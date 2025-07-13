@@ -21,10 +21,29 @@ struct FileProcessingEvent
     double artifact_confidence = 0.0;
 };
 
+/**
+ * @brief Orchestrates processing of scanned media files with standardized error handling.
+ *
+ * Error Handling Policy:
+ * - All errors are logged with context.
+ * - Per-file errors (e.g., unsupported file, processing failure, DB error) are emitted via onNext with success=false.
+ * - Fatal errors (e.g., DB not available, invalid config, cancellation) are emitted via onError.
+ * - No silent failures: all errors are both logged and reported.
+ */
 class MediaProcessingOrchestrator
 {
 public:
     explicit MediaProcessingOrchestrator(const std::string &db_path);
+    /**
+     * @brief Process all unprocessed scanned files in parallel.
+     * @param max_threads Maximum number of parallel threads.
+     * @return Observable emitting FileProcessingEvent for each file and error/completion events.
+     *
+     * Error Handling:
+     * - Per-file errors are emitted via onNext (success=false, error_message set).
+     * - Fatal errors are emitted via onError and abort processing.
+     * - All errors are logged.
+     */
     SimpleObservable<FileProcessingEvent> processAllScannedFiles(int max_threads = 4);
 
     /**

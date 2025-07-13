@@ -8,6 +8,16 @@
 #include "server_config_manager.hpp"
 
 /**
+ * @brief Result of a file processing operation
+ */
+struct FileProcessResult
+{
+    bool success;
+    std::string error_message;
+    FileProcessResult(bool s = true, const std::string &msg = "") : success(s), error_message(msg) {}
+};
+
+/**
  * @brief File processor that integrates file scanning, media processing, and database storage
  *
  * This class observes file names emitted by FileUtils::listFilesInternal,
@@ -39,9 +49,9 @@ public:
     /**
      * @brief Process a single file with current quality settings
      * @param file_path Path to file to process
-     * @return true if successful, false otherwise
+     * @return FileProcessResult with success flag and error message
      */
-    bool processFile(const std::string &file_path);
+    FileProcessResult processFile(const std::string &file_path);
 
     /**
      * @brief Get processing statistics

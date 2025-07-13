@@ -1,6 +1,7 @@
 #include "core/file_utils.hpp"
 #include <stdexcept>
 #include <iostream>
+#include "logging/logger.hpp"
 
 namespace fs = std::filesystem;
 
@@ -11,51 +12,57 @@ SimpleObservable<std::string> FileUtils::listFilesAsObservable(const std::string
 
 SimpleObservable<std::string> FileUtils::listFilesInternal(const std::string &dir_path, bool recursive)
 {
+    using Observer = std::function<void(const std::string &)>;
+    using ErrorHandler = std::function<void(const std::exception &)>;
+    using CompleteHandler = std::function<void()>;
     return SimpleObservable<std::string>(
-        [dir_path, recursive](auto onNext, auto onError, auto onComplete)
-        {
-            try
+        std::function<void(Observer, ErrorHandler, CompleteHandler)>(
+            [dir_path, recursive](Observer onNext, ErrorHandler onError, CompleteHandler onComplete)
             {
-                // Validate directory exists
-                if (!isValidDirectory(dir_path))
+                try
                 {
-                    if (onError)
+                    // Validate directory exists
+                    if (!isValidDirectory(dir_path))
                     {
-                        onError(std::runtime_error("Invalid directory path: " + dir_path));
-                    }
-                    return;
-                }
-
-                if (recursive)
-                {
-                    // Custom recursive directory iteration with error handling
-                    scanDirectoryRecursively(dir_path, onNext);
-                }
-                else
-                {
-                    // Non-recursive directory iteration
-                    for (const auto &entry : fs::directory_iterator(dir_path))
-                    {
-                        if (entry.is_regular_file())
+                        std::string msg = "Invalid directory path: " + dir_path;
+                        Logger::warn(msg);
+                        if (onError)
                         {
-                            onNext(entry.path().string());
+                            onError(std::runtime_error(msg));
+                        }
+                        return;
+                    }
+                    if (recursive)
+                    {
+                        // Custom recursive directory iteration with error handling
+                        scanDirectoryRecursively(dir_path, onNext);
+                    }
+                    else
+                    {
+                        // Non-recursive directory iteration
+                        for (const auto &entry : fs::directory_iterator(dir_path))
+                        {
+                            if (entry.is_regular_file())
+                            {
+                                onNext(entry.path().string());
+                            }
                         }
                     }
+                    if (onComplete)
+                    {
+                        onComplete();
+                    }
                 }
-
-                if (onComplete)
+                catch (const std::exception &e)
                 {
-                    onComplete();
+                    std::string msg = "Error listing files in directory: " + dir_path + ": " + e.what();
+                    Logger::warn(msg);
+                    if (onError)
+                    {
+                        onError(std::runtime_error(msg));
+                    }
                 }
-            }
-            catch (const std::exception &e)
-            {
-                if (onError)
-                {
-                    onError(e);
-                }
-            }
-        });
+            }));
 }
 
 bool FileUtils::isValidDirectory(const std::string &path)
@@ -96,8 +103,7 @@ void FileUtils::scanDirectoryRecursively(const std::string &dir_path,
                 catch (const fs::filesystem_error &e)
                 {
                     // Log the error but continue scanning
-                    std::cerr << "Warning: Skipping entry due to permission error: " << entry.path().string()
-                              << " - " << e.what() << std::endl;
+                    Logger::warn("Skipping entry due to permission error: " + entry.path().string() + " - " + e.what());
                     continue;
                 }
             }
@@ -105,15 +111,14 @@ void FileUtils::scanDirectoryRecursively(const std::string &dir_path,
         catch (const fs::filesystem_error &e)
         {
             // Log the error but don't stop the entire scan
-            std::cerr << "Warning: Error accessing directory " << current_path.string() << ": " << e.what() << std::endl;
+            Logger::warn("Error accessing directory " + current_path.string() + ": " + e.what());
         }
         catch (const std::exception &e)
         {
             // Log any other errors
-            std::cerr << "Warning: Unexpected error scanning directory " << current_path.string() << ": " << e.what() << std::endl;
+            Logger::warn("Unexpected error scanning directory " + current_path.string() + ": " + e.what());
         }
     };
-
     // Start the recursive scan
     scanDirectory(fs::path(dir_path));
 }

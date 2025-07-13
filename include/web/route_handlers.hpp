@@ -324,19 +324,16 @@ private:
             auto body = json::parse(req.body);
             std::string file_path = body["file_path"];
             std::string db_path = body.value("database_path", "processing_results.db");
-
             Logger::info("Processing single file: " + file_path);
-
             // Create FileProcessor and process file
             FileProcessor processor(db_path);
-            bool success = processor.processFile(file_path);
-
+            auto result = processor.processFile(file_path);
             json response = {
-                {"success", success},
+                {"success", result.success},
                 {"file_path", file_path},
-                {"database_path", db_path}};
-
-            if (success)
+                {"database_path", db_path},
+                {"error_message", result.error_message}};
+            if (result.success)
             {
                 res.set_content(response.dump(), "application/json");
                 Logger::info("File processing completed successfully");
@@ -429,14 +426,15 @@ private:
                     try
                     {
                         // Store file metadata in database (just name and path)
-                        if (db_manager.storeScannedFile(file_path))
+                        auto db_result = db_manager.storeScannedFile(file_path);
+                        if (db_result.success)
                         {
                             files_scanned++;
                             Logger::debug("Scanned file: " + file_path);
                         }
                         else
                         {
-                            Logger::warn("Failed to store scanned file: " + file_path);
+                            Logger::warn("Failed to store scanned file: " + file_path + ". DB error: " + db_result.error_message);
                         }
                     }
                     catch (const std::exception &e)

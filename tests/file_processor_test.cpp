@@ -64,11 +64,13 @@ TEST_F(FileProcessorTest, ProcessSingleFile)
 
     // Test processing a supported file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
-    EXPECT_TRUE(processor.processFile(image_path));
+    auto image_result = processor.processFile(image_path);
+    EXPECT_TRUE(image_result.success) << image_result.error_message;
 
     // Test processing an unsupported file
     std::string text_path = (test_dir_ / "test_document.txt").string();
-    EXPECT_FALSE(processor.processFile(text_path));
+    auto text_result = processor.processFile(text_path);
+    EXPECT_FALSE(text_result.success) << text_result.error_message;
 }
 
 TEST_F(FileProcessorTest, ProcessDirectory)
@@ -99,7 +101,8 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
 
     // Process a file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
-    processor.processFile(image_path);
+    auto result = processor.processFile(image_path);
+    EXPECT_TRUE(result.success) << result.error_message;
 
     // Check stats updated
     stats = processor.getProcessingStats();
@@ -113,7 +116,8 @@ TEST_F(FileProcessorTest, DatabaseIntegration)
 
     // Process a file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
-    EXPECT_TRUE(processor.processFile(image_path));
+    auto result = processor.processFile(image_path);
+    EXPECT_TRUE(result.success) << result.error_message;
 
     // Verify database was created and contains data
     EXPECT_TRUE(std::filesystem::exists(test_db_));
@@ -130,7 +134,8 @@ TEST_F(FileProcessorTest, QualityModeIntegration)
 
     // Process a file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
-    EXPECT_TRUE(processor.processFile(image_path));
+    auto result = processor.processFile(image_path);
+    EXPECT_TRUE(result.success) << result.error_message;
 
     // The processing should use the current quality mode
     // (This is verified by the fact that processing succeeds)

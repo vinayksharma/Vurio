@@ -63,7 +63,7 @@ bool DatabaseManager::createMediaProcessingResultsTable()
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
-    return executeStatement(sql);
+    return executeStatement(sql).success;
 }
 
 bool DatabaseManager::createScannedFilesTable()
@@ -82,34 +82,37 @@ bool DatabaseManager::createScannedFilesTable()
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
-    return executeStatement(sql);
+    return executeStatement(sql).success;
 }
 
 // Mark a file as processed
-bool DatabaseManager::markFileAsProcessed(const std::string &file_path)
+DBOpResult DatabaseManager::markFileAsProcessed(const std::string &file_path)
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
     const std::string sql = "UPDATE scanned_files SET processed = 1 WHERE file_path = ?";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        Logger::error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
     sqlite3_bind_text(stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE)
     {
-        Logger::error("Failed to mark file as processed: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to mark file as processed: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
-    return true;
+    return DBOpResult(true);
 }
 
 // Get all unprocessed scanned files
@@ -141,14 +144,15 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllUnproces
     return results;
 }
 
-bool DatabaseManager::storeProcessingResult(const std::string &file_path,
-                                            DedupMode mode,
-                                            const ProcessingResult &result)
+DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
+                                                  DedupMode mode,
+                                                  const ProcessingResult &result)
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     const std::string insert_sql = R"(
@@ -163,8 +167,9 @@ bool DatabaseManager::storeProcessingResult(const std::string &file_path,
     int rc = sqlite3_prepare_v2(db_, insert_sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        Logger::error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     // Bind parameters
@@ -225,12 +230,13 @@ bool DatabaseManager::storeProcessingResult(const std::string &file_path,
 
     if (rc != SQLITE_DONE)
     {
-        Logger::error("Failed to insert result: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to insert result: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     Logger::info("Stored processing result for: " + file_path);
-    return true;
+    return DBOpResult(true);
 }
 
 std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::string &file_path)
@@ -377,24 +383,26 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
     return results;
 }
 
-bool DatabaseManager::clearAllResults()
+DBOpResult DatabaseManager::clearAllResults()
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     const std::string delete_sql = "DELETE FROM media_processing_results";
     return executeStatement(delete_sql);
 }
 
-bool DatabaseManager::executeStatement(const std::string &sql)
+DBOpResult DatabaseManager::executeStatement(const std::string &sql)
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     char *err_msg = nullptr;
@@ -402,12 +410,13 @@ bool DatabaseManager::executeStatement(const std::string &sql)
 
     if (rc != SQLITE_OK)
     {
-        Logger::error("SQL execution failed: " + std::string(err_msg));
+        std::string msg = "SQL execution failed: " + std::string(err_msg);
+        Logger::error(msg);
         sqlite3_free(err_msg);
-        return false;
+        return DBOpResult(false, msg);
     }
 
-    return true;
+    return DBOpResult(true);
 }
 
 std::string DatabaseManager::resultToJson(const ProcessingResult &result)
@@ -462,12 +471,13 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
     return result;
 }
 
-bool DatabaseManager::storeScannedFile(const std::string &file_path)
+DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     // Extract file name from path
@@ -483,8 +493,9 @@ bool DatabaseManager::storeScannedFile(const std::string &file_path)
     int rc = sqlite3_prepare_v2(db_, insert_sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        Logger::error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     // Bind parameters
@@ -496,12 +507,13 @@ bool DatabaseManager::storeScannedFile(const std::string &file_path)
 
     if (rc != SQLITE_DONE)
     {
-        Logger::error("Failed to insert scanned file: " + std::string(sqlite3_errmsg(db_)));
-        return false;
+        std::string msg = "Failed to insert scanned file: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     Logger::debug("Stored scanned file: " + file_path);
-    return true;
+    return DBOpResult(true);
 }
 
 std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedFiles()
@@ -539,12 +551,13 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
     return results;
 }
 
-bool DatabaseManager::clearAllScannedFiles()
+DBOpResult DatabaseManager::clearAllScannedFiles()
 {
     if (!db_)
     {
-        Logger::error("Database not initialized");
-        return false;
+        std::string msg = "Database not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
     }
 
     const std::string delete_sql = "DELETE FROM scanned_files";

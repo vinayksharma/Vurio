@@ -53,51 +53,46 @@ size_t FileProcessor::processDirectory(const std::string &dir_path, bool recursi
     return total_files_processed_;
 }
 
-bool FileProcessor::processFile(const std::string &file_path)
+FileProcessResult FileProcessor::processFile(const std::string &file_path)
 {
     Logger::info("Processing single file: " + file_path);
-
     try
     {
-        // Check if file is supported
         if (!MediaProcessor::isSupportedFile(file_path))
         {
-            Logger::warn("Unsupported file type: " + file_path);
-            return false;
+            std::string msg = "Unsupported file type: " + file_path;
+            Logger::warn(msg);
+            return FileProcessResult(false, msg);
         }
-
-        // Get current quality mode from configuration
         auto &config_manager = ServerConfigManager::getInstance();
         DedupMode current_mode = config_manager.getDedupMode();
-
-        // Process the file
         ProcessingResult result = MediaProcessor::processFile(file_path, current_mode);
-
-        // Store result in database
-        if (db_manager_->storeProcessingResult(file_path, current_mode, result))
+        DBOpResult db_result = db_manager_->storeProcessingResult(file_path, current_mode, result);
+        if (!db_result.success)
         {
-            total_files_processed_++;
-            if (result.success)
-            {
-                successful_files_processed_++;
-                Logger::info("Successfully processed: " + file_path);
-            }
-            else
-            {
-                Logger::warn("Failed to process: " + file_path + " - " + result.error_message);
-            }
-            return result.success;
+            std::string msg = "Failed to store processing result for: " + file_path + ". DB error: " + db_result.error_message;
+            Logger::error(msg);
+            return FileProcessResult(false, msg);
+        }
+        total_files_processed_++;
+        if (result.success)
+        {
+            successful_files_processed_++;
+            Logger::info("Successfully processed: " + file_path);
+            return FileProcessResult(true);
         }
         else
         {
-            Logger::error("Failed to store processing result for: " + file_path);
-            return false;
+            std::string msg = "Failed to process: " + file_path + " - " + result.error_message;
+            Logger::warn(msg);
+            return FileProcessResult(false, msg);
         }
     }
     catch (const std::exception &e)
     {
-        Logger::error("Error processing file " + file_path + ": " + std::string(e.what()));
-        return false;
+        std::string msg = "Error processing file " + file_path + ": " + std::string(e.what());
+        Logger::error(msg);
+        return FileProcessResult(false, msg);
     }
 }
 
@@ -126,42 +121,33 @@ std::string FileProcessor::getFileCategory(const std::string &file_path)
 void FileProcessor::handleFile(const std::string &file_path)
 {
     Logger::debug("Handling file: " + file_path);
-
     try
     {
-        // Check if file is supported
         if (!MediaProcessor::isSupportedFile(file_path))
         {
             Logger::debug("Skipping unsupported file: " + file_path);
             return;
         }
-
-        // Get current quality mode from configuration
         auto &config_manager = ServerConfigManager::getInstance();
         DedupMode current_mode = config_manager.getDedupMode();
-
-        // Process the file
         ProcessingResult result = MediaProcessor::processFile(file_path, current_mode);
-
-        // Store result in database
-        if (db_manager_->storeProcessingResult(file_path, current_mode, result))
+        DBOpResult db_result = db_manager_->storeProcessingResult(file_path, current_mode, result);
+        if (!db_result.success)
         {
-            total_files_processed_++;
-            if (result.success)
-            {
-                successful_files_processed_++;
-                Logger::info("Successfully processed: " + file_path +
-                             " (format: " + result.artifact.format +
-                             ", confidence: " + std::to_string(result.artifact.confidence) + ")");
-            }
-            else
-            {
-                Logger::warn("Failed to process: " + file_path + " - " + result.error_message);
-            }
+            Logger::error("Failed to store processing result for: " + file_path + ". DB error: " + db_result.error_message);
+            return;
+        }
+        total_files_processed_++;
+        if (result.success)
+        {
+            successful_files_processed_++;
+            Logger::info("Successfully processed: " + file_path +
+                         " (format: " + result.artifact.format +
+                         ", confidence: " + std::to_string(result.artifact.confidence) + ")");
         }
         else
         {
-            Logger::error("Failed to store processing result for: " + file_path);
+            Logger::warn("Failed to process: " + file_path + " - " + result.error_message);
         }
     }
     catch (const std::exception &e)
