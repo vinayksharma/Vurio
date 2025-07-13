@@ -72,6 +72,25 @@ public:
      */
     bool clearAllScannedFiles();
 
+    /**
+     * @brief Check if the database connection is valid
+     * @return true if database is initialized and connected, false otherwise
+     */
+    bool isValid() const;
+
+    /**
+     * @brief Mark a scanned file as processed
+     * @param file_path Full path to the file
+     * @return true if successful, false otherwise
+     */
+    bool markFileAsProcessed(const std::string &file_path);
+
+    /**
+     * @brief Get all unprocessed scanned files
+     * @return Vector of pairs (file_path, file_name)
+     */
+    std::vector<std::pair<std::string, std::string>> getAllUnprocessedScannedFiles();
+
 private:
     sqlite3 *db_;
     std::string db_path_;

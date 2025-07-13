@@ -2,4 +2,6 @@
 set -e
 
 rm -rf build
-./build.sh 
+./build.sh
+cd build
+ctest --output-on-failure 

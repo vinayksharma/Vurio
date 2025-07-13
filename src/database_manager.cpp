@@ -78,10 +78,67 @@ bool DatabaseManager::createScannedFilesTable()
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_path TEXT NOT NULL UNIQUE,
             file_name TEXT NOT NULL,
+            processed INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
     return executeStatement(sql);
+}
+
+// Mark a file as processed
+bool DatabaseManager::markFileAsProcessed(const std::string &file_path)
+{
+    if (!db_)
+    {
+        Logger::error("Database not initialized");
+        return false;
+    }
+    const std::string sql = "UPDATE scanned_files SET processed = 1 WHERE file_path = ?";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+    {
+        Logger::error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db_)));
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE)
+    {
+        Logger::error("Failed to mark file as processed: " + std::string(sqlite3_errmsg(db_)));
+        return false;
+    }
+    return true;
+}
+
+// Get all unprocessed scanned files
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllUnprocessedScannedFiles()
+{
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!db_)
+    {
+        Logger::error("Database not initialized");
+        return results;
+    }
+    const std::string select_sql = R"(
+        SELECT file_path, file_name FROM scanned_files WHERE processed = 0 ORDER BY created_at DESC
+    )";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db_, select_sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+    {
+        Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db_)));
+        return results;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+        results.emplace_back(file_path, file_name);
+    }
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 bool DatabaseManager::storeProcessingResult(const std::string &file_path,
@@ -492,4 +549,9 @@ bool DatabaseManager::clearAllScannedFiles()
 
     const std::string delete_sql = "DELETE FROM scanned_files";
     return executeStatement(delete_sql);
+}
+
+bool DatabaseManager::isValid() const
+{
+    return db_ != nullptr;
 }

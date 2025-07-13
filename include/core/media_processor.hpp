@@ -16,6 +16,8 @@ struct MediaArtifact
     std::string hash;          // Hash/fingerprint of the artifact
     double confidence;         // Confidence score (0.0 to 1.0)
     std::string metadata;      // Additional metadata as JSON string
+
+    MediaArtifact() : confidence(0.0) {}
 };
 
 /**

@@ -28,3 +28,24 @@ target_link_libraries(dedup_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(dedup_tests) 
+
+add_executable(media_processing_orchestrator_test
+    media_processing_orchestrator_test.cpp
+    ../src/database_manager.cpp
+    ../src/media_processing_orchestrator.cpp
+    ../src/server_config_manager.cpp
+    ../src/media_processor.cpp
+    ../src/file_utils.cpp
+)
+target_link_libraries(media_processing_orchestrator_test
+    PRIVATE
+    gtest
+    gtest_main
+    pthread
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    PkgConfig::SQLITE3
+)
+add_test(NAME MediaProcessingOrchestratorTest COMMAND media_processing_orchestrator_test) 

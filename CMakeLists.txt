@@ -4,6 +4,9 @@ project(dedup_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Add Homebrew spdlog path for macOS
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}:/opt/homebrew/opt/spdlog")
+
 # Find required packages
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
