@@ -5,6 +5,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <iostream> // Added for debug output
 
 namespace fs = std::filesystem;
 
@@ -127,7 +128,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
     db.storeScannedFile(test_file);
     db.waitForWrites();
 
-    // Simulate processing by setting a hash
+    // Simulate processing by setting a hash (simulate mismatch)
     db.updateFileHash(test_file, "old_hash_123");
     db.waitForWrites();
 
@@ -171,7 +172,8 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     EXPECT_EQ(files_needing_processing.size(), 3);
 
     // Process one file (set hash)
-    db.updateFileHash(file1, "hash_123");
+    std::string hash1 = FileUtils::computeFileHash(file1);
+    db.updateFileHash(file1, hash1);
     db.waitForWrites();
 
     // Only 2 files should need processing now
@@ -209,7 +211,8 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
     EXPECT_EQ(files_needing_processing.size(), 1);
 
     // Update hash (simulate processing)
-    db.updateFileHash(test_file, "processed_hash_456");
+    std::string processed_hash = FileUtils::computeFileHash(test_file);
+    db.updateFileHash(test_file, processed_hash);
     db.waitForWrites();
 
     // Should no longer need processing
@@ -300,15 +303,32 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     db.waitForWrites();
 
     // Set hash (simulate processing)
-    db.updateFileHash(test_file, "old_hash_123");
+    std::string actual_hash = FileUtils::computeFileHash(test_file);
+    std::cout << "[DEBUG] Actual file hash: " << actual_hash << std::endl;
+    db.updateFileHash(test_file, actual_hash);
     db.waitForWrites();
+
+    // Retrieve hash from DB for debug
+    auto files = db.getAllScannedFiles();
+    for (const auto &pair : files)
+    {
+        if (pair.first == test_file)
+        {
+            std::cout << "[DEBUG] DB file: " << pair.first << ", DB hash: " << FileUtils::computeFileHash(pair.first) << std::endl;
+        }
+    }
 
     bool callback_called = false;
 
     // Store file again with callback (no change in content)
+    std::string hash_before_second_store = FileUtils::computeFileHash(test_file);
+    std::cout << "[DEBUG] Hash before second store: " << hash_before_second_store << std::endl;
     db.storeScannedFile(test_file, [&](const std::string &file_path)
                         { callback_called = true; });
     db.waitForWrites();
+
+    // Wait a bit for async callback to execute (should NOT be called)
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     // Callback should NOT be called when hash doesn't change
     EXPECT_FALSE(callback_called);
