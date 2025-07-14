@@ -2,6 +2,11 @@
 #include <stdexcept>
 #include <iostream>
 #include "logging/logger.hpp"
+#include <openssl/sha.h>
+#include <fstream>
+#include <vector>
+#include <sstream>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -121,4 +126,33 @@ void FileUtils::scanDirectoryRecursively(const std::string &dir_path,
     };
     // Start the recursive scan
     scanDirectory(fs::path(dir_path));
+}
+
+std::string FileUtils::computeFileHash(const std::string &file_path)
+{
+    constexpr size_t buffer_size = 8192;
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    if (SHA256_Init(&sha256) != 1)
+        return "";
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open())
+        return "";
+    std::vector<char> buffer(buffer_size);
+    while (file.good())
+    {
+        file.read(buffer.data(), buffer_size);
+        std::streamsize bytes_read = file.gcount();
+        if (bytes_read > 0)
+        {
+            if (SHA256_Update(&sha256, buffer.data(), bytes_read) != 1)
+                return "";
+        }
+    }
+    if (SHA256_Final(hash, &sha256) != 1)
+        return "";
+    std::stringstream ss;
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+    return ss.str();
 }

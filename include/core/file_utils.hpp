@@ -53,6 +53,13 @@ public:
      */
     static SimpleObservable<std::string> listFilesAsObservable(const std::string &dir_path, bool recursive);
 
+    /**
+     * @brief Compute the SHA-256 hash of a file's contents
+     * @param file_path Path to the file
+     * @return Hex string of the SHA-256 hash, or empty string on error
+     */
+    static std::string computeFileHash(const std::string &file_path);
+
 private:
     /**
      * Internal implementation of file listing with error handling

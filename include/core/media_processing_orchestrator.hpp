@@ -35,14 +35,14 @@ class MediaProcessingOrchestrator
 public:
     explicit MediaProcessingOrchestrator(const std::string &db_path);
     /**
-     * @brief Process all unprocessed scanned files in parallel.
-     * @param max_threads Maximum number of parallel threads.
-     * @return Observable emitting FileProcessingEvent for each file and error/completion events.
+     * @brief Process all scanned files in parallel.
      *
-     * Error Handling:
-     * - Per-file errors are emitted via onNext (success=false, error_message set).
-     * - Fatal errors are emitted via onError and abort processing.
-     * - All errors are logged.
+     * This method processes all scanned files using the current dedup mode.
+     * Files are processed in parallel using the specified number of threads.
+     * Processing results are stored in the database.
+     *
+     * @param max_threads Maximum number of threads to use for processing
+     * @return Observable that emits FileProcessingEvent for each processed file
      */
     SimpleObservable<FileProcessingEvent> processAllScannedFiles(int max_threads = 4);
 

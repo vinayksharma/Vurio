@@ -24,9 +24,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 if (onError) onError(std::runtime_error("Database not initialized"));
                 return;
             }
-            auto scanned_files = db_.getAllUnprocessedScannedFiles();
+            auto scanned_files = db_.getAllScannedFiles();
             if (scanned_files.empty()) {
-                Logger::info("No unprocessed files found");
+                Logger::info("No scanned files found");
                 if (onComplete) onComplete();
                 return;
             }
@@ -40,7 +40,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             Logger::info("Starting processing of " + std::to_string(scanned_files.size()) + 
                         " files with " + std::to_string(max_threads) + " threads");
             std::mutex store_mutex;
-            std::mutex mark_mutex;
             std::atomic<size_t> total_files{scanned_files.size()};
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
@@ -62,7 +61,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             };
             std::vector<std::future<void>> futures;
             FutureManager future_manager(futures);
-            auto process_file = [&](const std::string& file_path) {
+            auto process_file = [&](const std::string& file_path)
+            {
                 if (cancelled_.load()) {
                     Logger::warn("Processing cancelled before file: " + file_path);
                     if (onError) onError(std::runtime_error("Processing cancelled"));
@@ -95,7 +95,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         return;
                     }
                     bool store_success = false;
-                    bool mark_success = false;
                     std::string db_error_msg;
                     {
                         std::lock_guard<std::mutex> store_lock(store_mutex);
@@ -103,14 +102,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         store_success = store_result.success;
                         if (!store_success) db_error_msg = store_result.error_message;
                     }
-                    if (store_success) {
-                        std::lock_guard<std::mutex> mark_lock(mark_mutex);
-                        DBOpResult mark_result = db_.markFileAsProcessed(file_path);
-                        mark_success = mark_result.success;
-                        if (!mark_success) db_error_msg = mark_result.error_message;
-                    }
-                    if (!store_success || !mark_success) {
-                        Logger::error("Failed to store processing result or mark file as processed: " + file_path + ". DB error: " + db_error_msg);
+                    if (!store_success) {
+                        Logger::error("Failed to store processing result: " + file_path + ". DB error: " + db_error_msg);
                         event.success = false;
                         event.error_message = "Database operation failed: " + db_error_msg;
                         processed_files.fetch_add(1);
@@ -125,7 +118,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     processed_files.fetch_add(1);
                     successful_files.fetch_add(1);
                     if (onNext) onNext(event);
-                } catch (const std::exception& e) {
+                }
+                catch (const std::exception& e) {
                     Logger::error("Unexpected error processing file " + file_path + ": " + std::string(e.what()));
                     event.success = false;
                     event.error_message = "Unexpected error: " + std::string(e.what());
@@ -167,12 +161,14 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     }
                 }
             }
-            Logger::info("Processing completed: " + std::to_string(processed_files.load()) + 
-                        " processed, " + std::to_string(successful_files.load()) + 
-                        " successful, " + std::to_string(failed_files.load()) + " failed");
+            Logger::info("Processing completed. Total: " + std::to_string(total_files.load()) + 
+                        ", Processed: " + std::to_string(processed_files.load()) + 
+                        ", Successful: " + std::to_string(successful_files.load()) + 
+                        ", Failed: " + std::to_string(failed_files.load()));
             if (onComplete) onComplete();
-        } catch (const std::exception& e) {
-            Logger::error("Fatal error in orchestrator: " + std::string(e.what()));
+        }
+        catch (const std::exception& e) {
+            Logger::error("Fatal error in processAllScannedFiles: " + std::string(e.what()));
             if (onError) onError(e);
         } });
 }

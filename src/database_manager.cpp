@@ -78,70 +78,11 @@ bool DatabaseManager::createScannedFilesTable()
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_path TEXT NOT NULL UNIQUE,
             file_name TEXT NOT NULL,
-            processed INTEGER DEFAULT 0,
+            hash TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
     return executeStatement(sql).success;
-}
-
-// Mark a file as processed
-DBOpResult DatabaseManager::markFileAsProcessed(const std::string &file_path)
-{
-    if (!db_)
-    {
-        std::string msg = "Database not initialized";
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-    const std::string sql = "UPDATE scanned_files SET processed = 1 WHERE file_path = ?";
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK)
-    {
-        std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db_));
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-    sqlite3_bind_text(stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE)
-    {
-        std::string msg = "Failed to mark file as processed: " + std::string(sqlite3_errmsg(db_));
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-    return DBOpResult(true);
-}
-
-// Get all unprocessed scanned files
-std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllUnprocessedScannedFiles()
-{
-    std::vector<std::pair<std::string, std::string>> results;
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return results;
-    }
-    const std::string select_sql = R"(
-        SELECT file_path, file_name FROM scanned_files WHERE processed = 0 ORDER BY created_at DESC
-    )";
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db_, select_sql.c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK)
-    {
-        Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db_)));
-        return results;
-    }
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        results.emplace_back(file_path, file_name);
-    }
-    sqlite3_finalize(stmt);
-    return results;
 }
 
 DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
@@ -471,7 +412,7 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
     return result;
 }
 
-DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
+DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path, const std::string &file_hash)
 {
     if (!db_)
     {
@@ -479,59 +420,96 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
-
-    // Extract file name from path
     std::filesystem::path path(file_path);
     std::string file_name = path.filename().string();
-
-    const std::string insert_sql = R"(
-        INSERT OR REPLACE INTO scanned_files (file_path, file_name)
-        VALUES (?, ?)
-    )";
-
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db_, insert_sql.c_str(), -1, &stmt, nullptr);
+    // Check if file already exists
+    const std::string select_sql = "SELECT hash FROM scanned_files WHERE file_path = ?";
+    sqlite3_stmt *select_stmt;
+    int rc = sqlite3_prepare_v2(db_, select_sql.c_str(), -1, &select_stmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db_));
+        std::string msg = "Failed to prepare select statement: " + std::string(sqlite3_errmsg(db_));
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
-
-    // Bind parameters
-    sqlite3_bind_text(stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, file_name.c_str(), -1, SQLITE_STATIC);
-
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
+    sqlite3_bind_text(select_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+    rc = sqlite3_step(select_stmt);
+    if (rc == SQLITE_ROW)
+    {
+        // File exists, check hash
+        const unsigned char *existing_hash = sqlite3_column_text(select_stmt, 0);
+        std::string existing_hash_str = existing_hash ? reinterpret_cast<const char *>(existing_hash) : "";
+        sqlite3_finalize(select_stmt);
+        if (existing_hash_str == file_hash)
+        {
+            // Hash matches, do nothing
+            Logger::debug("File already scanned and hash matches: " + file_path);
+            return DBOpResult(true);
+        }
+        // Hash differs, update hash
+        const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
+        sqlite3_stmt *update_stmt;
+        rc = sqlite3_prepare_v2(db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            std::string msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(db_));
+            Logger::error(msg);
+            return DBOpResult(false, msg);
+        }
+        sqlite3_bind_text(update_stmt, 1, file_hash.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(update_stmt, 2, file_path.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(update_stmt);
+        sqlite3_finalize(update_stmt);
+        if (rc != SQLITE_DONE)
+        {
+            std::string msg = "Failed to update scanned file hash: " + std::string(sqlite3_errmsg(db_));
+            Logger::error(msg);
+            return DBOpResult(false, msg);
+        }
+        Logger::info("File hash updated: " + file_path);
+        return DBOpResult(true);
+    }
+    sqlite3_finalize(select_stmt);
+    // File does not exist, insert new
+    const std::string insert_sql = R"(
+        INSERT INTO scanned_files (file_path, file_name, hash)
+        VALUES (?, ?, ?)
+    )";
+    sqlite3_stmt *insert_stmt;
+    rc = sqlite3_prepare_v2(db_, insert_sql.c_str(), -1, &insert_stmt, nullptr);
+    if (rc != SQLITE_OK)
+    {
+        std::string msg = "Failed to prepare insert statement: " + std::string(sqlite3_errmsg(db_));
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+    sqlite3_bind_text(insert_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(insert_stmt, 2, file_name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(insert_stmt, 3, file_hash.c_str(), -1, SQLITE_STATIC);
+    rc = sqlite3_step(insert_stmt);
+    sqlite3_finalize(insert_stmt);
     if (rc != SQLITE_DONE)
     {
         std::string msg = "Failed to insert scanned file: " + std::string(sqlite3_errmsg(db_));
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
-
     Logger::debug("Stored scanned file: " + file_path);
     return DBOpResult(true);
 }
 
+// Get all scanned files
 std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedFiles()
 {
     std::vector<std::pair<std::string, std::string>> results;
-
     if (!db_)
     {
         Logger::error("Database not initialized");
         return results;
     }
-
     const std::string select_sql = R"(
-        SELECT file_path, file_name
-        FROM scanned_files 
-        ORDER BY created_at DESC
+        SELECT file_path, file_name FROM scanned_files ORDER BY created_at DESC
     )";
-
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db_, select_sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
@@ -539,14 +517,12 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
         Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db_)));
         return results;
     }
-
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         results.emplace_back(file_path, file_name);
     }
-
     sqlite3_finalize(stmt);
     return results;
 }

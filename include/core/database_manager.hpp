@@ -60,13 +60,15 @@ public:
 
     /**
      * @brief Store a scanned file in the database
-     * @return DBOpResult with success flag and error message
+     * @param file_path Path to the scanned file
+     * @param file_hash Hash of the file
+     * @return DBOpResult indicating success or failure
      */
-    DBOpResult storeScannedFile(const std::string &file_path);
+    DBOpResult storeScannedFile(const std::string &file_path, const std::string &file_hash);
 
     /**
      * @brief Get all scanned files
-     * @return Vector of pairs (file_path, file_name)
+     * @return Vector of file path and name pairs
      */
     std::vector<std::pair<std::string, std::string>> getAllScannedFiles();
 
@@ -81,18 +83,6 @@ public:
      * @return true if database is initialized and connected, false otherwise
      */
     bool isValid() const;
-
-    /**
-     * @brief Mark a file as processed
-     * @return DBOpResult with success flag and error message
-     */
-    DBOpResult markFileAsProcessed(const std::string &file_path);
-
-    /**
-     * @brief Get all unprocessed scanned files
-     * @return Vector of pairs (file_path, file_name)
-     */
-    std::vector<std::pair<std::string, std::string>> getAllUnprocessedScannedFiles();
 
 private:
     sqlite3 *db_;

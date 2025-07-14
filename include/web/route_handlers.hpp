@@ -425,8 +425,14 @@ private:
                 {
                     try
                     {
-                        // Store file metadata in database (just name and path)
-                        auto db_result = db_manager.storeScannedFile(file_path);
+                        // Only insert supported files
+                        if (!MediaProcessor::isSupportedFile(file_path))
+                        {
+                            Logger::debug("Skipping unsupported file during scan: " + file_path);
+                            return;
+                        }
+                        std::string file_hash = FileUtils::computeFileHash(file_path);
+                        auto db_result = db_manager.storeScannedFile(file_path, file_hash);
                         if (db_result.success)
                         {
                             files_scanned++;
