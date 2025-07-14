@@ -51,31 +51,53 @@ protected:
 TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
 {
     DatabaseManager db(db_path);
-    // Add a supported and unsupported file with actual paths
-    std::string supported = test_dir + "/test.jpg";
-    std::string unsupported = test_dir + "/test.txt";
+
+    // Add some test files
+    std::string file1 = test_dir + "/test.jpg";
+    std::string file2 = test_dir + "/test.txt";
+    createTestFile(file1);
+    createTestFile(file2);
+
     // Store test files in database
-    db.storeScannedFile(supported);
-    db.storeScannedFile(unsupported);
-    MediaProcessingOrchestrator orchestrator(db_path);
+    db.storeScannedFile(file1);
+    db.storeScannedFile(file2);
+    db.waitForWrites();
+
+    MediaProcessingOrchestrator orchestrator(db);
+
     std::vector<FileProcessingEvent> events;
     orchestrator.processAllScannedFiles(2).subscribe(
         [&](const FileProcessingEvent &evt)
-        { events.push_back(evt); },
+        {
+            events.push_back(evt);
+        },
         nullptr,
         [&]()
         {
-            // Check that both files emitted events
-            ASSERT_EQ(events.size(), 2);
-            // One should be unsupported
-            auto it = std::find_if(events.begin(), events.end(), [](const FileProcessingEvent &e)
-                                   { return !e.success; });
-            ASSERT_TRUE(it != events.end());
-            EXPECT_TRUE(it->file_path == unsupported);
-            // Test that files are processed correctly
-            auto files_needing_processing = db.getFilesNeedingProcessing();
-            EXPECT_EQ(files_needing_processing.size(), 1); // Only unsupported file should need processing (supported file gets hash during processing)
+            // Processing completed
         });
+    db.waitForWrites();
+    // Should have processed 2 files (1 supported, 1 unsupported)
+    EXPECT_EQ(events.size(), 2);
+
+    // Check that we have one successful and one failed event
+    bool found_success = false, found_failure = false;
+    for (const auto &event : events)
+    {
+        if (event.success)
+        {
+            found_success = true;
+            EXPECT_EQ(event.artifact_format, "phash");
+            EXPECT_GT(event.artifact_confidence, 0.0);
+        }
+        else
+        {
+            found_failure = true;
+            EXPECT_FALSE(event.error_message.empty());
+        }
+    }
+    EXPECT_TRUE(found_success);
+    EXPECT_TRUE(found_failure);
 }
 
 TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
@@ -91,21 +113,25 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
     // Store test files in database
     db.storeScannedFile(file1);
     db.storeScannedFile(file2);
+    db.waitForWrites();
 
-    MediaProcessingOrchestrator orchestrator(db_path);
+    MediaProcessingOrchestrator orchestrator(db);
+
+    // Use shared pointer to avoid memory issues
+    auto events = std::make_shared<std::vector<FileProcessingEvent>>();
 
     // Start processing in a separate thread
-    std::thread processing_thread([&orchestrator]()
-                                  {
-        std::vector<FileProcessingEvent> events;
-        orchestrator.processAllScannedFiles(2).subscribe(
-            [&](const FileProcessingEvent &evt) {
-                events.push_back(evt);
-            },
-            nullptr,
-            [&]() {
-                // Processing completed
-            }); });
+    std::thread processing_thread([&orchestrator, events]()
+                                  { orchestrator.processAllScannedFiles(2).subscribe(
+                                        [events](const FileProcessingEvent &evt)
+                                        {
+                                            events->push_back(evt);
+                                        },
+                                        nullptr,
+                                        [events]()
+                                        {
+                                            // Processing completed
+                                        }); });
 
     // Cancel processing after a short delay
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

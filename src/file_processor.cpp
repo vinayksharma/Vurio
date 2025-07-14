@@ -9,6 +9,14 @@ FileProcessor::FileProcessor(const std::string &db_path)
     Logger::info("FileProcessor initialized with database: " + db_path);
 }
 
+FileProcessor::~FileProcessor()
+{
+    if (db_manager_)
+    {
+        db_manager_->waitForWrites();
+    }
+}
+
 size_t FileProcessor::processDirectory(const std::string &dir_path, bool recursive)
 {
     Logger::info("Starting directory processing: " + dir_path + " (recursive: " + (recursive ? "yes" : "no") + ")");
@@ -105,6 +113,14 @@ void FileProcessor::clearStats()
 {
     total_files_processed_ = 0;
     successful_files_processed_ = 0;
+}
+
+void FileProcessor::waitForWrites()
+{
+    if (db_manager_)
+    {
+        db_manager_->waitForWrites();
+    }
 }
 
 std::string FileProcessor::getFileCategory(const std::string &file_path)

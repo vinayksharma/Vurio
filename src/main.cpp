@@ -5,6 +5,7 @@
 #include "auth/auth_middleware.hpp"
 #include "web/route_handlers.hpp"
 #include "web/openapi_docs.hpp"
+#include "core/thread_pool_manager.hpp"
 #include <httplib.h>
 #include <iostream>
 #include <jwt-cpp/jwt.h>
@@ -13,6 +14,9 @@ int main()
 {
         // Initialize configuration manager
         auto &config_manager = ServerConfigManager::getInstance();
+
+        // Initialize thread pool manager
+        ThreadPoolManager::initialize(4); // Use 4 threads by default
 
         Status status;
         Auth auth(config_manager.getAuthSecret()); // Use config from manager
@@ -32,6 +36,11 @@ int main()
 
         std::cout << "Server starting on " << ServerConfig::getServerUrl() << std::endl;
         std::cout << "API documentation available at: " << ServerConfig::getServerUrl() << ServerConfig::API_DOCS_PATH << std::endl;
+
+        // Start the server
         svr.listen(ServerConfig::HOST, config_manager.getServerPort());
+
+        // Shutdown thread pool manager
+        ThreadPoolManager::shutdown();
         return 0;
 }

@@ -11,6 +11,9 @@ set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}:/opt/homebrew/opt/spdlog")
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
+# Find TBB (Intel Threading Building Blocks)
+find_package(TBB REQUIRED)
+
 # Find SQLite3
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
@@ -64,6 +67,8 @@ set(SOURCES
     src/database_manager.cpp
     src/file_processor.cpp
     src/media_processing_orchestrator.cpp
+    src/thread_pool_manager.cpp
+    src/database_write_queue.cpp
 )
 
 # Add header files
@@ -76,8 +81,10 @@ set(HEADERS
     include/core/server_config_manager.hpp
     include/core/media_processor.hpp
     include/core/database_manager.hpp
+    include/core/database_write_queue.hpp
     include/core/file_processor.hpp
     include/core/media_processing_orchestrator.hpp
+    include/core/thread_pool_manager.hpp
     include/logging/logger.hpp
     include/web/openapi_docs.hpp
     include/web/route_handlers.hpp
@@ -96,6 +103,7 @@ target_link_libraries(dedup_server
     spdlog::spdlog
     pthread
     PkgConfig::SQLITE3
+    TBB::tbb
     # TODO: DEDUP MODES - Link libraries for different modes
     # FAST MODE: OpenCV + FFmpeg
     # BALANCED MODE: libvips + OpenCV + FFmpeg
@@ -146,6 +154,7 @@ target_link_libraries(media_processor_example
     spdlog::spdlog
     pthread
     PkgConfig::SQLITE3
+    TBB::tbb
     ${OpenCV_LIBS}
     PkgConfig::FFMPEG
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
@@ -155,7 +164,8 @@ target_link_libraries(media_processor_example
 # Add FileProcessor example
 add_executable(file_processor_example examples/file_processor_example.cpp 
                src/media_processor.cpp src/server_config_manager.cpp 
-               src/database_manager.cpp src/file_processor.cpp src/file_utils.cpp)
+               src/database_manager.cpp src/file_processor.cpp src/file_utils.cpp
+               src/database_write_queue.cpp)
 target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(file_processor_example
     PRIVATE
@@ -165,6 +175,7 @@ target_link_libraries(file_processor_example
     spdlog::spdlog
     pthread
     PkgConfig::SQLITE3
+    TBB::tbb
     ${OpenCV_LIBS}
     PkgConfig::FFMPEG
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>

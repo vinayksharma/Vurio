@@ -5,8 +5,8 @@
 #include <atomic>
 #include <chrono>
 
-MediaProcessingOrchestrator::MediaProcessingOrchestrator(const std::string &db_path)
-    : db_path_(db_path), db_(db_path), cancelled_(false) {}
+MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &db)
+    : db_(db), cancelled_(false) {}
 
 SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllScannedFiles(int max_threads)
 {

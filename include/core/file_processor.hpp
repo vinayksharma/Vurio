@@ -36,7 +36,7 @@ public:
     /**
      * @brief Destructor
      */
-    ~FileProcessor() = default;
+    ~FileProcessor();
 
     /**
      * @brief Process all files in a directory with current quality settings
@@ -70,6 +70,11 @@ public:
      * @return std::string category name
      */
     static std::string getFileCategory(const std::string &file_path);
+
+    /**
+     * @brief Wait for all pending database writes to complete
+     */
+    void waitForWrites();
 
 private:
     std::unique_ptr<DatabaseManager> db_manager_;

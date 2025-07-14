@@ -58,6 +58,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
 
     // Store the file
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Check that file was stored with NULL hash (needs processing)
     auto files_needing_processing = db.getFilesNeedingProcessing();
@@ -78,15 +79,18 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
 
     // Store the file first time
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Get the actual hash of the file
     std::string actual_hash = FileUtils::computeFileHash(test_file);
 
     // Simulate processing by setting a hash
     db.updateFileHash(test_file, actual_hash);
+    db.waitForWrites();
 
     // Store the same file again (should not change hash since content is same)
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Check that file still has hash (doesn't need processing)
     auto files_needing_processing = db.getFilesNeedingProcessing();
@@ -106,15 +110,18 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
 
     // Store the file first time
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Simulate processing by setting a hash
     db.updateFileHash(test_file, "old_hash_123");
+    db.waitForWrites();
 
     // Modify the file content (simulating file change)
     createTestFile(test_file, "different content");
 
     // Store the file again (should clear hash due to content change)
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Check that file needs processing again (hash cleared)
     auto files_needing_processing = db.getFilesNeedingProcessing();
@@ -142,6 +149,7 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     db.storeScannedFile(file1);
     db.storeScannedFile(file2);
     db.storeScannedFile(file3);
+    db.waitForWrites();
 
     // All files should need processing initially
     auto files_needing_processing = db.getFilesNeedingProcessing();
@@ -149,6 +157,7 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
 
     // Process one file (set hash)
     db.updateFileHash(file1, "hash_123");
+    db.waitForWrites();
 
     // Only 2 files should need processing now
     files_needing_processing = db.getFilesNeedingProcessing();
@@ -178,6 +187,7 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
 
     // Store the file
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Initially should need processing
     auto files_needing_processing = db.getFilesNeedingProcessing();
@@ -185,6 +195,7 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
 
     // Update hash (simulate processing)
     db.updateFileHash(test_file, "processed_hash_456");
+    db.waitForWrites();
 
     // Should no longer need processing
     files_needing_processing = db.getFilesNeedingProcessing();
@@ -232,9 +243,11 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
 
     // Store file first time
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Set hash (simulate processing)
     db.updateFileHash(test_file, "old_hash_123");
+    db.waitForWrites();
 
     // Modify file content
     createTestFile(test_file, "different content");
@@ -269,15 +282,18 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 
     // Store file first time
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Set hash (simulate processing)
     db.updateFileHash(test_file, "old_hash_123");
+    db.waitForWrites();
 
     bool callback_called = false;
 
     // Store file again with callback (no change in content)
     db.storeScannedFile(test_file, [&](const std::string &file_path)
                         { callback_called = true; });
+    db.waitForWrites();
 
     // Callback should NOT be called when hash doesn't change
     EXPECT_FALSE(callback_called);
@@ -306,6 +322,7 @@ TEST_F(DatabaseManagerTest, StoreProcessingResult)
     // Store the processing result
     auto db_result = db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
     EXPECT_TRUE(db_result.success);
+    db.waitForWrites();
 
     // Verify the result was stored
     auto results = db.getProcessingResults(test_file);
@@ -338,6 +355,7 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
     // Store the processing result
     auto db_result = db.storeProcessingResult(test_file, DedupMode::FAST, result);
     EXPECT_TRUE(db_result.success);
+    db.waitForWrites();
 
     // Verify the result was stored
     auto results = db.getProcessingResults(test_file);
@@ -370,6 +388,7 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 
     db.storeProcessingResult(test_file, DedupMode::BALANCED, result1);
     db.storeProcessingResult(test_file, DedupMode::FAST, result2);
+    db.waitForWrites();
 
     // Get all results for the file
     auto results = db.getProcessingResults(test_file);
@@ -420,6 +439,7 @@ TEST_F(DatabaseManagerTest, GetAllProcessingResults)
 
     db.storeProcessingResult(file1, DedupMode::BALANCED, result1);
     db.storeProcessingResult(file2, DedupMode::FAST, result2);
+    db.waitForWrites();
 
     // Get all processing results
     auto all_results = db.getAllProcessingResults();
@@ -465,6 +485,7 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
     result.artifact.hash = "test_hash";
 
     db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    db.waitForWrites();
 
     // Verify result exists
     auto results = db.getProcessingResults(test_file);
@@ -473,6 +494,7 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
     // Clear all results
     auto clear_result = db.clearAllResults();
     EXPECT_TRUE(clear_result.success);
+    db.waitForWrites();
 
     // Verify results are cleared
     results = db.getProcessingResults(test_file);
@@ -495,6 +517,7 @@ TEST_F(DatabaseManagerTest, GetAllScannedFiles)
     // Store scanned files
     db.storeScannedFile(file1);
     db.storeScannedFile(file2);
+    db.waitForWrites();
 
     // Get all scanned files
     auto all_files = db.getAllScannedFiles();
@@ -533,6 +556,7 @@ TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
 
     // Store a scanned file
     db.storeScannedFile(test_file);
+    db.waitForWrites();
 
     // Verify file exists
     auto all_files = db.getAllScannedFiles();
@@ -541,6 +565,7 @@ TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
     // Clear all scanned files
     auto clear_result = db.clearAllScannedFiles();
     EXPECT_TRUE(clear_result.success);
+    db.waitForWrites();
 
     // Verify files are cleared
     all_files = db.getAllScannedFiles();

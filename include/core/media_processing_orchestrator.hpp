@@ -33,7 +33,7 @@ struct FileProcessingEvent
 class MediaProcessingOrchestrator
 {
 public:
-    explicit MediaProcessingOrchestrator(const std::string &db_path);
+    explicit MediaProcessingOrchestrator(DatabaseManager &db);
     /**
      * @brief Process files that need processing (those without hash) in parallel.
      *
@@ -54,7 +54,6 @@ public:
     void cancel();
 
 private:
-    std::string db_path_;
-    DatabaseManager db_;
+    DatabaseManager &db_;
     std::atomic<bool> cancelled_;
 };

@@ -6,6 +6,9 @@
 #include <sqlite3.h>
 #include "media_processor.hpp"
 
+// Forward declaration
+class DatabaseWriteQueue;
+
 /**
  * @brief Result of a database operation
  */
@@ -99,9 +102,18 @@ public:
      */
     bool isValid() const;
 
+    /**
+     * @brief Wait for all pending database writes to complete
+     */
+    void waitForWrites();
+
 private:
     sqlite3 *db_;
     std::string db_path_;
+    std::unique_ptr<DatabaseWriteQueue> write_queue_;
+
+    // Make db_ accessible to DatabaseWriteQueue
+    friend class DatabaseWriteQueue;
 
     // Initialization
     void initialize();

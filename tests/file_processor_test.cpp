@@ -66,11 +66,13 @@ TEST_F(FileProcessorTest, ProcessSingleFile)
     std::string image_path = (test_dir_ / "test_image.jpg").string();
     auto image_result = processor.processFile(image_path);
     EXPECT_TRUE(image_result.success) << image_result.error_message;
+    processor.waitForWrites();
 
     // Test processing an unsupported file
     std::string text_path = (test_dir_ / "test_document.txt").string();
     auto text_result = processor.processFile(text_path);
     EXPECT_FALSE(text_result.success) << text_result.error_message;
+    processor.waitForWrites();
 }
 
 TEST_F(FileProcessorTest, ProcessDirectory)
@@ -79,6 +81,7 @@ TEST_F(FileProcessorTest, ProcessDirectory)
 
     // Process the test directory
     size_t files_processed = processor.processDirectory(test_dir_.string(), false);
+    processor.waitForWrites();
 
     // Should have processed at least the supported files
     EXPECT_GT(files_processed, 0);
@@ -103,6 +106,7 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
     std::string image_path = (test_dir_ / "test_image.jpg").string();
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
+    processor.waitForWrites();
 
     // Check stats updated
     stats = processor.getProcessingStats();
@@ -118,6 +122,7 @@ TEST_F(FileProcessorTest, DatabaseIntegration)
     std::string image_path = (test_dir_ / "test_image.jpg").string();
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
+    processor.waitForWrites();
 
     // Verify database was created and contains data
     EXPECT_TRUE(std::filesystem::exists(test_db_));
@@ -136,6 +141,7 @@ TEST_F(FileProcessorTest, QualityModeIntegration)
     std::string image_path = (test_dir_ / "test_image.jpg").string();
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
+    processor.waitForWrites();
 
     // The processing should use the current quality mode
     // (This is verified by the fact that processing succeeds)

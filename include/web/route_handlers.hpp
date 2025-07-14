@@ -8,6 +8,7 @@
 #include "core/file_processor.hpp"
 #include "core/database_manager.hpp"
 #include "core/media_processing_orchestrator.hpp"
+#include "core/thread_pool_manager.hpp"
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
 #include "logging/logger.hpp"
@@ -420,6 +421,7 @@ private:
 
             size_t files_scanned = 0;
             std::string last_error;
+            std::vector<std::string> files_to_process;
 
             observable.subscribe(
                 [&](const std::string &file_path)
@@ -433,37 +435,13 @@ private:
                             return;
                         }
 
-                        // Create a callback to trigger immediate processing
-                        auto processingCallback = [&db_path](const std::string &file_path)
+                        // Create a callback to trigger immediate processing using thread pool
+                        auto processingCallback = [db_path](const std::string &file_path)
                         {
                             try
                             {
-                                MediaProcessingOrchestrator orchestrator(db_path);
-                                auto processing_observable = orchestrator.processAllScannedFiles(2); // Use 2 threads for async processing
-
-                                processing_observable.subscribe(
-                                    [](const FileProcessingEvent &event)
-                                    {
-                                        if (event.success)
-                                        {
-                                            Logger::info("Async processed file: " + event.file_path +
-                                                         " (format: " + event.artifact_format +
-                                                         ", confidence: " + std::to_string(event.artifact_confidence) + ")");
-                                        }
-                                        else
-                                        {
-                                            Logger::warn("Async processing failed for: " + event.file_path +
-                                                         " - " + event.error_message);
-                                        }
-                                    },
-                                    [](const std::exception &e)
-                                    {
-                                        Logger::error("Async processing error: " + std::string(e.what()));
-                                    },
-                                    []()
-                                    {
-                                        Logger::info("Async processing completed");
-                                    });
+                                // Use the thread pool manager to process the file asynchronously
+                                ThreadPoolManager::processFileAsync(db_path, file_path);
                             }
                             catch (const std::exception &e)
                             {
