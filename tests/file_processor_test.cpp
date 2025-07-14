@@ -142,6 +142,31 @@ TEST_F(FileProcessorTest, QualityModeIntegration)
     EXPECT_TRUE(true); // Placeholder assertion
 }
 
+TEST_F(FileProcessorTest, GetFileCategory)
+{
+    FileProcessor processor(test_db_.string());
+
+    // Test image file category
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpg"), "Image");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.png"), "Image");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpeg"), "Image");
+
+    // Test video file category
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mp4"), "Video");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.avi"), "Video");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mov"), "Video");
+
+    // Test audio file category
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.mp3"), "Audio");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.wav"), "Audio");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.flac"), "Audio");
+
+    // Test unknown file category
+    EXPECT_EQ(FileProcessor::getFileCategory("test_document.txt"), "Unknown");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_file.pdf"), "Unknown");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_file"), "Unknown");
+}
+
 // TODO: INTEGRATION TESTS WITH REAL MEDIA FILES
 //
 // These tests would require actual media files:

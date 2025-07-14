@@ -285,3 +285,279 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     // Clean up test file
     fs::remove(test_file);
 }
+
+TEST_F(DatabaseManagerTest, StoreProcessingResult)
+{
+    DatabaseManager db(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Create a processing result
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash_123";
+    result.artifact.confidence = 0.95;
+    result.artifact.metadata = "{\"test\":\"metadata\"}";
+    result.artifact.data = {0x01, 0x02, 0x03, 0x04};
+
+    // Store the processing result
+    auto db_result = db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    EXPECT_TRUE(db_result.success);
+
+    // Verify the result was stored
+    auto results = db.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 1);
+    EXPECT_TRUE(results[0].success);
+    EXPECT_EQ(results[0].artifact.format, "phash");
+    EXPECT_EQ(results[0].artifact.hash, "test_hash_123");
+    EXPECT_EQ(results[0].artifact.confidence, 0.95);
+    EXPECT_EQ(results[0].artifact.metadata, "{\"test\":\"metadata\"}");
+    EXPECT_EQ(results[0].artifact.data.size(), 4);
+    EXPECT_EQ(results[0].artifact.data[0], 0x01);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
+{
+    DatabaseManager db(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Create a processing result with error
+    ProcessingResult result;
+    result.success = false;
+    result.error_message = "Processing failed";
+
+    // Store the processing result
+    auto db_result = db.storeProcessingResult(test_file, DedupMode::FAST, result);
+    EXPECT_TRUE(db_result.success);
+
+    // Verify the result was stored
+    auto results = db.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 1);
+    EXPECT_FALSE(results[0].success);
+    EXPECT_EQ(results[0].error_message, "Processing failed");
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
+{
+    DatabaseManager db(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store multiple processing results
+    ProcessingResult result1;
+    result1.success = true;
+    result1.artifact.format = "phash";
+    result1.artifact.hash = "hash1";
+
+    ProcessingResult result2;
+    result2.success = true;
+    result2.artifact.format = "dhash";
+    result2.artifact.hash = "hash2";
+
+    db.storeProcessingResult(test_file, DedupMode::BALANCED, result1);
+    db.storeProcessingResult(test_file, DedupMode::FAST, result2);
+
+    // Get all results for the file
+    auto results = db.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 2);
+
+    // Results should be ordered by created_at DESC (newest first)
+    // Since both results are inserted quickly, we can't guarantee order
+    // So we'll check that both results exist with the correct data
+    bool found_phash = false, found_dhash = false;
+    for (const auto &result : results)
+    {
+        if (result.artifact.format == "phash" && result.artifact.hash == "hash1")
+        {
+            found_phash = true;
+        }
+        else if (result.artifact.format == "dhash" && result.artifact.hash == "hash2")
+        {
+            found_dhash = true;
+        }
+    }
+    EXPECT_TRUE(found_phash);
+    EXPECT_TRUE(found_dhash);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, GetAllProcessingResults)
+{
+    DatabaseManager db(db_path);
+
+    // Create test files
+    std::string file1 = "file1.jpg";
+    std::string file2 = "file2.png";
+    createTestFile(file1);
+    createTestFile(file2);
+
+    // Store processing results for different files
+    ProcessingResult result1;
+    result1.success = true;
+    result1.artifact.format = "phash";
+    result1.artifact.hash = "hash1";
+
+    ProcessingResult result2;
+    result2.success = true;
+    result2.artifact.format = "dhash";
+    result2.artifact.hash = "hash2";
+
+    db.storeProcessingResult(file1, DedupMode::BALANCED, result1);
+    db.storeProcessingResult(file2, DedupMode::FAST, result2);
+
+    // Get all processing results
+    auto all_results = db.getAllProcessingResults();
+    EXPECT_EQ(all_results.size(), 2);
+
+    // Check that we have results for both files
+    bool found_file1 = false, found_file2 = false;
+    for (const auto &pair : all_results)
+    {
+        if (pair.first == file1)
+        {
+            found_file1 = true;
+            EXPECT_EQ(pair.second.artifact.format, "phash");
+            EXPECT_EQ(pair.second.artifact.hash, "hash1");
+        }
+        else if (pair.first == file2)
+        {
+            found_file2 = true;
+            EXPECT_EQ(pair.second.artifact.format, "dhash");
+            EXPECT_EQ(pair.second.artifact.hash, "hash2");
+        }
+    }
+    EXPECT_TRUE(found_file1);
+    EXPECT_TRUE(found_file2);
+
+    // Clean up test files
+    fs::remove(file1);
+    fs::remove(file2);
+}
+
+TEST_F(DatabaseManagerTest, ClearAllResults)
+{
+    DatabaseManager db(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store a processing result
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash";
+
+    db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+
+    // Verify result exists
+    auto results = db.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 1);
+
+    // Clear all results
+    auto clear_result = db.clearAllResults();
+    EXPECT_TRUE(clear_result.success);
+
+    // Verify results are cleared
+    results = db.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 0);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, GetAllScannedFiles)
+{
+    DatabaseManager db(db_path);
+
+    // Create test files
+    std::string file1 = "file1.jpg";
+    std::string file2 = "file2.png";
+    createTestFile(file1);
+    createTestFile(file2);
+
+    // Store scanned files
+    db.storeScannedFile(file1);
+    db.storeScannedFile(file2);
+
+    // Get all scanned files
+    auto all_files = db.getAllScannedFiles();
+    EXPECT_EQ(all_files.size(), 2);
+
+    // Check that we have both files
+    bool found_file1 = false, found_file2 = false;
+    for (const auto &pair : all_files)
+    {
+        if (pair.first == file1)
+        {
+            found_file1 = true;
+            EXPECT_EQ(pair.second, "file1.jpg");
+        }
+        else if (pair.first == file2)
+        {
+            found_file2 = true;
+            EXPECT_EQ(pair.second, "file2.png");
+        }
+    }
+    EXPECT_TRUE(found_file1);
+    EXPECT_TRUE(found_file2);
+
+    // Clean up test files
+    fs::remove(file1);
+    fs::remove(file2);
+}
+
+TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
+{
+    DatabaseManager db(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store a scanned file
+    db.storeScannedFile(test_file);
+
+    // Verify file exists
+    auto all_files = db.getAllScannedFiles();
+    EXPECT_EQ(all_files.size(), 1);
+
+    // Clear all scanned files
+    auto clear_result = db.clearAllScannedFiles();
+    EXPECT_TRUE(clear_result.success);
+
+    // Verify files are cleared
+    all_files = db.getAllScannedFiles();
+    EXPECT_EQ(all_files.size(), 0);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, IsValid)
+{
+    DatabaseManager db(db_path);
+
+    // Database should be valid after construction
+    EXPECT_TRUE(db.isValid());
+
+    // Test with invalid database path (this would require a different test setup)
+    // For now, we just verify that isValid() returns true for a properly initialized database
+    EXPECT_TRUE(db.isValid());
+}

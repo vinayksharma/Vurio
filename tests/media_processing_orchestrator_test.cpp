@@ -4,6 +4,8 @@
 #include <fstream>
 #include <filesystem>
 #include "core/file_utils.hpp"
+#include <thread>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
@@ -37,6 +39,13 @@ protected:
         if (fs::exists(test_dir))
             fs::remove_all(test_dir);
     }
+
+    void createTestFile(const std::string &path, const std::string &content = "test content")
+    {
+        std::ofstream file(path);
+        file << content;
+        file.close();
+    }
 };
 
 TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
@@ -67,4 +76,47 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
             auto files_needing_processing = db.getFilesNeedingProcessing();
             EXPECT_EQ(files_needing_processing.size(), 1); // Only unsupported file should need processing (supported file gets hash during processing)
         });
+}
+
+TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
+{
+    DatabaseManager db(db_path);
+
+    // Add some test files
+    std::string file1 = test_dir + "/test1.jpg";
+    std::string file2 = test_dir + "/test2.png";
+    createTestFile(file1);
+    createTestFile(file2);
+
+    // Store test files in database
+    db.storeScannedFile(file1);
+    db.storeScannedFile(file2);
+
+    MediaProcessingOrchestrator orchestrator(db_path);
+
+    // Start processing in a separate thread
+    std::thread processing_thread([&orchestrator]()
+                                  {
+        std::vector<FileProcessingEvent> events;
+        orchestrator.processAllScannedFiles(2).subscribe(
+            [&](const FileProcessingEvent &evt) {
+                events.push_back(evt);
+            },
+            nullptr,
+            [&]() {
+                // Processing completed
+            }); });
+
+    // Cancel processing after a short delay
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    orchestrator.cancel();
+
+    // Wait for processing thread to finish
+    if (processing_thread.joinable())
+    {
+        processing_thread.join();
+    }
+
+    // The cancel method should not throw and should complete gracefully
+    EXPECT_TRUE(true); // If we reach here, cancel worked without crashing
 }

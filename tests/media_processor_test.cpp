@@ -121,6 +121,20 @@ TEST_F(MediaProcessorTest, MediaArtifactStructure)
     EXPECT_EQ(artifact.metadata, "{\"test\":\"value\"}");
 }
 
+TEST_F(MediaProcessorTest, AudioFileDetection)
+{
+    // Test audio file detection
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.mp3"));
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.WAV"));
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.flac"));
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.ogg"));
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.aac"));
+    EXPECT_TRUE(MediaProcessor::isAudioFile("test.m4a"));
+    EXPECT_FALSE(MediaProcessor::isAudioFile("test.jpg"));
+    EXPECT_FALSE(MediaProcessor::isAudioFile("test.mp4"));
+    EXPECT_FALSE(MediaProcessor::isAudioFile("test.txt"));
+}
+
 // TODO: INTEGRATION TESTS
 //
 // These tests would require actual media files and libraries:
