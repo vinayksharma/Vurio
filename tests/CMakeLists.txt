@@ -4,6 +4,7 @@ add_executable(dedup_tests
     file_utils_test.cpp
     media_processor_test.cpp
     file_processor_test.cpp
+    database_manager_test.cpp
     ../src/auth.cpp
     ../src/file_utils.cpp
     ../src/media_processor.cpp

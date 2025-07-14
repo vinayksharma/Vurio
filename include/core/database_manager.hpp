@@ -61,9 +61,11 @@ public:
     /**
      * @brief Store a scanned file in the database
      * @param file_path Path to the scanned file
+     * @param onFileNeedsProcessing Optional callback to trigger processing when file needs processing
      * @return DBOpResult indicating success or failure
      */
-    DBOpResult storeScannedFile(const std::string &file_path);
+    DBOpResult storeScannedFile(const std::string &file_path,
+                                std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
 
     /**
      * @brief Get files that need processing (those without hash)

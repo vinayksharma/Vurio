@@ -7,6 +7,7 @@
 #include "core/server_config_manager.hpp"
 #include "core/file_processor.hpp"
 #include "core/database_manager.hpp"
+#include "core/media_processing_orchestrator.hpp"
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
 #include "logging/logger.hpp"
@@ -431,7 +432,46 @@ private:
                             Logger::debug("Skipping unsupported file during scan: " + file_path);
                             return;
                         }
-                        auto db_result = db_manager.storeScannedFile(file_path);
+
+                        // Create a callback to trigger immediate processing
+                        auto processingCallback = [&db_path](const std::string &file_path)
+                        {
+                            try
+                            {
+                                MediaProcessingOrchestrator orchestrator(db_path);
+                                auto processing_observable = orchestrator.processAllScannedFiles(2); // Use 2 threads for async processing
+
+                                processing_observable.subscribe(
+                                    [](const FileProcessingEvent &event)
+                                    {
+                                        if (event.success)
+                                        {
+                                            Logger::info("Async processed file: " + event.file_path +
+                                                         " (format: " + event.artifact_format +
+                                                         ", confidence: " + std::to_string(event.artifact_confidence) + ")");
+                                        }
+                                        else
+                                        {
+                                            Logger::warn("Async processing failed for: " + event.file_path +
+                                                         " - " + event.error_message);
+                                        }
+                                    },
+                                    [](const std::exception &e)
+                                    {
+                                        Logger::error("Async processing error: " + std::string(e.what()));
+                                    },
+                                    []()
+                                    {
+                                        Logger::info("Async processing completed");
+                                    });
+                            }
+                            catch (const std::exception &e)
+                            {
+                                Logger::error("Failed to start async processing: " + std::string(e.what()));
+                            }
+                        };
+
+                        auto db_result = db_manager.storeScannedFile(file_path, processingCallback);
                         if (db_result.success)
                         {
                             files_scanned++;

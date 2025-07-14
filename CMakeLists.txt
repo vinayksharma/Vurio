@@ -63,6 +63,7 @@ set(SOURCES
     src/media_processor.cpp
     src/database_manager.cpp
     src/file_processor.cpp
+    src/media_processing_orchestrator.cpp
 )
 
 # Add header files
@@ -76,6 +77,7 @@ set(HEADERS
     include/core/media_processor.hpp
     include/core/database_manager.hpp
     include/core/file_processor.hpp
+    include/core/media_processing_orchestrator.hpp
     include/logging/logger.hpp
     include/web/openapi_docs.hpp
     include/web/route_handlers.hpp

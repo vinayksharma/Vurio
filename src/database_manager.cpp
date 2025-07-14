@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
+#include <thread>
 
 using json = nlohmann::json;
 
@@ -413,7 +414,8 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
     return result;
 }
 
-DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
+DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
+                                             std::function<void(const std::string &)> onFileNeedsProcessing)
 {
     if (!db_)
     {
@@ -475,6 +477,17 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
                     return DBOpResult(false, msg);
                 }
                 Logger::info("File hash differs, cleared hash: " + file_path);
+
+                // Trigger processing for this file asynchronously
+                if (onFileNeedsProcessing)
+                {
+                    std::thread([onFileNeedsProcessing, file_path]()
+                                {
+                        Logger::info("Triggering async processing for changed file: " + file_path);
+                        onFileNeedsProcessing(file_path); })
+                        .detach();
+                }
+
                 return DBOpResult(true);
             }
         }
@@ -512,6 +525,17 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path)
         return DBOpResult(false, msg);
     }
     Logger::debug("Stored scanned file: " + file_path);
+
+    // Trigger processing for this new file asynchronously
+    if (onFileNeedsProcessing)
+    {
+        std::thread([onFileNeedsProcessing, file_path]()
+                    {
+            Logger::info("Triggering async processing for new file: " + file_path);
+            onFileNeedsProcessing(file_path); })
+            .detach();
+    }
+
     return DBOpResult(true);
 }
 
