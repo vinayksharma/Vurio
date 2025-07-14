@@ -17,6 +17,7 @@ protected:
 
     void SetUp() override
     {
+        DatabaseManager::resetForTesting();
         // Remove any existing test DB
         if (fs::exists(db_path))
             fs::remove(db_path);
@@ -33,8 +34,22 @@ protected:
 
     void TearDown() override
     {
-        if (fs::exists(db_path))
-            fs::remove(db_path);
+        // Clean up test files
+        std::vector<std::string> test_files = {
+            "test_orchestrator.db",
+            "test_orchestrator.db-shm",
+            "test_orchestrator.db-wal"};
+
+        for (const auto &file : test_files)
+        {
+            if (std::filesystem::exists(file))
+            {
+                std::filesystem::remove(file);
+            }
+        }
+
+        // Ensure singleton is properly cleaned up
+        DatabaseManager::shutdown();
 
         if (fs::exists(test_dir))
             fs::remove_all(test_dir);
@@ -119,18 +134,19 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
 
     // Use shared pointer to avoid memory issues
     auto events = std::make_shared<std::vector<FileProcessingEvent>>();
+    std::atomic<bool> processing_completed{false};
 
     // Start processing in a separate thread
-    std::thread processing_thread([&orchestrator, events]()
+    std::thread processing_thread([&orchestrator, events, &processing_completed]()
                                   { orchestrator.processAllScannedFiles(2).subscribe(
                                         [events](const FileProcessingEvent &evt)
                                         {
                                             events->push_back(evt);
                                         },
                                         nullptr,
-                                        [events]()
+                                        [&processing_completed]()
                                         {
-                                            // Processing completed
+                                            processing_completed.store(true);
                                         }); });
 
     // Cancel processing after a short delay
@@ -142,6 +158,9 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
     {
         processing_thread.join();
     }
+
+    // Wait a bit more to ensure all cleanup is complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     // The cancel method should not throw and should complete gracefully
     EXPECT_TRUE(true); // If we reach here, cancel worked without crashing

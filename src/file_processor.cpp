@@ -5,7 +5,7 @@
 FileProcessor::FileProcessor(const std::string &db_path)
     : total_files_processed_(0), successful_files_processed_(0)
 {
-    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    db_manager_ = &DatabaseManager::getInstance(db_path);
     Logger::info("FileProcessor initialized with database: " + db_path);
 }
 

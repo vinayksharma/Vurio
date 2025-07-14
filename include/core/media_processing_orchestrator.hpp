@@ -34,6 +34,7 @@ class MediaProcessingOrchestrator
 {
 public:
     explicit MediaProcessingOrchestrator(DatabaseManager &db);
+    ~MediaProcessingOrchestrator();
     /**
      * @brief Process files that need processing (those without hash) in parallel.
      *

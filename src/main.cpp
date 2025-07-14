@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <jwt-cpp/jwt.h>
+#include "core/database_manager.hpp"
 
 int main()
 {
@@ -17,6 +18,9 @@ int main()
 
         // Initialize thread pool manager
         ThreadPoolManager::initialize(4); // Use 4 threads by default
+
+        // At the start of main, initialize the DatabaseManager singleton
+        auto &db_manager = DatabaseManager::getInstance("scan_results.db");
 
         Status status;
         Auth auth(config_manager.getAuthSecret()); // Use config from manager
@@ -40,7 +44,8 @@ int main()
         // Start the server
         svr.listen(ServerConfig::HOST, config_manager.getServerPort());
 
-        // Shutdown thread pool manager
+        // Cleanup
+        DatabaseManager::shutdown();
         ThreadPoolManager::shutdown();
         return 0;
 }

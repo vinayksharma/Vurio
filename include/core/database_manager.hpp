@@ -5,9 +5,10 @@
 #include <memory>
 #include <sqlite3.h>
 #include "media_processor.hpp"
+#include "database_access_queue.hpp"
 
 // Forward declaration
-class DatabaseWriteQueue;
+class DatabaseAccessQueue;
 
 /**
  * @brief Result of a database operation
@@ -25,6 +26,14 @@ struct DBOpResult
 class DatabaseManager
 {
 public:
+    static DatabaseManager &getInstance(const std::string &db_path = "");
+    static void resetForTesting(); // For test isolation
+    static void shutdown();        // For proper cleanup
+    DatabaseManager(const DatabaseManager &) = delete;
+    DatabaseManager &operator=(const DatabaseManager &) = delete;
+    DatabaseManager(DatabaseManager &&) = delete;
+    DatabaseManager &operator=(DatabaseManager &&) = delete;
+
     /**
      * @brief Constructor - initializes database connection and tables
      * @param db_path Path to SQLite database file
@@ -107,13 +116,19 @@ public:
      */
     void waitForWrites();
 
+    // Get access to the write queue for checking operation results
+    const DatabaseAccessQueue &getAccessQueue() const { return *access_queue_; }
+
+    // Check if the last database operation succeeded
+    bool checkLastOperationSuccess();
+
 private:
     sqlite3 *db_;
     std::string db_path_;
-    std::unique_ptr<DatabaseWriteQueue> write_queue_;
+    std::unique_ptr<DatabaseAccessQueue> access_queue_;
 
-    // Make db_ accessible to DatabaseWriteQueue
-    friend class DatabaseWriteQueue;
+    // Make db_ accessible to DatabaseAccessQueue
+    friend class DatabaseAccessQueue;
 
     // Initialization
     void initialize();
@@ -128,4 +143,7 @@ private:
     DBOpResult executeStatement(const std::string &sql);
     std::string resultToJson(const ProcessingResult &result);
     ProcessingResult jsonToResult(const std::string &json_str);
+
+    static std::unique_ptr<DatabaseManager> instance_;
+    static std::mutex instance_mutex_;
 };

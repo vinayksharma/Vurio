@@ -8,6 +8,13 @@
 MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &db)
     : db_(db), cancelled_(false) {}
 
+MediaProcessingOrchestrator::~MediaProcessingOrchestrator()
+{
+    // Ensure cancellation is set to prevent any ongoing operations
+    cancelled_.store(true);
+    Logger::debug("MediaProcessingOrchestrator destructor called");
+}
+
 SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllScannedFiles(int max_threads)
 {
     // Error handling policy:
@@ -39,8 +46,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             }
             Logger::info("Starting processing of " + std::to_string(files_to_process.size()) + 
                         " files with " + std::to_string(max_threads) + " threads");
-            std::mutex store_mutex;
-            std::mutex hash_mutex;
             std::atomic<size_t> total_files{files_to_process.size()};
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
@@ -98,31 +103,68 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     bool store_success = false;
                     bool hash_success = false;
                     std::string db_error_msg;
-                    {
-                        std::lock_guard<std::mutex> store_lock(store_mutex);
-                        DBOpResult store_result = db_.storeProcessingResult(file_path, mode, result);
-                        store_success = store_result.success;
-                        if (!store_success) db_error_msg = store_result.error_message;
-                    }
-                    if (store_success) {
-                        // Generate file hash and update database
-                        std::string file_hash = FileUtils::computeFileHash(file_path);
-                        {
-                            std::lock_guard<std::mutex> hash_lock(hash_mutex);
-                            DBOpResult hash_result = db_.updateFileHash(file_path, file_hash);
-                            hash_success = hash_result.success;
-                            if (!hash_success) db_error_msg = hash_result.error_message;
-                        }
-                    }
-                    if (!store_success || !hash_success) {
-                        Logger::error("Failed to store processing result or update hash: " + file_path + ". DB error: " + db_error_msg);
-                        event.success = false;
-                        event.error_message = "Database operation failed: " + db_error_msg;
+                    
+                    // Store processing result
+                    DBOpResult store_result = db_.storeProcessingResult(file_path, mode, result);
+                    if (!store_result.success) {
+                        db_error_msg = store_result.error_message;
+                        Logger::error("Failed to enqueue processing result: " + file_path + " - " + db_error_msg);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
+                        event.success = false;
+                        event.error_message = "Database operation failed: " + db_error_msg;
                         if (onNext) onNext(event);
                         return;
                     }
+                    
+                    // Wait for write queue to process the store operation
+                    db_.waitForWrites();
+                    
+                    // Check if the store operation actually succeeded
+                    auto store_op_result = db_.getAccessQueue().getLastOperationResult();
+                    if (!store_op_result.success) {
+                        Logger::error("Store operation failed: " + file_path + " - " + store_op_result.error_message);
+                        processed_files.fetch_add(1);
+                        failed_files.fetch_add(1);
+                        event.success = false;
+                        event.error_message = "Database operation failed: " + store_op_result.error_message;
+                        if (onNext) onNext(event);
+                        return;
+                    }
+                    
+                    // Generate file hash and update database
+                    std::string file_hash = FileUtils::computeFileHash(file_path);
+                    DBOpResult hash_result = db_.updateFileHash(file_path, file_hash);
+                    if (!hash_result.success) {
+                        db_error_msg = hash_result.error_message;
+                        Logger::error("Failed to enqueue hash update: " + file_path + " - " + db_error_msg);
+                        processed_files.fetch_add(1);
+                        failed_files.fetch_add(1);
+                        event.success = false;
+                        event.error_message = "Database operation failed: " + db_error_msg;
+                        if (onNext) onNext(event);
+                        return;
+                    }
+                    
+                    // Wait for write queue to process the hash update
+                    db_.waitForWrites();
+                    
+                    // Check if the hash update operation actually succeeded
+                    auto hash_op_result = db_.getAccessQueue().getLastOperationResult();
+                    if (!hash_op_result.success) {
+                        Logger::error("Hash update operation failed: " + file_path + " - " + hash_op_result.error_message);
+                        processed_files.fetch_add(1);
+                        failed_files.fetch_add(1);
+                        event.success = false;
+                        event.error_message = "Database operation failed: " + hash_op_result.error_message;
+                        if (onNext) onNext(event);
+                        return;
+                    }
+                    
+                    // Both operations succeeded
+                    store_success = true;
+                    hash_success = true;
+                    
                     auto end = std::chrono::steady_clock::now();
                     event.processing_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
                     event.success = true;

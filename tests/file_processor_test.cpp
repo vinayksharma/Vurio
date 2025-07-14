@@ -3,6 +3,7 @@
 #include "core/server_config_manager.hpp"
 #include <filesystem>
 #include <fstream>
+#include "core/database_manager.hpp" // Added for DatabaseManager reset
 
 class FileProcessorTest : public ::testing::Test
 {
@@ -18,6 +19,8 @@ protected:
 
         // Set up test database path
         test_db_ = std::filesystem::temp_directory_path() / "test_processing.db";
+
+        DatabaseManager::resetForTesting();
     }
 
     void TearDown() override
@@ -33,6 +36,23 @@ protected:
         {
             std::filesystem::remove(test_db_);
         }
+
+        // Clean up any remaining test files created by DatabaseManager
+        std::vector<std::string> test_files = {
+            "test_file_processor.db",
+            "test_file_processor.db-shm",
+            "test_file_processor.db-wal"};
+
+        for (const auto &file : test_files)
+        {
+            if (std::filesystem::exists(file))
+            {
+                std::filesystem::remove(file);
+            }
+        }
+
+        // Ensure singleton is properly cleaned up
+        DatabaseManager::shutdown();
     }
 
     void createTestFiles()

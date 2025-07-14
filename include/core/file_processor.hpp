@@ -77,7 +77,7 @@ public:
     void waitForWrites();
 
 private:
-    std::unique_ptr<DatabaseManager> db_manager_;
+    DatabaseManager *db_manager_;
     size_t total_files_processed_;
     size_t successful_files_processed_;
 

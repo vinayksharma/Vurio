@@ -11,7 +11,7 @@ add_executable(dedup_tests
     ../src/database_manager.cpp
     ../src/file_processor.cpp
     ../src/server_config_manager.cpp
-    ../src/database_write_queue.cpp
+    ../src/database_access_queue.cpp
 )
 
 target_include_directories(dedup_tests PRIVATE
@@ -38,7 +38,7 @@ add_executable(media_processing_orchestrator_test
     ../src/server_config_manager.cpp
     ../src/media_processor.cpp
     ../src/file_utils.cpp
-    ../src/database_write_queue.cpp
+    ../src/database_access_queue.cpp
 )
 target_link_libraries(media_processing_orchestrator_test
     PRIVATE

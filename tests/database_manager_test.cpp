@@ -15,6 +15,7 @@ protected:
 
     void SetUp() override
     {
+        DatabaseManager::resetForTesting();
         // Remove any existing test DB
         if (fs::exists(db_path))
             fs::remove(db_path);
@@ -22,8 +23,22 @@ protected:
 
     void TearDown() override
     {
-        if (fs::exists(db_path))
-            fs::remove(db_path);
+        // Clean up test files
+        std::vector<std::string> test_files = {
+            "test_database_manager.db",
+            "test_database_manager.db-shm",
+            "test_database_manager.db-wal"};
+
+        for (const auto &file : test_files)
+        {
+            if (std::filesystem::exists(file))
+            {
+                std::filesystem::remove(file);
+            }
+        }
+
+        // Ensure singleton is properly cleaned up
+        DatabaseManager::shutdown();
     }
 
     void createTestFile(const std::string &path, const std::string &content = "test content")
@@ -36,7 +51,7 @@ protected:
 
 TEST_F(DatabaseManagerTest, DatabaseInitialization)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Database should be created
     EXPECT_TRUE(fs::exists(db_path));
@@ -50,7 +65,7 @@ TEST_F(DatabaseManagerTest, DatabaseInitialization)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -71,7 +86,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file with specific content
     std::string test_file = "test_file.jpg";
@@ -102,7 +117,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -134,7 +149,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
 
 TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -179,7 +194,7 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
 
 TEST_F(DatabaseManagerTest, UpdateFileHash)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -207,7 +222,7 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -235,7 +250,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -274,7 +289,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -304,7 +319,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 
 TEST_F(DatabaseManagerTest, StoreProcessingResult)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -341,7 +356,7 @@ TEST_F(DatabaseManagerTest, StoreProcessingResult)
 
 TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -369,7 +384,7 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
 
 TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -418,7 +433,7 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 
 TEST_F(DatabaseManagerTest, GetAllProcessingResults)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -472,7 +487,7 @@ TEST_F(DatabaseManagerTest, GetAllProcessingResults)
 
 TEST_F(DatabaseManagerTest, ClearAllResults)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -506,7 +521,7 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
 
 TEST_F(DatabaseManagerTest, GetAllScannedFiles)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -548,7 +563,7 @@ TEST_F(DatabaseManagerTest, GetAllScannedFiles)
 
 TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -577,7 +592,7 @@ TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
 
 TEST_F(DatabaseManagerTest, IsValid)
 {
-    DatabaseManager db(db_path);
+    auto &db = DatabaseManager::getInstance(db_path);
 
     // Database should be valid after construction
     EXPECT_TRUE(db.isValid());
