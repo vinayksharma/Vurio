@@ -24,9 +24,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 if (onError) onError(std::runtime_error("Database not initialized"));
                 return;
             }
-            auto scanned_files = db_.getAllScannedFiles();
-            if (scanned_files.empty()) {
-                Logger::info("No scanned files found");
+            auto files_to_process = db_.getFilesNeedingProcessing();
+            if (files_to_process.empty()) {
+                Logger::info("No files need processing");
                 if (onComplete) onComplete();
                 return;
             }
@@ -37,10 +37,11 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 if (onError) onError(std::runtime_error("Invalid dedup mode"));
                 return;
             }
-            Logger::info("Starting processing of " + std::to_string(scanned_files.size()) + 
+            Logger::info("Starting processing of " + std::to_string(files_to_process.size()) + 
                         " files with " + std::to_string(max_threads) + " threads");
             std::mutex store_mutex;
-            std::atomic<size_t> total_files{scanned_files.size()};
+            std::mutex hash_mutex;
+            std::atomic<size_t> total_files{files_to_process.size()};
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
             std::atomic<size_t> failed_files{0};
@@ -95,6 +96,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         return;
                     }
                     bool store_success = false;
+                    bool hash_success = false;
                     std::string db_error_msg;
                     {
                         std::lock_guard<std::mutex> store_lock(store_mutex);
@@ -102,8 +104,18 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         store_success = store_result.success;
                         if (!store_success) db_error_msg = store_result.error_message;
                     }
-                    if (!store_success) {
-                        Logger::error("Failed to store processing result: " + file_path + ". DB error: " + db_error_msg);
+                    if (store_success) {
+                        // Generate file hash and update database
+                        std::string file_hash = FileUtils::computeFileHash(file_path);
+                        {
+                            std::lock_guard<std::mutex> hash_lock(hash_mutex);
+                            DBOpResult hash_result = db_.updateFileHash(file_path, file_hash);
+                            hash_success = hash_result.success;
+                            if (!hash_success) db_error_msg = hash_result.error_message;
+                        }
+                    }
+                    if (!store_success || !hash_success) {
+                        Logger::error("Failed to store processing result or update hash: " + file_path + ". DB error: " + db_error_msg);
                         event.success = false;
                         event.error_message = "Database operation failed: " + db_error_msg;
                         processed_files.fetch_add(1);
@@ -128,7 +140,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     if (onNext) onNext(event);
                 }
             };
-            for (const auto& [file_path, file_name] : scanned_files) {
+            for (const auto& [file_path, file_name] : files_to_process) {
                 if (cancelled_.load()) {
                     Logger::info("Processing cancelled");
                     if (onError) onError(std::runtime_error("Processing cancelled"));

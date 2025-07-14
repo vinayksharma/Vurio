@@ -61,10 +61,23 @@ public:
     /**
      * @brief Store a scanned file in the database
      * @param file_path Path to the scanned file
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult storeScannedFile(const std::string &file_path);
+
+    /**
+     * @brief Get files that need processing (those without hash)
+     * @return Vector of file path and name pairs that need processing
+     */
+    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing();
+
+    /**
+     * @brief Update the hash for a file after processing
+     * @param file_path Path to the file
      * @param file_hash Hash of the file
      * @return DBOpResult indicating success or failure
      */
-    DBOpResult storeScannedFile(const std::string &file_path, const std::string &file_hash);
+    DBOpResult updateFileHash(const std::string &file_path, const std::string &file_hash);
 
     /**
      * @brief Get all scanned files

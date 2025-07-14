@@ -431,8 +431,7 @@ private:
                             Logger::debug("Skipping unsupported file during scan: " + file_path);
                             return;
                         }
-                        std::string file_hash = FileUtils::computeFileHash(file_path);
-                        auto db_result = db_manager.storeScannedFile(file_path, file_hash);
+                        auto db_result = db_manager.storeScannedFile(file_path);
                         if (db_result.success)
                         {
                             files_scanned++;

@@ -35,11 +35,12 @@ class MediaProcessingOrchestrator
 public:
     explicit MediaProcessingOrchestrator(const std::string &db_path);
     /**
-     * @brief Process all scanned files in parallel.
+     * @brief Process files that need processing (those without hash) in parallel.
      *
-     * This method processes all scanned files using the current dedup mode.
+     * This method processes files that don't have a hash in the database,
+     * indicating they haven't been processed yet or need reprocessing.
      * Files are processed in parallel using the specified number of threads.
-     * Processing results are stored in the database.
+     * Processing results are stored in the database and file hashes are updated.
      *
      * @param max_threads Maximum number of threads to use for processing
      * @return Observable that emits FileProcessingEvent for each processed file

@@ -45,8 +45,9 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
     // Add a supported and unsupported file with actual paths
     std::string supported = test_dir + "/test.jpg";
     std::string unsupported = test_dir + "/test.txt";
-    db.storeScannedFile(supported, FileUtils::computeFileHash(supported));
-    db.storeScannedFile(unsupported, FileUtils::computeFileHash(unsupported));
+    // Store test files in database
+    db.storeScannedFile(supported);
+    db.storeScannedFile(unsupported);
     MediaProcessingOrchestrator orchestrator(db_path);
     std::vector<FileProcessingEvent> events;
     orchestrator.processAllScannedFiles(2).subscribe(
@@ -63,7 +64,7 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
             ASSERT_TRUE(it != events.end());
             EXPECT_TRUE(it->file_path == unsupported);
             // Test that files are processed correctly
-            auto scanned = db.getAllScannedFiles();
-            EXPECT_EQ(scanned.size(), 2); // Both files should be scanned
+            auto files_needing_processing = db.getFilesNeedingProcessing();
+            EXPECT_EQ(files_needing_processing.size(), 1); // Only unsupported file should need processing (supported file gets hash during processing)
         });
 }
