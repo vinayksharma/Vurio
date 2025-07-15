@@ -169,10 +169,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 }
             }
 
-            // Wait for all processing to complete
-            while (processed_files.load() < total_files.load() && !cancelled_.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            // Processing is sequential, so all files are already processed
+            // No need to wait for completion
 
             Logger::info("Processing completed. Total: " + std::to_string(total_files.load()) + 
                         ", Processed: " + std::to_string(processed_files.load()) + 

@@ -3,8 +3,6 @@
 #include "core/server_config_manager.hpp"
 #include <filesystem>
 #include <fstream>
-#include <thread>
-#include <chrono>
 #include "core/database_manager.hpp" // Added for DatabaseManager reset
 
 class FileProcessorTest : public ::testing::Test
@@ -131,9 +129,6 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
 
     // Wait for all database operations to complete
     processor.waitForWrites();
-
-    // Add a small delay to ensure all async operations complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     // Check stats updated
     stats = processor.getProcessingStats();

@@ -240,8 +240,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
         callback_called = true;
         callback_file = file_path; });
 
-    // Wait a bit for async callback to execute
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Callback is executed synchronously within the database operation
+    // No need to wait
 
     // Callback should be called for new file
     EXPECT_TRUE(callback_called);
@@ -279,8 +279,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
         callback_called = true;
         callback_file = file_path; });
 
-    // Wait a bit for async callback to execute
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Callback is executed synchronously within the database operation
+    // No need to wait
 
     // Callback should be called when hash is cleared
     EXPECT_TRUE(callback_called);
@@ -327,8 +327,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
                            { callback_called = true; });
     dbMan.waitForWrites();
 
-    // Wait a bit for async callback to execute (should NOT be called)
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Callback is executed synchronously within the database operation
+    // No need to wait (callback should NOT be called)
 
     // Callback should NOT be called when hash doesn't change
     EXPECT_FALSE(callback_called);

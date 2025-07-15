@@ -149,8 +149,7 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
                                             processing_completed->store(true);
                                         }); });
 
-    // Cancel processing after a short delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Cancel processing immediately
     orchestrator.cancel();
 
     // Wait for processing thread to finish
@@ -159,8 +158,7 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
         processing_thread.join();
     }
 
-    // Wait a bit more to ensure all cleanup is complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Processing should complete immediately since it's sequential
 
     // The cancel method should not throw and should complete gracefully
     EXPECT_TRUE(true); // If we reach here, cancel worked without crashing
