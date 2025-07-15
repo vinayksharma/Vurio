@@ -435,21 +435,8 @@ private:
                             return;
                         }
 
-                        // Create a callback to trigger immediate processing using thread pool
-                        auto processingCallback = [db_path](const std::string &file_path)
-                        {
-                            try
-                            {
-                                // Use the thread pool manager to process the file asynchronously
-                                ThreadPoolManager::processFileAsync(db_path, file_path);
-                            }
-                            catch (const std::exception &e)
-                            {
-                                Logger::error("Failed to start async processing: " + std::string(e.what()));
-                            }
-                        };
-
-                        auto db_result = db_manager.storeScannedFile(file_path, processingCallback);
+                        // Store file in database without triggering processing
+                        auto db_result = db_manager.storeScannedFile(file_path);
                         if (db_result.success)
                         {
                             files_scanned++;
