@@ -3,6 +3,8 @@
 #include "core/server_config_manager.hpp"
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <chrono>
 #include "core/database_manager.hpp" // Added for DatabaseManager reset
 
 class FileProcessorTest : public ::testing::Test
@@ -126,12 +128,17 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
     std::string image_path = (test_dir_ / "test_image.jpg").string();
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
+
+    // Wait for all database operations to complete
     processor.waitForWrites();
+
+    // Add a small delay to ensure all async operations complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     // Check stats updated
     stats = processor.getProcessingStats();
-    EXPECT_EQ(stats.first, 1);
-    EXPECT_EQ(stats.second, 1); // Should be successful
+    EXPECT_EQ(stats.first, 1) << "Expected 1 total files processed, got " << stats.first;
+    EXPECT_EQ(stats.second, 1) << "Expected 1 successful files processed, got " << stats.second;
 }
 
 TEST_F(FileProcessorTest, DatabaseIntegration)
