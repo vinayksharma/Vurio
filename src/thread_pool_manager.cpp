@@ -55,6 +55,7 @@ void ThreadPoolManager::processFilesAsync(
                       {
                           for (size_t i = range.begin(); i != range.end(); ++i)
                           {
+                              // Use the singleton DatabaseManager for all threads
                               processFileWithOwnConnection(db_path, files[i]);
                           }
                       });
@@ -93,11 +94,11 @@ void ThreadPoolManager::processFileWithOwnConnection(const std::string &db_path,
 {
     try
     {
-        // Each thread gets its own DatabaseManager (and thus its own SQLite connection)
-        DatabaseManager local_db(db_path);
-        MediaProcessingOrchestrator orchestrator(local_db);
+        // Get database manager instance
+        DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
+        MediaProcessingOrchestrator orchestrator(dbMan);
 
-        Logger::info("Processing file with thread-local database connection: " + file_path);
+        Logger::info("Processing file with shared database connection: " + file_path);
 
         // Process the file using the orchestrator
         auto processing_observable = orchestrator.processAllScannedFiles(1); // Single thread per file
@@ -128,7 +129,7 @@ void ThreadPoolManager::processFileWithOwnConnection(const std::string &db_path,
     }
     catch (const std::exception &e)
     {
-        Logger::error("Failed to process file with thread-local connection: " + file_path +
+        Logger::error("Failed to process file with shared connection: " + file_path +
                       " - " + std::string(e.what()));
     }
 }

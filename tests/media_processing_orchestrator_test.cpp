@@ -65,7 +65,7 @@ protected:
 
 TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
 {
-    DatabaseManager db(db_path);
+    DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
 
     // Add some test files
     std::string file1 = test_dir + "/test.jpg";
@@ -74,11 +74,11 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
     createTestFile(file2);
 
     // Store test files in database
-    db.storeScannedFile(file1);
-    db.storeScannedFile(file2);
-    db.waitForWrites();
+    dbMan.storeScannedFile(file1);
+    dbMan.storeScannedFile(file2);
+    dbMan.waitForWrites();
 
-    MediaProcessingOrchestrator orchestrator(db);
+    MediaProcessingOrchestrator orchestrator(dbMan);
 
     std::vector<FileProcessingEvent> events;
     orchestrator.processAllScannedFiles(2).subscribe(
@@ -91,7 +91,7 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
         {
             // Processing completed
         });
-    db.waitForWrites();
+    dbMan.waitForWrites();
     // Should have processed 2 files (1 supported, 1 unsupported)
     EXPECT_EQ(events.size(), 2);
 
@@ -117,7 +117,7 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
 
 TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
 {
-    DatabaseManager db(db_path);
+    DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
 
     // Add some test files
     std::string file1 = test_dir + "/test1.jpg";
@@ -126,27 +126,27 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
     createTestFile(file2);
 
     // Store test files in database
-    db.storeScannedFile(file1);
-    db.storeScannedFile(file2);
-    db.waitForWrites();
+    dbMan.storeScannedFile(file1);
+    dbMan.storeScannedFile(file2);
+    dbMan.waitForWrites();
 
-    MediaProcessingOrchestrator orchestrator(db);
+    MediaProcessingOrchestrator orchestrator(dbMan);
 
     // Use shared pointer to avoid memory issues
     auto events = std::make_shared<std::vector<FileProcessingEvent>>();
-    std::atomic<bool> processing_completed{false};
+    auto processing_completed = std::make_shared<std::atomic<bool>>(false);
 
     // Start processing in a separate thread
-    std::thread processing_thread([&orchestrator, events, &processing_completed]()
+    std::thread processing_thread([&orchestrator, events, processing_completed]()
                                   { orchestrator.processAllScannedFiles(2).subscribe(
                                         [events](const FileProcessingEvent &evt)
                                         {
                                             events->push_back(evt);
                                         },
                                         nullptr,
-                                        [&processing_completed]()
+                                        [processing_completed]()
                                         {
-                                            processing_completed.store(true);
+                                            processing_completed->store(true);
                                         }); });
 
     // Cancel processing after a short delay

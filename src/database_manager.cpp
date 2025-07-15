@@ -52,37 +52,52 @@ DatabaseManager::DatabaseManager(const std::string &db_path)
     : db_(nullptr), db_path_(db_path)
 {
     Logger::info("DatabaseManager constructor called for: " + db_path);
-    int rc = sqlite3_open(db_path.c_str(), &db_);
-    if (rc != SQLITE_OK)
-    {
-        Logger::error("Failed to open database: " + std::string(sqlite3_errmsg(db_)));
-        sqlite3_close(db_);
-        db_ = nullptr;
-    }
-    else
-    {
-        Logger::info("Database opened successfully: " + db_path);
+    // Initialize the access queue first
+    access_queue_ = std::make_unique<DatabaseAccessQueue>(*this);
 
-        // Enable WAL mode for better concurrency
-        rc = sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+    // Enqueue the open operation and wait for it to complete
+    auto open_future = access_queue_->enqueueRead([db_path](DatabaseManager &dbMan)
+                                                  {
+        int rc = sqlite3_open(db_path.c_str(), &dbMan.db_);
         if (rc != SQLITE_OK)
         {
-            Logger::warn("Failed to enable WAL mode: " + std::string(sqlite3_errmsg(db_)));
+            Logger::error("Failed to open database: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            sqlite3_close(dbMan.db_);
+            dbMan.db_ = nullptr;
+            return false;
+        }
+        Logger::info("Database opened successfully: " + db_path);
+        // Enable WAL mode for better concurrency
+        rc = sqlite3_exec(dbMan.db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::warn("Failed to enable WAL mode: " + std::string(sqlite3_errmsg(dbMan.db_)));
         }
         else
         {
             Logger::info("WAL mode enabled for database: " + db_path);
         }
-
         // Set additional PRAGMA settings for better concurrency
-        sqlite3_exec(db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
-        sqlite3_exec(db_, "PRAGMA cache_size=10000;", nullptr, nullptr, nullptr);
-        sqlite3_exec(db_, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
-
-        initialize();
-        access_queue_ = std::make_unique<DatabaseAccessQueue>(*this);
-        Logger::info("DatabaseManager initialization completed");
+        sqlite3_exec(dbMan.db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dbMan.db_, "PRAGMA cache_size=10000;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dbMan.db_, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+        return true; });
+    bool open_success = false;
+    try
+    {
+        open_success = std::any_cast<bool>(open_future.get());
     }
+    catch (...)
+    {
+        open_success = false;
+    }
+    if (!open_success)
+    {
+        Logger::error("Database open failed in access queue");
+        return;
+    }
+    initialize();
+    Logger::info("DatabaseManager initialization completed");
 }
 
 DatabaseManager::~DatabaseManager()
@@ -90,12 +105,24 @@ DatabaseManager::~DatabaseManager()
     Logger::info("DatabaseManager destructor called");
     if (access_queue_)
     {
+        // Enqueue the close operation and wait for it to complete
+        auto close_future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                                       {
+            if (dbMan.db_)
+            {
+                sqlite3_close(dbMan.db_);
+                dbMan.db_ = nullptr;
+                Logger::info("Database connection closed");
+            }
+            return true; });
+        try
+        {
+            close_future.get();
+        }
+        catch (...)
+        {
+        }
         access_queue_->stop();
-    }
-    if (db_)
-    {
-        sqlite3_close(db_);
-        Logger::info("Database connection closed");
     }
 }
 
@@ -128,11 +155,6 @@ void DatabaseManager::initialize()
 
 bool DatabaseManager::createMediaProcessingResultsTable()
 {
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return false;
-    }
     const std::string sql = R"(
         CREATE TABLE IF NOT EXISTS media_processing_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,11 +175,6 @@ bool DatabaseManager::createMediaProcessingResultsTable()
 
 bool DatabaseManager::createScannedFilesTable()
 {
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return false;
-    }
     const std::string sql = R"(
         CREATE TABLE IF NOT EXISTS scanned_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,13 +193,6 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
 {
     Logger::debug("storeProcessingResult called for: " + file_path);
 
-    if (!db_)
-    {
-        std::string msg = "Database not initialized";
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-
     if (!access_queue_)
     {
         std::string msg = "Access queue not initialized";
@@ -194,11 +204,21 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
     std::string captured_file_path = file_path;
     DedupMode captured_mode = mode;
     ProcessingResult captured_result = result;
+    std::string error_msg;
+    bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result](DatabaseManager &db)
+    access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
         
         const std::string insert_sql = R"(
             INSERT INTO media_processing_results 
@@ -209,12 +229,13 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         )";
 
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, insert_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
         }
 
         // Bind parameters
@@ -275,27 +296,151 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
 
         if (rc != SQLITE_DONE)
         {
-            std::string msg = "Failed to insert result: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
+            error_msg = "Failed to insert result: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
         }
 
         Logger::info("Stored processing result for: " + captured_file_path);
-        return WriteOperationResult(true); });
+        return WriteOperationResult(); });
 
-    return DBOpResult(true);
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
+}
+
+std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const std::string &file_path,
+                                                                           DedupMode mode,
+                                                                           const ProcessingResult &result)
+{
+    Logger::debug("storeProcessingResultWithId called for: " + file_path);
+
+    if (!access_queue_)
+    {
+        std::string msg = "Access queue not initialized";
+        Logger::error(msg);
+        return {DBOpResult(false, msg), 0};
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    ProcessingResult captured_result = result;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation and get the operation ID
+    access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string insert_sql = R"(
+            INSERT INTO media_processing_results 
+            (file_path, processing_mode, success, error_message, 
+             artifact_format, artifact_hash, artifact_confidence, 
+             artifact_metadata, artifact_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Bind parameters
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, DedupModes::getModeName(captured_mode).c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 3, captured_result.success ? 1 : 0);
+
+        if (captured_result.error_message.empty())
+        {
+            sqlite3_bind_null(stmt, 4);
+        }
+        else
+        {
+            sqlite3_bind_text(stmt, 4, captured_result.error_message.c_str(), -1, SQLITE_STATIC);
+        }
+
+        if (captured_result.artifact.format.empty())
+        {
+            sqlite3_bind_null(stmt, 5);
+        }
+        else
+        {
+            sqlite3_bind_text(stmt, 5, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
+        }
+
+        if (captured_result.artifact.hash.empty())
+        {
+            sqlite3_bind_null(stmt, 6);
+        }
+        else
+        {
+            sqlite3_bind_text(stmt, 6, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
+        }
+
+        sqlite3_bind_double(stmt, 7, captured_result.artifact.confidence);
+
+        if (captured_result.artifact.metadata.empty())
+        {
+            sqlite3_bind_null(stmt, 8);
+        }
+        else
+        {
+            sqlite3_bind_text(stmt, 8, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
+        }
+
+        if (captured_result.artifact.data.empty())
+        {
+            sqlite3_bind_blob(stmt, 9, nullptr, 0, SQLITE_STATIC);
+        }
+        else
+        {
+            sqlite3_bind_blob(stmt, 9, captured_result.artifact.data.data(),
+                              static_cast<int>(captured_result.artifact.data.size()), SQLITE_STATIC);
+        }
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to insert result: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::info("Stored processing result for: " + captured_file_path);
+        return WriteOperationResult(); });
+
+    // Get the operation ID from the access queue
+    size_t operation_id = access_queue_->getNextOperationId();
+    waitForWrites();
+    if (!success)
+        return {DBOpResult(false, error_msg), 0};
+    return {DBOpResult(true, ""), operation_id};
 }
 
 std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::string &file_path)
 {
     Logger::debug("getProcessingResults called for: " + file_path);
     std::vector<ProcessingResult> results;
-
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return results;
-    }
 
     if (!access_queue_)
     {
@@ -307,9 +452,15 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
     std::string captured_file_path = file_path;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &db)
+    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
                                              {
         Logger::debug("Executing getProcessingResults in access queue for: " + captured_file_path);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<ProcessingResult>());
+        }
         
         std::vector<ProcessingResult> results;
         const std::string select_sql = R"(
@@ -322,10 +473,10 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
         )";
 
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db.db_)));
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
 
@@ -392,12 +543,6 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
     Logger::debug("getAllProcessingResults called");
     std::vector<std::pair<std::string, ProcessingResult>> results;
 
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return results;
-    }
-
     if (!access_queue_)
     {
         Logger::error("Access queue not initialized");
@@ -405,9 +550,15 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &db)
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
                                              {
         Logger::debug("Executing getAllProcessingResults in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, ProcessingResult>>());
+        }
         
         std::vector<std::pair<std::string, ProcessingResult>> results;
         const std::string select_sql = R"(
@@ -419,10 +570,10 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
         )";
 
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db.db_)));
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
 
@@ -485,37 +636,81 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
 
 DBOpResult DatabaseManager::clearAllResults()
 {
-    if (!db_)
+    if (!access_queue_)
     {
-        std::string msg = "Database not initialized";
+        std::string msg = "Access queue not initialized";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
 
-    const std::string delete_sql = "DELETE FROM media_processing_results";
-    return executeStatement(delete_sql);
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string delete_sql = "DELETE FROM media_processing_results";
+        char *err_msg = nullptr;
+        int rc = sqlite3_exec(dbMan.db_, delete_sql.c_str(), nullptr, nullptr, &err_msg);
+
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "SQL execution failed: " + std::string(err_msg);
+            Logger::error(error_msg);
+            sqlite3_free(err_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        return WriteOperationResult(true); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
 }
 
 DBOpResult DatabaseManager::executeStatement(const std::string &sql)
 {
-    if (!db_)
+    if (!access_queue_)
     {
-        std::string msg = "Database not initialized";
+        std::string msg = "Access queue not initialized";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
-
-    char *err_msg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &err_msg);
-
-    if (rc != SQLITE_OK)
-    {
-        std::string msg = "SQL execution failed: " + std::string(err_msg);
-        Logger::error(msg);
-        sqlite3_free(err_msg);
-        return DBOpResult(false, msg);
-    }
-
+    std::string error_msg;
+    bool success = true;
+    access_queue_->enqueueWrite([&](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        char *err_msg = nullptr;
+        int rc = sqlite3_exec(dbMan.db_, sql.c_str(), nullptr, nullptr, &err_msg);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "SQL execution failed: " + std::string(err_msg);
+            Logger::error(error_msg);
+            sqlite3_free(err_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        return WriteOperationResult(true); });
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
     return DBOpResult(true);
 }
 
@@ -574,13 +769,6 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
 DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
                                              std::function<void(const std::string &)> onFileNeedsProcessing)
 {
-    if (!db_)
-    {
-        std::string msg = "Database not initialized";
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-
     if (!access_queue_)
     {
         std::string msg = "Access queue not initialized";
@@ -595,19 +783,30 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     std::string captured_file_path = file_path;
     std::string captured_file_name = file_name;
     auto captured_callback = onFileNeedsProcessing;
+    std::string error_msg;
+    bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_callback](DatabaseManager &db)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_callback, &error_msg, &success](DatabaseManager &dbMan)
                                 {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
         // Check if file already exists
         const std::string select_sql = "SELECT hash FROM scanned_files WHERE file_path = ?";
         sqlite3_stmt *select_stmt;
-        int rc = sqlite3_prepare_v2(db.db_, select_sql.c_str(), -1, &select_stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &select_stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            std::string msg = "Failed to prepare select statement: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
+            error_msg = "Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
         }
         sqlite3_bind_text(select_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
         rc = sqlite3_step(select_stmt);
@@ -633,88 +832,80 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
                     sqlite3_finalize(select_stmt);
                     const std::string update_sql = "UPDATE scanned_files SET hash = NULL, created_at = CURRENT_TIMESTAMP WHERE file_path = ?";
                     sqlite3_stmt *update_stmt;
-                    rc = sqlite3_prepare_v2(db.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                    rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
                     if (rc != SQLITE_OK)
                     {
-                        std::string msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(db.db_));
-                        Logger::error(msg);
-                        return WriteOperationResult::Failure(msg);
+                        error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                        Logger::error(error_msg);
+                        success = false;
+                        return WriteOperationResult::Failure(error_msg);
                     }
                     sqlite3_bind_text(update_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
                     rc = sqlite3_step(update_stmt);
                     sqlite3_finalize(update_stmt);
                     if (rc != SQLITE_DONE)
                     {
-                        std::string msg = "Failed to clear file hash: " + std::string(sqlite3_errmsg(db.db_));
-                        Logger::error(msg);
-                        return WriteOperationResult::Failure(msg);
+                        error_msg = "Failed to clear file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
+                        Logger::error(error_msg);
+                        success = false;
+                        return WriteOperationResult::Failure(error_msg);
                     }
-                    Logger::info("File hash differs, cleared hash: " + captured_file_path);
-
-                    // Trigger processing for this file asynchronously
+                    Logger::info("File hash changed, cleared hash for: " + captured_file_path);
                     if (captured_callback)
                     {
-                        // Use a shared_ptr to ensure the callback lives long enough
-                        auto callback_ptr = std::make_shared<std::function<void(const std::string&)>>(captured_callback);
-                        std::thread([callback_ptr, captured_file_path]()
-                                    {
-                            Logger::info("Triggering async processing for changed file: " + captured_file_path);
-                            (*callback_ptr)(captured_file_path); })
-                            .detach();
+                        captured_callback(captured_file_path);
                     }
-
                     return WriteOperationResult(true);
                 }
             }
             else
             {
-                // File exists but no hash, do nothing (will be processed)
+                // No hash, file needs processing
                 sqlite3_finalize(select_stmt);
-                Logger::debug("File exists without hash: " + captured_file_path);
+                Logger::info("File exists but has no hash, needs processing: " + captured_file_path);
+                if (captured_callback)
+                {
+                    captured_callback(captured_file_path);
+                }
                 return WriteOperationResult(true);
             }
         }
-        sqlite3_finalize(select_stmt);
-
-        // File does not exist, insert new entry with NULL hash
-        const std::string insert_sql = R"(
-            INSERT INTO scanned_files (file_path, file_name, hash)
-            VALUES (?, ?, NULL)
-        )";
-        sqlite3_stmt *insert_stmt;
-        rc = sqlite3_prepare_v2(db.db_, insert_sql.c_str(), -1, &insert_stmt, nullptr);
-        if (rc != SQLITE_OK)
+        else
         {
-            std::string msg = "Failed to prepare insert statement: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
-        }
-        sqlite3_bind_text(insert_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(insert_stmt, 2, captured_file_name.c_str(), -1, SQLITE_STATIC);
-        rc = sqlite3_step(insert_stmt);
-        sqlite3_finalize(insert_stmt);
-        if (rc != SQLITE_DONE)
-        {
-            std::string msg = "Failed to insert scanned file: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
-        }
-        Logger::debug("Stored scanned file: " + captured_file_path);
+            // File doesn't exist, insert it
+            sqlite3_finalize(select_stmt);
+            const std::string insert_sql = "INSERT INTO scanned_files (file_path, file_name) VALUES (?, ?)";
+            sqlite3_stmt *insert_stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &insert_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                error_msg = "Failed to prepare insert statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                Logger::error(error_msg);
+                success = false;
+                return WriteOperationResult::Failure(error_msg);
+            }
+            sqlite3_bind_text(insert_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(insert_stmt, 2, captured_file_name.c_str(), -1, SQLITE_STATIC);
+            rc = sqlite3_step(insert_stmt);
+            sqlite3_finalize(insert_stmt);
+            if (rc != SQLITE_DONE)
+            {
+                error_msg = "Failed to insert scanned file: " + std::string(sqlite3_errmsg(dbMan.db_));
+                Logger::error(error_msg);
+                success = false;
+                return WriteOperationResult::Failure(error_msg);
+            }
+            Logger::info("Stored new scanned file: " + captured_file_path);
+            if (captured_callback)
+            {
+                captured_callback(captured_file_path);
+            }
+            return WriteOperationResult(true);
+        } });
 
-        // Trigger processing for this new file asynchronously
-        if (captured_callback)
-        {
-            // Use a shared_ptr to ensure the callback lives long enough
-            auto callback_ptr = std::make_shared<std::function<void(const std::string&)>>(captured_callback);
-            std::thread([callback_ptr, captured_file_path]()
-                        {
-                Logger::info("Triggering async processing for new file: " + captured_file_path);
-                (*callback_ptr)(captured_file_path); })
-                .detach();
-        }
-        
-        return WriteOperationResult(true); });
-
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
     return DBOpResult(true);
 }
 
@@ -723,12 +914,6 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
 {
     Logger::debug("getAllScannedFiles called");
     std::vector<std::pair<std::string, std::string>> results;
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return results;
-    }
-
     if (!access_queue_)
     {
         Logger::error("Access queue not initialized");
@@ -736,19 +921,25 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &db)
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
                                              {
         Logger::debug("Executing getAllScannedFiles in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, std::string>>());
+        }
         
         std::vector<std::pair<std::string, std::string>> results;
         const std::string select_sql = R"(
             SELECT file_path, file_name FROM scanned_files ORDER BY created_at DESC
         )";
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db.db_)));
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
         while (sqlite3_step(stmt) == SQLITE_ROW)
@@ -775,15 +966,39 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
 
 DBOpResult DatabaseManager::clearAllScannedFiles()
 {
-    if (!db_)
+    if (!access_queue_)
     {
-        std::string msg = "Database not initialized";
+        std::string msg = "Access queue not initialized";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
-
-    const std::string delete_sql = "DELETE FROM scanned_files";
-    return executeStatement(delete_sql);
+    std::string error_msg;
+    bool success = true;
+    access_queue_->enqueueWrite([&](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        const std::string delete_sql = "DELETE FROM scanned_files";
+        char *err_msg = nullptr;
+        int rc = sqlite3_exec(dbMan.db_, delete_sql.c_str(), nullptr, nullptr, &err_msg);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "SQL execution failed: " + std::string(err_msg);
+            Logger::error(error_msg);
+            sqlite3_free(err_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        return WriteOperationResult(true); });
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
 }
 
 // Get files that need processing (those without hash)
@@ -791,12 +1006,6 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 {
     Logger::debug("getFilesNeedingProcessing called");
     std::vector<std::pair<std::string, std::string>> results;
-    if (!db_)
-    {
-        Logger::error("Database not initialized");
-        return results;
-    }
-
     if (!access_queue_)
     {
         Logger::error("Access queue not initialized");
@@ -804,19 +1013,25 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &db)
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
                                              {
         Logger::debug("Executing getFilesNeedingProcessing in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, std::string>>());
+        }
         
         std::vector<std::pair<std::string, std::string>> results;
         const std::string select_sql = R"(
             SELECT file_path, file_name FROM scanned_files WHERE hash IS NULL ORDER BY created_at DESC
         )";
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(db.db_)));
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
 
@@ -846,15 +1061,6 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 // Update the hash for a file after processing
 DBOpResult DatabaseManager::updateFileHash(const std::string &file_path, const std::string &file_hash)
 {
-    Logger::debug("updateFileHash called for: " + file_path);
-
-    if (!db_)
-    {
-        std::string msg = "Database not initialized";
-        Logger::error(msg);
-        return DBOpResult(false, msg);
-    }
-
     if (!access_queue_)
     {
         std::string msg = "Access queue not initialized";
@@ -865,41 +1071,118 @@ DBOpResult DatabaseManager::updateFileHash(const std::string &file_path, const s
     // Capture parameters for async execution
     std::string captured_file_path = file_path;
     std::string captured_file_hash = file_hash;
+    std::string error_msg;
+    bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_hash](DatabaseManager &db)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         Logger::debug("Executing updateFileHash in write queue for: " + captured_file_path);
         
-        const std::string sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
+        const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(db.db_, sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            std::string msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
         }
 
         sqlite3_bind_text(stmt, 1, captured_file_hash.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
         rc = sqlite3_step(stmt);
         sqlite3_finalize(stmt);
 
         if (rc != SQLITE_DONE)
         {
-            std::string msg = "Failed to update file hash: " + std::string(sqlite3_errmsg(db.db_));
-            Logger::error(msg);
-            return WriteOperationResult::Failure(msg);
+            error_msg = "Failed to update file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
         }
 
-        Logger::debug("Updated hash for file: " + captured_file_path);
-        return WriteOperationResult(true); });
+        Logger::debug("Updated file hash for: " + captured_file_path);
+        return WriteOperationResult(); });
 
-    return DBOpResult(true);
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
 }
 
-bool DatabaseManager::isValid() const
+std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::string &file_path, const std::string &file_hash)
 {
-    return db_ != nullptr;
+    if (!access_queue_)
+    {
+        std::string msg = "Access queue not initialized";
+        Logger::error(msg);
+        return {DBOpResult(false, msg), 0};
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_file_hash = file_hash;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing updateFileHash in write queue for: " + captured_file_path);
+        
+        const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_hash.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Updated file hash for: " + captured_file_path);
+        return WriteOperationResult(); });
+
+    // Get the operation ID from the access queue
+    size_t operation_id = access_queue_->getNextOperationId();
+    waitForWrites();
+    if (!success)
+        return {DBOpResult(false, error_msg), 0};
+    return {DBOpResult(true, ""), operation_id};
+}
+
+bool DatabaseManager::isValid()
+{
+    if (!access_queue_)
+    {
+        return false;
+    }
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             { return dbMan.db_ != nullptr; });
+    try
+    {
+        return std::any_cast<bool>(future.get());
+    }
+    catch (...)
+    {
+        return false;
+    }
 }

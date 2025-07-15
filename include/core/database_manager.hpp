@@ -52,6 +52,12 @@ public:
     DBOpResult storeProcessingResult(const std::string &file_path, DedupMode mode, const ProcessingResult &result);
 
     /**
+     * @brief Store a processing result in the database and return operation ID
+     * @return Pair of DBOpResult and operation ID for tracking
+     */
+    std::pair<DBOpResult, size_t> storeProcessingResultWithId(const std::string &file_path, DedupMode mode, const ProcessingResult &result);
+
+    /**
      * @brief Get processing results for a file
      * @param file_path File path to query
      * @return Vector of processing results
@@ -80,6 +86,15 @@ public:
                                 std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
 
     /**
+     * @brief Store a scanned file in the database and return operation ID
+     * @param file_path Path to the scanned file
+     * @param onFileNeedsProcessing Optional callback to trigger processing when file needs processing
+     * @return Pair of DBOpResult and operation ID for tracking
+     */
+    std::pair<DBOpResult, size_t> storeScannedFileWithId(const std::string &file_path,
+                                                         std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
+
+    /**
      * @brief Get files that need processing (those without hash)
      * @return Vector of file path and name pairs that need processing
      */
@@ -92,6 +107,14 @@ public:
      * @return DBOpResult indicating success or failure
      */
     DBOpResult updateFileHash(const std::string &file_path, const std::string &file_hash);
+
+    /**
+     * @brief Update the hash for a file after processing and return operation ID
+     * @param file_path Path to the file
+     * @param file_hash Hash of the file
+     * @return Pair of DBOpResult and operation ID for tracking
+     */
+    std::pair<DBOpResult, size_t> updateFileHashWithId(const std::string &file_path, const std::string &file_hash);
 
     /**
      * @brief Get all scanned files
@@ -109,7 +132,7 @@ public:
      * @brief Check if the database connection is valid
      * @return true if database is initialized and connected, false otherwise
      */
-    bool isValid() const;
+    bool isValid();
 
     /**
      * @brief Wait for all pending database writes to complete

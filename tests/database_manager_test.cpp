@@ -52,32 +52,32 @@ protected:
 
 TEST_F(DatabaseManagerTest, DatabaseInitialization)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Database should be created
     EXPECT_TRUE(fs::exists(db_path));
 
     // Database should be accessible
     EXPECT_NO_THROW({
-        auto files = db.getFilesNeedingProcessing();
+        auto files = dbMan.getFilesNeedingProcessing();
         EXPECT_EQ(files.size(), 0); // Should be empty initially
     });
 }
 
 TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store the file
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Check that file was stored with NULL hash (needs processing)
-    auto files_needing_processing = db.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 1);
     EXPECT_EQ(files_needing_processing[0].first, test_file);
 
@@ -87,29 +87,29 @@ TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file with specific content
     std::string test_file = "test_file.jpg";
     createTestFile(test_file, "specific test content for hash comparison");
 
     // Store the file first time
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Get the actual hash of the file
     std::string actual_hash = FileUtils::computeFileHash(test_file);
 
     // Simulate processing by setting a hash
-    db.updateFileHash(test_file, actual_hash);
-    db.waitForWrites();
+    dbMan.updateFileHash(test_file, actual_hash);
+    dbMan.waitForWrites();
 
     // Store the same file again (should not change hash since content is same)
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Check that file still has hash (doesn't need processing)
-    auto files_needing_processing = db.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 0);
 
     // Clean up test file
@@ -118,29 +118,29 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store the file first time
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Simulate processing by setting a hash (simulate mismatch)
-    db.updateFileHash(test_file, "old_hash_123");
-    db.waitForWrites();
+    dbMan.updateFileHash(test_file, "old_hash_123");
+    dbMan.waitForWrites();
 
     // Modify the file content (simulating file change)
     createTestFile(test_file, "different content");
 
     // Store the file again (should clear hash due to content change)
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Check that file needs processing again (hash cleared)
-    auto files_needing_processing = db.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 1);
     EXPECT_EQ(files_needing_processing[0].first, test_file);
 
@@ -150,7 +150,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
 
 TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -162,22 +162,22 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     createTestFile(file3);
 
     // Store all files
-    db.storeScannedFile(file1);
-    db.storeScannedFile(file2);
-    db.storeScannedFile(file3);
-    db.waitForWrites();
+    dbMan.storeScannedFile(file1);
+    dbMan.storeScannedFile(file2);
+    dbMan.storeScannedFile(file3);
+    dbMan.waitForWrites();
 
     // All files should need processing initially
-    auto files_needing_processing = db.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 3);
 
     // Process one file (set hash)
     std::string hash1 = FileUtils::computeFileHash(file1);
-    db.updateFileHash(file1, hash1);
-    db.waitForWrites();
+    dbMan.updateFileHash(file1, hash1);
+    dbMan.waitForWrites();
 
     // Only 2 files should need processing now
-    files_needing_processing = db.getFilesNeedingProcessing();
+    files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 2);
 
     // Check that file1 is not in the list
@@ -196,27 +196,27 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
 
 TEST_F(DatabaseManagerTest, UpdateFileHash)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store the file
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Initially should need processing
-    auto files_needing_processing = db.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 1);
 
     // Update hash (simulate processing)
     std::string processed_hash = FileUtils::computeFileHash(test_file);
-    db.updateFileHash(test_file, processed_hash);
-    db.waitForWrites();
+    dbMan.updateFileHash(test_file, processed_hash);
+    dbMan.waitForWrites();
 
     // Should no longer need processing
-    files_needing_processing = db.getFilesNeedingProcessing();
+    files_needing_processing = dbMan.getFilesNeedingProcessing();
     EXPECT_EQ(files_needing_processing.size(), 0);
 
     // Clean up test file
@@ -225,7 +225,7 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -235,8 +235,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
     std::string callback_file;
 
     // Store file with callback
-    db.storeScannedFile(test_file, [&](const std::string &file_path)
-                        {
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+                           {
         callback_called = true;
         callback_file = file_path; });
 
@@ -253,19 +253,19 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store file first time
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Set hash (simulate processing)
-    db.updateFileHash(test_file, "old_hash_123");
-    db.waitForWrites();
+    dbMan.updateFileHash(test_file, "old_hash_123");
+    dbMan.waitForWrites();
 
     // Modify file content
     createTestFile(test_file, "different content");
@@ -274,8 +274,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
     std::string callback_file;
 
     // Store file again with callback (hash should be cleared)
-    db.storeScannedFile(test_file, [&](const std::string &file_path)
-                        {
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+                           {
         callback_called = true;
         callback_file = file_path; });
 
@@ -292,24 +292,24 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
 
 TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store file first time
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Set hash (simulate processing)
     std::string actual_hash = FileUtils::computeFileHash(test_file);
     std::cout << "[DEBUG] Actual file hash: " << actual_hash << std::endl;
-    db.updateFileHash(test_file, actual_hash);
-    db.waitForWrites();
+    dbMan.updateFileHash(test_file, actual_hash);
+    dbMan.waitForWrites();
 
     // Retrieve hash from DB for debug
-    auto files = db.getAllScannedFiles();
+    auto files = dbMan.getAllScannedFiles();
     for (const auto &pair : files)
     {
         if (pair.first == test_file)
@@ -323,9 +323,9 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     // Store file again with callback (no change in content)
     std::string hash_before_second_store = FileUtils::computeFileHash(test_file);
     std::cout << "[DEBUG] Hash before second store: " << hash_before_second_store << std::endl;
-    db.storeScannedFile(test_file, [&](const std::string &file_path)
-                        { callback_called = true; });
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+                           { callback_called = true; });
+    dbMan.waitForWrites();
 
     // Wait a bit for async callback to execute (should NOT be called)
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -339,7 +339,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 
 TEST_F(DatabaseManagerTest, StoreProcessingResult)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -355,12 +355,12 @@ TEST_F(DatabaseManagerTest, StoreProcessingResult)
     result.artifact.data = {0x01, 0x02, 0x03, 0x04};
 
     // Store the processing result
-    auto db_result = db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    auto db_result = dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
     EXPECT_TRUE(db_result.success);
-    db.waitForWrites();
+    dbMan.waitForWrites();
 
     // Verify the result was stored
-    auto results = db.getProcessingResults(test_file);
+    auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 1);
     EXPECT_TRUE(results[0].success);
     EXPECT_EQ(results[0].artifact.format, "phash");
@@ -376,7 +376,7 @@ TEST_F(DatabaseManagerTest, StoreProcessingResult)
 
 TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -388,12 +388,12 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
     result.error_message = "Processing failed";
 
     // Store the processing result
-    auto db_result = db.storeProcessingResult(test_file, DedupMode::FAST, result);
+    auto db_result = dbMan.storeProcessingResult(test_file, DedupMode::FAST, result);
     EXPECT_TRUE(db_result.success);
-    db.waitForWrites();
+    dbMan.waitForWrites();
 
     // Verify the result was stored
-    auto results = db.getProcessingResults(test_file);
+    auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 1);
     EXPECT_FALSE(results[0].success);
     EXPECT_EQ(results[0].error_message, "Processing failed");
@@ -404,11 +404,10 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
 
 TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
-    createTestFile(test_file);
 
     // Store multiple processing results
     ProcessingResult result1;
@@ -421,12 +420,12 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
     result2.artifact.format = "dhash";
     result2.artifact.hash = "hash2";
 
-    db.storeProcessingResult(test_file, DedupMode::BALANCED, result1);
-    db.storeProcessingResult(test_file, DedupMode::FAST, result2);
-    db.waitForWrites();
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result1);
+    dbMan.storeProcessingResult(test_file, DedupMode::FAST, result2);
+    dbMan.waitForWrites();
 
     // Get all results for the file
-    auto results = db.getProcessingResults(test_file);
+    auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 2);
 
     // Results should be ordered by created_at DESC (newest first)
@@ -453,7 +452,7 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 
 TEST_F(DatabaseManagerTest, GetAllProcessingResults)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -472,12 +471,12 @@ TEST_F(DatabaseManagerTest, GetAllProcessingResults)
     result2.artifact.format = "dhash";
     result2.artifact.hash = "hash2";
 
-    db.storeProcessingResult(file1, DedupMode::BALANCED, result1);
-    db.storeProcessingResult(file2, DedupMode::FAST, result2);
-    db.waitForWrites();
+    dbMan.storeProcessingResult(file1, DedupMode::BALANCED, result1);
+    dbMan.storeProcessingResult(file2, DedupMode::FAST, result2);
+    dbMan.waitForWrites();
 
     // Get all processing results
-    auto all_results = db.getAllProcessingResults();
+    auto all_results = dbMan.getAllProcessingResults();
     EXPECT_EQ(all_results.size(), 2);
 
     // Check that we have results for both files
@@ -507,7 +506,7 @@ TEST_F(DatabaseManagerTest, GetAllProcessingResults)
 
 TEST_F(DatabaseManagerTest, ClearAllResults)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
@@ -519,20 +518,20 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
     result.artifact.format = "phash";
     result.artifact.hash = "test_hash";
 
-    db.storeProcessingResult(test_file, DedupMode::BALANCED, result);
-    db.waitForWrites();
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    dbMan.waitForWrites();
 
     // Verify result exists
-    auto results = db.getProcessingResults(test_file);
+    auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 1);
 
     // Clear all results
-    auto clear_result = db.clearAllResults();
+    auto clear_result = dbMan.clearAllResults();
     EXPECT_TRUE(clear_result.success);
-    db.waitForWrites();
+    dbMan.waitForWrites();
 
     // Verify results are cleared
-    results = db.getProcessingResults(test_file);
+    results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 0);
 
     // Clean up test file
@@ -541,7 +540,7 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
 
 TEST_F(DatabaseManagerTest, GetAllScannedFiles)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create test files
     std::string file1 = "file1.jpg";
@@ -550,12 +549,12 @@ TEST_F(DatabaseManagerTest, GetAllScannedFiles)
     createTestFile(file2);
 
     // Store scanned files
-    db.storeScannedFile(file1);
-    db.storeScannedFile(file2);
-    db.waitForWrites();
+    dbMan.storeScannedFile(file1);
+    dbMan.storeScannedFile(file2);
+    dbMan.waitForWrites();
 
     // Get all scanned files
-    auto all_files = db.getAllScannedFiles();
+    auto all_files = dbMan.getAllScannedFiles();
     EXPECT_EQ(all_files.size(), 2);
 
     // Check that we have both files
@@ -583,27 +582,27 @@ TEST_F(DatabaseManagerTest, GetAllScannedFiles)
 
 TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
     // Create a test file
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
     // Store a scanned file
-    db.storeScannedFile(test_file);
-    db.waitForWrites();
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
 
     // Verify file exists
-    auto all_files = db.getAllScannedFiles();
+    auto all_files = dbMan.getAllScannedFiles();
     EXPECT_EQ(all_files.size(), 1);
 
     // Clear all scanned files
-    auto clear_result = db.clearAllScannedFiles();
+    auto clear_result = dbMan.clearAllScannedFiles();
     EXPECT_TRUE(clear_result.success);
-    db.waitForWrites();
+    dbMan.waitForWrites();
 
     // Verify files are cleared
-    all_files = db.getAllScannedFiles();
+    all_files = dbMan.getAllScannedFiles();
     EXPECT_EQ(all_files.size(), 0);
 
     // Clean up test file
@@ -612,12 +611,11 @@ TEST_F(DatabaseManagerTest, ClearAllScannedFiles)
 
 TEST_F(DatabaseManagerTest, IsValid)
 {
-    auto &db = DatabaseManager::getInstance(db_path);
+    auto &dbMan = DatabaseManager::getInstance(db_path);
 
-    // Database should be valid after construction
-    EXPECT_TRUE(db.isValid());
+    // Database should be valid after initialization
+    EXPECT_TRUE(dbMan.isValid());
 
-    // Test with invalid database path (this would require a different test setup)
     // For now, we just verify that isValid() returns true for a properly initialized database
-    EXPECT_TRUE(db.isValid());
+    EXPECT_TRUE(dbMan.isValid());
 }

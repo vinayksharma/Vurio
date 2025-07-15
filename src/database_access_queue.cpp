@@ -1,8 +1,8 @@
 #include "core/database_access_queue.hpp"
 #include "logging/logger.hpp"
 
-DatabaseAccessQueue::DatabaseAccessQueue(DatabaseManager &db_manager)
-    : db_manager_(db_manager)
+DatabaseAccessQueue::DatabaseAccessQueue(DatabaseManager &dbMan)
+    : db_manager_(dbMan), next_operation_id_(0)
 {
     is_running_ = true;
     access_thread_ = std::thread(&DatabaseAccessQueue::access_thread_worker, this);
@@ -56,11 +56,16 @@ void DatabaseAccessQueue::stop()
     queue_cv_.notify_all();
 }
 
-// Get the result of the last completed operation
-WriteOperationResult DatabaseAccessQueue::getLastOperationResult() const
+// Get the result of a specific operation by its ID
+WriteOperationResult DatabaseAccessQueue::getOperationResult(size_t operation_id) const
 {
-    std::lock_guard<std::mutex> lock(result_mutex_);
-    return last_operation_result_;
+    std::lock_guard<std::mutex> lock(results_mutex_);
+    auto it = operation_results_.find(operation_id);
+    if (it != operation_results_.end())
+    {
+        return it->second;
+    }
+    return WriteOperationResult::Failure("Operation not found");
 }
 
 void DatabaseAccessQueue::access_thread_worker()
@@ -90,22 +95,23 @@ void DatabaseAccessQueue::access_thread_worker()
         if (std::holds_alternative<WriteOperation>(operation))
         {
             WriteOperation write_op = std::get<WriteOperation>(std::move(operation));
-            Logger::debug("Executing database write operation in access thread");
+            size_t operation_id = next_operation_id_.fetch_add(1);
+            Logger::debug("Executing database write operation " + std::to_string(operation_id) + " in access thread");
             try
             {
                 WriteOperationResult result = write_op(db_manager_);
                 {
-                    std::lock_guard<std::mutex> lock(result_mutex_);
-                    last_operation_result_ = result;
+                    std::lock_guard<std::mutex> lock(results_mutex_);
+                    operation_results_[operation_id] = result;
                 }
-                Logger::debug("Database write operation completed successfully");
+                Logger::debug("Database write operation " + std::to_string(operation_id) + " completed successfully");
             }
             catch (const std::exception &e)
             {
-                Logger::error("Database write operation failed: " + std::string(e.what()));
+                Logger::error("Database write operation " + std::to_string(operation_id) + " failed: " + std::string(e.what()));
                 {
-                    std::lock_guard<std::mutex> lock(result_mutex_);
-                    last_operation_result_ = WriteOperationResult::Failure();
+                    std::lock_guard<std::mutex> lock(results_mutex_);
+                    operation_results_[operation_id] = WriteOperationResult::Failure(e.what());
                 }
             }
         }

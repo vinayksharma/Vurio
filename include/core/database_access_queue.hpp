@@ -10,6 +10,7 @@
 #include <future>
 #include <variant>
 #include <any>
+#include <map>
 #include "database_manager.hpp"
 
 class DatabaseManager;
@@ -34,7 +35,11 @@ using ReadOperation = std::function<std::any(DatabaseManager &)>;
 class DatabaseAccessQueue
 {
 public:
-    explicit DatabaseAccessQueue(DatabaseManager &db_manager);
+    /**
+     * @brief Constructor
+     * @param dbMan Reference to the DatabaseManager instance
+     */
+    explicit DatabaseAccessQueue(DatabaseManager &dbMan);
     ~DatabaseAccessQueue();
 
     void enqueueWrite(WriteOperation operation);
@@ -42,8 +47,11 @@ public:
     void wait_for_completion();
     void stop();
 
-    // Get the result of the last completed operation
-    WriteOperationResult getLastOperationResult() const;
+    // Get the result of a specific operation by its ID
+    WriteOperationResult getOperationResult(size_t operation_id) const;
+
+    // Get the next operation ID for tracking
+    size_t getNextOperationId() const { return next_operation_id_.load(); }
 
 private:
     void access_thread_worker();
@@ -55,7 +63,8 @@ private:
     std::atomic<bool> is_running_;
     std::atomic<bool> should_stop_;
 
-    // Track the last operation result
-    mutable std::mutex result_mutex_;
-    WriteOperationResult last_operation_result_;
+    // Track operation results by ID
+    mutable std::mutex results_mutex_;
+    std::map<size_t, WriteOperationResult> operation_results_;
+    std::atomic<size_t> next_operation_id_;
 };

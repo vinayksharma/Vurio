@@ -5,8 +5,8 @@
 #include <atomic>
 #include <chrono>
 
-MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &db)
-    : db_(db), cancelled_(false) {}
+MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &dbMan)
+    : dbMan_(dbMan), cancelled_(false) {}
 
 MediaProcessingOrchestrator::~MediaProcessingOrchestrator()
 {
@@ -26,12 +26,12 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                                  {
         try {
             cancelled_ = false;
-            if (!db_.isValid()) {
+            if (!dbMan_.isValid()) {
                 Logger::error("Database not initialized or invalid");
                 if (onError) onError(std::runtime_error("Database not initialized"));
                 return;
             }
-            auto files_to_process = db_.getFilesNeedingProcessing();
+            auto files_to_process = dbMan_.getFilesNeedingProcessing();
             if (files_to_process.empty()) {
                 Logger::info("No files need processing");
                 if (onComplete) onComplete();
@@ -50,115 +50,100 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
             std::atomic<size_t> failed_files{0};
-            class FutureManager {
-                std::vector<std::future<void>>& futures_;
-            public:
-                explicit FutureManager(std::vector<std::future<void>>& futures) : futures_(futures) {}
-                ~FutureManager() {
-                    for (auto& f : futures_) {
-                        if (f.valid()) {
-                            try { f.wait(); }
-                            catch (const std::exception& e) {
-                                Logger::error("Exception in future: " + std::string(e.what()));
-                            }
-                        }
-                    }
-                }
-            };
-            std::vector<std::future<void>> futures;
-            FutureManager future_manager(futures);
-            auto process_file = [&](const std::string& file_path)
+
+            // Process files sequentially (TBB not available)
+            for (size_t i = 0; i < files_to_process.size(); ++i)
             {
                 if (cancelled_.load()) {
-                    Logger::warn("Processing cancelled before file: " + file_path);
+                    Logger::warn("Processing cancelled before file: " + files_to_process[i].first);
                     if (onError) onError(std::runtime_error("Processing cancelled"));
                     return;
                 }
                 auto start = std::chrono::steady_clock::now();
                 FileProcessingEvent event;
-                event.file_path = file_path;
+                event.file_path = files_to_process[i].first;
                 try {
-                    if (!MediaProcessor::isSupportedFile(file_path)) {
+                    if (!MediaProcessor::isSupportedFile(files_to_process[i].first)) {
                         event.success = false;
-                        event.error_message = "Unsupported file type: " + file_path;
+                        event.error_message = "Unsupported file type: " + files_to_process[i].first;
                         Logger::error(event.error_message);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
-                    ProcessingResult result = MediaProcessor::processFile(file_path, mode);
+                    ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, mode);
                     event.artifact_format = result.artifact.format;
                     event.artifact_hash = result.artifact.hash;
                     event.artifact_confidence = result.artifact.confidence;
                     if (!result.success) {
                         event.success = false;
                         event.error_message = result.error_message;
-                        Logger::error("Processing failed for: " + file_path + " - " + result.error_message);
+                        Logger::error("Processing failed for: " + files_to_process[i].first + " - " + result.error_message);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
                     bool store_success = false;
                     bool hash_success = false;
                     std::string db_error_msg;
                     
                     // Store processing result
-                    DBOpResult store_result = db_.storeProcessingResult(file_path, mode, result);
+                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, mode, result);
                     if (!store_result.success) {
                         db_error_msg = store_result.error_message;
-                        Logger::error("Failed to enqueue processing result: " + file_path + " - " + db_error_msg);
+                        Logger::error("Failed to enqueue processing result: " + files_to_process[i].first + " - " + db_error_msg);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         event.success = false;
                         event.error_message = "Database operation failed: " + db_error_msg;
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
                     
                     // Wait for write queue to process the store operation
-                    db_.waitForWrites();
+                    dbMan_.waitForWrites();
                     
                     // Check if the store operation actually succeeded
-                    auto store_op_result = db_.getAccessQueue().getLastOperationResult();
+                    auto store_op_result = dbMan_.getAccessQueue().getOperationResult(store_op_id);
                     if (!store_op_result.success) {
-                        Logger::error("Store operation failed: " + file_path + " - " + store_op_result.error_message);
+                        Logger::error("Store operation failed: " + files_to_process[i].first + " - " + store_op_result.error_message);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         event.success = false;
                         event.error_message = "Database operation failed: " + store_op_result.error_message;
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
                     
                     // Generate file hash and update database
-                    std::string file_hash = FileUtils::computeFileHash(file_path);
-                    DBOpResult hash_result = db_.updateFileHash(file_path, file_hash);
+                    std::string file_hash = FileUtils::computeFileHash(files_to_process[i].first);
+                    auto [hash_result, hash_op_id] = dbMan_.updateFileHashWithId(files_to_process[i].first, file_hash);
                     if (!hash_result.success) {
                         db_error_msg = hash_result.error_message;
-                        Logger::error("Failed to enqueue hash update: " + file_path + " - " + db_error_msg);
+                        Logger::error("Failed to enqueue hash update: " + files_to_process[i].first + " - " + db_error_msg);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         event.success = false;
                         event.error_message = "Database operation failed: " + db_error_msg;
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
                     
                     // Wait for write queue to process the hash update
-                    db_.waitForWrites();
+                    dbMan_.waitForWrites();
                     
                     // Check if the hash update operation actually succeeded
-                    auto hash_op_result = db_.getAccessQueue().getLastOperationResult();
+                    auto hash_op_result = dbMan_.getAccessQueue().getOperationResult(hash_op_id);
                     if (!hash_op_result.success) {
-                        Logger::error("Hash update operation failed: " + file_path + " - " + hash_op_result.error_message);
+                        Logger::error("Hash update operation failed: " + files_to_process[i].first + " - " + hash_op_result.error_message);
                         processed_files.fetch_add(1);
                         failed_files.fetch_add(1);
                         event.success = false;
                         event.error_message = "Database operation failed: " + hash_op_result.error_message;
                         if (onNext) onNext(event);
-                        return;
+                        continue;
                     }
                     
                     // Both operations succeeded
@@ -171,58 +156,33 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     event.error_message = "";
                     processed_files.fetch_add(1);
                     successful_files.fetch_add(1);
+                    Logger::info("Stored processing result for: " + files_to_process[i].first);
                     if (onNext) onNext(event);
                 }
-                catch (const std::exception& e) {
-                    Logger::error("Unexpected error processing file " + file_path + ": " + std::string(e.what()));
-                    event.success = false;
-                    event.error_message = "Unexpected error: " + std::string(e.what());
+                catch (const std::exception &e) {
+                    Logger::error("Exception processing file: " + files_to_process[i].first + " - " + std::string(e.what()));
                     processed_files.fetch_add(1);
                     failed_files.fetch_add(1);
+                    event.success = false;
+                    event.error_message = "Exception: " + std::string(e.what());
                     if (onNext) onNext(event);
                 }
-            };
-            for (const auto& [file_path, file_name] : files_to_process) {
-                if (cancelled_.load()) {
-                    Logger::info("Processing cancelled");
-                    if (onError) onError(std::runtime_error("Processing cancelled"));
-                    return;
-                }
-                if (max_threads > 1) {
-                    futures.emplace_back(std::async(std::launch::async, process_file, file_path));
-                    if (futures.size() >= static_cast<size_t>(max_threads)) {
-                        for (auto& f : futures) {
-                            if (f.valid()) {
-                                try { f.get(); }
-                                catch (const std::exception& e) {
-                                    Logger::error("Exception in processing thread: " + std::string(e.what()));
-                                    if (onError) onError(e);
-                                }
-                            }
-                        }
-                        futures.clear();
-                    }
-                } else {
-                    process_file(file_path);
-                }
             }
-            for (auto& f : futures) {
-                if (f.valid()) {
-                    try { f.get(); }
-                    catch (const std::exception& e) {
-                        Logger::error("Exception in processing thread: " + std::string(e.what()));
-                        if (onError) onError(e);
-                    }
-                }
+
+            // Wait for all processing to complete
+            while (processed_files.load() < total_files.load() && !cancelled_.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
+
             Logger::info("Processing completed. Total: " + std::to_string(total_files.load()) + 
                         ", Processed: " + std::to_string(processed_files.load()) + 
                         ", Successful: " + std::to_string(successful_files.load()) + 
                         ", Failed: " + std::to_string(failed_files.load()));
+
             if (onComplete) onComplete();
         }
-        catch (const std::exception& e) {
-            Logger::error("Fatal error in processAllScannedFiles: " + std::string(e.what()));
+        catch (const std::exception &e) {
+            Logger::error("Fatal error in processing: " + std::string(e.what()));
             if (onError) onError(e);
         } });
 }
