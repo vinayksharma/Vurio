@@ -5,6 +5,9 @@
 #include <functional>
 #include <chrono>
 #include <atomic>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include "file_utils.hpp"
 #include "database_manager.hpp"
 #include "media_processor.hpp"
@@ -35,6 +38,7 @@ class MediaProcessingOrchestrator
 public:
     explicit MediaProcessingOrchestrator(DatabaseManager &dbMan);
     ~MediaProcessingOrchestrator();
+
     /**
      * @brief Process files that need processing (those without hash) in parallel.
      *
@@ -54,7 +58,63 @@ public:
      */
     void cancel();
 
+    /**
+     * @brief Start timer-based processing with scanning coordination
+     *
+     * This method starts a background thread that processes files at regular intervals.
+     * The processing waits for any ongoing scanning operations to complete before starting.
+     *
+     * @param processing_interval_seconds Interval between processing runs in seconds (default: 60)
+     * @param max_threads Maximum number of threads to use for processing (default: 4)
+     */
+    void startTimerBasedProcessing(int processing_interval_seconds = 60, int max_threads = 4);
+
+    /**
+     * @brief Stop timer-based processing
+     *
+     * This method stops the background processing thread and waits for it to complete.
+     */
+    void stopTimerBasedProcessing();
+
+    /**
+     * @brief Set scanning in progress flag
+     *
+     * This method should be called when scanning starts to prevent processing from running
+     * until scanning is complete. When scanning completes, processing will be triggered immediately.
+     */
+    void setScanningInProgress(bool in_progress);
+
+    /**
+     * @brief Trigger processing immediately (called when scanning completes)
+     *
+     * This method starts processing immediately without waiting for the timer interval.
+     * It should be called when scanning completes to process newly scanned files.
+     */
+    void triggerProcessingOnScanComplete();
+
+    /**
+     * @brief Check if timer-based processing is currently running
+     *
+     * @return true if timer-based processing is active, false otherwise
+     */
+    bool isTimerBasedProcessingRunning() const;
+
 private:
     DatabaseManager &dbMan_;
     std::atomic<bool> cancelled_;
+
+    // Timer-based processing members
+    std::atomic<bool> timer_processing_running_{false};
+    std::atomic<bool> scanning_in_progress_{false};
+    std::thread processing_thread_;
+    std::mutex processing_mutex_;
+    std::condition_variable processing_cv_;
+
+    /**
+     * @brief Background processing thread function
+     *
+     * This function runs in a separate thread and processes files at regular intervals.
+     * It waits for scanning to complete before starting processing.
+     */
+    void processingThreadFunction(int processing_interval_seconds, int max_threads);
 };

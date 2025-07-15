@@ -2,6 +2,7 @@
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <thread>
 #include "core/status.hpp"
 #include "core/file_utils.hpp"
 #include "core/server_config_manager.hpp"
@@ -14,6 +15,11 @@
 #include "logging/logger.hpp"
 
 using json = nlohmann::json;
+
+// Global orchestrator instance for coordination between scan and processing
+static std::unique_ptr<MediaProcessingOrchestrator> global_orchestrator;
+static std::unique_ptr<DatabaseManager> global_db_manager;
+static std::mutex orchestrator_mutex;
 
 class RouteHandlers
 {
@@ -86,6 +92,22 @@ public:
                 {
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleGetScanResults(req, res); });
+
+        // Orchestration endpoints
+        svr.Post("/orchestration/start", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleStartOrchestration(req, res); });
+
+        svr.Post("/orchestration/stop", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleStopOrchestration(req, res); });
+
+        svr.Get("/orchestration/status", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetOrchestrationStatus(req, res); });
     }
 
 private:
@@ -413,6 +435,16 @@ private:
 
             Logger::info("Starting directory scan: " + directory);
 
+            // Set scanning in progress flag if orchestrator is running
+            {
+                std::lock_guard<std::mutex> lock(orchestrator_mutex);
+                if (global_orchestrator)
+                {
+                    global_orchestrator->setScanningInProgress(true);
+                    Logger::info("Set scanning in progress flag - processing will wait");
+                }
+            }
+
             // Use the existing FileUtils to scan directory recursively
             auto observable = FileUtils::listFilesAsObservable(directory, recursive);
 
@@ -463,6 +495,63 @@ private:
                 [&]()
                 {
                     Logger::info("Directory scan completed successfully");
+
+                    // Clear scanning in progress flag if orchestrator is running
+                    {
+                        std::lock_guard<std::mutex> lock(orchestrator_mutex);
+                        if (global_orchestrator)
+                        {
+                            global_orchestrator->setScanningInProgress(false);
+                            Logger::info("Cleared scanning in progress flag - processing can proceed");
+                        }
+                        else
+                        {
+                            // No orchestration running, trigger processing directly
+                            Logger::info("No orchestration running, triggering processing directly after scan");
+
+                            // Process files in background thread to avoid blocking the response
+                            std::thread([db_path]()
+                                        {
+                                try {
+                                    Logger::info("Starting post-scan processing of scanned files");
+                                    
+                                    // Create database manager and orchestrator inside the thread
+                                    auto temp_db_manager = std::make_unique<DatabaseManager>(db_path);
+                                    auto temp_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*temp_db_manager);
+                                    
+                                    auto observable = temp_orchestrator->processAllScannedFiles(4);
+                                    
+                                    size_t processed_count = 0;
+                                    size_t successful_count = 0;
+                                    size_t failed_count = 0;
+                                    
+                                    observable.subscribe(
+                                        [&](const FileProcessingEvent &event) {
+                                            processed_count++;
+                                            if (event.success) {
+                                                successful_count++;
+                                            } else {
+                                                failed_count++;
+                                            }
+                                            Logger::debug("Post-scan processed file: " + event.file_path + 
+                                                        " (success: " + std::to_string(event.success) + ")");
+                                        },
+                                        [](const std::exception &e) {
+                                            Logger::error("Post-scan processing error: " + std::string(e.what()));
+                                        },
+                                        [&]() {
+                                            Logger::info("Post-scan processing completed. Processed: " + 
+                                                        std::to_string(processed_count) + ", Successful: " + 
+                                                        std::to_string(successful_count) + ", Failed: " + 
+                                                        std::to_string(failed_count));
+                                        });
+                                } catch (const std::exception &e) {
+                                    Logger::error("Exception in post-scan processing: " + std::string(e.what()));
+                                } })
+                                .detach();
+                        }
+                    }
+
                     json response = {
                         {"message", "Directory scan completed"},
                         {"files_scanned", files_scanned},
@@ -523,6 +612,118 @@ private:
             Logger::error("Get scan results error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Failed to retrieve scan results: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Orchestration handlers
+    static void handleStartOrchestration(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received start orchestration request");
+        try
+        {
+            auto body = json::parse(req.body);
+            int processing_interval_seconds = body.value("processing_interval_seconds", 60);
+            int max_threads = body.value("max_threads", 4);
+            std::string db_path = body.value("database_path", "scan_results.db");
+
+            Logger::info("Starting orchestration with interval: " + std::to_string(processing_interval_seconds) + " seconds");
+
+            // Create global database manager and orchestrator instances
+            std::lock_guard<std::mutex> lock(orchestrator_mutex);
+            global_db_manager = std::make_unique<DatabaseManager>(db_path);
+            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*global_db_manager);
+
+            // Start timer-based processing
+            global_orchestrator->startTimerBasedProcessing(processing_interval_seconds, max_threads);
+
+            json response = {
+                {"message", "Orchestration started successfully"},
+                {"processing_interval_seconds", processing_interval_seconds},
+                {"max_threads", max_threads},
+                {"database_path", db_path}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Orchestration started successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Start orchestration error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to start orchestration: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleStopOrchestration(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received stop orchestration request");
+        try
+        {
+            std::string db_path = req.get_param_value("database_path");
+            if (db_path.empty())
+            {
+                db_path = "scan_results.db";
+            }
+
+            // Stop global orchestrator instance
+            std::lock_guard<std::mutex> lock(orchestrator_mutex);
+            if (global_orchestrator)
+            {
+                global_orchestrator->stopTimerBasedProcessing();
+                global_orchestrator.reset();
+                global_db_manager.reset();
+                Logger::info("Orchestration stopped and global instances cleared");
+            }
+            else
+            {
+                Logger::warn("No orchestration running to stop");
+            }
+
+            json response = {
+                {"message", "Orchestration stopped successfully"},
+                {"database_path", db_path}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Orchestration stopped successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Stop orchestration error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to stop orchestration: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleGetOrchestrationStatus(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get orchestration status request");
+        try
+        {
+            std::string db_path = req.get_param_value("database_path");
+            if (db_path.empty())
+            {
+                db_path = "scan_results.db";
+            }
+
+            // Check global orchestrator status
+            std::lock_guard<std::mutex> lock(orchestrator_mutex);
+            bool is_running = false;
+            if (global_orchestrator)
+            {
+                is_running = global_orchestrator->isTimerBasedProcessingRunning();
+            }
+
+            json response = {
+                {"timer_processing_running", is_running},
+                {"database_path", db_path}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Orchestration status retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get orchestration status error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to get orchestration status: " + std::string(e.what())}}.dump(), "application/json");
         }
     }
 };

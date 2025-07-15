@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
 #include "core/media_processing_orchestrator.hpp"
 #include "core/database_manager.hpp"
-#include <fstream>
 #include <filesystem>
-#include "core/file_utils.hpp"
+#include <fstream>
 #include <thread>
 #include <chrono>
+#include <condition_variable>
+#include <iostream> // Added for diagnostic logging
 
 namespace fs = std::filesystem;
 
@@ -162,4 +163,25 @@ TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
 
     // The cancel method should not throw and should complete gracefully
     EXPECT_TRUE(true); // If we reach here, cancel worked without crashing
+}
+
+TEST_F(MediaProcessingOrchestratorTest, CancelTimerBasedProcessing)
+{
+    DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
+    MediaProcessingOrchestrator orchestrator(dbMan);
+
+    // Start timer-based processing
+    orchestrator.startTimerBasedProcessing(60, 1);
+
+    // Verify processing is running
+    EXPECT_TRUE(orchestrator.isTimerBasedProcessingRunning());
+
+    // Cancel processing
+    orchestrator.cancel();
+
+    // Stop the orchestrator
+    orchestrator.stopTimerBasedProcessing();
+
+    // Verify processing has stopped
+    EXPECT_FALSE(orchestrator.isTimerBasedProcessingRunning());
 }
