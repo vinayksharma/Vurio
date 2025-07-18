@@ -619,3 +619,239 @@ TEST_F(DatabaseManagerTest, IsValid)
     // For now, we just verify that isValid() returns true for a properly initialized database
     EXPECT_TRUE(dbMan.isValid());
 }
+
+// Links functionality tests
+
+TEST_F(DatabaseManagerTest, SetFileLinks)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Set links for the file
+    std::vector<int> linked_ids = {1, 2, 3, 5, 8};
+    auto result = dbMan.setFileLinks(test_file, linked_ids);
+    EXPECT_TRUE(result.success);
+    dbMan.waitForWrites();
+
+    // Verify links were set correctly
+    auto retrieved_links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(retrieved_links.size(), 5);
+    EXPECT_EQ(retrieved_links[0], 1);
+    EXPECT_EQ(retrieved_links[1], 2);
+    EXPECT_EQ(retrieved_links[2], 3);
+    EXPECT_EQ(retrieved_links[3], 5);
+    EXPECT_EQ(retrieved_links[4], 8);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, GetFileLinksEmpty)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Get links for file with no links set
+    auto links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 0);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, AddFileLink)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Add a link
+    auto result = dbMan.addFileLink(test_file, 42);
+    EXPECT_TRUE(result.success);
+    dbMan.waitForWrites();
+
+    // Verify link was added
+    auto links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 1);
+    EXPECT_EQ(links[0], 42);
+
+    // Add another link
+    result = dbMan.addFileLink(test_file, 99);
+    EXPECT_TRUE(result.success);
+    dbMan.waitForWrites();
+
+    // Verify both links exist
+    links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 2);
+    EXPECT_EQ(links[0], 42);
+    EXPECT_EQ(links[1], 99);
+
+    // Try to add the same link again (should not duplicate)
+    result = dbMan.addFileLink(test_file, 42);
+    EXPECT_TRUE(result.success);
+    dbMan.waitForWrites();
+
+    // Verify no duplicate was added
+    links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 2);
+    EXPECT_EQ(links[0], 42);
+    EXPECT_EQ(links[1], 99);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, RemoveFileLink)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Set initial links
+    std::vector<int> initial_links = {1, 2, 3, 4, 5};
+    dbMan.setFileLinks(test_file, initial_links);
+    dbMan.waitForWrites();
+
+    // Remove a link
+    auto result = dbMan.removeFileLink(test_file, 3);
+    EXPECT_TRUE(result.success);
+    dbMan.waitForWrites();
+
+    // Verify link was removed
+    auto links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 4);
+    EXPECT_EQ(links[0], 1);
+    EXPECT_EQ(links[1], 2);
+    EXPECT_EQ(links[2], 4);
+    EXPECT_EQ(links[3], 5);
+
+    // Try to remove a link that doesn't exist
+    result = dbMan.removeFileLink(test_file, 999);
+    EXPECT_TRUE(result.success); // Should not fail, just return success
+    dbMan.waitForWrites();
+
+    // Verify links are unchanged
+    links = dbMan.getFileLinks(test_file);
+    EXPECT_EQ(links.size(), 4);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, GetLinkedFiles)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create test files
+    std::string file1 = "file1.jpg";
+    std::string file2 = "file2.jpg";
+    std::string file3 = "file3.jpg";
+    createTestFile(file1);
+    createTestFile(file2);
+    createTestFile(file3);
+
+    // Store all files
+    dbMan.storeScannedFile(file1);
+    dbMan.storeScannedFile(file2);
+    dbMan.storeScannedFile(file3);
+    dbMan.waitForWrites();
+
+    // Get the ID of file1
+    auto file1_links = dbMan.getFileLinks(file1);
+    EXPECT_EQ(file1_links.size(), 0);
+
+    // Set file2 and file3 to link to file1
+    dbMan.addFileLink(file2, 1); // Assuming file1 has ID 1
+    dbMan.addFileLink(file3, 1);
+    dbMan.waitForWrites();
+
+    // Get files linked to file1
+    auto linked_files = dbMan.getLinkedFiles(file1);
+    EXPECT_EQ(linked_files.size(), 2);
+
+    // Check that both file2 and file3 are in the results
+    bool found_file2 = false, found_file3 = false;
+    for (const auto &linked_file : linked_files)
+    {
+        if (linked_file == file2)
+            found_file2 = true;
+        else if (linked_file == file3)
+            found_file3 = true;
+    }
+    EXPECT_TRUE(found_file2);
+    EXPECT_TRUE(found_file3);
+
+    // Clean up test files
+    fs::remove(file1);
+    fs::remove(file2);
+    fs::remove(file3);
+}
+
+TEST_F(DatabaseManagerTest, LinksJsonSerialization)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Test with various link combinations
+    std::vector<std::vector<int>> test_cases = {
+        {},                   // Empty array
+        {1},                  // Single element
+        {1, 2, 3},            // Multiple elements
+        {100, 200, 300, 400}, // Large numbers
+        {0, 1, 2, 3, 4, 5}    // Sequential numbers
+    };
+
+    for (const auto &test_case : test_cases)
+    {
+        // Set links
+        auto result = dbMan.setFileLinks(test_file, test_case);
+        EXPECT_TRUE(result.success);
+        dbMan.waitForWrites();
+
+        // Retrieve links
+        auto retrieved_links = dbMan.getFileLinks(test_file);
+        EXPECT_EQ(retrieved_links.size(), test_case.size());
+
+        // Verify each link matches
+        for (size_t i = 0; i < test_case.size(); ++i)
+        {
+            EXPECT_EQ(retrieved_links[i], test_case[i]);
+        }
+    }
+
+    // Clean up test file
+    fs::remove(test_file);
+}

@@ -129,6 +129,44 @@ public:
     DBOpResult clearAllScannedFiles();
 
     /**
+     * @brief Set links for a scanned file (for duplicate detection)
+     * @param file_path Path to the file
+     * @param linked_ids Vector of IDs that this file is linked to (duplicates)
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setFileLinks(const std::string &file_path, const std::vector<int> &linked_ids);
+
+    /**
+     * @brief Get links for a scanned file
+     * @param file_path Path to the file
+     * @return Vector of linked file IDs
+     */
+    std::vector<int> getFileLinks(const std::string &file_path);
+
+    /**
+     * @brief Add a link to a scanned file
+     * @param file_path Path to the file
+     * @param linked_id ID of the file to link to
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult addFileLink(const std::string &file_path, int linked_id);
+
+    /**
+     * @brief Remove a link from a scanned file
+     * @param file_path Path to the file
+     * @param linked_id ID of the file to unlink from
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult removeFileLink(const std::string &file_path, int linked_id);
+
+    /**
+     * @brief Get all files that are linked to a specific file
+     * @param file_path Path to the file
+     * @return Vector of file paths that are linked to the specified file
+     */
+    std::vector<std::string> getLinkedFiles(const std::string &file_path);
+
+    /**
      * @brief Check if the database connection is valid
      * @return true if database is initialized and connected, false otherwise
      */

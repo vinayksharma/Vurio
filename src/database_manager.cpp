@@ -181,6 +181,7 @@ bool DatabaseManager::createScannedFilesTable()
             file_path TEXT NOT NULL UNIQUE,
             file_name TEXT NOT NULL,
             hash TEXT,
+            links TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
@@ -1185,4 +1186,279 @@ bool DatabaseManager::isValid()
     {
         return false;
     }
+}
+
+// Links management methods for duplicate detection
+
+DBOpResult DatabaseManager::setFileLinks(const std::string &file_path, const std::vector<int> &linked_ids)
+{
+    if (!access_queue_)
+    {
+        std::string msg = "Access queue not initialized";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Convert vector to JSON array
+    json links_array = json::array();
+    for (int id : linked_ids)
+    {
+        links_array.push_back(id);
+    }
+    std::string links_json = links_array.dump();
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_links_json = links_json;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_links_json, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing setFileLinks in write queue for: " + captured_file_path);
+        
+        const std::string update_sql = "UPDATE scanned_files SET links = ? WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_links_json.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update file links: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Updated file links for: " + captured_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
+}
+
+std::vector<int> DatabaseManager::getFileLinks(const std::string &file_path)
+{
+    std::vector<int> results;
+    if (!access_queue_)
+    {
+        Logger::error("Access queue not initialized");
+        return results;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getFileLinks in access queue for: " + captured_file_path);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<int>());
+        }
+        
+        std::vector<int> results;
+        const std::string select_sql = "SELECT links FROM scanned_files WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+            {
+                std::string links_json = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+                try
+                {
+                    json links_array = json::parse(links_json);
+                    for (const auto &id : links_array)
+                    {
+                        results.push_back(id.get<int>());
+                    }
+                }
+                catch (const json::exception &e)
+                {
+                    Logger::error("Failed to parse links JSON: " + std::string(e.what()));
+                }
+            }
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<int>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get file links: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+DBOpResult DatabaseManager::addFileLink(const std::string &file_path, int linked_id)
+{
+    // Get current links
+    std::vector<int> current_links = getFileLinks(file_path);
+
+    // Check if link already exists
+    if (std::find(current_links.begin(), current_links.end(), linked_id) != current_links.end())
+    {
+        Logger::debug("Link already exists for file: " + file_path + " to ID: " + std::to_string(linked_id));
+        return DBOpResult(true, ""); // Already linked
+    }
+
+    // Add new link
+    current_links.push_back(linked_id);
+    return setFileLinks(file_path, current_links);
+}
+
+DBOpResult DatabaseManager::removeFileLink(const std::string &file_path, int linked_id)
+{
+    // Get current links
+    std::vector<int> current_links = getFileLinks(file_path);
+
+    // Remove the link
+    auto it = std::find(current_links.begin(), current_links.end(), linked_id);
+    if (it == current_links.end())
+    {
+        Logger::debug("Link not found for file: " + file_path + " to ID: " + std::to_string(linked_id));
+        return DBOpResult(true, ""); // Link doesn't exist
+    }
+
+    current_links.erase(it);
+    return setFileLinks(file_path, current_links);
+}
+
+std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file_path)
+{
+    std::vector<std::string> results;
+    if (!access_queue_)
+    {
+        Logger::error("Access queue not initialized");
+        return results;
+    }
+
+    // Get the ID of the current file first
+    int current_id = -1;
+    {
+        auto future = access_queue_->enqueueRead([file_path](DatabaseManager &dbMan)
+                                                 {
+            Logger::debug("Getting file ID for: " + file_path);
+            
+            if (!dbMan.db_)
+            {
+                Logger::error("Database not initialized");
+                return std::any(-1);
+            }
+            
+            const std::string select_sql = "SELECT id FROM scanned_files WHERE file_path = ?";
+            sqlite3_stmt *stmt;
+            int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+                return std::any(-1);
+            }
+
+            sqlite3_bind_text(stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+
+            int id = -1;
+            if (sqlite3_step(stmt) == SQLITE_ROW)
+            {
+                id = sqlite3_column_int(stmt, 0);
+            }
+
+            sqlite3_finalize(stmt);
+            return std::any(id); });
+
+        try
+        {
+            current_id = std::any_cast<int>(future.get());
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Failed to get file ID: " + std::string(e.what()));
+            return results;
+        }
+    }
+
+    if (current_id == -1)
+    {
+        Logger::error("File not found: " + file_path);
+        return results;
+    }
+
+    // Find all files that link to this file
+    auto future = access_queue_->enqueueRead([current_id](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Finding files linked to ID: " + std::to_string(current_id));
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::string>());
+        }
+        
+        std::vector<std::string> results;
+        const std::string select_sql = "SELECT file_path FROM scanned_files WHERE links LIKE ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        // Search for files that contain the current ID in their links JSON
+        std::string search_pattern = "%" + std::to_string(current_id) + "%";
+        sqlite3_bind_text(stmt, 1, search_pattern.c_str(), -1, SQLITE_STATIC);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string linked_file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            results.push_back(linked_file_path);
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<std::string>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get linked files: " + std::string(e.what()));
+    }
+
+    return results;
 }
