@@ -67,4 +67,7 @@ private:
     mutable std::mutex results_mutex_;
     std::map<size_t, WriteOperationResult> operation_results_;
     std::atomic<size_t> next_operation_id_;
+
+    // Track pending write operations to fix race condition
+    std::atomic<size_t> pending_write_operations_;
 };

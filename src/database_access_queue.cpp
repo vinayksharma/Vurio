@@ -2,7 +2,7 @@
 #include "logging/logger.hpp"
 
 DatabaseAccessQueue::DatabaseAccessQueue(DatabaseManager &dbMan)
-    : db_manager_(dbMan), next_operation_id_(0)
+    : db_manager_(dbMan), next_operation_id_(0), pending_write_operations_(0)
 {
     is_running_ = true;
     access_thread_ = std::thread(&DatabaseAccessQueue::access_thread_worker, this);
@@ -22,6 +22,7 @@ size_t DatabaseAccessQueue::enqueueWrite(WriteOperation operation)
 {
     Logger::debug("Enqueueing database write operation");
     size_t operation_id = next_operation_id_.fetch_add(1);
+    pending_write_operations_.fetch_add(1);
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
         operation_queue_.push(std::make_pair(std::move(operation), operation_id));
@@ -49,7 +50,7 @@ void DatabaseAccessQueue::wait_for_completion()
 {
     std::unique_lock<std::mutex> lock(queue_mutex_);
     queue_cv_.wait(lock, [this]
-                   { return operation_queue_.empty() || should_stop_; });
+                   { return (operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_; });
 }
 
 void DatabaseAccessQueue::stop()
@@ -115,6 +116,9 @@ void DatabaseAccessQueue::access_thread_worker()
                     operation_results_[operation_id] = WriteOperationResult::Failure(e.what());
                 }
             }
+
+            // Decrement pending write operations counter
+            pending_write_operations_.fetch_sub(1);
         }
         // Handle read operation
         else if (std::holds_alternative<std::pair<ReadOperation, std::promise<std::any>>>(operation))
@@ -134,10 +138,10 @@ void DatabaseAccessQueue::access_thread_worker()
             }
         }
 
-        // Notify waiters if the queue is now empty
+        // Notify waiters if the queue is now empty and all write operations are complete
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
-            if (operation_queue_.empty())
+            if (operation_queue_.empty() && pending_write_operations_.load() == 0)
             {
                 queue_cv_.notify_all();
             }
