@@ -25,6 +25,11 @@ DatabaseManager &DatabaseManager::getInstance(const std::string &db_path)
         }
         instance_ = std::unique_ptr<DatabaseManager>(new DatabaseManager(db_path));
     }
+    else if (instance_->db_path_ != db_path)
+    {
+        Logger::warn("DatabaseManager singleton already initialized with different path: " +
+                     instance_->db_path_ + " vs " + db_path);
+    }
     return *instance_;
 }
 

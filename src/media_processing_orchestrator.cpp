@@ -270,21 +270,22 @@ void MediaProcessingOrchestrator::triggerProcessingOnScanComplete()
         // Process files that need processing
         auto observable = processAllScannedFiles(4); // Use default max_threads
 
-        size_t processed_count = 0;
-        size_t successful_count = 0;
-        size_t failed_count = 0;
+        // Use shared_ptr for thread-safe access to counters
+        auto processed_count = std::make_shared<size_t>(0);
+        auto successful_count = std::make_shared<size_t>(0);
+        auto failed_count = std::make_shared<size_t>(0);
 
         observable.subscribe(
-            [&](const FileProcessingEvent &event)
+            [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
             {
-                processed_count++;
+                (*processed_count)++;
                 if (event.success)
                 {
-                    successful_count++;
+                    (*successful_count)++;
                 }
                 else
                 {
-                    failed_count++;
+                    (*failed_count)++;
                 }
                 Logger::debug("Processed file: " + event.file_path + " (success: " + std::to_string(event.success) + ")");
             },
@@ -292,11 +293,11 @@ void MediaProcessingOrchestrator::triggerProcessingOnScanComplete()
             {
                 Logger::error("Processing error: " + std::string(e.what()));
             },
-            [&]()
+            [processed_count, successful_count, failed_count]()
             {
-                Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(processed_count) +
-                             ", Successful: " + std::to_string(successful_count) +
-                             ", Failed: " + std::to_string(failed_count));
+                Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
+                             ", Successful: " + std::to_string(*successful_count) +
+                             ", Failed: " + std::to_string(*failed_count));
             });
     }
     catch (const std::exception &e)
@@ -352,21 +353,22 @@ void MediaProcessingOrchestrator::processingThreadFunction(int processing_interv
             // Process files that need processing
             auto observable = processAllScannedFiles(max_threads);
 
-            size_t processed_count = 0;
-            size_t successful_count = 0;
-            size_t failed_count = 0;
+            // Use shared_ptr for thread-safe access to counters
+            auto processed_count = std::make_shared<size_t>(0);
+            auto successful_count = std::make_shared<size_t>(0);
+            auto failed_count = std::make_shared<size_t>(0);
 
             observable.subscribe(
-                [&](const FileProcessingEvent &event)
+                [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
                 {
-                    processed_count++;
+                    (*processed_count)++;
                     if (event.success)
                     {
-                        successful_count++;
+                        (*successful_count)++;
                     }
                     else
                     {
-                        failed_count++;
+                        (*failed_count)++;
                     }
                     Logger::debug("Processed file: " + event.file_path + " (success: " + std::to_string(event.success) + ")");
                 },
@@ -374,11 +376,11 @@ void MediaProcessingOrchestrator::processingThreadFunction(int processing_interv
                 {
                     Logger::error("Processing error: " + std::string(e.what()));
                 },
-                [&]()
+                [processed_count, successful_count, failed_count]()
                 {
-                    Logger::info("Scheduled processing run completed. Processed: " + std::to_string(processed_count) +
-                                 ", Successful: " + std::to_string(successful_count) +
-                                 ", Failed: " + std::to_string(failed_count));
+                    Logger::info("Scheduled processing run completed. Processed: " + std::to_string(*processed_count) +
+                                 ", Successful: " + std::to_string(*successful_count) +
+                                 ", Failed: " + std::to_string(*failed_count));
                 });
         }
         catch (const std::exception &e)

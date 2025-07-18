@@ -20,6 +20,7 @@ using json = nlohmann::json;
 static std::unique_ptr<MediaProcessingOrchestrator> global_orchestrator;
 static std::unique_ptr<DatabaseManager> global_db_manager;
 static std::mutex orchestrator_mutex;
+static std::atomic<bool> background_processing_running{false};
 
 class RouteHandlers
 {
@@ -509,46 +510,57 @@ private:
                             // No orchestration running, trigger processing directly
                             Logger::info("No orchestration running, triggering processing directly after scan");
 
-                            // Process files in background thread to avoid blocking the response
-                            std::thread([db_path]()
-                                        {
-                                try {
-                                    Logger::info("Starting post-scan processing of scanned files");
-                                    
-                                    // Create database manager and orchestrator inside the thread
-                                    auto temp_db_manager = std::make_unique<DatabaseManager>(db_path);
-                                    auto temp_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*temp_db_manager);
-                                    
-                                    auto observable = temp_orchestrator->processAllScannedFiles(4);
-                                    
-                                    size_t processed_count = 0;
-                                    size_t successful_count = 0;
-                                    size_t failed_count = 0;
-                                    
-                                    observable.subscribe(
-                                        [&](const FileProcessingEvent &event) {
-                                            processed_count++;
-                                            if (event.success) {
-                                                successful_count++;
-                                            } else {
-                                                failed_count++;
-                                            }
-                                            Logger::debug("Post-scan processed file: " + event.file_path + 
-                                                        " (success: " + std::to_string(event.success) + ")");
-                                        },
-                                        [](const std::exception &e) {
-                                            Logger::error("Post-scan processing error: " + std::string(e.what()));
-                                        },
-                                        [&]() {
-                                            Logger::info("Post-scan processing completed. Processed: " + 
-                                                        std::to_string(processed_count) + ", Successful: " + 
-                                                        std::to_string(successful_count) + ", Failed: " + 
-                                                        std::to_string(failed_count));
-                                        });
-                                } catch (const std::exception &e) {
-                                    Logger::error("Exception in post-scan processing: " + std::string(e.what()));
-                                } })
-                                .detach();
+                            // Only start background processing if not already running
+                            if (!background_processing_running.exchange(true))
+                            {
+                                // Process files in background thread to avoid blocking the response
+                                std::thread([db_path]()
+                                            {
+                                    try {
+                                        Logger::info("Starting post-scan processing of scanned files");
+                                        
+                                        // Create database manager and orchestrator inside the thread
+                                        auto temp_db_manager = std::make_unique<DatabaseManager>(db_path);
+                                        auto temp_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*temp_db_manager);
+                                        
+                                        auto observable = temp_orchestrator->processAllScannedFiles(4);
+                                        
+                                        // Use shared_ptr for thread-safe access to counters
+                                        auto processed_count = std::make_shared<size_t>(0);
+                                        auto successful_count = std::make_shared<size_t>(0);
+                                        auto failed_count = std::make_shared<size_t>(0);
+                                        
+                                        observable.subscribe(
+                                            [processed_count, successful_count, failed_count](const FileProcessingEvent &event) {
+                                                (*processed_count)++;
+                                                if (event.success) {
+                                                    (*successful_count)++;
+                                                } else {
+                                                    (*failed_count)++;
+                                                }
+                                                Logger::debug("Post-scan processed file: " + event.file_path + 
+                                                            " (success: " + std::to_string(event.success) + ")");
+                                            },
+                                            [](const std::exception &e) {
+                                                Logger::error("Post-scan processing error: " + std::string(e.what()));
+                                            },
+                                            [processed_count, successful_count, failed_count]() {
+                                                Logger::info("Post-scan processing completed. Processed: " + 
+                                                            std::to_string(*processed_count) + ", Successful: " + 
+                                                            std::to_string(*successful_count) + ", Failed: " + 
+                                                            std::to_string(*failed_count));
+                                                background_processing_running.store(false);
+                                            });
+                                    } catch (const std::exception &e) {
+                                        Logger::error("Exception in post-scan processing: " + std::string(e.what()));
+                                        background_processing_running.store(false);
+                                    } })
+                                    .detach();
+                            }
+                            else
+                            {
+                                Logger::info("Background processing already running, skipping post-scan processing");
+                            }
                         }
                     }
 
