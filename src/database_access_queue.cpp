@@ -18,14 +18,16 @@ DatabaseAccessQueue::~DatabaseAccessQueue()
     is_running_ = false;
 }
 
-void DatabaseAccessQueue::enqueueWrite(WriteOperation operation)
+size_t DatabaseAccessQueue::enqueueWrite(WriteOperation operation)
 {
     Logger::debug("Enqueueing database write operation");
+    size_t operation_id = next_operation_id_.fetch_add(1);
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
-        operation_queue_.push(std::move(operation));
+        operation_queue_.push(std::make_pair(std::move(operation), operation_id));
     }
     queue_cv_.notify_one();
+    return operation_id;
 }
 
 std::future<std::any> DatabaseAccessQueue::enqueueRead(ReadOperation operation)
@@ -72,7 +74,7 @@ void DatabaseAccessQueue::access_thread_worker()
 {
     while (true)
     {
-        std::variant<WriteOperation, std::pair<ReadOperation, std::promise<std::any>>> operation;
+        std::variant<std::pair<WriteOperation, size_t>, std::pair<ReadOperation, std::promise<std::any>>> operation;
 
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
@@ -92,10 +94,9 @@ void DatabaseAccessQueue::access_thread_worker()
         }
 
         // Handle write operation
-        if (std::holds_alternative<WriteOperation>(operation))
+        if (std::holds_alternative<std::pair<WriteOperation, size_t>>(operation))
         {
-            WriteOperation write_op = std::get<WriteOperation>(std::move(operation));
-            size_t operation_id = next_operation_id_.fetch_add(1);
+            auto [write_op, operation_id] = std::get<std::pair<WriteOperation, size_t>>(std::move(operation));
             Logger::debug("Executing database write operation " + std::to_string(operation_id) + " in access thread");
             try
             {

@@ -42,7 +42,7 @@ public:
     explicit DatabaseAccessQueue(DatabaseManager &dbMan);
     ~DatabaseAccessQueue();
 
-    void enqueueWrite(WriteOperation operation);
+    size_t enqueueWrite(WriteOperation operation);
     std::future<std::any> enqueueRead(ReadOperation operation);
     void wait_for_completion();
     void stop();
@@ -56,7 +56,7 @@ public:
 private:
     void access_thread_worker();
     DatabaseManager &db_manager_;
-    std::queue<std::variant<WriteOperation, std::pair<ReadOperation, std::promise<std::any>>>> operation_queue_;
+    std::queue<std::variant<std::pair<WriteOperation, size_t>, std::pair<ReadOperation, std::promise<std::any>>>> operation_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
     std::thread access_thread_;

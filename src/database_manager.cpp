@@ -338,8 +338,8 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
     bool success = true;
 
     // Enqueue the write operation and get the operation ID
-    access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
+                                                      {
         Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path);
         
         if (!dbMan.db_)
@@ -435,8 +435,6 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         Logger::info("Stored processing result for: " + captured_file_path);
         return WriteOperationResult(); });
 
-    // Get the operation ID from the access queue
-    size_t operation_id = access_queue_->getNextOperationId();
     waitForWrites();
     if (!success)
         return {DBOpResult(false, error_msg), 0};
@@ -1134,9 +1132,9 @@ std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::s
     std::string error_msg;
     bool success = true;
 
-    // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    // Enqueue the write operation and get the operation ID
+    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
+                                                      {
         Logger::debug("Executing updateFileHash in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
@@ -1167,8 +1165,6 @@ std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::s
         Logger::debug("Updated file hash for: " + captured_file_path);
         return WriteOperationResult(); });
 
-    // Get the operation ID from the access queue
-    size_t operation_id = access_queue_->getNextOperationId();
     waitForWrites();
     if (!success)
         return {DBOpResult(false, error_msg), 0};
