@@ -35,12 +35,6 @@ public:
     DatabaseManager &operator=(DatabaseManager &&) = delete;
 
     /**
-     * @brief Constructor - initializes database connection and tables
-     * @param db_path Path to SQLite database file
-     */
-    explicit DatabaseManager(const std::string &db_path);
-
-    /**
      * @brief Destructor - closes database connection
      */
     ~DatabaseManager();
@@ -184,6 +178,11 @@ public:
     bool checkLastOperationSuccess();
 
 private:
+    /**
+     * @brief Constructor - initializes database connection and tables
+     * @param db_path Path to SQLite database file
+     */
+    explicit DatabaseManager(const std::string &db_path);
     sqlite3 *db_;
     std::string db_path_;
     std::unique_ptr<DatabaseAccessQueue> access_queue_;

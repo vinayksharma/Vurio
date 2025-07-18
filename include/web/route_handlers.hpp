@@ -18,7 +18,6 @@ using json = nlohmann::json;
 
 // Global orchestrator instance for coordination between scan and processing
 static std::unique_ptr<MediaProcessingOrchestrator> global_orchestrator;
-static std::unique_ptr<DatabaseManager> global_db_manager;
 static std::mutex orchestrator_mutex;
 static std::atomic<bool> background_processing_running{false};
 
@@ -389,7 +388,7 @@ private:
             }
 
             // Create DatabaseManager and get results
-            DatabaseManager db_manager(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
             auto results = db_manager.getAllProcessingResults();
 
             json response = {
@@ -450,7 +449,7 @@ private:
             auto observable = FileUtils::listFilesAsObservable(directory, recursive);
 
             // Create DatabaseManager for storing scan results
-            DatabaseManager db_manager(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
 
             size_t files_scanned = 0;
             std::string last_error;
@@ -507,59 +506,51 @@ private:
                         }
                         else
                         {
-                            // No orchestration running, trigger processing directly
+                            // No orchestration running, trigger processing directly after scan
                             Logger::info("No orchestration running, triggering processing directly after scan");
 
                             // Only start background processing if not already running
                             if (!background_processing_running.exchange(true))
                             {
-                                // Process files in background thread to avoid blocking the response
-                                std::thread([db_path]()
+                                // Use the global orchestrator and db manager for processing
+                                std::thread([]()
                                             {
                                     try {
-                                        Logger::info("Starting post-scan processing of scanned files");
-                                        
-                                        // Create database manager and orchestrator inside the thread
-                                        auto temp_db_manager = std::make_unique<DatabaseManager>(db_path);
-                                        auto temp_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*temp_db_manager);
-                                        
-                                        auto observable = temp_orchestrator->processAllScannedFiles(4);
-                                        
-                                        // Use shared_ptr for thread-safe access to counters
-                                        auto processed_count = std::make_shared<size_t>(0);
-                                        auto successful_count = std::make_shared<size_t>(0);
-                                        auto failed_count = std::make_shared<size_t>(0);
-                                        
-                                        observable.subscribe(
-                                            [processed_count, successful_count, failed_count](const FileProcessingEvent &event) {
-                                                (*processed_count)++;
-                                                if (event.success) {
-                                                    (*successful_count)++;
-                                                } else {
-                                                    (*failed_count)++;
-                                                }
-                                                Logger::debug("Post-scan processed file: " + event.file_path + 
-                                                            " (success: " + std::to_string(event.success) + ")");
-                                            },
-                                            [](const std::exception &e) {
-                                                Logger::error("Post-scan processing error: " + std::string(e.what()));
-                                            },
-                                            [processed_count, successful_count, failed_count]() {
-                                                Logger::info("Post-scan processing completed. Processed: " + 
-                                                            std::to_string(*processed_count) + ", Successful: " + 
-                                                            std::to_string(*successful_count) + ", Failed: " + 
-                                                            std::to_string(*failed_count));
-                                                background_processing_running.store(false);
-                                            });
+                                        Logger::info("Starting post-scan processing of scanned files using global orchestrator");
+                                        if (global_orchestrator) {
+                                            auto observable = global_orchestrator->processAllScannedFiles(4);
+                                            auto processed_count = std::make_shared<size_t>(0);
+                                            auto successful_count = std::make_shared<size_t>(0);
+                                            auto failed_count = std::make_shared<size_t>(0);
+                                            observable.subscribe(
+                                                [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
+                                                {
+                                                    (*processed_count)++;
+                                                    if (event.success)
+                                                        (*successful_count)++;
+                                                    else
+                                                        (*failed_count)++;
+                                                },
+                                                [](const std::exception &e)
+                                                {
+                                                    Logger::error("Processing error: " + std::string(e.what()));
+                                                },
+                                                [processed_count, successful_count, failed_count]()
+                                                {
+                                                    Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
+                                                                 ", Successful: " + std::to_string(*successful_count) +
+                                                                 ", Failed: " + std::to_string(*failed_count));
+                                                    background_processing_running.store(false);
+                                                });
+                                        } else {
+                                            Logger::error("Global orchestrator not initialized. Cannot process scanned files.");
+                                            background_processing_running.store(false);
+                                        }
                                     } catch (const std::exception &e) {
-                                        Logger::error("Exception in post-scan processing: " + std::string(e.what()));
+                                        Logger::error("Exception in scan-triggered processing: " + std::string(e.what()));
                                         background_processing_running.store(false);
                                     } })
                                     .detach();
-                            }
-                            else
-                            {
-                                Logger::info("Background processing already running, skipping post-scan processing");
                             }
                         }
                     }
@@ -597,7 +588,7 @@ private:
             }
 
             // Create DatabaseManager and get scan results
-            DatabaseManager db_manager(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
             auto results = db_manager.getAllScannedFiles();
 
             json response = {
@@ -642,8 +633,7 @@ private:
 
             // Create global database manager and orchestrator instances
             std::lock_guard<std::mutex> lock(orchestrator_mutex);
-            global_db_manager = std::make_unique<DatabaseManager>(db_path);
-            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(*global_db_manager);
+            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(DatabaseManager::getInstance(db_path));
 
             // Start timer-based processing
             global_orchestrator->startTimerBasedProcessing(processing_interval_seconds, max_threads);
@@ -682,7 +672,6 @@ private:
             {
                 global_orchestrator->stopTimerBasedProcessing();
                 global_orchestrator.reset();
-                global_db_manager.reset();
                 Logger::info("Orchestration stopped and global instances cleared");
             }
             else

@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
         std::cout << "\n--- Sample Results from Database ---" << std::endl;
 
         // Create a temporary database manager to query results
-        DatabaseManager db_manager(db_path);
+        DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
         auto all_results = db_manager.getAllProcessingResults();
 
         if (all_results.empty())
