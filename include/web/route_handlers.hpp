@@ -433,144 +433,155 @@ private:
             bool recursive = body.value("recursive", true);
             std::string db_path = body.value("database_path", "scan_results.db");
 
-            Logger::info("Starting directory scan: " + directory);
+            Logger::info("Starting directory scan in background: " + directory);
 
-            // Set scanning in progress flag if orchestrator is running
-            {
-                std::lock_guard<std::mutex> lock(orchestrator_mutex);
-                if (global_orchestrator)
-                {
-                    global_orchestrator->setScanningInProgress(true);
-                    Logger::info("Set scanning in progress flag - processing will wait");
-                }
-            }
+            // Return immediately with success response
+            json response = {
+                {"message", "Directory scan started in background"},
+                {"directory", directory},
+                {"recursive", recursive},
+                {"database_path", db_path},
+                {"status", "scanning"}};
+            res.set_content(response.dump(), "application/json");
 
-            // Use the existing FileUtils to scan directory recursively
-            auto observable = FileUtils::listFilesAsObservable(directory, recursive);
-
-            // Create DatabaseManager for storing scan results
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
-
-            size_t files_scanned = 0;
-            std::string last_error;
-            std::vector<std::string> files_to_process;
-
-            observable.subscribe(
-                [&](const std::string &file_path)
-                {
-                    try
-                    {
-                        // Only insert supported files
-                        if (!MediaProcessor::isSupportedFile(file_path))
+            // Start scanning in background thread
+            std::thread([directory, recursive, db_path]()
                         {
-                            Logger::debug("Skipping unsupported file during scan: " + file_path);
-                            return;
-                        }
+                try {
+                    Logger::info("Background scan started for directory: " + directory);
 
-                        // Store file in database without triggering processing
-                        auto db_result = db_manager.storeScannedFile(file_path);
-                        if (db_result.success)
-                        {
-                            files_scanned++;
-                            Logger::debug("Scanned file: " + file_path);
-                        }
-                        else
-                        {
-                            Logger::warn("Failed to store scanned file: " + file_path + ". DB error: " + db_result.error_message);
-                        }
-                    }
-                    catch (const std::exception &e)
-                    {
-                        last_error = e.what();
-                        Logger::error("Error processing scanned file: " + std::string(e.what()));
-                    }
-                },
-                [&](const std::exception &e)
-                {
-                    last_error = e.what();
-                    Logger::error("Scan error: " + std::string(e.what()));
-                    res.status = 500;
-                    res.set_content(json{{"error", "Directory scan failed: " + std::string(e.what())}}.dump(), "application/json");
-                },
-                [&]()
-                {
-                    Logger::info("Directory scan completed successfully");
-
-                    // Clear scanning in progress flag if orchestrator is running
+                    // Set scanning in progress flag if orchestrator is running
                     {
                         std::lock_guard<std::mutex> lock(orchestrator_mutex);
                         if (global_orchestrator)
                         {
-                            global_orchestrator->setScanningInProgress(false);
-                            Logger::info("Cleared scanning in progress flag - processing can proceed");
+                            global_orchestrator->setScanningInProgress(true);
+                            Logger::info("Set scanning in progress flag - processing will wait");
                         }
-                        else
+                    }
+
+                    // Use the existing FileUtils to scan directory recursively
+                    auto observable = FileUtils::listFilesAsObservable(directory, recursive);
+
+                    // Create DatabaseManager for storing scan results
+                    DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+
+                    size_t files_scanned = 0;
+                    std::string last_error;
+
+                    observable.subscribe(
+                        [&](const std::string &file_path)
                         {
-                            // No orchestration running, trigger processing directly after scan
-                            Logger::info("No orchestration running, triggering processing directly after scan");
-
-                            // Only start background processing if not already running
-                            if (!background_processing_running.exchange(true))
+                            try
                             {
-                                // Use the global orchestrator and db manager for processing
-                                std::thread([]()
-                                            {
-                                    try {
-                                        Logger::info("Starting post-scan processing of scanned files using global orchestrator");
-                                        if (global_orchestrator) {
-                                            auto observable = global_orchestrator->processAllScannedFiles(4);
-                                            auto processed_count = std::make_shared<size_t>(0);
-                                            auto successful_count = std::make_shared<size_t>(0);
-                                            auto failed_count = std::make_shared<size_t>(0);
-                                            observable.subscribe(
-                                                [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
-                                                {
-                                                    (*processed_count)++;
-                                                    if (event.success)
-                                                        (*successful_count)++;
-                                                    else
-                                                        (*failed_count)++;
-                                                },
-                                                [](const std::exception &e)
-                                                {
-                                                    Logger::error("Processing error: " + std::string(e.what()));
-                                                },
-                                                [processed_count, successful_count, failed_count]()
-                                                {
-                                                    Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
-                                                                 ", Successful: " + std::to_string(*successful_count) +
-                                                                 ", Failed: " + std::to_string(*failed_count));
-                                                    background_processing_running.store(false);
-                                                });
-                                        } else {
-                                            Logger::error("Global orchestrator not initialized. Cannot process scanned files.");
-                                            background_processing_running.store(false);
-                                        }
-                                    } catch (const std::exception &e) {
-                                        Logger::error("Exception in scan-triggered processing: " + std::string(e.what()));
-                                        background_processing_running.store(false);
-                                    } })
-                                    .detach();
+                                // Only insert supported files
+                                if (!MediaProcessor::isSupportedFile(file_path))
+                                {
+                                    Logger::debug("Skipping unsupported file during scan: " + file_path);
+                                    return;
+                                }
+
+                                // Store file in database without triggering processing
+                                auto db_result = db_manager.storeScannedFile(file_path);
+                                if (db_result.success)
+                                {
+                                    files_scanned++;
+                                    Logger::debug("Scanned file: " + file_path);
+                                }
+                                else
+                                {
+                                    Logger::warn("Failed to store scanned file: " + file_path + ". DB error: " + db_result.error_message);
+                                }
                             }
-                        }
-                    }
+                            catch (const std::exception &e)
+                            {
+                                last_error = e.what();
+                                Logger::error("Error processing scanned file: " + std::string(e.what()));
+                            }
+                        },
+                        [&](const std::exception &e)
+                        {
+                            last_error = e.what();
+                            Logger::error("Background scan error: " + std::string(e.what()));
+                        },
+                        [&]()
+                        {
+                            Logger::info("Background directory scan completed successfully. Files scanned: " + std::to_string(files_scanned));
 
-                    json response = {
-                        {"message", "Directory scan completed"},
-                        {"files_scanned", files_scanned},
-                        {"database_path", db_path}};
+                            // Clear scanning in progress flag if orchestrator is running
+                            {
+                                std::lock_guard<std::mutex> lock(orchestrator_mutex);
+                                if (global_orchestrator)
+                                {
+                                    global_orchestrator->setScanningInProgress(false);
+                                    Logger::info("Cleared scanning in progress flag - processing can proceed");
+                                }
+                                else
+                                {
+                                    // No orchestration running, trigger processing directly after scan
+                                    Logger::info("No orchestration running, triggering processing directly after scan");
 
-                    if (!last_error.empty())
-                    {
-                        response["warning"] = "Some files had errors: " + last_error;
-                    }
+                                    // Only start background processing if not already running
+                                    if (!background_processing_running.exchange(true))
+                                    {
+                                        // Use the global orchestrator and db manager for processing
+                                        std::thread([]()
+                                                    {
+                                            try {
+                                                Logger::info("Starting post-scan processing of scanned files using global orchestrator");
+                                                if (global_orchestrator) {
+                                                    auto observable = global_orchestrator->processAllScannedFiles(4);
+                                                    auto processed_count = std::make_shared<size_t>(0);
+                                                    auto successful_count = std::make_shared<size_t>(0);
+                                                    auto failed_count = std::make_shared<size_t>(0);
+                                                    observable.subscribe(
+                                                        [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
+                                                        {
+                                                            (*processed_count)++;
+                                                            if (event.success)
+                                                                (*successful_count)++;
+                                                            else
+                                                                (*failed_count)++;
+                                                        },
+                                                        [](const std::exception &e)
+                                                        {
+                                                            Logger::error("Processing error: " + std::string(e.what()));
+                                                        },
+                                                        [processed_count, successful_count, failed_count]()
+                                                        {
+                                                            Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
+                                                                         ", Successful: " + std::to_string(*successful_count) +
+                                                                         ", Failed: " + std::to_string(*failed_count));
+                                                            background_processing_running.store(false);
+                                                        });
+                                                } else {
+                                                    Logger::error("Global orchestrator not initialized. Cannot process scanned files.");
+                                                    background_processing_running.store(false);
+                                                }
+                                            } catch (const std::exception &e) {
+                                                Logger::error("Exception in scan-triggered processing: " + std::string(e.what()));
+                                                background_processing_running.store(false);
+                                            } })
+                                            .detach();
+                                    }
+                                }
+                            }
 
-                    res.set_content(response.dump(), "application/json");
-                });
+                            if (!last_error.empty())
+                            {
+                                Logger::warn("Background scan completed with warnings: " + last_error);
+                            }
+                        });
+                }
+                catch (const std::exception &e)
+                {
+                    Logger::error("Background scan thread error: " + std::string(e.what()));
+                } })
+                .detach();
         }
         catch (const std::exception &e)
         {
-            Logger::error("Scan error: " + std::string(e.what()));
+            Logger::error("Scan request error: " + std::string(e.what()));
             res.status = 400;
             res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
         }
