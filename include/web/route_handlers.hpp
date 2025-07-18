@@ -514,56 +514,7 @@ private:
                                 if (global_orchestrator)
                                 {
                                     global_orchestrator->setScanningInProgress(false);
-                                    Logger::info("Cleared scanning in progress flag - processing can proceed");
-                                }
-                                else
-                                {
-                                    // No orchestration running, trigger processing directly after scan
-                                    Logger::info("No orchestration running, triggering processing directly after scan");
-
-                                    // Only start background processing if not already running
-                                    if (!background_processing_running.exchange(true))
-                                    {
-                                        // Use the global orchestrator and db manager for processing
-                                        std::thread([]()
-                                                    {
-                                            try {
-                                                Logger::info("Starting post-scan processing of scanned files using global orchestrator");
-                                                if (global_orchestrator) {
-                                                    auto observable = global_orchestrator->processAllScannedFiles(4);
-                                                    auto processed_count = std::make_shared<size_t>(0);
-                                                    auto successful_count = std::make_shared<size_t>(0);
-                                                    auto failed_count = std::make_shared<size_t>(0);
-                                                    observable.subscribe(
-                                                        [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
-                                                        {
-                                                            (*processed_count)++;
-                                                            if (event.success)
-                                                                (*successful_count)++;
-                                                            else
-                                                                (*failed_count)++;
-                                                        },
-                                                        [](const std::exception &e)
-                                                        {
-                                                            Logger::error("Processing error: " + std::string(e.what()));
-                                                        },
-                                                        [processed_count, successful_count, failed_count]()
-                                                        {
-                                                            Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
-                                                                         ", Successful: " + std::to_string(*successful_count) +
-                                                                         ", Failed: " + std::to_string(*failed_count));
-                                                            background_processing_running.store(false);
-                                                        });
-                                                } else {
-                                                    Logger::error("Global orchestrator not initialized. Cannot process scanned files.");
-                                                    background_processing_running.store(false);
-                                                }
-                                            } catch (const std::exception &e) {
-                                                Logger::error("Exception in scan-triggered processing: " + std::string(e.what()));
-                                                background_processing_running.store(false);
-                                            } })
-                                            .detach();
-                                    }
+                                    Logger::info("Cleared scanning in progress flag - processing continues independently");
                                 }
                             }
 

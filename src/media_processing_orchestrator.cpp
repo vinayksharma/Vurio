@@ -246,63 +246,11 @@ void MediaProcessingOrchestrator::setScanningInProgress(bool in_progress)
     scanning_in_progress_.store(in_progress);
     if (in_progress)
     {
-        Logger::info("Scanning in progress - timer-based processing will be ignored until completion");
+        Logger::info("Scanning in progress - processing will continue to run concurrently");
     }
     else
     {
-        Logger::info("Scanning completed - triggering processing immediately");
-        triggerProcessingOnScanComplete();
-    }
-}
-
-void MediaProcessingOrchestrator::triggerProcessingOnScanComplete()
-{
-    if (!timer_processing_running_.load())
-    {
-        Logger::debug("Timer-based processing not running, skipping immediate trigger");
-        return;
-    }
-
-    Logger::info("Triggering processing immediately after scan completion");
-
-    try
-    {
-        // Process files that need processing
-        auto observable = processAllScannedFiles(4); // Use default max_threads
-
-        // Use shared_ptr for thread-safe access to counters
-        auto processed_count = std::make_shared<size_t>(0);
-        auto successful_count = std::make_shared<size_t>(0);
-        auto failed_count = std::make_shared<size_t>(0);
-
-        observable.subscribe(
-            [processed_count, successful_count, failed_count](const FileProcessingEvent &event)
-            {
-                (*processed_count)++;
-                if (event.success)
-                {
-                    (*successful_count)++;
-                }
-                else
-                {
-                    (*failed_count)++;
-                }
-                Logger::debug("Processed file: " + event.file_path + " (success: " + std::to_string(event.success) + ")");
-            },
-            [](const std::exception &e)
-            {
-                Logger::error("Processing error: " + std::string(e.what()));
-            },
-            [processed_count, successful_count, failed_count]()
-            {
-                Logger::info("Scan-triggered processing completed. Processed: " + std::to_string(*processed_count) +
-                             ", Successful: " + std::to_string(*successful_count) +
-                             ", Failed: " + std::to_string(*failed_count));
-            });
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("Exception in scan-triggered processing: " + std::string(e.what()));
+        Logger::info("Scanning completed - processing continues to run independently");
     }
 }
 
@@ -317,29 +265,6 @@ void MediaProcessingOrchestrator::processingThreadFunction(int processing_interv
 
     while (timer_processing_running_.load() && !cancelled_.load())
     {
-        // Skip processing if scanning is in progress
-        if (scanning_in_progress_.load())
-        {
-            Logger::debug("Scanning in progress, skipping scheduled processing run");
-
-            // Wait for scanning to complete or timer to stop
-            std::unique_lock<std::mutex> lock(processing_mutex_);
-            processing_cv_.wait_for(lock, std::chrono::seconds(processing_interval_seconds), [this]
-                                    { return !scanning_in_progress_.load() || !timer_processing_running_.load() || cancelled_.load(); });
-
-            if (!timer_processing_running_.load() || cancelled_.load())
-            {
-                break;
-            }
-
-            // If scanning completed, skip this timer cycle since processing was already triggered
-            if (!scanning_in_progress_.load())
-            {
-                Logger::debug("Scanning completed, skipping timer cycle since processing was already triggered");
-                continue;
-            }
-        }
-
         // Check if we should stop
         if (!timer_processing_running_.load() || cancelled_.load())
         {

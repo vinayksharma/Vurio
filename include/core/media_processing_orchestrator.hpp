@@ -79,18 +79,10 @@ public:
     /**
      * @brief Set scanning in progress flag
      *
-     * This method should be called when scanning starts to prevent processing from running
-     * until scanning is complete. When scanning completes, processing will be triggered immediately.
+     * This method should be called when scanning starts to track scanning status.
+     * Scanning and processing can now run concurrently.
      */
     void setScanningInProgress(bool in_progress);
-
-    /**
-     * @brief Trigger processing immediately (called when scanning completes)
-     *
-     * This method starts processing immediately without waiting for the timer interval.
-     * It should be called when scanning completes to process newly scanned files.
-     */
-    void triggerProcessingOnScanComplete();
 
     /**
      * @brief Check if timer-based processing is currently running

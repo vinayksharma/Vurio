@@ -790,8 +790,11 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     std::string error_msg;
     bool success = true;
 
+    // Compute file hash BEFORE enqueueing to avoid blocking the database queue
+    std::string current_hash = FileUtils::computeFileHash(captured_file_path);
+
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_callback, &error_msg, &success](DatabaseManager &dbMan)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_callback, current_hash, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         if (!dbMan.db_)
         {
@@ -819,9 +822,8 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
             // File exists, check if hash exists
             if (sqlite3_column_type(select_stmt, 0) != SQLITE_NULL)
             {
-                // Hash exists, compare with current file hash
+                // Hash exists, compare with current file hash (already computed)
                 std::string existing_hash = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
-                std::string current_hash = FileUtils::computeFileHash(captured_file_path);
 
                 if (existing_hash == current_hash)
                 {
