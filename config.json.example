@@ -1,7 +1,29 @@
+// Configuration for Dedup Server
+// 
+// dedup_mode: enum ["FAST", "BALANCED", "QUALITY"]
+//   - FAST: Fast processing with basic deduplication
+//   - BALANCED: Balanced processing with moderate accuracy  
+//   - QUALITY: High-quality processing with maximum accuracy
+//
+// log_level: enum ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+//   - TRACE: Most verbose logging
+//   - DEBUG: Debug information
+//   - INFO: General information (default)
+//   - WARN: Warning messages
+//   - ERROR: Error messages only
+//
+// server_port: integer (1-65535)
+//   - HTTP server port number
+//
+// server_host: string
+//   - HTTP server host address
+//
+// auth_secret: string
+//   - JWT authentication secret key
 {
+    "auth_secret": "your-secret-key-here",
     "dedup_mode": "BALANCED",
     "log_level": "INFO",
-    "server_port": 8080,
-    "auth_secret": "your-secret-key-here",
-    "server_host": "localhost"
+    "server_host": "localhost",
+    "server_port": 8080
 } 

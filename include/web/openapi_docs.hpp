@@ -215,6 +215,9 @@ public:
                   "server_port": {
                     "type": "integer"
                   },
+                  "server_host": {
+                    "type": "string"
+                  },
                   "auth_secret": {
                     "type": "string"
                   }

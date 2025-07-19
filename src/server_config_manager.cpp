@@ -55,11 +55,12 @@ void ServerConfigManager::initializeDefaultConfig()
     std::lock_guard<std::mutex> lock(config_mutex_);
 
     config_ = {
-        {"dedup_mode", "BALANCED"},
-        {"log_level", "INFO"},
-        {"server_port", 8080},
-        {"auth_secret", "your-secret-key-here"},
-        {"server_host", "localhost"}};
+        {"dedup_mode", "BALANCED"},              // enum: ["FAST", "BALANCED", "QUALITY"]
+        {"log_level", "INFO"},                   // enum: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+        {"server_port", 8080},                   // integer: 1-65535
+        {"auth_secret", "your-secret-key-here"}, // string: JWT authentication secret
+        {"server_host", "localhost"}             // string: HTTP server host address
+    };
 }
 
 DedupMode ServerConfigManager::getDedupMode() const
@@ -384,7 +385,7 @@ bool ServerConfigManager::validateConfig(const json &config) const
 {
     // Basic validation - check for required fields
     std::vector<std::string> required_fields = {
-        "dedup_mode", "log_level", "server_port", "auth_secret"};
+        "dedup_mode", "log_level", "server_port", "server_host", "auth_secret"};
 
     for (const auto &field : required_fields)
     {
@@ -406,6 +407,14 @@ bool ServerConfigManager::validateConfig(const json &config) const
     if (mode != "FAST" && mode != "BALANCED" && mode != "QUALITY")
     {
         Logger::error("Invalid dedup mode: " + mode);
+        return false;
+    }
+
+    std::string log_level = config["log_level"];
+    if (log_level != "TRACE" && log_level != "DEBUG" && log_level != "INFO" &&
+        log_level != "WARN" && log_level != "ERROR")
+    {
+        Logger::error("Invalid log level: " + log_level);
         return false;
     }
 

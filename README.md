@@ -151,13 +151,7 @@ The server will automatically create a `config.json` file with default values if
 }
 ```
 
-### Configuration Fields
-
-- **`dedup_mode`**: Processing mode (`FAST`, `BALANCED`, `QUALITY`)
-- **`log_level`**: Logging level (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`)
-- **`server_port`**: HTTP server port (1-65535)
-- **`auth_secret`**: JWT secret key for authentication
-- **`server_host`**: Server hostname
+**📖 For detailed configuration documentation including enum values, see [CONFIGURATION.md](CONFIGURATION.md)**
 
 ### Runtime Configuration Management
 
