@@ -1,15 +1,18 @@
-#include "core/status.hpp"
-#include "auth/auth.hpp"
-#include "core/server_config.hpp"
-#include "core/server_config_manager.hpp"
-#include "auth/auth_middleware.hpp"
-#include "web/route_handlers.hpp"
-#include "web/openapi_docs.hpp"
+#include "core/file_processor.hpp"
+#include "core/media_processing_orchestrator.hpp"
 #include "core/thread_pool_manager.hpp"
+#include "web/route_handlers.hpp"
+#include "auth/auth.hpp"
+#include "logging/logger.hpp"
+#include "database/database_manager.hpp"
+#include "core/server_config_manager.hpp"
+#include "core/server_config.hpp"
+#include "web/openapi_docs.hpp"
+#include "core/status.hpp"
 #include <httplib.h>
 #include <iostream>
-#include <jwt-cpp/jwt.h>
-#include "core/database_manager.hpp"
+#include <memory>
+#include <signal.h>
 
 int main()
 {

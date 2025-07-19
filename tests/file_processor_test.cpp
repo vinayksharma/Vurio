@@ -1,9 +1,9 @@
-#include <gtest/gtest.h>
 #include "core/file_processor.hpp"
+#include "database/database_manager.hpp" // Added for DatabaseManager reset
 #include "core/server_config_manager.hpp"
+#include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
-#include "core/database_manager.hpp" // Added for DatabaseManager reset
 
 class FileProcessorTest : public ::testing::Test
 {

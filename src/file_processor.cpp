@@ -1,4 +1,7 @@
 #include "core/file_processor.hpp"
+#include "database/database_manager.hpp"
+#include "core/media_processor.hpp"
+#include "core/server_config_manager.hpp"
 #include "logging/logger.hpp"
 #include <iostream>
 

@@ -1,5 +1,7 @@
-#include "core/database_access_queue.hpp"
+#include "database/database_access_queue.hpp"
+#include "database/database_manager.hpp"
 #include "logging/logger.hpp"
+#include <chrono>
 
 DatabaseAccessQueue::DatabaseAccessQueue(DatabaseManager &dbMan)
     : db_manager_(dbMan), next_operation_id_(0), pending_write_operations_(0)

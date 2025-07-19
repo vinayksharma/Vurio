@@ -1,4 +1,7 @@
 #include "core/media_processing_orchestrator.hpp"
+#include "database/database_manager.hpp"
+#include "core/media_processor.hpp"
+#include "core/file_utils.hpp"
 #include "logging/logger.hpp"
 #include <future>
 #include <mutex>

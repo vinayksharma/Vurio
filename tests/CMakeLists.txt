@@ -8,10 +8,10 @@ add_executable(dedup_tests
     ../src/auth.cpp
     ../src/file_utils.cpp
     ../src/media_processor.cpp
-    ../src/database_manager.cpp
+    ../src/database/database_manager.cpp
     ../src/file_processor.cpp
     ../src/server_config_manager.cpp
-    ../src/database_access_queue.cpp
+    ../src/database/database_access_queue.cpp
 )
 
 target_include_directories(dedup_tests PRIVATE
@@ -33,12 +33,12 @@ gtest_discover_tests(dedup_tests)
 
 add_executable(media_processing_orchestrator_test
     media_processing_orchestrator_test.cpp
-    ../src/database_manager.cpp
+    ../src/database/database_manager.cpp
     ../src/media_processing_orchestrator.cpp
     ../src/server_config_manager.cpp
     ../src/media_processor.cpp
     ../src/file_utils.cpp
-    ../src/database_access_queue.cpp
+    ../src/database/database_access_queue.cpp
 )
 target_link_libraries(media_processing_orchestrator_test
     PRIVATE

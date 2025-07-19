@@ -6,7 +6,7 @@
 #include <memory>
 #include <functional>
 #include <string>
-#include "database_manager.hpp"
+#include "database/database_manager.hpp"
 #include "media_processing_orchestrator.hpp"
 #include "logging/logger.hpp"
 

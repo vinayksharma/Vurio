@@ -64,11 +64,11 @@ set(SOURCES
     src/file_utils.cpp
     src/server_config_manager.cpp
     src/media_processor.cpp
-    src/database_manager.cpp
+    src/database/database_manager.cpp
     src/file_processor.cpp
     src/media_processing_orchestrator.cpp
     src/thread_pool_manager.cpp
-    src/database_access_queue.cpp
+    src/database/database_access_queue.cpp
 )
 
 # Add header files
@@ -80,8 +80,8 @@ set(HEADERS
     include/core/dedup_modes.hpp
     include/core/server_config_manager.hpp
     include/core/media_processor.hpp
-    include/core/database_manager.hpp
-    include/core/database_access_queue.hpp
+    include/database/database_manager.hpp
+    include/database/database_access_queue.hpp
     include/core/file_processor.hpp
     include/core/media_processing_orchestrator.hpp
     include/core/thread_pool_manager.hpp
@@ -164,8 +164,8 @@ target_link_libraries(media_processor_example
 # Add FileProcessor example
 add_executable(file_processor_example examples/file_processor_example.cpp 
                src/media_processor.cpp src/server_config_manager.cpp 
-               src/database_manager.cpp src/file_processor.cpp src/file_utils.cpp
-               src/database_access_queue.cpp)
+               src/database/database_manager.cpp src/file_processor.cpp src/file_utils.cpp
+               src/database/database_access_queue.cpp)
 target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(file_processor_example
     PRIVATE

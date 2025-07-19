@@ -1,6 +1,8 @@
-#include <gtest/gtest.h>
 #include "core/media_processing_orchestrator.hpp"
-#include "core/database_manager.hpp"
+#include "database/database_manager.hpp"
+#include "core/media_processor.hpp"
+#include "core/file_utils.hpp"
+#include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
 #include <thread>

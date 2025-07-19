@@ -1,16 +1,17 @@
 #pragma once
 
+#include "database/database_manager.hpp"
+#include "media_processor.hpp"
 #include <string>
 #include <vector>
 #include <functional>
+#include <memory>
 #include <chrono>
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include "file_utils.hpp"
-#include "database_manager.hpp"
-#include "media_processor.hpp"
 #include "server_config_manager.hpp"
 
 struct FileProcessingEvent

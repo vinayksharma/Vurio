@@ -1,10 +1,11 @@
 #pragma once
 
+#include "database/database_manager.hpp"
 #include <string>
-#include <memory>
+#include <vector>
+#include <functional>
 #include "file_utils.hpp"
 #include "media_processor.hpp"
-#include "database_manager.hpp"
 #include "server_config_manager.hpp"
 
 /**

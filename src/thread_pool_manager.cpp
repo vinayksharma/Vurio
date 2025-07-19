@@ -1,5 +1,10 @@
 #include "core/thread_pool_manager.hpp"
+#include "database/database_manager.hpp"
 #include "core/media_processor.hpp"
+#include "core/file_utils.hpp"
+#include "logging/logger.hpp"
+#include <algorithm>
+#include <chrono>
 #include "core/server_config_manager.hpp"
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>

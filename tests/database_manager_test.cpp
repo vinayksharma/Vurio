@@ -1,5 +1,5 @@
+#include "database/database_manager.hpp"
 #include <gtest/gtest.h>
-#include "core/database_manager.hpp"
 #include "core/file_utils.hpp"
 #include <filesystem>
 #include <fstream>

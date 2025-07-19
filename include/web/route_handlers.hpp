@@ -1,18 +1,21 @@
 #pragma once
 
+#include "database/database_manager.hpp"
+#include "core/media_processing_orchestrator.hpp"
+#include "core/server_config_manager.hpp"
+#include "logging/logger.hpp"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <string>
+#include <memory>
 #include <thread>
 #include "core/status.hpp"
 #include "core/file_utils.hpp"
-#include "core/server_config_manager.hpp"
 #include "core/file_processor.hpp"
-#include "core/database_manager.hpp"
-#include "core/media_processing_orchestrator.hpp"
 #include "core/thread_pool_manager.hpp"
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
-#include "logging/logger.hpp"
+#include "core/media_processor.hpp"
 
 using json = nlohmann::json;
 

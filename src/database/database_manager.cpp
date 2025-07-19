@@ -1,5 +1,5 @@
-#include "core/database_manager.hpp"
-#include "core/database_access_queue.hpp"
+#include "database/database_manager.hpp"
+#include "database/database_access_queue.hpp"
 #include "logging/logger.hpp"
 #include "core/file_utils.hpp"
 #include <nlohmann/json.hpp>

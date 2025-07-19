@@ -1,11 +1,13 @@
 #pragma once
 
+#include "database/database_access_queue.hpp"
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
-#include <memory>
+#include <functional>
 #include <sqlite3.h>
 #include "media_processor.hpp"
-#include "database_access_queue.hpp"
 
 // Forward declaration
 class DatabaseAccessQueue;
