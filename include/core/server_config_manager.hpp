@@ -58,6 +58,7 @@ public:
     DedupMode getDedupMode() const;
     std::string getLogLevel() const;
     int getServerPort() const;
+    std::string getServerHost() const;
     std::string getAuthSecret() const;
     json getConfig() const;
 

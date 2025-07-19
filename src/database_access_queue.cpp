@@ -46,11 +46,17 @@ std::future<std::any> DatabaseAccessQueue::enqueueRead(ReadOperation operation)
     return future;
 }
 
-void DatabaseAccessQueue::wait_for_completion()
+void DatabaseAccessQueue::wait_for_completion(std::chrono::milliseconds timeout)
 {
     std::unique_lock<std::mutex> lock(queue_mutex_);
-    queue_cv_.wait(lock, [this]
-                   { return (operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_; });
+    auto result = queue_cv_.wait_for(lock, timeout, [this]
+                                     { return (operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_; });
+
+    if (!result)
+    {
+        Logger::warn("Database access queue wait_for_completion timed out after " +
+                     std::to_string(timeout.count()) + "ms");
+    }
 }
 
 void DatabaseAccessQueue::stop()

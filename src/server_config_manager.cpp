@@ -5,7 +5,43 @@
 
 ServerConfigManager::ServerConfigManager()
 {
-    initializeDefaultConfig();
+    Logger::info("ServerConfigManager constructor called");
+
+    // Try to load configuration from file first
+    const std::string config_file = "config.json";
+
+    // Check if config file exists
+    std::ifstream file_check(config_file);
+    if (!file_check.good())
+    {
+        Logger::info("Configuration file not found, creating default config.json");
+        initializeDefaultConfig();
+        if (saveConfig(config_file))
+        {
+            Logger::info("Default configuration saved to: " + config_file);
+        }
+        else
+        {
+            Logger::error("Failed to save default configuration to: " + config_file);
+        }
+    }
+    else
+    {
+        file_check.close();
+    }
+
+    // Now try to load the configuration (either existing or newly created)
+    if (loadConfig(config_file))
+    {
+        Logger::info("Configuration loaded from file: " + config_file);
+    }
+    else
+    {
+        Logger::error("Failed to load configuration from file, using hardcoded defaults");
+        initializeDefaultConfig();
+    }
+
+    Logger::info("ServerConfigManager initialization completed");
 }
 
 ServerConfigManager &ServerConfigManager::getInstance()
@@ -23,10 +59,7 @@ void ServerConfigManager::initializeDefaultConfig()
         {"log_level", "INFO"},
         {"server_port", 8080},
         {"auth_secret", "your-secret-key-here"},
-        {"server_host", "localhost"},
-        {"max_file_size", 1000000000}, // 1GB
-        {"scan_timeout", 300}          // 5 minutes
-    };
+        {"server_host", "localhost"}};
 }
 
 DedupMode ServerConfigManager::getDedupMode() const
@@ -46,6 +79,12 @@ int ServerConfigManager::getServerPort() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
     return config_["server_port"];
+}
+
+std::string ServerConfigManager::getServerHost() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    return config_["server_host"];
 }
 
 std::string ServerConfigManager::getAuthSecret() const
@@ -288,7 +327,7 @@ bool ServerConfigManager::validateConfig(const json &config) const
 {
     // Basic validation - check for required fields
     std::vector<std::string> required_fields = {
-        "dedup_mode", "log_level", "server_port", "auth_secret", "max_file_size", "scan_timeout"};
+        "dedup_mode", "log_level", "server_port", "auth_secret"};
 
     for (const auto &field : required_fields)
     {
@@ -310,18 +349,6 @@ bool ServerConfigManager::validateConfig(const json &config) const
     if (mode != "FAST" && mode != "BALANCED" && mode != "QUALITY")
     {
         Logger::error("Invalid dedup mode: " + mode);
-        return false;
-    }
-
-    if (config["max_file_size"].get<int>() <= 0)
-    {
-        Logger::error("Invalid max_file_size: " + std::to_string(config["max_file_size"].get<int>()));
-        return false;
-    }
-
-    if (config["scan_timeout"].get<int>() <= 0)
-    {
-        Logger::error("Invalid scan_timeout: " + std::to_string(config["scan_timeout"].get<int>()));
         return false;
     }
 

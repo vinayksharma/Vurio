@@ -38,11 +38,11 @@ int main()
         // Setup routes
         RouteHandlers::setupRoutes(svr, status, auth);
 
-        std::cout << "Server starting on " << ServerConfig::getServerUrl() << std::endl;
-        std::cout << "API documentation available at: " << ServerConfig::getServerUrl() << ServerConfig::API_DOCS_PATH << std::endl;
+        std::cout << "Server starting on http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << std::endl;
+        std::cout << "API documentation available at: http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << ServerConfig::API_DOCS_PATH << std::endl;
 
         // Start the server
-        svr.listen(ServerConfig::HOST, config_manager.getServerPort());
+        svr.listen(config_manager.getServerHost(), config_manager.getServerPort());
 
         // Cleanup
         DatabaseManager::shutdown();

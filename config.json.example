@@ -1,0 +1,7 @@
+{
+    "dedup_mode": "BALANCED",
+    "log_level": "INFO",
+    "server_port": 8080,
+    "auth_secret": "your-secret-key-here",
+    "server_host": "localhost"
+} 

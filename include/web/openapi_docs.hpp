@@ -184,12 +184,6 @@ public:
                     },
                     "server_host": {
                       "type": "string"
-                    },
-                    "max_file_size": {
-                      "type": "integer"
-                    },
-                    "scan_timeout": {
-                      "type": "integer"
                     }
                   }
                 }
@@ -223,12 +217,6 @@ public:
                   },
                   "auth_secret": {
                     "type": "string"
-                  },
-                  "max_file_size": {
-                    "type": "integer"
-                  },
-                  "scan_timeout": {
-                    "type": "integer"
                   }
                 }
               }

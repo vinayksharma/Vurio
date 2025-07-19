@@ -129,6 +129,45 @@ All configuration endpoints require a valid JWT token in the `Authorization` hea
   - Response: `{"message": "Configuration saved successfully"}`
   - Saves current configuration to specified file
 
+## Configuration
+
+The server supports both file-based and hardcoded configuration. By default, the server will:
+
+1. **Try to load `config.json`** from the current directory
+2. **Create a default `config.json`** if the file doesn't exist
+3. **Fall back to hardcoded defaults** if file creation fails
+
+### Configuration File Format
+
+The server will automatically create a `config.json` file with default values if none exists:
+
+```json
+{
+  "dedup_mode": "BALANCED",
+  "log_level": "INFO",
+  "server_port": 8080,
+  "auth_secret": "your-secret-key-here",
+  "server_host": "localhost"
+}
+```
+
+### Configuration Fields
+
+- **`dedup_mode`**: Processing mode (`FAST`, `BALANCED`, `QUALITY`)
+- **`log_level`**: Logging level (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`)
+- **`server_port`**: HTTP server port (1-65535)
+- **`auth_secret`**: JWT secret key for authentication
+- **`server_host`**: Server hostname
+
+### Runtime Configuration Management
+
+You can also manage configuration at runtime via the API:
+
+- **Get current configuration**: `GET /api/config`
+- **Update configuration**: `PUT /api/config`
+- **Reload from file**: `POST /api/config/reload`
+- **Save to file**: `POST /api/config/save`
+
 ## Example Usage
 
 1. Get a token:
