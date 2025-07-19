@@ -75,6 +75,16 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
             Logger::warn(msg);
             return FileProcessResult(false, msg);
         }
+
+        // First, ensure the file is stored in scanned_files table
+        DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
+        if (!scan_result.success)
+        {
+            std::string msg = "Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message;
+            Logger::error(msg);
+            return FileProcessResult(false, msg);
+        }
+
         auto &config_manager = ServerConfigManager::getInstance();
         DedupMode current_mode = config_manager.getDedupMode();
         ProcessingResult result = MediaProcessor::processFile(file_path, current_mode);
@@ -147,6 +157,15 @@ void FileProcessor::handleFile(const std::string &file_path)
             Logger::debug("Skipping unsupported file: " + file_path);
             return;
         }
+
+        // First, ensure the file is stored in scanned_files table
+        DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
+        if (!scan_result.success)
+        {
+            Logger::error("Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message);
+            return;
+        }
+
         auto &config_manager = ServerConfigManager::getInstance();
         DedupMode current_mode = config_manager.getDedupMode();
         ProcessingResult result = MediaProcessor::processFile(file_path, current_mode);

@@ -345,6 +345,11 @@ TEST_F(DatabaseManagerTest, StoreProcessingResult)
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
+    // First, store the file in scanned_files table
+    auto scan_result = dbMan.storeScannedFile(test_file);
+    EXPECT_TRUE(scan_result.success);
+    dbMan.waitForWrites();
+
     // Create a processing result
     ProcessingResult result;
     result.success = true;
@@ -382,6 +387,11 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
+    // First, store the file in scanned_files table
+    auto scan_result = dbMan.storeScannedFile(test_file);
+    EXPECT_TRUE(scan_result.success);
+    dbMan.waitForWrites();
+
     // Create a processing result with error
     ProcessingResult result;
     result.success = false;
@@ -408,6 +418,12 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
 
     // Create a test file
     std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // First, store the file in scanned_files table
+    auto scan_result = dbMan.storeScannedFile(test_file);
+    EXPECT_TRUE(scan_result.success);
+    dbMan.waitForWrites();
 
     // Store processing results for different modes
     ProcessingResult result1;
@@ -483,6 +499,13 @@ TEST_F(DatabaseManagerTest, GetAllProcessingResults)
     createTestFile(file1);
     createTestFile(file2);
 
+    // First, store the files in scanned_files table
+    auto scan_result1 = dbMan.storeScannedFile(file1);
+    EXPECT_TRUE(scan_result1.success);
+    auto scan_result2 = dbMan.storeScannedFile(file2);
+    EXPECT_TRUE(scan_result2.success);
+    dbMan.waitForWrites();
+
     // Store processing results for different files
     ProcessingResult result1;
     result1.success = true;
@@ -535,16 +558,22 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
     std::string test_file = "test_file.jpg";
     createTestFile(test_file);
 
+    // First, store the file in scanned_files table
+    auto scan_result = dbMan.storeScannedFile(test_file);
+    EXPECT_TRUE(scan_result.success);
+    dbMan.waitForWrites();
+
     // Store a processing result
     ProcessingResult result;
     result.success = true;
     result.artifact.format = "phash";
     result.artifact.hash = "test_hash";
 
-    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    auto db_result = dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    EXPECT_TRUE(db_result.success);
     dbMan.waitForWrites();
 
-    // Verify result exists
+    // Verify the result was stored
     auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 1);
 
@@ -553,7 +582,7 @@ TEST_F(DatabaseManagerTest, ClearAllResults)
     EXPECT_TRUE(clear_result.success);
     dbMan.waitForWrites();
 
-    // Verify results are cleared
+    // Verify all results were cleared
     results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 0);
 

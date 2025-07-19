@@ -86,6 +86,18 @@ DatabaseManager::DatabaseManager(const std::string &db_path)
         sqlite3_exec(dbMan.db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
         sqlite3_exec(dbMan.db_, "PRAGMA cache_size=10000;", nullptr, nullptr, nullptr);
         sqlite3_exec(dbMan.db_, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+        
+        // Enable foreign key support
+        rc = sqlite3_exec(dbMan.db_, "PRAGMA foreign_keys=ON;", nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::warn("Failed to enable foreign keys: " + std::string(sqlite3_errmsg(dbMan.db_)));
+        }
+        else
+        {
+            Logger::info("Foreign key support enabled");
+        }
+        
         return true; });
     bool open_success = false;
     try
@@ -151,10 +163,10 @@ bool DatabaseManager::checkLastOperationSuccess()
 void DatabaseManager::initialize()
 {
     Logger::info("Initializing database tables");
-    if (!createMediaProcessingResultsTable())
-        Logger::error("Failed to create media_processing_results table");
     if (!createScannedFilesTable())
         Logger::error("Failed to create scanned_files table");
+    if (!createMediaProcessingResultsTable())
+        Logger::error("Failed to create media_processing_results table");
     Logger::info("Database tables initialization completed");
 }
 
@@ -173,7 +185,8 @@ bool DatabaseManager::createMediaProcessingResultsTable()
             artifact_metadata TEXT,
             artifact_data BLOB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(file_path, processing_mode)
+            UNIQUE(file_path, processing_mode),
+            FOREIGN KEY (file_path) REFERENCES scanned_files(file_path) ON DELETE CASCADE
         )
     )";
     return executeStatement(sql).success;
