@@ -89,6 +89,7 @@ private:
     // Internal methods
     void publishEvent(const ConfigEvent &event);
     void initializeDefaultConfig();
+    bool saveConfigInternal(const std::string &file_path, const json &config) const;
 
     // Configuration storage
     mutable std::mutex config_mutex_;

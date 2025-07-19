@@ -104,7 +104,20 @@ void ServerConfigManager::setDedupMode(DedupMode mode)
     std::lock_guard<std::mutex> lock(config_mutex_);
 
     std::string old_mode = config_["dedup_mode"];
-    std::string new_mode = DedupModes::getModeName(mode);
+    std::string new_mode;
+
+    switch (mode)
+    {
+    case DedupMode::FAST:
+        new_mode = "FAST";
+        break;
+    case DedupMode::BALANCED:
+        new_mode = "BALANCED";
+        break;
+    case DedupMode::QUALITY:
+        new_mode = "QUALITY";
+        break;
+    }
 
     if (old_mode != new_mode)
     {
@@ -118,9 +131,12 @@ void ServerConfigManager::setDedupMode(DedupMode mode)
             "dedup_mode",
             old_value,
             new_value,
-            "Deduplication mode changed from " + old_mode + " to " + new_mode};
+            "Dedup mode changed from " + old_mode + " to " + new_mode};
 
         publishEvent(event);
+
+        // Auto-save configuration to file
+        saveConfigInternal("config.json", config_);
     }
 }
 
@@ -145,6 +161,9 @@ void ServerConfigManager::setLogLevel(const std::string &level)
             "Log level changed from " + old_level + " to " + level};
 
         publishEvent(event);
+
+        // Auto-save configuration to file
+        saveConfigInternal("config.json", config_);
     }
 }
 
@@ -169,6 +188,9 @@ void ServerConfigManager::setServerPort(int port)
             "Server port changed from " + std::to_string(old_port) + " to " + std::to_string(port)};
 
         publishEvent(event);
+
+        // Auto-save configuration to file
+        saveConfigInternal("config.json", config_);
     }
 }
 
@@ -193,6 +215,9 @@ void ServerConfigManager::setAuthSecret(const std::string &secret)
             "Auth secret changed"};
 
         publishEvent(event);
+
+        // Auto-save configuration to file
+        saveConfigInternal("config.json", config_);
     }
 }
 
@@ -201,6 +226,7 @@ void ServerConfigManager::updateConfig(const json &new_config)
     std::lock_guard<std::mutex> lock(config_mutex_);
 
     json old_config = config_;
+    bool config_changed = false;
 
     // Merge new config with existing config
     for (auto it = new_config.begin(); it != new_config.end(); ++it)
@@ -213,6 +239,7 @@ void ServerConfigManager::updateConfig(const json &new_config)
             if (old_value != new_value)
             {
                 config_[it.key()] = it.value();
+                config_changed = true;
 
                 ConfigEvent event{
                     ConfigEventType::GENERAL_CONFIG_CHANGED,
@@ -227,7 +254,14 @@ void ServerConfigManager::updateConfig(const json &new_config)
         else
         {
             config_[it.key()] = it.value();
+            config_changed = true;
         }
+    }
+
+    // Auto-save configuration to file if any changes were made
+    if (config_changed)
+    {
+        saveConfigInternal("config.json", config_);
     }
 }
 
@@ -312,6 +346,29 @@ bool ServerConfigManager::saveConfig(const std::string &file_path) const
 
         std::lock_guard<std::mutex> lock(config_mutex_);
         file << config_.dump(4);
+
+        Logger::info("Configuration saved to: " + file_path);
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error saving config: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool ServerConfigManager::saveConfigInternal(const std::string &file_path, const json &config) const
+{
+    try
+    {
+        std::ofstream file(file_path);
+        if (!file.is_open())
+        {
+            Logger::error("Could not open config file for writing: " + file_path);
+            return false;
+        }
+
+        file << config.dump(4);
 
         Logger::info("Configuration saved to: " + file_path);
         return true;
