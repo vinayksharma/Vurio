@@ -172,7 +172,8 @@ bool DatabaseManager::createMediaProcessingResultsTable()
             artifact_confidence REAL,
             artifact_metadata TEXT,
             artifact_data BLOB,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(file_path, processing_mode)
         )
     )";
     return executeStatement(sql).success;
@@ -227,7 +228,7 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         }
         
         const std::string insert_sql = R"(
-            INSERT INTO media_processing_results 
+            INSERT OR REPLACE INTO media_processing_results 
             (file_path, processing_mode, success, error_message, 
              artifact_format, artifact_hash, artifact_confidence, 
              artifact_metadata, artifact_data)
@@ -351,7 +352,7 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         }
         
         const std::string insert_sql = R"(
-            INSERT INTO media_processing_results 
+            INSERT OR REPLACE INTO media_processing_results 
             (file_path, processing_mode, success, error_message, 
              artifact_format, artifact_hash, artifact_confidence, 
              artifact_metadata, artifact_data)
@@ -473,7 +474,7 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
                    artifact_metadata, artifact_data
             FROM media_processing_results 
             WHERE file_path = ?
-            ORDER BY created_at DESC
+            ORDER BY processing_mode
         )";
 
         sqlite3_stmt *stmt;
@@ -570,7 +571,7 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
                    artifact_format, artifact_hash, artifact_confidence, 
                    artifact_metadata, artifact_data
             FROM media_processing_results 
-            ORDER BY created_at DESC
+            ORDER BY file_path, processing_mode
         )";
 
         sqlite3_stmt *stmt;

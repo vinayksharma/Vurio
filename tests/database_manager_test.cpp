@@ -409,7 +409,7 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
     // Create a test file
     std::string test_file = "test_file.jpg";
 
-    // Store multiple processing results
+    // Store processing results for different modes
     ProcessingResult result1;
     result1.success = true;
     result1.artifact.format = "phash";
@@ -420,17 +420,16 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
     result2.artifact.format = "dhash";
     result2.artifact.hash = "hash2";
 
+    // Store results for different modes (should create separate records)
     dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result1);
     dbMan.storeProcessingResult(test_file, DedupMode::FAST, result2);
     dbMan.waitForWrites();
 
     // Get all results for the file
     auto results = dbMan.getProcessingResults(test_file);
-    EXPECT_EQ(results.size(), 2);
+    EXPECT_EQ(results.size(), 2); // Should have one record per mode
 
-    // Results should be ordered by created_at DESC (newest first)
-    // Since both results are inserted quickly, we can't guarantee order
-    // So we'll check that both results exist with the correct data
+    // Check that both results exist with the correct data
     bool found_phash = false, found_dhash = false;
     for (const auto &result : results)
     {
@@ -445,6 +444,30 @@ TEST_F(DatabaseManagerTest, GetProcessingResultsMultiple)
     }
     EXPECT_TRUE(found_phash);
     EXPECT_TRUE(found_dhash);
+
+    // Test that storing the same mode again replaces the previous result
+    ProcessingResult result3;
+    result3.success = true;
+    result3.artifact.format = "phash_updated";
+    result3.artifact.hash = "hash3";
+
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result3);
+    dbMan.waitForWrites();
+
+    // Should still have 2 results (one per mode), but BALANCED should be updated
+    results = dbMan.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 2);
+
+    // Check that the BALANCED mode result was updated
+    bool found_updated_phash = false;
+    for (const auto &result : results)
+    {
+        if (result.artifact.format == "phash_updated" && result.artifact.hash == "hash3")
+        {
+            found_updated_phash = true;
+        }
+    }
+    EXPECT_TRUE(found_updated_phash);
 
     // Clean up test file
     fs::remove(test_file);
