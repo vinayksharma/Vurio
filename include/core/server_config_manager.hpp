@@ -61,6 +61,8 @@ public:
     std::string getServerHost() const;
     std::string getAuthSecret() const;
     json getConfig() const;
+    json getScanSchedules() const;
+    int getDefaultScanInterval() const;
 
     // Configuration setters with event publishing
     void setDedupMode(DedupMode mode);

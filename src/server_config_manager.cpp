@@ -59,7 +59,9 @@ void ServerConfigManager::initializeDefaultConfig()
         {"log_level", "INFO"},                   // enum: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
         {"server_port", 8080},                   // integer: 1-65535
         {"auth_secret", "your-secret-key-here"}, // string: JWT authentication secret
-        {"server_host", "localhost"}             // string: HTTP server host address
+        {"server_host", "localhost"},            // string: HTTP server host address
+        {"scan_schedules", json::array()},       // array: scheduled scan configurations
+        {"default_scan_interval", 3600}          // integer: default scan interval in seconds (1 hour)
     };
 }
 
@@ -98,6 +100,18 @@ json ServerConfigManager::getConfig() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
     return config_;
+}
+
+json ServerConfigManager::getScanSchedules() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    return config_.value("scan_schedules", json::array());
+}
+
+int ServerConfigManager::getDefaultScanInterval() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    return config_.value("default_scan_interval", 3600);
 }
 
 void ServerConfigManager::setDedupMode(DedupMode mode)

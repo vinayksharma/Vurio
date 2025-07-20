@@ -69,6 +69,7 @@ set(SOURCES
     src/media_processing_orchestrator.cpp
     src/thread_pool_manager.cpp
     src/database/database_access_queue.cpp
+    src/scan_scheduler.cpp
 )
 
 # Add header files
@@ -80,6 +81,7 @@ set(HEADERS
     include/core/dedup_modes.hpp
     include/core/server_config_manager.hpp
     include/core/media_processor.hpp
+    include/core/scan_scheduler.hpp
     include/database/database_manager.hpp
     include/database/database_access_queue.hpp
     include/core/file_processor.hpp

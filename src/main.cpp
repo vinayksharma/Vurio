@@ -7,6 +7,7 @@
 #include "database/database_manager.hpp"
 #include "core/server_config_manager.hpp"
 #include "core/server_config.hpp"
+#include "core/scan_scheduler.hpp"
 #include "web/openapi_docs.hpp"
 #include "core/status.hpp"
 #include <httplib.h>
@@ -24,6 +25,10 @@ int main()
 
         // At the start of main, initialize the DatabaseManager singleton
         auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+
+        // Initialize and start the scan scheduler
+        auto &scheduler = ScanScheduler::getInstance();
+        scheduler.start();
 
         Status status;
         Auth auth(config_manager.getAuthSecret()); // Use config from manager
@@ -48,6 +53,7 @@ int main()
         svr.listen(config_manager.getServerHost(), config_manager.getServerPort());
 
         // Cleanup
+        scheduler.stop();
         DatabaseManager::shutdown();
         ThreadPoolManager::shutdown();
         return 0;
