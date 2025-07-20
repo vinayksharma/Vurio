@@ -24,7 +24,8 @@ pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 # QUALITY MODE: ONNX Runtime + CNN Embeddings (ResNet/CLIP) + FFmpeg
 
 # OpenCV - Required for FAST and BALANCED modes
-find_package(OpenCV REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(OpenCV REQUIRED IMPORTED_TARGET opencv4)
 
 # FFmpeg - Required for video processing in all modes
 find_package(PkgConfig REQUIRED)
@@ -112,7 +113,7 @@ target_link_libraries(dedup_server
     # FAST MODE: OpenCV + FFmpeg
     # BALANCED MODE: libvips + OpenCV + FFmpeg
     # QUALITY MODE: ONNX Runtime + FFmpeg
-    ${OpenCV_LIBS}
+    PkgConfig::OpenCV
     PkgConfig::FFMPEG
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
@@ -159,7 +160,7 @@ target_link_libraries(media_processor_example
     pthread
     PkgConfig::SQLITE3
     TBB::tbb
-    ${OpenCV_LIBS}
+    PkgConfig::OpenCV
     PkgConfig::FFMPEG
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
@@ -180,7 +181,7 @@ target_link_libraries(file_processor_example
     pthread
     PkgConfig::SQLITE3
     TBB::tbb
-    ${OpenCV_LIBS}
+    PkgConfig::OpenCV
     PkgConfig::FFMPEG
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>

@@ -27,6 +27,7 @@ target_link_libraries(dedup_tests PRIVATE
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     PkgConfig::SQLITE3
+    PkgConfig::OpenCV
 )
 
 include(GoogleTest)
@@ -51,5 +52,6 @@ target_link_libraries(media_processing_orchestrator_test
     OpenSSL::SSL
     OpenSSL::Crypto
     PkgConfig::SQLITE3
+    PkgConfig::OpenCV
 )
 add_test(NAME MediaProcessingOrchestratorTest COMMAND media_processing_orchestrator_test) 
