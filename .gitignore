@@ -52,10 +52,5 @@ Thumbs.db
 # Logs
 *.log
 
-# Database files
-*.db
-*.db-shm
-*.db-wal
-
 # Configuration files (may contain sensitive data)
 config.json 

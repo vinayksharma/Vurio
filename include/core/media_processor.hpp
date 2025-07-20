@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include "dedup_modes.hpp"
 #include "logging/logger.hpp"
 
@@ -35,6 +36,20 @@ struct ProcessingResult
 };
 
 /**
+ * @brief Processing algorithm information
+ */
+struct ProcessingAlgorithm
+{
+    std::string name;                   // Algorithm name (e.g., "dHash", "pHash", "CNN Embeddings")
+    std::string description;            // Human-readable description
+    std::vector<std::string> libraries; // Required libraries (e.g., ["OpenCV", "FFmpeg"])
+    std::string output_format;          // Output format (e.g., "dhash", "phash", "cnn_embedding")
+    double typical_confidence;          // Typical confidence score
+    int data_size_bytes;                // Typical output data size in bytes
+    std::string metadata_template;      // JSON metadata template
+};
+
+/**
  * @brief Media processor for different quality modes
  *
  * This class handles media file processing based on the selected quality mode.
@@ -50,6 +65,14 @@ public:
      * @return ProcessingResult containing the binary artifact
      */
     static ProcessingResult processFile(const std::string &file_path, DedupMode mode);
+
+    /**
+     * @brief Get processing algorithm information for a media type and mode
+     * @param media_type Media type ("image", "video", "audio")
+     * @param mode Quality mode
+     * @return ProcessingAlgorithm information, or nullptr if not found
+     */
+    static const ProcessingAlgorithm *getProcessingAlgorithm(const std::string &media_type, DedupMode mode);
 
     /**
      * @brief Check if a file is supported for processing
@@ -78,6 +101,9 @@ private:
     static const std::vector<std::string> image_extensions_;
     static const std::vector<std::string> video_extensions_;
     static const std::vector<std::string> audio_extensions_;
+
+    // Static lookup table for processing algorithms
+    static const std::unordered_map<std::string, std::unordered_map<DedupMode, ProcessingAlgorithm>> processing_algorithms_;
 
     /**
      * @brief Process image file using FAST mode (OpenCV dHash)

@@ -380,3 +380,26 @@ std::string MediaProcessor::getFileExtension(const std::string &file_path)
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
     return extension;
 }
+
+// Static lookup table for processing algorithms
+const std::unordered_map<std::string, std::unordered_map<DedupMode, ProcessingAlgorithm>> MediaProcessor::processing_algorithms_ = {
+    {"image", {{DedupMode::FAST, {"dHash", "Fast perceptual hashing using OpenCV dHash algorithm", {"OpenCV"}, "dhash", 0.85, 8, "{\"algorithm\":\"dhash\",\"size\":\"9x8\",\"mode\":\"FAST\",\"libraries\":[\"OpenCV\"]}"}}, {DedupMode::BALANCED, {"pHash", "Balanced perceptual hashing using libvips + OpenCV pHash algorithm", {"libvips", "OpenCV"}, "phash", 0.92, 8, "{\"algorithm\":\"phash\",\"size\":\"32x32\",\"mode\":\"BALANCED\",\"libraries\":[\"libvips\",\"OpenCV\"]}"}}, {DedupMode::QUALITY, {"CNN Embeddings", "High-quality feature extraction using CNN embeddings via ONNX Runtime", {"ONNX Runtime", "OpenCV", "CNN Models"}, "cnn_embedding", 0.98, 512, "{\"algorithm\":\"cnn_embedding\",\"model\":\"ResNet\",\"dimensions\":512,\"mode\":\"QUALITY\",\"libraries\":[\"ONNX Runtime\",\"OpenCV\"]}"}}}},
+    {"video", {{DedupMode::FAST, {"Video dHash", "Fast video fingerprinting using FFmpeg + OpenCV dHash on key frames", {"FFmpeg", "OpenCV"}, "video_dhash", 0.80, 32, "{\"algorithm\":\"video_dhash\",\"keyframes\":5,\"mode\":\"FAST\",\"libraries\":[\"FFmpeg\",\"OpenCV\"]}"}}, {DedupMode::BALANCED, {"Video pHash", "Balanced video fingerprinting using FFmpeg + libvips + OpenCV pHash on key frames", {"FFmpeg", "libvips", "OpenCV"}, "video_phash", 0.88, 32, "{\"algorithm\":\"video_phash\",\"keyframes\":8,\"mode\":\"BALANCED\",\"libraries\":[\"FFmpeg\",\"libvips\",\"OpenCV\"]}"}}, {DedupMode::QUALITY, {"Video CNN Embeddings", "High-quality video feature extraction using FFmpeg + ONNX Runtime + CNN embeddings on key frames", {"FFmpeg", "ONNX Runtime", "CNN Models"}, "video_cnn_embedding", 0.95, 1024, "{\"algorithm\":\"video_cnn_embedding\",\"model\":\"ResNet\",\"keyframes\":12,\"mode\":\"QUALITY\",\"libraries\":[\"FFmpeg\",\"ONNX Runtime\"]}"}}}},
+    {"audio", {{DedupMode::FAST, {"Chromaprint", "Fast audio fingerprinting using Chromaprint/AcoustID algorithm", {"Chromaprint", "FFmpeg"}, "chromaprint", 0.80, 32, "{\"algorithm\":\"chromaprint\",\"mode\":\"FAST\",\"libraries\":[\"Chromaprint\",\"FFmpeg\"]}"}}, {DedupMode::BALANCED, {"MFCCs", "Balanced audio feature extraction using MFCCs via Essentia/LibROSA", {"Essentia", "LibROSA", "FFmpeg"}, "mfcc", 0.90, 64, "{\"algorithm\":\"mfcc\",\"mode\":\"BALANCED\",\"libraries\":[\"Essentia\",\"LibROSA\",\"FFmpeg\"]}"}}, {DedupMode::QUALITY, {"Audio Embeddings", "High-quality audio feature extraction using VGGish/YAMNet/OpenL3 via ONNX Runtime", {"ONNX Runtime", "VGGish/YAMNet/OpenL3", "FFmpeg"}, "audio_embedding", 0.97, 128, "{\"algorithm\":\"audio_embedding\",\"model\":\"VGGish/YAMNet/OpenL3\",\"mode\":\"QUALITY\",\"libraries\":[\"ONNX Runtime\",\"FFmpeg\"]}"}}}}};
+
+const ProcessingAlgorithm *MediaProcessor::getProcessingAlgorithm(const std::string &media_type, DedupMode mode)
+{
+    auto media_it = processing_algorithms_.find(media_type);
+    if (media_it == processing_algorithms_.end())
+    {
+        return nullptr;
+    }
+
+    auto mode_it = media_it->second.find(mode);
+    if (mode_it == media_it->second.end())
+    {
+        return nullptr;
+    }
+
+    return &(mode_it->second);
+}
