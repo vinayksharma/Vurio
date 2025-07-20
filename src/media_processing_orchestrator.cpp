@@ -168,7 +168,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                     event.error_message = "";
                     processed_files.fetch_add(1);
                     successful_files.fetch_add(1);
-                    Logger::info("Stored processing result for: " + files_to_process[i].first);
                     if (onNext) onNext(event);
                 }
                 catch (const std::exception &e) {

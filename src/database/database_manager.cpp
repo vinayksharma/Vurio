@@ -339,7 +339,7 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
             return WriteOperationResult::Failure(error_msg);
         }
 
-        Logger::info("Stored processing result for: " + captured_file_path);
+        Logger::info("Stored processing result (basic) for: " + captured_file_path);
         return WriteOperationResult(); });
 
     waitForWrites();
@@ -463,7 +463,7 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
             return WriteOperationResult::Failure(error_msg);
         }
 
-        Logger::info("Stored processing result for: " + captured_file_path);
+        Logger::info("Stored processing result (with ID) for: " + captured_file_path);
         return WriteOperationResult(); });
 
     waitForWrites();
