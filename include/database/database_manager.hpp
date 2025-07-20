@@ -91,10 +91,11 @@ public:
                                                          std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
 
     /**
-     * @brief Get files that need processing (those without hash)
+     * @brief Get files that need processing for a specific mode
+     * @param current_mode The current dedup mode to check for
      * @return Vector of file path and name pairs that need processing
      */
-    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing();
+    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing(DedupMode current_mode);
 
     /**
      * @brief Update the hash for a file after processing

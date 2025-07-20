@@ -59,7 +59,8 @@ TEST_F(DatabaseManagerTest, DatabaseInitialization)
 
     // Database should be accessible
     EXPECT_NO_THROW({
-        auto files = dbMan.getFilesNeedingProcessing();
+        // Test getFilesNeedingProcessing
+        auto files = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
         EXPECT_EQ(files.size(), 0); // Should be empty initially
     });
 }
@@ -77,7 +78,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
     dbMan.waitForWrites();
 
     // Check that file was stored with NULL hash (needs processing)
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 1);
     EXPECT_EQ(files_needing_processing[0].first, test_file);
 
@@ -104,12 +105,27 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
     dbMan.updateFileHash(test_file, actual_hash);
     dbMan.waitForWrites();
 
+    // Create a processing result for the current mode
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash_123";
+    result.artifact.confidence = 0.95;
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    dbMan.waitForWrites();
+
+    // Verify the processing result was stored
+    auto results = dbMan.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 1);
+    EXPECT_TRUE(results[0].success);
+    EXPECT_EQ(results[0].artifact.format, "phash");
+
     // Store the same file again (should not change hash since content is same)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Check that file still has hash (doesn't need processing)
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
+    // Check that file no longer needs processing (has hash and processing result for current mode)
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 0);
 
     // Clean up test file
@@ -140,7 +156,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
     dbMan.waitForWrites();
 
     // Check that file needs processing again (hash cleared)
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 1);
     EXPECT_EQ(files_needing_processing[0].first, test_file);
 
@@ -168,7 +184,7 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     dbMan.waitForWrites();
 
     // All files should need processing initially
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 3);
 
     // Process one file (set hash)
@@ -176,11 +192,26 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     dbMan.updateFileHash(file1, hash1);
     dbMan.waitForWrites();
 
-    // Only 2 files should need processing now
-    files_needing_processing = dbMan.getFilesNeedingProcessing();
+    // Create a processing result for file1
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash_123";
+    result.artifact.confidence = 0.95;
+    dbMan.storeProcessingResult(file1, DedupMode::BALANCED, result);
+    dbMan.waitForWrites();
+
+    // Verify the processing result was stored
+    auto results = dbMan.getProcessingResults(file1);
+    EXPECT_EQ(results.size(), 1);
+    EXPECT_TRUE(results[0].success);
+    EXPECT_EQ(results[0].artifact.format, "phash");
+
+    // Only 2 files should need processing now (file1 has hash and processing result for current mode)
+    files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 2);
 
-    // Check that file1 is not in the list
+    // Check that file1 is not in the list (has hash and processing result for current mode)
     auto it = std::find_if(files_needing_processing.begin(), files_needing_processing.end(),
                            [&file1](const std::pair<std::string, std::string> &p)
                            {
@@ -207,7 +238,7 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
     dbMan.waitForWrites();
 
     // Initially should need processing
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing();
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 1);
 
     // Update hash (simulate processing)
@@ -215,8 +246,23 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
     dbMan.updateFileHash(test_file, processed_hash);
     dbMan.waitForWrites();
 
-    // Should no longer need processing
-    files_needing_processing = dbMan.getFilesNeedingProcessing();
+    // Create a processing result for the current mode
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash_123";
+    result.artifact.confidence = 0.95;
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    dbMan.waitForWrites();
+
+    // Verify the processing result was stored
+    auto results = dbMan.getProcessingResults(test_file);
+    EXPECT_EQ(results.size(), 1);
+    EXPECT_TRUE(results[0].success);
+    EXPECT_EQ(results[0].artifact.format, "phash");
+
+    // Should no longer need processing (has hash and processing result for current mode)
+    files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 0);
 
     // Clean up test file

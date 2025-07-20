@@ -40,17 +40,20 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 if (onError) onError(std::runtime_error("Database not initialized"));
                 return;
             }
-            auto files_to_process = dbMan_.getFilesNeedingProcessing();
-            if (files_to_process.empty()) {
-                Logger::info("No files need processing");
-                if (onComplete) onComplete();
-                return;
-            }
             auto& config_manager = ServerConfigManager::getInstance();
             DedupMode mode = config_manager.getDedupMode();
             if (mode != DedupMode::FAST && mode != DedupMode::BALANCED && mode != DedupMode::QUALITY) {
                 Logger::error("Invalid dedup mode configured");
                 if (onError) onError(std::runtime_error("Invalid dedup mode"));
+                return;
+            }
+            
+            Logger::info("Starting file processing with mode: " + DedupModes::getModeName(mode));
+            
+            auto files_to_process = dbMan_.getFilesNeedingProcessing(mode);
+            if (files_to_process.empty()) {
+                Logger::info("No files need processing");
+                if (onComplete) onComplete();
                 return;
             }
             Logger::info("Starting processing of " + std::to_string(files_to_process.size()) + 

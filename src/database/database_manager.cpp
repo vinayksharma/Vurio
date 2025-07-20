@@ -1094,10 +1094,10 @@ DBOpResult DatabaseManager::clearAllScannedFiles()
     return DBOpResult(true);
 }
 
-// Get files that need processing (those without hash)
-std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedingProcessing()
+// Get files that need processing for a specific mode
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedingProcessing(DedupMode current_mode)
 {
-    Logger::debug("getFilesNeedingProcessing called");
+    Logger::debug("getFilesNeedingProcessing called for mode: " + DedupModes::getModeName(current_mode));
     std::vector<std::pair<std::string, std::string>> results;
     if (!waitForQueueInitialization())
     {
@@ -1105,10 +1105,13 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
         return results;
     }
 
+    // Capture the current mode for async execution
+    std::string captured_mode = DedupModes::getModeName(current_mode);
+
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+    auto future = access_queue_->enqueueRead([captured_mode](DatabaseManager &dbMan)
                                              {
-        Logger::debug("Executing getFilesNeedingProcessing in access queue");
+        Logger::debug("Executing getFilesNeedingProcessing in access queue for mode: " + captured_mode);
         
         if (!dbMan.db_)
         {
@@ -1118,7 +1121,15 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
         
         std::vector<std::pair<std::string, std::string>> results;
         const std::string select_sql = R"(
-            SELECT file_path, file_name FROM scanned_files WHERE hash IS NULL ORDER BY created_at DESC
+            SELECT sf.file_path, sf.file_name 
+            FROM scanned_files sf
+            WHERE sf.hash IS NULL 
+               OR NOT EXISTS (
+                   SELECT 1 FROM media_processing_results mpr 
+                   WHERE mpr.file_path = sf.file_path 
+                   AND mpr.processing_mode = ?
+               )
+            ORDER BY sf.created_at DESC
         )";
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
@@ -1127,6 +1138,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
             Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
+
+        // Bind the mode parameter
+        sqlite3_bind_text(stmt, 1, captured_mode.c_str(), -1, SQLITE_STATIC);
 
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
