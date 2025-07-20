@@ -1124,11 +1124,11 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
             SELECT sf.file_path, sf.file_name 
             FROM scanned_files sf
             WHERE sf.hash IS NULL 
-               OR NOT EXISTS (
+               OR (sf.hash IS NOT NULL AND NOT EXISTS (
                    SELECT 1 FROM media_processing_results mpr 
                    WHERE mpr.file_path = sf.file_path 
                    AND mpr.processing_mode = ?
-               )
+               ))
             ORDER BY sf.created_at DESC
         )";
         sqlite3_stmt *stmt;
