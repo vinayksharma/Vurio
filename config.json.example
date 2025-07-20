@@ -22,7 +22,7 @@
 //   - JWT authentication secret key
 {
     "auth_secret": "your-secret-key-here",
-    "dedup_mode": "QUALITY",
+    "dedup_mode": "BALANCED",
     "log_level": "INFO",
     "server_host": "localhost",
     "server_port": 8080

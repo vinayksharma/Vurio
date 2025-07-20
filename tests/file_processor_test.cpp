@@ -58,10 +58,18 @@ protected:
 
     void createTestFiles()
     {
-        // Create a test image file (just a placeholder)
-        std::ofstream(test_dir_ / "test_image.jpg") << "fake jpeg data";
+        // Create actual test images using ImageMagick
+        std::string test_dir_str = test_dir_.string();
 
-        // Create a test video file (just a placeholder)
+        // Create a simple test image (blue background with red circle)
+        std::string cmd1 = "magick -size 100x100 xc:blue -fill red -draw \"circle 50,50 30,50\" " + test_dir_str + "/test_image.jpg";
+        system(cmd1.c_str());
+
+        // Create another test image (green background with yellow rectangle)
+        std::string cmd2 = "magick -size 100x100 xc:green -fill yellow -draw \"rectangle 20,20 80,80\" " + test_dir_str + "/test_image2.jpg";
+        system(cmd2.c_str());
+
+        // Create a test video file (just a placeholder for now)
         std::ofstream(test_dir_ / "test_video.mp4") << "fake mp4 data";
 
         // Create an unsupported file

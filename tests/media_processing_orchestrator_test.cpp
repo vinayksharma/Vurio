@@ -28,8 +28,13 @@ protected:
         // Create test directory and files
         fs::create_directories(test_dir);
 
-        // Create a test image file (just a placeholder)
-        std::ofstream(test_dir + "/test.jpg") << "fake jpeg data";
+        // Create actual test images using ImageMagick
+        std::string cmd1 = "magick -size 100x100 xc:blue -fill red -draw \"circle 50,50 30,50\" " + test_dir + "/test.jpg";
+        system(cmd1.c_str());
+
+        // Create another test image
+        std::string cmd2 = "magick -size 100x100 xc:green -fill yellow -draw \"rectangle 20,20 80,80\" " + test_dir + "/test.png";
+        system(cmd2.c_str());
 
         // Create a test text file
         std::ofstream(test_dir + "/test.txt") << "text file content";
@@ -72,13 +77,15 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
 
     // Add some test files
     std::string file1 = test_dir + "/test.jpg";
-    std::string file2 = test_dir + "/test.txt";
-    createTestFile(file1);
-    createTestFile(file2);
+    std::string file2 = test_dir + "/test.png";
+    std::string file3 = test_dir + "/test.txt";
+    // Image files are already created in SetUp()
+    createTestFile(file3, "text file content");
 
     // Store test files in database
     dbMan.storeScannedFile(file1);
     dbMan.storeScannedFile(file2);
+    dbMan.storeScannedFile(file3);
     dbMan.waitForWrites();
 
     MediaProcessingOrchestrator orchestrator(dbMan);
@@ -95,38 +102,48 @@ TEST_F(MediaProcessingOrchestratorTest, EmitsEventsAndUpdatesDB)
             // Processing completed
         });
     dbMan.waitForWrites();
-    // Should have processed 2 files (1 supported, 1 unsupported)
-    EXPECT_EQ(events.size(), 2);
+    // Should have processed 3 files (2 supported images, 1 unsupported text file)
+    EXPECT_EQ(events.size(), 3);
 
-    // Check that we have one successful and one failed event
+    // Check that we have successful and failed events
     bool found_success = false, found_failure = false;
+    int success_count = 0, failure_count = 0;
     for (const auto &event : events)
     {
         if (event.success)
         {
             found_success = true;
+            success_count++;
             EXPECT_EQ(event.artifact_format, "phash");
             EXPECT_GT(event.artifact_confidence, 0.0);
         }
         else
         {
             found_failure = true;
+            failure_count++;
             EXPECT_FALSE(event.error_message.empty());
         }
     }
     EXPECT_TRUE(found_success);
     EXPECT_TRUE(found_failure);
+    EXPECT_EQ(success_count, 2); // 2 images should succeed
+    EXPECT_EQ(failure_count, 1); // 1 text file should fail
 }
 
 TEST_F(MediaProcessingOrchestratorTest, CancelProcessing)
 {
     DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
 
-    // Add some test files
+    // Add some test files (create actual images)
     std::string file1 = test_dir + "/test1.jpg";
     std::string file2 = test_dir + "/test2.png";
-    createTestFile(file1);
-    createTestFile(file2);
+
+    // Create actual test images using ImageMagick
+    std::string cmd1 = "magick -size 100x100 xc:red -fill blue -draw \"circle 50,50 30,50\" " + file1;
+    system(cmd1.c_str());
+
+    std::string cmd2 = "magick -size 100x100 xc:yellow -fill green -draw \"rectangle 20,20 80,80\" " + file2;
+    system(cmd2.c_str());
 
     // Store test files in database
     dbMan.storeScannedFile(file1);

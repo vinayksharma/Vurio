@@ -233,28 +233,115 @@ ProcessingResult MediaProcessor::processImageBalanced(const std::string &file_pa
 
     Logger::info("Processing image with " + algorithm->name + ": " + file_path);
 
-    // TODO: IMPLEMENTATION - Use algorithm information
-    // Libraries needed: algorithm->libraries
-    // Output format: algorithm->output_format
-    // Expected data size: algorithm->data_size_bytes
-    // Typical confidence: algorithm->typical_confidence
+    try
+    {
+        // Load image using OpenCV
+        cv::Mat image = cv::imread(file_path, cv::IMREAD_COLOR);
+        if (image.empty())
+        {
+            return ProcessingResult(false, "Failed to load image: " + file_path);
+        }
 
-    // Placeholder implementation using algorithm info
-    std::vector<uint8_t> phash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
-    std::string hash = generateHash(phash_data);
+        Logger::info("Image loaded successfully: " + file_path + " (size: " + std::to_string(image.cols) + "x" + std::to_string(image.rows) + ")");
 
-    MediaArtifact artifact;
-    artifact.data = phash_data;
-    artifact.format = algorithm->output_format; // Use algorithm output format
-    artifact.hash = hash;
-    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
-    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
+        // Convert to grayscale for pHash
+        cv::Mat gray_image;
+        cv::cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
 
-    ProcessingResult result(true);
-    result.artifact = artifact;
+        // Resize to 32x32 for pHash (perceptual hash)
+        cv::Mat resized_image;
+        cv::resize(gray_image, resized_image, cv::Size(32, 32));
 
-    Logger::info("BALANCED mode processing completed for: " + file_path + " using " + algorithm->name);
-    return result;
+        Logger::info("Image resized to 32x32 for pHash calculation");
+
+        // Convert to float for DCT
+        cv::Mat float_image;
+        resized_image.convertTo(float_image, CV_32F);
+
+        // Apply DCT (Discrete Cosine Transform)
+        cv::Mat dct_image;
+        cv::dct(float_image, dct_image);
+
+        Logger::info("DCT applied for pHash calculation");
+
+        // Extract the top-left 8x8 DCT coefficients (low frequency components)
+        cv::Mat dct_8x8 = dct_image(cv::Rect(0, 0, 8, 8));
+
+        // Calculate the median of the DCT coefficients (excluding DC component)
+        std::vector<float> dct_values;
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 8; x++)
+            {
+                if (x == 0 && y == 0)
+                    continue; // Skip DC component
+                dct_values.push_back(dct_8x8.at<float>(y, x));
+            }
+        }
+
+        // Calculate median
+        std::sort(dct_values.begin(), dct_values.end());
+        float median = dct_values[dct_values.size() / 2];
+
+        // Generate pHash based on DCT coefficients
+        std::vector<uint8_t> phash_data(algorithm->data_size_bytes, 0); // 8 bytes for 64-bit hash
+
+        int hash_index = 0;
+        int bit_position = 0;
+
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 8; x++)
+            {
+                if (x == 0 && y == 0)
+                    continue; // Skip DC component
+
+                float dct_value = dct_8x8.at<float>(y, x);
+
+                // Set bit if DCT coefficient is greater than median
+                if (dct_value > median)
+                {
+                    phash_data[hash_index] |= (1 << (7 - bit_position));
+                }
+
+                bit_position++;
+                if (bit_position == 8)
+                {
+                    bit_position = 0;
+                    hash_index++;
+                }
+            }
+        }
+
+        // Generate hash from the pHash data
+        std::string hash = generateHash(phash_data);
+
+        // Create media artifact with algorithm-specific parameters
+        MediaArtifact artifact;
+        artifact.data = phash_data;
+        artifact.format = algorithm->output_format; // "phash"
+        artifact.hash = hash;
+        artifact.confidence = algorithm->typical_confidence; // 0.92
+        artifact.metadata = algorithm->metadata_template;    // Uses algorithm metadata template
+
+        ProcessingResult result(true);
+        result.artifact = artifact;
+
+        Logger::info("BALANCED mode processing completed for: " + file_path + " using " + algorithm->name);
+        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte pHash with confidence " + std::to_string(algorithm->typical_confidence));
+
+        return result;
+    }
+    catch (const cv::Exception &e)
+    {
+        Logger::error("OpenCV error during image processing: " + std::string(e.what()));
+        return ProcessingResult(false, "OpenCV processing error: " + std::string(e.what()));
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error during image balanced processing: " + std::string(e.what()));
+        return ProcessingResult(false, "Processing error: " + std::string(e.what()));
+    }
 }
 
 ProcessingResult MediaProcessor::processImageQuality(const std::string &file_path)

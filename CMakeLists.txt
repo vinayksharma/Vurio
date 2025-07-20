@@ -186,3 +186,5 @@ target_link_libraries(file_processor_example
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
 ) 
+
+ 
