@@ -24,7 +24,30 @@ ProcessingResult MediaProcessor::processFile(const std::string &file_path, Dedup
 
     try
     {
+        // Determine media type
+        std::string media_type;
         if (isImageFile(file_path))
+            media_type = "image";
+        else if (isVideoFile(file_path))
+            media_type = "video";
+        else if (isAudioFile(file_path))
+            media_type = "audio";
+        else
+        {
+            return ProcessingResult(false, "Unsupported file type: " + file_path);
+        }
+
+        // Get processing algorithm information
+        const ProcessingAlgorithm *algorithm = getProcessingAlgorithm(media_type, mode);
+        if (!algorithm)
+        {
+            return ProcessingResult(false, "No processing algorithm found for " + media_type + " with mode " + DedupModes::getModeName(mode));
+        }
+
+        Logger::info("Using algorithm: " + algorithm->name + " for " + media_type + " processing");
+
+        // Process file based on media type and mode
+        if (media_type == "image")
         {
             switch (mode)
             {
@@ -35,10 +58,10 @@ ProcessingResult MediaProcessor::processFile(const std::string &file_path, Dedup
             case DedupMode::QUALITY:
                 return processImageQuality(file_path);
             default:
-                return ProcessingResult(false, "Unknown dedup mode");
+                return ProcessingResult(false, "Unknown dedup mode for image processing");
             }
         }
-        else if (isVideoFile(file_path))
+        else if (media_type == "video")
         {
             switch (mode)
             {
@@ -49,10 +72,10 @@ ProcessingResult MediaProcessor::processFile(const std::string &file_path, Dedup
             case DedupMode::QUALITY:
                 return processVideoQuality(file_path);
             default:
-                return ProcessingResult(false, "Unknown dedup mode");
+                return ProcessingResult(false, "Unknown dedup mode for video processing");
             }
         }
-        else if (isAudioFile(file_path))
+        else if (media_type == "audio")
         {
             switch (mode)
             {
@@ -63,7 +86,7 @@ ProcessingResult MediaProcessor::processFile(const std::string &file_path, Dedup
             case DedupMode::QUALITY:
                 return processAudioQuality(file_path);
             default:
-                return ProcessingResult(false, "Unknown dedup mode");
+                return ProcessingResult(false, "Unknown dedup mode for audio processing");
             }
         }
         else
@@ -104,145 +127,176 @@ std::vector<std::string> MediaProcessor::getSupportedExtensions()
 
 ProcessingResult MediaProcessor::processImageFast(const std::string &file_path)
 {
-    Logger::info("Processing image with FAST mode (OpenCV dHash): " + file_path);
+    // Get algorithm information from lookup table
+    const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("image", DedupMode::FAST);
+    if (!algorithm)
+    {
+        return ProcessingResult(false, "No processing algorithm found for image FAST mode");
+    }
 
-    // TODO: IMPLEMENTATION - OpenCV dHash
-    // 1. Load image with OpenCV
-    // 2. Resize to 9x8 for dHash
-    // 3. Convert to grayscale
-    // 4. Calculate dHash
-    // 5. Return binary artifact
+    Logger::info("Processing image with " + algorithm->name + ": " + file_path);
 
-    // Placeholder implementation
-    std::vector<uint8_t> dhash_data(8, 0); // 64-bit dHash
+    // TODO: IMPLEMENTATION - Use algorithm information
+    // Libraries needed: algorithm->libraries
+    // Output format: algorithm->output_format
+    // Expected data size: algorithm->data_size_bytes
+    // Typical confidence: algorithm->typical_confidence
+
+    // Placeholder implementation using algorithm info
+    std::vector<uint8_t> dhash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
     std::string hash = generateHash(dhash_data);
 
     MediaArtifact artifact;
     artifact.data = dhash_data;
-    artifact.format = "dhash";
+    artifact.format = algorithm->output_format; // Use algorithm output format
     artifact.hash = hash;
-    artifact.confidence = 0.85;
-    artifact.metadata = "{\"algorithm\":\"dhash\",\"size\":\"9x8\",\"mode\":\"FAST\"}";
+    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
+    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
 
     ProcessingResult result(true);
     result.artifact = artifact;
 
-    Logger::info("FAST mode processing completed for: " + file_path);
+    Logger::info("FAST mode processing completed for: " + file_path + " using " + algorithm->name);
     return result;
 }
 
 ProcessingResult MediaProcessor::processImageBalanced(const std::string &file_path)
 {
-    Logger::info("Processing image with BALANCED mode (libvips + OpenCV pHash): " + file_path);
+    // Get algorithm information from lookup table
+    const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("image", DedupMode::BALANCED);
+    if (!algorithm)
+    {
+        return ProcessingResult(false, "No processing algorithm found for image BALANCED mode");
+    }
 
-    // TODO: IMPLEMENTATION - libvips + OpenCV pHash
-    // 1. Use libvips to generate thumbnail
-    // 2. Load thumbnail with OpenCV
-    // 3. Apply DCT for pHash
-    // 4. Calculate pHash
-    // 5. Return binary artifact
+    Logger::info("Processing image with " + algorithm->name + ": " + file_path);
 
-    // Placeholder implementation
-    std::vector<uint8_t> phash_data(8, 0); // 64-bit pHash
+    // TODO: IMPLEMENTATION - Use algorithm information
+    // Libraries needed: algorithm->libraries
+    // Output format: algorithm->output_format
+    // Expected data size: algorithm->data_size_bytes
+    // Typical confidence: algorithm->typical_confidence
+
+    // Placeholder implementation using algorithm info
+    std::vector<uint8_t> phash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
     std::string hash = generateHash(phash_data);
 
     MediaArtifact artifact;
     artifact.data = phash_data;
-    artifact.format = "phash";
+    artifact.format = algorithm->output_format; // Use algorithm output format
     artifact.hash = hash;
-    artifact.confidence = 0.92;
-    artifact.metadata = "{\"algorithm\":\"phash\",\"size\":\"32x32\",\"mode\":\"BALANCED\"}";
+    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
+    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
 
     ProcessingResult result(true);
     result.artifact = artifact;
 
-    Logger::info("BALANCED mode processing completed for: " + file_path);
+    Logger::info("BALANCED mode processing completed for: " + file_path + " using " + algorithm->name);
     return result;
 }
 
 ProcessingResult MediaProcessor::processImageQuality(const std::string &file_path)
 {
-    Logger::info("Processing image with QUALITY mode (CNN embeddings): " + file_path);
+    // Get algorithm information from lookup table
+    const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("image", DedupMode::QUALITY);
+    if (!algorithm)
+    {
+        return ProcessingResult(false, "No processing algorithm found for image QUALITY mode");
+    }
 
-    // TODO: IMPLEMENTATION - ONNX Runtime + CNN embeddings
-    // 1. Load image with OpenCV
-    // 2. Preprocess for CNN model
-    // 3. Run inference with ONNX Runtime
-    // 4. Extract embeddings
-    // 5. Return binary artifact
+    Logger::info("Processing image with " + algorithm->name + ": " + file_path);
 
-    // Placeholder implementation
-    std::vector<uint8_t> embedding_data(512, 0); // 512-dimensional embedding
+    // TODO: IMPLEMENTATION - Use algorithm information
+    // Libraries needed: algorithm->libraries
+    // Output format: algorithm->output_format
+    // Expected data size: algorithm->data_size_bytes
+    // Typical confidence: algorithm->typical_confidence
+
+    // Placeholder implementation using algorithm info
+    std::vector<uint8_t> embedding_data(algorithm->data_size_bytes, 0); // Use algorithm data size
     std::string hash = generateHash(embedding_data);
 
     MediaArtifact artifact;
     artifact.data = embedding_data;
-    artifact.format = "cnn_embedding";
+    artifact.format = algorithm->output_format; // Use algorithm output format
     artifact.hash = hash;
-    artifact.confidence = 0.98;
-    artifact.metadata = "{\"algorithm\":\"cnn_embedding\",\"model\":\"ResNet\",\"dimensions\":512,\"mode\":\"QUALITY\"}";
+    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
+    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
 
     ProcessingResult result(true);
     result.artifact = artifact;
 
-    Logger::info("QUALITY mode processing completed for: " + file_path);
+    Logger::info("QUALITY mode processing completed for: " + file_path + " using " + algorithm->name);
     return result;
 }
 
 ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
 {
-    Logger::info("Processing video with FAST mode: " + file_path);
+    // Get algorithm information from lookup table
+    const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("video", DedupMode::FAST);
+    if (!algorithm)
+    {
+        return ProcessingResult(false, "No processing algorithm found for video FAST mode");
+    }
 
-    // TODO: IMPLEMENTATION - FFmpeg + OpenCV dHash
-    // 1. Extract key frames with FFmpeg
-    // 2. Apply dHash to each key frame
-    // 3. Combine hashes into video fingerprint
-    // 4. Return binary artifact
+    Logger::info("Processing video with " + algorithm->name + ": " + file_path);
 
-    // Placeholder implementation
-    std::vector<uint8_t> video_hash_data(32, 0); // Video fingerprint
+    // TODO: IMPLEMENTATION - Use algorithm information
+    // Libraries needed: algorithm->libraries
+    // Output format: algorithm->output_format
+    // Expected data size: algorithm->data_size_bytes
+    // Typical confidence: algorithm->typical_confidence
+
+    // Placeholder implementation using algorithm info
+    std::vector<uint8_t> video_hash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
     std::string hash = generateHash(video_hash_data);
 
     MediaArtifact artifact;
     artifact.data = video_hash_data;
-    artifact.format = "video_dhash";
+    artifact.format = algorithm->output_format; // Use algorithm output format
     artifact.hash = hash;
-    artifact.confidence = 0.80;
-    artifact.metadata = "{\"algorithm\":\"video_dhash\",\"keyframes\":5,\"mode\":\"FAST\"}";
+    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
+    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
 
     ProcessingResult result(true);
     result.artifact = artifact;
 
-    Logger::info("FAST mode video processing completed for: " + file_path);
+    Logger::info("FAST mode video processing completed for: " + file_path + " using " + algorithm->name);
     return result;
 }
 
 ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_path)
 {
-    Logger::info("Processing video with BALANCED mode: " + file_path);
+    // Get algorithm information from lookup table
+    const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("video", DedupMode::BALANCED);
+    if (!algorithm)
+    {
+        return ProcessingResult(false, "No processing algorithm found for video BALANCED mode");
+    }
 
-    // TODO: IMPLEMENTATION - FFmpeg + libvips + OpenCV pHash
-    // 1. Extract key frames with FFmpeg
-    // 2. Generate thumbnails with libvips
-    // 3. Apply pHash to each thumbnail
-    // 4. Combine hashes into video fingerprint
-    // 5. Return binary artifact
+    Logger::info("Processing video with " + algorithm->name + ": " + file_path);
 
-    // Placeholder implementation
-    std::vector<uint8_t> video_hash_data(32, 0); // Video fingerprint
+    // TODO: IMPLEMENTATION - Use algorithm information
+    // Libraries needed: algorithm->libraries
+    // Output format: algorithm->output_format
+    // Expected data size: algorithm->data_size_bytes
+    // Typical confidence: algorithm->typical_confidence
+
+    // Placeholder implementation using algorithm info
+    std::vector<uint8_t> video_hash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
     std::string hash = generateHash(video_hash_data);
 
     MediaArtifact artifact;
     artifact.data = video_hash_data;
-    artifact.format = "video_phash";
+    artifact.format = algorithm->output_format; // Use algorithm output format
     artifact.hash = hash;
-    artifact.confidence = 0.88;
-    artifact.metadata = "{\"algorithm\":\"video_phash\",\"keyframes\":8,\"mode\":\"BALANCED\"}";
+    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
+    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
 
     ProcessingResult result(true);
     result.artifact = artifact;
 
-    Logger::info("BALANCED mode video processing completed for: " + file_path);
+    Logger::info("BALANCED mode video processing completed for: " + file_path + " using " + algorithm->name);
     return result;
 }
 
