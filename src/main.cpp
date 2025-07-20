@@ -30,16 +30,51 @@ int main()
         // Initialize and start the simple scheduler
         auto &scheduler = SimpleScheduler::getInstance();
 
-        // Set up scan callback - scan default directories
+        // Set up scan callback - scan all stored directories
         scheduler.setScanCallback([]()
                                   {
             Logger::info("Executing scheduled scan operation");
             try {
-                // For now, scan a default directory - this could be configurable
-                std::string default_scan_path = "/tmp"; // Default scan path
-                FileScanner scanner("scan_results.db");
-                size_t files_stored = scanner.scanDirectory(default_scan_path, true);
-                Logger::info("Scheduled scan completed - Files stored: " + std::to_string(files_stored));
+                // Get all stored scan paths from database
+                auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+                auto scan_paths = db_manager.getUserInputs("scan_path");
+                
+                if (scan_paths.empty()) {
+                    Logger::warn("No scan paths configured, using default: /tmp");
+                    scan_paths.push_back("/tmp");
+                }
+                
+                Logger::info("Found " + std::to_string(scan_paths.size()) + " scan paths to process");
+                
+                // Create scan threads for each path
+                std::vector<std::thread> scan_threads;
+                std::atomic<size_t> total_files_stored{0};
+                
+                for (const auto &scan_path : scan_paths) {
+                    Logger::info("Creating scan thread for directory: " + scan_path);
+                    
+                    // Create a thread for each scan path
+                    scan_threads.emplace_back([scan_path, &total_files_stored]() {
+                        try {
+                            FileScanner scanner("scan_results.db");
+                            size_t files_stored = scanner.scanDirectory(scan_path, true);
+                            total_files_stored += files_stored;
+                            Logger::info("Directory scan completed for " + scan_path + 
+                                       " - Files stored: " + std::to_string(files_stored));
+                        } catch (const std::exception &e) {
+                            Logger::error("Error scanning directory " + scan_path + ": " + std::string(e.what()));
+                        }
+                    });
+                }
+                
+                // Wait for all scan threads to complete
+                for (auto &thread : scan_threads) {
+                    if (thread.joinable()) {
+                        thread.join();
+                    }
+                }
+                
+                Logger::info("All scheduled scans completed - Total files stored: " + std::to_string(total_files_stored.load()));
             } catch (const std::exception &e) {
                 Logger::error("Error in scheduled scan: " + std::string(e.what()));
             } });
