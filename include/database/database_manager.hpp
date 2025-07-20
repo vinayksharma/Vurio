@@ -169,6 +169,33 @@ public:
     bool isValid();
 
     /**
+     * @brief Store a user input in the database
+     * @param input_type Type of input (e.g., "scan_path", "config_setting", etc.)
+     * @param input_value The actual input value
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult storeUserInput(const std::string &input_type, const std::string &input_value);
+
+    /**
+     * @brief Get all user inputs of a specific type
+     * @param input_type Type of input to retrieve
+     * @return Vector of input values for the specified type
+     */
+    std::vector<std::string> getUserInputs(const std::string &input_type);
+
+    /**
+     * @brief Get all user inputs
+     * @return Vector of pairs containing input type and value
+     */
+    std::vector<std::pair<std::string, std::string>> getAllUserInputs();
+
+    /**
+     * @brief Clear all user inputs
+     * @return DBOpResult with success flag and error message
+     */
+    DBOpResult clearAllUserInputs();
+
+    /**
      * @brief Wait for all pending database writes to complete
      */
     void waitForWrites();
@@ -196,6 +223,7 @@ private:
     void initialize();
     bool createMediaProcessingResultsTable();
     bool createScannedFilesTable();
+    bool createUserInputsTable();
 
     // SQL helpers
     /**
@@ -208,4 +236,10 @@ private:
 
     static std::unique_ptr<DatabaseManager> instance_;
     static std::mutex instance_mutex_;
+
+public:
+    // Queue initialization utility (public for testing)
+    bool waitForQueueInitialization(int max_retries = 5, int retry_delay_ms = 1000);
+
+private:
 };

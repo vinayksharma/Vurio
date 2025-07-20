@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <thread>
 #include <mutex>
+#include <chrono>
 
 using json = nlohmann::json;
 
@@ -167,6 +168,8 @@ void DatabaseManager::initialize()
         Logger::error("Failed to create scanned_files table");
     if (!createMediaProcessingResultsTable())
         Logger::error("Failed to create media_processing_results table");
+    if (!createUserInputsTable())
+        Logger::error("Failed to create user_inputs table");
     Logger::info("Database tables initialization completed");
 }
 
@@ -207,15 +210,29 @@ bool DatabaseManager::createScannedFilesTable()
     return executeStatement(sql).success;
 }
 
+bool DatabaseManager::createUserInputsTable()
+{
+    const std::string sql = R"(
+        CREATE TABLE IF NOT EXISTS user_inputs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            input_type TEXT NOT NULL,
+            input_value TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(input_type, input_value)
+        )
+    )";
+    return executeStatement(sql).success;
+}
+
 DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
                                                   DedupMode mode,
                                                   const ProcessingResult &result)
 {
     Logger::debug("storeProcessingResult called for: " + file_path);
 
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -337,9 +354,9 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
 {
     Logger::debug("storeProcessingResultWithId called for: " + file_path);
 
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return {DBOpResult(false, msg), 0};
     }
@@ -460,9 +477,9 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
     Logger::debug("getProcessingResults called for: " + file_path);
     std::vector<ProcessingResult> results;
 
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 
@@ -561,9 +578,9 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
     Logger::debug("getAllProcessingResults called");
     std::vector<std::pair<std::string, ProcessingResult>> results;
 
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 
@@ -654,9 +671,9 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
 
 DBOpResult DatabaseManager::clearAllResults()
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -698,9 +715,9 @@ DBOpResult DatabaseManager::clearAllResults()
 
 DBOpResult DatabaseManager::executeStatement(const std::string &sql)
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -787,9 +804,9 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
 DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
                                              std::function<void(const std::string &)> onFileNeedsProcessing)
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -934,9 +951,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
 {
     Logger::debug("getAllScannedFiles called");
     std::vector<std::pair<std::string, std::string>> results;
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 
@@ -986,9 +1003,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
 
 DBOpResult DatabaseManager::clearAllScannedFiles()
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -1026,9 +1043,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 {
     Logger::debug("getFilesNeedingProcessing called");
     std::vector<std::pair<std::string, std::string>> results;
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 
@@ -1081,9 +1098,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 // Update the hash for a file after processing
 DBOpResult DatabaseManager::updateFileHash(const std::string &file_path, const std::string &file_hash)
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -1135,9 +1152,9 @@ DBOpResult DatabaseManager::updateFileHash(const std::string &file_path, const s
 
 std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::string &file_path, const std::string &file_hash)
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return {DBOpResult(false, msg), 0};
     }
@@ -1187,9 +1204,288 @@ std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::s
     return {DBOpResult(true, ""), operation_id};
 }
 
+DBOpResult DatabaseManager::storeUserInput(const std::string &input_type, const std::string &input_value)
+{
+    Logger::debug("storeUserInput called for type: " + input_type + ", value: " + input_value);
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_input_type = input_type;
+    std::string captured_input_value = input_value;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_input_type, captured_input_value, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing storeUserInput in write queue for type: " + captured_input_type);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string insert_sql = R"(
+            INSERT OR REPLACE INTO user_inputs (input_type, input_value)
+            VALUES (?, ?)
+        )";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Bind parameters
+        sqlite3_bind_text(stmt, 1, captured_input_type.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_input_value.c_str(), -1, SQLITE_STATIC);
+
+        // Execute the statement
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to insert user input: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            sqlite3_finalize(stmt);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_finalize(stmt);
+        Logger::debug("User input stored successfully: " + captured_input_type + " = " + captured_input_value);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
+}
+
+std::vector<std::string> DatabaseManager::getUserInputs(const std::string &input_type)
+{
+    Logger::debug("getUserInputs called for type: " + input_type);
+    std::vector<std::string> results;
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([input_type](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getUserInputs in access queue for type: " + input_type);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::string>());
+        }
+        
+        std::vector<std::string> results;
+        const std::string select_sql = R"(
+            SELECT input_value FROM user_inputs WHERE input_type = ? ORDER BY created_at DESC
+        )";
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        // Bind the input type parameter
+        sqlite3_bind_text(stmt, 1, input_type.c_str(), -1, SQLITE_STATIC);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string input_value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            results.push_back(input_value);
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<std::string>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get user inputs: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllUserInputs()
+{
+    Logger::debug("getAllUserInputs called");
+    std::vector<std::pair<std::string, std::string>> results;
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getAllUserInputs in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, std::string>>());
+        }
+        
+        std::vector<std::pair<std::string, std::string>> results;
+        const std::string select_sql = R"(
+            SELECT input_type, input_value FROM user_inputs ORDER BY created_at DESC
+        )";
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string input_type = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            std::string input_value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            results.emplace_back(input_type, input_value);
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<std::pair<std::string, std::string>>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get all user inputs: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+DBOpResult DatabaseManager::clearAllUserInputs()
+{
+    Logger::debug("clearAllUserInputs called");
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing clearAllUserInputs in write queue");
+        
+        if (!dbMan.db_)
+        {
+            std::string error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string delete_sql = "DELETE FROM user_inputs";
+
+        int rc = sqlite3_exec(dbMan.db_, delete_sql.c_str(), nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            std::string error_msg = "Failed to clear user inputs: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("All user inputs cleared successfully");
+        return WriteOperationResult(true); });
+
+    return DBOpResult(true);
+}
+
+bool DatabaseManager::waitForQueueInitialization(int max_retries, int retry_delay_ms)
+{
+    static std::mutex queue_check_mutex;
+    static std::atomic<bool> queue_initialized{false};
+    static std::atomic<int> initialization_attempts{0};
+
+    // Use double-checked locking pattern for thread safety
+    if (queue_initialized.load())
+    {
+        return true;
+    }
+
+    std::lock_guard<std::mutex> lock(queue_check_mutex);
+
+    // Check again after acquiring lock
+    if (queue_initialized.load())
+    {
+        return true;
+    }
+
+    // Check if queue is already initialized
+    if (access_queue_)
+    {
+        queue_initialized.store(true);
+        return true;
+    }
+
+    // Wait for queue initialization with retries
+    for (int attempt = 0; attempt < max_retries; ++attempt)
+    {
+        initialization_attempts.fetch_add(1);
+        Logger::debug("Queue initialization attempt " + std::to_string(attempt + 1) + "/" + std::to_string(max_retries));
+
+        // Check if queue has been initialized
+        if (access_queue_)
+        {
+            queue_initialized.store(true);
+            Logger::info("Queue initialized successfully after " + std::to_string(attempt + 1) + " attempts");
+            return true;
+        }
+
+        // Wait before next attempt (except on last attempt)
+        if (attempt < max_retries - 1)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+        }
+    }
+
+    Logger::error("Queue initialization failed after " + std::to_string(max_retries) + " attempts");
+    return false;
+}
+
 bool DatabaseManager::isValid()
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
         return false;
     }
@@ -1209,9 +1505,9 @@ bool DatabaseManager::isValid()
 
 DBOpResult DatabaseManager::setFileLinks(const std::string &file_path, const std::vector<int> &linked_ids)
 {
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        std::string msg = "Access queue not initialized";
+        std::string msg = "Access queue not initialized after retries";
         Logger::error(msg);
         return DBOpResult(false, msg);
     }
@@ -1272,9 +1568,9 @@ DBOpResult DatabaseManager::setFileLinks(const std::string &file_path, const std
 std::vector<int> DatabaseManager::getFileLinks(const std::string &file_path)
 {
     std::vector<int> results;
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 
@@ -1377,9 +1673,9 @@ DBOpResult DatabaseManager::removeFileLink(const std::string &file_path, int lin
 std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file_path)
 {
     std::vector<std::string> results;
-    if (!access_queue_)
+    if (!waitForQueueInitialization())
     {
-        Logger::error("Access queue not initialized");
+        Logger::error("Access queue not initialized after retries");
         return results;
     }
 

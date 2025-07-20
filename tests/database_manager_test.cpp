@@ -907,3 +907,78 @@ TEST_F(DatabaseManagerTest, LinksJsonSerialization)
     // Clean up test file
     fs::remove(test_file);
 }
+
+TEST_F(DatabaseManagerTest, UserInputs)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Test storing user inputs
+    auto result1 = dbMan.storeUserInput("scan_path", "/path/to/directory1");
+    EXPECT_TRUE(result1.success);
+
+    auto result2 = dbMan.storeUserInput("scan_path", "/path/to/directory2");
+    EXPECT_TRUE(result2.success);
+
+    auto result3 = dbMan.storeUserInput("config_setting", "quality_mode=FAST");
+    EXPECT_TRUE(result3.success);
+
+    dbMan.waitForWrites();
+
+    // Test getting user inputs by type
+    auto scan_paths = dbMan.getUserInputs("scan_path");
+    EXPECT_EQ(scan_paths.size(), 2);
+    EXPECT_TRUE(std::find(scan_paths.begin(), scan_paths.end(), "/path/to/directory1") != scan_paths.end());
+    EXPECT_TRUE(std::find(scan_paths.begin(), scan_paths.end(), "/path/to/directory2") != scan_paths.end());
+
+    auto config_settings = dbMan.getUserInputs("config_setting");
+    EXPECT_EQ(config_settings.size(), 1);
+    EXPECT_EQ(config_settings[0], "quality_mode=FAST");
+
+    // Test getting all user inputs
+    auto all_inputs = dbMan.getAllUserInputs();
+    EXPECT_EQ(all_inputs.size(), 3);
+
+    bool found_scan_path1 = false, found_scan_path2 = false, found_config = false;
+    for (const auto &[input_type, input_value] : all_inputs)
+    {
+        if (input_type == "scan_path" && input_value == "/path/to/directory1")
+            found_scan_path1 = true;
+        else if (input_type == "scan_path" && input_value == "/path/to/directory2")
+            found_scan_path2 = true;
+        else if (input_type == "config_setting" && input_value == "quality_mode=FAST")
+            found_config = true;
+    }
+    EXPECT_TRUE(found_scan_path1);
+    EXPECT_TRUE(found_scan_path2);
+    EXPECT_TRUE(found_config);
+
+    // Test clearing all user inputs
+    auto clear_result = dbMan.clearAllUserInputs();
+    EXPECT_TRUE(clear_result.success);
+    dbMan.waitForWrites();
+
+    // Verify all inputs were cleared
+    auto remaining_inputs = dbMan.getAllUserInputs();
+    EXPECT_EQ(remaining_inputs.size(), 0);
+}
+
+TEST_F(DatabaseManagerTest, QueueInitializationRetry)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Test that the queue initialization utility works correctly
+    bool queue_ready = dbMan.waitForQueueInitialization(3, 100); // 3 retries, 100ms delay
+    EXPECT_TRUE(queue_ready);
+
+    // Test with custom retry parameters
+    bool queue_ready2 = dbMan.waitForQueueInitialization(1, 50); // 1 retry, 50ms delay
+    EXPECT_TRUE(queue_ready2);
+
+    // Test that user input operations work after queue initialization
+    auto result = dbMan.storeUserInput("test_type", "test_value");
+    EXPECT_TRUE(result.success);
+
+    auto inputs = dbMan.getUserInputs("test_type");
+    EXPECT_EQ(inputs.size(), 1);
+    EXPECT_EQ(inputs[0], "test_value");
+}

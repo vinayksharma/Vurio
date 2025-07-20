@@ -96,6 +96,17 @@ public:
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleGetScanResults(req, res); });
 
+        // User inputs endpoints
+        svr.Get("/user/inputs", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetUserInputs(req, res); });
+
+        svr.Get("/user/inputs/([^/]+)", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetUserInputsByType(req, res); });
+
         // Orchestration endpoints
         svr.Post("/orchestration/start", [&](const httplib::Request &req, httplib::Response &res)
                  {
@@ -436,16 +447,31 @@ private:
             bool recursive = body.value("recursive", true);
             std::string db_path = body.value("database_path", "scan_results.db");
 
-            Logger::info("Starting directory scan in background: " + directory);
+            Logger::info("Starting directory scan: " + directory);
 
-            // Return immediately with success response
+            // Create DatabaseManager for storing scan results and user inputs
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+
+            // Store the scan path in user_inputs table
+            auto user_input_result = db_manager.storeUserInput("scan_path", directory);
+            if (!user_input_result.success)
+            {
+                Logger::warn("Failed to store scan path in user inputs: " + user_input_result.error_message);
+                // Continue with scan even if storing user input fails
+            }
+            else
+            {
+                Logger::info("Stored scan path in user inputs: " + directory);
+            }
+
             json response = {
-                {"message", "Directory scan started in background"},
+                {"message", "Directory scan started"},
                 {"directory", directory},
                 {"recursive", recursive},
-                {"database_path", db_path},
-                {"status", "scanning"}};
+                {"database_path", db_path}};
+
             res.set_content(response.dump(), "application/json");
+            Logger::info("Directory scan request accepted");
 
             // Start scanning in background thread
             std::thread([directory, recursive, db_path]()
@@ -690,6 +716,84 @@ private:
             Logger::error("Get orchestration status error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Failed to get orchestration status: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // User inputs handlers
+    static void handleGetUserInputs(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get user inputs request");
+        try
+        {
+            std::string db_path = req.get_param_value("database_path");
+            if (db_path.empty())
+            {
+                db_path = "scan_results.db"; // Default to scan_results.db for user inputs
+            }
+
+            // Create DatabaseManager and get user inputs
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            auto user_inputs = db_manager.getAllUserInputs();
+
+            json response = {
+                {"total_inputs", user_inputs.size()},
+                {"database_path", db_path},
+                {"inputs", json::array()}};
+
+            for (const auto &[input_type, input_value] : user_inputs)
+            {
+                json input_json = {
+                    {"input_type", input_type},
+                    {"value", input_value}};
+                response["inputs"].push_back(input_json);
+            }
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("User inputs retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get user inputs error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to retrieve user inputs: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleGetUserInputsByType(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get user inputs by type request");
+        try
+        {
+            std::string input_type = req.matches[1]; // matches[1] is the input_type
+            std::string db_path = req.get_param_value("database_path");
+            if (db_path.empty())
+            {
+                db_path = "scan_results.db"; // Default to scan_results.db for user inputs
+            }
+
+            // Create DatabaseManager and get user inputs by type
+            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            auto user_inputs = db_manager.getUserInputs(input_type);
+
+            json response = {
+                {"total_inputs", user_inputs.size()},
+                {"input_type", input_type},
+                {"database_path", db_path},
+                {"values", json::array()}};
+
+            for (const auto &input_value : user_inputs)
+            {
+                response["values"].push_back(input_value);
+            }
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("User inputs by type retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get user inputs by type error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to retrieve user inputs by type: " + std::string(e.what())}}.dump(), "application/json");
         }
     }
 };
