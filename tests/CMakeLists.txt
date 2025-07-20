@@ -10,6 +10,7 @@ add_executable(dedup_tests
     ../src/media_processor.cpp
     ../src/database/database_manager.cpp
     ../src/file_processor.cpp
+    ../src/file_scanner.cpp
     ../src/server_config_manager.cpp
     ../src/database/database_access_queue.cpp
 )

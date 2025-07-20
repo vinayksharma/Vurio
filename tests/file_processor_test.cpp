@@ -1,4 +1,5 @@
 #include "core/file_processor.hpp"
+#include "core/file_scanner.hpp"
 #include "database/database_manager.hpp" // Added for DatabaseManager reset
 #include "core/server_config_manager.hpp"
 #include <gtest/gtest.h>
@@ -80,16 +81,25 @@ TEST_F(FileProcessorTest, FileProcessorInitialization)
 
 TEST_F(FileProcessorTest, ProcessSingleFile)
 {
+    FileScanner scanner(test_db_.string());
     FileProcessor processor(test_db_.string());
 
-    // Test processing a supported file
+    // First scan the supported file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
+    bool scan_success = scanner.scanFile(image_path);
+    EXPECT_TRUE(scan_success) << "Failed to scan image file";
+
+    // Now process the scanned file
     auto image_result = processor.processFile(image_path);
     EXPECT_TRUE(image_result.success) << image_result.error_message;
     processor.waitForWrites();
 
-    // Test processing an unsupported file
+    // Test processing an unsupported file (should fail during scan)
     std::string text_path = (test_dir_ / "test_document.txt").string();
+    bool text_scan_success = scanner.scanFile(text_path);
+    EXPECT_FALSE(text_scan_success) << "Should not scan unsupported files";
+
+    // Try to process unsupported file (should fail)
     auto text_result = processor.processFile(text_path);
     EXPECT_FALSE(text_result.success) << text_result.error_message;
     processor.waitForWrites();
@@ -97,9 +107,14 @@ TEST_F(FileProcessorTest, ProcessSingleFile)
 
 TEST_F(FileProcessorTest, ProcessDirectory)
 {
+    FileScanner scanner(test_db_.string());
     FileProcessor processor(test_db_.string());
 
-    // Process the test directory
+    // First scan the directory to store supported files
+    size_t files_scanned = scanner.scanDirectory(test_dir_.string(), false);
+    EXPECT_GT(files_scanned, 0) << "Should scan at least some supported files";
+
+    // Now process the scanned files
     size_t files_processed = processor.processDirectory(test_dir_.string(), false);
     processor.waitForWrites();
 
@@ -114,6 +129,7 @@ TEST_F(FileProcessorTest, ProcessDirectory)
 
 TEST_F(FileProcessorTest, ProcessingStatistics)
 {
+    FileScanner scanner(test_db_.string());
     FileProcessor processor(test_db_.string());
 
     // Clear stats
@@ -122,8 +138,12 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
     EXPECT_EQ(stats.first, 0);
     EXPECT_EQ(stats.second, 0);
 
-    // Process a file
+    // First scan the file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
+    bool scan_success = scanner.scanFile(image_path);
+    EXPECT_TRUE(scan_success) << "Failed to scan image file";
+
+    // Process the scanned file
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
 
@@ -138,10 +158,15 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
 
 TEST_F(FileProcessorTest, DatabaseIntegration)
 {
+    FileScanner scanner(test_db_.string());
     FileProcessor processor(test_db_.string());
 
-    // Process a file
+    // First scan the file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
+    bool scan_success = scanner.scanFile(image_path);
+    EXPECT_TRUE(scan_success) << "Failed to scan image file";
+
+    // Process the scanned file
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
     processor.waitForWrites();
@@ -153,14 +178,19 @@ TEST_F(FileProcessorTest, DatabaseIntegration)
 
 TEST_F(FileProcessorTest, QualityModeIntegration)
 {
+    FileScanner scanner(test_db_.string());
     FileProcessor processor(test_db_.string());
 
     // Get current quality mode
     auto &config_manager = ServerConfigManager::getInstance();
     auto current_mode = config_manager.getDedupMode();
 
-    // Process a file
+    // First scan the file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
+    bool scan_success = scanner.scanFile(image_path);
+    EXPECT_TRUE(scan_success) << "Failed to scan image file";
+
+    // Process the scanned file
     auto result = processor.processFile(image_path);
     EXPECT_TRUE(result.success) << result.error_message;
     processor.waitForWrites();

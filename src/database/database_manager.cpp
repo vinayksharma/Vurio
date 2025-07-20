@@ -1001,6 +1001,62 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
     return results;
 }
 
+bool DatabaseManager::fileExistsInDatabase(const std::string &file_path)
+{
+    Logger::debug("fileExistsInDatabase called for: " + file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return false;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing fileExistsInDatabase in access queue for: " + captured_file_path);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(false);
+        }
+        
+        const std::string select_sql = "SELECT COUNT(*) FROM scanned_files WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(false);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        
+        bool exists = false;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            exists = (sqlite3_column_int(stmt, 0) > 0);
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(exists); });
+
+    // Wait for the result
+    try
+    {
+        return std::any_cast<bool>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to check if file exists in database: " + std::string(e.what()));
+        return false;
+    }
+}
+
 DBOpResult DatabaseManager::clearAllScannedFiles()
 {
     if (!waitForQueueInitialization())

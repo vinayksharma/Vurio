@@ -113,6 +113,13 @@ public:
     std::pair<DBOpResult, size_t> updateFileHashWithId(const std::string &file_path, const std::string &file_hash);
 
     /**
+     * @brief Check if a file exists in the scanned_files table
+     * @param file_path Path to the file to check
+     * @return true if file exists in database, false otherwise
+     */
+    bool fileExistsInDatabase(const std::string &file_path);
+
+    /**
      * @brief Get all scanned files
      * @return Vector of file path and name pairs
      */

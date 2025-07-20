@@ -76,12 +76,11 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
             return FileProcessResult(false, msg);
         }
 
-        // First, ensure the file is stored in scanned_files table
-        DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
-        if (!scan_result.success)
+        // Check if file exists in scanned_files table before processing
+        if (!db_manager_->fileExistsInDatabase(file_path))
         {
-            std::string msg = "Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message;
-            Logger::error(msg);
+            std::string msg = "File not found in scanned_files table: " + file_path + ". File must be scanned before processing.";
+            Logger::warn(msg);
             return FileProcessResult(false, msg);
         }
 
@@ -158,11 +157,10 @@ void FileProcessor::handleFile(const std::string &file_path)
             return;
         }
 
-        // First, ensure the file is stored in scanned_files table
-        DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
-        if (!scan_result.success)
+        // Check if file exists in scanned_files table before processing
+        if (!db_manager_->fileExistsInDatabase(file_path))
         {
-            Logger::error("Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message);
+            Logger::warn("File not found in scanned_files table: " + file_path + ". File must be scanned before processing.");
             return;
         }
 
