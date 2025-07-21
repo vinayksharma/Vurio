@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <opencv2/core.hpp>
 #include "dedup_modes.hpp"
 #include "logging/logger.hpp"
 
@@ -151,6 +152,10 @@ private:
     static ProcessingResult processAudioFast(const std::string &file_path);
     static ProcessingResult processAudioBalanced(const std::string &file_path);
     static ProcessingResult processAudioQuality(const std::string &file_path);
+
+    // Helper functions for video processing
+    static std::vector<uint8_t> generateFrameDHash(const cv::Mat &frame);
+    static std::vector<uint8_t> combineFrameHashes(const std::vector<std::vector<uint8_t>> &frame_hashes, int target_size);
 };
 
 // TODO: IMPLEMENTATION NOTES

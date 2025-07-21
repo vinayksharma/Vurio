@@ -36,6 +36,19 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libswscale
 )
 
+# Individual FFmpeg libraries for linking
+pkg_check_modules(AVCODEC REQUIRED libavcodec)
+pkg_check_modules(AVFORMAT REQUIRED libavformat)
+pkg_check_modules(AVUTIL REQUIRED libavutil)
+pkg_check_modules(SWSCALE REQUIRED libswscale)
+
+# FFmpeg library names - use pkg-config output
+execute_process(
+    COMMAND pkg-config --libs libavcodec libavformat libavutil libswscale
+    OUTPUT_VARIABLE FFMPEG_LIBRARIES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
 # libvips - Required for BALANCED mode (image processing)
 # TODO: Install with: brew install vips (macOS) or apt-get install libvips-dev (Ubuntu)
 find_package(PkgConfig REQUIRED)
@@ -114,7 +127,7 @@ target_link_libraries(dedup_server
     # BALANCED MODE: libvips + OpenCV + FFmpeg
     # QUALITY MODE: ONNX Runtime + FFmpeg
     PkgConfig::OpenCV
-    PkgConfig::FFMPEG
+    ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
 )
@@ -161,7 +174,7 @@ target_link_libraries(media_processor_example
     PkgConfig::SQLITE3
     TBB::tbb
     PkgConfig::OpenCV
-    PkgConfig::FFMPEG
+    ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
 )
@@ -182,7 +195,7 @@ target_link_libraries(file_processor_example
     PkgConfig::SQLITE3
     TBB::tbb
     PkgConfig::OpenCV
-    PkgConfig::FFMPEG
+    ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
 ) 

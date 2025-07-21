@@ -28,6 +28,7 @@ target_link_libraries(dedup_tests PRIVATE
     spdlog::spdlog
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
+    ${FFMPEG_LIBRARIES}
 )
 
 include(GoogleTest)
@@ -53,5 +54,6 @@ target_link_libraries(media_processing_orchestrator_test
     OpenSSL::Crypto
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
+    ${FFMPEG_LIBRARIES}
 )
 add_test(NAME MediaProcessingOrchestratorTest COMMAND media_processing_orchestrator_test) 
