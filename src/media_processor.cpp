@@ -714,28 +714,235 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
 
     Logger::info("Processing video with " + algorithm->name + ": " + file_path);
 
-    // TODO: IMPLEMENTATION - Use algorithm information
-    // Libraries needed: algorithm->libraries
-    // Output format: algorithm->output_format
-    // Expected data size: algorithm->data_size_bytes
-    // Typical confidence: algorithm->typical_confidence
+    try
+    {
+        // Open video file
+        AVFormatContext *format_ctx = nullptr;
+        if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
+        {
+            return ProcessingResult(false, "Could not open video file: " + file_path);
+        }
 
-    // Placeholder implementation using algorithm info
-    std::vector<uint8_t> video_hash_data(algorithm->data_size_bytes, 0); // Use algorithm data size
-    std::string hash = generateHash(video_hash_data);
+        // Find stream information
+        if (avformat_find_stream_info(format_ctx, nullptr) < 0)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not find stream information");
+        }
 
-    MediaArtifact artifact;
-    artifact.data = video_hash_data;
-    artifact.format = algorithm->output_format; // Use algorithm output format
-    artifact.hash = hash;
-    artifact.confidence = algorithm->typical_confidence; // Use algorithm confidence
-    artifact.metadata = algorithm->metadata_template;    // Use algorithm metadata template
+        // Find video stream
+        int video_stream_index = -1;
+        for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
+        {
+            if (format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+            {
+                video_stream_index = i;
+                break;
+            }
+        }
 
-    ProcessingResult result(true);
-    result.artifact = artifact;
+        if (video_stream_index == -1)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "No video stream found");
+        }
 
-    Logger::info("BALANCED mode video processing completed for: " + file_path + " using " + algorithm->name);
-    return result;
+        AVStream *video_stream = format_ctx->streams[video_stream_index];
+        AVCodecParameters *codec_params = video_stream->codecpar;
+
+        // Get video duration and frame count
+        int64_t duration = video_stream->duration;
+        int64_t frame_count = video_stream->nb_frames;
+        double fps = av_q2d(video_stream->r_frame_rate);
+
+        Logger::info("Video info - Duration: " + std::to_string(duration) +
+                     ", Frames: " + std::to_string(frame_count) +
+                     ", FPS: " + std::to_string(fps));
+
+        // Find decoder
+        const AVCodec *codec = avcodec_find_decoder(codec_params->codec_id);
+        if (!codec)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Unsupported video codec");
+        }
+
+        // Allocate decoder context
+        AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
+        if (!codec_ctx)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not allocate decoder context");
+        }
+
+        // Fill decoder context with parameters
+        if (avcodec_parameters_to_context(codec_ctx, codec_params) < 0)
+        {
+            avcodec_free_context(&codec_ctx);
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not copy codec parameters");
+        }
+
+        // Open decoder
+        if (avcodec_open2(codec_ctx, codec, nullptr) < 0)
+        {
+            avcodec_free_context(&codec_ctx);
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not open decoder");
+        }
+
+        // Allocate frame and packet
+        AVFrame *frame = av_frame_alloc();
+        AVFrame *rgb_frame = av_frame_alloc();
+        AVPacket *packet = av_packet_alloc();
+
+        if (!frame || !rgb_frame || !packet)
+        {
+            av_frame_free(&frame);
+            av_frame_free(&rgb_frame);
+            av_packet_free(&packet);
+            avcodec_free_context(&codec_ctx);
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not allocate frame or packet");
+        }
+
+        // Set up RGB frame
+        rgb_frame->format = AV_PIX_FMT_RGB24;
+        rgb_frame->width = codec_ctx->width;
+        rgb_frame->height = codec_ctx->height;
+        av_frame_get_buffer(rgb_frame, 0);
+
+        // Set up software scaler
+        SwsContext *sws_ctx = sws_getContext(
+            codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
+            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
+            SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+        if (!sws_ctx)
+        {
+            av_frame_free(&frame);
+            av_frame_free(&rgb_frame);
+            av_packet_free(&packet);
+            avcodec_free_context(&codec_ctx);
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Could not create software scaler");
+        }
+
+        // Extract key frames and generate pHash fingerprints
+        std::vector<std::vector<uint8_t>> frame_hashes;
+        int frame_count_extracted = 0;
+        int max_keyframes = 8; // Algorithm specifies 8 keyframes for BALANCED mode
+
+        while (av_read_frame(format_ctx, packet) >= 0 && frame_count_extracted < max_keyframes)
+        {
+            if (packet->stream_index == video_stream_index)
+            {
+                // Send packet to decoder
+                int response = avcodec_send_packet(codec_ctx, packet);
+                if (response < 0)
+                {
+                    av_packet_unref(packet);
+                    continue;
+                }
+
+                // Receive frames from decoder
+                while (response >= 0)
+                {
+                    response = avcodec_receive_frame(codec_ctx, frame);
+                    if (response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+                    {
+                        break;
+                    }
+                    else if (response < 0)
+                    {
+                        av_packet_unref(packet);
+                        break;
+                    }
+
+                    // Check if this is a key frame (I-frame)
+                    if (frame->key_frame || frame_count_extracted == 0)
+                    {
+                        // Scale frame to RGB
+                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+                                  rgb_frame->data, rgb_frame->linesize);
+
+                        // Convert to OpenCV Mat
+                        cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
+                        for (int y = 0; y < frame->height; y++)
+                        {
+                            for (int x = 0; x < frame->width; x++)
+                            {
+                                cv_frame.at<cv::Vec3b>(y, x)[0] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + 0]; // R
+                                cv_frame.at<cv::Vec3b>(y, x)[1] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + 1]; // G
+                                cv_frame.at<cv::Vec3b>(y, x)[2] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + 2]; // B
+                            }
+                        }
+
+                        // Generate pHash for this frame
+                        std::vector<uint8_t> frame_hash = generateFramePHash(cv_frame);
+                        frame_hashes.push_back(frame_hash);
+                        frame_count_extracted++;
+
+                        Logger::info("Extracted key frame " + std::to_string(frame_count_extracted) +
+                                     " (size: " + std::to_string(frame->width) + "x" + std::to_string(frame->height) + ")");
+
+                        if (frame_count_extracted >= max_keyframes)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            av_packet_unref(packet);
+        }
+
+        // Clean up FFmpeg resources
+        sws_freeContext(sws_ctx);
+        av_frame_free(&frame);
+        av_frame_free(&rgb_frame);
+        av_packet_free(&packet);
+        avcodec_free_context(&codec_ctx);
+        avformat_close_input(&format_ctx);
+
+        if (frame_hashes.empty())
+        {
+            return ProcessingResult(false, "No key frames could be extracted from video");
+        }
+
+        Logger::info("Extracted " + std::to_string(frame_hashes.size()) + " key frames for pHash processing");
+
+        // Combine frame hashes into a single video fingerprint
+        std::vector<uint8_t> video_hash_data = combineFrameHashes(frame_hashes, algorithm->data_size_bytes);
+
+        // Generate hash from the video fingerprint
+        std::string hash = generateHash(video_hash_data);
+
+        // Create media artifact with algorithm-specific parameters
+        MediaArtifact artifact;
+        artifact.data = video_hash_data;
+        artifact.format = algorithm->output_format; // "video_phash"
+        artifact.hash = hash;
+        artifact.confidence = algorithm->typical_confidence; // 0.88
+        artifact.metadata = algorithm->metadata_template;    // Uses algorithm metadata template
+
+        ProcessingResult result(true);
+        result.artifact = artifact;
+
+        Logger::info("BALANCED mode video processing completed for: " + file_path + " using " + algorithm->name);
+        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte video pHash with confidence " + std::to_string(algorithm->typical_confidence));
+
+        return result;
+    }
+    catch (const cv::Exception &e)
+    {
+        Logger::error("OpenCV error during video processing: " + std::string(e.what()));
+        return ProcessingResult(false, "OpenCV processing error: " + std::string(e.what()));
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error during video balanced processing: " + std::string(e.what()));
+        return ProcessingResult(false, "Processing error: " + std::string(e.what()));
+    }
 }
 
 ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_path)
@@ -935,6 +1142,76 @@ std::vector<uint8_t> MediaProcessor::generateFrameDHash(const cv::Mat &frame)
     }
 
     return dhash_data;
+}
+
+// Helper function to generate pHash for a single frame
+std::vector<uint8_t> MediaProcessor::generateFramePHash(const cv::Mat &frame)
+{
+    // Convert to grayscale
+    cv::Mat gray_frame;
+    cv::cvtColor(frame, gray_frame, cv::COLOR_BGR2GRAY);
+
+    // Resize to 32x32 for pHash (perceptual hash)
+    cv::Mat resized_frame;
+    cv::resize(gray_frame, resized_frame, cv::Size(32, 32));
+
+    // Convert to float for DCT
+    cv::Mat float_frame;
+    resized_frame.convertTo(float_frame, CV_32F);
+
+    // Apply DCT (Discrete Cosine Transform)
+    cv::Mat dct_frame;
+    cv::dct(float_frame, dct_frame);
+
+    // Extract the top-left 8x8 DCT coefficients (low frequency components)
+    cv::Mat dct_8x8 = dct_frame(cv::Rect(0, 0, 8, 8));
+
+    // Calculate the median of the DCT coefficients (excluding DC component)
+    std::vector<float> dct_values;
+    for (int y = 0; y < 8; y++)
+    {
+        for (int x = 0; x < 8; x++)
+        {
+            if (x == 0 && y == 0)
+                continue; // Skip DC component
+            dct_values.push_back(dct_8x8.at<float>(y, x));
+        }
+    }
+
+    // Calculate median
+    std::sort(dct_values.begin(), dct_values.end());
+    float median = dct_values[dct_values.size() / 2];
+
+    // Generate pHash based on DCT coefficients (8 bytes for 64-bit hash)
+    std::vector<uint8_t> phash_data(8, 0);
+    int hash_index = 0;
+    int bit_position = 0;
+
+    for (int y = 0; y < 8; y++)
+    {
+        for (int x = 0; x < 8; x++)
+        {
+            if (x == 0 && y == 0)
+                continue; // Skip DC component
+
+            float dct_value = dct_8x8.at<float>(y, x);
+
+            // Set bit if DCT coefficient is greater than median
+            if (dct_value > median)
+            {
+                phash_data[hash_index] |= (1 << (7 - bit_position));
+            }
+
+            bit_position++;
+            if (bit_position == 8)
+            {
+                bit_position = 0;
+                hash_index++;
+            }
+        }
+    }
+
+    return phash_data;
 }
 
 // Helper function to combine multiple frame hashes into a single video fingerprint
