@@ -16,6 +16,7 @@
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
 #include "core/media_processor.hpp"
+#include <yaml-cpp/yaml.h> // Added for YAML::Node
 
 using json = nlohmann::json;
 
@@ -217,9 +218,14 @@ private:
         try
         {
             auto &config_manager = ServerConfigManager::getInstance();
-            json config = config_manager.getConfig();
-
-            res.set_content(config.dump(), "application/json");
+            YAML::Node config = config_manager.getConfig();
+            // Convert YAML to JSON string for API response
+            std::stringstream ss;
+            ss << config;
+            std::string yaml_str = ss.str();
+            // Optionally, convert YAML to JSON for clients expecting JSON
+            nlohmann::json config_json = nlohmann::json::parse(YAML::Dump(config));
+            res.set_content(config_json.dump(), "application/json");
             Logger::info("Configuration retrieved successfully");
         }
         catch (const std::exception &e)
@@ -235,20 +241,19 @@ private:
         Logger::trace("Received update config request");
         try
         {
-            auto body = json::parse(req.body);
+            auto body = nlohmann::json::parse(req.body);
+            // Convert JSON to YAML::Node
+            YAML::Node yaml_body = YAML::Load(body.dump());
             auto &config_manager = ServerConfigManager::getInstance();
-
             // Validate the configuration
-            if (!config_manager.validateConfig(body))
+            if (!config_manager.validateConfig(yaml_body))
             {
                 res.status = 400;
                 res.set_content(json{{"error", "Invalid configuration"}}.dump(), "application/json");
                 return;
             }
-
             // Update configuration (this will trigger reactive events)
-            config_manager.updateConfig(body);
-
+            config_manager.updateConfig(yaml_body);
             res.set_content(json{{"message", "Configuration updated successfully"}}.dump(), "application/json");
             Logger::info("Configuration updated successfully");
         }

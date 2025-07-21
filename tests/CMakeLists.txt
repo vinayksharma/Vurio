@@ -29,6 +29,7 @@ target_link_libraries(dedup_tests PRIVATE
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
+    yaml-cpp
 )
 
 include(GoogleTest)
@@ -55,5 +56,6 @@ target_link_libraries(media_processing_orchestrator_test
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
+    yaml-cpp
 )
 add_test(NAME MediaProcessingOrchestratorTest COMMAND media_processing_orchestrator_test) 

@@ -6,10 +6,8 @@
 #include <vector>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 #include "core/dedup_modes.hpp"
-
-using json = nlohmann::json;
 
 /**
  * @brief Configuration change event types
@@ -30,8 +28,8 @@ struct ConfigEvent
 {
     ConfigEventType type;
     std::string key;
-    json old_value;
-    json new_value;
+    YAML::Node old_value;
+    YAML::Node new_value;
     std::string description;
 };
 
@@ -60,16 +58,20 @@ public:
     int getServerPort() const;
     std::string getServerHost() const;
     std::string getAuthSecret() const;
-    json getConfig() const;
+    YAML::Node getConfig() const;
     int getScanIntervalSeconds() const;
     int getProcessingIntervalSeconds() const;
+    // Video processing configuration accessors
+    int getVideoSkipDurationSeconds(DedupMode mode) const;
+    int getVideoFramesPerSkip(DedupMode mode) const;
+    int getVideoSkipCount(DedupMode mode) const;
 
     // Configuration setters with event publishing
     void setDedupMode(DedupMode mode);
     void setLogLevel(const std::string &level);
     void setServerPort(int port);
     void setAuthSecret(const std::string &secret);
-    void updateConfig(const json &new_config);
+    void updateConfig(const YAML::Node &new_config);
 
     // Observer management
     void subscribe(ConfigObserver *observer);
@@ -80,7 +82,7 @@ public:
     bool saveConfig(const std::string &file_path) const;
 
     // Configuration validation
-    bool validateConfig(const json &config) const;
+    bool validateConfig(const YAML::Node &config) const;
 
 private:
     ServerConfigManager();
@@ -91,11 +93,11 @@ private:
     // Internal methods
     void publishEvent(const ConfigEvent &event);
     void initializeDefaultConfig();
-    bool saveConfigInternal(const std::string &file_path, const json &config) const;
+    bool saveConfigInternal(const std::string &file_path, const YAML::Node &config) const;
 
     // Configuration storage
     mutable std::mutex config_mutex_;
-    json config_;
+    YAML::Node config_;
 
     // Observers
     mutable std::mutex observers_mutex_;
@@ -107,7 +109,7 @@ private:
 // This configuration manager provides:
 // 1. Centralized configuration storage
 // 2. Reactive publishing to subscribed services
-// 3. Configuration persistence to/from JSON files
+// 3. Configuration persistence to/from YAML files
 // 4. Thread-safe operations
 // 5. Event-driven architecture for configuration changes
 //

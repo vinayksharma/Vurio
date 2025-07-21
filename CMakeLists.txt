@@ -5,11 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add Homebrew spdlog path for macOS
-set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}:/opt/homebrew/opt/spdlog")
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}:/opt/homebrew/opt/spdlog:/opt/homebrew/opt/yaml-cpp")
 
 # Find required packages
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # Find TBB (Intel Threading Building Blocks)
 find_package(TBB REQUIRED)
@@ -71,6 +72,9 @@ include_directories(
     ${nlohmann_json_INCLUDE_DIRS}
 )
 
+# Add Homebrew yaml-cpp lib directory for linker
+link_directories(/opt/homebrew/opt/yaml-cpp/lib)
+
 # Add source files
 set(SOURCES
     src/main.cpp
@@ -130,6 +134,7 @@ target_link_libraries(dedup_server
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    yaml-cpp
 )
 
 # Add Google Test
@@ -177,6 +182,7 @@ target_link_libraries(media_processor_example
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    yaml-cpp
 )
 
 # Add FileProcessor example
@@ -198,6 +204,7 @@ target_link_libraries(file_processor_example
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    yaml-cpp
 ) 
 
  

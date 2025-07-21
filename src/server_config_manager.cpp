@@ -8,13 +8,13 @@ ServerConfigManager::ServerConfigManager()
     Logger::info("ServerConfigManager constructor called");
 
     // Try to load configuration from file first
-    const std::string config_file = "config.json";
+    const std::string config_file = "config.yaml";
 
     // Check if config file exists
     std::ifstream file_check(config_file);
     if (!file_check.good())
     {
-        Logger::info("Configuration file not found, creating default config.json");
+        Logger::info("Configuration file not found, creating default config.yaml");
         initializeDefaultConfig();
         if (saveConfig(config_file))
         {
@@ -53,50 +53,62 @@ ServerConfigManager &ServerConfigManager::getInstance()
 void ServerConfigManager::initializeDefaultConfig()
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    config_ = {
-        {"dedup_mode", "BALANCED"},              // enum: ["FAST", "BALANCED", "QUALITY"]
-        {"log_level", "INFO"},                   // enum: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-        {"server_port", 8080},                   // integer: 1-65535
-        {"auth_secret", "your-secret-key-here"}, // string: JWT authentication secret
-        {"server_host", "localhost"},            // string: HTTP server host address
-        {"scan_interval_seconds", 3600},         // integer: scan interval in seconds (1 hour)
-        {"processing_interval_seconds", 1800}    // integer: processing interval in seconds (30 minutes)
-    };
+    config_ = YAML::Load(R"(
+        auth_secret: "your-secret-key-here"
+        dedup_mode: "BALANCED"
+        log_level: "INFO"
+        server_port: 8080
+        server_host: "localhost"
+        scan_interval_seconds: 3600
+        processing_interval_seconds: 1800
+        video_processing:
+          FAST:
+            skip_duration_seconds: 2
+            frames_per_skip: 2
+            skip_count: 5
+          BALANCED:
+            skip_duration_seconds: 1
+            frames_per_skip: 2
+            skip_count: 8
+          QUALITY:
+            skip_duration_seconds: 1
+            frames_per_skip: 3
+            skip_count: 12
+    )");
 }
 
 DedupMode ServerConfigManager::getDedupMode() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    std::string mode_str = config_["dedup_mode"];
+    std::string mode_str = config_["dedup_mode"].as<std::string>();
     return DedupModes::fromString(mode_str);
 }
 
 std::string ServerConfigManager::getLogLevel() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_["log_level"];
+    return config_["log_level"].as<std::string>();
 }
 
 int ServerConfigManager::getServerPort() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_["server_port"];
+    return config_["server_port"].as<int>();
 }
 
 std::string ServerConfigManager::getServerHost() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_["server_host"];
+    return config_["server_host"].as<std::string>();
 }
 
 std::string ServerConfigManager::getAuthSecret() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_["auth_secret"];
+    return config_["auth_secret"].as<std::string>();
 }
 
-json ServerConfigManager::getConfig() const
+YAML::Node ServerConfigManager::getConfig() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
     return config_;
@@ -105,22 +117,57 @@ json ServerConfigManager::getConfig() const
 int ServerConfigManager::getScanIntervalSeconds() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_.value("scan_interval_seconds", 3600);
+    if (config_["scan_interval_seconds"])
+        return config_["scan_interval_seconds"].as<int>();
+    return 3600;
 }
 
 int ServerConfigManager::getProcessingIntervalSeconds() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    return config_.value("processing_interval_seconds", 1800);
+    if (config_["processing_interval_seconds"])
+        return config_["processing_interval_seconds"].as<int>();
+    return 1800;
+}
+
+int ServerConfigManager::getVideoSkipDurationSeconds(DedupMode mode) const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::string mode_str = DedupModes::getModeName(mode);
+    if (config_["video_processing"] && config_["video_processing"][mode_str])
+    {
+        return config_["video_processing"][mode_str]["skip_duration_seconds"].as<int>(1);
+    }
+    return 1;
+}
+
+int ServerConfigManager::getVideoFramesPerSkip(DedupMode mode) const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::string mode_str = DedupModes::getModeName(mode);
+    if (config_["video_processing"] && config_["video_processing"][mode_str])
+    {
+        return config_["video_processing"][mode_str]["frames_per_skip"].as<int>(1);
+    }
+    return 1;
+}
+
+int ServerConfigManager::getVideoSkipCount(DedupMode mode) const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::string mode_str = DedupModes::getModeName(mode);
+    if (config_["video_processing"] && config_["video_processing"][mode_str])
+    {
+        return config_["video_processing"][mode_str]["skip_count"].as<int>(5);
+    }
+    return 5;
 }
 
 void ServerConfigManager::setDedupMode(DedupMode mode)
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    std::string old_mode = config_["dedup_mode"];
+    std::string old_mode = config_["dedup_mode"].as<std::string>();
     std::string new_mode;
-
     switch (mode)
     {
     case DedupMode::FAST:
@@ -133,150 +180,123 @@ void ServerConfigManager::setDedupMode(DedupMode mode)
         new_mode = "QUALITY";
         break;
     }
-
     if (old_mode != new_mode)
     {
-        json old_value = old_mode;
-        json new_value = new_mode;
-
+        YAML::Node old_value;
+        old_value = old_mode;
+        YAML::Node new_value;
+        new_value = new_mode;
         config_["dedup_mode"] = new_mode;
-
         ConfigEvent event{
             ConfigEventType::DEDUP_MODE_CHANGED,
             "dedup_mode",
             old_value,
             new_value,
             "Dedup mode changed from " + old_mode + " to " + new_mode};
-
         publishEvent(event);
-
-        // Auto-save configuration to file
-        saveConfigInternal("config.json", config_);
+        saveConfigInternal("config.yaml", config_);
     }
 }
 
 void ServerConfigManager::setLogLevel(const std::string &level)
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    std::string old_level = config_["log_level"];
-
+    std::string old_level = config_["log_level"].as<std::string>();
     if (old_level != level)
     {
-        json old_value = old_level;
-        json new_value = level;
-
+        YAML::Node old_value;
+        old_value = old_level;
+        YAML::Node new_value;
+        new_value = level;
         config_["log_level"] = level;
-
         ConfigEvent event{
             ConfigEventType::LOG_LEVEL_CHANGED,
             "log_level",
             old_value,
             new_value,
             "Log level changed from " + old_level + " to " + level};
-
         publishEvent(event);
-
-        // Auto-save configuration to file
-        saveConfigInternal("config.json", config_);
+        saveConfigInternal("config.yaml", config_);
     }
 }
 
 void ServerConfigManager::setServerPort(int port)
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    int old_port = config_["server_port"];
-
+    int old_port = config_["server_port"].as<int>();
     if (old_port != port)
     {
-        json old_value = old_port;
-        json new_value = port;
-
+        YAML::Node old_value;
+        old_value = old_port;
+        YAML::Node new_value;
+        new_value = port;
         config_["server_port"] = port;
-
         ConfigEvent event{
             ConfigEventType::SERVER_PORT_CHANGED,
             "server_port",
             old_value,
             new_value,
             "Server port changed from " + std::to_string(old_port) + " to " + std::to_string(port)};
-
         publishEvent(event);
-
-        // Auto-save configuration to file
-        saveConfigInternal("config.json", config_);
+        saveConfigInternal("config.yaml", config_);
     }
 }
 
 void ServerConfigManager::setAuthSecret(const std::string &secret)
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    std::string old_secret = config_["auth_secret"];
-
+    std::string old_secret = config_["auth_secret"].as<std::string>();
     if (old_secret != secret)
     {
-        json old_value = old_secret;
-        json new_value = secret;
-
+        YAML::Node old_value;
+        old_value = old_secret;
+        YAML::Node new_value;
+        new_value = secret;
         config_["auth_secret"] = secret;
-
         ConfigEvent event{
             ConfigEventType::AUTH_SECRET_CHANGED,
             "auth_secret",
             old_value,
             new_value,
             "Auth secret changed"};
-
         publishEvent(event);
-
-        // Auto-save configuration to file
-        saveConfigInternal("config.json", config_);
+        saveConfigInternal("config.yaml", config_);
     }
 }
 
-void ServerConfigManager::updateConfig(const json &new_config)
+void ServerConfigManager::updateConfig(const YAML::Node &new_config)
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-
-    json old_config = config_;
+    YAML::Node old_config = config_;
     bool config_changed = false;
-
-    // Merge new config with existing config
     for (auto it = new_config.begin(); it != new_config.end(); ++it)
     {
-        if (config_.contains(it.key()))
+        if (config_[it->first])
         {
-            json old_value = config_[it.key()];
-            json new_value = it.value();
-
-            if (old_value != new_value)
+            YAML::Node old_value = config_[it->first];
+            YAML::Node new_value = it->second;
+            if (YAML::Dump(old_value) != YAML::Dump(new_value))
             {
-                config_[it.key()] = it.value();
+                config_[it->first] = it->second;
                 config_changed = true;
-
                 ConfigEvent event{
                     ConfigEventType::GENERAL_CONFIG_CHANGED,
-                    it.key(),
+                    it->first.as<std::string>(),
                     old_value,
                     new_value,
-                    "Configuration key '" + it.key() + "' updated"};
-
+                    "Configuration key '" + it->first.as<std::string>() + "' updated"};
                 publishEvent(event);
             }
         }
         else
         {
-            config_[it.key()] = it.value();
+            config_[it->first] = it->second;
             config_changed = true;
         }
     }
-
-    // Auto-save configuration to file if any changes were made
     if (config_changed)
     {
-        saveConfigInternal("config.json", config_);
+        saveConfigInternal("config.yaml", config_);
     }
 }
 
@@ -299,9 +319,7 @@ void ServerConfigManager::unsubscribe(ConfigObserver *observer)
 void ServerConfigManager::publishEvent(const ConfigEvent &event)
 {
     std::lock_guard<std::mutex> lock(observers_mutex_);
-
     Logger::info("Publishing config event: " + event.description);
-
     for (auto observer : observers_)
     {
         try
@@ -319,19 +337,9 @@ bool ServerConfigManager::loadConfig(const std::string &file_path)
 {
     try
     {
-        std::ifstream file(file_path);
-        if (!file.is_open())
+        config_ = YAML::LoadFile(file_path);
+        if (validateConfig(config_))
         {
-            Logger::error("Could not open config file: " + file_path);
-            return false;
-        }
-
-        json file_config;
-        file >> file_config;
-
-        if (validateConfig(file_config))
-        {
-            updateConfig(file_config);
             Logger::info("Configuration loaded from: " + file_path);
             return true;
         }
@@ -350,6 +358,11 @@ bool ServerConfigManager::loadConfig(const std::string &file_path)
 
 bool ServerConfigManager::saveConfig(const std::string &file_path) const
 {
+    return saveConfigInternal(file_path, config_);
+}
+
+bool ServerConfigManager::saveConfigInternal(const std::string &file_path, const YAML::Node &config) const
+{
     try
     {
         std::ofstream file(file_path);
@@ -358,10 +371,7 @@ bool ServerConfigManager::saveConfig(const std::string &file_path) const
             Logger::error("Could not open config file for writing: " + file_path);
             return false;
         }
-
-        std::lock_guard<std::mutex> lock(config_mutex_);
-        file << config_.dump(4);
-
+        file << config;
         Logger::info("Configuration saved to: " + file_path);
         return true;
     }
@@ -372,65 +382,36 @@ bool ServerConfigManager::saveConfig(const std::string &file_path) const
     }
 }
 
-bool ServerConfigManager::saveConfigInternal(const std::string &file_path, const json &config) const
+bool ServerConfigManager::validateConfig(const YAML::Node &config) const
 {
-    try
-    {
-        std::ofstream file(file_path);
-        if (!file.is_open())
-        {
-            Logger::error("Could not open config file for writing: " + file_path);
-            return false;
-        }
-
-        file << config.dump(4);
-
-        Logger::info("Configuration saved to: " + file_path);
-        return true;
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("Error saving config: " + std::string(e.what()));
-        return false;
-    }
-}
-
-bool ServerConfigManager::validateConfig(const json &config) const
-{
-    // Basic validation - check for required fields
     std::vector<std::string> required_fields = {
         "dedup_mode", "log_level", "server_port", "server_host", "auth_secret"};
-
     for (const auto &field : required_fields)
     {
-        if (!config.contains(field))
+        if (!config[field])
         {
             Logger::error("Missing required config field: " + field);
             return false;
         }
     }
-
-    // Validate specific fields
-    if (config["server_port"].get<int>() <= 0 || config["server_port"].get<int>() > 65535)
+    int port = config["server_port"].as<int>();
+    if (port <= 0 || port > 65535)
     {
-        Logger::error("Invalid server port: " + std::to_string(config["server_port"].get<int>()));
+        Logger::error("Invalid server port: " + std::to_string(port));
         return false;
     }
-
-    std::string mode = config["dedup_mode"];
+    std::string mode = config["dedup_mode"].as<std::string>();
     if (mode != "FAST" && mode != "BALANCED" && mode != "QUALITY")
     {
         Logger::error("Invalid dedup mode: " + mode);
         return false;
     }
-
-    std::string log_level = config["log_level"];
+    std::string log_level = config["log_level"].as<std::string>();
     if (log_level != "TRACE" && log_level != "DEBUG" && log_level != "INFO" &&
         log_level != "WARN" && log_level != "ERROR")
     {
         Logger::error("Invalid log level: " + log_level);
         return false;
     }
-
     return true;
 }

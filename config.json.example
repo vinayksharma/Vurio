@@ -1,29 +1,44 @@
-// Configuration for Dedup Server
-// 
-// dedup_mode: enum ["FAST", "BALANCED", "QUALITY"]
-//   - FAST: Fast processing with basic deduplication
-//   - BALANCED: Balanced processing with moderate accuracy  
-//   - QUALITY: High-quality processing with maximum accuracy
-//
-// log_level: enum ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-//   - TRACE: Most verbose logging
-//   - DEBUG: Debug information
-//   - INFO: General information (default)
-//   - WARN: Warning messages
-//   - ERROR: Error messages only
-//
-// server_port: integer (1-65535)
-//   - HTTP server port number
-//
-// server_host: string
-//   - HTTP server host address
-//
-// auth_secret: string
-//   - JWT authentication secret key
-{
-    "auth_secret": "your-secret-key-here",
-    "dedup_mode": "FAST",
-    "log_level": "INFO",
-    "server_host": "localhost",
-    "server_port": 8080
-} 
+# Configuration for Dedup Server
+# 
+# dedup_mode: enum ["FAST", "BALANCED", "QUALITY"]
+#   - FAST: Fast processing with basic deduplication
+#   - BALANCED: Balanced processing with moderate accuracy  
+#   - QUALITY: High-quality processing with maximum accuracy
+#
+# log_level: enum ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+#   - TRACE: Most verbose logging
+#   - DEBUG: Debug information
+#   - INFO: General information (default)
+#   - WARN: Warning messages
+#   - ERROR: Error messages only
+#
+# server_port: integer (1-65535)
+#   - HTTP server port number
+#
+# server_host: string
+#   - HTTP server host address
+#
+# auth_secret: string
+#   - JWT authentication secret key
+auth_secret: "your-secret-key-here"
+dedup_mode: "QUALITY"
+log_level: "INFO"
+server_host: "localhost"
+server_port: 8080
+# Video processing settings for each quality mode
+video_processing:
+  FAST:
+    # Number of seconds to skip between frame groups
+    skip_duration_seconds: 2
+    # Number of frames to extract at each skip point
+    frames_per_skip: 2
+    # Number of skip points (template length)
+    skip_count: 5
+  BALANCED:
+    skip_duration_seconds: 1
+    frames_per_skip: 2
+    skip_count: 8
+  QUALITY:
+    skip_duration_seconds: 1
+    frames_per_skip: 3
+    skip_count: 12 

@@ -3,10 +3,10 @@ set -e
 
 echo "Building dedup server..."
 
-# Always copy the latest config from example, stripping comments
-echo "Updating config.json from config.json.example (stripping comments)..."
-grep -v '^//' config.json.example | grep -v '^$' > config.json
-echo "✓ Config file updated from example (comments removed)"
+# Always copy the latest config from example (YAML, preserves comments)
+echo "Updating config.yaml from config.yaml.example (preserving comments)..."
+cp config.yaml.example config.yaml
+echo "✓ Config file updated from example (comments preserved)"
 
 mkdir -p build
 cd build
