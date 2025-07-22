@@ -502,6 +502,7 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         int skip_duration = config.getVideoSkipDurationSeconds(DedupMode::FAST);
         int frames_per_skip = config.getVideoFramesPerSkip(DedupMode::FAST);
         int skip_count = config.getVideoSkipCount(DedupMode::FAST);
+        int frames_to_extract = frames_per_skip * 3; // Extract more frames per skip for filtering
         std::vector<int64_t> target_pts;
         if (duration > 0 && skip_count > 0)
         {
@@ -569,9 +570,12 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         for (int skip_idx = 0; skip_idx < (int)target_pts.size(); ++skip_idx)
         {
             int64_t seek_target = target_pts[skip_idx];
-            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD);
+            // Seek to nearest keyframe before target
+            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
+            avcodec_flush_buffers(codec_ctx);
             int frames_found = 0;
-            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_per_skip)
+            int valid_frames = 0;
+            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_to_extract && valid_frames < frames_per_skip)
             {
                 if (packet->stream_index == video_stream_index)
                 {
@@ -591,18 +595,37 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
                             av_packet_unref(packet);
                             break;
                         }
-                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
-                                  rgb_frame->data, rgb_frame->linesize);
-                        cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
-                        for (int y = 0; y < frame->height; y++)
-                            for (int x = 0; x < frame->width; x++)
-                                for (int c = 0; c < 3; c++)
-                                    cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
-                        std::vector<uint8_t> frame_hash = generateFrameDHash(cv_frame);
-                        frame_hashes.push_back(frame_hash);
-                        frame_count_extracted++;
+                        // Only process keyframes or frames after a keyframe
+                        if (frame->key_frame || valid_frames > 0)
+                        {
+                            // Check for corrupted frames (black/low-variance or error flags)
+                            bool corrupted = false;
+                            if (frame->flags & AV_FRAME_FLAG_CORRUPT)
+                                corrupted = true;
+                            // Convert to OpenCV for further checks
+                            sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+                                      rgb_frame->data, rgb_frame->linesize);
+                            cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
+                            for (int y = 0; y < frame->height; y++)
+                                for (int x = 0; x < frame->width; x++)
+                                    for (int c = 0; c < 3; c++)
+                                        cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
+                            // Check for black/low-variance frames
+                            cv::Scalar mean, stddev;
+                            cv::meanStdDev(cv_frame, mean, stddev);
+                            double total_stddev = stddev[0] + stddev[1] + stddev[2];
+                            if (total_stddev < 5.0) // Threshold for low-variance (tune as needed)
+                                corrupted = true;
+                            if (!corrupted)
+                            {
+                                std::vector<uint8_t> frame_hash = generateFrameDHash(cv_frame);
+                                frame_hashes.push_back(frame_hash);
+                                frame_count_extracted++;
+                                valid_frames++;
+                            }
+                        }
                         frames_found++;
-                        if (frames_found >= frames_per_skip)
+                        if (valid_frames >= frames_per_skip)
                             break;
                     }
                 }
@@ -616,7 +639,7 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
         if (frame_hashes.empty())
-            return ProcessingResult(false, "No frames could be extracted from video");
+            return ProcessingResult(false, "No valid frames could be extracted from video");
         std::vector<uint8_t> video_hash_data = combineFrameHashes(frame_hashes, algorithm->data_size_bytes);
         std::string hash = generateHash(video_hash_data);
         // Embed config in metadata
@@ -690,6 +713,7 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
         int skip_duration = config.getVideoSkipDurationSeconds(DedupMode::BALANCED);
         int frames_per_skip = config.getVideoFramesPerSkip(DedupMode::BALANCED);
         int skip_count = config.getVideoSkipCount(DedupMode::BALANCED);
+        int frames_to_extract = frames_per_skip * 3; // Extract more frames per skip for filtering
         std::vector<int64_t> target_pts;
         if (duration > 0 && skip_count > 0)
         {
@@ -757,9 +781,12 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
         for (int skip_idx = 0; skip_idx < (int)target_pts.size(); ++skip_idx)
         {
             int64_t seek_target = target_pts[skip_idx];
-            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD);
+            // Seek to nearest keyframe before target
+            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
+            avcodec_flush_buffers(codec_ctx);
             int frames_found = 0;
-            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_per_skip)
+            int valid_frames = 0;
+            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_to_extract && valid_frames < frames_per_skip)
             {
                 if (packet->stream_index == video_stream_index)
                 {
@@ -779,18 +806,37 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
                             av_packet_unref(packet);
                             break;
                         }
-                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
-                                  rgb_frame->data, rgb_frame->linesize);
-                        cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
-                        for (int y = 0; y < frame->height; y++)
-                            for (int x = 0; x < frame->width; x++)
-                                for (int c = 0; c < 3; c++)
-                                    cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
-                        std::vector<uint8_t> frame_hash = generateFramePHash(cv_frame);
-                        frame_hashes.push_back(frame_hash);
-                        frame_count_extracted++;
+                        // Only process keyframes or frames after a keyframe
+                        if (frame->key_frame || valid_frames > 0)
+                        {
+                            // Check for corrupted frames (black/low-variance or error flags)
+                            bool corrupted = false;
+                            if (frame->flags & AV_FRAME_FLAG_CORRUPT)
+                                corrupted = true;
+                            // Convert to OpenCV for further checks
+                            sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+                                      rgb_frame->data, rgb_frame->linesize);
+                            cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
+                            for (int y = 0; y < frame->height; y++)
+                                for (int x = 0; x < frame->width; x++)
+                                    for (int c = 0; c < 3; c++)
+                                        cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
+                            // Check for black/low-variance frames
+                            cv::Scalar mean, stddev;
+                            cv::meanStdDev(cv_frame, mean, stddev);
+                            double total_stddev = stddev[0] + stddev[1] + stddev[2];
+                            if (total_stddev < 5.0) // Threshold for low-variance (tune as needed)
+                                corrupted = true;
+                            if (!corrupted)
+                            {
+                                std::vector<uint8_t> frame_hash = generateFramePHash(cv_frame);
+                                frame_hashes.push_back(frame_hash);
+                                frame_count_extracted++;
+                                valid_frames++;
+                            }
+                        }
                         frames_found++;
-                        if (frames_found >= frames_per_skip)
+                        if (valid_frames >= frames_per_skip)
                             break;
                     }
                 }
@@ -804,7 +850,7 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
         if (frame_hashes.empty())
-            return ProcessingResult(false, "No frames could be extracted from video");
+            return ProcessingResult(false, "No valid frames could be extracted from video");
         std::vector<uint8_t> video_hash_data = combineFrameHashes(frame_hashes, algorithm->data_size_bytes);
         std::string hash = generateHash(video_hash_data);
         YAML::Node meta = YAML::Load(algorithm->metadata_template);
@@ -877,6 +923,7 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
         int skip_duration = config.getVideoSkipDurationSeconds(DedupMode::QUALITY);
         int frames_per_skip = config.getVideoFramesPerSkip(DedupMode::QUALITY);
         int skip_count = config.getVideoSkipCount(DedupMode::QUALITY);
+        int frames_to_extract = frames_per_skip * 3; // Extract more frames per skip for filtering
         std::vector<int64_t> target_pts;
         if (duration > 0 && skip_count > 0)
         {
@@ -945,9 +992,12 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
         for (int skip_idx = 0; skip_idx < (int)target_pts.size(); ++skip_idx)
         {
             int64_t seek_target = target_pts[skip_idx];
-            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD);
+            // Seek to nearest keyframe before target
+            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
+            avcodec_flush_buffers(codec_ctx);
             int frames_found = 0;
-            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_per_skip)
+            int valid_frames = 0;
+            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_to_extract && valid_frames < frames_per_skip)
             {
                 if (packet->stream_index == video_stream_index)
                 {
@@ -967,44 +1017,63 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
                             av_packet_unref(packet);
                             break;
                         }
-                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
-                                  rgb_frame->data, rgb_frame->linesize);
-                        cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
-                        for (int y = 0; y < frame->height; y++)
-                            for (int x = 0; x < frame->width; x++)
-                                for (int c = 0; c < 3; c++)
-                                    cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
-                        // CNN Preprocessing (as in processImageQuality)
-                        cv::Mat processed_frame;
-                        cv::resize(cv_frame, processed_frame, cv::Size(224, 224));
-                        cv::cvtColor(processed_frame, processed_frame, cv::COLOR_BGR2RGB);
-                        processed_frame.convertTo(processed_frame, CV_32F, 1.0 / 255.0);
-                        std::vector<cv::Mat> channels(3);
-                        cv::split(processed_frame, channels);
-                        channels[0] = (channels[0] - 0.485f) / 0.229f;
-                        channels[1] = (channels[1] - 0.456f) / 0.224f;
-                        channels[2] = (channels[2] - 0.406f) / 0.225f;
-                        cv::merge(channels, processed_frame);
-                        std::vector<float> embedding(embedding_size, 0.0f);
-                        for (int i = 0; i < embedding_size; i++)
+                        // Only process keyframes or frames after a keyframe
+                        if (frame->key_frame || valid_frames > 0)
                         {
-                            int pixel_idx = i % (processed_frame.rows * processed_frame.cols);
-                            int row = pixel_idx / processed_frame.cols;
-                            int col = pixel_idx % processed_frame.cols;
-                            if (row < processed_frame.rows && col < processed_frame.cols)
+                            // Check for corrupted frames (black/low-variance or error flags)
+                            bool corrupted = false;
+                            if (frame->flags & AV_FRAME_FLAG_CORRUPT)
+                                corrupted = true;
+                            // Convert to OpenCV for further checks
+                            sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+                                      rgb_frame->data, rgb_frame->linesize);
+                            cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
+                            for (int y = 0; y < frame->height; y++)
+                                for (int x = 0; x < frame->width; x++)
+                                    for (int c = 0; c < 3; c++)
+                                        cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
+                            // Check for black/low-variance frames
+                            cv::Scalar mean, stddev;
+                            cv::meanStdDev(cv_frame, mean, stddev);
+                            double total_stddev = stddev[0] + stddev[1] + stddev[2];
+                            if (total_stddev < 5.0) // Threshold for low-variance (tune as needed)
+                                corrupted = true;
+                            if (!corrupted)
                             {
-                                cv::Vec3f pixel = processed_frame.at<cv::Vec3f>(row, col);
-                                embedding[i] = (pixel[0] * 0.299f + pixel[1] * 0.587f + pixel[2] * 0.114f) + ((row + col) % 256) / 255.0f;
-                            }
-                            else
-                            {
-                                embedding[i] = ((i * 13 + 7) % 256) / 255.0f;
+                                // CNN Preprocessing (as in processImageQuality)
+                                cv::Mat processed_frame;
+                                cv::resize(cv_frame, processed_frame, cv::Size(224, 224));
+                                cv::cvtColor(processed_frame, processed_frame, cv::COLOR_BGR2RGB);
+                                processed_frame.convertTo(processed_frame, CV_32F, 1.0 / 255.0);
+                                std::vector<cv::Mat> channels(3);
+                                cv::split(processed_frame, channels);
+                                channels[0] = (channels[0] - 0.485f) / 0.229f;
+                                channels[1] = (channels[1] - 0.456f) / 0.224f;
+                                channels[2] = (channels[2] - 0.406f) / 0.225f;
+                                cv::merge(channels, processed_frame);
+                                std::vector<float> embedding(embedding_size, 0.0f);
+                                for (int i = 0; i < embedding_size; i++)
+                                {
+                                    int pixel_idx = i % (processed_frame.rows * processed_frame.cols);
+                                    int row = pixel_idx / processed_frame.cols;
+                                    int col = pixel_idx % processed_frame.cols;
+                                    if (row < processed_frame.rows && col < processed_frame.cols)
+                                    {
+                                        cv::Vec3f pixel = processed_frame.at<cv::Vec3f>(row, col);
+                                        embedding[i] = (pixel[0] * 0.299f + pixel[1] * 0.587f + pixel[2] * 0.114f) + ((row + col) % 256) / 255.0f;
+                                    }
+                                    else
+                                    {
+                                        embedding[i] = ((i * 13 + 7) % 256) / 255.0f;
+                                    }
+                                }
+                                frame_embeddings.push_back(embedding);
+                                frame_count_extracted++;
+                                valid_frames++;
                             }
                         }
-                        frame_embeddings.push_back(embedding);
-                        frame_count_extracted++;
                         frames_found++;
-                        if (frames_found >= frames_per_skip)
+                        if (valid_frames >= frames_per_skip)
                             break;
                     }
                 }
@@ -1018,7 +1087,7 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
         if (frame_embeddings.empty())
-            return ProcessingResult(false, "No frames could be extracted from video");
+            return ProcessingResult(false, "No valid frames could be extracted from video");
         std::vector<float> avg_embedding(embedding_size, 0.0f);
         for (const auto &emb : frame_embeddings)
             for (int i = 0; i < embedding_size; i++)
