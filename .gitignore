@@ -54,3 +54,8 @@ Thumbs.db
 
 # Configuration files (may contain sensitive data)
 config.json 
+
+# db files
+scan_results.db
+scan_results.db-shm
+scan_results.db-wal
