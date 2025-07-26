@@ -1,14 +1,14 @@
 #include "core/media_processing_orchestrator.hpp"
-#include "database/database_manager.hpp"
 #include "core/media_processor.hpp"
 #include "core/file_utils.hpp"
+#include "core/server_config_manager.hpp"
 #include "logging/logger.hpp"
-#include <future>
-#include <mutex>
-#include <atomic>
 #include <chrono>
 #include <thread>
 #include <condition_variable>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/mutex.h>
 
 MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &dbMan)
     : dbMan_(dbMan), cancelled_(false) {}
@@ -67,140 +67,157 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             
             Logger::info("Starting processing of " + std::to_string(files_to_process.size()) + 
                         " files with " + std::to_string(actual_max_threads) + " threads");
-            std::atomic<size_t> total_files{files_to_process.size()};
+            
+            // Thread-safe counters for progress tracking
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
             std::atomic<size_t> failed_files{0};
-
-            // Process files sequentially (TBB not available)
-            for (size_t i = 0; i < files_to_process.size(); ++i)
-            {
-                if (cancelled_.load()) {
-                    Logger::warn("Processing cancelled before file: " + files_to_process[i].first);
-                    if (onError) onError(std::runtime_error("Processing cancelled"));
-                    return;
-                }
-                auto start = std::chrono::steady_clock::now();
-                FileProcessingEvent event;
-                event.file_path = files_to_process[i].first;
-                try {
-                    if (!MediaProcessor::isSupportedFile(files_to_process[i].first)) {
-                        event.success = false;
-                        event.error_message = "Unsupported file type: " + files_to_process[i].first;
-                        Logger::error(event.error_message);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        if (onNext) onNext(event);
-                        continue;
+            
+            // Thread-safe mutex for database operations to prevent race conditions
+            tbb::mutex db_mutex;
+            
+            // Process files in parallel using TBB
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, files_to_process.size()),
+                [&](const tbb::blocked_range<size_t>& range) {
+                    for (size_t i = range.begin(); i != range.end(); ++i) {
+                        // Check for cancellation
+                        if (cancelled_.load()) {
+                            return; // Exit this thread's processing
+                        }
+                        
+                        auto start = std::chrono::steady_clock::now();
+                        FileProcessingEvent event;
+                        event.file_path = files_to_process[i].first;
+                        
+                        try {
+                            // Check if file is supported
+                            if (!MediaProcessor::isSupportedFile(files_to_process[i].first)) {
+                                event.success = false;
+                                event.error_message = "Unsupported file type: " + files_to_process[i].first;
+                                Logger::error(event.error_message);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Process the file
+                            ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, mode);
+                            event.artifact_format = result.artifact.format;
+                            event.artifact_hash = result.artifact.hash;
+                            event.artifact_confidence = result.artifact.confidence;
+                            
+                            if (!result.success) {
+                                event.success = false;
+                                event.error_message = result.error_message;
+                                Logger::error("Processing failed for: " + files_to_process[i].first + " - " + result.error_message);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Thread-safe database operations
+                            bool store_success = false;
+                            bool hash_success = false;
+                            std::string db_error_msg;
+                            
+                            // Lock database operations to prevent race conditions
+                            tbb::mutex::scoped_lock lock(db_mutex);
+                            
+                            // Store processing result
+                            auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, mode, result);
+                            if (!store_result.success) {
+                                db_error_msg = store_result.error_message;
+                                Logger::error("Failed to enqueue processing result: " + files_to_process[i].first + " - " + db_error_msg);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                event.success = false;
+                                event.error_message = "Database operation failed: " + db_error_msg;
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Wait for write queue to process the store operation
+                            dbMan_.waitForWrites();
+                            
+                            // Check if the store operation actually succeeded
+                            auto store_op_result = dbMan_.getAccessQueue().getOperationResult(store_op_id);
+                            if (!store_op_result.success) {
+                                Logger::error("Store operation failed: " + files_to_process[i].first + " - " + store_op_result.error_message);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                event.success = false;
+                                event.error_message = "Database operation failed: " + store_op_result.error_message;
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Generate file hash and update database
+                            std::string file_hash = FileUtils::computeFileHash(files_to_process[i].first);
+                            auto [hash_result, hash_op_id] = dbMan_.updateFileHashWithId(files_to_process[i].first, file_hash);
+                            if (!hash_result.success) {
+                                db_error_msg = hash_result.error_message;
+                                Logger::error("Failed to enqueue hash update: " + files_to_process[i].first + " - " + db_error_msg);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                event.success = false;
+                                event.error_message = "Database operation failed: " + db_error_msg;
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Wait for write queue to process the hash update
+                            dbMan_.waitForWrites();
+                            
+                            // Check if the hash update operation actually succeeded
+                            auto hash_op_result = dbMan_.getAccessQueue().getOperationResult(hash_op_id);
+                            if (!hash_op_result.success) {
+                                Logger::error("Hash update operation failed: " + files_to_process[i].first + " - " + hash_op_result.error_message);
+                                processed_files.fetch_add(1);
+                                failed_files.fetch_add(1);
+                                event.success = false;
+                                event.error_message = "Database operation failed: " + hash_op_result.error_message;
+                                if (onNext) onNext(event);
+                                continue;
+                            }
+                            
+                            // Success - update counters and emit event
+                            auto end = std::chrono::steady_clock::now();
+                            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                            event.processing_time_ms = duration.count();
+                            event.success = true;
+                            
+                            processed_files.fetch_add(1);
+                            successful_files.fetch_add(1);
+                            
+                            Logger::info("Successfully processed file: " + files_to_process[i].first + 
+                                       " (format: " + event.artifact_format + 
+                                       ", confidence: " + std::to_string(event.artifact_confidence) + 
+                                       ", time: " + std::to_string(event.processing_time_ms) + "ms)");
+                            
+                            if (onNext) onNext(event);
+                            
+                        } catch (const std::exception& e) {
+                            Logger::error("Exception processing file: " + files_to_process[i].first + " - " + std::string(e.what()));
+                            event.success = false;
+                            event.error_message = "Exception: " + std::string(e.what());
+                            processed_files.fetch_add(1);
+                            failed_files.fetch_add(1);
+                            if (onNext) onNext(event);
+                        }
                     }
-                    ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, mode);
-                    event.artifact_format = result.artifact.format;
-                    event.artifact_hash = result.artifact.hash;
-                    event.artifact_confidence = result.artifact.confidence;
-                    if (!result.success) {
-                        event.success = false;
-                        event.error_message = result.error_message;
-                        Logger::error("Processing failed for: " + files_to_process[i].first + " - " + result.error_message);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        if (onNext) onNext(event);
-                        continue;
-                    }
-                    bool store_success = false;
-                    bool hash_success = false;
-                    std::string db_error_msg;
-                    
-                    // Store processing result
-                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, mode, result);
-                    if (!store_result.success) {
-                        db_error_msg = store_result.error_message;
-                        Logger::error("Failed to enqueue processing result: " + files_to_process[i].first + " - " + db_error_msg);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        event.success = false;
-                        event.error_message = "Database operation failed: " + db_error_msg;
-                        if (onNext) onNext(event);
-                        continue;
-                    }
-                    
-                    // Wait for write queue to process the store operation
-                    dbMan_.waitForWrites();
-                    
-                    // Check if the store operation actually succeeded
-                    auto store_op_result = dbMan_.getAccessQueue().getOperationResult(store_op_id);
-                    if (!store_op_result.success) {
-                        Logger::error("Store operation failed: " + files_to_process[i].first + " - " + store_op_result.error_message);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        event.success = false;
-                        event.error_message = "Database operation failed: " + store_op_result.error_message;
-                        if (onNext) onNext(event);
-                        continue;
-                    }
-                    
-                    // Generate file hash and update database
-                    std::string file_hash = FileUtils::computeFileHash(files_to_process[i].first);
-                    auto [hash_result, hash_op_id] = dbMan_.updateFileHashWithId(files_to_process[i].first, file_hash);
-                    if (!hash_result.success) {
-                        db_error_msg = hash_result.error_message;
-                        Logger::error("Failed to enqueue hash update: " + files_to_process[i].first + " - " + db_error_msg);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        event.success = false;
-                        event.error_message = "Database operation failed: " + db_error_msg;
-                        if (onNext) onNext(event);
-                        continue;
-                    }
-                    
-                    // Wait for write queue to process the hash update
-                    dbMan_.waitForWrites();
-                    
-                    // Check if the hash update operation actually succeeded
-                    auto hash_op_result = dbMan_.getAccessQueue().getOperationResult(hash_op_id);
-                    if (!hash_op_result.success) {
-                        Logger::error("Hash update operation failed: " + files_to_process[i].first + " - " + hash_op_result.error_message);
-                        processed_files.fetch_add(1);
-                        failed_files.fetch_add(1);
-                        event.success = false;
-                        event.error_message = "Database operation failed: " + hash_op_result.error_message;
-                        if (onNext) onNext(event);
-                        continue;
-                    }
-                    
-                    // Both operations succeeded
-                    store_success = true;
-                    hash_success = true;
-                    
-                    auto end = std::chrono::steady_clock::now();
-                    event.processing_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-                    event.success = true;
-                    event.error_message = "";
-                    processed_files.fetch_add(1);
-                    successful_files.fetch_add(1);
-                    if (onNext) onNext(event);
-                }
-                catch (const std::exception &e) {
-                    Logger::error("Exception processing file: " + files_to_process[i].first + " - " + std::string(e.what()));
-                    processed_files.fetch_add(1);
-                    failed_files.fetch_add(1);
-                    event.success = false;
-                    event.error_message = "Exception: " + std::string(e.what());
-                    if (onNext) onNext(event);
-                }
-            }
-
-            // Processing is sequential, so all files are already processed
-            // No need to wait for completion
-
-            Logger::info("Processing completed. Total: " + std::to_string(total_files.load()) + 
-                        ", Processed: " + std::to_string(processed_files.load()) + 
+                });
+            
+            // Log final statistics
+            Logger::info("Processing completed - Total: " + std::to_string(processed_files.load()) + 
                         ", Successful: " + std::to_string(successful_files.load()) + 
                         ", Failed: " + std::to_string(failed_files.load()));
-
+            
             if (onComplete) onComplete();
-        }
-        catch (const std::exception &e) {
-            Logger::error("Fatal error in processing: " + std::string(e.what()));
+            
+        } catch (const std::exception& e) {
+            Logger::error("Fatal error in processAllScannedFiles: " + std::string(e.what()));
             if (onError) onError(e);
         } });
 }

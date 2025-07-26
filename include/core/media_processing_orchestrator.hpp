@@ -11,6 +11,9 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/mutex.h>
 #include "file_utils.hpp"
 #include "server_config_manager.hpp"
 

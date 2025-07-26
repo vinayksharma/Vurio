@@ -31,6 +31,7 @@ target_link_libraries(dedup_tests PRIVATE
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
     yaml-cpp
+    TBB::tbb
 )
 
 include(GoogleTest)
@@ -59,5 +60,6 @@ target_link_libraries(media_processing_orchestrator_test
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
     yaml-cpp
+    TBB::tbb
 )
 add_test(NAME MediaProcessingOrchestratorTest COMMAND media_processing_orchestrator_test) 
