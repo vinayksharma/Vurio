@@ -19,6 +19,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 #include <tbb/mutex.h>
+#include <tbb/task_arena.h>
 
 int main(int argc, char *argv[])
 {
@@ -124,14 +125,28 @@ int main(int argc, char *argv[])
                 // Thread-safe mutex for database operations to prevent race conditions
                 tbb::mutex db_mutex;
                 
-                // Process scan paths in parallel using TBB
+                // Process scan paths in parallel using TBB with round-robin distribution
+                // This ensures equal prioritization when there are more paths than threads
                 tbb::parallel_for(tbb::blocked_range<size_t>(0, scan_paths.size()),
                     [&](const tbb::blocked_range<size_t>& range) {
-                        for (size_t i = range.begin(); i != range.end(); ++i) {
+                        // Round-robin distribution: each thread processes every Nth path
+                        // where N is the number of threads
+                        auto& config_manager = ServerConfigManager::getInstance();
+                        int max_scan_threads = config_manager.getMaxScanThreads();
+                        
+                        // Get thread ID for round-robin distribution
+                        size_t thread_id = tbb::this_task_arena::current_thread_index();
+                        if (thread_id >= max_scan_threads) {
+                            thread_id = thread_id % max_scan_threads;
+                        }
+                        
+                        // Process paths assigned to this thread in round-robin fashion
+                        for (size_t i = thread_id; i < scan_paths.size(); i += max_scan_threads) {
                             const auto& scan_path = scan_paths[i];
                             
                             try {
-                                Logger::info("Scanning directory: " + scan_path);
+                                Logger::info("Thread " + std::to_string(thread_id) + 
+                                           " scanning directory: " + scan_path);
                                 
                                 // Create scanner instance for this thread
                                 FileScanner scanner("scan_results.db");
@@ -146,12 +161,14 @@ int main(int argc, char *argv[])
                                 total_files_stored += files_stored;
                                 successful_scans++;
                                 
-                                Logger::info("Directory scan completed for " + scan_path + 
+                                Logger::info("Thread " + std::to_string(thread_id) + 
+                                           " completed scan for " + scan_path + 
                                            " - Files stored: " + std::to_string(files_stored));
                                            
                             } catch (const std::exception &e) {
                                 failed_scans++;
-                                Logger::error("Error scanning directory " + scan_path + ": " + std::string(e.what()));
+                                Logger::error("Thread " + std::to_string(thread_id) + 
+                                            " error scanning directory " + scan_path + ": " + std::string(e.what()));
                             }
                         }
                     });
