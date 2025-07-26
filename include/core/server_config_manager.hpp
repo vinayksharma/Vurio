@@ -68,6 +68,9 @@ public:
     std::string getHttpServerThreads() const;
     int getDatabaseThreads() const;
 
+    // Cache configuration getters
+    uint32_t getDecoderCacheSizeMB() const;
+
     // Video processing configuration accessors
     int getVideoSkipDurationSeconds(DedupMode mode) const;
     int getVideoFramesPerSkip(DedupMode mode) const;

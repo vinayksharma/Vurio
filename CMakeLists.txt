@@ -91,6 +91,7 @@ set(SOURCES
     src/file_scanner.cpp
     src/mount_manager.cpp
     src/singleton_manager.cpp
+    src/cache/decoder_cache.cpp
 )
 
 # Add header files
@@ -115,6 +116,7 @@ set(HEADERS
     include/web/route_handlers.hpp
     include/core/server_config.hpp
     include/core/mount_manager.hpp
+    include/core/cache/decoder_cache.hpp
 )
 
 # Create executable

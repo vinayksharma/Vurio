@@ -66,6 +66,8 @@ void ServerConfigManager::initializeDefaultConfig()
           max_scan_threads: 4
           http_server_threads: "auto"
           database_threads: 2
+        cache:
+          decoder_cache_size_mb: 1024
         video_processing:
           FAST:
             skip_duration_seconds: 2
@@ -255,6 +257,34 @@ int ServerConfigManager::getDatabaseThreads() const
                      ", using default: 2");
     }
     return 2; // Default fallback
+}
+
+uint32_t ServerConfigManager::getDecoderCacheSizeMB() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["cache"] && config_["cache"]["decoder_cache_size_mb"])
+        {
+            uint32_t value = config_["cache"]["decoder_cache_size_mb"].as<uint32_t>();
+            // Validate: must be positive and reasonable (1MB to 10GB)
+            if (value > 0 && value <= 10240)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid decoder_cache_size_mb value: " + std::to_string(value) +
+                             ", using default: 1024");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing decoder_cache_size_mb: " + std::string(e.what()) +
+                     ", using default: 1024");
+    }
+    return 1024; // Default fallback (1024 MB = 1 GB)
 }
 
 int ServerConfigManager::getVideoSkipDurationSeconds(DedupMode mode) const
