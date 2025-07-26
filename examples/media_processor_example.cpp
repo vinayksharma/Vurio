@@ -16,8 +16,8 @@ int main()
 
     // Example file paths (these would be real files in practice)
     std::vector<std::string> test_files = {
-        "sample_image.jpg",
-        "sample_video.mp4",
+        "test_balance.jpg",
+        "test_audio.mp3",
         "document.pdf" // This should fail
     };
 
