@@ -90,6 +90,7 @@ set(SOURCES
     src/simple_scheduler.cpp
     src/file_scanner.cpp
     src/mount_manager.cpp
+    src/singleton_manager.cpp
 )
 
 # Add header files
@@ -98,6 +99,7 @@ set(HEADERS
     include/auth/auth_middleware.hpp
     include/core/status.hpp
     include/core/file_utils.hpp
+    include/core/singleton_manager.hpp
     include/core/dedup_modes.hpp
     include/core/server_config_manager.hpp
     include/core/media_processor.hpp

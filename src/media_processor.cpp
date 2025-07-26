@@ -20,6 +20,36 @@ extern "C"
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 #include <libavutil/frame.h>
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_videotoolbox.h>
+#include <libavutil/opt.h>
+}
+
+// Helper function to create hardware-accelerated scaling context
+SwsContext *createHardwareScaler(int src_width, int src_height, AVPixelFormat src_fmt,
+                                 int dst_width, int dst_height, AVPixelFormat dst_fmt)
+{
+    // Try to create hardware-accelerated scaler first
+    SwsContext *sws_ctx = sws_getContext(
+        src_width, src_height, src_fmt,
+        dst_width, dst_height, dst_fmt,
+        SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+    if (sws_ctx)
+    {
+        // Check if hardware acceleration is available
+        const AVClass *sws_class = sws_get_class();
+        if (sws_class && av_opt_get_int(sws_ctx, "hwaccel", 0, nullptr) >= 0)
+        {
+            Logger::info("Using hardware-accelerated video scaling");
+        }
+        else
+        {
+            Logger::info("Using software video scaling (hardware acceleration not available)");
+        }
+    }
+
+    return sws_ctx;
 }
 
 ProcessingResult MediaProcessor::processFile(const std::string &file_path, DedupMode mode)
@@ -552,10 +582,9 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         rgb_frame->width = codec_ctx->width;
         rgb_frame->height = codec_ctx->height;
         av_frame_get_buffer(rgb_frame, 0);
-        SwsContext *sws_ctx = sws_getContext(
+        SwsContext *sws_ctx = createHardwareScaler(
             codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
+            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24);
         if (!sws_ctx)
         {
             av_frame_free(&frame);
@@ -563,7 +592,7 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
             av_packet_free(&packet);
             avcodec_free_context(&codec_ctx);
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not create software scaler");
+            return ProcessingResult(false, "Could not create scaler context");
         }
         std::vector<std::vector<uint8_t>> frame_hashes;
         int frame_count_extracted = 0;
@@ -763,10 +792,9 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
         rgb_frame->width = codec_ctx->width;
         rgb_frame->height = codec_ctx->height;
         av_frame_get_buffer(rgb_frame, 0);
-        SwsContext *sws_ctx = sws_getContext(
+        SwsContext *sws_ctx = createHardwareScaler(
             codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
+            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24);
         if (!sws_ctx)
         {
             av_frame_free(&frame);
@@ -774,7 +802,7 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
             av_packet_free(&packet);
             avcodec_free_context(&codec_ctx);
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not create software scaler");
+            return ProcessingResult(false, "Could not create scaler context");
         }
         std::vector<std::vector<uint8_t>> frame_hashes;
         int frame_count_extracted = 0;
@@ -973,10 +1001,9 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
         rgb_frame->width = codec_ctx->width;
         rgb_frame->height = codec_ctx->height;
         av_frame_get_buffer(rgb_frame, 0);
-        SwsContext *sws_ctx = sws_getContext(
+        SwsContext *sws_ctx = createHardwareScaler(
             codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
+            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24);
         if (!sws_ctx)
         {
             av_frame_free(&frame);
@@ -984,7 +1011,7 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
             av_packet_free(&packet);
             avcodec_free_context(&codec_ctx);
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not create software scaler");
+            return ProcessingResult(false, "Could not create scaler context");
         }
         std::vector<std::vector<float>> frame_embeddings;
         int frame_count_extracted = 0;

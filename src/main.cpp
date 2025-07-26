@@ -11,28 +11,88 @@
 #include "core/simple_scheduler.hpp"
 #include "web/openapi_docs.hpp"
 #include "core/status.hpp"
+#include "core/singleton_manager.hpp"
 #include <httplib.h>
 #include <iostream>
 #include <memory>
 #include <signal.h>
 
-int main()
+int main(int argc, char *argv[])
 {
-        // Initialize configuration manager
-        auto &config_manager = ServerConfigManager::getInstance();
+    // Initialize singleton manager with PID file
+    SingletonManager::initialize("dedup_server.pid");
+    auto &singleton_manager = SingletonManager::getInstance();
 
-        // Initialize thread pool manager
-        ThreadPoolManager::initialize(4); // Use 4 threads by default
+    // Check for command line arguments
+    bool force_shutdown = false;
+    for (int i = 1; i < argc; i++)
+    {
+        std::string arg = argv[i];
+        if (arg == "--shutdown" || arg == "-s")
+        {
+            force_shutdown = true;
+        }
+        else if (arg == "--help" || arg == "-h")
+        {
+            std::cout << "Dedup Server - Single Instance Manager" << std::endl;
+            std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
+            std::cout << "Options:" << std::endl;
+            std::cout << "  --shutdown, -s    Shutdown existing instance and start new one" << std::endl;
+            std::cout << "  --help, -h        Show this help message" << std::endl;
+            return 0;
+        }
+    }
 
-        // At the start of main, initialize the DatabaseManager singleton
-        auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+    // Check if another instance is running
+    if (singleton_manager.isAnotherInstanceRunning())
+    {
+        if (force_shutdown)
+        {
+            std::cout << "Existing instance detected. Attempting to shutdown..." << std::endl;
+            if (singleton_manager.shutdownExistingInstance())
+            {
+                std::cout << "Existing instance shutdown successful." << std::endl;
+                sleep(1); // Give it time to fully shutdown
+            }
+            else
+            {
+                std::cout << "Failed to shutdown existing instance." << std::endl;
+                return 1;
+            }
+        }
+        else
+        {
+            std::cout << "Error: Another instance is already running!" << std::endl;
+            std::cout << "Use --shutdown or -s to force shutdown the existing instance." << std::endl;
+            std::cout << "Use --help or -h for more options." << std::endl;
+            return 1;
+        }
+    }
 
-        // Initialize and start the simple scheduler
-        auto &scheduler = SimpleScheduler::getInstance();
+    // Try to create PID file (this will fail if another instance is running)
+    if (!singleton_manager.createPidFile())
+    {
+        std::cout << "Error: Failed to create PID file. Another instance may be running." << std::endl;
+        return 1;
+    }
 
-        // Set up scan callback - scan all stored directories
-        scheduler.setScanCallback([]()
-                                  {
+    std::cout << "Starting dedup server (PID: " << getpid() << ")..." << std::endl;
+
+    // Initialize configuration manager
+    auto &config_manager = ServerConfigManager::getInstance();
+
+    // Initialize thread pool manager
+    ThreadPoolManager::initialize(4); // Use 4 threads by default
+
+    // At the start of main, initialize the DatabaseManager singleton
+    auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+
+    // Initialize and start the simple scheduler
+    auto &scheduler = SimpleScheduler::getInstance();
+
+    // Set up scan callback - scan all stored directories
+    scheduler.setScanCallback([]()
+                              {
             Logger::info("Executing scheduled scan operation");
             try {
                 // Get all stored scan paths from database
@@ -79,9 +139,9 @@ int main()
                 Logger::error("Error in scheduled scan: " + std::string(e.what()));
             } });
 
-        // Set up processing callback - process files that need processing
-        scheduler.setProcessingCallback([&db_manager]()
-                                        {
+    // Set up processing callback - process files that need processing
+    scheduler.setProcessingCallback([&db_manager]()
+                                    {
             Logger::info("Executing scheduled processing operation");
             try {
                 // Process files that need processing
@@ -108,33 +168,34 @@ int main()
                 Logger::error("Error in scheduled processing: " + std::string(e.what()));
             } });
 
-        scheduler.start();
+    scheduler.start();
 
-        Status status;
-        Auth auth(config_manager.getAuthSecret()); // Use config from manager
+    Status status;
+    Auth auth(config_manager.getAuthSecret()); // Use config from manager
 
-        httplib::Server svr;
+    httplib::Server svr;
 
-        // Serve OpenAPI documentation
-        svr.Get(ServerConfig::SWAGGER_JSON_PATH, [](const httplib::Request &, httplib::Response &res)
-                { res.set_content(OpenApiDocs::getSpec(), "application/json"); });
+    // Serve OpenAPI documentation
+    svr.Get(ServerConfig::SWAGGER_JSON_PATH, [](const httplib::Request &, httplib::Response &res)
+            { res.set_content(OpenApiDocs::getSpec(), "application/json"); });
 
-        // Serve Swagger UI
-        svr.Get(ServerConfig::API_DOCS_PATH, [](const httplib::Request &, httplib::Response &res)
-                { res.set_content(OpenApiDocs::getSwaggerUI(), "text/html"); });
+    // Serve Swagger UI
+    svr.Get(ServerConfig::API_DOCS_PATH, [](const httplib::Request &, httplib::Response &res)
+            { res.set_content(OpenApiDocs::getSwaggerUI(), "text/html"); });
 
-        // Setup routes
-        RouteHandlers::setupRoutes(svr, status, auth);
+    // Setup routes
+    RouteHandlers::setupRoutes(svr, status, auth);
 
-        std::cout << "Server starting on http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << std::endl;
-        std::cout << "API documentation available at: http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << ServerConfig::API_DOCS_PATH << std::endl;
+    std::cout << "Server starting on http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << std::endl;
+    std::cout << "API documentation available at: http://" << config_manager.getServerHost() << ":" << config_manager.getServerPort() << ServerConfig::API_DOCS_PATH << std::endl;
 
-        // Start the server
-        svr.listen(config_manager.getServerHost(), config_manager.getServerPort());
+    // Start the server
+    svr.listen(config_manager.getServerHost(), config_manager.getServerPort());
 
-        // Cleanup
-        scheduler.stop();
-        DatabaseManager::shutdown();
-        ThreadPoolManager::shutdown();
-        return 0;
+    // Cleanup (this will only be reached if server stops normally)
+    scheduler.stop();
+    DatabaseManager::shutdown();
+    ThreadPoolManager::shutdown();
+    SingletonManager::cleanup();
+    return 0;
 }

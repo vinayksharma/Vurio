@@ -85,9 +85,16 @@ check_orchestration_status() {
     fi
 }
 
+# Check for command line arguments
+FORCE_SHUTDOWN=""
+if [ "$1" = "--shutdown" ] || [ "$1" = "-s" ]; then
+    FORCE_SHUTDOWN="--shutdown"
+    echo -e "${YELLOW}Force shutdown mode enabled${NC}"
+fi
+
 # Start the server in background
 echo -e "${YELLOW}Starting dedup server...${NC}"
-./build/dedup_server &
+./build/dedup_server $FORCE_SHUTDOWN &
 SERVER_PID=$!
 
 # Wait for server to start
