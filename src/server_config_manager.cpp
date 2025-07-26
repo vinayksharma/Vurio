@@ -130,6 +130,39 @@ int ServerConfigManager::getProcessingIntervalSeconds() const
     return 1800;
 }
 
+// Thread configuration getters
+int ServerConfigManager::getMaxProcessingThreads() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (config_["threading"] && config_["threading"]["max_processing_threads"])
+        return config_["threading"]["max_processing_threads"].as<int>();
+    return 8; // Default fallback
+}
+
+int ServerConfigManager::getMaxScanThreads() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (config_["threading"] && config_["threading"]["max_scan_threads"])
+        return config_["threading"]["max_scan_threads"].as<int>();
+    return 4; // Default fallback
+}
+
+std::string ServerConfigManager::getHttpServerThreads() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (config_["threading"] && config_["threading"]["http_server_threads"])
+        return config_["threading"]["http_server_threads"].as<std::string>();
+    return "auto"; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseThreads() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (config_["threading"] && config_["threading"]["database_threads"])
+        return config_["threading"]["database_threads"].as<int>();
+    return 2; // Default fallback
+}
+
 int ServerConfigManager::getVideoSkipDurationSeconds(DedupMode mode) const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);

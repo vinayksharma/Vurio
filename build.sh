@@ -36,6 +36,17 @@ log_level: "INFO"
 server_host: "localhost"
 server_port: 8080
 
+# Thread pool configuration
+threading:
+  # Maximum number of threads for media processing operations
+  max_processing_threads: 8
+  # Maximum number of threads for file scanning operations
+  max_scan_threads: 4
+  # HTTP server thread pool (auto = hardware_concurrency - 1, or specify number)
+  http_server_threads: "auto"
+  # Database access queue threads (for concurrent database operations)
+  database_threads: 2
+
 # Scheduling intervals (in seconds)
 scan_interval_seconds: 3600        # How often to scan directories (1 hour)
 processing_interval_seconds: 1800   # How often to process files (30 minutes)

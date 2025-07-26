@@ -61,6 +61,13 @@ public:
     YAML::Node getConfig() const;
     int getScanIntervalSeconds() const;
     int getProcessingIntervalSeconds() const;
+
+    // Thread configuration getters
+    int getMaxProcessingThreads() const;
+    int getMaxScanThreads() const;
+    std::string getHttpServerThreads() const;
+    int getDatabaseThreads() const;
+
     // Video processing configuration accessors
     int getVideoSkipDurationSeconds(DedupMode mode) const;
     int getVideoFramesPerSkip(DedupMode mode) const;

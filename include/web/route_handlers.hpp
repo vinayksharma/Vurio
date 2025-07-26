@@ -629,8 +629,11 @@ private:
         {
             auto body = json::parse(req.body);
             int processing_interval_seconds = body.value("processing_interval_seconds", 60);
-            int max_threads = body.value("max_threads", 4);
             std::string db_path = body.value("database_path", "scan_results.db");
+
+            // Get thread configuration from config manager
+            auto &config_manager = ServerConfigManager::getInstance();
+            int max_threads = config_manager.getMaxProcessingThreads();
 
             Logger::info("Starting orchestration with interval: " + std::to_string(processing_interval_seconds) + " seconds");
 

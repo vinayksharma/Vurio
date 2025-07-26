@@ -31,7 +31,15 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
     // - Per-file errors are emitted via onNext (with success=false)
     // - Fatal errors (DB not available, invalid config, cancellation) are emitted via onError
     // - No silent failures
-    return SimpleObservable<FileProcessingEvent>([this, max_threads](auto onNext, auto onError, auto onComplete)
+    // Use configuration if max_threads is -1 (default)
+    int actual_max_threads = max_threads;
+    if (actual_max_threads == -1)
+    {
+        auto &config_manager = ServerConfigManager::getInstance();
+        actual_max_threads = config_manager.getMaxProcessingThreads();
+    }
+
+    return SimpleObservable<FileProcessingEvent>([this, actual_max_threads](auto onNext, auto onError, auto onComplete)
                                                  {
         try {
             cancelled_ = false;
@@ -56,8 +64,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 if (onComplete) onComplete();
                 return;
             }
+            
             Logger::info("Starting processing of " + std::to_string(files_to_process.size()) + 
-                        " files with " + std::to_string(max_threads) + " threads");
+                        " files with " + std::to_string(actual_max_threads) + " threads");
             std::atomic<size_t> total_files{files_to_process.size()};
             std::atomic<size_t> processed_files{0};
             std::atomic<size_t> successful_files{0};
@@ -210,6 +219,13 @@ void MediaProcessingOrchestrator::startTimerBasedProcessing(int processing_inter
     {
         Logger::warn("Timer-based processing is already running");
         return;
+    }
+
+    // Use configuration if max_threads is -1 (default)
+    if (max_threads == -1)
+    {
+        auto &config_manager = ServerConfigManager::getInstance();
+        max_threads = config_manager.getMaxProcessingThreads();
     }
 
     Logger::info("Starting timer-based processing with interval: " + std::to_string(processing_interval_seconds) + " seconds");

@@ -51,7 +51,7 @@ public:
      * @param max_threads Maximum number of threads to use for processing
      * @return Observable that emits FileProcessingEvent for each processed file
      */
-    SimpleObservable<FileProcessingEvent> processAllScannedFiles(int max_threads = 4);
+    SimpleObservable<FileProcessingEvent> processAllScannedFiles(int max_threads = -1);
 
     /**
      * @brief Cancel ongoing processing operations
@@ -66,9 +66,9 @@ public:
      * The processing waits for any ongoing scanning operations to complete before starting.
      *
      * @param processing_interval_seconds Interval between processing runs in seconds (default: 60)
-     * @param max_threads Maximum number of threads to use for processing (default: 4)
+     * @param max_threads Maximum number of threads to use for processing (default: -1 = use config)
      */
-    void startTimerBasedProcessing(int processing_interval_seconds = 60, int max_threads = 4);
+    void startTimerBasedProcessing(int processing_interval_seconds = 60, int max_threads = -1);
 
     /**
      * @brief Stop timer-based processing

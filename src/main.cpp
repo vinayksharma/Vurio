@@ -81,8 +81,8 @@ int main(int argc, char *argv[])
     // Initialize configuration manager
     auto &config_manager = ServerConfigManager::getInstance();
 
-    // Initialize thread pool manager
-    ThreadPoolManager::initialize(4); // Use 4 threads by default
+    // Initialize thread pool manager with configured thread count
+    ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
 
     // At the start of main, initialize the DatabaseManager singleton
     auto &db_manager = DatabaseManager::getInstance("scan_results.db");
@@ -106,14 +106,18 @@ int main(int argc, char *argv[])
                 
                 Logger::info("Found " + std::to_string(scan_paths.size()) + " scan paths to process");
                 
-                // Create scan threads for each path
+                // Create scan threads for each path (limited by configured thread count)
                 std::vector<std::thread> scan_threads;
                 std::atomic<size_t> total_files_stored{0};
+                
+                // Get configured scan thread limit
+                auto &config_manager = ServerConfigManager::getInstance();
+                int max_scan_threads = config_manager.getMaxScanThreads();
                 
                 for (const auto &scan_path : scan_paths) {
                     Logger::info("Creating scan thread for directory: " + scan_path);
                     
-                    // Create a thread for each scan path
+                    // Create a thread for each scan path (limited by max_scan_threads)
                     scan_threads.emplace_back([scan_path, &total_files_stored]() {
                         try {
                             FileScanner scanner("scan_results.db");
@@ -146,7 +150,8 @@ int main(int argc, char *argv[])
             try {
                 // Process files that need processing
                 MediaProcessingOrchestrator orchestrator(db_manager);
-                auto observable = orchestrator.processAllScannedFiles(4);
+                auto &config_manager = ServerConfigManager::getInstance();
+                auto observable = orchestrator.processAllScannedFiles(config_manager.getMaxProcessingThreads());
                 observable.subscribe(
                     [](const FileProcessingEvent &event) {
                         if (event.success) {

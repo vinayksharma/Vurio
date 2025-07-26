@@ -106,7 +106,8 @@ void ThreadPoolManager::processFileWithOwnConnection(const std::string &db_path,
         Logger::info("Processing file with shared database connection: " + file_path);
 
         // Process the file using the orchestrator
-        auto processing_observable = orchestrator.processAllScannedFiles(1); // Single thread per file
+        auto &config_manager = ServerConfigManager::getInstance();
+        auto processing_observable = orchestrator.processAllScannedFiles(config_manager.getMaxProcessingThreads());
 
         processing_observable.subscribe(
             [](const FileProcessingEvent &event)
