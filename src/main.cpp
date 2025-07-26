@@ -16,6 +16,9 @@
 #include <iostream>
 #include <memory>
 #include <signal.h>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/mutex.h>
 
 int main(int argc, char *argv[])
 {
@@ -106,37 +109,57 @@ int main(int argc, char *argv[])
                 
                 Logger::info("Found " + std::to_string(scan_paths.size()) + " scan paths to process");
                 
-                // Create scan threads for each path (limited by configured thread count)
-                std::vector<std::thread> scan_threads;
-                std::atomic<size_t> total_files_stored{0};
-                
                 // Get configured scan thread limit
                 auto &config_manager = ServerConfigManager::getInstance();
                 int max_scan_threads = config_manager.getMaxScanThreads();
                 
-                for (const auto &scan_path : scan_paths) {
-                    Logger::info("Creating scan thread for directory: " + scan_path);
-                    
-                    // Create a thread for each scan path (limited by max_scan_threads)
-                    scan_threads.emplace_back([scan_path, &total_files_stored]() {
-                        try {
-                            FileScanner scanner("scan_results.db");
-                            size_t files_stored = scanner.scanDirectory(scan_path, true);
-                            total_files_stored += files_stored;
-                            Logger::info("Directory scan completed for " + scan_path + 
-                                       " - Files stored: " + std::to_string(files_stored));
-                        } catch (const std::exception &e) {
-                            Logger::error("Error scanning directory " + scan_path + ": " + std::string(e.what()));
+                Logger::info("Starting parallel scan with " + std::to_string(max_scan_threads) + " threads for " + 
+                           std::to_string(scan_paths.size()) + " scan paths");
+                
+                // Thread-safe counters for progress tracking
+                std::atomic<size_t> total_files_stored{0};
+                std::atomic<size_t> successful_scans{0};
+                std::atomic<size_t> failed_scans{0};
+                
+                // Thread-safe mutex for database operations to prevent race conditions
+                tbb::mutex db_mutex;
+                
+                // Process scan paths in parallel using TBB
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, scan_paths.size()),
+                    [&](const tbb::blocked_range<size_t>& range) {
+                        for (size_t i = range.begin(); i != range.end(); ++i) {
+                            const auto& scan_path = scan_paths[i];
+                            
+                            try {
+                                Logger::info("Scanning directory: " + scan_path);
+                                
+                                // Create scanner instance for this thread
+                                FileScanner scanner("scan_results.db");
+                                
+                                // Lock database operations to prevent race conditions
+                                tbb::mutex::scoped_lock lock(db_mutex);
+                                
+                                // Perform the scan
+                                size_t files_stored = scanner.scanDirectory(scan_path, true);
+                                
+                                // Update counters
+                                total_files_stored += files_stored;
+                                successful_scans++;
+                                
+                                Logger::info("Directory scan completed for " + scan_path + 
+                                           " - Files stored: " + std::to_string(files_stored));
+                                           
+                            } catch (const std::exception &e) {
+                                failed_scans++;
+                                Logger::error("Error scanning directory " + scan_path + ": " + std::string(e.what()));
+                            }
                         }
                     });
-                }
                 
-                // Wait for all scan threads to complete
-                for (auto &thread : scan_threads) {
-                    if (thread.joinable()) {
-                        thread.join();
-                    }
-                }
+                // Log final statistics
+                Logger::info("Parallel scanning completed - Total files stored: " + std::to_string(total_files_stored.load()) + 
+                           ", Successful scans: " + std::to_string(successful_scans.load()) + 
+                           ", Failed scans: " + std::to_string(failed_scans.load()));
                 
                 Logger::info("All scheduled scans completed - Total files stored: " + std::to_string(total_files_stored.load()));
             } catch (const std::exception &e) {
