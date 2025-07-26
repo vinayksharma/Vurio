@@ -52,7 +52,7 @@ start_orchestration() {
         -H "Authorization: Bearer $TOKEN" \
         -d '{
             "processing_interval_seconds": 60,
-            "max_threads": 4,
+            "max_threads": 16,
             "database_path": "scan_results.db"
         }')
     

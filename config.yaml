@@ -21,10 +21,15 @@
 # auth_secret: string
 #   - JWT authentication secret key
 auth_secret: "your-secret-key-here"
-dedup_mode: "QUALITY"
+dedup_mode: "BALANCED"
 log_level: "INFO"
 server_host: "localhost"
 server_port: 8080
+
+# Scheduling intervals (in seconds)
+scan_interval_seconds: 3600        # How often to scan directories (1 hour)
+processing_interval_seconds: 1800   # How often to process files (30 minutes)
+
 # Video processing settings for each quality mode
 video_processing:
   FAST:
@@ -41,4 +46,4 @@ video_processing:
   QUALITY:
     skip_duration_seconds: 1
     frames_per_skip: 3
-    skip_count: 12 
+    skip_count: 12

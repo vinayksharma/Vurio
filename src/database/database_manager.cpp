@@ -2,6 +2,7 @@
 #include "database/database_access_queue.hpp"
 #include "logging/logger.hpp"
 #include "core/file_utils.hpp"
+#include "core/mount_manager.hpp"
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <iomanip>
@@ -201,9 +202,12 @@ bool DatabaseManager::createScannedFilesTable()
         CREATE TABLE IF NOT EXISTS scanned_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_path TEXT NOT NULL UNIQUE,
+            relative_path TEXT,           -- For network mounts: share:relative/path
+            share_name TEXT,              -- The share name (B, G, etc.)
             file_name TEXT NOT NULL,
             hash TEXT,
             links TEXT,
+            is_network_file BOOLEAN DEFAULT 0,  -- True if on network mount
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
@@ -814,9 +818,33 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     std::filesystem::path path(file_path);
     std::string file_name = path.filename().string();
 
+    // Check if this is a network path and convert to relative path
+    auto &mount_manager = MountManager::getInstance();
+    bool is_network_file = mount_manager.isNetworkPath(file_path);
+    std::string relative_path;
+    std::string share_name;
+
+    if (is_network_file)
+    {
+        auto relative = mount_manager.toRelativePath(file_path);
+        if (relative)
+        {
+            relative_path = relative->share_name + ":" + relative->relative_path;
+            share_name = relative->share_name;
+            Logger::debug("Storing network file with relative path: " + relative_path);
+        }
+        else
+        {
+            Logger::warn("Failed to convert network path to relative: " + file_path);
+        }
+    }
+
     // Capture parameters for async execution
     std::string captured_file_path = file_path;
     std::string captured_file_name = file_name;
+    std::string captured_relative_path = relative_path;
+    std::string captured_share_name = share_name;
+    bool captured_is_network = is_network_file;
     auto captured_callback = onFileNeedsProcessing;
     std::string error_msg;
     bool success = true;
@@ -825,7 +853,7 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     std::string current_hash = FileUtils::computeFileHash(captured_file_path);
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_callback, current_hash, &error_msg, &success](DatabaseManager &dbMan)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_callback, current_hash, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         if (!dbMan.db_)
         {
@@ -911,7 +939,7 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
         {
             // File doesn't exist, insert it
             sqlite3_finalize(select_stmt);
-            const std::string insert_sql = "INSERT INTO scanned_files (file_path, file_name) VALUES (?, ?)";
+            const std::string insert_sql = "INSERT INTO scanned_files (file_path, file_name, relative_path, share_name, is_network_file) VALUES (?, ?, ?, ?, ?)";
             sqlite3_stmt *insert_stmt;
             rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &insert_stmt, nullptr);
             if (rc != SQLITE_OK)
@@ -923,6 +951,9 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
             }
             sqlite3_bind_text(insert_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
             sqlite3_bind_text(insert_stmt, 2, captured_file_name.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(insert_stmt, 3, captured_relative_path.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(insert_stmt, 4, captured_share_name.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_int(insert_stmt, 5, captured_is_network ? 1 : 0);
             rc = sqlite3_step(insert_stmt);
             sqlite3_finalize(insert_stmt);
             if (rc != SQLITE_DONE)
@@ -1011,11 +1042,16 @@ bool DatabaseManager::fileExistsInDatabase(const std::string &file_path)
         return false;
     }
 
+    // Check if this is a network path and try to resolve it
+    auto &mount_manager = MountManager::getInstance();
+    bool is_network_file = mount_manager.isNetworkPath(file_path);
+
     // Capture parameters for async execution
     std::string captured_file_path = file_path;
+    bool captured_is_network = is_network_file;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
+    auto future = access_queue_->enqueueRead([captured_file_path, captured_is_network](DatabaseManager &dbMan)
                                              {
         Logger::debug("Executing fileExistsInDatabase in access queue for: " + captured_file_path);
         
@@ -1025,7 +1061,22 @@ bool DatabaseManager::fileExistsInDatabase(const std::string &file_path)
             return std::any(false);
         }
         
-        const std::string select_sql = "SELECT COUNT(*) FROM scanned_files WHERE file_path = ?";
+        // For network files, check both absolute path and relative path
+        std::string select_sql;
+        if (captured_is_network) {
+            // Try to find by relative path first
+            auto& mount_manager = MountManager::getInstance();
+            auto relative = mount_manager.toRelativePath(captured_file_path);
+            if (relative) {
+                std::string relative_path = relative->share_name + ":" + relative->relative_path;
+                select_sql = "SELECT COUNT(*) FROM scanned_files WHERE relative_path = ? OR file_path = ?";
+            } else {
+                select_sql = "SELECT COUNT(*) FROM scanned_files WHERE file_path = ?";
+            }
+        } else {
+            select_sql = "SELECT COUNT(*) FROM scanned_files WHERE file_path = ?";
+        }
+        
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -1034,7 +1085,19 @@ bool DatabaseManager::fileExistsInDatabase(const std::string &file_path)
             return std::any(false);
         }
 
-        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        if (captured_is_network) {
+            auto& mount_manager = MountManager::getInstance();
+            auto relative = mount_manager.toRelativePath(captured_file_path);
+            if (relative) {
+                std::string relative_path = relative->share_name + ":" + relative->relative_path;
+                sqlite3_bind_text(stmt, 1, relative_path.c_str(), -1, SQLITE_STATIC);
+                sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+            } else {
+                sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+            }
+        } else {
+            sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        }
         
         bool exists = false;
         if (sqlite3_step(stmt) == SQLITE_ROW)

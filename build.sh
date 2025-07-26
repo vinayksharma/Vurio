@@ -1,19 +1,82 @@
 #!/bin/bash
 set -e
 
-echo "Building dedup server..."
+# Function to perform the build process
+build_project() {
+    echo "Building dedup server..."
 
-# Always copy the latest config from example (YAML, preserves comments)
-echo "Updating config.yaml from config.yaml.example (preserving comments)..."
-cp config.yaml.example config.yaml
-echo "✓ Config file updated from example (comments preserved)"
+    # Always create/overwrite config.yaml with latest template
+    echo "Creating config.yaml from template..."
+    cat > config.yaml << 'EOF'
+# Configuration for Dedup Server
+# 
+# dedup_mode: enum ["FAST", "BALANCED", "QUALITY"]
+#   - FAST: Fast processing with basic deduplication
+#   - BALANCED: Balanced processing with moderate accuracy  
+#   - QUALITY: High-quality processing with maximum accuracy
+#
+# log_level: enum ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+#   - TRACE: Most verbose logging
+#   - DEBUG: Debug information
+#   - INFO: General information (default)
+#   - WARN: Warning messages
+#   - ERROR: Error messages only
+#
+# server_port: integer (1-65535)
+#   - HTTP server port number
+#
+# server_host: string
+#   - HTTP server host address
+#
+# auth_secret: string
+#   - JWT authentication secret key
+auth_secret: "your-secret-key-here"
+dedup_mode: "BALANCED"
+log_level: "INFO"
+server_host: "localhost"
+server_port: 8080
 
-mkdir -p build
-cd build
-cmake ..
-make -j$(nproc || sysctl -n hw.ncpu)
+# Scheduling intervals (in seconds)
+scan_interval_seconds: 3600        # How often to scan directories (1 hour)
+processing_interval_seconds: 1800   # How often to process files (30 minutes)
 
-echo "Build completed successfully!"
-echo "Starting server..."
-cd ..
-./run.sh 
+# Video processing settings for each quality mode
+video_processing:
+  FAST:
+    # Number of seconds to skip between frame groups
+    skip_duration_seconds: 2
+    # Number of frames to extract at each skip point
+    frames_per_skip: 2
+    # Number of skip points (template length)
+    skip_count: 5
+  BALANCED:
+    skip_duration_seconds: 1
+    frames_per_skip: 2
+    skip_count: 8
+  QUALITY:
+    skip_duration_seconds: 1
+    frames_per_skip: 3
+    skip_count: 12
+EOF
+    echo "✓ Config file created/updated from template"
+
+    mkdir -p build
+    cd build
+    cmake ..
+    make -j$(nproc || sysctl -n hw.ncpu)
+    cd ..
+
+    echo "Build completed successfully!"
+}
+
+# Check if we should start the server
+START_SERVER=${1:-true}
+
+# Perform the build
+build_project
+
+# Start server if requested
+if [ "$START_SERVER" = "true" ]; then
+    echo "Starting server..."
+    ./run.sh
+fi 

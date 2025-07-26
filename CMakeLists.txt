@@ -89,6 +89,7 @@ set(SOURCES
     src/database/database_access_queue.cpp
     src/simple_scheduler.cpp
     src/file_scanner.cpp
+    src/mount_manager.cpp
 )
 
 # Add header files
@@ -111,6 +112,7 @@ set(HEADERS
     include/web/openapi_docs.hpp
     include/web/route_handlers.hpp
     include/core/server_config.hpp
+    include/core/mount_manager.hpp
 )
 
 # Create executable
@@ -167,7 +169,7 @@ enable_testing()
 add_subdirectory(tests)
 
 # Add MediaProcessor example
-add_executable(media_processor_example examples/media_processor_example.cpp src/media_processor.cpp src/server_config_manager.cpp)
+add_executable(media_processor_example examples/media_processor_example.cpp src/media_processor.cpp src/server_config_manager.cpp src/mount_manager.cpp)
 target_include_directories(media_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(media_processor_example
     PRIVATE
@@ -189,7 +191,7 @@ target_link_libraries(media_processor_example
 add_executable(file_processor_example examples/file_processor_example.cpp 
                src/media_processor.cpp src/server_config_manager.cpp 
                src/database/database_manager.cpp src/file_processor.cpp src/file_utils.cpp
-               src/database/database_access_queue.cpp)
+               src/database/database_access_queue.cpp src/mount_manager.cpp)
 target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(file_processor_example
     PRIVATE
