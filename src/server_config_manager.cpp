@@ -61,6 +61,11 @@ void ServerConfigManager::initializeDefaultConfig()
         server_host: "localhost"
         scan_interval_seconds: 3600
         processing_interval_seconds: 1800
+        threading:
+          max_processing_threads: 8
+          max_scan_threads: 4
+          http_server_threads: "auto"
+          database_threads: 2
         video_processing:
           FAST:
             skip_duration_seconds: 2
@@ -130,36 +135,125 @@ int ServerConfigManager::getProcessingIntervalSeconds() const
     return 1800;
 }
 
-// Thread configuration getters
+// Thread configuration getters with improved error handling
 int ServerConfigManager::getMaxProcessingThreads() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["threading"] && config_["threading"]["max_processing_threads"])
-        return config_["threading"]["max_processing_threads"].as<int>();
+    try
+    {
+        if (config_["threading"] && config_["threading"]["max_processing_threads"])
+        {
+            int value = config_["threading"]["max_processing_threads"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 64)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid max_processing_threads value: " + std::to_string(value) +
+                             ", using default: 8");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing max_processing_threads: " + std::string(e.what()) +
+                     ", using default: 8");
+    }
     return 8; // Default fallback
 }
 
 int ServerConfigManager::getMaxScanThreads() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["threading"] && config_["threading"]["max_scan_threads"])
-        return config_["threading"]["max_scan_threads"].as<int>();
+    try
+    {
+        if (config_["threading"] && config_["threading"]["max_scan_threads"])
+        {
+            int value = config_["threading"]["max_scan_threads"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 32)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid max_scan_threads value: " + std::to_string(value) +
+                             ", using default: 4");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing max_scan_threads: " + std::string(e.what()) +
+                     ", using default: 4");
+    }
     return 4; // Default fallback
 }
 
 std::string ServerConfigManager::getHttpServerThreads() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["threading"] && config_["threading"]["http_server_threads"])
-        return config_["threading"]["http_server_threads"].as<std::string>();
+    try
+    {
+        if (config_["threading"] && config_["threading"]["http_server_threads"])
+        {
+            std::string value = config_["threading"]["http_server_threads"].as<std::string>();
+            // Validate: must be "auto" or a positive integer
+            if (value == "auto")
+            {
+                return value;
+            }
+            else
+            {
+                // Try to parse as integer
+                int int_value = std::stoi(value);
+                if (int_value > 0 && int_value <= 64)
+                {
+                    return value;
+                }
+                else
+                {
+                    Logger::warn("Invalid http_server_threads value: " + value +
+                                 ", using default: auto");
+                }
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing http_server_threads: " + std::string(e.what()) +
+                     ", using default: auto");
+    }
     return "auto"; // Default fallback
 }
 
 int ServerConfigManager::getDatabaseThreads() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["threading"] && config_["threading"]["database_threads"])
-        return config_["threading"]["database_threads"].as<int>();
+    try
+    {
+        if (config_["threading"] && config_["threading"]["database_threads"])
+        {
+            int value = config_["threading"]["database_threads"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 16)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database_threads value: " + std::to_string(value) +
+                             ", using default: 2");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database_threads: " + std::string(e.what()) +
+                     ", using default: 2");
+    }
     return 2; // Default fallback
 }
 
