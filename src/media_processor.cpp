@@ -494,19 +494,52 @@ ProcessingResult MediaProcessor::processImageQuality(const std::string &file_pat
 
 ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
 {
+    // Get algorithm information from lookup table
     const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("video", DedupMode::FAST);
     if (!algorithm)
+    {
         return ProcessingResult(false, "No processing algorithm found for video FAST mode");
+    }
+
     Logger::info("Processing video with " + algorithm->name + ": " + file_path);
+
+    // Validate video file before processing
+    if (!isVideoFileValid(file_path))
+    {
+        return ProcessingResult(false, "Video file validation failed (file may be corrupted or unsupported): " + file_path);
+    }
+
     try
     {
         AVFormatContext *format_ctx = nullptr;
         if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
-            return ProcessingResult(false, "Could not open video file: " + file_path);
+        {
+            // Check if file exists first
+            std::ifstream test_file(file_path);
+            if (!test_file.good())
+            {
+                return ProcessingResult(false, "Video file does not exist or is not accessible: " + file_path);
+            }
+            test_file.close();
+
+            // Try to get more specific error information
+            char err_buf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(AVERROR(EINVAL), err_buf, AV_ERROR_MAX_STRING_SIZE);
+            return ProcessingResult(false, "Could not open video file (possibly corrupted or unsupported format): " + file_path + " - " + std::string(err_buf));
+        }
+
+        // Add validation for corrupted files
         if (avformat_find_stream_info(format_ctx, nullptr) < 0)
         {
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not find stream information");
+            return ProcessingResult(false, "Could not find stream information (file may be corrupted): " + file_path);
+        }
+
+        // Check if file has valid duration
+        if (format_ctx->duration <= 0)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Video file has invalid or zero duration (possibly corrupted): " + file_path);
         }
         int video_stream_index = -1;
         for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
@@ -704,19 +737,52 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
 
 ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_path)
 {
+    // Get algorithm information from lookup table
     const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("video", DedupMode::BALANCED);
     if (!algorithm)
+    {
         return ProcessingResult(false, "No processing algorithm found for video BALANCED mode");
+    }
+
     Logger::info("Processing video with " + algorithm->name + ": " + file_path);
+
+    // Validate video file before processing
+    if (!isVideoFileValid(file_path))
+    {
+        return ProcessingResult(false, "Video file validation failed (file may be corrupted or unsupported): " + file_path);
+    }
+
     try
     {
         AVFormatContext *format_ctx = nullptr;
         if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
-            return ProcessingResult(false, "Could not open video file: " + file_path);
+        {
+            // Check if file exists first
+            std::ifstream test_file(file_path);
+            if (!test_file.good())
+            {
+                return ProcessingResult(false, "Video file does not exist or is not accessible: " + file_path);
+            }
+            test_file.close();
+
+            // Try to get more specific error information
+            char err_buf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(AVERROR(EINVAL), err_buf, AV_ERROR_MAX_STRING_SIZE);
+            return ProcessingResult(false, "Could not open video file (possibly corrupted or unsupported format): " + file_path + " - " + std::string(err_buf));
+        }
+
+        // Add validation for corrupted files
         if (avformat_find_stream_info(format_ctx, nullptr) < 0)
         {
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not find stream information");
+            return ProcessingResult(false, "Could not find stream information (file may be corrupted): " + file_path);
+        }
+
+        // Check if file has valid duration
+        if (format_ctx->duration <= 0)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Video file has invalid or zero duration (possibly corrupted): " + file_path);
         }
         int video_stream_index = -1;
         for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
@@ -913,19 +979,52 @@ ProcessingResult MediaProcessor::processVideoBalanced(const std::string &file_pa
 
 ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_path)
 {
+    // Get algorithm information from lookup table
     const ProcessingAlgorithm *algorithm = getProcessingAlgorithm("video", DedupMode::QUALITY);
     if (!algorithm)
+    {
         return ProcessingResult(false, "No processing algorithm found for video QUALITY mode");
+    }
+
     Logger::info("Processing video with " + algorithm->name + ": " + file_path);
+
+    // Validate video file before processing
+    if (!isVideoFileValid(file_path))
+    {
+        return ProcessingResult(false, "Video file validation failed (file may be corrupted or unsupported): " + file_path);
+    }
+
     try
     {
         AVFormatContext *format_ctx = nullptr;
         if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
-            return ProcessingResult(false, "Could not open video file: " + file_path);
+        {
+            // Check if file exists first
+            std::ifstream test_file(file_path);
+            if (!test_file.good())
+            {
+                return ProcessingResult(false, "Video file does not exist or is not accessible: " + file_path);
+            }
+            test_file.close();
+
+            // Try to get more specific error information
+            char err_buf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(AVERROR(EINVAL), err_buf, AV_ERROR_MAX_STRING_SIZE);
+            return ProcessingResult(false, "Could not open video file (possibly corrupted or unsupported format): " + file_path + " - " + std::string(err_buf));
+        }
+
+        // Add validation for corrupted files
         if (avformat_find_stream_info(format_ctx, nullptr) < 0)
         {
             avformat_close_input(&format_ctx);
-            return ProcessingResult(false, "Could not find stream information");
+            return ProcessingResult(false, "Could not find stream information (file may be corrupted): " + file_path);
+        }
+
+        // Check if file has valid duration
+        if (format_ctx->duration <= 0)
+        {
+            avformat_close_input(&format_ctx);
+            return ProcessingResult(false, "Video file has invalid or zero duration (possibly corrupted): " + file_path);
         }
         int video_stream_index = -1;
         for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
@@ -1729,4 +1828,44 @@ std::vector<uint8_t> MediaProcessor::combineFrameHashes(const std::vector<std::v
     }
 
     return combined_hash;
+}
+
+// Helper function to validate video file before processing
+bool MediaProcessor::isVideoFileValid(const std::string &file_path)
+{
+    AVFormatContext *format_ctx = nullptr;
+
+    // Try to open the file
+    if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
+    {
+        return false;
+    }
+
+    // Try to find stream info
+    if (avformat_find_stream_info(format_ctx, nullptr) < 0)
+    {
+        avformat_close_input(&format_ctx);
+        return false;
+    }
+
+    // Check if file has valid duration
+    if (format_ctx->duration <= 0)
+    {
+        avformat_close_input(&format_ctx);
+        return false;
+    }
+
+    // Check if there's at least one video stream
+    bool has_video_stream = false;
+    for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
+    {
+        if (format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            has_video_stream = true;
+            break;
+        }
+    }
+
+    avformat_close_input(&format_ctx);
+    return has_video_stream;
 }

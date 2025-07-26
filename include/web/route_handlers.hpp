@@ -403,7 +403,7 @@ private:
             std::string db_path = req.get_param_value("database_path");
             if (db_path.empty())
             {
-                db_path = "processing_results.db";
+                db_path = "scan_results.db";
             }
 
             // Create DatabaseManager and get results
@@ -427,6 +427,13 @@ private:
                     {"hash", result.artifact.hash},
                     {"confidence", result.artifact.confidence},
                     {"data_size", result.artifact.data.size()}};
+
+                // Include error message if processing failed
+                if (!result.success && !result.error_message.empty())
+                {
+                    result_json["error_message"] = result.error_message;
+                }
+
                 response["results"].push_back(result_json);
             }
 

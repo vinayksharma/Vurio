@@ -157,6 +157,9 @@ private:
     static std::vector<uint8_t> generateFrameDHash(const cv::Mat &frame);
     static std::vector<uint8_t> generateFramePHash(const cv::Mat &frame);
     static std::vector<uint8_t> combineFrameHashes(const std::vector<std::vector<uint8_t>> &frame_hashes, int target_size);
+
+    // Helper function to validate video file before processing
+    static bool isVideoFileValid(const std::string &file_path);
 };
 
 // TODO: IMPLEMENTATION NOTES

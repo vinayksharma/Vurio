@@ -4,6 +4,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <chrono>
+#include <filesystem>
 #include <sys/statvfs.h>
 #include <sys/mount.h>
 
@@ -12,6 +14,8 @@
 #include <sys/ucred.h>
 #include <sys/mount.h>
 #endif
+
+namespace fs = std::filesystem;
 
 MountManager &MountManager::getInstance()
 {
@@ -148,7 +152,6 @@ std::optional<RelativePath> MountManager::toRelativePath(const std::string &abso
         RelativePath result;
         result.share_name = mount_info->share_name;
         result.relative_path = relative.string();
-        result.file_name = abs_path.filename().string();
 
         Logger::debug("Converted " + absolute_path + " to relative path: " +
                       result.share_name + ":" + result.relative_path);
@@ -200,8 +203,23 @@ std::optional<MountInfo> MountManager::getMountInfo(const std::string &path)
 
 void MountManager::refreshMounts()
 {
+    auto now = std::chrono::steady_clock::now();
+
+    // Check if cache is still valid
+    if (mounts_detected_ &&
+        (now - last_mount_detection_) < MOUNT_CACHE_DURATION)
+    {
+        // Cache is still valid, no need to re-detect
+        return;
+    }
+
+    // Cache expired or first time, detect mounts
     mounts_cache_ = detectMounts();
     updateMountMap();
+
+    // Update cache timestamp
+    last_mount_detection_ = now;
+    mounts_detected_ = true;
 }
 
 bool MountManager::validateRelativePath(const RelativePath &relative_path)

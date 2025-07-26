@@ -167,9 +167,24 @@ pid_t SingletonManager::getPidFromFile()
 void SingletonManager::signalHandler(int signal)
 {
     std::cout << "\nReceived signal " << signal << ", shutting down gracefully..." << std::endl;
-    SingletonManager::getInstance().removePidFile();
-    // Just exit cleanly
-    exit(0);
+
+    // Safely remove PID file
+    try
+    {
+        SingletonManager::getInstance().removePidFile();
+    }
+    catch (...)
+    {
+        // Ignore any exceptions during cleanup
+        std::cout << "Warning: Error during PID file cleanup" << std::endl;
+    }
+
+    // Flush any pending output
+    std::cout.flush();
+    std::cerr.flush();
+
+    // Exit cleanly without calling destructors that might cause issues
+    _exit(0);
 }
 
 void SingletonManager::cleanup()

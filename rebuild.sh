@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Check for shutdown parameter
+SHUTDOWN_PARAM=""
+if [ "$1" = "--shutdown" ] || [ "$1" = "-s" ]; then
+    SHUTDOWN_PARAM="--shutdown"
+    echo "Shutdown mode enabled - will force shutdown existing instance"
+fi
+
 echo "Rebuilding dedup server..."
 
 # Clean everything first
@@ -19,4 +26,8 @@ cd ..
 
 echo "✓ Rebuild completed successfully!"
 echo "Starting server..."
-./run.sh 
+if [ "$SHUTDOWN_PARAM" = "--shutdown" ]; then
+    ./run.sh --shutdown
+else
+    ./run.sh
+fi 

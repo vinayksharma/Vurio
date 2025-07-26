@@ -71,6 +71,7 @@ EOF
 
 # Check if we should start the server
 START_SERVER=${1:-true}
+SHUTDOWN_PARAM=${2:-""}
 
 # Perform the build
 build_project
@@ -78,5 +79,9 @@ build_project
 # Start server if requested
 if [ "$START_SERVER" = "true" ]; then
     echo "Starting server..."
-    ./run.sh
+    if [ "$SHUTDOWN_PARAM" = "--shutdown" ] || [ "$SHUTDOWN_PARAM" = "-s" ]; then
+        ./run.sh --shutdown
+    else
+        ./run.sh
+    fi
 fi 
