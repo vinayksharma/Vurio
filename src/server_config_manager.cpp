@@ -66,6 +66,7 @@ void ServerConfigManager::initializeDefaultConfig()
           max_scan_threads: 4
           http_server_threads: "auto"
           database_threads: 2
+          max_decoder_threads: 4
         cache:
           decoder_cache_size_mb: 1024
         video_processing:
@@ -285,6 +286,34 @@ uint32_t ServerConfigManager::getDecoderCacheSizeMB() const
                      ", using default: 1024");
     }
     return 1024; // Default fallback (1024 MB = 1 GB)
+}
+
+int ServerConfigManager::getMaxDecoderThreads() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["threading"] && config_["threading"]["max_decoder_threads"])
+        {
+            int value = config_["threading"]["max_decoder_threads"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 32)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid max_decoder_threads value: " + std::to_string(value) +
+                             ", using default: 4");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing max_decoder_threads: " + std::string(e.what()) +
+                     ", using default: 4");
+    }
+    return 4; // Default fallback
 }
 
 int ServerConfigManager::getVideoSkipDurationSeconds(DedupMode mode) const

@@ -71,6 +71,9 @@ public:
     // Cache configuration getters
     uint32_t getDecoderCacheSizeMB() const;
 
+    // Decoder configuration getters
+    int getMaxDecoderThreads() const;
+
     // Video processing configuration accessors
     int getVideoSkipDurationSeconds(DedupMode mode) const;
     int getVideoFramesPerSkip(DedupMode mode) const;

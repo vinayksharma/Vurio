@@ -92,6 +92,7 @@ set(SOURCES
     src/mount_manager.cpp
     src/singleton_manager.cpp
     src/cache/decoder_cache.cpp
+    src/decoder/media_decoder.cpp
 )
 
 # Add header files
@@ -117,6 +118,7 @@ set(HEADERS
     include/core/server_config.hpp
     include/core/mount_manager.hpp
     include/core/cache/decoder_cache.hpp
+    include/core/decoder/media_decoder.hpp
 )
 
 # Create executable
