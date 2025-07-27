@@ -79,6 +79,7 @@ public:
      * @return DBOpResult indicating success or failure
      */
     DBOpResult storeScannedFile(const std::string &file_path,
+                                bool compute_hash = true,
                                 std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
 
     /**

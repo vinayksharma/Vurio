@@ -806,6 +806,7 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
 }
 
 DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
+                                             bool compute_hash,
                                              std::function<void(const std::string &)> onFileNeedsProcessing)
 {
     if (!waitForQueueInitialization())
@@ -849,11 +850,20 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     std::string error_msg;
     bool success = true;
 
-    // Compute file hash BEFORE enqueueing to avoid blocking the database queue
-    std::string current_hash = FileUtils::computeFileHash(captured_file_path);
+    // Compute file hash only if requested (skip during scanning for performance)
+    std::string current_hash;
+    if (compute_hash)
+    {
+        Logger::debug("Computing hash for file: " + captured_file_path);
+        current_hash = FileUtils::computeFileHash(captured_file_path);
+    }
+    else
+    {
+        Logger::debug("Skipping hash computation for file: " + captured_file_path);
+    }
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_callback, current_hash, &error_msg, &success](DatabaseManager &dbMan)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_callback, current_hash, compute_hash, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         if (!dbMan.db_)
         {
@@ -881,41 +891,56 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
             // File exists, check if hash exists
             if (sqlite3_column_type(select_stmt, 0) != SQLITE_NULL)
             {
-                // Hash exists, compare with current file hash (already computed)
-                std::string existing_hash = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
-
-                if (existing_hash == current_hash)
+                // Hash exists, but we only compare if we computed a hash
+                if (compute_hash)
                 {
-                    // Hash matches, skip this file
-                    sqlite3_finalize(select_stmt);
-                    Logger::debug("File hash matches, skipping: " + captured_file_path);
-                    return WriteOperationResult(true);
+                    std::string existing_hash = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
+
+                    if (existing_hash == current_hash)
+                    {
+                        // Hash matches, skip this file
+                        sqlite3_finalize(select_stmt);
+                        Logger::debug("File hash matches, skipping: " + captured_file_path);
+                        return WriteOperationResult(true);
+                    }
+                    else
+                    {
+                        // Hash differs, clear the hash and update timestamp
+                        sqlite3_finalize(select_stmt);
+                        const std::string update_sql = "UPDATE scanned_files SET hash = NULL, created_at = CURRENT_TIMESTAMP WHERE file_path = ?";
+                        sqlite3_stmt *update_stmt;
+                        rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                        if (rc != SQLITE_OK)
+                        {
+                            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                            Logger::error(error_msg);
+                            success = false;
+                            return WriteOperationResult::Failure(error_msg);
+                        }
+                        sqlite3_bind_text(update_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+                        rc = sqlite3_step(update_stmt);
+                        sqlite3_finalize(update_stmt);
+                        if (rc != SQLITE_DONE)
+                        {
+                            error_msg = "Failed to clear file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
+                            Logger::error(error_msg);
+                            success = false;
+                            return WriteOperationResult::Failure(error_msg);
+                        }
+                        Logger::info("File hash changed, cleared hash for: " + captured_file_path);
+                        if (captured_callback)
+                        {
+                            captured_callback(captured_file_path);
+                        }
+                        return WriteOperationResult(true);
+                    }
                 }
                 else
                 {
-                    // Hash differs, clear the hash and update timestamp
+                    // Hash exists but we're not computing hashes during scan
+                    // Just mark as needs processing
                     sqlite3_finalize(select_stmt);
-                    const std::string update_sql = "UPDATE scanned_files SET hash = NULL, created_at = CURRENT_TIMESTAMP WHERE file_path = ?";
-                    sqlite3_stmt *update_stmt;
-                    rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
-                    if (rc != SQLITE_OK)
-                    {
-                        error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
-                        Logger::error(error_msg);
-                        success = false;
-                        return WriteOperationResult::Failure(error_msg);
-                    }
-                    sqlite3_bind_text(update_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
-                    rc = sqlite3_step(update_stmt);
-                    sqlite3_finalize(update_stmt);
-                    if (rc != SQLITE_DONE)
-                    {
-                        error_msg = "Failed to clear file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
-                        Logger::error(error_msg);
-                        success = false;
-                        return WriteOperationResult::Failure(error_msg);
-                    }
-                    Logger::info("File hash changed, cleared hash for: " + captured_file_path);
+                    Logger::info("File exists with hash, needs processing: " + captured_file_path);
                     if (captured_callback)
                     {
                         captured_callback(captured_file_path);

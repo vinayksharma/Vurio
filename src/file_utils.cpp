@@ -8,6 +8,13 @@
 #include <sstream>
 #include <iomanip>
 
+// macOS native APIs for faster file enumeration
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
+
 namespace fs = std::filesystem;
 
 SimpleObservable<std::string> FileUtils::listFilesAsObservable(const std::string &dir_path, bool recursive)
@@ -44,6 +51,38 @@ SimpleObservable<std::string> FileUtils::listFilesInternal(const std::string &di
                     }
                     else
                     {
+#ifdef __APPLE__
+                        // Use C-based directory enumeration for faster performance
+                        DIR *dir = opendir(dir_path.c_str());
+                        if (!dir)
+                        {
+                            Logger::warn("Could not access directory: " + dir_path);
+                            return;
+                        }
+
+                        struct dirent *entry;
+                        while ((entry = readdir(dir)) != nullptr)
+                        {
+                            // Skip . and ..
+                            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                            {
+                                continue;
+                            }
+
+                            std::string full_path = dir_path + "/" + entry->d_name;
+                            struct stat st;
+
+                            if (stat(full_path.c_str(), &st) == 0)
+                            {
+                                if (S_ISREG(st.st_mode))
+                                {
+                                    // Regular file
+                                    onNext(full_path);
+                                }
+                            }
+                        }
+                        closedir(dir);
+#else
                         // Non-recursive directory iteration
                         for (const auto &entry : fs::directory_iterator(dir_path))
                         {
@@ -52,6 +91,7 @@ SimpleObservable<std::string> FileUtils::listFilesInternal(const std::string &di
                                 onNext(entry.path().string());
                             }
                         }
+#endif
                     }
                     if (onComplete)
                     {
@@ -86,7 +126,44 @@ bool FileUtils::isValidDirectory(const std::string &path)
 void FileUtils::scanDirectoryRecursively(const std::string &dir_path,
                                          std::function<void(const std::string &)> onNext)
 {
-    // Custom recursive scanner that handles permission errors gracefully
+#ifdef __APPLE__
+    // Use C-based directory enumeration for faster performance
+    DIR *dir = opendir(dir_path.c_str());
+    if (!dir)
+    {
+        Logger::warn("Could not access directory: " + dir_path);
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr)
+    {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        std::string full_path = dir_path + "/" + entry->d_name;
+        struct stat st;
+
+        if (stat(full_path.c_str(), &st) == 0)
+        {
+            if (S_ISREG(st.st_mode))
+            {
+                // Regular file
+                onNext(full_path);
+            }
+            else if (S_ISDIR(st.st_mode))
+            {
+                // Directory - recursively scan
+                scanDirectoryRecursively(full_path, onNext);
+            }
+        }
+    }
+    closedir(dir);
+#else
+    // Fallback to std::filesystem for non-macOS platforms
     std::function<void(const fs::path &)> scanDirectory = [&](const fs::path &current_path)
     {
         try
@@ -126,10 +203,12 @@ void FileUtils::scanDirectoryRecursively(const std::string &dir_path,
     };
     // Start the recursive scan
     scanDirectory(fs::path(dir_path));
+#endif
 }
 
 std::string FileUtils::computeFileHash(const std::string &file_path)
 {
+    Logger::debug("Reading entire file for hash computation: " + file_path);
     constexpr size_t buffer_size = 8192;
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256_CTX sha256;

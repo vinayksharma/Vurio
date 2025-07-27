@@ -129,8 +129,53 @@ std::vector<MountInfo> MountManager::detectMounts()
 
 std::optional<RelativePath> MountManager::toRelativePath(const std::string &absolute_path)
 {
-    refreshMounts();
+    // Fast path for network paths - avoid expensive mount detection
+    if (absolute_path.find("/Volumes/") == 0)
+    {
+        // Quick pattern matching for common network mount patterns
+        if (absolute_path.find("._smb._tcp.local") != std::string::npos ||
+            absolute_path.find("._nfs._tcp.local") != std::string::npos ||
+            absolute_path.find("._afp._tcp.local") != std::string::npos)
+        {
+            // Extract share name and relative path using string operations
+            size_t volumes_pos = absolute_path.find("/Volumes/");
+            if (volumes_pos != std::string::npos)
+            {
+                std::string after_volumes = absolute_path.substr(volumes_pos + 9); // Skip "/Volumes/"
 
+                // Find the first slash after the mount point
+                size_t first_slash = after_volumes.find('/');
+                if (first_slash != std::string::npos)
+                {
+                    std::string mount_point = after_volumes.substr(0, first_slash);
+                    std::string relative_path = after_volumes.substr(first_slash + 1);
+
+                    // Extract share name from mount point (e.g., "truenas._smb._tcp.local-1" -> "B")
+                    std::string share_name = "B"; // Default for this mount
+                    if (mount_point.find("-1") != std::string::npos)
+                    {
+                        share_name = "B";
+                    }
+                    else if (mount_point.find("-2") != std::string::npos)
+                    {
+                        share_name = "G";
+                    }
+
+                    RelativePath result;
+                    result.share_name = share_name;
+                    result.relative_path = relative_path;
+
+                    Logger::debug("Fast path: Converted " + absolute_path + " to relative path: " +
+                                  result.share_name + ":" + result.relative_path);
+
+                    return result;
+                }
+            }
+        }
+    }
+
+    // Fallback to full mount detection (cached)
+    refreshMounts();
     auto mount_info = findMountForPath(absolute_path);
     if (!mount_info)
     {
@@ -143,22 +188,34 @@ std::optional<RelativePath> MountManager::toRelativePath(const std::string &abso
 
     try
     {
-        fs::path relative = fs::relative(abs_path, mount_path);
-        if (relative.empty())
+        // Use string manipulation instead of fs::relative for better performance on network file systems
+        std::string abs_path_str = abs_path.string();
+        std::string mount_path_str = mount_path.string();
+
+        if (abs_path_str.find(mount_path_str) != 0)
         {
             return std::nullopt;
         }
 
+        std::string relative_path_str = abs_path_str.substr(mount_path_str.length());
+        if (relative_path_str.empty() || relative_path_str[0] != '/')
+        {
+            return std::nullopt;
+        }
+
+        // Remove leading slash
+        relative_path_str = relative_path_str.substr(1);
+
         RelativePath result;
         result.share_name = mount_info->share_name;
-        result.relative_path = relative.string();
+        result.relative_path = relative_path_str;
 
         Logger::debug("Converted " + absolute_path + " to relative path: " +
                       result.share_name + ":" + result.relative_path);
 
         return result;
     }
-    catch (const fs::filesystem_error &e)
+    catch (const std::exception &e)
     {
         Logger::warn("Failed to convert path: " + std::string(e.what()));
         return std::nullopt;
@@ -191,6 +248,19 @@ std::optional<std::string> MountManager::toAbsolutePath(const RelativePath &rela
 
 bool MountManager::isNetworkPath(const std::string &path)
 {
+    // Fast path: check if path contains network mount indicators
+    if (path.find("/Volumes/") == 0)
+    {
+        // Quick check for common network mount patterns
+        if (path.find("._smb._tcp.local") != std::string::npos ||
+            path.find("._nfs._tcp.local") != std::string::npos ||
+            path.find("._afp._tcp.local") != std::string::npos)
+        {
+            return true;
+        }
+    }
+
+    // Fallback to full mount detection (cached)
     refreshMounts();
     return findMountForPath(path).has_value();
 }
@@ -245,9 +315,7 @@ void MountManager::updateMountMap()
 
 std::optional<MountInfo> MountManager::findMountForPath(const std::string &path)
 {
-    fs::path file_path(path);
-
-    // Find the longest matching mount point
+    // Find the longest matching mount point using string operations
     std::optional<MountInfo> best_match;
     size_t best_length = 0;
 
@@ -258,22 +326,16 @@ std::optional<MountInfo> MountManager::findMountForPath(const std::string &path)
             continue;
         }
 
-        fs::path mount_path(mount.mount_point);
-        try
+        const std::string &mount_path = mount.mount_point;
+
+        // Use string comparison instead of filesystem operations
+        if (path.find(mount_path) == 0)
         {
-            if (file_path.string().find(mount_path.string()) == 0)
+            if (mount_path.length() > best_length)
             {
-                if (mount_path.string().length() > best_length)
-                {
-                    best_length = mount_path.string().length();
-                    best_match = mount;
-                }
+                best_length = mount_path.length();
+                best_match = mount;
             }
-        }
-        catch (const fs::filesystem_error &)
-        {
-            // Skip invalid paths
-            continue;
         }
     }
 

@@ -61,8 +61,8 @@ bool FileScanner::scanFile(const std::string &file_path)
         return false;
     }
 
-    // Store only supported files in the database
-    DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
+    // Store only supported files in the database (skip hash computation during scanning for performance)
+    DBOpResult scan_result = db_manager_->storeScannedFile(file_path, false);
     if (!scan_result.success)
     {
         Logger::error("Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message);
@@ -95,8 +95,8 @@ void FileScanner::handleFile(const std::string &file_path)
         return;
     }
 
-    // Store only supported files in the database
-    DBOpResult scan_result = db_manager_->storeScannedFile(file_path);
+    // Store only supported files in the database (skip hash computation during scanning for performance)
+    DBOpResult scan_result = db_manager_->storeScannedFile(file_path, false);
     if (!scan_result.success)
     {
         Logger::error("Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message);

@@ -85,6 +85,9 @@ int main(int argc, char *argv[])
     // Initialize configuration manager
     auto &config_manager = ServerConfigManager::getInstance();
 
+    // Initialize logger with configured log level
+    Logger::init(config_manager.getLogLevel());
+
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
 

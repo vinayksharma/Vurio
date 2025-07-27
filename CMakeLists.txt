@@ -143,6 +143,7 @@ target_link_libraries(dedup_server
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
     yaml-cpp
+    # macOS native frameworks for faster file enumeration (using C APIs, no frameworks needed)
 )
 
 # Add Google Test

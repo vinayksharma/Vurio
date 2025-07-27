@@ -32,7 +32,7 @@ build_project() {
 #   - JWT authentication secret key
 auth_secret: "your-secret-key-here"
 dedup_mode: "BALANCED"
-log_level: "INFO"
+log_level: "DEBUG"
 server_host: "localhost"
 server_port: 8080
 

@@ -281,7 +281,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
     std::string callback_file;
 
     // Store file with callback
-    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
                            {
         callback_called = true;
         callback_file = file_path; });
@@ -320,7 +320,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
     std::string callback_file;
 
     // Store file again with callback (hash should be cleared)
-    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
                            {
         callback_called = true;
         callback_file = file_path; });
@@ -369,7 +369,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     // Store file again with callback (no change in content)
     std::string hash_before_second_store = FileUtils::computeFileHash(test_file);
     std::cout << "[DEBUG] Hash before second store: " << hash_before_second_store << std::endl;
-    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
+    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
                            { callback_called = true; });
     dbMan.waitForWrites();
 
