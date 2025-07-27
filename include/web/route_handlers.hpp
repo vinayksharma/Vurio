@@ -522,8 +522,8 @@ private:
                                     return;
                                 }
 
-                                // Store file in database without triggering processing
-                                auto db_result = db_manager.storeScannedFile(file_path);
+                                // Store file in database without triggering processing (skip hash computation for performance)
+                                auto db_result = db_manager.storeScannedFile(file_path, false);
                                 if (db_result.success)
                                 {
                                     files_scanned++;
