@@ -93,10 +93,24 @@ public:
 
     /**
      * @brief Get files that need processing for a specific mode
-     * @param current_mode The current dedup mode to check for
-     * @return Vector of file path and name pairs that need processing
+     * @param current_mode The deduplication mode to check
+     * @return Vector of file paths and names that need processing
      */
     std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing(DedupMode current_mode);
+
+    /**
+     * @brief Get files that need processing for any mode
+     * @return Vector of file paths and names that need processing for any mode
+     */
+    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessingAnyMode();
+
+    /**
+     * @brief Check if a file needs processing for a specific mode
+     * @param file_path The file path to check
+     * @param mode The deduplication mode to check
+     * @return True if the file needs processing for this mode
+     */
+    bool fileNeedsProcessingForMode(const std::string &file_path, DedupMode mode);
 
     /**
      * @brief Update the hash for a file after processing

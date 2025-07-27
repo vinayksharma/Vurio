@@ -61,6 +61,7 @@ void ServerConfigManager::initializeDefaultConfig()
         server_host: "localhost"
         scan_interval_seconds: 3600
         processing_interval_seconds: 1800
+        pre_process_quality_stack: false
         threading:
           max_processing_threads: 8
           max_scan_threads: 4
@@ -316,6 +317,25 @@ int ServerConfigManager::getMaxDecoderThreads() const
     return 4; // Default fallback
 }
 
+bool ServerConfigManager::getPreProcessQualityStack() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["pre_process_quality_stack"])
+        {
+            return config_["pre_process_quality_stack"].as<bool>();
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing pre_process_quality_stack: " + std::string(e.what()) +
+                     ", using default: false");
+    }
+    return false; // Default fallback
+}
+
+// Video processing configuration accessors
 int ServerConfigManager::getVideoSkipDurationSeconds(DedupMode mode) const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);

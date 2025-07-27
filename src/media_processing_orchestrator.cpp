@@ -50,15 +50,36 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             }
             auto& config_manager = ServerConfigManager::getInstance();
             DedupMode mode = config_manager.getDedupMode();
+            bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+            
             if (mode != DedupMode::FAST && mode != DedupMode::BALANCED && mode != DedupMode::QUALITY) {
                 Logger::error("Invalid dedup mode configured");
                 if (onError) onError(std::runtime_error("Invalid dedup mode"));
                 return;
             }
             
-            Logger::info("Starting file processing with mode: " + DedupModes::getModeName(mode));
+            // Determine which modes to process
+            std::vector<DedupMode> modes_to_process;
+            if (pre_process_quality_stack) {
+                // Process all three quality levels
+                modes_to_process = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                Logger::info("PreProcessQualityStack enabled - processing all quality levels (FAST, BALANCED, QUALITY)");
+            } else {
+                // Process only the selected mode
+                modes_to_process = {mode};
+                Logger::info("PreProcessQualityStack disabled - processing only selected mode: " + DedupModes::getModeName(mode));
+            }
             
-            auto files_to_process = dbMan_.getFilesNeedingProcessing(mode);
+            // Get files that need processing for any of the modes
+            std::vector<std::pair<std::string, std::string>> files_to_process;
+            if (pre_process_quality_stack) {
+                // Get files that need processing for any mode
+                files_to_process = dbMan_.getFilesNeedingProcessingAnyMode();
+            } else {
+                // Get files that need processing for the specific mode
+                files_to_process = dbMan_.getFilesNeedingProcessing(mode);
+            }
+            
             if (files_to_process.empty()) {
                 Logger::info("No files need processing");
                 if (onComplete) onComplete();
@@ -101,95 +122,69 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 continue;
                             }
                             
-                            // Process the file
-                            ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, mode);
-                            event.artifact_format = result.artifact.format;
-                            event.artifact_hash = result.artifact.hash;
-                            event.artifact_confidence = result.artifact.confidence;
+                            // Process the file for each required mode
+                            bool any_success = false;
+                            std::string last_error;
                             
-                            if (!result.success) {
-                                event.success = false;
-                                event.error_message = result.error_message;
-                                Logger::error("Processing failed for: " + files_to_process[i].first + " - " + result.error_message);
-                                processed_files.fetch_add(1);
-                                failed_files.fetch_add(1);
-                                if (onNext) onNext(event);
-                                continue;
+                            for (const auto& process_mode : modes_to_process) {
+                                // Check if this file needs processing for this specific mode
+                                if (pre_process_quality_stack) {
+                                    // In quality stack mode, check if this specific mode needs processing
+                                    if (!dbMan_.fileNeedsProcessingForMode(files_to_process[i].first, process_mode)) {
+                                        Logger::debug("File " + files_to_process[i].first + " already processed for mode " + DedupModes::getModeName(process_mode));
+                                        continue;
+                                    }
+                                }
+                                
+                                Logger::info("Processing file: " + files_to_process[i].first + " with mode: " + DedupModes::getModeName(process_mode));
+                                
+                                // Process the file for this mode
+                                ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, process_mode);
+                                
+                                if (result.success) {
+                                    any_success = true;
+                                    // Update event with the most recent successful result
+                                    event.artifact_format = result.artifact.format;
+                                    event.artifact_hash = result.artifact.hash;
+                                    event.artifact_confidence = result.artifact.confidence;
+                                    
+                                    // Thread-safe database operations
+                                    bool store_success = false;
+                                    std::string db_error_msg;
+                                    
+                                    // Lock database operations to prevent race conditions
+                                    tbb::mutex::scoped_lock lock(db_mutex);
+                                    
+                                    // Store processing result for this mode
+                                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, process_mode, result);
+                                    if (!store_result.success) {
+                                        db_error_msg = store_result.error_message;
+                                        Logger::error("Failed to store processing result for mode " + DedupModes::getModeName(process_mode) + ": " + files_to_process[i].first + " - " + db_error_msg);
+                                    } else {
+                                        Logger::info("Successfully processed and stored result for " + files_to_process[i].first + " with mode " + DedupModes::getModeName(process_mode));
+                                    }
+                                } else {
+                                    last_error = result.error_message;
+                                    Logger::error("Processing failed for " + files_to_process[i].first + " with mode " + DedupModes::getModeName(process_mode) + " - " + result.error_message);
+                                }
                             }
                             
-                            // Thread-safe database operations
-                            bool store_success = false;
-                            bool hash_success = false;
-                            std::string db_error_msg;
-                            
-                            // Lock database operations to prevent race conditions
-                            tbb::mutex::scoped_lock lock(db_mutex);
-                            
-                            // Store processing result
-                            auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, mode, result);
-                            if (!store_result.success) {
-                                db_error_msg = store_result.error_message;
-                                Logger::error("Failed to enqueue processing result: " + files_to_process[i].first + " - " + db_error_msg);
-                                processed_files.fetch_add(1);
-                                failed_files.fetch_add(1);
+                            // Set final event result
+                            if (any_success) {
+                                event.success = true;
+                                successful_files.fetch_add(1);
+                            } else {
                                 event.success = false;
-                                event.error_message = "Database operation failed: " + db_error_msg;
-                                if (onNext) onNext(event);
-                                continue;
-                            }
-                            
-                            // Wait for write queue to process the store operation
-                            dbMan_.waitForWrites();
-                            
-                            // Check if the store operation actually succeeded
-                            auto store_op_result = dbMan_.getAccessQueue().getOperationResult(store_op_id);
-                            if (!store_op_result.success) {
-                                Logger::error("Store operation failed: " + files_to_process[i].first + " - " + store_op_result.error_message);
-                                processed_files.fetch_add(1);
+                                event.error_message = "Processing failed for all modes: " + last_error;
                                 failed_files.fetch_add(1);
-                                event.success = false;
-                                event.error_message = "Database operation failed: " + store_op_result.error_message;
-                                if (onNext) onNext(event);
-                                continue;
-                            }
-                            
-                            // Generate file hash and update database
-                            std::string file_hash = FileUtils::computeFileHash(files_to_process[i].first);
-                            auto [hash_result, hash_op_id] = dbMan_.updateFileHashWithId(files_to_process[i].first, file_hash);
-                            if (!hash_result.success) {
-                                db_error_msg = hash_result.error_message;
-                                Logger::error("Failed to enqueue hash update: " + files_to_process[i].first + " - " + db_error_msg);
-                                processed_files.fetch_add(1);
-                                failed_files.fetch_add(1);
-                                event.success = false;
-                                event.error_message = "Database operation failed: " + db_error_msg;
-                                if (onNext) onNext(event);
-                                continue;
-                            }
-                            
-                            // Wait for write queue to process the hash update
-                            dbMan_.waitForWrites();
-                            
-                            // Check if the hash update operation actually succeeded
-                            auto hash_op_result = dbMan_.getAccessQueue().getOperationResult(hash_op_id);
-                            if (!hash_op_result.success) {
-                                Logger::error("Hash update operation failed: " + files_to_process[i].first + " - " + hash_op_result.error_message);
-                                processed_files.fetch_add(1);
-                                failed_files.fetch_add(1);
-                                event.success = false;
-                                event.error_message = "Database operation failed: " + hash_op_result.error_message;
-                                if (onNext) onNext(event);
-                                continue;
                             }
                             
                             // Success - update counters and emit event
                             auto end = std::chrono::steady_clock::now();
                             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
                             event.processing_time_ms = duration.count();
-                            event.success = true;
                             
                             processed_files.fetch_add(1);
-                            successful_files.fetch_add(1);
                             
                             Logger::info("Successfully processed file: " + files_to_process[i].first + 
                                        " (format: " + event.artifact_format + 

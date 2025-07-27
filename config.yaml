@@ -26,6 +26,9 @@ log_level: "INFO"
 server_host: "localhost"
 server_port: 8080
 
+# Quality stack configuration
+pre_process_quality_stack: true
+
 # Thread pool configuration
 threading:
   # Maximum number of threads for media processing operations

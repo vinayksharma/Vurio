@@ -74,6 +74,9 @@ public:
     // Decoder configuration getters
     int getMaxDecoderThreads() const;
 
+    // Quality stack configuration
+    bool getPreProcessQualityStack() const;
+
     // Video processing configuration accessors
     int getVideoSkipDurationSeconds(DedupMode mode) const;
     int getVideoFramesPerSkip(DedupMode mode) const;

@@ -1933,3 +1933,163 @@ std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file
 
     return results;
 }
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedingProcessingAnyMode()
+{
+    Logger::debug("getFilesNeedingProcessingAnyMode called");
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getFilesNeedingProcessingAnyMode in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, std::string>>());
+        }
+        
+        std::vector<std::pair<std::string, std::string>> results;
+        const std::string select_sql = R"(
+            SELECT DISTINCT sf.file_path, sf.file_name 
+            FROM scanned_files sf
+            WHERE sf.hash IS NULL 
+               OR (sf.hash IS NOT NULL AND (
+                   NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'FAST')
+                   OR NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'BALANCED')
+                   OR NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'QUALITY')
+               ))
+            ORDER BY sf.created_at DESC
+        )";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            results.emplace_back(file_path, file_name);
+        }
+
+        sqlite3_finalize(stmt);
+        Logger::debug("Database read operation completed successfully");
+        return std::any(results); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            results = std::any_cast<std::vector<std::pair<std::string, std::string>>>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting files needing processing for any mode: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, DedupMode mode)
+{
+    Logger::debug("fileNeedsProcessingForMode called for file: " + file_path + ", mode: " + DedupModes::getModeName(mode));
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return false;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_mode = DedupModes::getModeName(mode);
+    bool needs_processing = false;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_file_path, captured_mode, &needs_processing](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing fileNeedsProcessingForMode in access queue for: " + captured_file_path + ", mode: " + captured_mode);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(false);
+        }
+        
+        // First check if file exists in scanned_files
+        const std::string check_sql = "SELECT hash FROM scanned_files WHERE file_path = ?";
+        sqlite3_stmt *check_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, check_sql.c_str(), -1, &check_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare check statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(false);
+        }
+        
+        sqlite3_bind_text(check_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(check_stmt);
+        if (rc != SQLITE_ROW)
+        {
+            // File not in scanned_files
+            sqlite3_finalize(check_stmt);
+            return std::any(false);
+        }
+        
+        // Check if hash exists
+        if (sqlite3_column_type(check_stmt, 0) == SQLITE_NULL)
+        {
+            // No hash, needs processing
+            sqlite3_finalize(check_stmt);
+            return std::any(true);
+        }
+        
+        sqlite3_finalize(check_stmt);
+        
+        // Check if processing result exists for this mode
+        const std::string result_sql = "SELECT 1 FROM media_processing_results WHERE file_path = ? AND processing_mode = ?";
+        sqlite3_stmt *result_stmt;
+        rc = sqlite3_prepare_v2(dbMan.db_, result_sql.c_str(), -1, &result_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare result statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(false);
+        }
+        
+        sqlite3_bind_text(result_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(result_stmt, 2, captured_mode.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(result_stmt);
+        
+        bool has_result = (rc == SQLITE_ROW);
+        sqlite3_finalize(result_stmt);
+        
+        return std::any(!has_result); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            needs_processing = std::any_cast<bool>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error checking if file needs processing for mode: " + std::string(e.what()));
+    }
+
+    return needs_processing;
+}
+
+// Video processing configuration accessors
