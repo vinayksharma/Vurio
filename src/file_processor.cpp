@@ -94,6 +94,21 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
             Logger::error(msg);
             return FileProcessResult(false, msg);
         }
+
+        // Set processing flag after successful processing to prevent reprocessing
+        if (result.success)
+        {
+            auto flag_result = db_manager_->setProcessingFlag(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag after processing: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag after successful processing: " + file_path + " for mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+
         total_files_processed_++;
         if (result.success)
         {
@@ -173,6 +188,21 @@ void FileProcessor::handleFile(const std::string &file_path)
             Logger::error("Failed to store processing result for: " + file_path + ". DB error: " + db_result.error_message);
             return;
         }
+
+        // Set processing flag after successful processing to prevent reprocessing
+        if (result.success)
+        {
+            auto flag_result = db_manager_->setProcessingFlag(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag after processing: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag after successful processing: " + file_path + " for mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+
         total_files_processed_++;
         if (result.success)
         {

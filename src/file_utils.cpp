@@ -235,3 +235,143 @@ std::string FileUtils::computeFileHash(const std::string &file_path)
         ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
     return ss.str();
 }
+
+// FileMetadata implementation
+bool FileMetadata::operator==(const FileMetadata &other) const
+{
+    return modification_time == other.modification_time &&
+           creation_time == other.creation_time &&
+           file_size == other.file_size &&
+           inode == other.inode &&
+           device_id == other.device_id;
+}
+
+bool FileMetadata::operator!=(const FileMetadata &other) const
+{
+    return !(*this == other);
+}
+
+std::string FileMetadata::toString() const
+{
+    std::stringstream ss;
+    ss << "FileMetadata{"
+       << "path='" << file_path << "', "
+       << "mod_time=" << modification_time << ", "
+       << "create_time=" << creation_time << ", "
+       << "size=" << file_size << ", "
+       << "inode=" << inode << ", "
+       << "device=" << device_id << "}";
+    return ss.str();
+}
+
+std::optional<FileMetadata> FileUtils::getFileMetadata(const std::string &file_path)
+{
+#ifdef __APPLE__
+    struct stat st;
+    if (stat(file_path.c_str(), &st) != 0)
+    {
+        return std::nullopt;
+    }
+
+    FileMetadata metadata;
+    metadata.file_path = file_path;
+    metadata.modification_time = st.st_mtime;
+    metadata.creation_time = st.st_birthtime; // macOS specific
+    metadata.file_size = static_cast<uint64_t>(st.st_size);
+    metadata.inode = static_cast<uint32_t>(st.st_ino);
+    metadata.device_id = static_cast<uint32_t>(st.st_dev);
+
+    return metadata;
+#else
+    // For non-macOS systems, use std::filesystem
+    try
+    {
+        fs::path path(file_path);
+        if (!fs::exists(path) || !fs::is_regular_file(path))
+        {
+            return std::nullopt;
+        }
+
+        FileMetadata metadata;
+        metadata.file_path = file_path;
+        metadata.modification_time = fs::last_write_time(path).time_since_epoch().count();
+        metadata.creation_time = metadata.modification_time; // Fallback for non-macOS
+        metadata.file_size = fs::file_size(path);
+        metadata.inode = 0;     // Not easily available on all systems
+        metadata.device_id = 0; // Not easily available on all systems
+
+        return metadata;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting file metadata for " + file_path + ": " + e.what());
+        return std::nullopt;
+    }
+#endif
+}
+
+bool FileUtils::hasFileChanged(const std::string &file_path, const FileMetadata &stored_metadata)
+{
+    auto current_metadata = getFileMetadata(file_path);
+    if (!current_metadata)
+    {
+        // File doesn't exist or can't be accessed
+        return true; // Consider it changed
+    }
+
+    return *current_metadata != stored_metadata;
+}
+
+std::string FileUtils::metadataToString(const FileMetadata &metadata)
+{
+    std::stringstream ss;
+    ss << metadata.modification_time << "|"
+       << metadata.creation_time << "|"
+       << metadata.file_size << "|"
+       << metadata.inode << "|"
+       << metadata.device_id;
+    return ss.str();
+}
+
+std::optional<FileMetadata> FileUtils::metadataFromString(const std::string &metadata_str)
+{
+    try
+    {
+        std::stringstream ss(metadata_str);
+        std::string token;
+
+        FileMetadata metadata;
+
+        // Parse modification_time
+        if (!std::getline(ss, token, '|'))
+            return std::nullopt;
+        metadata.modification_time = std::stoll(token);
+
+        // Parse creation_time
+        if (!std::getline(ss, token, '|'))
+            return std::nullopt;
+        metadata.creation_time = std::stoll(token);
+
+        // Parse file_size
+        if (!std::getline(ss, token, '|'))
+            return std::nullopt;
+        metadata.file_size = std::stoull(token);
+
+        // Parse inode
+        if (!std::getline(ss, token, '|'))
+            return std::nullopt;
+        metadata.inode = std::stoul(token);
+
+        // Parse device_id
+        if (!std::getline(ss, token, '|'))
+            return std::nullopt;
+        metadata.device_id = std::stoul(token);
+
+        return metadata;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error parsing metadata string: " + metadata_str + " - " + e.what());
+        return std::nullopt;
+    }
+}

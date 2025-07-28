@@ -86,53 +86,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileNewFile)
     fs::remove(test_file);
 }
 
-TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameHash)
-{
-    auto &dbMan = DatabaseManager::getInstance(db_path);
-
-    // Create a test file with specific content
-    std::string test_file = "test_file.jpg";
-    createTestFile(test_file, "specific test content for hash comparison");
-
-    // Store the file first time
-    dbMan.storeScannedFile(test_file);
-    dbMan.waitForWrites();
-
-    // Get the actual hash of the file
-    std::string actual_hash = FileUtils::computeFileHash(test_file);
-
-    // Simulate processing by setting a hash
-    dbMan.updateFileHash(test_file, actual_hash);
-    dbMan.waitForWrites();
-
-    // Create a processing result for the current mode
-    ProcessingResult result;
-    result.success = true;
-    result.artifact.format = "phash";
-    result.artifact.hash = "test_hash_123";
-    result.artifact.confidence = 0.95;
-    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
-    dbMan.waitForWrites();
-
-    // Verify the processing result was stored
-    auto results = dbMan.getProcessingResults(test_file);
-    EXPECT_EQ(results.size(), 1);
-    EXPECT_TRUE(results[0].success);
-    EXPECT_EQ(results[0].artifact.format, "phash");
-
-    // Store the same file again (should not change hash since content is same)
-    dbMan.storeScannedFile(test_file);
-    dbMan.waitForWrites();
-
-    // Check that file no longer needs processing (has hash and processing result for current mode)
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
-    EXPECT_EQ(files_needing_processing.size(), 0);
-
-    // Clean up test file
-    fs::remove(test_file);
-}
-
-TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
+TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileSameMetadata)
 {
     auto &dbMan = DatabaseManager::getInstance(db_path);
 
@@ -144,18 +98,52 @@ TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentHash)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Simulate processing by setting a hash (simulate mismatch)
-    dbMan.updateFileHash(test_file, "old_hash_123");
+    // Process the file to set the processing flag
+    ProcessingResult result;
+    result.success = true;
+    result.artifact.format = "phash";
+    result.artifact.hash = "test_hash";
+    result.artifact.confidence = 0.95;
+    dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    dbMan.setProcessingFlag(test_file, DedupMode::BALANCED);
+    dbMan.waitForWrites();
+
+    // Store the same file again (should not change metadata since content is same)
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Check that file no longer needs processing (has processing flag set)
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
+    EXPECT_EQ(files_needing_processing.size(), 0);
+
+    // Clean up test file
+    fs::remove(test_file);
+}
+
+TEST_F(DatabaseManagerTest, StoreScannedFileExistingFileDifferentMetadata)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_file.jpg";
+    createTestFile(test_file);
+
+    // Store the file first time
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Simulate processing by setting metadata (simulate mismatch)
+    dbMan.updateFileMetadata(test_file, "old_metadata_123");
     dbMan.waitForWrites();
 
     // Modify the file content (simulating file change)
     createTestFile(test_file, "different content");
 
-    // Store the file again (should clear hash due to content change)
+    // Store the file again (should clear metadata due to content change)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Check that file needs processing again (hash cleared)
+    // Check that file needs processing again (metadata cleared)
     auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 1);
     EXPECT_EQ(files_needing_processing[0].first, test_file);
@@ -172,46 +160,35 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     std::string file1 = "file1.jpg";
     std::string file2 = "file2.png";
     std::string file3 = "file3.mp4";
-
     createTestFile(file1);
     createTestFile(file2);
     createTestFile(file3);
 
-    // Store all files
+    // Store files
     dbMan.storeScannedFile(file1);
     dbMan.storeScannedFile(file2);
     dbMan.storeScannedFile(file3);
     dbMan.waitForWrites();
 
-    // All files should need processing initially
+    // Initially all files need processing
     auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 3);
 
-    // Process one file (set hash)
-    std::string hash1 = FileUtils::computeFileHash(file1);
-    dbMan.updateFileHash(file1, hash1);
+    // Process file1 and set processing flag
+    ProcessingResult result1;
+    result1.success = true;
+    result1.artifact.format = "phash";
+    result1.artifact.hash = "test_hash_1";
+    result1.artifact.confidence = 0.95;
+    dbMan.storeProcessingResult(file1, DedupMode::BALANCED, result1);
+    dbMan.setProcessingFlag(file1, DedupMode::BALANCED);
     dbMan.waitForWrites();
 
-    // Create a processing result for file1
-    ProcessingResult result;
-    result.success = true;
-    result.artifact.format = "phash";
-    result.artifact.hash = "test_hash_123";
-    result.artifact.confidence = 0.95;
-    dbMan.storeProcessingResult(file1, DedupMode::BALANCED, result);
-    dbMan.waitForWrites();
-
-    // Verify the processing result was stored
-    auto results = dbMan.getProcessingResults(file1);
-    EXPECT_EQ(results.size(), 1);
-    EXPECT_TRUE(results[0].success);
-    EXPECT_EQ(results[0].artifact.format, "phash");
-
-    // Only 2 files should need processing now (file1 has hash and processing result for current mode)
+    // Now only file2 and file3 need processing
     files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 2);
 
-    // Check that file1 is not in the list (has hash and processing result for current mode)
+    // Verify file1 is not in the list
     auto it = std::find_if(files_needing_processing.begin(), files_needing_processing.end(),
                            [&file1](const std::pair<std::string, std::string> &p)
                            {
@@ -225,7 +202,7 @@ TEST_F(DatabaseManagerTest, GetFilesNeedingProcessing)
     fs::remove(file3);
 }
 
-TEST_F(DatabaseManagerTest, UpdateFileHash)
+TEST_F(DatabaseManagerTest, UpdateFileMetadata)
 {
     auto &dbMan = DatabaseManager::getInstance(db_path);
 
@@ -237,32 +214,18 @@ TEST_F(DatabaseManagerTest, UpdateFileHash)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Initially should need processing
-    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
-    EXPECT_EQ(files_needing_processing.size(), 1);
-
-    // Update hash (simulate processing)
-    std::string processed_hash = FileUtils::computeFileHash(test_file);
-    dbMan.updateFileHash(test_file, processed_hash);
-    dbMan.waitForWrites();
-
-    // Create a processing result for the current mode
+    // Process the file and set processing flag
     ProcessingResult result;
     result.success = true;
     result.artifact.format = "phash";
-    result.artifact.hash = "test_hash_123";
+    result.artifact.hash = "test_hash";
     result.artifact.confidence = 0.95;
     dbMan.storeProcessingResult(test_file, DedupMode::BALANCED, result);
+    dbMan.setProcessingFlag(test_file, DedupMode::BALANCED);
     dbMan.waitForWrites();
 
-    // Verify the processing result was stored
-    auto results = dbMan.getProcessingResults(test_file);
-    EXPECT_EQ(results.size(), 1);
-    EXPECT_TRUE(results[0].success);
-    EXPECT_EQ(results[0].artifact.format, "phash");
-
-    // Should no longer need processing (has hash and processing result for current mode)
-    files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
+    // Check that file no longer needs processing
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
     EXPECT_EQ(files_needing_processing.size(), 0);
 
     // Clean up test file
@@ -281,7 +244,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
     std::string callback_file;
 
     // Store file with callback
-    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
                            {
         callback_called = true;
         callback_file = file_path; });
@@ -297,7 +260,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallback)
     fs::remove(test_file);
 }
 
-TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
+TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackMetadataCleared)
 {
     auto &dbMan = DatabaseManager::getInstance(db_path);
 
@@ -309,8 +272,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Set hash (simulate processing)
-    dbMan.updateFileHash(test_file, "old_hash_123");
+    // Set metadata (simulate processing)
+    dbMan.updateFileMetadata(test_file, "old_metadata_123");
     dbMan.waitForWrites();
 
     // Modify file content
@@ -319,8 +282,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
     bool callback_called = false;
     std::string callback_file;
 
-    // Store file again with callback (hash should be cleared)
-    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
+    // Store file again with callback (metadata should be cleared)
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
                            {
         callback_called = true;
         callback_file = file_path; });
@@ -328,7 +291,7 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackHashCleared)
     // Callback is executed synchronously within the database operation
     // No need to wait
 
-    // Callback should be called when hash is cleared
+    // Callback should be called when metadata is cleared
     EXPECT_TRUE(callback_called);
     EXPECT_EQ(callback_file, test_file);
 
@@ -348,35 +311,37 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Set hash (simulate processing)
-    std::string actual_hash = FileUtils::computeFileHash(test_file);
-    std::cout << "[DEBUG] Actual file hash: " << actual_hash << std::endl;
-    dbMan.updateFileHash(test_file, actual_hash);
+    // Set metadata (simulate processing)
+    auto metadata = FileUtils::getFileMetadata(test_file);
+    EXPECT_TRUE(metadata.has_value());
+    std::string actual_metadata_str = FileUtils::metadataToString(*metadata);
+    std::cout << "[DEBUG] Actual file metadata: " << actual_metadata_str << std::endl;
+    dbMan.updateFileMetadata(test_file, actual_metadata_str);
     dbMan.waitForWrites();
 
-    // Retrieve hash from DB for debug
+    // Retrieve metadata from DB for debug
     auto files = dbMan.getAllScannedFiles();
     for (const auto &pair : files)
     {
         if (pair.first == test_file)
         {
-            std::cout << "[DEBUG] DB file: " << pair.first << ", DB hash: " << FileUtils::computeFileHash(pair.first) << std::endl;
+            std::cout << "[DEBUG] DB file: " << pair.first << ", DB metadata: " << FileUtils::getFileMetadata(pair.first)->toString() << std::endl;
         }
     }
 
     bool callback_called = false;
 
     // Store file again with callback (no change in content)
-    std::string hash_before_second_store = FileUtils::computeFileHash(test_file);
-    std::cout << "[DEBUG] Hash before second store: " << hash_before_second_store << std::endl;
-    dbMan.storeScannedFile(test_file, true, [&](const std::string &file_path)
+    auto metadata_before_second_store = FileUtils::getFileMetadata(test_file);
+    std::cout << "[DEBUG] Metadata before second store: " << metadata_before_second_store->toString() << std::endl;
+    dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
                            { callback_called = true; });
     dbMan.waitForWrites();
 
     // Callback is executed synchronously within the database operation
     // No need to wait (callback should NOT be called)
 
-    // Callback should NOT be called when hash doesn't change
+    // Callback should NOT be called when metadata doesn't change
     EXPECT_FALSE(callback_called);
 
     // Clean up test file
@@ -1027,4 +992,45 @@ TEST_F(DatabaseManagerTest, QueueInitializationRetry)
     auto inputs = dbMan.getUserInputs("test_type");
     EXPECT_EQ(inputs.size(), 1);
     EXPECT_EQ(inputs[0], "test_value");
+}
+
+TEST_F(DatabaseManagerTest, MetadataBasedChangeDetection)
+{
+    auto &dbMan = DatabaseManager::getInstance(db_path);
+
+    // Create a test file
+    std::string test_file = "test_metadata_detection.jpg";
+    createTestFile(test_file);
+
+    // Store the file (should have no metadata initially)
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Initially should need processing
+    auto files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
+    EXPECT_EQ(files_needing_processing.size(), 1);
+    EXPECT_EQ(files_needing_processing[0].first, test_file);
+
+    // Simulate processing by setting processing flag
+    dbMan.setProcessingFlag(test_file, DedupMode::BALANCED);
+    dbMan.waitForWrites();
+
+    // Now should not need processing
+    files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
+    EXPECT_EQ(files_needing_processing.size(), 0);
+
+    // Modify the file content (simulating file change)
+    createTestFile(test_file, "different content");
+
+    // Store the file again (should detect change and clear processing flags)
+    dbMan.storeScannedFile(test_file);
+    dbMan.waitForWrites();
+
+    // Should need processing again (processing flags cleared)
+    files_needing_processing = dbMan.getFilesNeedingProcessing(DedupMode::BALANCED);
+    EXPECT_EQ(files_needing_processing.size(), 1);
+    EXPECT_EQ(files_needing_processing[0].first, test_file);
+
+    // Clean up test file
+    fs::remove(test_file);
 }

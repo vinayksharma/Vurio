@@ -76,10 +76,9 @@ public:
      * @brief Store a scanned file in the database
      * @param file_path Path to the scanned file
      * @param onFileNeedsProcessing Optional callback to trigger processing when file needs processing
-     * @return DBOpResult indicating success or failure
+     * @return DBOpResult with success flag and error message
      */
     DBOpResult storeScannedFile(const std::string &file_path,
-                                bool compute_hash = true,
                                 std::function<void(const std::string &)> onFileNeedsProcessing = nullptr);
 
     /**
@@ -97,6 +96,14 @@ public:
      * @return Vector of file paths and names that need processing
      */
     std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing(DedupMode current_mode);
+
+    /**
+     * @brief Set processing flag for a specific mode after successful processing
+     * @param file_path Path to the file
+     * @param mode The deduplication mode that was processed
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setProcessingFlag(const std::string &file_path, DedupMode mode);
 
     /**
      * @brief Get files that need processing for any mode
@@ -127,6 +134,22 @@ public:
      * @return Pair of DBOpResult and operation ID for tracking
      */
     std::pair<DBOpResult, size_t> updateFileHashWithId(const std::string &file_path, const std::string &file_hash);
+
+    /**
+     * @brief Update the metadata for a file after processing
+     * @param file_path Path to the file
+     * @param metadata_str Metadata string to store
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult updateFileMetadata(const std::string &file_path, const std::string &metadata_str);
+
+    /**
+     * @brief Update the metadata for a file after processing and return operation ID
+     * @param file_path Path to the file
+     * @param metadata_str Metadata string to store
+     * @return Pair of DBOpResult and operation ID for tracking
+     */
+    std::pair<DBOpResult, size_t> updateFileMetadataWithId(const std::string &file_path, const std::string &metadata_str);
 
     /**
      * @brief Check if a file exists in the scanned_files table

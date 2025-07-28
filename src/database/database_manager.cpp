@@ -207,7 +207,10 @@ bool DatabaseManager::createScannedFilesTable()
             relative_path TEXT,           -- For network mounts: share:relative/path
             share_name TEXT,              -- The share name (B, G, etc.)
             file_name TEXT NOT NULL,
-            hash TEXT,
+            file_metadata TEXT,           -- File metadata for change detection (creation date, modification date, size)
+            processed_fast BOOLEAN DEFAULT 0,      -- Processing flag for FAST mode
+            processed_balanced BOOLEAN DEFAULT 0,  -- Processing flag for BALANCED mode
+            processed_quality BOOLEAN DEFAULT 0,   -- Processing flag for QUALITY mode
             links TEXT,
             is_network_file BOOLEAN DEFAULT 0,  -- True if on network mount
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -823,7 +826,6 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
 }
 
 DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
-                                             bool compute_hash,
                                              std::function<void(const std::string &)> onFileNeedsProcessing)
 {
     if (!waitForQueueInitialization())
@@ -857,30 +859,32 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
         }
     }
 
+    // Always compute metadata during scanning
+    Logger::debug("Getting metadata for file: " + file_path);
+    auto metadata = FileUtils::getFileMetadata(file_path);
+    std::string current_metadata_str;
+    if (metadata)
+    {
+        current_metadata_str = FileUtils::metadataToString(*metadata);
+    }
+    else
+    {
+        Logger::warn("Could not get metadata for file: " + file_path);
+    }
+
     // Capture parameters for async execution
     std::string captured_file_path = file_path;
     std::string captured_file_name = file_name;
     std::string captured_relative_path = relative_path;
     std::string captured_share_name = share_name;
     bool captured_is_network = is_network_file;
+    std::string captured_metadata_str = current_metadata_str;
     auto captured_callback = onFileNeedsProcessing;
     std::string error_msg;
     bool success = true;
 
-    // Compute file hash only if requested (skip during scanning for performance)
-    std::string current_hash;
-    if (compute_hash)
-    {
-        Logger::debug("Computing hash for file: " + captured_file_path);
-        current_hash = FileUtils::computeFileHash(captured_file_path);
-    }
-    else
-    {
-        Logger::debug("Skipping hash computation for file: " + captured_file_path);
-    }
-
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_callback, current_hash, compute_hash, &error_msg, &success](DatabaseManager &dbMan)
+    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_metadata_str, captured_callback, &error_msg, &success](DatabaseManager &dbMan)
                                 {
         if (!dbMan.db_)
         {
@@ -891,7 +895,7 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
         }
         
         // Check if file already exists
-        const std::string select_sql = "SELECT hash FROM scanned_files WHERE file_path = ?";
+        const std::string select_sql = "SELECT file_metadata, processed_fast, processed_balanced, processed_quality FROM scanned_files WHERE file_path = ?";
         sqlite3_stmt *select_stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &select_stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -905,59 +909,49 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
         rc = sqlite3_step(select_stmt);
         if (rc == SQLITE_ROW)
         {
-            // File exists, check if hash exists
+            // File exists, check if metadata exists
             if (sqlite3_column_type(select_stmt, 0) != SQLITE_NULL)
             {
-                // Hash exists, but we only compare if we computed a hash
-                if (compute_hash)
+                // Metadata exists, compare with current metadata
+                std::string existing_metadata_str = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
+                
+                // Parse existing metadata
+                auto existing_metadata = FileUtils::metadataFromString(existing_metadata_str);
+                auto current_metadata = FileUtils::metadataFromString(captured_metadata_str);
+                
+                if (existing_metadata && current_metadata && *existing_metadata == *current_metadata)
                 {
-                    std::string existing_hash = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
-
-                    if (existing_hash == current_hash)
-                    {
-                        // Hash matches, skip this file
-                        sqlite3_finalize(select_stmt);
-                        Logger::debug("File hash matches, skipping: " + captured_file_path);
-                        return WriteOperationResult(true);
-                    }
-                    else
-                    {
-                        // Hash differs, clear the hash and update timestamp
-                        sqlite3_finalize(select_stmt);
-                        const std::string update_sql = "UPDATE scanned_files SET hash = NULL, created_at = CURRENT_TIMESTAMP WHERE file_path = ?";
-                        sqlite3_stmt *update_stmt;
-                        rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
-                        if (rc != SQLITE_OK)
-                        {
-                            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
-                            Logger::error(error_msg);
-                            success = false;
-                            return WriteOperationResult::Failure(error_msg);
-                        }
-                        sqlite3_bind_text(update_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
-                        rc = sqlite3_step(update_stmt);
-                        sqlite3_finalize(update_stmt);
-                        if (rc != SQLITE_DONE)
-                        {
-                            error_msg = "Failed to clear file hash: " + std::string(sqlite3_errmsg(dbMan.db_));
-                            Logger::error(error_msg);
-                            success = false;
-                            return WriteOperationResult::Failure(error_msg);
-                        }
-                        Logger::info("File hash changed, cleared hash for: " + captured_file_path);
-                        if (captured_callback)
-                        {
-                            captured_callback(captured_file_path);
-                        }
-                        return WriteOperationResult(true);
-                    }
+                    // Metadata matches, file hasn't changed
+                    sqlite3_finalize(select_stmt);
+                    Logger::debug("File metadata matches, file unchanged: " + captured_file_path);
+                    return WriteOperationResult(true);
                 }
                 else
                 {
-                    // Hash exists but we're not computing hashes during scan
-                    // Just mark as needs processing
+                    // Metadata differs, file has changed - clear all processing flags
                     sqlite3_finalize(select_stmt);
-                    Logger::info("File exists with hash, needs processing: " + captured_file_path);
+                    const std::string update_sql = "UPDATE scanned_files SET file_metadata = ?, processed_fast = 0, processed_balanced = 0, processed_quality = 0, created_at = CURRENT_TIMESTAMP WHERE file_path = ?";
+                    sqlite3_stmt *update_stmt;
+                    rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                    if (rc != SQLITE_OK)
+                    {
+                        error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                        Logger::error(error_msg);
+                        success = false;
+                        return WriteOperationResult::Failure(error_msg);
+                    }
+                    sqlite3_bind_text(update_stmt, 1, captured_metadata_str.c_str(), -1, SQLITE_STATIC);
+                    sqlite3_bind_text(update_stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+                    rc = sqlite3_step(update_stmt);
+                    sqlite3_finalize(update_stmt);
+                    if (rc != SQLITE_DONE)
+                    {
+                        error_msg = "Failed to update file metadata and clear flags: " + std::string(sqlite3_errmsg(dbMan.db_));
+                        Logger::error(error_msg);
+                        success = false;
+                        return WriteOperationResult::Failure(error_msg);
+                    }
+                    Logger::info("File metadata changed, cleared processing flags for: " + captured_file_path);
                     if (captured_callback)
                     {
                         captured_callback(captured_file_path);
@@ -967,9 +961,9 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
             }
             else
             {
-                // No hash, file needs processing
+                // No metadata, file needs processing
                 sqlite3_finalize(select_stmt);
-                Logger::info("File exists but has no hash, needs processing: " + captured_file_path);
+                Logger::info("File exists but has no metadata, needs processing: " + captured_file_path);
                 if (captured_callback)
                 {
                     captured_callback(captured_file_path);
@@ -979,9 +973,9 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
         }
         else
         {
-            // File doesn't exist, insert it
+            // File doesn't exist, insert it with metadata
             sqlite3_finalize(select_stmt);
-            const std::string insert_sql = "INSERT INTO scanned_files (file_path, file_name, relative_path, share_name, is_network_file) VALUES (?, ?, ?, ?, ?)";
+            const std::string insert_sql = "INSERT INTO scanned_files (file_path, file_name, relative_path, share_name, is_network_file, file_metadata) VALUES (?, ?, ?, ?, ?, ?)";
             sqlite3_stmt *insert_stmt;
             rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &insert_stmt, nullptr);
             if (rc != SQLITE_OK)
@@ -996,6 +990,7 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
             sqlite3_bind_text(insert_stmt, 3, captured_relative_path.c_str(), -1, SQLITE_STATIC);
             sqlite3_bind_text(insert_stmt, 4, captured_share_name.c_str(), -1, SQLITE_STATIC);
             sqlite3_bind_int(insert_stmt, 5, captured_is_network ? 1 : 0);
+            sqlite3_bind_text(insert_stmt, 6, captured_metadata_str.c_str(), -1, SQLITE_STATIC);
             rc = sqlite3_step(insert_stmt);
             sqlite3_finalize(insert_stmt);
             if (rc != SQLITE_DONE)
@@ -1211,12 +1206,12 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
     }
 
     // Capture the current mode for async execution
-    std::string captured_mode = DedupModes::getModeName(current_mode);
+    DedupMode captured_mode = current_mode;
 
     // Enqueue the read operation
     auto future = access_queue_->enqueueRead([captured_mode](DatabaseManager &dbMan)
                                              {
-        Logger::debug("Executing getFilesNeedingProcessing in access queue for mode: " + captured_mode);
+        Logger::debug("Executing getFilesNeedingProcessing in access queue for mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
         {
@@ -1225,17 +1220,40 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
         }
         
         std::vector<std::pair<std::string, std::string>> results;
-        const std::string select_sql = R"(
-            SELECT sf.file_path, sf.file_name 
-            FROM scanned_files sf
-            WHERE sf.hash IS NULL 
-               OR (sf.hash IS NOT NULL AND NOT EXISTS (
-                   SELECT 1 FROM media_processing_results mpr 
-                   WHERE mpr.file_path = sf.file_path 
-                   AND mpr.processing_mode = ?
-               ))
-            ORDER BY sf.created_at DESC
-        )";
+        
+        // Build the SQL query based on the mode
+        std::string select_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_fast = 0
+                    ORDER BY created_at DESC
+                )";
+                break;
+            case DedupMode::BALANCED:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_balanced = 0
+                    ORDER BY created_at DESC
+                )";
+                break;
+            case DedupMode::QUALITY:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_quality = 0
+                    ORDER BY created_at DESC
+                )";
+                break;
+            default:
+                Logger::error("Unknown processing mode: " + DedupModes::getModeName(captured_mode));
+                return std::any(results);
+        }
+        
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -1243,9 +1261,6 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
             Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
-
-        // Bind the mode parameter
-        sqlite3_bind_text(stmt, 1, captured_mode.c_str(), -1, SQLITE_STATIC);
 
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
@@ -1976,8 +1991,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
         const std::string select_sql = R"(
             SELECT DISTINCT sf.file_path, sf.file_name 
             FROM scanned_files sf
-            WHERE sf.hash IS NULL 
-               OR (sf.hash IS NOT NULL AND (
+            WHERE sf.file_metadata IS NULL 
+               OR (sf.file_metadata IS NOT NULL AND (
                    NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'FAST')
                    OR NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'BALANCED')
                    OR NOT EXISTS (SELECT 1 FROM media_processing_results mpr WHERE mpr.file_path = sf.file_path AND mpr.processing_mode = 'QUALITY')
@@ -2046,7 +2061,7 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
         }
         
         // First check if file exists in scanned_files
-        const std::string check_sql = "SELECT hash FROM scanned_files WHERE file_path = ?";
+        const std::string check_sql = "SELECT file_metadata FROM scanned_files WHERE file_path = ?";
         sqlite3_stmt *check_stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, check_sql.c_str(), -1, &check_stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -2064,12 +2079,13 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
             return std::any(false);
         }
         
-        // Check if hash exists
+        // Check if metadata exists
         if (sqlite3_column_type(check_stmt, 0) == SQLITE_NULL)
         {
-            // No hash, needs processing
+            // No metadata, needs processing
             sqlite3_finalize(check_stmt);
-            return std::any(true);
+            needs_processing = true;
+            return std::any(needs_processing);
         }
         
         sqlite3_finalize(check_stmt);
@@ -2547,6 +2563,196 @@ DBOpResult DatabaseManager::clearAllTranscodingRecords()
         }
 
         Logger::debug("Successfully cleared all transcoding records");
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+// Update the metadata for a file after processing
+DBOpResult DatabaseManager::updateFileMetadata(const std::string &file_path, const std::string &metadata_str)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_metadata_str = metadata_str;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing updateFileMetadata in write queue for: " + captured_file_path);
+        
+        const std::string update_sql = "UPDATE scanned_files SET file_metadata = ? WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_metadata_str.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update file metadata: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Updated file metadata for: " + captured_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
+}
+
+std::pair<DBOpResult, size_t> DatabaseManager::updateFileMetadataWithId(const std::string &file_path, const std::string &metadata_str)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return {DBOpResult(false, msg), 0};
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_metadata_str = metadata_str;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation and get the operation ID
+    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
+                                                      {
+        Logger::debug("Executing updateFileMetadata in write queue for: " + captured_file_path);
+        
+        const std::string update_sql = "UPDATE scanned_files SET file_metadata = ? WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_metadata_str.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update file metadata: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Updated file metadata for: " + captured_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return {DBOpResult(false, error_msg), operation_id};
+    return {DBOpResult(true, ""), operation_id};
+}
+
+// Set processing flag for a specific mode after successful processing
+DBOpResult DatabaseManager::setProcessingFlag(const std::string &file_path, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_mode, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing setProcessingFlag in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Build the SQL query based on the mode
+        std::string update_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                update_sql = "UPDATE scanned_files SET processed_fast = 1 WHERE file_path = ?";
+                break;
+            case DedupMode::BALANCED:
+                update_sql = "UPDATE scanned_files SET processed_balanced = 1 WHERE file_path = ?";
+                break;
+            case DedupMode::QUALITY:
+                update_sql = "UPDATE scanned_files SET processed_quality = 1 WHERE file_path = ?";
+                break;
+            default:
+                error_msg = "Unknown processing mode: " + DedupModes::getModeName(captured_mode);
+                Logger::error(error_msg);
+                success = false;
+                return WriteOperationResult::Failure(error_msg);
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to set processing flag: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Set processing flag for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         return WriteOperationResult(); });
 
     waitForWrites();

@@ -162,6 +162,14 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                         Logger::error("Failed to store processing result for mode " + DedupModes::getModeName(process_mode) + ": " + files_to_process[i].first + " - " + db_error_msg);
                                     } else {
                                         Logger::info("Successfully processed and stored result for " + files_to_process[i].first + " with mode " + DedupModes::getModeName(process_mode));
+                                        
+                                        // Set processing flag after successful processing to prevent reprocessing
+                                        auto flag_result = dbMan_.setProcessingFlag(files_to_process[i].first, process_mode);
+                                        if (!flag_result.success) {
+                                            Logger::warn("Failed to set processing flag after processing: " + files_to_process[i].first + " - " + flag_result.error_message);
+                                        } else {
+                                            Logger::debug("Set processing flag after successful processing: " + files_to_process[i].first + " for mode: " + DedupModes::getModeName(process_mode));
+                                        }
                                     }
                                 } else {
                                     last_error = result.error_message;
