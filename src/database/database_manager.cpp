@@ -171,6 +171,8 @@ void DatabaseManager::initialize()
         Logger::error("Failed to create media_processing_results table");
     if (!createUserInputsTable())
         Logger::error("Failed to create user_inputs table");
+    if (!createCacheMapTable())
+        Logger::error("Failed to create cache_map table");
     Logger::info("Database tables initialization completed");
 }
 
@@ -223,6 +225,21 @@ bool DatabaseManager::createUserInputsTable()
             input_value TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(input_type, input_value)
+        )
+    )";
+    return executeStatement(sql).success;
+}
+
+bool DatabaseManager::createCacheMapTable()
+{
+    const std::string sql = R"(
+        CREATE TABLE IF NOT EXISTS cache_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_file_path TEXT NOT NULL UNIQUE,
+            transcoded_file_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (source_file_path) REFERENCES scanned_files(file_path) ON DELETE CASCADE
         )
     )";
     return executeStatement(sql).success;
@@ -2092,4 +2109,448 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
     return needs_processing;
 }
 
-// Video processing configuration accessors
+// Cache map (transcoding) methods
+
+DBOpResult DatabaseManager::insertTranscodingFile(const std::string &source_file_path)
+{
+    Logger::debug("insertTranscodingFile called for: " + source_file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_source_file_path = source_file_path;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing insertTranscodingFile in write queue for: " + captured_source_file_path);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string insert_sql = R"(
+            INSERT OR IGNORE INTO cache_map 
+            (source_file_path, transcoded_file_path)
+            VALUES (?, NULL)
+        )";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Bind parameters
+        sqlite3_bind_text(stmt, 1, captured_source_file_path.c_str(), -1, SQLITE_STATIC);
+
+        // Execute the statement
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE && rc != SQLITE_OK)
+        {
+            error_msg = "Failed to insert transcoding file: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Successfully inserted transcoding file: " + captured_source_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+DBOpResult DatabaseManager::updateTranscodedFilePath(const std::string &source_file_path, const std::string &transcoded_file_path)
+{
+    Logger::debug("updateTranscodedFilePath called for: " + source_file_path + " -> " + transcoded_file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_source_file_path = source_file_path;
+    std::string captured_transcoded_file_path = transcoded_file_path;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_source_file_path, captured_transcoded_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing updateTranscodedFilePath in write queue for: " + captured_source_file_path);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string update_sql = R"(
+            UPDATE cache_map 
+            SET transcoded_file_path = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE source_file_path = ?
+        )";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Bind parameters
+        sqlite3_bind_text(stmt, 1, captured_transcoded_file_path.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_source_file_path.c_str(), -1, SQLITE_STATIC);
+
+        // Execute the statement
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update transcoded file path: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Successfully updated transcoded file path: " + captured_source_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+std::string DatabaseManager::getTranscodedFilePath(const std::string &source_file_path)
+{
+    Logger::debug("getTranscodedFilePath called for: " + source_file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return "";
+    }
+
+    // Capture parameters for async execution
+    std::string captured_source_file_path = source_file_path;
+    std::string transcoded_file_path = "";
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_source_file_path, &transcoded_file_path](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getTranscodedFilePath in access queue for: " + captured_source_file_path);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::string(""));
+        }
+        
+        const std::string select_sql = "SELECT transcoded_file_path FROM cache_map WHERE source_file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::string(""));
+        }
+        
+        sqlite3_bind_text(stmt, 1, captured_source_file_path.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        
+        if (rc == SQLITE_ROW)
+        {
+            if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+            {
+                transcoded_file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            }
+        }
+        
+        sqlite3_finalize(stmt);
+        return std::any(transcoded_file_path); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            transcoded_file_path = std::any_cast<std::string>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting transcoded file path: " + std::string(e.what()));
+    }
+
+    return transcoded_file_path;
+}
+
+std::vector<std::string> DatabaseManager::getFilesNeedingTranscoding()
+{
+    Logger::debug("getFilesNeedingTranscoding called");
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return std::vector<std::string>();
+    }
+
+    std::vector<std::string> files_needing_transcoding;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([&files_needing_transcoding](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getFilesNeedingTranscoding in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::string>());
+        }
+        
+        const std::string select_sql = "SELECT source_file_path FROM cache_map WHERE transcoded_file_path IS NULL";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::vector<std::string>());
+        }
+        
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string source_file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            files_needing_transcoding.push_back(source_file_path);
+        }
+        
+        sqlite3_finalize(stmt);
+        return std::any(files_needing_transcoding); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            files_needing_transcoding = std::any_cast<std::vector<std::string>>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting files needing transcoding: " + std::string(e.what()));
+    }
+
+    return files_needing_transcoding;
+}
+
+bool DatabaseManager::fileNeedsTranscoding(const std::string &source_file_path)
+{
+    Logger::debug("fileNeedsTranscoding called for: " + source_file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return false;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_source_file_path = source_file_path;
+    bool needs_transcoding = false;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_source_file_path, &needs_transcoding](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing fileNeedsTranscoding in access queue for: " + captured_source_file_path);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(false);
+        }
+        
+        const std::string select_sql = "SELECT 1 FROM cache_map WHERE source_file_path = ? AND transcoded_file_path IS NULL";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(false);
+        }
+        
+        sqlite3_bind_text(stmt, 1, captured_source_file_path.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        
+        needs_transcoding = (rc == SQLITE_ROW);
+        sqlite3_finalize(stmt);
+        
+        return std::any(needs_transcoding); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            needs_transcoding = std::any_cast<bool>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error checking if file needs transcoding: " + std::string(e.what()));
+    }
+
+    return needs_transcoding;
+}
+
+DBOpResult DatabaseManager::removeTranscodingRecord(const std::string &source_file_path)
+{
+    Logger::debug("removeTranscodingRecord called for: " + source_file_path);
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_source_file_path = source_file_path;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing removeTranscodingRecord in write queue for: " + captured_source_file_path);
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string delete_sql = "DELETE FROM cache_map WHERE source_file_path = ?";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, delete_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Bind parameters
+        sqlite3_bind_text(stmt, 1, captured_source_file_path.c_str(), -1, SQLITE_STATIC);
+
+        // Execute the statement
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to remove transcoding record: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Successfully removed transcoding record: " + captured_source_file_path);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+DBOpResult DatabaseManager::clearAllTranscodingRecords()
+{
+    Logger::debug("clearAllTranscodingRecords called");
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing clearAllTranscodingRecords in write queue");
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        const std::string delete_sql = "DELETE FROM cache_map";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, delete_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Execute the statement
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to clear all transcoding records: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Successfully cleared all transcoding records");
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}

@@ -219,14 +219,62 @@ public:
     DBOpResult clearAllUserInputs();
 
     /**
-     * @brief Wait for all pending database writes to complete
+     * @brief Insert a file path that needs transcoding into cache_map
+     * @param source_file_path Path to the source file that needs transcoding
+     * @return DBOpResult with success flag and error message
+     */
+    DBOpResult insertTranscodingFile(const std::string &source_file_path);
+
+    /**
+     * @brief Update a cache_map record with the transcoded file path
+     * @param source_file_path Path to the source file
+     * @param transcoded_file_path Path to the transcoded file
+     * @return DBOpResult with success flag and error message
+     */
+    DBOpResult updateTranscodedFilePath(const std::string &source_file_path, const std::string &transcoded_file_path);
+
+    /**
+     * @brief Get the transcoded file path for a source file
+     * @param source_file_path Path to the source file
+     * @return The transcoded file path, or empty string if not found
+     */
+    std::string getTranscodedFilePath(const std::string &source_file_path);
+
+    /**
+     * @brief Get all files that need transcoding
+     * @return Vector of source file paths that need transcoding
+     */
+    std::vector<std::string> getFilesNeedingTranscoding();
+
+    /**
+     * @brief Check if a file needs transcoding
+     * @param source_file_path Path to the source file
+     * @return True if the file needs transcoding
+     */
+    bool fileNeedsTranscoding(const std::string &source_file_path);
+
+    /**
+     * @brief Remove a transcoding record
+     * @param source_file_path Path to the source file
+     * @return DBOpResult with success flag and error message
+     */
+    DBOpResult removeTranscodingRecord(const std::string &source_file_path);
+
+    /**
+     * @brief Clear all transcoding records
+     * @return DBOpResult with success flag and error message
+     */
+    DBOpResult clearAllTranscodingRecords();
+
+    /**
+     * @brief Wait for all database writes to complete
      */
     void waitForWrites();
 
-    // Get access to the write queue for checking operation results
-    const DatabaseAccessQueue &getAccessQueue() const { return *access_queue_; }
-
-    // Check if the last database operation succeeded
+    /**
+     * @brief Check if the last operation was successful
+     * @return True if successful
+     */
     bool checkLastOperationSuccess();
 
 private:
@@ -238,6 +286,7 @@ private:
     sqlite3 *db_;
     std::string db_path_;
     std::unique_ptr<DatabaseAccessQueue> access_queue_;
+    std::mutex queue_check_mutex;
 
     // Make db_ accessible to DatabaseAccessQueue
     friend class DatabaseAccessQueue;
@@ -247,6 +296,7 @@ private:
     bool createMediaProcessingResultsTable();
     bool createScannedFilesTable();
     bool createUserInputsTable();
+    bool createCacheMapTable();
 
     // SQL helpers
     /**
