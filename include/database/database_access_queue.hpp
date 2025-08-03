@@ -45,7 +45,7 @@ public:
     size_t enqueueWrite(WriteOperation operation);
     std::future<std::any> enqueueRead(ReadOperation operation);
     // Wait for all pending operations to complete
-    void wait_for_completion(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
+    void wait_for_completion(std::chrono::milliseconds timeout = std::chrono::milliseconds(30000));
 
     // Stop the access queue
     void stop();
