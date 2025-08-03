@@ -98,14 +98,20 @@ SERVER_PID=$!
 
 # Wait for server to start
 echo -e "${YELLOW}Waiting for server to start...${NC}"
-sleep 3
+sleep 5
 
 # Check if server is running
-if ! curl -s http://localhost:8080/auth/status > /dev/null 2>&1; then
-    echo -e "${RED}Error: Server failed to start${NC}"
-    kill $SERVER_PID 2>/dev/null || true
-    exit 1
-fi
+for i in {1..10}; do
+    if curl -s http://localhost:8080/auth/status > /dev/null 2>&1; then
+        break
+    fi
+    if [ $i -eq 10 ]; then
+        echo -e "${RED}Error: Server failed to start${NC}"
+        kill $SERVER_PID 2>/dev/null || true
+        exit 1
+    fi
+    sleep 1
+done
 
 echo -e "${GREEN}✓ Server started successfully on http://localhost:8080${NC}"
 

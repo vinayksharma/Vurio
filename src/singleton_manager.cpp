@@ -31,7 +31,15 @@ bool SingletonManager::isAnotherInstanceRunning()
         return false;
     }
 
-    return isPidFileValid();
+    // Check if PID file exists (regardless of whether process is running)
+    std::ifstream file(pid_file_path);
+    if (!file.is_open())
+    {
+        return false;
+    }
+    file.close();
+
+    return true;
 }
 
 bool SingletonManager::createPidFile()
@@ -93,7 +101,19 @@ bool SingletonManager::shutdownExistingInstance()
     pid_t existing_pid = getPidFromFile();
     if (existing_pid <= 0)
     {
-        return false;
+        // Invalid PID in file, remove the stale PID file
+        std::cout << "Invalid PID in file, removing stale PID file..." << std::endl;
+        unlink(pid_file_path.c_str());
+        return true;
+    }
+
+    // Check if process is actually running
+    if (kill(existing_pid, 0) != 0)
+    {
+        // Process is not running, remove stale PID file
+        std::cout << "Process " << existing_pid << " is not running, removing stale PID file..." << std::endl;
+        unlink(pid_file_path.c_str());
+        return true;
     }
 
     // Send SIGTERM to existing process
