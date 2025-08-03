@@ -3,6 +3,7 @@
 #include "logging/logger.hpp"
 #include "core/file_utils.hpp"
 #include "core/mount_manager.hpp"
+#include "core/media_processor.hpp"
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <iomanip>
@@ -11,6 +12,8 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
+#include <algorithm>
+#include <unordered_set>
 
 using json = nlohmann::json;
 
@@ -1229,7 +1232,39 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
                     SELECT file_path, file_name 
                     FROM scanned_files 
                     WHERE processed_fast = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
                     ORDER BY created_at DESC
+                    LIMIT ?
                 )";
                 break;
             case DedupMode::BALANCED:
@@ -1237,7 +1272,39 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
                     SELECT file_path, file_name 
                     FROM scanned_files 
                     WHERE processed_balanced = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
                     ORDER BY created_at DESC
+                    LIMIT ?
                 )";
                 break;
             case DedupMode::QUALITY:
@@ -1245,7 +1312,39 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
                     SELECT file_path, file_name 
                     FROM scanned_files 
                     WHERE processed_quality = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
                     ORDER BY created_at DESC
+                    LIMIT ?
                 )";
                 break;
             default:
@@ -1260,6 +1359,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
             Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
             return std::any(results);
         }
+
+        // Bind the limit parameter (use a large number to get all files)
+        sqlite3_bind_int(stmt, 1, 1000);
 
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
@@ -2045,13 +2147,13 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
 
     // Capture parameters for async execution
     std::string captured_file_path = file_path;
-    std::string captured_mode = DedupModes::getModeName(mode);
+    DedupMode captured_mode = mode;
     bool needs_processing = false;
 
     // Enqueue the read operation
     auto future = access_queue_->enqueueRead([captured_file_path, captured_mode, &needs_processing](DatabaseManager &dbMan)
                                              {
-        Logger::debug("Executing fileNeedsProcessingForMode in access queue for: " + captured_file_path + ", mode: " + captured_mode);
+        Logger::debug("Executing fileNeedsProcessingForMode in access queue for: " + captured_file_path + ", mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
         {
@@ -2059,8 +2161,25 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
             return std::any(false);
         }
         
-        // First check if file exists in scanned_files
-        const std::string check_sql = "SELECT file_metadata FROM scanned_files WHERE file_path = ?";
+        // Check processing flag for this mode
+        std::string flag_column;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                flag_column = "processed_fast";
+                break;
+            case DedupMode::BALANCED:
+                flag_column = "processed_balanced";
+                break;
+            case DedupMode::QUALITY:
+                flag_column = "processed_quality";
+                break;
+            default:
+                Logger::error("Unknown processing mode: " + DedupModes::getModeName(captured_mode));
+                return std::any(false);
+        }
+        
+        const std::string check_sql = "SELECT " + flag_column + ", file_name FROM scanned_files WHERE file_path = ?";
         sqlite3_stmt *check_stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, check_sql.c_str(), -1, &check_stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -2078,35 +2197,61 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
             return std::any(false);
         }
         
-        // Check if metadata exists
-        if (sqlite3_column_type(check_stmt, 0) == SQLITE_NULL)
-        {
-            // No metadata, needs processing
-            sqlite3_finalize(check_stmt);
-            needs_processing = true;
-            return std::any(needs_processing);
-        }
-        
+        int processing_flag = sqlite3_column_int(check_stmt, 0);
+        std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(check_stmt, 1));
         sqlite3_finalize(check_stmt);
         
-        // Check if processing result exists for this mode
-        const std::string result_sql = "SELECT 1 FROM media_processing_results WHERE file_path = ? AND processing_mode = ?";
-        sqlite3_stmt *result_stmt;
-        rc = sqlite3_prepare_v2(dbMan.db_, result_sql.c_str(), -1, &result_stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            Logger::error("Failed to prepare result statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
-            return std::any(false);
+        // Check processing flag:
+        // 0 = needs processing
+        // -1 = in progress (should be processed)
+        // 1 = already processed
+        needs_processing = (processing_flag == 0 || processing_flag == -1);
+        
+        // Only return true if the file is actually supported
+        if (needs_processing) {
+            // Check if file has a supported extension
+            std::transform(file_name.begin(), file_name.end(), file_name.begin(), ::tolower);
+            
+            // Check if file has a supported extension
+            bool has_supported_extension = false;
+            if (file_name.find(".jpg") != std::string::npos || file_name.find(".jpeg") != std::string::npos ||
+                file_name.find(".png") != std::string::npos || file_name.find(".bmp") != std::string::npos ||
+                file_name.find(".gif") != std::string::npos || file_name.find(".tiff") != std::string::npos ||
+                file_name.find(".webp") != std::string::npos || file_name.find(".jp2") != std::string::npos ||
+                file_name.find(".ppm") != std::string::npos || file_name.find(".pgm") != std::string::npos ||
+                file_name.find(".pbm") != std::string::npos || file_name.find(".pnm") != std::string::npos ||
+                file_name.find(".exr") != std::string::npos || file_name.find(".hdr") != std::string::npos ||
+                file_name.find(".cr2") != std::string::npos || file_name.find(".nef") != std::string::npos ||
+                file_name.find(".arw") != std::string::npos || file_name.find(".dng") != std::string::npos ||
+                file_name.find(".raf") != std::string::npos || file_name.find(".rw2") != std::string::npos ||
+                file_name.find(".orf") != std::string::npos || file_name.find(".pef") != std::string::npos ||
+                file_name.find(".srw") != std::string::npos || file_name.find(".kdc") != std::string::npos ||
+                file_name.find(".dcr") != std::string::npos || file_name.find(".mos") != std::string::npos ||
+                file_name.find(".mrw") != std::string::npos || file_name.find(".raw") != std::string::npos ||
+                file_name.find(".bay") != std::string::npos || file_name.find(".3fr") != std::string::npos ||
+                file_name.find(".fff") != std::string::npos || file_name.find(".mef") != std::string::npos ||
+                file_name.find(".iiq") != std::string::npos || file_name.find(".rwz") != std::string::npos ||
+                file_name.find(".nrw") != std::string::npos || file_name.find(".rwl") != std::string::npos ||
+                file_name.find(".r3d") != std::string::npos || file_name.find(".dcm") != std::string::npos ||
+                file_name.find(".dicom") != std::string::npos ||
+                file_name.find(".mp4") != std::string::npos || file_name.find(".avi") != std::string::npos ||
+                file_name.find(".mov") != std::string::npos || file_name.find(".mkv") != std::string::npos ||
+                file_name.find(".wmv") != std::string::npos || file_name.find(".flv") != std::string::npos ||
+                file_name.find(".webm") != std::string::npos || file_name.find(".m4v") != std::string::npos ||
+                file_name.find(".3gp") != std::string::npos || file_name.find(".ogv") != std::string::npos ||
+                file_name.find(".mp3") != std::string::npos || file_name.find(".wav") != std::string::npos ||
+                file_name.find(".flac") != std::string::npos || file_name.find(".aac") != std::string::npos ||
+                file_name.find(".ogg") != std::string::npos || file_name.find(".wma") != std::string::npos ||
+                file_name.find(".m4a") != std::string::npos || file_name.find(".opus") != std::string::npos) {
+                has_supported_extension = true;
+            }
+            
+            needs_processing = has_supported_extension;
         }
         
-        sqlite3_bind_text(result_stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(result_stmt, 2, captured_mode.c_str(), -1, SQLITE_STATIC);
-        rc = sqlite3_step(result_stmt);
+        Logger::debug("File " + captured_file_path + " processing flag for mode " + DedupModes::getModeName(captured_mode) + ": " + std::to_string(processing_flag) + " (needs processing: " + (needs_processing ? "true" : "false") + ")");
         
-        bool has_result = (rc == SQLITE_ROW);
-        sqlite3_finalize(result_stmt);
-        
-        return std::any(!has_result); });
+        return std::any(needs_processing); });
 
     try
     {
@@ -2847,4 +2992,250 @@ bool DatabaseManager::tryAcquireProcessingLock(const std::string &file_path, Ded
 
     waitForWrites();
     return lock_acquired.load();
+}
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFilesForProcessing(DedupMode mode, int batch_size)
+{
+    Logger::debug("getAndMarkFilesForProcessing called for mode: " + DedupModes::getModeName(mode) + " with batch size: " + std::to_string(batch_size));
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Capture the parameters for async execution
+    DedupMode captured_mode = mode;
+    int captured_batch_size = batch_size;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_mode, captured_batch_size](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getAndMarkFilesForProcessing in access queue for mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::pair<std::string, std::string>>());
+        }
+        
+        std::vector<std::pair<std::string, std::string>> results;
+        
+        // Start transaction
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+        
+        // Build the SQL query to get files that need processing
+        std::string select_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_fast = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                )";
+                break;
+            case DedupMode::BALANCED:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_balanced = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                )";
+                break;
+            case DedupMode::QUALITY:
+                select_sql = R"(
+                    SELECT file_path, file_name 
+                    FROM scanned_files 
+                    WHERE processed_quality = 0
+                    AND (
+                        LOWER(file_name) LIKE '%.jpg' OR LOWER(file_name) LIKE '%.jpeg' OR
+                        LOWER(file_name) LIKE '%.png' OR LOWER(file_name) LIKE '%.bmp' OR
+                        LOWER(file_name) LIKE '%.gif' OR LOWER(file_name) LIKE '%.tiff' OR
+                        LOWER(file_name) LIKE '%.webp' OR LOWER(file_name) LIKE '%.jp2' OR
+                        LOWER(file_name) LIKE '%.ppm' OR LOWER(file_name) LIKE '%.pgm' OR
+                        LOWER(file_name) LIKE '%.pbm' OR LOWER(file_name) LIKE '%.pnm' OR
+                        LOWER(file_name) LIKE '%.exr' OR LOWER(file_name) LIKE '%.hdr' OR
+                        LOWER(file_name) LIKE '%.cr2' OR LOWER(file_name) LIKE '%.nef' OR
+                        LOWER(file_name) LIKE '%.arw' OR LOWER(file_name) LIKE '%.dng' OR
+                        LOWER(file_name) LIKE '%.raf' OR LOWER(file_name) LIKE '%.rw2' OR
+                        LOWER(file_name) LIKE '%.orf' OR LOWER(file_name) LIKE '%.pef' OR
+                        LOWER(file_name) LIKE '%.srw' OR LOWER(file_name) LIKE '%.kdc' OR
+                        LOWER(file_name) LIKE '%.dcr' OR LOWER(file_name) LIKE '%.mos' OR
+                        LOWER(file_name) LIKE '%.mrw' OR LOWER(file_name) LIKE '%.raw' OR
+                        LOWER(file_name) LIKE '%.bay' OR LOWER(file_name) LIKE '%.3fr' OR
+                        LOWER(file_name) LIKE '%.fff' OR LOWER(file_name) LIKE '%.mef' OR
+                        LOWER(file_name) LIKE '%.iiq' OR LOWER(file_name) LIKE '%.rwz' OR
+                        LOWER(file_name) LIKE '%.nrw' OR LOWER(file_name) LIKE '%.rwl' OR
+                        LOWER(file_name) LIKE '%.r3d' OR LOWER(file_name) LIKE '%.dcm' OR
+                        LOWER(file_name) LIKE '%.dicom' OR
+                        LOWER(file_name) LIKE '%.mp4' OR LOWER(file_name) LIKE '%.avi' OR
+                        LOWER(file_name) LIKE '%.mov' OR LOWER(file_name) LIKE '%.mkv' OR
+                        LOWER(file_name) LIKE '%.wmv' OR LOWER(file_name) LIKE '%.flv' OR
+                        LOWER(file_name) LIKE '%.webm' OR LOWER(file_name) LIKE '%.m4v' OR
+                        LOWER(file_name) LIKE '%.3gp' OR LOWER(file_name) LIKE '%.ogv' OR
+                        LOWER(file_name) LIKE '%.mp3' OR LOWER(file_name) LIKE '%.wav' OR
+                        LOWER(file_name) LIKE '%.flac' OR LOWER(file_name) LIKE '%.aac' OR
+                        LOWER(file_name) LIKE '%.ogg' OR LOWER(file_name) LIKE '%.wma' OR
+                        LOWER(file_name) LIKE '%.m4a' OR LOWER(file_name) LIKE '%.opus'
+                    )
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                )";
+                break;
+            default:
+                Logger::error("Unknown processing mode: " + DedupModes::getModeName(captured_mode));
+                sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                return std::any(results);
+        }
+        
+        // First, get the files that need processing
+        sqlite3_stmt *select_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &select_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            return std::any(results);
+        }
+
+        sqlite3_bind_int(select_stmt, 1, captured_batch_size);
+
+        std::vector<std::string> file_paths_to_mark;
+        while (sqlite3_step(select_stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 1));
+            results.emplace_back(file_path, file_name);
+            file_paths_to_mark.push_back(file_path);
+        }
+
+        sqlite3_finalize(select_stmt);
+
+        // If we found files, mark them as in progress
+        if (!file_paths_to_mark.empty())
+        {
+            // Build the update SQL
+            std::string update_sql;
+            switch (captured_mode)
+            {
+                case DedupMode::FAST:
+                    update_sql = "UPDATE scanned_files SET processed_fast = -1 WHERE file_path = ?";
+                    break;
+                case DedupMode::BALANCED:
+                    update_sql = "UPDATE scanned_files SET processed_balanced = -1 WHERE file_path = ?";
+                    break;
+                case DedupMode::QUALITY:
+                    update_sql = "UPDATE scanned_files SET processed_quality = -1 WHERE file_path = ?";
+                    break;
+                default:
+                    break;
+            }
+
+            sqlite3_stmt *update_stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                Logger::error("Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+                sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                return std::any(std::vector<std::pair<std::string, std::string>>());
+            }
+
+            // Mark each file as in progress
+            for (const auto& file_path : file_paths_to_mark)
+            {
+                sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                rc = sqlite3_step(update_stmt);
+                if (rc != SQLITE_DONE)
+                {
+                    Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                }
+                sqlite3_reset(update_stmt);
+            }
+
+            sqlite3_finalize(update_stmt);
+        }
+
+        // Commit transaction
+        sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+        
+        Logger::debug("Atomically marked " + std::to_string(results.size()) + " files as in progress for mode: " + DedupModes::getModeName(captured_mode));
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<std::pair<std::string, std::string>>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get and mark files for processing: " + std::string(e.what()));
+    }
+
+    return results;
 }

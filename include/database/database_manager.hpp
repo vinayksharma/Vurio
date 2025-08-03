@@ -92,10 +92,18 @@ public:
 
     /**
      * @brief Get files that need processing for a specific mode
-     * @param current_mode The deduplication mode to check
+     * @param mode The processing mode
      * @return Vector of file paths and names that need processing
      */
-    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing(DedupMode current_mode);
+    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessing(DedupMode mode);
+
+    /**
+     * @brief Atomically get and mark files as in progress (prevents duplicates)
+     * @param mode The processing mode
+     * @param batch_size Maximum number of files to get
+     * @return Vector of file paths and names that are now marked as in progress
+     */
+    std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessing(DedupMode mode, int batch_size = 10);
 
     /**
      * @brief Set processing flag for a specific mode after successful processing

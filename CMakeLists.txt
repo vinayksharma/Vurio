@@ -239,6 +239,29 @@ target_link_libraries(raw_file_test
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
     yaml-cpp
+)
+
+# Add Cache Size Test example
+add_executable(cache_size_test examples/cache_size_test.cpp 
+               src/transcoding_manager.cpp src/media_processor.cpp
+               src/server_config_manager.cpp src/mount_manager.cpp
+               src/database/database_manager.cpp src/database/database_access_queue.cpp
+               src/file_utils.cpp)
+target_include_directories(cache_size_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(cache_size_test
+    PRIVATE
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+    pthread
+    PkgConfig::SQLITE3
+    TBB::tbb
+    PkgConfig::OpenCV
+    ${FFMPEG_LIBRARIES}
+    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
+    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    yaml-cpp
 ) 
 
  

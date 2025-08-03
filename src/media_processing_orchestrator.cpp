@@ -104,11 +104,32 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             // Get files that need processing for any of the modes
             std::vector<std::pair<std::string, std::string>> files_to_process;
             if (pre_process_quality_stack) {
-                // Get files that need processing for any mode
-                files_to_process = dbMan_.getFilesNeedingProcessingAnyMode();
+                // Get files that need processing for any mode using atomic batch processing
+                // This prevents duplicates by atomically marking files as in progress
+                files_to_process = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, 50);
+                auto balanced_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::BALANCED, 50);
+                auto quality_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::QUALITY, 50);
+                
+                // Combine all files (avoiding duplicates)
+                std::set<std::string> unique_files;
+                for (const auto& [path, name] : files_to_process) {
+                    unique_files.insert(path);
+                }
+                for (const auto& [path, name] : balanced_files) {
+                    if (unique_files.find(path) == unique_files.end()) {
+                        files_to_process.emplace_back(path, name);
+                        unique_files.insert(path);
+                    }
+                }
+                for (const auto& [path, name] : quality_files) {
+                    if (unique_files.find(path) == unique_files.end()) {
+                        files_to_process.emplace_back(path, name);
+                        unique_files.insert(path);
+                    }
+                }
             } else {
-                // Get files that need processing for the specific mode
-                files_to_process = dbMan_.getFilesNeedingProcessing(mode);
+                // Get files that need processing for the specific mode using atomic batch processing
+                files_to_process = dbMan_.getAndMarkFilesForProcessing(mode, 50);
             }
             
             if (files_to_process.empty()) {
@@ -139,18 +160,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         
                         const std::string& file_path = files_to_process[i].first;
                         
-                        // Try to acquire processing lock for this file
-                        if (!tryAcquireProcessingLock(file_path)) {
-                            // File is already being processed by another thread, skip it
-                            Logger::debug("Skipping file already being processed: " + file_path);
-                            continue;
-                        }
-                        
-                        // Ensure lock is released when we exit this scope
-                        auto lock_guard = std::unique_ptr<void, std::function<void(void*)>>(
-                            nullptr, 
-                            [this, &file_path](void*) { releaseProcessingLock(file_path); }
-                        );
+                        // Process the file for each required mode using database atomic locking
+                        // No need for in-memory locking since database atomic operations handle concurrency
                         
                         auto start = std::chrono::steady_clock::now();
                         FileProcessingEvent event;
@@ -169,14 +180,15 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             }
                             
                             // Process the file for each required mode
+                            // Files are already marked as in progress (-1) by getAndMarkFilesForProcessing
                             bool any_success = false;
                             std::string last_error;
                             
                             for (const auto& process_mode : modes_to_process) {
-                                // Atomically check if file needs processing and acquire processing lock
-                                if (!dbMan_.tryAcquireProcessingLock(file_path, process_mode)) {
-                                    // File is already being processed or doesn't need processing for this mode
-                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed or locked");
+                                // Check if this file needs processing for this mode
+                                // Files with status -1 (in progress) should be processed
+                                if (!dbMan_.fileNeedsProcessingForMode(file_path, process_mode)) {
+                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed");
                                     continue;
                                 }
                                 
@@ -216,12 +228,16 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     } else {
                                         Logger::info("Successfully processed and stored result for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
                                         
-                                        // Processing flag was already set atomically in tryAcquireProcessingLock
+                                        // Mark as completed (change from -1 to 1)
+                                        dbMan_.setProcessingFlag(file_path, process_mode);
                                         Logger::debug("Processing completed for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
                                     }
                                 } else {
                                     last_error = result.error_message;
                                     Logger::error("Processing failed for " + file_path + " with mode " + DedupModes::getModeName(process_mode) + " - " + result.error_message);
+                                    
+                                    // Mark as failed (change from -1 to 0 to allow retry)
+                                    dbMan_.setProcessingFlag(file_path, process_mode);
                                 }
                             }
                             
