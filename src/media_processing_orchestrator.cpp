@@ -24,6 +24,36 @@ MediaProcessingOrchestrator::~MediaProcessingOrchestrator()
     Logger::debug("MediaProcessingOrchestrator destructor called");
 }
 
+bool MediaProcessingOrchestrator::tryAcquireProcessingLock(const std::string &file_path)
+{
+    std::unique_lock<std::shared_mutex> lock(processing_state_mutex_);
+
+    // Check if file is already being processed
+    if (currently_processing_files_.find(file_path) != currently_processing_files_.end())
+    {
+        Logger::debug("File already being processed, skipping: " + file_path);
+        return false;
+    }
+
+    // Acquire the lock by adding to the set
+    currently_processing_files_.insert(file_path);
+    Logger::debug("Acquired processing lock for: " + file_path);
+    return true;
+}
+
+void MediaProcessingOrchestrator::releaseProcessingLock(const std::string &file_path)
+{
+    std::unique_lock<std::shared_mutex> lock(processing_state_mutex_);
+
+    // Release the lock by removing from the set
+    auto it = currently_processing_files_.find(file_path);
+    if (it != currently_processing_files_.end())
+    {
+        currently_processing_files_.erase(it);
+        Logger::debug("Released processing lock for: " + file_path);
+    }
+}
+
 SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllScannedFiles(int max_threads)
 {
     // Error handling policy:
@@ -106,15 +136,30 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             return; // Exit this thread's processing
                         }
                         
+                        const std::string& file_path = files_to_process[i].first;
+                        
+                        // Try to acquire processing lock for this file
+                        if (!tryAcquireProcessingLock(file_path)) {
+                            // File is already being processed by another thread, skip it
+                            Logger::debug("Skipping file already being processed: " + file_path);
+                            continue;
+                        }
+                        
+                        // Ensure lock is released when we exit this scope
+                        auto lock_guard = std::unique_ptr<void, std::function<void(void*)>>(
+                            nullptr, 
+                            [this, &file_path](void*) { releaseProcessingLock(file_path); }
+                        );
+                        
                         auto start = std::chrono::steady_clock::now();
                         FileProcessingEvent event;
-                        event.file_path = files_to_process[i].first;
+                        event.file_path = file_path;
                         
                         try {
                             // Check if file is supported
-                            if (!MediaProcessor::isSupportedFile(files_to_process[i].first)) {
+                            if (!MediaProcessor::isSupportedFile(file_path)) {
                                 event.success = false;
-                                event.error_message = "Unsupported file type: " + files_to_process[i].first;
+                                event.error_message = "Unsupported file type: " + file_path;
                                 Logger::error(event.error_message);
                                 processed_files.fetch_add(1);
                                 failed_files.fetch_add(1);
@@ -127,19 +172,17 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             std::string last_error;
                             
                             for (const auto& process_mode : modes_to_process) {
-                                // Check if this file needs processing for this specific mode
-                                if (pre_process_quality_stack) {
-                                    // In quality stack mode, check if this specific mode needs processing
-                                    if (!dbMan_.fileNeedsProcessingForMode(files_to_process[i].first, process_mode)) {
-                                        Logger::debug("File " + files_to_process[i].first + " already processed for mode " + DedupModes::getModeName(process_mode));
-                                        continue;
-                                    }
+                                // Atomically check if file needs processing and acquire processing lock
+                                if (!dbMan_.tryAcquireProcessingLock(file_path, process_mode)) {
+                                    // File is already being processed or doesn't need processing for this mode
+                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed or locked");
+                                    continue;
                                 }
                                 
-                                Logger::info("Processing file: " + files_to_process[i].first + " with mode: " + DedupModes::getModeName(process_mode));
+                                Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
                                 
                                 // Process the file for this mode
-                                ProcessingResult result = MediaProcessor::processFile(files_to_process[i].first, process_mode);
+                                ProcessingResult result = MediaProcessor::processFile(file_path, process_mode);
                                 
                                 if (result.success) {
                                     any_success = true;
@@ -156,24 +199,19 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     tbb::mutex::scoped_lock lock(db_mutex);
                                     
                                     // Store processing result for this mode
-                                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(files_to_process[i].first, process_mode, result);
+                                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(file_path, process_mode, result);
                                     if (!store_result.success) {
                                         db_error_msg = store_result.error_message;
-                                        Logger::error("Failed to store processing result for mode " + DedupModes::getModeName(process_mode) + ": " + files_to_process[i].first + " - " + db_error_msg);
+                                        Logger::error("Failed to store processing result for mode " + DedupModes::getModeName(process_mode) + ": " + file_path + " - " + db_error_msg);
                                     } else {
-                                        Logger::info("Successfully processed and stored result for " + files_to_process[i].first + " with mode " + DedupModes::getModeName(process_mode));
+                                        Logger::info("Successfully processed and stored result for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
                                         
-                                        // Set processing flag after successful processing to prevent reprocessing
-                                        auto flag_result = dbMan_.setProcessingFlag(files_to_process[i].first, process_mode);
-                                        if (!flag_result.success) {
-                                            Logger::warn("Failed to set processing flag after processing: " + files_to_process[i].first + " - " + flag_result.error_message);
-                                        } else {
-                                            Logger::debug("Set processing flag after successful processing: " + files_to_process[i].first + " for mode: " + DedupModes::getModeName(process_mode));
-                                        }
+                                        // Processing flag was already set atomically in tryAcquireProcessingLock
+                                        Logger::debug("Processing completed for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
                                     }
                                 } else {
                                     last_error = result.error_message;
-                                    Logger::error("Processing failed for " + files_to_process[i].first + " with mode " + DedupModes::getModeName(process_mode) + " - " + result.error_message);
+                                    Logger::error("Processing failed for " + file_path + " with mode " + DedupModes::getModeName(process_mode) + " - " + result.error_message);
                                 }
                             }
                             
@@ -194,7 +232,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             
                             processed_files.fetch_add(1);
                             
-                            Logger::info("Successfully processed file: " + files_to_process[i].first + 
+                            Logger::info("Successfully processed file: " + file_path + 
                                        " (format: " + event.artifact_format + 
                                        ", confidence: " + std::to_string(event.artifact_confidence) + 
                                        ", time: " + std::to_string(event.processing_time_ms) + "ms)");
@@ -202,7 +240,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             if (onNext) onNext(event);
                             
                         } catch (const std::exception& e) {
-                            Logger::error("Exception processing file: " + files_to_process[i].first + " - " + std::string(e.what()));
+                            Logger::error("Exception processing file: " + file_path + " - " + std::string(e.what()));
                             event.success = false;
                             event.error_message = "Exception: " + std::string(e.what());
                             processed_files.fetch_add(1);

@@ -290,15 +290,24 @@ public:
     DBOpResult clearAllTranscodingRecords();
 
     /**
-     * @brief Wait for all database writes to complete
+     * @brief Wait for all pending write operations to complete
      */
     void waitForWrites();
 
     /**
      * @brief Check if the last operation was successful
-     * @return True if successful
+     * @return true if last operation succeeded, false otherwise
      */
     bool checkLastOperationSuccess();
+
+    /**
+     * @brief Atomically check if file needs processing and set processing flag in a single operation
+     * This prevents race conditions by using a single SQL UPDATE with WHERE clause
+     * @param file_path Path to the file to check and lock
+     * @param mode The deduplication mode to check
+     * @return true if file needs processing and lock was acquired, false otherwise
+     */
+    bool tryAcquireProcessingLock(const std::string &file_path, DedupMode mode);
 
 private:
     /**

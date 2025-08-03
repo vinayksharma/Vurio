@@ -14,6 +14,8 @@
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 #include <tbb/mutex.h>
+#include <unordered_set>
+#include <shared_mutex>
 #include "file_utils.hpp"
 #include "server_config_manager.hpp"
 
@@ -105,6 +107,25 @@ private:
     std::thread processing_thread_;
     std::mutex processing_mutex_;
     std::condition_variable processing_cv_;
+
+    // Thread-safe processing state tracking
+    mutable std::shared_mutex processing_state_mutex_;
+    std::unordered_set<std::string> currently_processing_files_;
+
+    /**
+     * @brief Try to acquire processing lock for a file
+     *
+     * @param file_path The file path to lock
+     * @return true if lock was acquired, false if file is already being processed
+     */
+    bool tryAcquireProcessingLock(const std::string &file_path);
+
+    /**
+     * @brief Release processing lock for a file
+     *
+     * @param file_path The file path to unlock
+     */
+    void releaseProcessingLock(const std::string &file_path);
 
     /**
      * @brief Background processing thread function

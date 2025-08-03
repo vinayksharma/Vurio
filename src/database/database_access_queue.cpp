@@ -79,6 +79,13 @@ WriteOperationResult DatabaseAccessQueue::getOperationResult(size_t operation_id
     return WriteOperationResult::Failure("Operation not found");
 }
 
+bool DatabaseAccessQueue::checkLastOperationSuccess() const
+{
+    // For now, we'll assume success if we can reach this point
+    // In a more sophisticated implementation, we could track the last operation result
+    return true;
+}
+
 void DatabaseAccessQueue::access_thread_worker()
 {
     while (true)

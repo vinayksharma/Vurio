@@ -10,6 +10,7 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
+#include <atomic>
 
 using json = nlohmann::json;
 
@@ -157,9 +158,7 @@ void DatabaseManager::waitForWrites()
 
 bool DatabaseManager::checkLastOperationSuccess()
 {
-    // For now, we'll assume success if we can reach this point
-    // In a more sophisticated implementation, we could track operation results
-    return true;
+    return access_queue_->checkLastOperationSuccess();
 }
 
 void DatabaseManager::initialize()
@@ -2759,4 +2758,93 @@ DBOpResult DatabaseManager::setProcessingFlag(const std::string &file_path, Dedu
     if (!success)
         return DBOpResult(false, error_msg);
     return DBOpResult(true);
+}
+
+bool DatabaseManager::tryAcquireProcessingLock(const std::string &file_path, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return false;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    std::atomic<bool> lock_acquired{false};
+    std::string error_msg;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_mode, &lock_acquired, &error_msg](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing tryAcquireProcessingLockAtomic in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            lock_acquired.store(false);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Build the SQL query based on the mode - only update if not already processed
+        std::string update_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                update_sql = "UPDATE scanned_files SET processed_fast = 1 WHERE file_path = ? AND processed_fast = 0";
+                break;
+            case DedupMode::BALANCED:
+                update_sql = "UPDATE scanned_files SET processed_balanced = 1 WHERE file_path = ? AND processed_balanced = 0";
+                break;
+            case DedupMode::QUALITY:
+                update_sql = "UPDATE scanned_files SET processed_quality = 1 WHERE file_path = ? AND processed_quality = 0";
+                break;
+            default:
+                error_msg = "Unknown processing mode: " + DedupModes::getModeName(captured_mode);
+                Logger::error(error_msg);
+                lock_acquired.store(false);
+                return WriteOperationResult::Failure(error_msg);
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare atomic update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            lock_acquired.store(false);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to execute atomic update: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            lock_acquired.store(false);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Check if any rows were actually updated
+        int rows_affected = sqlite3_changes(dbMan.db_);
+        if (rows_affected > 0)
+        {
+            Logger::debug("Atomically acquired processing lock for " + captured_file_path + " mode " + DedupModes::getModeName(captured_mode));
+            lock_acquired.store(true);
+        }
+        else
+        {
+            Logger::debug("File " + captured_file_path + " already processed for mode " + DedupModes::getModeName(captured_mode));
+            lock_acquired.store(false);
+        }
+
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    return lock_acquired.load();
 }

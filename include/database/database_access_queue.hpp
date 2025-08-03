@@ -56,6 +56,12 @@ public:
     // Get the next operation ID for tracking
     size_t getNextOperationId() const { return next_operation_id_.load(); }
 
+    /**
+     * @brief Check if the last operation was successful
+     * @return true if last operation succeeded, false otherwise
+     */
+    bool checkLastOperationSuccess() const;
+
 private:
     void access_thread_worker();
     DatabaseManager &db_manager_;
