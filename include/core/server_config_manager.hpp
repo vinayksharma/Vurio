@@ -71,6 +71,10 @@ public:
     // Processing configuration getters
     int getProcessingBatchSize() const;
 
+    // File type configuration getters
+    std::map<std::string, bool> getSupportedFileTypes() const;
+    std::map<std::string, bool> getTranscodingFileTypes() const;
+
     // Cache configuration getters
     uint32_t getDecoderCacheSizeMB() const;
 

@@ -289,6 +289,62 @@ int ServerConfigManager::getProcessingBatchSize() const
     return 100; // Default fallback
 }
 
+std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::map<std::string, bool> supported_types;
+    
+    try
+    {
+        if (config_["supported_files"])
+        {
+            const YAML::Node& supported_files = config_["supported_files"];
+            for (const auto& file_type : supported_files)
+            {
+                std::string extension = file_type.first.as<std::string>();
+                bool enabled = file_type.second.as<bool>();
+                supported_types[extension] = enabled;
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing supported_files configuration: " + std::string(e.what()) +
+                     ", using default supported file types");
+    }
+    
+    // If no configuration found, return empty map (will be handled by MediaProcessor defaults)
+    return supported_types;
+}
+
+std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::map<std::string, bool> transcoding_types;
+    
+    try
+    {
+        if (config_["extended_support"])
+        {
+            const YAML::Node& extended_support = config_["extended_support"];
+            for (const auto& file_type : extended_support)
+            {
+                std::string extension = file_type.first.as<std::string>();
+                bool enabled = file_type.second.as<bool>();
+                transcoding_types[extension] = enabled;
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing extended_support configuration: " + std::string(e.what()) +
+                     ", using default transcoding file types");
+    }
+    
+    // If no configuration found, return empty map (will be handled by TranscodingManager defaults)
+    return transcoding_types;
+}
+
 uint32_t ServerConfigManager::getDecoderCacheSizeMB() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
