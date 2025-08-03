@@ -242,11 +242,22 @@ target_link_libraries(raw_file_test
 )
 
 # Add Cache Size Test example
-add_executable(cache_size_test examples/cache_size_test.cpp 
-               src/transcoding_manager.cpp src/media_processor.cpp
-               src/server_config_manager.cpp src/mount_manager.cpp
-               src/database/database_manager.cpp src/database/database_access_queue.cpp
-               src/file_utils.cpp)
+add_executable(cache_size_test
+    examples/cache_size_test.cpp
+    src/transcoding_manager.cpp
+    src/media_processor.cpp
+    src/server_config_manager.cpp
+    src/mount_manager.cpp
+    src/database/database_manager.cpp
+    src/database/database_access_queue.cpp
+    src/file_utils.cpp
+)
+
+add_executable(file_type_config_test
+    examples/file_type_config_test.cpp
+    src/server_config_manager.cpp
+)
+
 target_include_directories(cache_size_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(cache_size_test
     PRIVATE
@@ -262,6 +273,16 @@ target_link_libraries(cache_size_test
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
     yaml-cpp
-) 
+)
+
+target_include_directories(file_type_config_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(file_type_config_test
+    PRIVATE
+    spdlog::spdlog
+    yaml-cpp
+    PkgConfig::SQLITE3
+    pthread
+)
+target_include_directories(file_type_config_test PRIVATE /opt/homebrew/include) 
 
  

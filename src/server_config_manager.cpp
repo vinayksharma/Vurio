@@ -293,13 +293,13 @@ std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
     std::map<std::string, bool> supported_types;
-    
+
     try
     {
         if (config_["supported_files"])
         {
-            const YAML::Node& supported_files = config_["supported_files"];
-            for (const auto& file_type : supported_files)
+            const YAML::Node &supported_files = config_["supported_files"];
+            for (const auto &file_type : supported_files)
             {
                 std::string extension = file_type.first.as<std::string>();
                 bool enabled = file_type.second.as<bool>();
@@ -312,7 +312,7 @@ std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
         Logger::warn("Error parsing supported_files configuration: " + std::string(e.what()) +
                      ", using default supported file types");
     }
-    
+
     // If no configuration found, return empty map (will be handled by MediaProcessor defaults)
     return supported_types;
 }
@@ -321,13 +321,13 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
     std::map<std::string, bool> transcoding_types;
-    
+
     try
     {
         if (config_["extended_support"])
         {
-            const YAML::Node& extended_support = config_["extended_support"];
-            for (const auto& file_type : extended_support)
+            const YAML::Node &extended_support = config_["extended_support"];
+            for (const auto &file_type : extended_support)
             {
                 std::string extension = file_type.first.as<std::string>();
                 bool enabled = file_type.second.as<bool>();
@@ -340,9 +340,61 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
         Logger::warn("Error parsing extended_support configuration: " + std::string(e.what()) +
                      ", using default transcoding file types");
     }
-    
+
     // If no configuration found, return empty map (will be handled by TranscodingManager defaults)
     return transcoding_types;
+}
+
+std::vector<std::string> ServerConfigManager::getEnabledFileTypes() const
+{
+    std::vector<std::string> enabled_types;
+
+    // Get supported file types
+    auto supported_types = getSupportedFileTypes();
+    for (const auto &[extension, enabled] : supported_types)
+    {
+        if (enabled)
+        {
+            enabled_types.push_back(extension);
+        }
+    }
+
+    // Get transcoding file types
+    auto transcoding_types = getTranscodingFileTypes();
+    for (const auto &[extension, enabled] : transcoding_types)
+    {
+        if (enabled)
+        {
+            enabled_types.push_back(extension);
+        }
+    }
+
+    return enabled_types;
+}
+
+bool ServerConfigManager::needsTranscoding(const std::string &file_extension) const
+{
+    // Convert to lowercase for case-insensitive comparison
+    std::string ext = file_extension;
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    // Remove leading dot if present
+    if (!ext.empty() && ext[0] == '.')
+    {
+        ext = ext.substr(1);
+    }
+
+    // Check if this extension is in the transcoding configuration
+    auto transcoding_types = getTranscodingFileTypes();
+    auto it = transcoding_types.find(ext);
+
+    if (it != transcoding_types.end())
+    {
+        return it->second; // Return the configured value (true/false)
+    }
+
+    // If not found in configuration, return false (no transcoding needed)
+    return false;
 }
 
 uint32_t ServerConfigManager::getDecoderCacheSizeMB() const

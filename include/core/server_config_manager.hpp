@@ -75,6 +75,10 @@ public:
     std::map<std::string, bool> getSupportedFileTypes() const;
     std::map<std::string, bool> getTranscodingFileTypes() const;
 
+    // File type utility methods
+    std::vector<std::string> getEnabledFileTypes() const;
+    bool needsTranscoding(const std::string& file_extension) const;
+
     // Cache configuration getters
     uint32_t getDecoderCacheSizeMB() const;
 
