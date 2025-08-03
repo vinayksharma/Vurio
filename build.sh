@@ -51,8 +51,8 @@ threading:
   database_threads: 2
 
 # Scheduling intervals (in seconds)
-scan_interval_seconds: 3600        # How often to scan directories (1 hour)
-processing_interval_seconds: 1800   # How often to process files (30 minutes)
+scan_interval_seconds: 300        # How often to scan directories (5 minutes)
+processing_interval_seconds: 30   # How often to process files (30 seconds)
 
 # Video processing settings for each quality mode
 video_processing:
