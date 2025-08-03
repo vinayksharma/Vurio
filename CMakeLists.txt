@@ -93,6 +93,7 @@ set(SOURCES
     src/singleton_manager.cpp
     src/cache/decoder_cache.cpp
     src/decoder/media_decoder.cpp
+    src/transcoding_manager.cpp
 )
 
 # Add header files
@@ -112,6 +113,7 @@ set(HEADERS
     include/core/file_processor.hpp
     include/core/media_processing_orchestrator.hpp
     include/core/thread_pool_manager.hpp
+    include/core/transcoding_manager.hpp
     include/logging/logger.hpp
     include/web/openapi_docs.hpp
     include/web/route_handlers.hpp
@@ -201,6 +203,29 @@ add_executable(file_processor_example examples/file_processor_example.cpp
                src/database/database_access_queue.cpp src/mount_manager.cpp)
 target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(file_processor_example
+    PRIVATE
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+    pthread
+    PkgConfig::SQLITE3
+    TBB::tbb
+    PkgConfig::OpenCV
+    ${FFMPEG_LIBRARIES}
+    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
+    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    yaml-cpp
+)
+
+# Add Raw File Test example
+add_executable(raw_file_test examples/raw_file_test.cpp 
+               src/media_processor.cpp src/transcoding_manager.cpp 
+               src/server_config_manager.cpp src/mount_manager.cpp
+               src/database/database_manager.cpp src/database/database_access_queue.cpp
+               src/file_utils.cpp)
+target_include_directories(raw_file_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(raw_file_test
     PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto

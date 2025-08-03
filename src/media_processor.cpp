@@ -156,7 +156,10 @@ bool MediaProcessor::isSupportedFile(const std::string &file_path)
 
 // Static extension lists
 const std::vector<std::string> MediaProcessor::image_extensions_ = {
-    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "jp2", "ppm", "pgm", "pbm", "pnm", "exr", "hdr"};
+    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "jp2", "ppm", "pgm", "pbm", "pnm", "exr", "hdr",
+    // Raw camera formats
+    "cr2", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "kdc", "dcr", "mos", "mrw", "raw", "bay", "3fr", "fff", "mef", "iiq", "rwz", "nrw", "rwl", "r3d", "dcm", "dicom"
+};
 const std::vector<std::string> MediaProcessor::video_extensions_ = {
     "mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "ts", "mts", "m2ts", "ogv"};
 const std::vector<std::string> MediaProcessor::audio_extensions_ = {

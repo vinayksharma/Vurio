@@ -2,6 +2,7 @@
 #include "database/database_manager.hpp"
 #include "core/media_processor.hpp"
 #include "core/file_utils.hpp"
+#include "core/transcoding_manager.hpp"
 #include "logging/logger.hpp"
 
 FileScanner::FileScanner(const std::string &db_path)
@@ -69,6 +70,13 @@ bool FileScanner::scanFile(const std::string &file_path)
         return false;
     }
 
+    // Check if this is a raw file that needs transcoding
+    if (TranscodingManager::isRawFile(file_path))
+    {
+        Logger::info("Detected raw file for transcoding: " + file_path);
+        TranscodingManager::getInstance().queueForTranscoding(file_path);
+    }
+
     files_stored_++;
     Logger::debug("Stored supported file during scan: " + file_path);
     return true;
@@ -101,6 +109,13 @@ void FileScanner::handleFile(const std::string &file_path)
     {
         Logger::error("Failed to store file in scanned_files: " + file_path + ". DB error: " + scan_result.error_message);
         return;
+    }
+
+    // Check if this is a raw file that needs transcoding
+    if (TranscodingManager::isRawFile(file_path))
+    {
+        Logger::info("Detected raw file for transcoding: " + file_path);
+        TranscodingManager::getInstance().queueForTranscoding(file_path);
     }
 
     files_stored_++;

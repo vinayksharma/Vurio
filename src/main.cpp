@@ -2,6 +2,7 @@
 #include "core/media_processing_orchestrator.hpp"
 #include "core/thread_pool_manager.hpp"
 #include "core/file_scanner.hpp"
+#include "core/transcoding_manager.hpp"
 #include "web/route_handlers.hpp"
 #include "auth/auth.hpp"
 #include "logging/logger.hpp"
@@ -93,6 +94,11 @@ int main(int argc, char *argv[])
 
     // At the start of main, initialize the DatabaseManager singleton
     auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+
+    // Initialize transcoding manager
+    auto &transcoding_manager = TranscodingManager::getInstance();
+    transcoding_manager.initialize("./cache", config_manager.getMaxProcessingThreads());
+    transcoding_manager.startTranscoding();
 
     // Initialize and start the simple scheduler
     auto &scheduler = SimpleScheduler::getInstance();

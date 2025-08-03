@@ -14,6 +14,7 @@ add_executable(dedup_tests
     ../src/server_config_manager.cpp
     ../src/database/database_access_queue.cpp
     ../src/mount_manager.cpp
+    ../src/transcoding_manager.cpp
 )
 
 target_include_directories(dedup_tests PRIVATE
@@ -46,6 +47,7 @@ add_executable(media_processing_orchestrator_test
     ../src/file_utils.cpp
     ../src/database/database_access_queue.cpp
     ../src/mount_manager.cpp
+    ../src/transcoding_manager.cpp
 )
 target_link_libraries(media_processing_orchestrator_test
     PRIVATE

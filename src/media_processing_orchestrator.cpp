@@ -1,7 +1,7 @@
 #include "core/media_processing_orchestrator.hpp"
 #include "core/media_processor.hpp"
-#include "core/file_utils.hpp"
-#include "core/server_config_manager.hpp"
+#include "core/transcoding_manager.hpp"
+#include "database/database_manager.hpp"
 #include "logging/logger.hpp"
 #include <chrono>
 #include <thread>
@@ -9,6 +9,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 #include <tbb/mutex.h>
+#include <filesystem>
 
 MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &dbMan)
     : dbMan_(dbMan), cancelled_(false) {}
@@ -181,8 +182,17 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 
                                 Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
                                 
+                                // Check if this file has a transcoded version available
+                                std::string actual_file_path = file_path;
+                                std::string transcoded_path = TranscodingManager::getInstance().getTranscodedFilePath(file_path);
+                                if (!transcoded_path.empty() && std::filesystem::exists(transcoded_path))
+                                {
+                                    actual_file_path = transcoded_path;
+                                    Logger::info("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
+                                }
+                                
                                 // Process the file for this mode
-                                ProcessingResult result = MediaProcessor::processFile(file_path, process_mode);
+                                ProcessingResult result = MediaProcessor::processFile(actual_file_path, process_mode);
                                 
                                 if (result.success) {
                                     any_success = true;
