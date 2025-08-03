@@ -261,6 +261,34 @@ int ServerConfigManager::getDatabaseThreads() const
     return 2; // Default fallback
 }
 
+int ServerConfigManager::getProcessingBatchSize() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["processing"] && config_["processing"]["batch_size"])
+        {
+            int value = config_["processing"]["batch_size"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 1000)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid processing batch_size value: " + std::to_string(value) +
+                             ", using default: 100");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing processing batch_size: " + std::string(e.what()) +
+                     ", using default: 100");
+    }
+    return 100; // Default fallback
+}
+
 uint32_t ServerConfigManager::getDecoderCacheSizeMB() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);

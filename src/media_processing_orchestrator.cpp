@@ -103,11 +103,15 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             
             // Get files that need processing for any of the modes
             std::vector<std::pair<std::string, std::string>> files_to_process;
+            
+            // Get configurable batch size
+            int batch_size = config_manager.getProcessingBatchSize();
+            
             if (pre_process_quality_stack) {
                 // Get files that need processing for each mode separately to avoid duplicates
-                auto fast_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, 50);
-                auto balanced_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::BALANCED, 50);
-                auto quality_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::QUALITY, 50);
+                auto fast_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, batch_size);
+                auto balanced_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::BALANCED, batch_size);
+                auto quality_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::QUALITY, batch_size);
                 
                 // Combine all files (avoiding duplicates)
                 std::set<std::string> unique_files;
@@ -129,7 +133,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                 }
             } else {
                 // Get files that need processing for the specific mode using atomic batch processing
-                files_to_process = dbMan_.getAndMarkFilesForProcessing(mode, 50);
+                files_to_process = dbMan_.getAndMarkFilesForProcessing(mode, batch_size);
             }
             
             if (files_to_process.empty()) {

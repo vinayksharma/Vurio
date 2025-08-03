@@ -68,6 +68,9 @@ public:
     std::string getHttpServerThreads() const;
     int getDatabaseThreads() const;
 
+    // Processing configuration getters
+    int getProcessingBatchSize() const;
+
     // Cache configuration getters
     uint32_t getDecoderCacheSizeMB() const;
 

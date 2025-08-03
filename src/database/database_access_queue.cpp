@@ -51,11 +51,11 @@ std::future<std::any> DatabaseAccessQueue::enqueueRead(ReadOperation operation)
 void DatabaseAccessQueue::wait_for_completion(std::chrono::milliseconds timeout)
 {
     std::unique_lock<std::mutex> lock(queue_mutex_);
-    
+
     // First wait up to 30 seconds before showing any warning
     auto warning_threshold = std::chrono::milliseconds(30000);
     auto start_time = std::chrono::steady_clock::now();
-    
+
     // Wait for operations to complete or timeout
     auto result = queue_cv_.wait_for(lock, timeout, [this]
                                      { return (operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_; });
@@ -68,7 +68,7 @@ void DatabaseAccessQueue::wait_for_completion(std::chrono::milliseconds timeout)
             Logger::warn("Database access queue wait_for_completion timed out after " +
                          std::to_string(timeout.count()) + "ms - continuing to wait for operations to complete");
         }
-        
+
         // Continue waiting indefinitely for operations to complete
         while (!((operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_))
         {
