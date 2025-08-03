@@ -406,7 +406,6 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
     // Create a processing result with error
     ProcessingResult result;
     result.success = false;
-    result.error_message = "Processing failed";
 
     // Store the processing result
     auto db_result = dbMan.storeProcessingResult(test_file, DedupMode::FAST, result);
@@ -417,7 +416,6 @@ TEST_F(DatabaseManagerTest, StoreProcessingResultWithError)
     auto results = dbMan.getProcessingResults(test_file);
     EXPECT_EQ(results.size(), 1);
     EXPECT_FALSE(results[0].success);
-    EXPECT_EQ(results[0].error_message, "Processing failed");
 
     // Clean up test file
     fs::remove(test_file);

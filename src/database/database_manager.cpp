@@ -186,7 +186,6 @@ bool DatabaseManager::createMediaProcessingResultsTable()
             file_path TEXT NOT NULL,
             processing_mode TEXT NOT NULL,
             success BOOLEAN NOT NULL,
-            error_message TEXT,
             artifact_format TEXT,
             artifact_hash TEXT,
             artifact_confidence REAL,
@@ -285,10 +284,10 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         
         const std::string insert_sql = R"(
             INSERT OR REPLACE INTO media_processing_results 
-            (file_path, processing_mode, success, error_message, 
+            (file_path, processing_mode, success, 
              artifact_format, artifact_hash, artifact_confidence, 
              artifact_metadata, artifact_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         )";
 
         sqlite3_stmt *stmt;
@@ -306,51 +305,42 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         sqlite3_bind_text(stmt, 2, DedupModes::getModeName(captured_mode).c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 3, captured_result.success ? 1 : 0);
 
-        if (captured_result.error_message.empty())
+        if (captured_result.artifact.format.empty())
         {
             sqlite3_bind_null(stmt, 4);
         }
         else
         {
-            sqlite3_bind_text(stmt, 4, captured_result.error_message.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 4, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
         }
 
-        if (captured_result.artifact.format.empty())
+        if (captured_result.artifact.hash.empty())
         {
             sqlite3_bind_null(stmt, 5);
         }
         else
         {
-            sqlite3_bind_text(stmt, 5, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 5, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
         }
 
-        if (captured_result.artifact.hash.empty())
-        {
-            sqlite3_bind_null(stmt, 6);
-        }
-        else
-        {
-            sqlite3_bind_text(stmt, 6, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
-        }
-
-        sqlite3_bind_double(stmt, 7, captured_result.artifact.confidence);
+        sqlite3_bind_double(stmt, 6, captured_result.artifact.confidence);
 
         if (captured_result.artifact.metadata.empty())
         {
-            sqlite3_bind_null(stmt, 8);
+            sqlite3_bind_null(stmt, 7);
         }
         else
         {
-            sqlite3_bind_text(stmt, 8, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 7, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
         }
 
         if (captured_result.artifact.data.empty())
         {
-            sqlite3_bind_blob(stmt, 9, nullptr, 0, SQLITE_STATIC);
+            sqlite3_bind_blob(stmt, 8, nullptr, 0, SQLITE_STATIC);
         }
         else
         {
-            sqlite3_bind_blob(stmt, 9, captured_result.artifact.data.data(),
+            sqlite3_bind_blob(stmt, 8, captured_result.artifact.data.data(),
                               static_cast<int>(captured_result.artifact.data.size()), SQLITE_STATIC);
         }
 
@@ -409,10 +399,10 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         
         const std::string insert_sql = R"(
             INSERT OR REPLACE INTO media_processing_results 
-            (file_path, processing_mode, success, error_message, 
+            (file_path, processing_mode, success, 
              artifact_format, artifact_hash, artifact_confidence, 
              artifact_metadata, artifact_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         )";
 
         sqlite3_stmt *stmt;
@@ -430,51 +420,42 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         sqlite3_bind_text(stmt, 2, DedupModes::getModeName(captured_mode).c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 3, captured_result.success ? 1 : 0);
 
-        if (captured_result.error_message.empty())
+        if (captured_result.artifact.format.empty())
         {
             sqlite3_bind_null(stmt, 4);
         }
         else
         {
-            sqlite3_bind_text(stmt, 4, captured_result.error_message.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 4, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
         }
 
-        if (captured_result.artifact.format.empty())
+        if (captured_result.artifact.hash.empty())
         {
             sqlite3_bind_null(stmt, 5);
         }
         else
         {
-            sqlite3_bind_text(stmt, 5, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 5, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
         }
 
-        if (captured_result.artifact.hash.empty())
-        {
-            sqlite3_bind_null(stmt, 6);
-        }
-        else
-        {
-            sqlite3_bind_text(stmt, 6, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
-        }
-
-        sqlite3_bind_double(stmt, 7, captured_result.artifact.confidence);
+        sqlite3_bind_double(stmt, 6, captured_result.artifact.confidence);
 
         if (captured_result.artifact.metadata.empty())
         {
-            sqlite3_bind_null(stmt, 8);
+            sqlite3_bind_null(stmt, 7);
         }
         else
         {
-            sqlite3_bind_text(stmt, 8, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 7, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
         }
 
         if (captured_result.artifact.data.empty())
         {
-            sqlite3_bind_blob(stmt, 9, nullptr, 0, SQLITE_STATIC);
+            sqlite3_bind_blob(stmt, 8, nullptr, 0, SQLITE_STATIC);
         }
         else
         {
-            sqlite3_bind_blob(stmt, 9, captured_result.artifact.data.data(),
+            sqlite3_bind_blob(stmt, 8, captured_result.artifact.data.data(),
                               static_cast<int>(captured_result.artifact.data.size()), SQLITE_STATIC);
         }
 
@@ -525,7 +506,7 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
         
         std::vector<ProcessingResult> results;
         const std::string select_sql = R"(
-            SELECT processing_mode, success, error_message, 
+            SELECT processing_mode, success, 
                    artifact_format, artifact_hash, artifact_confidence, 
                    artifact_metadata, artifact_data
             FROM media_processing_results 
@@ -551,30 +532,25 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
 
             if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
             {
-                result.error_message = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+                result.artifact.format = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
             }
 
             if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
             {
-                result.artifact.format = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+                result.artifact.hash = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
             }
 
-            if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+            result.artifact.confidence = sqlite3_column_double(stmt, 4);
+
+            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
             {
-                result.artifact.hash = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+                result.artifact.metadata = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
             }
-
-            result.artifact.confidence = sqlite3_column_double(stmt, 5);
 
             if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
             {
-                result.artifact.metadata = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-            }
-
-            if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
-            {
-                const void *blob_data = sqlite3_column_blob(stmt, 7);
-                int blob_size = sqlite3_column_bytes(stmt, 7);
+                const void *blob_data = sqlite3_column_blob(stmt, 6);
+                int blob_size = sqlite3_column_bytes(stmt, 6);
                 result.artifact.data.assign(
                     static_cast<const uint8_t *>(blob_data),
                     static_cast<const uint8_t *>(blob_data) + blob_size);
@@ -623,7 +599,7 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
         
         std::vector<std::pair<std::string, ProcessingResult>> results;
         const std::string select_sql = R"(
-            SELECT file_path, processing_mode, success, error_message, 
+            SELECT file_path, processing_mode, success, 
                    artifact_format, artifact_hash, artifact_confidence, 
                    artifact_metadata, artifact_data
             FROM media_processing_results 
@@ -647,30 +623,25 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
 
             if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
             {
-                result.error_message = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+                result.artifact.format = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
             }
 
             if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
             {
-                result.artifact.format = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+                result.artifact.hash = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
             }
 
-            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+            result.artifact.confidence = sqlite3_column_double(stmt, 5);
+
+            if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
             {
-                result.artifact.hash = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+                result.artifact.metadata = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
             }
-
-            result.artifact.confidence = sqlite3_column_double(stmt, 6);
 
             if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
             {
-                result.artifact.metadata = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
-            }
-
-            if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
-            {
-                const void *blob_data = sqlite3_column_blob(stmt, 8);
-                int blob_size = sqlite3_column_bytes(stmt, 8);
+                const void *blob_data = sqlite3_column_blob(stmt, 7);
+                int blob_size = sqlite3_column_bytes(stmt, 7);
                 result.artifact.data.assign(
                     static_cast<const uint8_t *>(blob_data),
                     static_cast<const uint8_t *>(blob_data) + blob_size);
@@ -779,7 +750,6 @@ std::string DatabaseManager::resultToJson(const ProcessingResult &result)
 {
     json j;
     j["success"] = result.success;
-    j["error_message"] = result.error_message;
     j["artifact"]["format"] = result.artifact.format;
     j["artifact"]["hash"] = result.artifact.hash;
     j["artifact"]["confidence"] = result.artifact.confidence;
@@ -804,7 +774,6 @@ ProcessingResult DatabaseManager::jsonToResult(const std::string &json_str)
     {
         json j = json::parse(json_str);
         result.success = j["success"];
-        result.error_message = j["error_message"];
         result.artifact.format = j["artifact"]["format"];
         result.artifact.hash = j["artifact"]["hash"];
         result.artifact.confidence = j["artifact"]["confidence"];

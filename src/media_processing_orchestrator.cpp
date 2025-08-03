@@ -104,15 +104,15 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             // Get files that need processing for any of the modes
             std::vector<std::pair<std::string, std::string>> files_to_process;
             if (pre_process_quality_stack) {
-                // Get files that need processing for any mode using atomic batch processing
-                // This prevents duplicates by atomically marking files as in progress
-                files_to_process = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, 50);
+                // Get files that need processing for each mode separately to avoid duplicates
+                auto fast_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, 50);
                 auto balanced_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::BALANCED, 50);
                 auto quality_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::QUALITY, 50);
                 
                 // Combine all files (avoiding duplicates)
                 std::set<std::string> unique_files;
-                for (const auto& [path, name] : files_to_process) {
+                for (const auto& [path, name] : fast_files) {
+                    files_to_process.emplace_back(path, name);
                     unique_files.insert(path);
                 }
                 for (const auto& [path, name] : balanced_files) {
@@ -160,9 +160,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         
                         const std::string& file_path = files_to_process[i].first;
                         
-                        // Process the file for each required mode using database atomic locking
-                        // No need for in-memory locking since database atomic operations handle concurrency
-                        
                         auto start = std::chrono::steady_clock::now();
                         FileProcessingEvent event;
                         event.file_path = file_path;
@@ -185,10 +182,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             std::string last_error;
                             
                             for (const auto& process_mode : modes_to_process) {
-                                // Check if this file needs processing for this mode
-                                // Files with status -1 (in progress) should be processed
-                                if (!dbMan_.fileNeedsProcessingForMode(file_path, process_mode)) {
-                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed");
+                                // Use atomic operation to check and mark file for processing for this specific mode
+                                if (!dbMan_.tryAcquireProcessingLock(file_path, process_mode)) {
+                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed or locked");
                                     continue;
                                 }
                                 
