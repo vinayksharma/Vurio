@@ -54,8 +54,6 @@ SwsContext *createHardwareScaler(int src_width, int src_height, AVPixelFormat sr
 
 ProcessingResult MediaProcessor::processFile(const std::string &file_path, DedupMode mode)
 {
-    Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(mode));
-
     // Check if file exists and is supported
     if (!isSupportedFile(file_path))
     {

@@ -57,6 +57,9 @@ void MediaProcessingOrchestrator::releaseProcessingLock(const std::string &file_
 
 SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllScannedFiles(int max_threads)
 {
+    // Use a mutex to ensure only one processing run happens at a time
+    std::unique_lock<std::mutex> processing_run_lock(processing_mutex_);
+
     // Error handling policy:
     // - All errors are logged with context
     // - Per-file errors are emitted via onNext (with success=false)
@@ -108,29 +111,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             int batch_size = config_manager.getProcessingBatchSize();
             
             if (pre_process_quality_stack) {
-                // Get files that need processing for each mode separately to avoid duplicates
-                auto fast_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::FAST, batch_size);
-                auto balanced_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::BALANCED, batch_size);
-                auto quality_files = dbMan_.getAndMarkFilesForProcessing(DedupMode::QUALITY, batch_size);
-                
-                // Combine all files (avoiding duplicates)
-                std::set<std::string> unique_files;
-                for (const auto& [path, name] : fast_files) {
-                    files_to_process.emplace_back(path, name);
-                    unique_files.insert(path);
-                }
-                for (const auto& [path, name] : balanced_files) {
-                    if (unique_files.find(path) == unique_files.end()) {
-                        files_to_process.emplace_back(path, name);
-                        unique_files.insert(path);
-                    }
-                }
-                for (const auto& [path, name] : quality_files) {
-                    if (unique_files.find(path) == unique_files.end()) {
-                        files_to_process.emplace_back(path, name);
-                        unique_files.insert(path);
-                    }
-                }
+                // Get files that need processing for ANY mode and atomically mark them as in progress
+                // This prevents race conditions where multiple threads get the same files
+                files_to_process = dbMan_.getAndMarkFilesForProcessingAnyMode(batch_size);
             } else {
                 // Get files that need processing for the specific mode using atomic batch processing
                 files_to_process = dbMan_.getAndMarkFilesForProcessing(mode, batch_size);
@@ -153,16 +136,16 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             // Thread-safe mutex for database operations to prevent race conditions
             tbb::mutex db_mutex;
             
-            // Process files in parallel using TBB
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, files_to_process.size()),
-                [&](const tbb::blocked_range<size_t>& range) {
-                    for (size_t i = range.begin(); i != range.end(); ++i) {
-                        // Check for cancellation
-                        if (cancelled_.load()) {
-                            return; // Exit this thread's processing
-                        }
-                        
-                        const std::string& file_path = files_to_process[i].first;
+            // Process files sequentially to avoid race conditions when processing multiple modes per file
+            // When pre_process_quality_stack is enabled, each file needs to be processed for all modes
+            // Processing in parallel can cause race conditions and duplicate processing
+            for (size_t i = 0; i < files_to_process.size(); ++i) {
+                // Check for cancellation
+                if (cancelled_.load()) {
+                    return; // Exit this thread's processing
+                }
+                
+                const std::string& file_path = files_to_process[i].first;
                         
                         auto start = std::chrono::steady_clock::now();
                         FileProcessingEvent event;
@@ -279,7 +262,6 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             if (onNext) onNext(event);
                         }
                     }
-                });
             
             // Log final statistics
             Logger::info("Processing completed - Total: " + std::to_string(processed_count.load()) + 
@@ -380,6 +362,9 @@ void MediaProcessingOrchestrator::processingThreadFunction(int processing_interv
         {
             break;
         }
+
+        // Use a mutex to ensure only one processing run happens at a time
+        std::unique_lock<std::mutex> processing_run_lock(processing_mutex_);
 
         Logger::info("Starting scheduled processing run");
 

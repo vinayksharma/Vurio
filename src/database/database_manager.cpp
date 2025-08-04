@@ -2873,6 +2873,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         return results;
     }
 
+    // Use a mutex to ensure only one thread can get files at a time
+    std::lock_guard<std::mutex> lock(file_processing_mutex);
+
     // Capture the parameters for async execution
     DedupMode captured_mode = mode;
     int captured_batch_size = batch_size;
@@ -2896,19 +2899,20 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         sqlite3_exec(dbMan.db_, "BEGIN IMMEDIATE TRANSACTION", nullptr, nullptr, nullptr);
         
         // Build the SQL query to get files that need processing
+        // Exclude files that are already marked as in progress (-1) to prevent race conditions
         std::string select_sql;
         std::string file_type_clauses = generateFileTypeLikeClauses();
         
         switch (captured_mode)
         {
             case DedupMode::FAST:
-                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_fast = 0 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_fast = 0 AND processed_fast != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
                 break;
             case DedupMode::BALANCED:
-                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_balanced = 0 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_balanced = 0 AND processed_balanced != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
                 break;
             case DedupMode::QUALITY:
-                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_quality = 0 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                select_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_quality = 0 AND processed_quality != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
                 break;
         }
         
@@ -3005,6 +3009,136 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     return results;
 }
 
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFilesForProcessingAnyMode(int batch_size)
+{
+    Logger::debug("getAndMarkFilesForProcessingAnyMode called with batch size: " + std::to_string(batch_size));
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Use a mutex to ensure only one thread can get files at a time
+    std::lock_guard<std::mutex> lock(file_processing_mutex);
+
+    // Capture the parameters for async execution
+    int captured_batch_size = batch_size;
+    std::atomic<bool> operation_completed{false};
+    std::string error_msg;
+
+    // Use enqueueWrite since we're performing write operations (UPDATE statements)
+    auto future = access_queue_->enqueueWrite([captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan) -> WriteOperationResult
+                                              {
+        Logger::debug("Executing getAndMarkFilesForProcessingAnyMode in write queue");
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Start transaction with immediate mode for better concurrency
+        sqlite3_exec(dbMan.db_, "BEGIN IMMEDIATE TRANSACTION", nullptr, nullptr, nullptr);
+        
+        // Build the SQL query to get files that need processing for ANY mode
+        // Use a more precise approach to avoid race conditions
+        std::string file_type_clauses = generateFileTypeLikeClauses();
+        std::string select_sql = "SELECT file_path, file_name FROM scanned_files WHERE "
+                                "(" + file_type_clauses + ") AND "
+                                "((processed_fast = 0 AND processed_fast != -1) OR "
+                                "(processed_balanced = 0 AND processed_balanced != -1) OR "
+                                "(processed_quality = 0 AND processed_quality != -1)) "
+                                "ORDER BY created_at DESC LIMIT ?";
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure("Failed to prepare select statement");
+        }
+
+        sqlite3_bind_int(stmt, 1, captured_batch_size);
+
+        std::vector<std::string> file_paths_to_mark;
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            results.emplace_back(file_path, file_name);
+            file_paths_to_mark.push_back(file_path);
+        }
+
+        sqlite3_finalize(stmt);
+
+        // If we found files, mark them as in progress for ALL modes that need processing
+        if (!file_paths_to_mark.empty())
+        {
+            // Mark files as in progress for each mode that needs processing
+            std::vector<std::string> update_sqls = {
+                "UPDATE scanned_files SET processed_fast = -1 WHERE file_path = ? AND processed_fast = 0",
+                "UPDATE scanned_files SET processed_balanced = -1 WHERE file_path = ? AND processed_balanced = 0",
+                "UPDATE scanned_files SET processed_quality = -1 WHERE file_path = ? AND processed_quality = 0"
+            };
+
+            for (const auto& update_sql : update_sqls)
+            {
+                sqlite3_stmt *update_stmt;
+                rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                if (rc != SQLITE_OK)
+                {
+                    Logger::error("Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+                    sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                    operation_completed.store(true);
+                    return WriteOperationResult::Failure("Failed to prepare update statement");
+                }
+
+                // Mark each file as in progress for this mode
+                for (const auto& file_path : file_paths_to_mark)
+                {
+                    sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                    rc = sqlite3_step(update_stmt);
+                    if (rc != SQLITE_DONE)
+                    {
+                        Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                    }
+                    sqlite3_reset(update_stmt);
+                }
+
+                sqlite3_finalize(update_stmt);
+            }
+        }
+
+        // Commit transaction
+        sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+        
+        Logger::debug("Atomically marked " + std::to_string(results.size()) + " files as in progress for any mode");
+        operation_completed.store(true);
+        return WriteOperationResult(); });
+
+    // Wait for the operation to complete with timeout
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(10); // 10 second timeout
+
+    while (!operation_completed.load())
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+        {
+            Logger::error("getAndMarkFilesForProcessingAnyMode timed out after 10 seconds");
+            return results;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    return results;
+}
+
 // Helper function to generate SQL LIKE clauses for enabled file types
 std::string DatabaseManager::generateFileTypeLikeClauses()
 {
@@ -3024,4 +3158,88 @@ std::string DatabaseManager::generateFileTypeLikeClauses()
         clauses += "LOWER(file_name) LIKE '%." + enabled_types[i] + "'";
     }
     return clauses;
+}
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedingProcessingAnyMode(int batch_size)
+{
+    Logger::debug("getFilesNeedingProcessingAnyMode called with batch size: " + std::to_string(batch_size));
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Capture the parameters for async execution
+    int captured_batch_size = batch_size;
+    std::atomic<bool> operation_completed{false};
+    std::string error_msg;
+
+    // Use enqueueRead since we're only reading files that need processing
+    auto future = access_queue_->enqueueRead([captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan) -> std::any
+                                             {
+        Logger::debug("Executing getFilesNeedingProcessingAnyMode in read queue");
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            operation_completed.store(true);
+            return std::any();
+        }
+        
+        // Build the SQL query to get files that need processing for ANY mode
+        std::string file_type_clauses = generateFileTypeLikeClauses();
+        std::string select_sql = "SELECT file_path, file_name FROM scanned_files WHERE (" + file_type_clauses + ") AND (processed_fast = 0 OR processed_balanced = 0 OR processed_quality = 0) ORDER BY created_at DESC LIMIT ?";
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            operation_completed.store(true);
+            return std::any();
+        }
+
+        sqlite3_bind_int(stmt, 1, captured_batch_size);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            results.emplace_back(file_path, file_name);
+        }
+
+        sqlite3_finalize(stmt);
+        
+        Logger::debug("Found " + std::to_string(results.size()) + " files needing processing for any mode");
+        operation_completed.store(true);
+        return std::any(); });
+
+    // Wait for the operation to complete with timeout
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(10); // 10 second timeout
+
+    while (!operation_completed.load())
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+        {
+            Logger::error("getFilesNeedingProcessingAnyMode timed out after 10 seconds");
+            return results;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Wait for the future to complete
+    try
+    {
+        future.wait();
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception waiting for read operation: " + std::string(e.what()));
+    }
+
+    return results;
 }

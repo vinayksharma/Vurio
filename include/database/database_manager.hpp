@@ -104,6 +104,8 @@ public:
      * @return Vector of file paths and names that are now marked as in progress
      */
     std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessing(DedupMode mode, int batch_size = 10);
+    std::vector<std::pair<std::string, std::string>> getFilesNeedingProcessingAnyMode(int batch_size = 10);
+    std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessingAnyMode(int batch_size = 10);
 
     /**
      * @brief Set processing flag for a specific mode after successful processing
@@ -327,6 +329,7 @@ private:
     std::string db_path_;
     std::unique_ptr<DatabaseAccessQueue> access_queue_;
     std::mutex queue_check_mutex;
+    std::mutex file_processing_mutex; // Mutex for file processing operations to prevent race conditions
 
     // Make db_ accessible to DatabaseAccessQueue
     friend class DatabaseAccessQueue;

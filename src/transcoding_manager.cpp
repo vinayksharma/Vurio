@@ -84,11 +84,17 @@ bool TranscodingManager::isRawFile(const std::string &file_path)
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
 
     // Use ServerConfigManager to check if this extension needs transcoding
-    return ServerConfigManager::getInstance().needsTranscoding(extension);
+    bool needs_transcoding = ServerConfigManager::getInstance().needsTranscoding(extension);
+
+    Logger::info("isRawFile check for: " + file_path + " (extension: " + extension + ") -> " + (needs_transcoding ? "YES" : "NO"));
+
+    return needs_transcoding;
 }
 
 void TranscodingManager::queueForTranscoding(const std::string &file_path)
 {
+    Logger::info("queueForTranscoding called for: " + file_path);
+
     if (!running_.load())
     {
         Logger::warn("Transcoding not running, cannot queue file: " + file_path);
@@ -120,7 +126,7 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
 
     queue_cv_.notify_one();
 
-    Logger::debug("Queued file for transcoding: " + file_path);
+    Logger::info("Successfully queued file for transcoding: " + file_path);
 }
 
 std::string TranscodingManager::getTranscodedFilePath(const std::string &source_file_path)
@@ -176,16 +182,19 @@ void TranscodingManager::transcodingThreadFunction()
 
         try
         {
+            Logger::info("Calling transcodeFile for: " + file_path);
             std::string transcoded_path = transcodeFile(file_path);
+            Logger::info("transcodeFile returned: " + (transcoded_path.empty() ? "EMPTY" : transcoded_path));
 
             if (!transcoded_path.empty())
             {
                 // Update database with transcoded file path
+                Logger::info("Updating database with transcoded path: " + file_path + " -> " + transcoded_path);
                 DBOpResult result = db_manager_->updateTranscodedFilePath(file_path, transcoded_path);
                 if (result.success)
                 {
                     completed_count_.fetch_add(1);
-                    Logger::info("Transcoding completed: " + file_path + " -> " + transcoded_path);
+                    Logger::info("Transcoding completed successfully: " + file_path + " -> " + transcoded_path);
                 }
                 else
                 {
@@ -196,7 +205,7 @@ void TranscodingManager::transcodingThreadFunction()
             else
             {
                 failed_count_.fetch_add(1);
-                Logger::error("Transcoding failed: " + file_path);
+                Logger::error("Transcoding failed - transcodeFile returned empty path: " + file_path);
             }
         }
         catch (const std::exception &e)
@@ -247,18 +256,52 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
     // LibRaw is not thread-safe, so we need to serialize access
     std::lock_guard<std::mutex> libraw_lock(libraw_mutex_);
 
+    // Validate input file before processing
+    if (!std::filesystem::exists(source_file_path))
+    {
+        Logger::error("Source file does not exist: " + source_file_path);
+        return "";
+    }
+
+    // Check file size to prevent processing corrupted files
+    try
+    {
+        auto file_size = std::filesystem::file_size(source_file_path);
+        if (file_size == 0)
+        {
+            Logger::error("Source file is empty: " + source_file_path);
+            return "";
+        }
+        if (file_size > 500 * 1024 * 1024) // 500MB limit
+        {
+            Logger::error("Source file too large for transcoding: " + source_file_path + " (" + std::to_string(file_size) + " bytes)");
+            return "";
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error checking file size: " + source_file_path + " - " + std::string(e.what()));
+        return "";
+    }
+
     try
     {
         LibRaw raw_processor;
 
-        // Set LibRaw options for better memory management
-        raw_processor.imgdata.params.output_tiff = 0;   // Output JPEG instead of TIFF
-        raw_processor.imgdata.params.output_bps = 8;    // 8-bit output
-        raw_processor.imgdata.params.output_color = 1;  // sRGB color space
-        raw_processor.imgdata.params.use_camera_wb = 1; // Use camera white balance
-        raw_processor.imgdata.params.use_auto_wb = 0;   // Disable auto white balance
-        raw_processor.imgdata.params.highlight = 0;     // Normal highlight handling
+        // Set LibRaw options for better memory management and stability
+        raw_processor.imgdata.params.output_tiff = 0;    // Output JPEG instead of TIFF
+        raw_processor.imgdata.params.output_bps = 8;     // 8-bit output
+        raw_processor.imgdata.params.output_color = 1;   // sRGB color space
+        raw_processor.imgdata.params.use_camera_wb = 1;  // Use camera white balance
+        raw_processor.imgdata.params.use_auto_wb = 0;    // Disable auto white balance
+        raw_processor.imgdata.params.highlight = 0;      // Normal highlight handling
+        raw_processor.imgdata.params.no_auto_bright = 1; // Disable auto brightness
+        raw_processor.imgdata.params.bright = 1.0;       // Normal brightness
+        raw_processor.imgdata.params.threshold = 0.0;    // No threshold
+        raw_processor.imgdata.params.half_size = 0;      // Full size output
 
+        // Add timeout protection for file operations
+        Logger::debug("Opening file with LibRaw: " + source_file_path);
         int result = raw_processor.open_file(source_file_path.c_str());
         if (result != LIBRAW_SUCCESS)
         {
@@ -266,6 +309,15 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
             return "";
         }
 
+        // Validate that the file was opened successfully
+        if (raw_processor.imgdata.sizes.width == 0 || raw_processor.imgdata.sizes.height == 0)
+        {
+            Logger::error("LibRaw opened file but image dimensions are invalid: " + source_file_path);
+            raw_processor.recycle();
+            return "";
+        }
+
+        Logger::debug("Unpacking raw data: " + source_file_path);
         // Unpack the raw data
         result = raw_processor.unpack();
         if (result != LIBRAW_SUCCESS)
@@ -275,6 +327,7 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
             return "";
         }
 
+        Logger::debug("Processing image with LibRaw: " + source_file_path);
         // Process the image (demosaic)
         result = raw_processor.dcraw_process();
         if (result != LIBRAW_SUCCESS)
@@ -284,6 +337,7 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
             return "";
         }
 
+        Logger::debug("Writing JPEG output: " + output_path);
         // Write JPEG output using dcraw compatibility method
         result = raw_processor.dcraw_ppm_tiff_writer(output_path.c_str());
         if (result != LIBRAW_SUCCESS)
@@ -302,6 +356,11 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
 
         raw_processor.recycle();
     }
+    catch (const std::bad_alloc &e)
+    {
+        Logger::error("LibRaw memory allocation failed during transcoding: " + std::string(e.what()));
+        return "";
+    }
     catch (const std::exception &e)
     {
         Logger::error("LibRaw exception during transcoding: " + std::string(e.what()));
@@ -309,7 +368,7 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
     }
     catch (...)
     {
-        Logger::error("LibRaw unknown exception during transcoding");
+        Logger::error("LibRaw unknown exception during transcoding - possible bus error or segmentation fault");
         return "";
     }
 
