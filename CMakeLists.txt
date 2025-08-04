@@ -37,6 +37,10 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libswscale
 )
 
+# LibRaw - Required for raw camera format support
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBRAW REQUIRED IMPORTED_TARGET libraw)
+
 # Individual FFmpeg libraries for linking
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
@@ -70,6 +74,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include/third_party
     ${OPENSSL_INCLUDE_DIR}
     ${nlohmann_json_INCLUDE_DIRS}
+    /opt/homebrew/include
 )
 
 # Add Homebrew yaml-cpp lib directory for linker
@@ -144,6 +149,7 @@ target_link_libraries(dedup_server
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    PkgConfig::LIBRAW
     yaml-cpp
     # macOS native frameworks for faster file enumeration (using C APIs, no frameworks needed)
 )
@@ -238,6 +244,7 @@ target_link_libraries(raw_file_test
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    PkgConfig::LIBRAW
     yaml-cpp
 )
 
@@ -272,6 +279,7 @@ target_link_libraries(cache_size_test
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    PkgConfig::LIBRAW
     yaml-cpp
 )
 

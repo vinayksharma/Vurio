@@ -31,6 +31,7 @@ target_link_libraries(dedup_tests PRIVATE
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
+    PkgConfig::LIBRAW
     yaml-cpp
     TBB::tbb
 )
@@ -61,6 +62,7 @@ target_link_libraries(media_processing_orchestrator_test
     PkgConfig::SQLITE3
     PkgConfig::OpenCV
     ${FFMPEG_LIBRARIES}
+    PkgConfig::LIBRAW
     yaml-cpp
     TBB::tbb
 )

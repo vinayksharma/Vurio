@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <chrono>
 #include "core/server_config_manager.hpp"
+#include <libraw/libraw.h>
 
 // Raw file extensions that need transcoding - now configuration-driven
 // These are no longer used as we use ServerConfigManager::needsTranscoding()
@@ -240,16 +241,81 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
         cleanupCacheEnhanced(true);
     }
 
-    // Use FFmpeg to transcode raw file to JPEG
-    std::string ffmpeg_cmd = "ffmpeg -i \"" + source_file_path + "\" -y -q:v 2 \"" + output_path + "\" 2>/dev/null";
+    // Use LibRaw to transcode raw file to JPEG
+    Logger::debug("Using LibRaw to transcode: " + source_file_path + " -> " + output_path);
 
-    Logger::debug("Executing FFmpeg command: " + ffmpeg_cmd);
+    // LibRaw is not thread-safe, so we need to serialize access
+    std::lock_guard<std::mutex> libraw_lock(libraw_mutex_);
 
-    int result = std::system(ffmpeg_cmd.c_str());
-
-    if (result == 0 && std::filesystem::exists(output_path))
+    try
     {
-        Logger::info("FFmpeg transcoding successful: " + source_file_path + " -> " + output_path);
+        LibRaw raw_processor;
+
+        // Set LibRaw options for better memory management
+        raw_processor.imgdata.params.output_tiff = 0;   // Output JPEG instead of TIFF
+        raw_processor.imgdata.params.output_bps = 8;    // 8-bit output
+        raw_processor.imgdata.params.output_color = 1;  // sRGB color space
+        raw_processor.imgdata.params.use_camera_wb = 1; // Use camera white balance
+        raw_processor.imgdata.params.use_auto_wb = 0;   // Disable auto white balance
+        raw_processor.imgdata.params.highlight = 0;     // Normal highlight handling
+
+        int result = raw_processor.open_file(source_file_path.c_str());
+        if (result != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw failed to open file: " + source_file_path + " (error: " + std::to_string(result) + ")");
+            return "";
+        }
+
+        // Unpack the raw data
+        result = raw_processor.unpack();
+        if (result != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw failed to unpack file: " + source_file_path + " (error: " + std::to_string(result) + ")");
+            raw_processor.recycle();
+            return "";
+        }
+
+        // Process the image (demosaic)
+        result = raw_processor.dcraw_process();
+        if (result != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw failed to process file: " + source_file_path + " (error: " + std::to_string(result) + ")");
+            raw_processor.recycle();
+            return "";
+        }
+
+        // Write JPEG output using dcraw compatibility method
+        result = raw_processor.dcraw_ppm_tiff_writer(output_path.c_str());
+        if (result != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw failed to write output: " + output_path + " (error: " + std::to_string(result) + ")");
+            raw_processor.recycle();
+
+            // Clean up failed output file if it exists
+            if (std::filesystem::exists(output_path))
+            {
+                std::filesystem::remove(output_path);
+            }
+
+            return "";
+        }
+
+        raw_processor.recycle();
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("LibRaw exception during transcoding: " + std::string(e.what()));
+        return "";
+    }
+    catch (...)
+    {
+        Logger::error("LibRaw unknown exception during transcoding");
+        return "";
+    }
+
+    if (std::filesystem::exists(output_path))
+    {
+        Logger::info("LibRaw transcoding successful: " + source_file_path + " -> " + output_path);
 
         // Log cache size after successful transcoding
         Logger::debug("Cache size after transcoding: " + getCacheSizeString());
@@ -258,14 +324,7 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
     }
     else
     {
-        Logger::error("FFmpeg transcoding failed for: " + source_file_path + " (exit code: " + std::to_string(result) + ")");
-
-        // Clean up failed output file if it exists
-        if (std::filesystem::exists(output_path))
-        {
-            std::filesystem::remove(output_path);
-        }
-
+        Logger::error("LibRaw transcoding failed - output file not created: " + output_path);
         return "";
     }
 }

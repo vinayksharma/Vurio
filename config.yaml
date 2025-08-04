@@ -98,7 +98,7 @@ supported_files:
 
 # Extended support (files that require transcoding)
 extended_support:
-  # Raw camera formats
+  # Raw camera formats - LibRaw supported
   cr2: true
   nef: true
   arw: true
@@ -121,9 +121,7 @@ extended_support:
   rwz: true
   nrw: true
   rwl: true
-  r3d: true
-  dcm: true
-  dicom: true
+  # Note: r3d (Red RAW), dcm, dicom (DICOM) removed - not supported by LibRaw
 
 # Video processing settings for each quality mode
 video_processing:

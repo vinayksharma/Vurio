@@ -140,9 +140,7 @@ void ServerConfigManager::initializeDefaultConfig()
           rwz: true
           nrw: true
           rwl: true
-          r3d: true
-          dcm: true
-          dicom: true
+          # Note: r3d (Red RAW), dcm, dicom (DICOM) removed - not supported by LibRaw
         video_processing:
           FAST:
             skip_duration_seconds: 2

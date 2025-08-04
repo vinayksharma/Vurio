@@ -172,6 +172,9 @@ private:
     std::atomic<size_t> completed_count_{0};
     std::atomic<size_t> failed_count_{0};
 
+    // LibRaw is not thread-safe, so we need a mutex for LibRaw operations
+    mutable std::mutex libraw_mutex_;
+
     // Database manager reference
     DatabaseManager *db_manager_{nullptr};
 
