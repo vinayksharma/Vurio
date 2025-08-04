@@ -146,9 +146,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                         " files with " + std::to_string(actual_max_threads) + " threads");
             
             // Thread-safe counters for progress tracking
-            std::atomic<size_t> processed_files{0};
-            std::atomic<size_t> successful_files{0};
-            std::atomic<size_t> failed_files{0};
+            std::atomic<size_t> processed_count{0};
+            std::atomic<size_t> successful_processed{0};
+            std::atomic<size_t> failed_processed{0};
             
             // Thread-safe mutex for database operations to prevent race conditions
             tbb::mutex db_mutex;
@@ -174,8 +174,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 event.success = false;
                                 event.error_message = "Unsupported file type: " + file_path;
                                 Logger::error(event.error_message);
-                                processed_files.fetch_add(1);
-                                failed_files.fetch_add(1);
+                                processed_count.fetch_add(1);
+                                failed_processed.fetch_add(1);
                                 if (onNext) onNext(event);
                                 continue;
                             }
@@ -186,12 +186,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             std::string last_error;
                             
                             for (const auto& process_mode : modes_to_process) {
-                                // Use atomic operation to check and mark file for processing for this specific mode
-                                if (!dbMan_.tryAcquireProcessingLock(file_path, process_mode)) {
-                                    Logger::debug("Skipping file " + file_path + " for mode " + DedupModes::getModeName(process_mode) + " - already processed or locked");
-                                    continue;
-                                }
-                                
+                                // Files are already marked as in progress by getAndMarkFilesForProcessing
+                                // No need to call tryAcquireProcessingLock again
                                 Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
                                 
                                 // Check if this file has a transcoded version available
@@ -206,49 +202,58 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 // Process the file for this mode
                                 ProcessingResult result = MediaProcessor::processFile(actual_file_path, process_mode);
                                 
-                                if (result.success) {
-                                    any_success = true;
-                                    // Update event with the most recent successful result
-                                    event.artifact_format = result.artifact.format;
-                                    event.artifact_hash = result.artifact.hash;
-                                    event.artifact_confidence = result.artifact.confidence;
+                                // Store the processing result in the database
+                                DBOpResult db_result = dbMan_.storeProcessingResult(file_path, process_mode, result);
+                                if (!db_result.success)
+                                {
+                                    Logger::error("Failed to store processing result for: " + file_path + " - " + db_result.error_message);
+                                    last_error = "Database error: " + db_result.error_message;
+                                    failed_processed.fetch_add(1);
+                                    continue;
+                                }
+                                
+                                // Store the processing result
+                                if (result.success)
+                                {
+                                    Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
                                     
-                                    // Thread-safe database operations
-                                    bool store_success = false;
-                                    std::string db_error_msg;
-                                    
-                                    // Lock database operations to prevent race conditions
-                                    tbb::mutex::scoped_lock lock(db_mutex);
-                                    
-                                    // Store processing result for this mode
-                                    auto [store_result, store_op_id] = dbMan_.storeProcessingResultWithId(file_path, process_mode, result);
-                                    if (!store_result.success) {
-                                        db_error_msg = store_result.error_message;
-                                        Logger::error("Failed to store processing result for mode " + DedupModes::getModeName(process_mode) + ": " + file_path + " - " + db_error_msg);
-                                    } else {
-                                        Logger::info("Successfully processed and stored result for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
-                                        
-                                        // Mark as completed (change from -1 to 1)
-                                        dbMan_.setProcessingFlag(file_path, process_mode);
-                                        Logger::debug("Processing completed for " + file_path + " with mode " + DedupModes::getModeName(process_mode));
-                                    }
-                                } else {
-                                    last_error = result.error_message;
-                                    Logger::error("Processing failed for " + file_path + " with mode " + DedupModes::getModeName(process_mode) + " - " + result.error_message);
-                                    
-                                    // Mark as failed (change from -1 to 0 to allow retry)
+                                    // Mark as successfully processed
                                     dbMan_.setProcessingFlag(file_path, process_mode);
+                                    
+                                    // Update success counter
+                                    successful_processed.fetch_add(1);
+                                }
+                                else
+                                {
+                                    Logger::warn("Failed to process file: " + file_path + " - " + result.error_message);
+                                    last_error = result.error_message;
+                                    
+                                    // Mark as failed (set to 0 to allow retry)
+                                    dbMan_.setProcessingFlag(file_path, process_mode);
+                                    
+                                    // Update failure counter
+                                    failed_processed.fetch_add(1);
+                                }
+                                
+                                // Update progress counter
+                                processed_count.fetch_add(1);
+                                
+                                // Check for cancellation
+                                if (cancelled_.load())
+                                {
+                                    Logger::info("Processing cancelled");
+                                    return;
                                 }
                             }
                             
                             // Set final event result
                             if (any_success) {
                                 event.success = true;
-                                successful_files.fetch_add(1);
+                                successful_processed.fetch_add(1);
                             } else {
                                 event.success = false;
                                 event.error_message = "Processing failed for all modes: " + last_error;
-                                failed_files.fetch_add(1);
+                                failed_processed.fetch_add(1);
                             }
                             
                             // Success - update counters and emit event
@@ -256,7 +261,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
                             event.processing_time_ms = duration.count();
                             
-                            processed_files.fetch_add(1);
+                            processed_count.fetch_add(1);
                             
                             Logger::info("Successfully processed file: " + file_path + 
                                        " (format: " + event.artifact_format + 
@@ -269,17 +274,17 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             Logger::error("Exception processing file: " + file_path + " - " + std::string(e.what()));
                             event.success = false;
                             event.error_message = "Exception: " + std::string(e.what());
-                            processed_files.fetch_add(1);
-                            failed_files.fetch_add(1);
+                            processed_count.fetch_add(1);
+                            failed_processed.fetch_add(1);
                             if (onNext) onNext(event);
                         }
                     }
                 });
             
             // Log final statistics
-            Logger::info("Processing completed - Total: " + std::to_string(processed_files.load()) + 
-                        ", Successful: " + std::to_string(successful_files.load()) + 
-                        ", Failed: " + std::to_string(failed_files.load()));
+            Logger::info("Processing completed - Total: " + std::to_string(processed_count.load()) + 
+                        ", Successful: " + std::to_string(successful_processed.load()) + 
+                        ", Failed: " + std::to_string(failed_processed.load()));
             
             if (onComplete) onComplete();
             
