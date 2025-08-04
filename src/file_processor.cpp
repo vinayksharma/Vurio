@@ -152,12 +152,11 @@ void FileProcessor::waitForWrites()
 
 std::string FileProcessor::getFileCategory(const std::string &file_path)
 {
-    if (MediaProcessor::isImageFile(file_path))
-        return "Image";
-    if (MediaProcessor::isVideoFile(file_path))
-        return "Video";
-    if (MediaProcessor::isAudioFile(file_path))
-        return "Audio";
+    // With the new configuration-driven approach, all supported file types
+    // are treated equally. We return "Supported" for any file type that
+    // is enabled in the configuration.
+    if (MediaProcessor::isSupportedFile(file_path))
+        return "Supported";
     return "Unknown";
 }
 

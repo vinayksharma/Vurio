@@ -212,20 +212,20 @@ TEST_F(FileProcessorTest, GetFileCategory)
 {
     FileProcessor processor(test_db_.string());
 
-    // Test image file category
-    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpg"), "Image");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_image.png"), "Image");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpeg"), "Image");
+    // Test supported file categories - now all supported file types return "Supported"
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpg"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.png"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpeg"), "Supported");
 
-    // Test video file category
-    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mp4"), "Video");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_video.avi"), "Video");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mov"), "Video");
+    // Test video file category - now all supported file types return "Supported"
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mp4"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.avi"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_video.mov"), "Supported");
 
-    // Test audio file category
-    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.mp3"), "Audio");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.wav"), "Audio");
-    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.flac"), "Audio");
+    // Test audio file category - now all supported file types return "Supported"
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.mp3"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.wav"), "Supported");
+    EXPECT_EQ(FileProcessor::getFileCategory("test_audio.flac"), "Supported");
 
     // Test unknown file category
     EXPECT_EQ(FileProcessor::getFileCategory("test_document.txt"), "Unknown");

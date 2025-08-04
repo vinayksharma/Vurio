@@ -175,6 +175,6 @@ private:
     // Database manager reference
     DatabaseManager *db_manager_{nullptr};
 
-    // Raw file extensions
-    static const std::vector<std::string> raw_extensions_;
+    // Raw file extensions - now configuration-driven
+    // These are no longer used as we use ServerConfigManager::needsTranscoding()
 };

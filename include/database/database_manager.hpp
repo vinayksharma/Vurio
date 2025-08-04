@@ -337,6 +337,7 @@ private:
     bool createScannedFilesTable();
     bool createUserInputsTable();
     bool createCacheMapTable();
+    bool createTranscodingTable();
 
     // SQL helpers
     /**
@@ -346,6 +347,9 @@ private:
     DBOpResult executeStatement(const std::string &sql);
     std::string resultToJson(const ProcessingResult &result);
     ProcessingResult jsonToResult(const std::string &json_str);
+
+    // Helper function to generate SQL LIKE clauses for enabled file types
+    std::string generateFileTypeLikeClauses();
 
     static std::unique_ptr<DatabaseManager> instance_;
     static std::mutex instance_mutex_;

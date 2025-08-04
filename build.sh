@@ -54,6 +54,87 @@ threading:
 scan_interval_seconds: 300        # How often to scan directories (5 minutes)
 processing_interval_seconds: 30   # How often to process files (30 seconds)
 
+# Processing batch size
+processing:
+  batch_size: 100
+
+# Supported file types
+supported_files:
+  # Standard image formats
+  jpg: true
+  jpeg: true
+  png: true
+  bmp: true
+  gif: true
+  tiff: true
+  webp: true
+  jp2: true
+  ppm: true
+  pgm: true
+  pbm: true
+  pnm: true
+  exr: true
+  hdr: true
+  
+  # Standard video formats
+  mp4: true
+  avi: true
+  mov: true
+  mkv: true
+  wmv: true
+  flv: true
+  webm: true
+  m4v: true
+  mpg: true
+  mpeg: true
+  ts: true
+  mts: true
+  m2ts: true
+  ogv: true
+  
+  # Standard audio formats
+  mp3: true
+  wav: true
+  flac: true
+  ogg: true
+  m4a: true
+  aac: true
+  opus: true
+  wma: true
+  aiff: true
+  alac: true
+  amr: true
+  au: true
+
+# Extended support (files that require transcoding)
+extended_support:
+  # Raw camera formats
+  cr2: true
+  nef: true
+  arw: true
+  dng: true
+  raf: true
+  rw2: true
+  orf: true
+  pef: true
+  srw: true
+  kdc: true
+  dcr: true
+  mos: true
+  mrw: true
+  raw: true
+  bay: true
+  3fr: true
+  fff: true
+  mef: true
+  iiq: true
+  rwz: true
+  nrw: true
+  rwl: true
+  r3d: true
+  dcm: true
+  dicom: true
+
 # Video processing settings for each quality mode
 video_processing:
   FAST:

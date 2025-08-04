@@ -40,12 +40,15 @@ threading:
   # Database access queue threads (for concurrent database operations)
   database_threads: 2
 
-# Processing configuration
+# Scheduling intervals (in seconds)
+scan_interval_seconds: 300        # How often to scan directories (5 minutes)
+processing_interval_seconds: 30   # How often to process files (30 seconds)
+
+# Processing batch size
 processing:
-  # Number of files to process in each batch (affects memory usage and processing efficiency)
   batch_size: 100
 
-# Supported file types configuration
+# Supported file types
 supported_files:
   # Standard image formats
   jpg: true
@@ -62,7 +65,8 @@ supported_files:
   pnm: true
   exr: true
   hdr: true
-  # Video formats
+  
+  # Standard video formats
   mp4: true
   avi: true
   mov: true
@@ -73,12 +77,12 @@ supported_files:
   m4v: true
   mpg: true
   mpeg: true
-  3gp: true
   ts: true
   mts: true
   m2ts: true
   ogv: true
-  # Audio formats
+  
+  # Standard audio formats
   mp3: true
   wav: true
   flac: true
@@ -92,9 +96,9 @@ supported_files:
   amr: true
   au: true
 
-# Extended support (file types requiring transcoding)
+# Extended support (files that require transcoding)
 extended_support:
-  # Raw camera formats that need transcoding to JPEG
+  # Raw camera formats
   cr2: true
   nef: true
   arw: true
@@ -120,10 +124,6 @@ extended_support:
   r3d: true
   dcm: true
   dicom: true
-
-# Scheduling intervals (in seconds)
-scan_interval_seconds: 300        # How often to scan directories (5 minutes)
-processing_interval_seconds: 30   # How often to process files (30 seconds)
 
 # Video processing settings for each quality mode
 video_processing:

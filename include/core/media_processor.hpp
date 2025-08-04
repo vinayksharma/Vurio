@@ -98,12 +98,10 @@ public:
     static std::string getFileExtension(const std::string &file_path);
 
 private:
-    // Common extension lists
-    static const std::vector<std::string> image_extensions_;
-    static const std::vector<std::string> video_extensions_;
-    static const std::vector<std::string> audio_extensions_;
+    // Static extension lists - now configuration-driven
+    // These are no longer used as we use ServerConfigManager::getEnabledFileTypes()
 
-    // Static lookup table for processing algorithms
+    // Processing algorithm lookup table
     static const std::unordered_map<std::string, std::unordered_map<DedupMode, ProcessingAlgorithm>> processing_algorithms_;
 
     /**

@@ -6,12 +6,10 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include "core/server_config_manager.hpp"
 
-// Raw file extensions that need transcoding
-const std::vector<std::string> TranscodingManager::raw_extensions_ = {
-    "cr2", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "kdc", "dcr",
-    "mos", "mrw", "raw", "bay", "3fr", "fff", "mef", "iiq", "rwz", "nrw", "rwl",
-    "r3d", "dcm", "dicom"};
+// Raw file extensions that need transcoding - now configuration-driven
+// These are no longer used as we use ServerConfigManager::needsTranscoding()
 
 TranscodingManager &TranscodingManager::getInstance()
 {
@@ -84,7 +82,8 @@ bool TranscodingManager::isRawFile(const std::string &file_path)
     std::string extension = MediaProcessor::getFileExtension(file_path);
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
 
-    return std::find(raw_extensions_.begin(), raw_extensions_.end(), extension) != raw_extensions_.end();
+    // Use ServerConfigManager to check if this extension needs transcoding
+    return ServerConfigManager::getInstance().needsTranscoding(extension);
 }
 
 void TranscodingManager::queueForTranscoding(const std::string &file_path)

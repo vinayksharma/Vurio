@@ -154,24 +154,14 @@ bool MediaProcessor::isSupportedFile(const std::string &file_path)
     return std::find(supported.begin(), supported.end(), ext) != supported.end();
 }
 
-// Static extension lists
-const std::vector<std::string> MediaProcessor::image_extensions_ = {
-    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "jp2", "ppm", "pgm", "pbm", "pnm", "exr", "hdr",
-    // Raw camera formats
-    "cr2", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "kdc", "dcr", "mos", "mrw", "raw", "bay", "3fr", "fff", "mef", "iiq", "rwz", "nrw", "rwl", "r3d", "dcm", "dicom"
-};
-const std::vector<std::string> MediaProcessor::video_extensions_ = {
-    "mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "ts", "mts", "m2ts", "ogv"};
-const std::vector<std::string> MediaProcessor::audio_extensions_ = {
-    "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff", "alac", "amr", "au"};
+// Static extension lists - now configuration-driven
+// These are no longer used as we use ServerConfigManager::getEnabledFileTypes()
 
 std::vector<std::string> MediaProcessor::getSupportedExtensions()
 {
-    std::vector<std::string> all;
-    all.insert(all.end(), image_extensions_.begin(), image_extensions_.end());
-    all.insert(all.end(), video_extensions_.begin(), video_extensions_.end());
-    all.insert(all.end(), audio_extensions_.begin(), audio_extensions_.end());
-    return all;
+    // Use ServerConfigManager to get enabled file types
+    auto enabled_types = ServerConfigManager::getInstance().getEnabledFileTypes();
+    return enabled_types;
 }
 
 ProcessingResult MediaProcessor::processImageFast(const std::string &file_path)
@@ -1622,19 +1612,22 @@ ProcessingResult MediaProcessor::processAudioQuality(const std::string &file_pat
 bool MediaProcessor::isImageFile(const std::string &file_path)
 {
     std::string ext = getFileExtension(file_path);
-    return std::find(image_extensions_.begin(), image_extensions_.end(), ext) != image_extensions_.end();
+    auto enabled_types = ServerConfigManager::getInstance().getEnabledFileTypes();
+    return std::find(enabled_types.begin(), enabled_types.end(), ext) != enabled_types.end();
 }
 
 bool MediaProcessor::isVideoFile(const std::string &file_path)
 {
     std::string ext = getFileExtension(file_path);
-    return std::find(video_extensions_.begin(), video_extensions_.end(), ext) != video_extensions_.end();
+    auto enabled_types = ServerConfigManager::getInstance().getEnabledFileTypes();
+    return std::find(enabled_types.begin(), enabled_types.end(), ext) != enabled_types.end();
 }
 
 bool MediaProcessor::isAudioFile(const std::string &file_path)
 {
     std::string ext = getFileExtension(file_path);
-    return std::find(audio_extensions_.begin(), audio_extensions_.end(), ext) != audio_extensions_.end();
+    auto enabled_types = ServerConfigManager::getInstance().getEnabledFileTypes();
+    return std::find(enabled_types.begin(), enabled_types.end(), ext) != enabled_types.end();
 }
 
 std::string MediaProcessor::generateHash(const std::vector<uint8_t> &data)

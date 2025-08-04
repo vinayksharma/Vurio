@@ -52,8 +52,8 @@ void DatabaseAccessQueue::wait_for_completion(std::chrono::milliseconds timeout)
 {
     std::unique_lock<std::mutex> lock(queue_mutex_);
 
-    // First wait up to 30 seconds before showing any warning
-    auto warning_threshold = std::chrono::milliseconds(30000);
+    // First wait up to 10 seconds before showing any warning (reduced from 30)
+    auto warning_threshold = std::chrono::milliseconds(10000);
     auto start_time = std::chrono::steady_clock::now();
 
     // Wait for operations to complete or timeout

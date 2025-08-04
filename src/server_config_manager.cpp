@@ -70,6 +70,79 @@ void ServerConfigManager::initializeDefaultConfig()
           max_decoder_threads: 4
         cache:
           decoder_cache_size_mb: 1024
+        processing:
+          batch_size: 100
+        supported_files:
+          # Standard image formats
+          jpg: true
+          jpeg: true
+          png: true
+          bmp: true
+          gif: true
+          tiff: true
+          webp: true
+          jp2: true
+          ppm: true
+          pgm: true
+          pbm: true
+          pnm: true
+          exr: true
+          hdr: true
+          # Standard video formats
+          mp4: true
+          avi: true
+          mov: true
+          mkv: true
+          wmv: true
+          flv: true
+          webm: true
+          m4v: true
+          mpg: true
+          mpeg: true
+          ts: true
+          mts: true
+          m2ts: true
+          ogv: true
+          # Standard audio formats
+          mp3: true
+          wav: true
+          flac: true
+          ogg: true
+          m4a: true
+          aac: true
+          opus: true
+          wma: true
+          aiff: true
+          alac: true
+          amr: true
+          au: true
+        extended_support:
+          # Raw camera formats
+          cr2: true
+          nef: true
+          arw: true
+          dng: true
+          raf: true
+          rw2: true
+          orf: true
+          pef: true
+          srw: true
+          kdc: true
+          dcr: true
+          mos: true
+          mrw: true
+          raw: true
+          bay: true
+          3fr: true
+          fff: true
+          mef: true
+          iiq: true
+          rwz: true
+          nrw: true
+          rwl: true
+          r3d: true
+          dcm: true
+          dicom: true
         video_processing:
           FAST:
             skip_duration_seconds: 2
@@ -299,6 +372,7 @@ std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
         if (config_["supported_files"])
         {
             const YAML::Node &supported_files = config_["supported_files"];
+
             for (const auto &file_type : supported_files)
             {
                 std::string extension = file_type.first.as<std::string>();
@@ -309,11 +383,9 @@ std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
     }
     catch (const std::exception &e)
     {
-        Logger::warn("Error parsing supported_files configuration: " + std::string(e.what()) +
-                     ", using default supported file types");
+        Logger::error("Error parsing supported file types: " + std::string(e.what()));
     }
 
-    // If no configuration found, return empty map (will be handled by MediaProcessor defaults)
     return supported_types;
 }
 
@@ -327,6 +399,7 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
         if (config_["extended_support"])
         {
             const YAML::Node &extended_support = config_["extended_support"];
+
             for (const auto &file_type : extended_support)
             {
                 std::string extension = file_type.first.as<std::string>();
@@ -337,11 +410,9 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
     }
     catch (const std::exception &e)
     {
-        Logger::warn("Error parsing extended_support configuration: " + std::string(e.what()) +
-                     ", using default transcoding file types");
+        Logger::error("Error parsing transcoding file types: " + std::string(e.what()));
     }
 
-    // If no configuration found, return empty map (will be handled by TranscodingManager defaults)
     return transcoding_types;
 }
 
@@ -351,6 +422,7 @@ std::vector<std::string> ServerConfigManager::getEnabledFileTypes() const
 
     // Get supported file types
     auto supported_types = getSupportedFileTypes();
+
     for (const auto &[extension, enabled] : supported_types)
     {
         if (enabled)
@@ -361,6 +433,7 @@ std::vector<std::string> ServerConfigManager::getEnabledFileTypes() const
 
     // Get transcoding file types
     auto transcoding_types = getTranscodingFileTypes();
+
     for (const auto &[extension, enabled] : transcoding_types)
     {
         if (enabled)
