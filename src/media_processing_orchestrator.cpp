@@ -181,6 +181,17 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     actual_file_path = transcoded_path;
                                     Logger::info("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
                                 }
+                                else if (TranscodingManager::isRawFile(file_path))
+                                {
+                                    // Raw file without a transcoded version yet – queue and defer processing
+                                    Logger::info("Raw file has no transcoded output yet; queuing for transcoding and deferring: " + file_path);
+                                    TranscodingManager::getInstance().queueForTranscoding(file_path);
+                                    last_error = "Transcoding pending";
+                                    // Allow retry in a future cycle
+                                    dbMan_.setProcessingFlag(file_path, process_mode);
+                                    failed_processed.fetch_add(1);
+                                    continue;
+                                }
                                 
                                 // Process the file for this mode
                                 ProcessingResult result = MediaProcessor::processFile(actual_file_path, process_mode);
@@ -199,6 +210,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 if (result.success)
                                 {
                                     Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
+                                    any_success = true;
                                     
                                     // Mark as successfully processed
                                     dbMan_.setProcessingFlag(file_path, process_mode);

@@ -528,6 +528,13 @@ private:
                                 {
                                     files_scanned++;
                                     Logger::debug("Scanned file: " + file_path);
+
+                                    // If it's a raw file, queue for transcoding immediately
+                                    if (TranscodingManager::isRawFile(file_path))
+                                    {
+                                        Logger::info("Queuing raw file for transcoding from scan: " + file_path);
+                                        TranscodingManager::getInstance().queueForTranscoding(file_path);
+                                    }
                                 }
                                 else
                                 {

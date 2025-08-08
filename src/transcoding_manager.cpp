@@ -250,7 +250,39 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
         cleanupCacheEnhanced(true);
     }
 
-    // Use LibRaw to transcode raw file to JPEG
+    // For formats known to cause stability issues with LibRaw (e.g., ARW/RAF/CR3),
+    // use ffmpeg CLI to extract a JPEG preview/frame safely in a subprocess.
+    {
+        std::string ext = MediaProcessor::getFileExtension(source_file_path);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == "arw" || ext == "raf" || ext == "cr3")
+        {
+            Logger::info("Using FFmpeg CLI transcoding for raw file: " + source_file_path);
+            // Ensure parent directory exists (already ensured earlier)
+            // Use moderate quality, scale down very large raws to reasonable size to reduce IO
+            std::stringstream cmd;
+            cmd << "ffmpeg -y -loglevel error -hide_banner -stats "
+                << "-i " << '"' << source_file_path << '"' << ' '
+                << "-frames:v 1 -q:v 2 "
+                << "-vf scale=\"'min(4096,iw)':-2\" "
+                << '"' << output_path << '"';
+
+            int rc = std::system(cmd.str().c_str());
+            if (rc == 0 && std::filesystem::exists(output_path))
+            {
+                Logger::info("FFmpeg transcoding successful: " + source_file_path + " -> " + output_path);
+                return output_path;
+            }
+            else
+            {
+                Logger::error("FFmpeg transcoding failed (rc=" + std::to_string(rc) + ") for: " + source_file_path +
+                              "; skipping LibRaw fallback for stability on this format");
+                return "";
+            }
+        }
+    }
+
+    // Use LibRaw to transcode raw file to JPEG (default path)
     Logger::debug("Using LibRaw to transcode: " + source_file_path + " -> " + output_path);
 
     // LibRaw is not thread-safe, so we need to serialize access

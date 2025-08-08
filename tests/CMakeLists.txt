@@ -37,7 +37,11 @@ target_link_libraries(dedup_tests PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(dedup_tests) 
+gtest_discover_tests(dedup_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 300
+)
 
 add_executable(media_processing_orchestrator_test
     media_processing_orchestrator_test.cpp
