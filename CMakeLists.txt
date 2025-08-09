@@ -293,4 +293,24 @@ target_link_libraries(file_type_config_test
 )
 target_include_directories(file_type_config_test PRIVATE /opt/homebrew/include) 
 
+# Add LibRaw probe tool
+add_executable(libraw_probe
+    examples/libraw_probe.cpp
+)
+target_include_directories(libraw_probe PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(libraw_probe
+    PRIVATE
+    PkgConfig::LIBRAW
+)
+
+add_executable(raw_to_jpeg
+    examples/raw_to_jpeg.cpp
+)
+target_include_directories(raw_to_jpeg PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(raw_to_jpeg
+    PRIVATE
+    PkgConfig::LIBRAW
+    PkgConfig::OpenCV
+)
+
  

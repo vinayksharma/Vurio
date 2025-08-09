@@ -275,8 +275,21 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
             }
             else
             {
-                Logger::error("FFmpeg transcoding failed (rc=" + std::to_string(rc) + ") for: " + source_file_path +
-                              "; skipping LibRaw fallback for stability on this format");
+                Logger::warn("FFmpeg transcoding failed (rc=" + std::to_string(rc) + ") for: " + source_file_path +
+                            "; trying isolated LibRaw helper process");
+
+                // Call isolated helper that wraps LibRaw in a subprocess to avoid crashing main server
+                std::stringstream helper;
+                helper << "\"" << std::filesystem::absolute("./build/raw_to_jpeg").string() << "\" "
+                       << '"' << source_file_path << '"' << ' '
+                       << '"' << output_path << '"';
+                int hrc = std::system(helper.str().c_str());
+                if (hrc == 0 && std::filesystem::exists(output_path))
+                {
+                    Logger::info("Isolated LibRaw helper succeeded: " + source_file_path + " -> " + output_path);
+                    return output_path;
+                }
+                Logger::error("Isolated LibRaw helper failed (rc=" + std::to_string(hrc) + ") for: " + source_file_path);
                 return "";
             }
         }
