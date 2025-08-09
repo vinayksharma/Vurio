@@ -250,187 +250,19 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
         cleanupCacheEnhanced(true);
     }
 
-    // For formats known to cause stability issues with LibRaw (e.g., ARW/RAF/CR3),
-    // use ffmpeg CLI to extract a JPEG preview/frame safely in a subprocess.
+    // Use isolated LibRaw helper only (no FFmpeg first) for stability
+    std::stringstream helper;
+    helper << "\"" << std::filesystem::absolute("./build/raw_to_jpeg").string() << "\" "
+           << '"' << source_file_path << '"' << ' '
+           << '"' << output_path << '"';
+    int hrc = std::system(helper.str().c_str());
+    if (hrc == 0 && std::filesystem::exists(output_path))
     {
-        std::string ext = MediaProcessor::getFileExtension(source_file_path);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == "arw" || ext == "raf" || ext == "cr3")
-        {
-            Logger::info("Using FFmpeg CLI transcoding for raw file: " + source_file_path);
-            // Ensure parent directory exists (already ensured earlier)
-            // Use moderate quality, scale down very large raws to reasonable size to reduce IO
-            std::stringstream cmd;
-            cmd << "ffmpeg -y -loglevel error -hide_banner -stats "
-                << "-i " << '"' << source_file_path << '"' << ' '
-                << "-frames:v 1 -q:v 2 "
-                << "-vf scale=\"'min(4096,iw)':-2\" "
-                << '"' << output_path << '"';
-
-            int rc = std::system(cmd.str().c_str());
-            if (rc == 0 && std::filesystem::exists(output_path))
-            {
-                Logger::info("FFmpeg transcoding successful: " + source_file_path + " -> " + output_path);
-                return output_path;
-            }
-            else
-            {
-                Logger::warn("FFmpeg transcoding failed (rc=" + std::to_string(rc) + ") for: " + source_file_path +
-                            "; trying isolated LibRaw helper process");
-
-                // Call isolated helper that wraps LibRaw in a subprocess to avoid crashing main server
-                std::stringstream helper;
-                helper << "\"" << std::filesystem::absolute("./build/raw_to_jpeg").string() << "\" "
-                       << '"' << source_file_path << '"' << ' '
-                       << '"' << output_path << '"';
-                int hrc = std::system(helper.str().c_str());
-                if (hrc == 0 && std::filesystem::exists(output_path))
-                {
-                    Logger::info("Isolated LibRaw helper succeeded: " + source_file_path + " -> " + output_path);
-                    return output_path;
-                }
-                Logger::error("Isolated LibRaw helper failed (rc=" + std::to_string(hrc) + ") for: " + source_file_path);
-                return "";
-            }
-        }
-    }
-
-    // Use LibRaw to transcode raw file to JPEG (default path)
-    Logger::debug("Using LibRaw to transcode: " + source_file_path + " -> " + output_path);
-
-    // LibRaw is not thread-safe, so we need to serialize access
-    std::lock_guard<std::mutex> libraw_lock(libraw_mutex_);
-
-    // Validate input file before processing
-    if (!std::filesystem::exists(source_file_path))
-    {
-        Logger::error("Source file does not exist: " + source_file_path);
-        return "";
-    }
-
-    // Check file size to prevent processing corrupted files
-    try
-    {
-        auto file_size = std::filesystem::file_size(source_file_path);
-        if (file_size == 0)
-        {
-            Logger::error("Source file is empty: " + source_file_path);
-            return "";
-        }
-        if (file_size > 500 * 1024 * 1024) // 500MB limit
-        {
-            Logger::error("Source file too large for transcoding: " + source_file_path + " (" + std::to_string(file_size) + " bytes)");
-            return "";
-        }
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("Error checking file size: " + source_file_path + " - " + std::string(e.what()));
-        return "";
-    }
-
-    try
-    {
-        LibRaw raw_processor;
-
-        // Set LibRaw options for better memory management and stability
-        raw_processor.imgdata.params.output_tiff = 0;    // Output JPEG instead of TIFF
-        raw_processor.imgdata.params.output_bps = 8;     // 8-bit output
-        raw_processor.imgdata.params.output_color = 1;   // sRGB color space
-        raw_processor.imgdata.params.use_camera_wb = 1;  // Use camera white balance
-        raw_processor.imgdata.params.use_auto_wb = 0;    // Disable auto white balance
-        raw_processor.imgdata.params.highlight = 0;      // Normal highlight handling
-        raw_processor.imgdata.params.no_auto_bright = 1; // Disable auto brightness
-        raw_processor.imgdata.params.bright = 1.0;       // Normal brightness
-        raw_processor.imgdata.params.threshold = 0.0;    // No threshold
-        raw_processor.imgdata.params.half_size = 0;      // Full size output
-
-        // Add timeout protection for file operations
-        Logger::debug("Opening file with LibRaw: " + source_file_path);
-        int result = raw_processor.open_file(source_file_path.c_str());
-        if (result != LIBRAW_SUCCESS)
-        {
-            Logger::error("LibRaw failed to open file: " + source_file_path + " (error: " + std::to_string(result) + ")");
-            return "";
-        }
-
-        // Validate that the file was opened successfully
-        if (raw_processor.imgdata.sizes.width == 0 || raw_processor.imgdata.sizes.height == 0)
-        {
-            Logger::error("LibRaw opened file but image dimensions are invalid: " + source_file_path);
-            raw_processor.recycle();
-            return "";
-        }
-
-        Logger::debug("Unpacking raw data: " + source_file_path);
-        // Unpack the raw data
-        result = raw_processor.unpack();
-        if (result != LIBRAW_SUCCESS)
-        {
-            Logger::error("LibRaw failed to unpack file: " + source_file_path + " (error: " + std::to_string(result) + ")");
-            raw_processor.recycle();
-            return "";
-        }
-
-        Logger::debug("Processing image with LibRaw: " + source_file_path);
-        // Process the image (demosaic)
-        result = raw_processor.dcraw_process();
-        if (result != LIBRAW_SUCCESS)
-        {
-            Logger::error("LibRaw failed to process file: " + source_file_path + " (error: " + std::to_string(result) + ")");
-            raw_processor.recycle();
-            return "";
-        }
-
-        Logger::debug("Writing JPEG output: " + output_path);
-        // Write JPEG output using dcraw compatibility method
-        result = raw_processor.dcraw_ppm_tiff_writer(output_path.c_str());
-        if (result != LIBRAW_SUCCESS)
-        {
-            Logger::error("LibRaw failed to write output: " + output_path + " (error: " + std::to_string(result) + ")");
-            raw_processor.recycle();
-
-            // Clean up failed output file if it exists
-            if (std::filesystem::exists(output_path))
-            {
-                std::filesystem::remove(output_path);
-            }
-
-            return "";
-        }
-
-        raw_processor.recycle();
-    }
-    catch (const std::bad_alloc &e)
-    {
-        Logger::error("LibRaw memory allocation failed during transcoding: " + std::string(e.what()));
-        return "";
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("LibRaw exception during transcoding: " + std::string(e.what()));
-        return "";
-    }
-    catch (...)
-    {
-        Logger::error("LibRaw unknown exception during transcoding - possible bus error or segmentation fault");
-        return "";
-    }
-
-    if (std::filesystem::exists(output_path))
-    {
-        Logger::info("LibRaw transcoding successful: " + source_file_path + " -> " + output_path);
-
-        // Log cache size after successful transcoding
-        Logger::debug("Cache size after transcoding: " + getCacheSizeString());
-
+        Logger::info("Isolated LibRaw helper succeeded: " + source_file_path + " -> " + output_path);
         return output_path;
     }
-    else
-    {
-        Logger::error("LibRaw transcoding failed - output file not created: " + output_path);
-        return "";
-    }
+    Logger::error("Isolated LibRaw helper failed (rc=" + std::to_string(hrc) + ") for: " + source_file_path);
+    return "";
 }
 
 std::string TranscodingManager::generateCacheFilename(const std::string &source_file_path)
