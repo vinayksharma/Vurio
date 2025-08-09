@@ -2,6 +2,7 @@
 #include "core/media_processor.hpp"
 #include "core/transcoding_manager.hpp"
 #include "database/database_manager.hpp"
+#include "core/duplicate_linker.hpp"
 #include "logging/logger.hpp"
 #include <chrono>
 #include <thread>
@@ -217,6 +218,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     
                                     // Update success counter
                                     successful_processed.fetch_add(1);
+
+                                    // Notify duplicate linker that new results are available
+                                    DuplicateLinker::getInstance().notifyNewResults();
                                 }
                                 else
                                 {

@@ -16,7 +16,7 @@ void sig_handler(int sig)
     std::exit(128 + sig);
 }
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     std::signal(SIGBUS, sig_handler);
     std::signal(SIGSEGV, sig_handler);
@@ -67,11 +67,12 @@ int main(int argc, char** argv)
             return 5;
         }
 
-        libraw_processed_image_t* img = raw.dcraw_make_mem_image(&rc);
+        libraw_processed_image_t *img = raw.dcraw_make_mem_image(&rc);
         if (!img || rc != LIBRAW_SUCCESS)
         {
             std::cerr << "dcraw_make_mem_image: " << libraw_strerror(rc) << " (" << rc << ")" << std::endl;
-            if (img) LibRaw::dcraw_clear_mem(img);
+            if (img)
+                LibRaw::dcraw_clear_mem(img);
             raw.recycle();
             return 6;
         }
@@ -105,11 +106,10 @@ int main(int argc, char** argv)
         std::cout << "WROTE " << output << std::endl;
         return 0;
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         std::cerr << "Exception: " << e.what() << std::endl;
         return 9;
     }
 }
-
 

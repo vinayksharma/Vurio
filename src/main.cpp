@@ -13,6 +13,7 @@
 #include "web/openapi_docs.hpp"
 #include "core/status.hpp"
 #include "core/singleton_manager.hpp"
+#include "core/duplicate_linker.hpp"
 #include <httplib.h>
 #include <iostream>
 #include <memory>
@@ -102,6 +103,9 @@ int main(int argc, char *argv[])
 
     // Initialize and start the simple scheduler
     auto &scheduler = SimpleScheduler::getInstance();
+
+    // Start duplicate linker async process (wake on schedule and when new results land)
+    DuplicateLinker::getInstance().start(db_manager, config_manager.getProcessingIntervalSeconds());
 
     // Set up scan callback - scan all stored directories
     scheduler.setScanCallback([]()

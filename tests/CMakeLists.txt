@@ -47,6 +47,7 @@ add_executable(media_processing_orchestrator_test
     media_processing_orchestrator_test.cpp
     ../src/database/database_manager.cpp
     ../src/media_processing_orchestrator.cpp
+    ../src/duplicate_linker.cpp
     ../src/server_config_manager.cpp
     ../src/media_processor.cpp
     ../src/file_utils.cpp

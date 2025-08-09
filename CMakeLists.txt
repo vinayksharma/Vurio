@@ -96,6 +96,7 @@ set(SOURCES
     src/file_scanner.cpp
     src/mount_manager.cpp
     src/singleton_manager.cpp
+    src/duplicate_linker.cpp
     src/cache/decoder_cache.cpp
     src/decoder/media_decoder.cpp
     src/transcoding_manager.cpp
