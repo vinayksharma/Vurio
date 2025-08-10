@@ -224,6 +224,16 @@ public:
      */
     bool isValid();
 
+    // Dedupe support helpers
+    int getFileId(const std::string &file_path);
+    long getMaxProcessingResultId();
+    std::vector<std::tuple<long, std::string, std::string>>
+    getNewSuccessfulResults(DedupMode mode, long last_seen_id);
+    std::vector<std::pair<std::string, std::string>>
+    getSuccessfulFileHashesForMode(DedupMode mode);
+    std::vector<std::string>
+    getAllFilePathsForHashAndMode(const std::string &artifact_hash, DedupMode mode);
+
     /**
      * @brief Store a user input in the database
      * @param input_type Type of input (e.g., "scan_path", "config_setting", etc.)

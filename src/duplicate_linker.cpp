@@ -64,20 +64,21 @@ void DuplicateLinker::workerLoop()
 
             Logger::info("DuplicateLinker running for mode: " + mode_name);
 
-            // Query all successful results for current mode and group by artifact_hash
-            // Then update scanned_files.links for each file in groups of size >= 2
-            // We do direct SQL here to keep it efficient
-            // Use public API to fetch all results; group in-process
-            auto all = db_->getAllProcessingResults();
-
+            // Incremental fetch of new successful results since last_seen_result_id_
+            auto new_rows = db_->getNewSuccessfulResults(mode, last_seen_result_id_);
             std::unordered_map<std::string, std::vector<std::string>> groups; // hash -> [file_path]
-            for (const auto &[path, res] : all)
+            long max_seen = last_seen_result_id_;
+            for (const auto &row : new_rows)
             {
-                if (!res.success)
-                    continue;
-                if (res.artifact.hash.empty())
-                    continue;
-                groups[res.artifact.hash].push_back(path);
+                long row_id;
+                std::string path, hash;
+                std::tie(row_id, path, hash) = row;
+                if (!hash.empty())
+                {
+                    groups[hash].push_back(path);
+                }
+                if (row_id > max_seen)
+                    max_seen = row_id;
             }
 
             // Update links for groups with >= 2 items
@@ -87,16 +88,12 @@ void DuplicateLinker::workerLoop()
             {
                 if (paths.size() < 2)
                     continue;
-                // Fetch IDs
+                // Fetch real DB IDs for each path
                 std::vector<int> ids;
                 ids.reserve(paths.size());
                 for (const auto &path : paths)
                 {
-                    // reuse existing API getLinkedFiles which fetches ID internally? No, implement lightweight fetch here
-                    // Simpler: rely on order and use index as pseudo-id if ID not needed by consumers.
-                    // But setFileLinks expects integer IDs; use placeholder sequential IDs per group for now.
-                    // In production, add a DatabaseManager method to fetch IDs by path.
-                    ids.push_back(static_cast<int>(&path - &paths[0]));
+                    ids.push_back(db_->getFileId(path));
                 }
                 // Update links per file
                 for (size_t i = 0; i < paths.size(); ++i)
@@ -110,7 +107,10 @@ void DuplicateLinker::workerLoop()
                 }
             }
 
-            Logger::info("DuplicateLinker updated links for " + std::to_string(groups.size()) + " hash groups");
+            // Advance the high-water mark so we do not reprocess the same rows
+            last_seen_result_id_ = max_seen;
+
+            Logger::info("DuplicateLinker updated links for " + std::to_string(groups.size()) + " hash groups (last_seen_id=" + std::to_string(last_seen_result_id_) + ")");
         }
         catch (const std::exception &e)
         {

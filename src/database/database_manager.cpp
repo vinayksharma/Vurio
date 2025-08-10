@@ -1654,6 +1654,180 @@ bool DatabaseManager::isValid()
     }
 }
 
+int DatabaseManager::getFileId(const std::string &file_path)
+{
+    if (!waitForQueueInitialization())
+        return -1;
+    std::string captured = file_path;
+    auto future = access_queue_->enqueueRead([captured](DatabaseManager &dbMan) {
+        if (!dbMan.db_)
+            return std::any(-1);
+        const char *sql = "SELECT id FROM scanned_files WHERE file_path = ?";
+        sqlite3_stmt *stmt = nullptr;
+        int rc = sqlite3_prepare_v2(dbMan.db_, sql, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+            return std::any(-1);
+        sqlite3_bind_text(stmt, 1, captured.c_str(), -1, SQLITE_STATIC);
+        int id = -1;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+            id = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+        return std::any(id);
+    });
+    try
+    {
+        return std::any_cast<int>(future.get());
+    }
+    catch (...)
+    {
+        return -1;
+    }
+}
+
+long DatabaseManager::getMaxProcessingResultId()
+{
+    if (!waitForQueueInitialization())
+        return 0;
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan) {
+        if (!dbMan.db_)
+            return std::any(0L);
+        const char *sql = "SELECT IFNULL(MAX(id),0) FROM media_processing_results";
+        sqlite3_stmt *stmt = nullptr;
+        long max_id = 0;
+        if (sqlite3_prepare_v2(dbMan.db_, sql, -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step(stmt) == SQLITE_ROW)
+            {
+                max_id = sqlite3_column_int64(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+        return std::any(max_id);
+    });
+    try
+    {
+        return std::any_cast<long>(future.get());
+    }
+    catch (...)
+    {
+        return 0;
+    }
+}
+
+std::vector<std::tuple<long, std::string, std::string>>
+DatabaseManager::getNewSuccessfulResults(DedupMode mode, long last_seen_id)
+{
+    std::vector<std::tuple<long, std::string, std::string>> out;
+    if (!waitForQueueInitialization())
+        return out;
+    auto future = access_queue_->enqueueRead([mode, last_seen_id](DatabaseManager &dbMan) {
+        std::vector<std::tuple<long, std::string, std::string>> rows;
+        if (!dbMan.db_)
+            return std::any(rows);
+        const std::string sql =
+            "SELECT id, file_path, artifact_hash FROM media_processing_results "
+            "WHERE id > ? AND success = 1 AND artifact_hash IS NOT NULL AND processing_mode = ? ORDER BY id";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return std::any(rows);
+        sqlite3_bind_int64(stmt, 1, last_seen_id);
+        std::string mode_name = DedupModes::getModeName(mode);
+        sqlite3_bind_text(stmt, 2, mode_name.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            long id = sqlite3_column_int64(stmt, 0);
+            std::string fp = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            std::string h = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+            rows.emplace_back(id, fp, h);
+        }
+        sqlite3_finalize(stmt);
+        return std::any(rows);
+    });
+    try
+    {
+        out = std::any_cast<std::vector<std::tuple<long, std::string, std::string>>>(future.get());
+    }
+    catch (...)
+    {
+    }
+    return out;
+}
+
+std::vector<std::pair<std::string, std::string>>
+DatabaseManager::getSuccessfulFileHashesForMode(DedupMode mode)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    if (!waitForQueueInitialization())
+        return out;
+    auto future = access_queue_->enqueueRead([mode](DatabaseManager &dbMan) {
+        std::vector<std::pair<std::string, std::string>> rows;
+        if (!dbMan.db_)
+            return std::any(rows);
+        const std::string sql =
+            "SELECT file_path, artifact_hash FROM media_processing_results "
+            "WHERE success = 1 AND artifact_hash IS NOT NULL AND processing_mode = ?";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return std::any(rows);
+        std::string mode_name = DedupModes::getModeName(mode);
+        sqlite3_bind_text(stmt, 1, mode_name.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string fp = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            std::string h = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            rows.emplace_back(fp, h);
+        }
+        sqlite3_finalize(stmt);
+        return std::any(rows);
+    });
+    try
+    {
+        out = std::any_cast<std::vector<std::pair<std::string, std::string>>>(future.get());
+    }
+    catch (...)
+    {
+    }
+    return out;
+}
+
+std::vector<std::string>
+DatabaseManager::getAllFilePathsForHashAndMode(const std::string &artifact_hash, DedupMode mode)
+{
+    std::vector<std::string> out;
+    if (!waitForQueueInitialization())
+        return out;
+    std::string captured_hash = artifact_hash;
+    auto future = access_queue_->enqueueRead([captured_hash, mode](DatabaseManager &dbMan) {
+        std::vector<std::string> rows;
+        if (!dbMan.db_)
+            return std::any(rows);
+        const std::string sql =
+            "SELECT sf.file_path FROM media_processing_results mpr JOIN scanned_files sf ON sf.file_path = mpr.file_path "
+            "WHERE mpr.success = 1 AND mpr.artifact_hash = ? AND mpr.processing_mode = ?";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return std::any(rows);
+        sqlite3_bind_text(stmt, 1, captured_hash.c_str(), -1, SQLITE_STATIC);
+        std::string mode_name = DedupModes::getModeName(mode);
+        sqlite3_bind_text(stmt, 2, mode_name.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string fp = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            rows.push_back(fp);
+        }
+        sqlite3_finalize(stmt);
+        return std::any(rows);
+    });
+    try
+    {
+        out = std::any_cast<std::vector<std::string>>(future.get());
+    }
+    catch (...)
+    {
+    }
+    return out;
+}
+
 // Links management methods for duplicate detection
 
 DBOpResult DatabaseManager::setFileLinks(const std::string &file_path, const std::vector<int> &linked_ids)
