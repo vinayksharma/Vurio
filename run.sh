@@ -103,7 +103,26 @@ echo -e "${YELLOW}Starting dedup server...${NC}"
 ./build/dedup_server $FORCE_SHUTDOWN &
 SERVER_PID=$!
 
-# Wait for server to start
+# If in detach mode, just wait a moment for server to start and then exit
+if [ $DETACH_MODE -eq 1 ]; then
+    echo -e "${YELLOW}Detach mode: waiting briefly for server startup...${NC}"
+    sleep 3
+    
+    # Quick check if server started
+    if curl -s http://localhost:8080/auth/status > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Detach mode: Server started successfully in background (PID: ${SERVER_PID})${NC}"
+        echo -e "${BLUE}Server URL: http://localhost:8080${NC}"
+        echo -e "${BLUE}API Documentation: http://localhost:8080/docs${NC}"
+        exit 0
+    else
+        echo -e "${YELLOW}Warning: Server may still be starting up in background (PID: ${SERVER_PID})${NC}"
+        echo -e "${BLUE}Server URL: http://localhost:8080${NC}"
+        echo -e "${BLUE}API Documentation: http://localhost:8080/docs${NC}"
+        exit 0
+    fi
+fi
+
+# Wait for server to start (only in non-detach mode)
 echo -e "${YELLOW}Waiting for server to start...${NC}"
 sleep 5
 
@@ -147,11 +166,6 @@ echo -e "${GREEN}✓ Dedup Server is running with scheduled processing enabled!$
 echo -e "${BLUE}Server URL: http://localhost:8080${NC}"
 echo -e "${BLUE}API Documentation: http://localhost:8080/docs${NC}"
 echo -e "${BLUE}Processing interval: 60 seconds${NC}"
-
-if [ $DETACH_MODE -eq 1 ]; then
-    echo -e "${GREEN}✓ Detach mode enabled. Leaving server running in background (PID: ${SERVER_PID}).${NC}"
-    exit 0
-fi
 
 echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
 

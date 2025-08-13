@@ -43,20 +43,6 @@ fi
 if [ "$SHUTDOWN_PARAM" = "--shutdown" ]; then
     ./run.sh --shutdown
 else
-    # Capture the output and exit code from run.sh
-    if ! output=$(./run.sh --detach 2>&1); then
-        # Check if the error is about another instance running
-        if echo "$output" | grep -q "Another instance is already running"; then
-            echo "⚠️  Warning: Another instance is already running!"
-            echo "⚠️  Warning: Use --shutdown or -s to force shutdown the existing instance"
-            echo "⚠️  Warning: Server startup skipped due to existing instance"
-            echo "✓ Rebuild completed successfully - existing server instance remains running"
-            exit 0
-        else
-            # Some other error occurred
-            echo "Error: Server failed to start:"
-            echo "$output"
-            exit 1
-        fi
-    fi
+    # Start the server in foreground (not detached)
+    ./run.sh
 fi 
