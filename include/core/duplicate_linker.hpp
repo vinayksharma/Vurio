@@ -16,6 +16,8 @@ public:
     void start(DatabaseManager &dbManager, int intervalSeconds = 30);
     void stop();
     void notifyNewResults();
+    // Request a full rescan of already processed files on next wake
+    void requestFullRescan();
 
 private:
     DuplicateLinker() = default;
@@ -32,4 +34,6 @@ private:
     int interval_seconds_{30};
     DatabaseManager *db_{nullptr};
     long long last_seen_result_id_{0};
+    std::atomic<bool> needs_full_rescan_{false};
+    std::atomic<bool> full_pass_completed_{false};
 };

@@ -206,7 +206,7 @@ target_link_libraries(media_processor_example
 # Add FileProcessor example
 add_executable(file_processor_example examples/file_processor_example.cpp 
                src/media_processor.cpp src/server_config_manager.cpp 
-               src/database/database_manager.cpp src/file_processor.cpp src/file_utils.cpp
+               src/database/database_manager.cpp src/duplicate_linker.cpp src/file_processor.cpp src/file_utils.cpp
                src/database/database_access_queue.cpp src/mount_manager.cpp)
 target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(file_processor_example
@@ -229,7 +229,7 @@ target_link_libraries(file_processor_example
 add_executable(raw_file_test examples/raw_file_test.cpp 
                src/media_processor.cpp src/transcoding_manager.cpp 
                src/server_config_manager.cpp src/mount_manager.cpp
-               src/database/database_manager.cpp src/database/database_access_queue.cpp
+               src/database/database_manager.cpp src/duplicate_linker.cpp src/database/database_access_queue.cpp
                src/file_utils.cpp)
 target_include_directories(raw_file_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(raw_file_test
@@ -257,6 +257,7 @@ add_executable(cache_size_test
     src/server_config_manager.cpp
     src/mount_manager.cpp
     src/database/database_manager.cpp
+    src/duplicate_linker.cpp
     src/database/database_access_queue.cpp
     src/file_utils.cpp
 )

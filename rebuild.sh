@@ -26,8 +26,37 @@ cd ..
 
 echo "✓ Rebuild completed successfully!"
 echo "Starting server..."
+
+# Check if another instance is already running
+if [ -f "dedup_server.pid" ]; then
+    PID=$(cat dedup_server.pid 2>/dev/null || echo "")
+    if [ ! -z "$PID" ] && kill -0 $PID 2>/dev/null; then
+        echo "⚠️  Warning: Another instance is already running (PID: $PID)"
+        echo "⚠️  Warning: Use --shutdown or -s to force shutdown the existing instance"
+        echo "⚠️  Warning: Server startup skipped due to existing instance"
+        echo "✓ Rebuild completed successfully - existing server instance remains running"
+        exit 0
+    fi
+fi
+
+# Try to start the server
 if [ "$SHUTDOWN_PARAM" = "--shutdown" ]; then
     ./run.sh --shutdown
 else
-    ./run.sh
+    # Capture the output and exit code from run.sh
+    if ! output=$(./run.sh --detach 2>&1); then
+        # Check if the error is about another instance running
+        if echo "$output" | grep -q "Another instance is already running"; then
+            echo "⚠️  Warning: Another instance is already running!"
+            echo "⚠️  Warning: Use --shutdown or -s to force shutdown the existing instance"
+            echo "⚠️  Warning: Server startup skipped due to existing instance"
+            echo "✓ Rebuild completed successfully - existing server instance remains running"
+            exit 0
+        else
+            # Some other error occurred
+            echo "Error: Server failed to start:"
+            echo "$output"
+            exit 1
+        fi
+    fi
 fi 

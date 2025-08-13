@@ -1,6 +1,7 @@
 #include "database/database_manager.hpp"
 #include "database/database_access_queue.hpp"
 #include "core/server_config_manager.hpp"
+#include "core/duplicate_linker.hpp"
 #include "core/media_processor.hpp"
 #include "core/file_utils.hpp"
 #include "core/mount_manager.hpp"
@@ -927,7 +928,9 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
                         success = false;
                         return WriteOperationResult::Failure(error_msg);
                     }
-                    Logger::info("File metadata changed, cleared processing flags for: " + captured_file_path);
+            Logger::info("File metadata changed, cleared processing flags for: " + captured_file_path);
+            // Request DuplicateLinker to do a full rescan since existing links may be stale
+            DuplicateLinker::getInstance().requestFullRescan();
                     if (captured_callback)
                     {
                         captured_callback(captured_file_path);
@@ -977,6 +980,8 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
                 return WriteOperationResult::Failure(error_msg);
             }
             Logger::info("Stored new scanned file: " + captured_file_path);
+            // New files arriving can introduce new duplicates; request a full rescan pass
+            DuplicateLinker::getInstance().requestFullRescan();
             if (captured_callback)
             {
                 captured_callback(captured_file_path);
@@ -1659,7 +1664,8 @@ int DatabaseManager::getFileId(const std::string &file_path)
     if (!waitForQueueInitialization())
         return -1;
     std::string captured = file_path;
-    auto future = access_queue_->enqueueRead([captured](DatabaseManager &dbMan) {
+    auto future = access_queue_->enqueueRead([captured](DatabaseManager &dbMan)
+                                             {
         if (!dbMan.db_)
             return std::any(-1);
         const char *sql = "SELECT id FROM scanned_files WHERE file_path = ?";
@@ -1672,8 +1678,7 @@ int DatabaseManager::getFileId(const std::string &file_path)
         if (sqlite3_step(stmt) == SQLITE_ROW)
             id = sqlite3_column_int(stmt, 0);
         sqlite3_finalize(stmt);
-        return std::any(id);
-    });
+        return std::any(id); });
     try
     {
         return std::any_cast<int>(future.get());
@@ -1688,7 +1693,8 @@ long DatabaseManager::getMaxProcessingResultId()
 {
     if (!waitForQueueInitialization())
         return 0;
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan) {
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             {
         if (!dbMan.db_)
             return std::any(0L);
         const char *sql = "SELECT IFNULL(MAX(id),0) FROM media_processing_results";
@@ -1702,8 +1708,7 @@ long DatabaseManager::getMaxProcessingResultId()
             }
             sqlite3_finalize(stmt);
         }
-        return std::any(max_id);
-    });
+        return std::any(max_id); });
     try
     {
         return std::any_cast<long>(future.get());
@@ -1720,7 +1725,8 @@ DatabaseManager::getNewSuccessfulResults(DedupMode mode, long last_seen_id)
     std::vector<std::tuple<long, std::string, std::string>> out;
     if (!waitForQueueInitialization())
         return out;
-    auto future = access_queue_->enqueueRead([mode, last_seen_id](DatabaseManager &dbMan) {
+    auto future = access_queue_->enqueueRead([mode, last_seen_id](DatabaseManager &dbMan)
+                                             {
         std::vector<std::tuple<long, std::string, std::string>> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -1741,8 +1747,7 @@ DatabaseManager::getNewSuccessfulResults(DedupMode mode, long last_seen_id)
             rows.emplace_back(id, fp, h);
         }
         sqlite3_finalize(stmt);
-        return std::any(rows);
-    });
+        return std::any(rows); });
     try
     {
         out = std::any_cast<std::vector<std::tuple<long, std::string, std::string>>>(future.get());
@@ -1759,7 +1764,8 @@ DatabaseManager::getSuccessfulFileHashesForMode(DedupMode mode)
     std::vector<std::pair<std::string, std::string>> out;
     if (!waitForQueueInitialization())
         return out;
-    auto future = access_queue_->enqueueRead([mode](DatabaseManager &dbMan) {
+    auto future = access_queue_->enqueueRead([mode](DatabaseManager &dbMan)
+                                             {
         std::vector<std::pair<std::string, std::string>> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -1778,8 +1784,7 @@ DatabaseManager::getSuccessfulFileHashesForMode(DedupMode mode)
             rows.emplace_back(fp, h);
         }
         sqlite3_finalize(stmt);
-        return std::any(rows);
-    });
+        return std::any(rows); });
     try
     {
         out = std::any_cast<std::vector<std::pair<std::string, std::string>>>(future.get());
@@ -1797,7 +1802,8 @@ DatabaseManager::getAllFilePathsForHashAndMode(const std::string &artifact_hash,
     if (!waitForQueueInitialization())
         return out;
     std::string captured_hash = artifact_hash;
-    auto future = access_queue_->enqueueRead([captured_hash, mode](DatabaseManager &dbMan) {
+    auto future = access_queue_->enqueueRead([captured_hash, mode](DatabaseManager &dbMan)
+                                             {
         std::vector<std::string> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -1816,8 +1822,7 @@ DatabaseManager::getAllFilePathsForHashAndMode(const std::string &artifact_hash,
             rows.push_back(fp);
         }
         sqlite3_finalize(stmt);
-        return std::any(rows);
-    });
+        return std::any(rows); });
     try
     {
         out = std::any_cast<std::vector<std::string>>(future.get());

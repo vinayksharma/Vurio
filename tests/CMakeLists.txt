@@ -9,6 +9,7 @@ add_executable(dedup_tests
     ../src/file_utils.cpp
     ../src/media_processor.cpp
     ../src/database/database_manager.cpp
+    ../src/duplicate_linker.cpp
     ../src/file_processor.cpp
     ../src/file_scanner.cpp
     ../src/server_config_manager.cpp
@@ -37,22 +38,18 @@ target_link_libraries(dedup_tests PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(dedup_tests
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-    DISCOVERY_MODE PRE_TEST
-    DISCOVERY_TIMEOUT 300
-)
+gtest_discover_tests(dedup_tests) 
 
 add_executable(media_processing_orchestrator_test
     media_processing_orchestrator_test.cpp
     ../src/database/database_manager.cpp
     ../src/media_processing_orchestrator.cpp
-    ../src/duplicate_linker.cpp
     ../src/server_config_manager.cpp
     ../src/media_processor.cpp
     ../src/file_utils.cpp
     ../src/database/database_access_queue.cpp
     ../src/mount_manager.cpp
+    ../src/duplicate_linker.cpp
     ../src/transcoding_manager.cpp
 )
 target_link_libraries(media_processing_orchestrator_test

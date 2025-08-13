@@ -22,6 +22,9 @@ void DuplicateLinker::start(DatabaseManager &dbManager, int intervalSeconds)
         return;
     db_ = &dbManager;
     interval_seconds_ = intervalSeconds;
+    // On startup, schedule a full rescan so existing processed rows are linked
+    needs_full_rescan_.store(true);
+    full_pass_completed_.store(false);
     running_.store(true);
     worker_ = std::thread(&DuplicateLinker::workerLoop, this);
     Logger::info("DuplicateLinker started (interval: " + std::to_string(interval_seconds_) + "s)");
@@ -40,6 +43,14 @@ void DuplicateLinker::stop()
 
 void DuplicateLinker::notifyNewResults()
 {
+    cv_.notify_all();
+}
+
+void DuplicateLinker::requestFullRescan()
+{
+    // Mark that we need to perform a full pass across existing results
+    needs_full_rescan_.store(true);
+    full_pass_completed_.store(false);
     cv_.notify_all();
 }
 
@@ -64,8 +75,20 @@ void DuplicateLinker::workerLoop()
 
             Logger::info("DuplicateLinker running for mode: " + mode_name);
 
-            // Incremental fetch of new successful results since last_seen_result_id_
-            auto new_rows = db_->getNewSuccessfulResults(mode, last_seen_result_id_);
+            // If requested, run a full pass over all successful results for this mode
+            std::vector<std::tuple<long, std::string, std::string>> new_rows;
+            if (needs_full_rescan_.load())
+            {
+                Logger::info("DuplicateLinker performing full rescan for mode: " + mode_name);
+                // A full pass can be implemented by setting last_seen_result_id_ to 0
+                // and processing all rows in batches if needed. Here we fetch all successful rows.
+                new_rows = db_->getNewSuccessfulResults(mode, 0);
+            }
+            else
+            {
+                // Incremental fetch of new successful results since last_seen_result_id_
+                new_rows = db_->getNewSuccessfulResults(mode, last_seen_result_id_);
+            }
             std::unordered_map<std::string, std::vector<std::string>> groups; // hash -> [file_path]
             long max_seen = last_seen_result_id_;
             for (const auto &row : new_rows)
@@ -109,6 +132,13 @@ void DuplicateLinker::workerLoop()
 
             // Advance the high-water mark so we do not reprocess the same rows
             last_seen_result_id_ = max_seen;
+
+            if (needs_full_rescan_.load())
+            {
+                needs_full_rescan_.store(false);
+                full_pass_completed_.store(true);
+                Logger::info("DuplicateLinker full rescan completed for mode: " + mode_name);
+            }
 
             Logger::info("DuplicateLinker updated links for " + std::to_string(groups.size()) + " hash groups (last_seen_id=" + std::to_string(last_seen_result_id_) + ")");
         }

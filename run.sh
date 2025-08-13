@@ -86,10 +86,17 @@ check_orchestration_status() {
 
 # Check for command line arguments
 FORCE_SHUTDOWN=""
-if [ "$1" = "--shutdown" ] || [ "$1" = "-s" ]; then
-    FORCE_SHUTDOWN="--shutdown"
-    echo -e "${YELLOW}Force shutdown mode enabled${NC}"
-fi
+DETACH_MODE=0
+for arg in "$@"; do
+    if [ "$arg" = "--shutdown" ] || [ "$arg" = "-s" ]; then
+        FORCE_SHUTDOWN="--shutdown"
+        echo -e "${YELLOW}Force shutdown mode enabled${NC}"
+    fi
+    if [ "$arg" = "--detach" ] || [ "$arg" = "-d" ]; then
+        DETACH_MODE=1
+        echo -e "${YELLOW}Detach mode: will not block; returning after startup${NC}"
+    fi
+done
 
 # Start the server in background
 echo -e "${YELLOW}Starting dedup server...${NC}"
@@ -140,6 +147,12 @@ echo -e "${GREEN}✓ Dedup Server is running with scheduled processing enabled!$
 echo -e "${BLUE}Server URL: http://localhost:8080${NC}"
 echo -e "${BLUE}API Documentation: http://localhost:8080/docs${NC}"
 echo -e "${BLUE}Processing interval: 60 seconds${NC}"
+
+if [ $DETACH_MODE -eq 1 ]; then
+    echo -e "${GREEN}✓ Detach mode enabled. Leaving server running in background (PID: ${SERVER_PID}).${NC}"
+    exit 0
+fi
+
 echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
 
 # Function to cleanup on exit
