@@ -59,3 +59,11 @@ config.json
 scan_results.db
 scan_results.db-shm
 scan_results.db-wal
+
+# Cache directory (generated files)
+cache/
+
+
+# Pictures directory (test files)
+pictures/
+
