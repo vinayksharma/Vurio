@@ -55,6 +55,7 @@ public:
     /**
      * @brief Queue a file for transcoding
      * @param file_path Path to the raw file to transcode
+     * @note This method prevents duplicate entries - if a file is already queued or transcoded, it will not be added again
      */
     void queueForTranscoding(const std::string &file_path);
 

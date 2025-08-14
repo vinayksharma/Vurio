@@ -109,6 +109,29 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
         return;
     }
 
+    // Check if already in the in-memory queue to prevent duplicates
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        // Check if file_path already exists in transcoding_queue_
+        bool already_queued = false;
+        std::queue<std::string> temp_queue = transcoding_queue_; // Create a copy to check
+        while (!temp_queue.empty())
+        {
+            if (temp_queue.front() == file_path)
+            {
+                already_queued = true;
+                break;
+            }
+            temp_queue.pop();
+        }
+        
+        if (already_queued)
+        {
+            Logger::debug("File already queued for transcoding: " + file_path);
+            return;
+        }
+    }
+
     // Add to database queue
     DBOpResult result = db_manager_->insertTranscodingFile(file_path);
     if (!result.success)
