@@ -124,7 +124,7 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
             }
             temp_queue.pop();
         }
-        
+
         if (already_queued)
         {
             Logger::debug("File already queued for transcoding: " + file_path);
