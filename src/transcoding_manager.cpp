@@ -574,3 +574,52 @@ size_t TranscodingManager::cleanupCacheEnhanced(bool force_cleanup)
 
     return files_removed;
 }
+
+void TranscodingManager::restoreQueueFromDatabase()
+{
+    Logger::info("Restoring transcoding queue from database...");
+    
+    try
+    {
+        // Get all files that need transcoding from the database
+        std::vector<std::string> files_needing_transcoding = db_manager_->getFilesNeedingTranscoding();
+        
+        if (files_needing_transcoding.empty())
+        {
+            Logger::info("No pending transcoding jobs found in database");
+            return;
+        }
+        
+        Logger::info("Found " + std::to_string(files_needing_transcoding.size()) + " pending transcoding jobs in database");
+        
+        // Add each file to the in-memory queue
+        size_t added_count = 0;
+        for (const auto& file_path : files_needing_transcoding)
+        {
+            // Check if file still exists and needs transcoding
+            if (std::filesystem::exists(file_path) && isRawFile(file_path))
+            {
+                // Add to queue without logging (since this is restoration, not new requests)
+                std::lock_guard<std::mutex> lock(queue_mutex_);
+                transcoding_queue_.push(file_path);
+                added_count++;
+            }
+            else
+            {
+                Logger::debug("Skipping file during queue restoration - file no longer exists or no longer needs transcoding: " + file_path);
+            }
+        }
+        
+        Logger::info("Restored " + std::to_string(added_count) + " transcoding jobs to queue");
+        
+        // Notify worker threads that new work is available
+        if (added_count > 0)
+        {
+            queue_cv_.notify_all();
+        }
+    }
+    catch (const std::exception& e)
+    {
+        Logger::error("Error restoring transcoding queue from database: " + std::string(e.what()));
+    }
+}

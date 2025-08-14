@@ -103,6 +103,12 @@ public:
     size_t getMaxCacheSize() const;
 
     /**
+     * @brief Restore transcoding queue from database on startup
+     * @note This method should be called after database initialization to restore pending transcoding jobs
+     */
+    void restoreQueueFromDatabase();
+
+    /**
      * @brief Check if cache is over size limit
      * @return true if cache size exceeds limit
      */
