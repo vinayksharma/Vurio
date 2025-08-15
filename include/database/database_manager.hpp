@@ -343,6 +343,19 @@ public:
      */
     DBOpResult setFlag(const std::string &flag_name, bool value);
 
+    /**
+     * @brief Get server status metrics from database
+     * @return Struct containing counts of scanned files, queued files, processed files, and duplicates
+     */
+    struct ServerStatus
+    {
+        size_t files_scanned;
+        size_t files_queued;
+        size_t files_processed;
+        size_t duplicates_found;
+    };
+    ServerStatus getServerStatus();
+
 private:
     /**
      * @brief Constructor - initializes database connection and tables

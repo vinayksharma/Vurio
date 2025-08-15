@@ -3596,3 +3596,86 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 
     return results;
 }
+
+DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
+{
+    ServerStatus status = {0, 0, 0, 0};
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized for getServerStatus");
+        return status;
+    }
+
+    auto future = access_queue_->enqueueRead([&status](DatabaseManager &dbMan)
+                                             {
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized in getServerStatus");
+            return std::any(status);
+        }
+
+        try
+        {
+            // 1. Total files scanned
+            const std::string scanned_sql = "SELECT COUNT(*) FROM scanned_files";
+            sqlite3_stmt *scanned_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, scanned_sql.c_str(), -1, &scanned_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(scanned_stmt) == SQLITE_ROW)
+                {
+                    status.files_scanned = static_cast<size_t>(sqlite3_column_int(scanned_stmt, 0));
+                }
+                sqlite3_finalize(scanned_stmt);
+            }
+
+            // 2. Files processed (in any mode)
+            const std::string processed_sql = "SELECT COUNT(DISTINCT file_path) FROM media_processing_results WHERE success = 1";
+            sqlite3_stmt *processed_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, processed_sql.c_str(), -1, &processed_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(processed_stmt) == SQLITE_ROW)
+                {
+                    status.files_processed = static_cast<size_t>(sqlite3_column_int(processed_stmt, 0));
+                }
+                sqlite3_finalize(processed_stmt);
+            }
+
+            // 3. Files queued (scanned but not processed)
+            status.files_queued = status.files_scanned - status.files_processed;
+
+            // 4. Duplicates found (files with non-empty links field)
+            const std::string duplicates_sql = "SELECT COUNT(*) FROM scanned_files WHERE links IS NOT NULL AND links != ''";
+            sqlite3_stmt *duplicates_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, duplicates_sql.c_str(), -1, &duplicates_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(duplicates_stmt) == SQLITE_ROW)
+                {
+                    status.duplicates_found = static_cast<size_t>(sqlite3_column_int(duplicates_stmt, 0));
+                }
+                sqlite3_finalize(duplicates_stmt);
+            }
+
+            Logger::debug("Server status retrieved - Scanned: " + std::to_string(status.files_scanned) + 
+                         ", Queued: " + std::to_string(status.files_queued) + 
+                         ", Processed: " + std::to_string(status.files_processed) + 
+                         ", Duplicates: " + std::to_string(status.duplicates_found));
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Exception in getServerStatus: " + std::string(e.what()));
+        }
+
+        return std::any(status); });
+
+    try
+    {
+        status = std::any_cast<ServerStatus>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting server status from access queue: " + std::string(e.what()));
+    }
+
+    return status;
+}

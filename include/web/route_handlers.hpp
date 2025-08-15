@@ -43,6 +43,12 @@ public:
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleStatus(req, res, status); });
 
+        // Server status endpoint
+        svr.Get("/api/status", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleServerStatus(req, res); });
+
         // Find duplicates endpoint
         svr.Post("/duplicates/find", [&](const httplib::Request &req, httplib::Response &res)
                  {
@@ -168,6 +174,32 @@ private:
         catch (const std::exception &e)
         {
             Logger::error("Status error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
+        }
+    }
+
+    static void handleServerStatus(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received server status request");
+        try
+        {
+            auto &db_manager = DatabaseManager::getInstance();
+            auto server_status = db_manager.getServerStatus();
+
+            json response = {
+                {"status", "success"},
+                {"data", {{"files_scanned", server_status.files_scanned}, {"files_queued", server_status.files_queued}, {"files_processed", server_status.files_processed}, {"duplicates_found", server_status.duplicates_found}}}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Server status retrieved successfully - Scanned: " + std::to_string(server_status.files_scanned) +
+                         ", Queued: " + std::to_string(server_status.files_queued) +
+                         ", Processed: " + std::to_string(server_status.files_processed) +
+                         ", Duplicates: " + std::to_string(server_status.duplicates_found));
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Server status error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
         }
