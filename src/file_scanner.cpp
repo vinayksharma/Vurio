@@ -4,6 +4,7 @@
 #include "core/file_utils.hpp"
 #include "core/transcoding_manager.hpp"
 #include "logging/logger.hpp"
+#include "core/server_config_manager.hpp"
 
 FileScanner::FileScanner(const std::string &db_path)
     : files_scanned_(0), files_stored_(0), files_skipped_(0)
@@ -71,10 +72,13 @@ bool FileScanner::scanFile(const std::string &file_path)
     }
 
     // Check if this is a raw file that needs transcoding
-    if (TranscodingManager::isRawFile(file_path))
     {
-        Logger::info("Detected raw file for transcoding: " + file_path);
-        TranscodingManager::getInstance().queueForTranscoding(file_path);
+        std::string ext = MediaProcessor::getFileExtension(file_path);
+        if (ServerConfigManager::getInstance().needsTranscoding(ext))
+        {
+            Logger::info("Detected raw file for transcoding: " + file_path);
+            TranscodingManager::getInstance().queueForTranscoding(file_path);
+        }
     }
 
     files_stored_++;
@@ -112,10 +116,13 @@ void FileScanner::handleFile(const std::string &file_path)
     }
 
     // Check if this is a raw file that needs transcoding
-    if (TranscodingManager::isRawFile(file_path))
     {
-        Logger::info("Detected raw file for transcoding: " + file_path);
-        TranscodingManager::getInstance().queueForTranscoding(file_path);
+        std::string ext = MediaProcessor::getFileExtension(file_path);
+        if (ServerConfigManager::getInstance().needsTranscoding(ext))
+        {
+            Logger::info("Detected raw file for transcoding: " + file_path);
+            TranscodingManager::getInstance().queueForTranscoding(file_path);
+        }
     }
 
     files_stored_++;

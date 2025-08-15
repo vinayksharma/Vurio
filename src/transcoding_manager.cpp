@@ -86,7 +86,11 @@ bool TranscodingManager::isRawFile(const std::string &file_path)
     // Use ServerConfigManager to check if this extension needs transcoding
     bool needs_transcoding = ServerConfigManager::getInstance().needsTranscoding(extension);
 
-    Logger::info("isRawFile check for: " + file_path + " (extension: " + extension + ") -> " + (needs_transcoding ? "YES" : "NO"));
+    // Only log when we actually detect a RAW file to reduce noise
+    if (needs_transcoding)
+    {
+        Logger::info("Detected RAW file for transcoding: " + file_path + " (extension: " + extension + ")");
+    }
 
     return needs_transcoding;
 }

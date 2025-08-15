@@ -2507,9 +2507,46 @@ std::vector<std::string> DatabaseManager::getFilesNeedingTranscoding()
             return std::any(std::vector<std::string>());
         }
         
-        const std::string select_sql = "SELECT source_file_path FROM cache_map WHERE transcoded_file_path IS NULL";
+        // Only select files that actually need transcoding (RAW formats)
+        // Dynamically build query based on enabled RAW formats from configuration
+        // This makes the system truly configuration-driven
+        auto transcoding_types = ServerConfigManager::getInstance().getTranscodingFileTypes();
+        
+        if (transcoding_types.empty())
+        {
+            Logger::info("No transcoding file types configured, returning empty list");
+            return std::any(std::vector<std::string>());
+        }
+        
+        // Build dynamic SQL query based on enabled RAW formats
+        std::string query = R"(
+            SELECT DISTINCT cm.source_file_path 
+            FROM cache_map cm
+            JOIN scanned_files sf ON cm.source_file_path = sf.file_path
+            WHERE cm.transcoded_file_path IS NULL 
+            AND (
+        )";
+        
+        bool first = true;
+        for (const auto& [extension, enabled] : transcoding_types)
+        {
+            if (enabled) // Only include enabled formats
+            {
+                if (!first)
+                {
+                    query += " OR ";
+                }
+                query += "LOWER(sf.file_name) LIKE '%." + extension + "'";
+                first = false;
+            }
+        }
+        
+        query += ")";
+        
+        Logger::debug("Dynamic SQL query for transcoding: " + query);
+        
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(dbMan.db_, query.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
             Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
@@ -2523,6 +2560,7 @@ std::vector<std::string> DatabaseManager::getFilesNeedingTranscoding()
         }
         
         sqlite3_finalize(stmt);
+        Logger::debug("Found " + std::to_string(files_needing_transcoding.size()) + " files that actually need transcoding");
         return std::any(files_needing_transcoding); });
 
     try

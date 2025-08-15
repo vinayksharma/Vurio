@@ -284,8 +284,12 @@ public:
     std::string getTranscodedFilePath(const std::string &source_file_path);
 
     /**
-     * @brief Get all files that need transcoding
-     * @return Vector of source file paths that need transcoding
+     * @brief Get all files that need transcoding from the cache_map table
+     * @return Vector of file paths that need transcoding
+     * @note This method dynamically builds the SQL query based on enabled RAW formats from ServerConfigManager
+     * @note Only file extensions marked as enabled=true in the extended_support configuration are included
+     * @note This makes the system truly configuration-driven - no hardcoded file extensions
+     * @note JPG, PNG, and other non-RAW files are automatically filtered out
      */
     std::vector<std::string> getFilesNeedingTranscoding();
 

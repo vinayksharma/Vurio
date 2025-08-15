@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
     auto &transcoding_manager = TranscodingManager::getInstance();
     transcoding_manager.initialize("./cache", config_manager.getMaxProcessingThreads());
     transcoding_manager.startTranscoding();
-    
+
     // Restore transcoding queue from database on startup
     transcoding_manager.restoreQueueFromDatabase();
 

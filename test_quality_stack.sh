@@ -1,6 +1,25 @@
 #!/bin/bash
 
+set -e
+
 echo "=== Testing PreProcessQualityStack Feature ==="
+
+CONFIG_FILE="config.yaml"
+BACKUP_FILE="config.yaml.bak.test_quality_stack"
+
+backup_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        cp "$CONFIG_FILE" "$BACKUP_FILE"
+    fi
+}
+
+restore_config() {
+    if [ -f "$BACKUP_FILE" ]; then
+        mv -f "$BACKUP_FILE" "$CONFIG_FILE"
+    fi
+}
+
+trap restore_config EXIT
 
 # Function to get auth token
 get_token() {
@@ -12,9 +31,9 @@ get_token() {
 # Function to test with quality stack enabled
 test_quality_stack_enabled() {
     echo "1. Testing with PreProcessQualityStack = true"
-    
+    backup_config
     # Update config
-    sed -i '' 's/pre_process_quality_stack: false/pre_process_quality_stack: true/' config.yaml
+    sed -i '' 's/pre_process_quality_stack: false/pre_process_quality_stack: true/' "$CONFIG_FILE" || true
     
     # Start server
     ./build/dedup_server > server.log 2>&1 &
@@ -47,16 +66,17 @@ test_quality_stack_enabled() {
         -H "Authorization: Bearer $TOKEN" | jq '.results[] | select(.file_path | contains("test_balance.jpg")) | {file_path, format, confidence}'
     
     # Stop server
-    kill $SERVER_PID
+    kill $SERVER_PID || true
     sleep 2
+    restore_config
 }
 
 # Function to test with quality stack disabled
 test_quality_stack_disabled() {
     echo "2. Testing with PreProcessQualityStack = false"
-    
+    backup_config
     # Update config
-    sed -i '' 's/pre_process_quality_stack: true/pre_process_quality_stack: false/' config.yaml
+    sed -i '' 's/pre_process_quality_stack: true/pre_process_quality_stack: false/' "$CONFIG_FILE" || true
     
     # Clear database
     rm -f scan_results.db*
@@ -92,8 +112,9 @@ test_quality_stack_disabled() {
         -H "Authorization: Bearer $TOKEN" | jq '.results[] | select(.file_path | contains("test_balance.jpg")) | {file_path, format, confidence}'
     
     # Stop server
-    kill $SERVER_PID
+    kill $SERVER_PID || true
     sleep 2
+    restore_config
 }
 
 # Run tests

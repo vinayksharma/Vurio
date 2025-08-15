@@ -72,75 +72,73 @@ void ServerConfigManager::initializeDefaultConfig()
           decoder_cache_size_mb: 1024
         processing:
           batch_size: 100
-        supported_files:
-          # Standard image formats
-          jpg: true
-          jpeg: true
-          png: true
-          bmp: true
-          gif: true
-          tiff: true
-          webp: true
-          jp2: true
-          ppm: true
-          pgm: true
-          pbm: true
-          pnm: true
-          exr: true
-          hdr: true
-          # Standard video formats
-          mp4: true
-          avi: true
-          mov: true
-          mkv: true
-          wmv: true
-          flv: true
-          webm: true
-          m4v: true
-          mpg: true
-          mpeg: true
-          ts: true
-          mts: true
-          m2ts: true
-          ogv: true
-          # Standard audio formats
-          mp3: true
-          wav: true
-          flac: true
-          ogg: true
-          m4a: true
-          aac: true
-          opus: true
-          wma: true
-          aiff: true
-          alac: true
-          amr: true
-          au: true
-        extended_support:
-          # Raw camera formats
-          cr2: true
-          nef: true
-          arw: true
-          dng: true
-          raf: true
-          rw2: true
-          orf: true
-          pef: true
-          srw: true
-          kdc: true
-          dcr: true
-          mos: true
-          mrw: true
-          raw: true
-          bay: true
-          3fr: true
-          fff: true
-          mef: true
-          iiq: true
-          rwz: true
-          nrw: true
-          rwl: true
-          # Note: r3d (Red RAW), dcm, dicom (DICOM) removed - not supported by LibRaw
+        categories:
+          images:
+            jpg: true
+            jpeg: true
+            png: true
+            bmp: true
+            gif: true
+            tiff: true
+            webp: true
+            jp2: true
+            ppm: true
+            pgm: true
+            pbm: true
+            pnm: true
+            exr: true
+            hdr: true
+          video:
+            mp4: true
+            avi: true
+            mov: true
+            mkv: true
+            wmv: true
+            flv: true
+            webm: true
+            m4v: true
+            mpg: true
+            mpeg: true
+            ts: true
+            mts: true
+            m2ts: true
+            ogv: true
+          audio:
+            mp3: true
+            wav: true
+            flac: true
+            ogg: true
+            m4a: true
+            aac: true
+            opus: true
+            wma: true
+            aiff: true
+            alac: true
+            amr: true
+            au: true
+          images_raw:
+            cr2: true
+            nef: true
+            arw: true
+            dng: true
+            raf: true
+            rw2: true
+            orf: true
+            pef: true
+            srw: true
+            kdc: true
+            dcr: true
+            mos: true
+            mrw: true
+            raw: true
+            bay: true
+            3fr: true
+            fff: true
+            mef: true
+            iiq: true
+            rwz: true
+            nrw: true
+            rwl: true
         video_processing:
           FAST:
             skip_duration_seconds: 2
@@ -367,16 +365,25 @@ std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const
 
     try
     {
-        if (config_["supported_files"])
+        // Categories-only schema: images, video, audio
+        if (config_["categories"])
         {
-            const YAML::Node &supported_files = config_["supported_files"];
-
-            for (const auto &file_type : supported_files)
+            const YAML::Node &cats = config_["categories"];
+            auto add_category = [&](const char *name)
             {
-                std::string extension = file_type.first.as<std::string>();
-                bool enabled = file_type.second.as<bool>();
-                supported_types[extension] = enabled;
-            }
+                if (cats[name])
+                {
+                    for (const auto &file_type : cats[name])
+                    {
+                        std::string extension = file_type.first.as<std::string>();
+                        bool enabled = file_type.second.as<bool>();
+                        supported_types[extension] = enabled;
+                    }
+                }
+            };
+            add_category("images");
+            add_category("video");
+            add_category("audio");
         }
     }
     catch (const std::exception &e)
@@ -394,11 +401,11 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
 
     try
     {
-        if (config_["extended_support"])
+        // Categories-only schema: images_raw
+        if (config_["categories"] && config_["categories"]["images_raw"])
         {
-            const YAML::Node &extended_support = config_["extended_support"];
-
-            for (const auto &file_type : extended_support)
+            const YAML::Node &raw = config_["categories"]["images_raw"];
+            for (const auto &file_type : raw)
             {
                 std::string extension = file_type.first.as<std::string>();
                 bool enabled = file_type.second.as<bool>();
@@ -416,30 +423,26 @@ std::map<std::string, bool> ServerConfigManager::getTranscodingFileTypes() const
 
 std::vector<std::string> ServerConfigManager::getEnabledFileTypes() const
 {
+    // Union of all enabled categories plus images_raw (so RAWs are considered supported during scanning)
     std::vector<std::string> enabled_types;
-
-    // Get supported file types
-    auto supported_types = getSupportedFileTypes();
-
-    for (const auto &[extension, enabled] : supported_types)
+    try
     {
-        if (enabled)
+        auto images = getEnabledImageExtensions();
+        enabled_types.insert(enabled_types.end(), images.begin(), images.end());
+        auto video = getEnabledVideoExtensions();
+        enabled_types.insert(enabled_types.end(), video.begin(), video.end());
+        auto audio = getEnabledAudioExtensions();
+        enabled_types.insert(enabled_types.end(), audio.begin(), audio.end());
+        for (const auto &kv : getTranscodingFileTypes())
         {
-            enabled_types.push_back(extension);
+            if (kv.second)
+                enabled_types.push_back(kv.first);
         }
     }
-
-    // Get transcoding file types
-    auto transcoding_types = getTranscodingFileTypes();
-
-    for (const auto &[extension, enabled] : transcoding_types)
+    catch (const std::exception &e)
     {
-        if (enabled)
-        {
-            enabled_types.push_back(extension);
-        }
+        Logger::warn("Error building enabled file types: " + std::string(e.what()));
     }
-
     return enabled_types;
 }
 
@@ -827,4 +830,73 @@ bool ServerConfigManager::validateConfig(const YAML::Node &config) const
         return false;
     }
     return true;
+}
+
+std::vector<std::string> ServerConfigManager::getEnabledImageExtensions() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::vector<std::string> image_exts;
+    try
+    {
+        if (config_["categories"] && config_["categories"]["images"])
+        {
+            const YAML::Node &images = config_["categories"]["images"];
+            for (const auto &file_type : images)
+            {
+                if (file_type.second.as<bool>())
+                    image_exts.push_back(file_type.first.as<std::string>());
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error building enabled image extensions: " + std::string(e.what()));
+    }
+    return image_exts;
+}
+
+std::vector<std::string> ServerConfigManager::getEnabledVideoExtensions() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::vector<std::string> video_exts;
+    try
+    {
+        if (config_["categories"] && config_["categories"]["video"])
+        {
+            const YAML::Node &video = config_["categories"]["video"];
+            for (const auto &file_type : video)
+            {
+                if (file_type.second.as<bool>())
+                    video_exts.push_back(file_type.first.as<std::string>());
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error building enabled video extensions: " + std::string(e.what()));
+    }
+    return video_exts;
+}
+
+std::vector<std::string> ServerConfigManager::getEnabledAudioExtensions() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::vector<std::string> audio_exts;
+    try
+    {
+        if (config_["categories"] && config_["categories"]["audio"])
+        {
+            const YAML::Node &audio = config_["categories"]["audio"];
+            for (const auto &file_type : audio)
+            {
+                if (file_type.second.as<bool>())
+                    audio_exts.push_back(file_type.first.as<std::string>());
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error building enabled audio extensions: " + std::string(e.what()));
+    }
+    return audio_exts;
 }

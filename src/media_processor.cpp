@@ -70,15 +70,28 @@ ProcessingResult MediaProcessor::processFile(const std::string &file_path, Dedup
     {
         // Determine media type
         std::string media_type;
-        if (isImageFile(file_path))
-            media_type = "image";
-        else if (isVideoFile(file_path))
-            media_type = "video";
-        else if (isAudioFile(file_path))
-            media_type = "audio";
-        else
+        try
         {
-            return ProcessingResult(false, "Unsupported file type: " + file_path);
+            std::string ext = getFileExtension(file_path);
+            auto &config = ServerConfigManager::getInstance();
+            auto img_exts = config.getEnabledImageExtensions();
+            auto vid_exts = config.getEnabledVideoExtensions();
+            auto aud_exts = config.getEnabledAudioExtensions();
+
+            if (std::find(img_exts.begin(), img_exts.end(), ext) != img_exts.end())
+                media_type = "image";
+            else if (std::find(vid_exts.begin(), vid_exts.end(), ext) != vid_exts.end())
+                media_type = "video";
+            else if (std::find(aud_exts.begin(), aud_exts.end(), ext) != aud_exts.end())
+                media_type = "audio";
+            else
+            {
+                return ProcessingResult(false, "Unsupported file type: " + file_path);
+            }
+        }
+        catch (const std::exception &e)
+        {
+            return ProcessingResult(false, std::string("Error determining media type: ") + e.what());
         }
 
         // Get processing algorithm information
