@@ -105,7 +105,11 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
         return;
     }
 
-    // Check if already transcoded
+    // Use a single mutex lock to keep database and in-memory queue operations atomic
+    // This prevents race conditions where multiple threads could queue the same file
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+
+    // Check if already transcoded (database check)
     std::string existing_transcoded = getTranscodedFilePath(file_path);
     if (!existing_transcoded.empty())
     {
@@ -114,29 +118,25 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
     }
 
     // Check if already in the in-memory queue to prevent duplicates
+    bool already_queued = false;
+    std::queue<std::string> temp_queue = transcoding_queue_; // Create a copy to check
+    while (!temp_queue.empty())
     {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        // Check if file_path already exists in transcoding_queue_
-        bool already_queued = false;
-        std::queue<std::string> temp_queue = transcoding_queue_; // Create a copy to check
-        while (!temp_queue.empty())
+        if (temp_queue.front() == file_path)
         {
-            if (temp_queue.front() == file_path)
-            {
-                already_queued = true;
-                break;
-            }
-            temp_queue.pop();
+            already_queued = true;
+            break;
         }
-
-        if (already_queued)
-        {
-            Logger::debug("File already queued for transcoding: " + file_path);
-            return;
-        }
+        temp_queue.pop();
     }
 
-    // Add to database queue
+    if (already_queued)
+    {
+        Logger::debug("File already queued for transcoding: " + file_path);
+        return;
+    }
+
+    // Add to database queue first
     DBOpResult result = db_manager_->insertTranscodingFile(file_path);
     if (!result.success)
     {
@@ -144,16 +144,17 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
         return;
     }
 
-    // Add to thread queue
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        transcoding_queue_.push(file_path);
-        queued_count_.fetch_add(1);
-    }
+    // Add to in-memory queue (still under the same mutex lock)
+    transcoding_queue_.push(file_path);
+    queued_count_.fetch_add(1);
 
-    queue_cv_.notify_one();
+    // Release the mutex before notifying (to avoid potential deadlock)
+    // The mutex is automatically released when lock goes out of scope
 
     Logger::info("Successfully queued file for transcoding: " + file_path);
+    
+    // Notify transcoding threads that new work is available
+    queue_cv_.notify_one();
 }
 
 std::string TranscodingManager::getTranscodedFilePath(const std::string &source_file_path)
