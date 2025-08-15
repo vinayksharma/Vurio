@@ -86,18 +86,12 @@ bool TranscodingManager::isRawFile(const std::string &file_path)
     // Use ServerConfigManager to check if this extension needs transcoding
     bool needs_transcoding = ServerConfigManager::getInstance().needsTranscoding(extension);
 
-    // Only log when we actually detect a RAW file to reduce noise
-    if (needs_transcoding)
-    {
-        Logger::info("Detected RAW file for transcoding: " + file_path + " (extension: " + extension + ")");
-    }
-
     return needs_transcoding;
 }
 
 void TranscodingManager::queueForTranscoding(const std::string &file_path)
 {
-    Logger::info("queueForTranscoding called for: " + file_path);
+    Logger::debug("queueForTranscoding called for: " + file_path);
 
     if (!running_.load())
     {
@@ -152,7 +146,7 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
     // The mutex is automatically released when lock goes out of scope
 
     Logger::info("Successfully queued file for transcoding: " + file_path);
-    
+
     // Notify transcoding threads that new work is available
     queue_cv_.notify_one();
 }
@@ -584,6 +578,24 @@ void TranscodingManager::restoreQueueFromDatabase()
 {
     Logger::info("Restoring transcoding queue from database...");
 
+    // Check change flag to avoid redundant surveys
+    try
+    {
+        if (db_manager_)
+        {
+            bool changed = db_manager_->getFlag("transcode_preprocess_scanned_files_changed");
+            if (!changed)
+            {
+                Logger::info("Transcoding survey skipped: no changes in scanned_files (flag not set)");
+                return;
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn(std::string("Error checking change flag; proceeding with survey: ") + e.what());
+    }
+
     try
     {
         // Get all files that need transcoding from the database
@@ -615,5 +627,22 @@ void TranscodingManager::restoreQueueFromDatabase()
     catch (const std::exception &e)
     {
         Logger::error("Error restoring transcoding queue from database: " + std::string(e.what()));
+    }
+
+    // Reset the change flag now that survey is complete
+    try
+    {
+        if (db_manager_)
+        {
+            auto res = db_manager_->setFlag("transcode_preprocess_scanned_files_changed", false);
+            if (!res.success)
+            {
+                Logger::warn("Failed to reset transcode_preprocess_scanned_files_changed flag: " + res.error_message);
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn(std::string("Exception resetting flag: ") + e.what());
     }
 }

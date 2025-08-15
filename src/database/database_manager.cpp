@@ -181,6 +181,10 @@ void DatabaseManager::initialize()
         Logger::error("Failed to create user_inputs table");
     if (!createCacheMapTable())
         Logger::error("Failed to create cache_map table");
+    if (!createFlagsTable())
+        Logger::error("Failed to create flags table");
+    if (!createScannedFilesChangeTriggers())
+        Logger::error("Failed to create scanned_files change triggers");
     Logger::info("Database tables initialization completed");
 }
 
@@ -253,6 +257,138 @@ bool DatabaseManager::createCacheMapTable()
         )
     )";
     return executeStatement(sql).success;
+}
+
+bool DatabaseManager::createFlagsTable()
+{
+    const std::string sql = R"(
+        CREATE TABLE IF NOT EXISTS flags (
+            name TEXT PRIMARY KEY,
+            value INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    )";
+    return executeStatement(sql).success;
+}
+
+bool DatabaseManager::createScannedFilesChangeTriggers()
+{
+    // Create a trigger to set transcode_preprocess_scanned_files_changed to 1 on INSERT, UPDATE, DELETE
+    const std::string sql = R"(
+        CREATE TRIGGER IF NOT EXISTS trg_scanned_files_changed_insert
+        AFTER INSERT ON scanned_files
+        BEGIN
+            INSERT INTO flags(name, value, updated_at) VALUES ('transcode_preprocess_scanned_files_changed', 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET value = 1, updated_at = CURRENT_TIMESTAMP;
+        END;
+    )";
+    auto res1 = executeStatement(sql);
+    if (!res1.success)
+        return false;
+
+    const std::string sql2 = R"(
+        CREATE TRIGGER IF NOT EXISTS trg_scanned_files_changed_update
+        AFTER UPDATE ON scanned_files
+        BEGIN
+            INSERT INTO flags(name, value, updated_at) VALUES ('transcode_preprocess_scanned_files_changed', 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET value = 1, updated_at = CURRENT_TIMESTAMP;
+        END;
+    )";
+    auto res2 = executeStatement(sql2);
+    if (!res2.success)
+        return false;
+
+    const std::string sql3 = R"(
+        CREATE TRIGGER IF NOT EXISTS trg_scanned_files_changed_delete
+        AFTER DELETE ON scanned_files
+        BEGIN
+            INSERT INTO flags(name, value, updated_at) VALUES ('transcode_preprocess_scanned_files_changed', 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET value = 1, updated_at = CURRENT_TIMESTAMP;
+        END;
+    )";
+    auto res3 = executeStatement(sql3);
+    if (!res3.success)
+        return false;
+
+    return true;
+}
+
+bool DatabaseManager::getFlag(const std::string &flag_name)
+{
+    if (!waitForQueueInitialization())
+        return false;
+
+    bool value = false;
+    auto future = access_queue_->enqueueRead([&flag_name, &value](DatabaseManager &dbMan)
+                                             {
+        if (!dbMan.db_) return std::any(false);
+        const std::string select_sql = "SELECT value FROM flags WHERE name = ?";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return std::any(false);
+        sqlite3_bind_text(stmt, 1, flag_name.c_str(), -1, SQLITE_TRANSIENT);
+        int rc = sqlite3_step(stmt);
+        if (rc == SQLITE_ROW)
+        {
+            value = sqlite3_column_int(stmt, 0) != 0;
+        }
+        sqlite3_finalize(stmt);
+        return std::any(value); });
+    try
+    {
+        return std::any_cast<bool>(future.get());
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+DBOpResult DatabaseManager::setFlag(const std::string &flag_name, bool flag_value)
+{
+    if (!waitForQueueInitialization())
+        return DBOpResult(false, "queue not initialized");
+
+    std::string captured_name = flag_name;
+    int captured_value = flag_value ? 1 : 0;
+    std::string error_msg;
+    bool success = true;
+
+    access_queue_->enqueueWrite([captured_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        const std::string upsert_sql = R"(
+            INSERT INTO flags(name, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        )";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, upsert_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            error_msg = std::string("Failed to prepare statement: ") + sqlite3_errmsg(dbMan.db_);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        sqlite3_bind_text(stmt, 1, captured_name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, captured_value);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE && rc != SQLITE_OK)
+        {
+            error_msg = std::string("Failed to set flag: ") + sqlite3_errmsg(dbMan.db_);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
 }
 
 DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,

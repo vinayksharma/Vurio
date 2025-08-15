@@ -333,6 +333,16 @@ public:
      */
     bool tryAcquireProcessingLock(const std::string &file_path, DedupMode mode);
 
+    /**
+     * @brief Get the boolean value of a named flag from the flags table
+     */
+    bool getFlag(const std::string &flag_name);
+
+    /**
+     * @brief Set the boolean value of a named flag in the flags table
+     */
+    DBOpResult setFlag(const std::string &flag_name, bool value);
+
 private:
     /**
      * @brief Constructor - initializes database connection and tables
@@ -355,6 +365,8 @@ private:
     bool createUserInputsTable();
     bool createCacheMapTable();
     bool createTranscodingTable();
+    bool createFlagsTable();
+    bool createScannedFilesChangeTriggers();
 
     // SQL helpers
     /**
