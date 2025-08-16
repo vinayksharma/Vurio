@@ -100,7 +100,7 @@ void ThreadPoolManager::processFileWithOwnConnection(const std::string &db_path,
     try
     {
         // Get database manager instance
-        DatabaseManager &dbMan = DatabaseManager::getInstance(db_path);
+        DatabaseManager &dbMan = DatabaseManager::getInstance();
         MediaProcessingOrchestrator orchestrator(dbMan);
 
         Logger::info("Processing file with shared database connection: " + file_path);

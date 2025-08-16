@@ -1,13 +1,14 @@
 #pragma once
 
 #include "database/database_access_queue.hpp"
+#include "core/processing_result.hpp"
+#include "core/dedup_modes.hpp"
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 #include <functional>
 #include <sqlite3.h>
-#include "media_processor.hpp"
 
 // Forward declaration
 class DatabaseAccessQueue;
@@ -31,6 +32,7 @@ public:
     static DatabaseManager &getInstance(const std::string &db_path = "");
     static void resetForTesting(); // For test isolation
     static void shutdown();        // For proper cleanup
+    static bool isTestMode();      // Check if running in test mode
     DatabaseManager(const DatabaseManager &) = delete;
     DatabaseManager &operator=(const DatabaseManager &) = delete;
     DatabaseManager(DatabaseManager &&) = delete;

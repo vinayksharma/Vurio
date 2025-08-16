@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
 
-    // At the start of main, initialize the DatabaseManager singleton
+    // At the start of main, initialize the DatabaseManager singleton with default db path
     auto &db_manager = DatabaseManager::getInstance("scan_results.db");
 
     // Initialize transcoding manager
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
             Logger::info("Executing scheduled scan operation");
             try {
                 // Get all stored scan paths from database
-                auto &db_manager = DatabaseManager::getInstance("scan_results.db");
+                auto &db_manager = DatabaseManager::getInstance();
                 auto scan_paths = db_manager.getUserInputs("scan_path");
                 
                 if (scan_paths.empty()) {

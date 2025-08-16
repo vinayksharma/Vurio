@@ -2,6 +2,7 @@
 #include "database/database_access_queue.hpp"
 #include "core/server_config_manager.hpp"
 #include "core/duplicate_linker.hpp"
+#include "core/dedup_modes.hpp"
 #include "core/media_processor.hpp"
 #include "core/file_utils.hpp"
 #include "core/mount_manager.hpp"
@@ -37,7 +38,17 @@ DatabaseManager &DatabaseManager::getInstance(const std::string &db_path)
         }
         instance_ = std::unique_ptr<DatabaseManager>(new DatabaseManager(db_path));
     }
-    else if (instance_->db_path_ != db_path)
+    // In test mode, allow reinitializing with a different database path
+    else if (isTestMode() && !db_path.empty() && instance_->db_path_ != db_path)
+    {
+        Logger::info("Test mode: Reinitializing DatabaseManager with new test database: " + db_path);
+        instance_->waitForWrites(); // Ensure all writes complete
+        instance_.reset();
+        instance_ = std::unique_ptr<DatabaseManager>(new DatabaseManager(db_path));
+    }
+    // After the singleton is initialized, allow calls with an empty db_path
+    // without emitting warnings. Only warn if a non-empty, different path is provided.
+    else if (!db_path.empty() && instance_->db_path_ != db_path)
     {
         Logger::warn("DatabaseManager singleton already initialized with different path: " +
                      instance_->db_path_ + " vs " + db_path);
@@ -63,6 +74,12 @@ void DatabaseManager::shutdown()
         instance_->waitForWrites(); // Ensure all writes complete
         instance_.reset();
     }
+}
+
+bool DatabaseManager::isTestMode()
+{
+    const char *test_mode = std::getenv("TEST_MODE");
+    return test_mode != nullptr && std::string(test_mode) == "1";
 }
 
 DatabaseManager::DatabaseManager(const std::string &db_path)

@@ -20,6 +20,70 @@
 
 using json = nlohmann::json;
 
+// Helper function to convert YAML::Node to nlohmann::json
+void convertYamlToJson(const YAML::Node &yaml, nlohmann::json &json)
+{
+    if (!yaml.IsDefined())
+    {
+        json = nullptr;
+        return;
+    }
+
+    if (yaml.IsNull())
+    {
+        json = nullptr;
+    }
+    else if (yaml.IsScalar())
+    {
+        // Handle different scalar types
+        if (yaml.Tag() == "!")
+        {
+            // Boolean
+            json = yaml.as<bool>();
+        }
+        else
+        {
+            // Try to parse as number first, then string
+            try
+            {
+                std::string str_val = yaml.as<std::string>();
+                if (str_val.find('.') != std::string::npos)
+                {
+                    json = yaml.as<double>();
+                }
+                else
+                {
+                    json = yaml.as<int64_t>();
+                }
+            }
+            catch (...)
+            {
+                json = yaml.as<std::string>();
+            }
+        }
+    }
+    else if (yaml.IsSequence())
+    {
+        json = nlohmann::json::array();
+        for (const auto &item : yaml)
+        {
+            nlohmann::json child;
+            convertYamlToJson(item, child);
+            json.push_back(child);
+        }
+    }
+    else if (yaml.IsMap())
+    {
+        json = nlohmann::json::object();
+        for (const auto &it : yaml)
+        {
+            nlohmann::json child;
+            convertYamlToJson(it.second, child);
+            json[it.first.as<std::string>()] = child;
+        }
+    }
+}
+
 // Global orchestrator instance for coordination between scan and processing
 static std::unique_ptr<MediaProcessingOrchestrator> global_orchestrator;
 static std::mutex orchestrator_mutex;
@@ -251,13 +315,18 @@ private:
         {
             auto &config_manager = ServerConfigManager::getInstance();
             YAML::Node config = config_manager.getConfig();
-            // Convert YAML to JSON string for API response
+
+            // For now, just return the YAML as a string to avoid conversion issues
             std::stringstream ss;
             ss << config;
             std::string yaml_str = ss.str();
-            // Optionally, convert YAML to JSON for clients expecting JSON
-            nlohmann::json config_json = nlohmann::json::parse(YAML::Dump(config));
-            res.set_content(config_json.dump(), "application/json");
+
+            // Create a simple JSON response with the YAML content
+            nlohmann::json response = {
+                {"status", "success"},
+                {"config", yaml_str}};
+
+            res.set_content(response.dump(), "application/json");
             Logger::info("Configuration retrieved successfully");
         }
         catch (const std::exception &e)
@@ -439,7 +508,7 @@ private:
             }
 
             // Create DatabaseManager and get results
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
             auto results = db_manager.getAllProcessingResults();
 
             json response = {
@@ -494,7 +563,7 @@ private:
             Logger::info("Starting directory scan: " + directory);
 
             // Create DatabaseManager for storing scan results and user inputs
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
 
             // Store the scan path in user_inputs table
             auto user_input_result = db_manager.storeUserInput("scan_path", directory);
@@ -537,7 +606,7 @@ private:
                     auto observable = FileUtils::listFilesAsObservable(directory, recursive);
 
                     // Create DatabaseManager for storing scan results
-                    DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+                    DatabaseManager &db_manager = DatabaseManager::getInstance();
 
                     size_t files_scanned = 0;
                     std::string last_error;
@@ -626,7 +695,7 @@ private:
             }
 
             // Create DatabaseManager and get scan results
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
             auto results = db_manager.getAllScannedFiles();
 
             json response = {
@@ -674,7 +743,7 @@ private:
 
             // Create global database manager and orchestrator instances
             std::lock_guard<std::mutex> lock(orchestrator_mutex);
-            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(DatabaseManager::getInstance(db_path));
+            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(DatabaseManager::getInstance());
 
             // Start timer-based processing
             global_orchestrator->startTimerBasedProcessing(processing_interval_seconds, max_threads);
@@ -782,7 +851,7 @@ private:
             }
 
             // Create DatabaseManager and get user inputs
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
             auto user_inputs = db_manager.getAllUserInputs();
 
             json response = {
@@ -822,7 +891,7 @@ private:
             }
 
             // Create DatabaseManager and get user inputs by type
-            DatabaseManager &db_manager = DatabaseManager::getInstance(db_path);
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
             auto user_inputs = db_manager.getUserInputs(input_type);
 
             json response = {

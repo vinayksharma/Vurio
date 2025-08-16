@@ -4,37 +4,9 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
-#include <opencv2/core.hpp>
 #include "dedup_modes.hpp"
 #include "logging/logger.hpp"
-
-/**
- * @brief Binary artifact structure for processed media
- */
-struct MediaArtifact
-{
-    std::vector<uint8_t> data; // Binary data
-    std::string format;        // Format/type of the artifact
-    std::string hash;          // Hash/fingerprint of the artifact
-    double confidence;         // Confidence score (0.0 to 1.0)
-    std::string metadata;      // Additional metadata as JSON string
-
-    MediaArtifact() : confidence(0.0) {}
-};
-
-/**
- * @brief Media processing result
- */
-struct ProcessingResult
-{
-    bool success;
-    std::string error_message;
-    MediaArtifact artifact;
-
-    ProcessingResult() : success(false) {}
-    ProcessingResult(bool s, const std::string &msg = "")
-        : success(s), error_message(msg) {}
-};
+#include "core/processing_result.hpp"
 
 /**
  * @brief Processing algorithm information
@@ -152,8 +124,6 @@ private:
     static ProcessingResult processAudioQuality(const std::string &file_path);
 
     // Helper functions for video processing
-    static std::vector<uint8_t> generateFrameDHash(const cv::Mat &frame);
-    static std::vector<uint8_t> generateFramePHash(const cv::Mat &frame);
     static std::vector<uint8_t> combineFrameHashes(const std::vector<std::vector<uint8_t>> &frame_hashes, int target_size);
 
     // Helper function to validate video file before processing

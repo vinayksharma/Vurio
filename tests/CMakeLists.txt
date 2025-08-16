@@ -1,4 +1,6 @@
+# Main test executable
 add_executable(dedup_tests
+    test_base.hpp
     status_test.cpp
     auth_test.cpp
     file_utils_test.cpp

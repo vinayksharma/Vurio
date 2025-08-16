@@ -1,4 +1,5 @@
 #include "core/transcoding_manager.hpp"
+#include "core/media_processor.hpp"
 #include "core/file_utils.hpp"
 #include <filesystem>
 #include <algorithm>

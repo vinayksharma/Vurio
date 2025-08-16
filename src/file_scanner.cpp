@@ -9,7 +9,7 @@
 FileScanner::FileScanner(const std::string &db_path)
     : files_scanned_(0), files_stored_(0), files_skipped_(0)
 {
-    db_manager_ = &DatabaseManager::getInstance(db_path);
+    db_manager_ = &DatabaseManager::getInstance();
     Logger::info("FileScanner initialized with database: " + db_path);
 }
 

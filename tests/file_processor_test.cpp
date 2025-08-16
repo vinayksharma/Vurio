@@ -1,27 +1,28 @@
 #include "core/file_processor.hpp"
 #include "core/file_scanner.hpp"
-#include "database/database_manager.hpp" // Added for DatabaseManager reset
+#include "database/database_manager.hpp"
 #include "core/server_config_manager.hpp"
-#include <gtest/gtest.h>
+#include "test_base.hpp"
 #include <filesystem>
 #include <fstream>
 
-class FileProcessorTest : public ::testing::Test
+class FileProcessorTest : public TestBase
 {
 protected:
     void SetUp() override
     {
+        // Call parent SetUp to initialize test environment
+        TestBase::SetUp();
+
         // Create a temporary test directory
-        test_dir_ = std::filesystem::temp_directory_path() / "file_processor_test";
+        test_dir_ = getTestFilesDir() + "/file_processor_test";
         std::filesystem::create_directories(test_dir_);
 
         // Create some test files
         createTestFiles();
 
         // Set up test database path
-        test_db_ = std::filesystem::temp_directory_path() / "test_processing.db";
-
-        DatabaseManager::resetForTesting();
+        test_db_ = getTestDbPath();
     }
 
     void TearDown() override
@@ -32,28 +33,8 @@ protected:
             std::filesystem::remove_all(test_dir_);
         }
 
-        // Clean up test database
-        if (std::filesystem::exists(test_db_))
-        {
-            std::filesystem::remove(test_db_);
-        }
-
-        // Clean up any remaining test files created by DatabaseManager
-        std::vector<std::string> test_files = {
-            "test_file_processor.db",
-            "test_file_processor.db-shm",
-            "test_file_processor.db-wal"};
-
-        for (const auto &file : test_files)
-        {
-            if (std::filesystem::exists(file))
-            {
-                std::filesystem::remove(file);
-            }
-        }
-
-        // Ensure singleton is properly cleaned up
-        DatabaseManager::shutdown();
+        // Call parent TearDown to clean up test environment
+        TestBase::TearDown();
     }
 
     void createTestFiles()
@@ -77,20 +58,20 @@ protected:
     }
 
     std::filesystem::path test_dir_;
-    std::filesystem::path test_db_;
+    std::string test_db_;
 };
 
 TEST_F(FileProcessorTest, FileProcessorInitialization)
 {
     EXPECT_NO_THROW({
-        FileProcessor processor(test_db_.string());
+        FileProcessor processor(test_db_);
     });
 }
 
 TEST_F(FileProcessorTest, ProcessSingleFile)
 {
-    FileScanner scanner(test_db_.string());
-    FileProcessor processor(test_db_.string());
+    FileScanner scanner(test_db_);
+    FileProcessor processor(test_db_);
 
     // First scan the supported file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
@@ -115,8 +96,8 @@ TEST_F(FileProcessorTest, ProcessSingleFile)
 
 TEST_F(FileProcessorTest, ProcessDirectory)
 {
-    FileScanner scanner(test_db_.string());
-    FileProcessor processor(test_db_.string());
+    FileScanner scanner(test_db_);
+    FileProcessor processor(test_db_);
 
     // First scan the directory to store supported files
     size_t files_scanned = scanner.scanDirectory(test_dir_.string(), false);
@@ -137,8 +118,8 @@ TEST_F(FileProcessorTest, ProcessDirectory)
 
 TEST_F(FileProcessorTest, ProcessingStatistics)
 {
-    FileScanner scanner(test_db_.string());
-    FileProcessor processor(test_db_.string());
+    FileScanner scanner(test_db_);
+    FileProcessor processor(test_db_);
 
     // Clear stats
     processor.clearStats();
@@ -166,8 +147,8 @@ TEST_F(FileProcessorTest, ProcessingStatistics)
 
 TEST_F(FileProcessorTest, DatabaseIntegration)
 {
-    FileScanner scanner(test_db_.string());
-    FileProcessor processor(test_db_.string());
+    FileScanner scanner(test_db_);
+    FileProcessor processor(test_db_);
 
     // First scan the file
     std::string image_path = (test_dir_ / "test_image.jpg").string();
@@ -180,14 +161,20 @@ TEST_F(FileProcessorTest, DatabaseIntegration)
     processor.waitForWrites();
 
     // Verify database was created and contains data
-    EXPECT_TRUE(std::filesystem::exists(test_db_));
-    EXPECT_GT(std::filesystem::file_size(test_db_), 0);
+    // Check if the database file exists at the path that DatabaseManager is actually using
+    // The test_db_ path should match the path used by DatabaseManager
+    EXPECT_TRUE(std::filesystem::exists(test_db_)) << "Database file not found at: " << test_db_;
+
+    if (std::filesystem::exists(test_db_))
+    {
+        EXPECT_GT(std::filesystem::file_size(test_db_), 0) << "Database file is empty";
+    }
 }
 
 TEST_F(FileProcessorTest, QualityModeIntegration)
 {
-    FileScanner scanner(test_db_.string());
-    FileProcessor processor(test_db_.string());
+    FileScanner scanner(test_db_);
+    FileProcessor processor(test_db_);
 
     // Get current quality mode
     auto &config_manager = ServerConfigManager::getInstance();
@@ -210,7 +197,7 @@ TEST_F(FileProcessorTest, QualityModeIntegration)
 
 TEST_F(FileProcessorTest, GetFileCategory)
 {
-    FileProcessor processor(test_db_.string());
+    FileProcessor processor(test_db_);
 
     // Test supported file categories - now all supported file types return "Supported"
     EXPECT_EQ(FileProcessor::getFileCategory("test_image.jpg"), "Supported");
