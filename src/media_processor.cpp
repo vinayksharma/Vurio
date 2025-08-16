@@ -252,8 +252,12 @@ ProcessingResult MediaProcessor::processImageFast(const std::string &file_path)
         ProcessingResult result(true);
         result.artifact = artifact;
 
-        Logger::info("FAST mode processing completed for: " + file_path + " using " + algorithm->name);
-        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte dHash with confidence " + std::to_string(algorithm->typical_confidence));
+        std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+        if (verbosity != "MINIMAL")
+        {
+            Logger::info("FAST mode processing completed for: " + file_path + " using " + algorithm->name);
+            Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte dHash with confidence " + std::to_string(algorithm->typical_confidence));
+        }
 
         return result;
     }
@@ -374,8 +378,12 @@ ProcessingResult MediaProcessor::processImageBalanced(const std::string &file_pa
         ProcessingResult result(true);
         result.artifact = artifact;
 
-        Logger::info("BALANCED mode processing completed for: " + file_path + " using " + algorithm->name);
-        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte pHash with confidence " + std::to_string(algorithm->typical_confidence));
+        std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+        if (verbosity != "MINIMAL")
+        {
+            Logger::info("BALANCED mode processing completed for: " + file_path + " using " + algorithm->name);
+            Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte pHash with confidence " + std::to_string(algorithm->typical_confidence));
+        }
 
         return result;
     }
@@ -479,8 +487,12 @@ ProcessingResult MediaProcessor::processImageQuality(const std::string &file_pat
         ProcessingResult result(true);
         result.artifact = artifact;
 
-        Logger::info("QUALITY mode processing completed for: " + file_path + " using " + algorithm->name);
-        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte CNN embedding with confidence " + std::to_string(algorithm->typical_confidence));
+        std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+        if (verbosity != "MINIMAL")
+        {
+            Logger::info("QUALITY mode processing completed for: " + file_path + " using " + algorithm->name);
+            Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte CNN embedding with confidence " + std::to_string(algorithm->typical_confidence));
+        }
 
         return result;
     }
@@ -1248,8 +1260,12 @@ ProcessingResult MediaProcessor::processVideoQuality(const std::string &file_pat
         artifact.metadata = ss_meta.str();
         ProcessingResult result(true);
         result.artifact = artifact;
-        Logger::info("QUALITY mode video processing completed for: " + file_path + " using " + algorithm->name);
-        Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte video CNN embedding with confidence " + std::to_string(algorithm->typical_confidence));
+        std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+        if (verbosity != "MINIMAL")
+        {
+            Logger::info("QUALITY mode processing completed for: " + file_path + " using " + algorithm->name);
+            Logger::info("Generated " + std::to_string(algorithm->data_size_bytes) + "-byte CNN embedding with confidence " + std::to_string(algorithm->typical_confidence));
+        }
         return result;
     }
     catch (const cv::Exception &e)

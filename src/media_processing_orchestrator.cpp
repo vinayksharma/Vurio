@@ -172,7 +172,12 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             for (const auto& process_mode : modes_to_process) {
                                 // Files are already marked as in progress by getAndMarkFilesForProcessing
                                 // No need to call tryAcquireProcessingLock again
-                                Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
+                                std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+                                if (verbosity == "MINIMAL") {
+                                    Logger::info("Processing: " + std::filesystem::path(file_path).filename().string() + " (" + DedupModes::getModeName(process_mode) + ")");
+                                } else {
+                                    Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
+                                }
                                 
                                 // Check if this file has a transcoded version available
                                 std::string actual_file_path = file_path;
@@ -180,12 +185,16 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 if (!transcoded_path.empty() && std::filesystem::exists(transcoded_path))
                                 {
                                     actual_file_path = transcoded_path;
-                                    Logger::info("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
+                                    if (verbosity != "MINIMAL") {
+                                        Logger::info("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
+                                    }
                                 }
                                 else if (TranscodingManager::isRawFile(file_path))
                                 {
                                     // Raw file without a transcoded version yet – queue and defer processing
-                                    Logger::info("Raw file has no transcoded output yet; queuing for transcoding and deferring: " + file_path);
+                                    if (verbosity != "MINIMAL") {
+                                        Logger::info("Raw file has no transcoded output yet; queuing for transcoding and deferring: " + file_path);
+                                    }
                                     TranscodingManager::getInstance().queueForTranscoding(file_path);
                                     last_error = "Transcoding pending";
                                     // Allow retry in a future cycle
@@ -210,7 +219,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 // Store the processing result
                                 if (result.success)
                                 {
-                                    Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
+                                    if (verbosity != "MINIMAL") {
+                                        Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
+                                    }
                                     any_success = true;
                                     
                                     // Mark as successfully processed
@@ -262,10 +273,13 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             
                             processed_count.fetch_add(1);
                             
-                            Logger::info("Successfully processed file: " + file_path + 
-                                       " (format: " + event.artifact_format + 
-                                       ", confidence: " + std::to_string(event.artifact_confidence) + 
-                                       ", time: " + std::to_string(event.processing_time_ms) + "ms)");
+                            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+                            if (verbosity != "MINIMAL") {
+                                Logger::info("Successfully processed file: " + file_path + 
+                                           " (format: " + event.artifact_format + 
+                                           ", confidence: " + std::to_string(event.artifact_confidence) + 
+                                           ", time: " + std::to_string(event.processing_time_ms) + "ms)");
+                            }
                             
                             if (onNext) onNext(event);
                             

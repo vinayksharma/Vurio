@@ -6,12 +6,20 @@
 #   - QUALITY: High-quality processing with maximum accuracy
 #
 # log_level: enum ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-#   - TRACE: Most verbose logging
-#   - DEBUG: Debug information
-#   - INFO: General information (default)
-#   - WARN: Warning messages
-#   - ERROR: Error messages only
-#
+#   - Controls overall logging verbosity
+#   - TRACE: Most verbose, shows all operations
+#   - DEBUG: Detailed debugging information
+#   - INFO: General information and status updates
+#   - WARN: Only warnings and errors (recommended for production)
+#   - ERROR: Only error messages
+log_level: "WARN"
+
+# Processing verbosity: controls detailed logging during file processing
+# - "MINIMAL": Only filename and mode (recommended for production)
+# - "NORMAL": Includes processing details and success confirmations
+# - "VERBOSE": All processing details including algorithm specifics
+processing_verbosity: "MINIMAL"
+
 # server_port: integer (1-65535)
 #   - HTTP server port number
 #
@@ -22,7 +30,6 @@
 #   - JWT authentication secret key
 auth_secret: "your-secret-key-here"
 dedup_mode: "BALANCED"
-log_level: "INFO"
 server_host: "localhost"
 server_port: 8080
 
@@ -42,7 +49,7 @@ threading:
 
 # Scan intervals
 scan_interval_seconds: 300        # How often to scan directories (5 minutes)
-processing_interval_seconds: 30   # How often to process files (30 seconds)
+processing_interval_seconds: 10   # How often to process files (10 seconds)
 
 # Processing batch size
 processing:

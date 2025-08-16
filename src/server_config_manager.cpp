@@ -168,6 +168,14 @@ std::string ServerConfigManager::getLogLevel() const
     return config_["log_level"].as<std::string>();
 }
 
+std::string ServerConfigManager::getProcessingVerbosity() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (config_["processing_verbosity"])
+        return config_["processing_verbosity"].as<std::string>();
+    return "NORMAL"; // Default fallback
+}
+
 int ServerConfigManager::getServerPort() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
@@ -829,6 +837,18 @@ bool ServerConfigManager::validateConfig(const YAML::Node &config) const
         Logger::error("Invalid log level: " + log_level);
         return false;
     }
+
+    // Validate processing_verbosity if present
+    if (config["processing_verbosity"])
+    {
+        std::string verbosity = config["processing_verbosity"].as<std::string>();
+        if (verbosity != "MINIMAL" && verbosity != "NORMAL" && verbosity != "VERBOSE")
+        {
+            Logger::error("Invalid processing verbosity: " + verbosity);
+            return false;
+        }
+    }
+
     return true;
 }
 

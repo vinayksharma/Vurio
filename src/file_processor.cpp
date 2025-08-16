@@ -113,7 +113,11 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
         if (result.success)
         {
             successful_files_processed_++;
-            Logger::info("Successfully processed: " + file_path);
+            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+            if (verbosity != "MINIMAL")
+            {
+                Logger::info("Successfully processed: " + file_path);
+            }
             return FileProcessResult(true);
         }
         else
@@ -206,9 +210,13 @@ void FileProcessor::handleFile(const std::string &file_path)
         if (result.success)
         {
             successful_files_processed_++;
-            Logger::info("Successfully processed: " + file_path +
-                         " (format: " + result.artifact.format +
-                         ", confidence: " + std::to_string(result.artifact.confidence) + ")");
+            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
+            if (verbosity != "MINIMAL")
+            {
+                Logger::info("Successfully processed: " + file_path +
+                             " (format: " + result.artifact.format +
+                             ", confidence: " + std::to_string(result.artifact.confidence) + ")");
+            }
         }
         else
         {

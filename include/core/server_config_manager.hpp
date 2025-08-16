@@ -55,6 +55,7 @@ public:
     // Configuration getters
     DedupMode getDedupMode() const;
     std::string getLogLevel() const;
+    std::string getProcessingVerbosity() const;
     int getServerPort() const;
     std::string getServerHost() const;
     std::string getAuthSecret() const;
