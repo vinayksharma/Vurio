@@ -42,12 +42,26 @@ ServerConfigManager::ServerConfigManager()
     }
 
     Logger::info("ServerConfigManager initialization completed");
+    // Initialize last write time for watcher
+    try
+    {
+        last_write_time_ = std::filesystem::last_write_time("config.yaml");
+    }
+    catch (...)
+    {
+        // ignore
+    }
 }
 
 ServerConfigManager &ServerConfigManager::getInstance()
 {
     static ServerConfigManager instance;
     return instance;
+}
+
+ServerConfigManager::~ServerConfigManager()
+{
+    stopWatching();
 }
 
 void ServerConfigManager::initializeDefaultConfig()
@@ -168,13 +182,7 @@ std::string ServerConfigManager::getLogLevel() const
     return config_["log_level"].as<std::string>();
 }
 
-std::string ServerConfigManager::getProcessingVerbosity() const
-{
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["processing_verbosity"])
-        return config_["processing_verbosity"].as<std::string>();
-    return "NORMAL"; // Default fallback
-}
+// removed: getProcessingVerbosity()
 
 int ServerConfigManager::getServerPort() const
 {
@@ -641,6 +649,9 @@ void ServerConfigManager::setLogLevel(const std::string &level)
             "Log level changed from " + old_level + " to " + level};
         publishEvent(event);
         saveConfigInternal("config.yaml", config_);
+
+        // Apply to logger immediately
+        Logger::init(level);
     }
 }
 
@@ -690,38 +701,128 @@ void ServerConfigManager::setAuthSecret(const std::string &secret)
 
 void ServerConfigManager::updateConfig(const YAML::Node &new_config)
 {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    YAML::Node old_config = config_;
+    // Defer special updates to avoid locking the same mutex inside setters
+    bool has_new_mode = false;
+    DedupMode new_mode_value = DedupMode::BALANCED;
+    bool has_new_log_level = false;
+    std::string new_log_level_value;
+    bool has_new_server_port = false;
+    int new_server_port_value = 0;
+    bool has_new_auth_secret = false;
+    std::string new_auth_secret_value;
+
     bool config_changed = false;
-    for (auto it = new_config.begin(); it != new_config.end(); ++it)
+
     {
-        if (config_[it->first])
+        std::lock_guard<std::mutex> lock(config_mutex_);
+        for (auto it = new_config.begin(); it != new_config.end(); ++it)
         {
-            YAML::Node old_value = config_[it->first];
-            YAML::Node new_value = it->second;
-            if (YAML::Dump(old_value) != YAML::Dump(new_value))
+            const std::string key = it->first.as<std::string>();
+
+            if (key == "dedup_mode")
             {
-                config_[it->first] = it->second;
+                try
+                {
+                    std::string incoming = it->second.as<std::string>();
+                    if (config_["dedup_mode"].as<std::string>() != incoming)
+                    {
+                        new_mode_value = DedupModes::fromString(incoming);
+                        has_new_mode = true;
+                    }
+                }
+                catch (...)
+                {
+                }
+                continue;
+            }
+            if (key == "log_level")
+            {
+                try
+                {
+                    std::string incoming = it->second.as<std::string>();
+                    if (config_["log_level"].as<std::string>() != incoming)
+                    {
+                        new_log_level_value = incoming;
+                        has_new_log_level = true;
+                    }
+                }
+                catch (...)
+                {
+                }
+                continue;
+            }
+            if (key == "server_port")
+            {
+                try
+                {
+                    int incoming = it->second.as<int>();
+                    if (config_["server_port"].as<int>() != incoming)
+                    {
+                        new_server_port_value = incoming;
+                        has_new_server_port = true;
+                    }
+                }
+                catch (...)
+                {
+                }
+                continue;
+            }
+            if (key == "auth_secret")
+            {
+                try
+                {
+                    std::string incoming = it->second.as<std::string>();
+                    if (config_["auth_secret"].as<std::string>() != incoming)
+                    {
+                        new_auth_secret_value = incoming;
+                        has_new_auth_secret = true;
+                    }
+                }
+                catch (...)
+                {
+                }
+                continue;
+            }
+
+            // Generic update for all other keys
+            if (config_[key])
+            {
+                YAML::Node old_value = config_[key];
+                YAML::Node new_value = it->second;
+                if (YAML::Dump(old_value) != YAML::Dump(new_value))
+                {
+                    config_[key] = new_value;
+                    config_changed = true;
+                    ConfigEvent event{
+                        ConfigEventType::GENERAL_CONFIG_CHANGED,
+                        key,
+                        old_value,
+                        new_value,
+                        "Configuration key '" + key + "' updated"};
+                    publishEvent(event);
+                }
+            }
+            else
+            {
+                config_[key] = it->second;
                 config_changed = true;
-                ConfigEvent event{
-                    ConfigEventType::GENERAL_CONFIG_CHANGED,
-                    it->first.as<std::string>(),
-                    old_value,
-                    new_value,
-                    "Configuration key '" + it->first.as<std::string>() + "' updated"};
-                publishEvent(event);
             }
         }
-        else
+        if (config_changed)
         {
-            config_[it->first] = it->second;
-            config_changed = true;
+            saveConfigInternal("config.yaml", config_);
         }
     }
-    if (config_changed)
-    {
-        saveConfigInternal("config.yaml", config_);
-    }
+
+    // Apply special keys outside the lock so their setters can lock safely and notify
+    if (has_new_mode)
+        setDedupMode(new_mode_value);
+    if (has_new_log_level)
+        setLogLevel(new_log_level_value);
+    if (has_new_server_port)
+        setServerPort(new_server_port_value);
+    if (has_new_auth_secret)
+        setAuthSecret(new_auth_secret_value);
 }
 
 void ServerConfigManager::subscribe(ConfigObserver *observer)
@@ -765,6 +866,14 @@ bool ServerConfigManager::loadConfig(const std::string &file_path)
         if (validateConfig(config_))
         {
             Logger::info("Configuration loaded from: " + file_path);
+            // Apply critical settings immediately
+            try
+            {
+                Logger::init(config_["log_level"].as<std::string>());
+            }
+            catch (...)
+            {
+            }
             return true;
         }
         else
@@ -778,6 +887,56 @@ bool ServerConfigManager::loadConfig(const std::string &file_path)
         Logger::error("Error loading config: " + std::string(e.what()));
         return false;
     }
+}
+
+void ServerConfigManager::startWatching(const std::string &file_path, int interval_seconds)
+{
+    if (watching_.load())
+        return;
+    watched_file_path_ = file_path;
+    watch_interval_seconds_ = interval_seconds;
+    // Initialize last write time
+    try
+    {
+        last_write_time_ = std::filesystem::last_write_time(watched_file_path_);
+    }
+    catch (...)
+    {
+        // ignore
+    }
+    watching_.store(true);
+    watcher_thread_ = std::thread([this]()
+                                  {
+        Logger::info("Starting configuration file watcher for: " + watched_file_path_);
+        while (watching_.load()) {
+            try {
+                auto current = std::filesystem::last_write_time(watched_file_path_);
+                if (last_write_time_.time_since_epoch().count() != 0 && current != last_write_time_) {
+                    Logger::info("Detected change in configuration file. Reloading...");
+                    YAML::Node new_config = YAML::LoadFile(watched_file_path_);
+                    if (validateConfig(new_config)) {
+                        // Determine diffs and publish events
+                        updateConfig(new_config);
+                        last_write_time_ = current;
+                    } else {
+                        Logger::warn("Ignored config change due to validation failure");
+                    }
+                }
+            } catch (const std::exception &e) {
+                Logger::warn(std::string("Config watcher error: ") + e.what());
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(watch_interval_seconds_));
+        }
+        Logger::info("Configuration file watcher stopped"); });
+}
+
+void ServerConfigManager::stopWatching()
+{
+    if (!watching_.load())
+        return;
+    watching_.store(false);
+    if (watcher_thread_.joinable())
+        watcher_thread_.join();
 }
 
 bool ServerConfigManager::saveConfig(const std::string &file_path) const
@@ -838,16 +997,7 @@ bool ServerConfigManager::validateConfig(const YAML::Node &config) const
         return false;
     }
 
-    // Validate processing_verbosity if present
-    if (config["processing_verbosity"])
-    {
-        std::string verbosity = config["processing_verbosity"].as<std::string>();
-        if (verbosity != "MINIMAL" && verbosity != "NORMAL" && verbosity != "VERBOSE")
-        {
-            Logger::error("Invalid processing verbosity: " + verbosity);
-            return false;
-        }
-    }
+    // processing_verbosity removed; no validation
 
     return true;
 }
