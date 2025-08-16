@@ -71,15 +71,8 @@ bool FileScanner::scanFile(const std::string &file_path)
         return false;
     }
 
-    // Check if this is a raw file that needs transcoding
-    {
-        std::string ext = MediaProcessor::getFileExtension(file_path);
-        if (ServerConfigManager::getInstance().needsTranscoding(ext))
-        {
-            Logger::info("Detected raw file for transcoding: " + file_path);
-            TranscodingManager::getInstance().queueForTranscoding(file_path);
-        }
-    }
+    // Note: Transcoding decisions are now handled by TranscodingManager through the flag-based system
+    // The transcoding manager will automatically detect and queue RAW files when the scanned_files table changes
 
     files_stored_++;
     Logger::debug("Stored supported file during scan: " + file_path);
@@ -115,15 +108,8 @@ void FileScanner::handleFile(const std::string &file_path)
         return;
     }
 
-    // Check if this is a raw file that needs transcoding
-    {
-        std::string ext = MediaProcessor::getFileExtension(file_path);
-        if (ServerConfigManager::getInstance().needsTranscoding(ext))
-        {
-            Logger::info("Detected raw file for transcoding: " + file_path);
-            TranscodingManager::getInstance().queueForTranscoding(file_path);
-        }
-    }
+    // Note: Transcoding decisions are now handled by TranscodingManager through the flag-based system
+    // The transcoding manager will automatically detect and queue RAW files when the scanned_files table changes
 
     files_stored_++;
     Logger::debug("Stored supported file during scan: " + file_path);

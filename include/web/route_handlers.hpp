@@ -561,12 +561,8 @@ private:
                                     files_scanned++;
                                     Logger::debug("Scanned file: " + file_path);
 
-                                    // If it's a raw file, queue for transcoding immediately
-                                    if (TranscodingManager::isRawFile(file_path))
-                                    {
-                                        Logger::info("Queuing raw file for transcoding from scan: " + file_path);
-                                        TranscodingManager::getInstance().queueForTranscoding(file_path);
-                                    }
+                                    // Note: Transcoding decisions are now handled by TranscodingManager through the flag-based system
+                                    // The transcoding manager will automatically detect and queue RAW files when the scanned_files table changes
                                 }
                                 else
                                 {
