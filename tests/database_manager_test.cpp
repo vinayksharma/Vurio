@@ -1,6 +1,7 @@
 #include "database/database_manager.hpp"
 #include <gtest/gtest.h>
 #include "core/file_utils.hpp"
+#include "logging/logger.hpp"
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -315,7 +316,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     auto metadata = FileUtils::getFileMetadata(test_file);
     EXPECT_TRUE(metadata.has_value());
     std::string actual_metadata_str = FileUtils::metadataToString(*metadata);
-    std::cout << "[DEBUG] Actual file metadata: " << actual_metadata_str << std::endl;
+    // Debug output to help diagnose the issue
+    Logger::debug("Actual file metadata: " + actual_metadata_str);
     dbMan.updateFileMetadata(test_file, actual_metadata_str);
     dbMan.waitForWrites();
 
@@ -325,7 +327,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
     {
         if (pair.first == test_file)
         {
-            std::cout << "[DEBUG] DB file: " << pair.first << ", DB metadata: " << FileUtils::getFileMetadata(pair.first)->toString() << std::endl;
+            // Debug output
+            Logger::debug("DB file: " + pair.first + ", DB metadata: " + FileUtils::getFileMetadata(pair.first)->toString());
         }
     }
 
@@ -333,7 +336,8 @@ TEST_F(DatabaseManagerTest, StoreScannedFileWithCallbackNoChange)
 
     // Store file again with callback (no change in content)
     auto metadata_before_second_store = FileUtils::getFileMetadata(test_file);
-    std::cout << "[DEBUG] Metadata before second store: " << metadata_before_second_store->toString() << std::endl;
+    // Debug output
+    Logger::debug("Metadata before second store: " + metadata_before_second_store->toString());
     dbMan.storeScannedFile(test_file, [&](const std::string &file_path)
                            { callback_called = true; });
     dbMan.waitForWrites();

@@ -5,6 +5,7 @@
 #include <string>
 #include <filesystem>
 #include <csignal>
+#include <opencv2/opencv.hpp>
 
 // Simple helper: raw_to_jpeg <input_raw> <output_jpeg>
 
@@ -103,7 +104,7 @@ int main(int argc, char **argv)
         LibRaw::dcraw_clear_mem(img);
         raw.recycle();
 
-        std::cout << "WROTE " << output << std::endl;
+        // Success - no need to output anything, transcoding manager will log the result
         return 0;
     }
     catch (const std::exception &e)
@@ -112,5 +113,3 @@ int main(int argc, char **argv)
         return 9;
     }
 }
-
-

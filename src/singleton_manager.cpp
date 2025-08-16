@@ -1,4 +1,5 @@
 #include "core/singleton_manager.hpp"
+#include "logging/logger.hpp"
 #include <cstring>
 #include <sys/types.h>
 #include <errno.h>
@@ -102,7 +103,7 @@ bool SingletonManager::shutdownExistingInstance()
     if (existing_pid <= 0)
     {
         // Invalid PID in file, remove the stale PID file
-        std::cout << "Invalid PID in file, removing stale PID file..." << std::endl;
+        Logger::info("Invalid PID in file, removing stale PID file...");
         unlink(pid_file_path.c_str());
         return true;
     }
@@ -111,7 +112,7 @@ bool SingletonManager::shutdownExistingInstance()
     if (kill(existing_pid, 0) != 0)
     {
         // Process is not running, remove stale PID file
-        std::cout << "Process " << existing_pid << " is not running, removing stale PID file..." << std::endl;
+        Logger::info("Process " + std::to_string(existing_pid) + " is not running, removing stale PID file...");
         unlink(pid_file_path.c_str());
         return true;
     }
@@ -119,7 +120,7 @@ bool SingletonManager::shutdownExistingInstance()
     // Send SIGTERM to existing process
     if (kill(existing_pid, SIGTERM) == 0)
     {
-        std::cout << "Sent shutdown signal to existing instance (PID: " << existing_pid << ")" << std::endl;
+        Logger::info("Sent shutdown signal to existing instance (PID: " + std::to_string(existing_pid) + ")");
 
         // Wait a bit for graceful shutdown
         sleep(2);
@@ -127,7 +128,7 @@ bool SingletonManager::shutdownExistingInstance()
         // Check if process is still running
         if (kill(existing_pid, 0) == 0)
         {
-            std::cout << "Existing instance still running, sending SIGKILL..." << std::endl;
+            Logger::info("Existing instance still running, sending SIGKILL...");
             kill(existing_pid, SIGKILL);
             sleep(1);
         }
@@ -186,7 +187,7 @@ pid_t SingletonManager::getPidFromFile()
 
 void SingletonManager::signalHandler(int signal)
 {
-    std::cout << "\nReceived signal " << signal << ", shutting down gracefully..." << std::endl;
+    Logger::info("Received signal " + std::to_string(signal) + ", shutting down gracefully...");
 
     // Safely remove PID file
     try
@@ -196,7 +197,7 @@ void SingletonManager::signalHandler(int signal)
     catch (...)
     {
         // Ignore any exceptions during cleanup
-        std::cout << "Warning: Error during PID file cleanup" << std::endl;
+        Logger::warn("Error during PID file cleanup");
     }
 
     // Flush any pending output

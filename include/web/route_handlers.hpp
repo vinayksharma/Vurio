@@ -284,8 +284,8 @@ private:
             observable.subscribe(
                 [](const std::string &file_path)
                 {
-                    // Print each file as it's found (console output)
-                    std::cout << "Found file: " << file_path << std::endl;
+                    // Log each file as it's found
+                    Logger::debug("Found file: " + file_path);
                 },
                 [&res](const std::exception &e)
                 {
