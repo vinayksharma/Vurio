@@ -226,7 +226,6 @@ public:
                 "properties": {
                   "dedup_mode": {"type": "string", "enum": ["FAST", "BALANCED", "QUALITY"]},
                   "log_level": {"type": "string", "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]},
-                  "processing_verbosity": {"type": "string", "enum": ["MINIMAL", "NORMAL", "VERBOSE"]},
                   "server_port": {"type": "integer"},
                   "max_processing_threads": {"type": "integer"}
                 }

@@ -7,6 +7,13 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <algorithm>
+#include <chrono>
+#include <thread>
+#include <iostream>
 
 using json = nlohmann::json;
 
@@ -126,7 +133,7 @@ void DuplicateLinker::workerLoop()
                     for (size_t j = 0; j < paths.size(); ++j)
                         if (j != i)
                             linked.push_back(ids[j]);
-                    db_->setFileLinks(paths[i], linked);
+                    db_->setFileLinksForMode(paths[i], linked, mode);
                 }
             }
 
@@ -146,5 +153,23 @@ void DuplicateLinker::workerLoop()
         {
             Logger::error(std::string("DuplicateLinker error: ") + e.what());
         }
+    }
+}
+
+void DuplicateLinker::onConfigChanged(const ConfigEvent &event)
+{
+    if (event.type == ConfigEventType::DEDUP_MODE_CHANGED)
+    {
+        std::cout << "[CONFIG CHANGE] DuplicateLinker: Deduplication mode changed from " +
+                         event.old_value.as<std::string>() + " to " +
+                         event.new_value.as<std::string>() + " - will use new mode for future linking"
+                  << std::endl;
+
+        Logger::info("DuplicateLinker: Deduplication mode changed from " +
+                     event.old_value.as<std::string>() + " to " +
+                     event.new_value.as<std::string>() + " - will use new mode for future linking");
+
+        // Request a full rescan when mode changes to ensure links are updated for the new mode
+        requestFullRescan();
     }
 }

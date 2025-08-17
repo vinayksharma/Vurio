@@ -5,10 +5,11 @@
 #include <condition_variable>
 #include <mutex>
 #include "core/dedup_modes.hpp"
+#include "core/server_config_manager.hpp"
 
 class DatabaseManager;
 
-class DuplicateLinker
+class DuplicateLinker : public ConfigObserver
 {
 public:
     static DuplicateLinker &getInstance();
@@ -18,6 +19,12 @@ public:
     void notifyNewResults();
     // Request a full rescan of already processed files on next wake
     void requestFullRescan();
+
+    /**
+     * @brief Handle configuration changes (ConfigObserver implementation)
+     * @param event Configuration change event
+     */
+    void onConfigChanged(const ConfigEvent &event) override;
 
 private:
     DuplicateLinker() = default;

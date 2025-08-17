@@ -1,6 +1,7 @@
 #include "database/database_manager.hpp"
 #include <gtest/gtest.h>
 #include "core/file_utils.hpp"
+#include "core/dedup_modes.hpp"
 #include "logging/logger.hpp"
 #include <filesystem>
 #include <fstream>
@@ -699,14 +700,14 @@ TEST_F(DatabaseManagerTest, SetFileLinks)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Set links for the file
+    // Set links for the file in BALANCED mode
     std::vector<int> linked_ids = {1, 2, 3, 5, 8};
-    auto result = dbMan.setFileLinks(test_file, linked_ids);
+    auto result = dbMan.setFileLinksForMode(test_file, linked_ids, DedupMode::BALANCED);
     EXPECT_TRUE(result.success);
     dbMan.waitForWrites();
 
-    // Verify links were set correctly
-    auto retrieved_links = dbMan.getFileLinks(test_file);
+    // Verify links were set correctly for BALANCED mode
+    auto retrieved_links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(retrieved_links.size(), 5);
     EXPECT_EQ(retrieved_links[0], 1);
     EXPECT_EQ(retrieved_links[1], 2);
@@ -730,8 +731,8 @@ TEST_F(DatabaseManagerTest, GetFileLinksEmpty)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Get links for file with no links set
-    auto links = dbMan.getFileLinks(test_file);
+    // Get links for file with no links set in BALANCED mode
+    auto links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 0);
 
     // Clean up test file
@@ -750,13 +751,13 @@ TEST_F(DatabaseManagerTest, AddFileLink)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Add a link
+    // Add a link in BALANCED mode
     auto result = dbMan.addFileLink(test_file, 42);
     EXPECT_TRUE(result.success);
     dbMan.waitForWrites();
 
     // Verify link was added
-    auto links = dbMan.getFileLinks(test_file);
+    auto links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 1);
     EXPECT_EQ(links[0], 42);
 
@@ -766,7 +767,7 @@ TEST_F(DatabaseManagerTest, AddFileLink)
     dbMan.waitForWrites();
 
     // Verify both links exist
-    links = dbMan.getFileLinks(test_file);
+    links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 2);
     EXPECT_EQ(links[0], 42);
     EXPECT_EQ(links[1], 99);
@@ -777,7 +778,7 @@ TEST_F(DatabaseManagerTest, AddFileLink)
     dbMan.waitForWrites();
 
     // Verify no duplicate was added
-    links = dbMan.getFileLinks(test_file);
+    links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 2);
     EXPECT_EQ(links[0], 42);
     EXPECT_EQ(links[1], 99);
@@ -798,9 +799,9 @@ TEST_F(DatabaseManagerTest, RemoveFileLink)
     dbMan.storeScannedFile(test_file);
     dbMan.waitForWrites();
 
-    // Set initial links
+    // Set initial links in BALANCED mode
     std::vector<int> initial_links = {1, 2, 3, 4, 5};
-    dbMan.setFileLinks(test_file, initial_links);
+    dbMan.setFileLinksForMode(test_file, initial_links, DedupMode::BALANCED);
     dbMan.waitForWrites();
 
     // Remove a link
@@ -809,7 +810,7 @@ TEST_F(DatabaseManagerTest, RemoveFileLink)
     dbMan.waitForWrites();
 
     // Verify link was removed
-    auto links = dbMan.getFileLinks(test_file);
+    auto links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 4);
     EXPECT_EQ(links[0], 1);
     EXPECT_EQ(links[1], 2);
@@ -822,7 +823,7 @@ TEST_F(DatabaseManagerTest, RemoveFileLink)
     dbMan.waitForWrites();
 
     // Verify links are unchanged
-    links = dbMan.getFileLinks(test_file);
+    links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
     EXPECT_EQ(links.size(), 4);
 
     // Clean up test file
@@ -848,10 +849,10 @@ TEST_F(DatabaseManagerTest, GetLinkedFiles)
     dbMan.waitForWrites();
 
     // Get the ID of file1
-    auto file1_links = dbMan.getFileLinks(file1);
+    auto file1_links = dbMan.getFileLinksForMode(file1, DedupMode::BALANCED);
     EXPECT_EQ(file1_links.size(), 0);
 
-    // Set file2 and file3 to link to file1
+    // Set file2 and file3 to link to file1 in BALANCED mode
     dbMan.addFileLink(file2, 1); // Assuming file1 has ID 1
     dbMan.addFileLink(file3, 1);
     dbMan.waitForWrites();
@@ -901,13 +902,13 @@ TEST_F(DatabaseManagerTest, LinksJsonSerialization)
 
     for (const auto &test_case : test_cases)
     {
-        // Set links
-        auto result = dbMan.setFileLinks(test_file, test_case);
+        // Set links in BALANCED mode
+        auto result = dbMan.setFileLinksForMode(test_file, test_case, DedupMode::BALANCED);
         EXPECT_TRUE(result.success);
         dbMan.waitForWrites();
 
-        // Retrieve links
-        auto retrieved_links = dbMan.getFileLinks(test_file);
+        // Retrieve links for BALANCED mode
+        auto retrieved_links = dbMan.getFileLinksForMode(test_file, DedupMode::BALANCED);
         EXPECT_EQ(retrieved_links.size(), test_case.size());
 
         // Verify each link matches

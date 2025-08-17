@@ -39,7 +39,7 @@ struct FileProcessingEvent
  * - Fatal errors (e.g., DB not available, invalid config, cancellation) are emitted via onError.
  * - No silent failures: all errors are both logged and reported.
  */
-class MediaProcessingOrchestrator
+class MediaProcessingOrchestrator : public ConfigObserver
 {
 public:
     explicit MediaProcessingOrchestrator(DatabaseManager &dbMan);
@@ -96,6 +96,12 @@ public:
      * @return true if timer-based processing is active, false otherwise
      */
     bool isTimerBasedProcessingRunning() const;
+
+    /**
+     * @brief Handle configuration changes (ConfigObserver implementation)
+     * @param event Configuration change event
+     */
+    void onConfigChanged(const ConfigEvent &event) override;
 
 private:
     DatabaseManager &dbMan_;

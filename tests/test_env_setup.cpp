@@ -2,6 +2,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include "utils/logger.hpp" // Added for Logger::info
 
 int main()
 {
@@ -26,8 +27,8 @@ int main()
         // Note: ServerConfigManager initialization would require more dependencies
         // For now, just set up the database
 
-        std::cout << "Test environment setup complete." << std::endl;
-        std::cout << "Test database: " << test_db_path << std::endl;
+        Logger::info("Test environment setup complete.");
+        Logger::info("Test database: " + test_db_path);
 
         return 0;
     }

@@ -54,15 +54,15 @@ int main(int argc, char *argv[])
     {
         if (force_shutdown)
         {
-            std::cout << "Existing instance detected. Attempting to shutdown..." << std::endl;
+            Logger::info("Existing instance detected. Attempting to shutdown...");
             if (singleton_manager.shutdownExistingInstance())
             {
-                std::cout << "Existing instance shutdown successful." << std::endl;
+                Logger::info("Existing instance shutdown successful.");
                 sleep(1); // Give it time to fully shutdown
             }
             else
             {
-                std::cout << "Failed to shutdown existing instance." << std::endl;
+                Logger::error("Failed to shutdown existing instance.");
                 return 1;
             }
         }
@@ -78,17 +78,20 @@ int main(int argc, char *argv[])
     // Try to create PID file (this will fail if another instance is running)
     if (!singleton_manager.createPidFile())
     {
-        std::cout << "Error: Failed to create PID file. Another instance may be running." << std::endl;
+        Logger::error("Failed to create PID file. Another instance may be running.");
         return 1;
     }
 
-    std::cout << "Starting dedup server (PID: " << getpid() << ")..." << std::endl;
+    Logger::info("Starting dedup server (PID: " + std::to_string(getpid()) + ")...");
 
     // Initialize configuration manager
     auto &config_manager = ServerConfigManager::getInstance();
 
     // Initialize logger with configured log level
     Logger::init(config_manager.getLogLevel());
+
+    // Start watching configuration for runtime changes
+    config_manager.startWatching("config.yaml", 2);
 
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());

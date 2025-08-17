@@ -11,9 +11,14 @@
 #include <tbb/blocked_range.h>
 #include <tbb/mutex.h>
 #include <filesystem>
+#include <iostream> // Added for stdout logging
 
 MediaProcessingOrchestrator::MediaProcessingOrchestrator(DatabaseManager &dbMan)
-    : dbMan_(dbMan), cancelled_(false) {}
+    : dbMan_(dbMan), cancelled_(false)
+{
+    // Subscribe to configuration changes
+    ServerConfigManager::getInstance().subscribe(this);
+}
 
 MediaProcessingOrchestrator::~MediaProcessingOrchestrator()
 {
@@ -22,6 +27,9 @@ MediaProcessingOrchestrator::~MediaProcessingOrchestrator()
 
     // Stop timer-based processing if running
     stopTimerBasedProcessing();
+
+    // Unsubscribe from configuration changes
+    ServerConfigManager::getInstance().unsubscribe(this);
 
     Logger::debug("MediaProcessingOrchestrator destructor called");
 }
@@ -172,12 +180,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             for (const auto& process_mode : modes_to_process) {
                                 // Files are already marked as in progress by getAndMarkFilesForProcessing
                                 // No need to call tryAcquireProcessingLock again
-                                std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
-                                if (verbosity == "MINIMAL") {
-                                    Logger::info("Processing: " + std::filesystem::path(file_path).filename().string() + " (" + DedupModes::getModeName(process_mode) + ")");
-                                } else {
-                                    Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
-                                }
+                                Logger::info("Processing file: " + file_path + " with mode: " + DedupModes::getModeName(process_mode));
                                 
                                 // Check if this file has a transcoded version available
                                 std::string actual_file_path = file_path;
@@ -185,16 +188,12 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 if (!transcoded_path.empty() && std::filesystem::exists(transcoded_path))
                                 {
                                     actual_file_path = transcoded_path;
-                                    if (verbosity != "MINIMAL") {
-                                        Logger::info("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
-                                    }
+                                    Logger::debug("Using transcoded file for processing: " + file_path + " -> " + transcoded_path);
                                 }
                                 else if (TranscodingManager::isRawFile(file_path))
                                 {
                                     // Raw file without a transcoded version yet – queue and defer processing
-                                    if (verbosity != "MINIMAL") {
-                                        Logger::info("Raw file has no transcoded output yet; queuing for transcoding and deferring: " + file_path);
-                                    }
+                                    Logger::info("Raw file missing transcoded output; queued and deferred: " + file_path);
                                     TranscodingManager::getInstance().queueForTranscoding(file_path);
                                     last_error = "Transcoding pending";
                                     // Allow retry in a future cycle
@@ -219,9 +218,7 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                 // Store the processing result
                                 if (result.success)
                                 {
-                                    if (verbosity != "MINIMAL") {
-                                        Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
-                                    }
+                                    Logger::info("Successfully processed file: " + file_path + " (format: " + result.artifact.format + ", confidence: " + std::to_string(result.artifact.confidence) + ")");
                                     any_success = true;
                                     
                                     // Mark as successfully processed
@@ -273,13 +270,10 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                             
                             processed_count.fetch_add(1);
                             
-                            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
-                            if (verbosity != "MINIMAL") {
-                                Logger::info("Successfully processed file: " + file_path + 
-                                           " (format: " + event.artifact_format + 
-                                           ", confidence: " + std::to_string(event.artifact_confidence) + 
-                                           ", time: " + std::to_string(event.processing_time_ms) + "ms)");
-                            }
+                            Logger::info("Successfully processed file: " + file_path + 
+                                       " (format: " + event.artifact_format + 
+                                       ", confidence: " + std::to_string(event.artifact_confidence) + 
+                                       ", time: " + std::to_string(event.processing_time_ms) + "ms)");
                             
                             if (onNext) onNext(event);
                             
@@ -361,6 +355,25 @@ void MediaProcessingOrchestrator::stopTimerBasedProcessing()
     }
 
     Logger::info("Timer-based processing stopped");
+}
+
+void MediaProcessingOrchestrator::onConfigChanged(const ConfigEvent &event)
+{
+    if (event.type == ConfigEventType::DEDUP_MODE_CHANGED)
+    {
+        std::cout << "[CONFIG CHANGE] MediaProcessingOrchestrator: Deduplication mode changed from " +
+                         event.old_value.as<std::string>() + " to " +
+                         event.new_value.as<std::string>() + " - will use new mode for future processing"
+                  << std::endl;
+
+        Logger::info("MediaProcessingOrchestrator: Deduplication mode changed from " +
+                     event.old_value.as<std::string>() + " to " +
+                     event.new_value.as<std::string>() + " - will use new mode for future processing");
+
+        // Note: We don't need to restart processing here since each processing run
+        // queries the current mode via ServerConfigManager::getInstance().getDedupMode()
+        // This ensures that new processing runs will use the updated mode
+    }
 }
 
 void MediaProcessingOrchestrator::setScanningInProgress(bool in_progress)

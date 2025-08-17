@@ -10,6 +10,9 @@ FileProcessor::FileProcessor(const std::string &db_path)
 {
     db_manager_ = &DatabaseManager::getInstance();
     Logger::info("FileProcessor initialized with database: " + db_path);
+
+    // Subscribe to configuration changes
+    ServerConfigManager::getInstance().subscribe(this);
 }
 
 FileProcessor::~FileProcessor()
@@ -18,6 +21,9 @@ FileProcessor::~FileProcessor()
     {
         db_manager_->waitForWrites();
     }
+
+    // Unsubscribe from configuration changes
+    ServerConfigManager::getInstance().unsubscribe(this);
 }
 
 size_t FileProcessor::processDirectory(const std::string &dir_path, bool recursive)
@@ -113,11 +119,7 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
         if (result.success)
         {
             successful_files_processed_++;
-            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
-            if (verbosity != "MINIMAL")
-            {
-                Logger::info("Successfully processed: " + file_path);
-            }
+            Logger::info("Successfully processed: " + file_path);
             return FileProcessResult(true);
         }
         else
@@ -210,13 +212,9 @@ void FileProcessor::handleFile(const std::string &file_path)
         if (result.success)
         {
             successful_files_processed_++;
-            std::string verbosity = ServerConfigManager::getInstance().getProcessingVerbosity();
-            if (verbosity != "MINIMAL")
-            {
-                Logger::info("Successfully processed: " + file_path +
-                             " (format: " + result.artifact.format +
-                             ", confidence: " + std::to_string(result.artifact.confidence) + ")");
-            }
+            Logger::info("Successfully processed: " + file_path +
+                         " (format: " + result.artifact.format +
+                         ", confidence: " + std::to_string(result.artifact.confidence) + ")");
         }
         else
         {
@@ -238,4 +236,19 @@ void FileProcessor::handleComplete()
 {
     Logger::info("File processing completed. Total: " + std::to_string(total_files_processed_) +
                  ", Successful: " + std::to_string(successful_files_processed_));
+}
+
+void FileProcessor::onConfigChanged(const ConfigEvent &event)
+{
+    if (event.type == ConfigEventType::DEDUP_MODE_CHANGED)
+    {
+        std::cout << "[CONFIG CHANGE] FileProcessor: Deduplication mode changed from " +
+                         event.old_value.as<std::string>() + " to " +
+                         event.new_value.as<std::string>() + " - will use new mode for future processing"
+                  << std::endl;
+
+        Logger::info("FileProcessor: Deduplication mode changed from " +
+                     event.old_value.as<std::string>() + " to " +
+                     event.new_value.as<std::string>() + " - will use new mode for future processing");
+    }
 }

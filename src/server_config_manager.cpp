@@ -844,6 +844,10 @@ void ServerConfigManager::unsubscribe(ConfigObserver *observer)
 void ServerConfigManager::publishEvent(const ConfigEvent &event)
 {
     std::lock_guard<std::mutex> lock(observers_mutex_);
+
+    // Log to stdout for immediate visibility
+    std::cout << "[CONFIG CHANGE DETECTED] " << event.description << std::endl;
+
     Logger::info("Publishing config event: " + event.description);
     for (auto observer : observers_)
     {

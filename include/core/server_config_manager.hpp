@@ -7,6 +7,9 @@
 #include <memory>
 #include <mutex>
 #include <yaml-cpp/yaml.h>
+#include <atomic>
+#include <thread>
+#include <filesystem>
 #include "core/dedup_modes.hpp"
 
 /**
@@ -55,7 +58,6 @@ public:
     // Configuration getters
     DedupMode getDedupMode() const;
     std::string getLogLevel() const;
-    std::string getProcessingVerbosity() const;
     int getServerPort() const;
     std::string getServerHost() const;
     std::string getAuthSecret() const;
@@ -106,6 +108,10 @@ public:
     void setAuthSecret(const std::string &secret);
     void updateConfig(const YAML::Node &new_config);
 
+    // Runtime config file watching
+    void startWatching(const std::string &file_path = "config.yaml", int interval_seconds = 2);
+    void stopWatching();
+
     // Observer management
     void subscribe(ConfigObserver *observer);
     void unsubscribe(ConfigObserver *observer);
@@ -119,7 +125,7 @@ public:
 
 private:
     ServerConfigManager();
-    ~ServerConfigManager() = default;
+    ~ServerConfigManager();
     ServerConfigManager(const ServerConfigManager &) = delete;
     ServerConfigManager &operator=(const ServerConfigManager &) = delete;
 
@@ -135,6 +141,13 @@ private:
     // Observers
     mutable std::mutex observers_mutex_;
     std::vector<ConfigObserver *> observers_;
+
+    // File watching internals
+    std::atomic<bool> watching_{false};
+    std::thread watcher_thread_;
+    std::string watched_file_path_;
+    int watch_interval_seconds_{2};
+    std::filesystem::file_time_type last_write_time_{};
 };
 
 // TODO: IMPLEMENTATION NOTES

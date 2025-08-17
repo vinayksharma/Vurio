@@ -239,7 +239,9 @@ bool DatabaseManager::createScannedFilesTable()
             processed_fast BOOLEAN DEFAULT 0,      -- Processing flag for FAST mode
             processed_balanced BOOLEAN DEFAULT 0,  -- Processing flag for BALANCED mode
             processed_quality BOOLEAN DEFAULT 0,   -- Processing flag for QUALITY mode
-            links TEXT,
+            links_fast TEXT,              -- Comma-separated list of duplicate file IDs found in FAST mode
+            links_balanced TEXT,          -- Comma-separated list of duplicate file IDs found in BALANCED mode
+            links_quality TEXT,           -- Comma-separated list of duplicate file IDs found in QUALITY mode
             is_network_file BOOLEAN DEFAULT 0,  -- True if on network mount
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -2123,8 +2125,8 @@ std::vector<int> DatabaseManager::getFileLinks(const std::string &file_path)
 
 DBOpResult DatabaseManager::addFileLink(const std::string &file_path, int linked_id)
 {
-    // Get current links
-    std::vector<int> current_links = getFileLinks(file_path);
+    // Get current links for the current server mode
+    std::vector<int> current_links = getFileLinksForCurrentMode(file_path);
 
     // Check if link already exists
     if (std::find(current_links.begin(), current_links.end(), linked_id) != current_links.end())
@@ -2135,13 +2137,25 @@ DBOpResult DatabaseManager::addFileLink(const std::string &file_path, int linked
 
     // Add new link
     current_links.push_back(linked_id);
-    return setFileLinks(file_path, current_links);
+
+    // Get the current deduplication mode from the server configuration
+    try
+    {
+        auto &config = ServerConfigManager::getInstance();
+        DedupMode current_mode = config.getDedupMode();
+        return setFileLinksForMode(file_path, current_links, current_mode);
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get current deduplication mode: " + std::string(e.what()));
+        return DBOpResult(false, "Failed to get current deduplication mode");
+    }
 }
 
 DBOpResult DatabaseManager::removeFileLink(const std::string &file_path, int linked_id)
 {
-    // Get current links
-    std::vector<int> current_links = getFileLinks(file_path);
+    // Get current links for the current server mode
+    std::vector<int> current_links = getFileLinksForCurrentMode(file_path);
 
     // Remove the link
     auto it = std::find(current_links.begin(), current_links.end(), linked_id);
@@ -2152,7 +2166,19 @@ DBOpResult DatabaseManager::removeFileLink(const std::string &file_path, int lin
     }
 
     current_links.erase(it);
-    return setFileLinks(file_path, current_links);
+
+    // Get the current deduplication mode from the server configuration
+    try
+    {
+        auto &config = ServerConfigManager::getInstance();
+        DedupMode current_mode = config.getDedupMode();
+        return setFileLinksForMode(file_path, current_links, current_mode);
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get current deduplication mode: " + std::string(e.what()));
+        return DBOpResult(false, "Failed to get current deduplication mode");
+    }
 }
 
 std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file_path)
@@ -2226,7 +2252,7 @@ std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file
         }
         
         std::vector<std::string> results;
-        const std::string select_sql = "SELECT file_path FROM scanned_files WHERE links LIKE ?";
+        const std::string select_sql = "SELECT file_path FROM scanned_files WHERE (links_fast LIKE ?) OR (links_balanced LIKE ?) OR (links_quality LIKE ?)";
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
@@ -2238,6 +2264,8 @@ std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file
         // Search for files that contain the current ID in their links JSON
         std::string search_pattern = "%" + std::to_string(current_id) + "%";
         sqlite3_bind_text(stmt, 1, search_pattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, search_pattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, search_pattern.c_str(), -1, SQLITE_STATIC);
 
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
@@ -3661,8 +3689,8 @@ DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
             // 3. Files queued (scanned but not processed)
             status.files_queued = status.files_scanned - status.files_processed;
 
-            // 4. Duplicates found (files with non-empty links field)
-            const std::string duplicates_sql = "SELECT COUNT(*) FROM scanned_files WHERE links IS NOT NULL AND links != ''";
+            // 4. Duplicates found (files with non-empty links in any mode)
+            const std::string duplicates_sql = "SELECT COUNT(*) FROM scanned_files WHERE (links_fast IS NOT NULL AND links_fast != '') OR (links_balanced IS NOT NULL AND links_balanced != '') OR (links_quality IS NOT NULL AND links_quality != '')";
             sqlite3_stmt *duplicates_stmt = nullptr;
             if (sqlite3_prepare_v2(dbMan.db_, duplicates_sql.c_str(), -1, &duplicates_stmt, nullptr) == SQLITE_OK)
             {
@@ -3695,4 +3723,197 @@ DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
     }
 
     return status;
+}
+
+DBOpResult DatabaseManager::setFileLinksForMode(const std::string &file_path, const std::vector<int> &linked_ids, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Convert vector to comma-separated string
+    std::stringstream ss;
+    for (size_t i = 0; i < linked_ids.size(); ++i)
+    {
+        if (i > 0)
+            ss << ",";
+        ss << linked_ids[i];
+    }
+    std::string links_text = ss.str();
+
+    // Determine which field to update based on mode
+    std::string field_name;
+    switch (mode)
+    {
+    case DedupMode::FAST:
+        field_name = "links_fast";
+        break;
+    case DedupMode::BALANCED:
+        field_name = "links_balanced";
+        break;
+    case DedupMode::QUALITY:
+        field_name = "links_quality";
+        break;
+    default:
+        return DBOpResult(false, "Invalid deduplication mode");
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_links_text = links_text;
+    std::string captured_field_name = field_name;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_file_path, captured_links_text, captured_field_name, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing setFileLinksForMode in write queue for: " + captured_file_path + " mode: " + captured_field_name);
+        
+        const std::string update_sql = "UPDATE scanned_files SET " + captured_field_name + " = ? WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_links_text.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to update file links for mode " + captured_field_name + ": " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Updated file links for: " + captured_file_path + " mode: " + captured_field_name);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true, "");
+}
+
+std::vector<int> DatabaseManager::getFileLinksForMode(const std::string &file_path, DedupMode mode)
+{
+    std::vector<int> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Determine which field to query based on mode
+    std::string field_name;
+    switch (mode)
+    {
+    case DedupMode::FAST:
+        field_name = "links_fast";
+        break;
+    case DedupMode::BALANCED:
+        field_name = "links_balanced";
+        break;
+    case DedupMode::QUALITY:
+        field_name = "links_quality";
+        break;
+    default:
+        Logger::error("Invalid deduplication mode");
+        return results;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    std::string captured_field_name = field_name;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_file_path, captured_field_name](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getFileLinksForMode in access queue for: " + captured_file_path + " mode: " + captured_field_name);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<int>());
+        }
+        
+        std::vector<int> results;
+        const std::string select_sql = "SELECT " + captured_field_name + " FROM scanned_files WHERE file_path = ?";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(results);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+            {
+                std::string links_text = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+                if (!links_text.empty())
+                {
+                    std::stringstream ss(links_text);
+                    std::string id_str;
+                    while (std::getline(ss, id_str, ','))
+                    {
+                        try
+                        {
+                            int id = std::stoi(id_str);
+                            results.push_back(id);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            Logger::error("Failed to parse link ID: " + id_str + " - " + std::string(e.what()));
+                        }
+                    }
+                }
+            }
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(results); });
+
+    // Wait for the result
+    try
+    {
+        results = std::any_cast<std::vector<int>>(future.get());
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get file links for mode: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+std::vector<int> DatabaseManager::getFileLinksForCurrentMode(const std::string &file_path)
+{
+    // Get the current deduplication mode from the server configuration
+    try
+    {
+        auto &config = ServerConfigManager::getInstance();
+        DedupMode current_mode = config.getDedupMode();
+        return getFileLinksForMode(file_path, current_mode);
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get current deduplication mode: " + std::string(e.what()));
+        return std::vector<int>();
+    }
 }

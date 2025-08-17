@@ -25,7 +25,7 @@ struct FileProcessResult
  * processes them with MediaProcessor using the current quality setting,
  * and stores the results in a SQLite database.
  */
-class FileProcessor
+class FileProcessor : public ConfigObserver
 {
 public:
     /**
@@ -49,7 +49,7 @@ public:
 
     /**
      * @brief Process a single file with current quality settings
-     * @param file_path Path to file to process
+     * @param dir_path Path to file to process
      * @return FileProcessResult with success flag and error message
      */
     FileProcessResult processFile(const std::string &file_path);
@@ -76,6 +76,12 @@ public:
      * @brief Wait for all pending database writes to complete
      */
     void waitForWrites();
+
+    /**
+     * @brief Handle configuration changes (ConfigObserver implementation)
+     * @param event Configuration change event
+     */
+    void onConfigChanged(const ConfigEvent &event) override;
 
 private:
     DatabaseManager *db_manager_;

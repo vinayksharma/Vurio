@@ -191,11 +191,35 @@ public:
     DBOpResult setFileLinks(const std::string &file_path, const std::vector<int> &linked_ids);
 
     /**
+     * @brief Set links for a scanned file in a specific deduplication mode
+     * @param file_path Path to the file
+     * @param linked_ids Vector of IDs that this file is linked to (duplicates)
+     * @param mode The deduplication mode (FAST, BALANCED, or QUALITY)
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setFileLinksForMode(const std::string &file_path, const std::vector<int> &linked_ids, DedupMode mode);
+
+    /**
      * @brief Get links for a scanned file
      * @param file_path Path to the file
      * @return Vector of linked file IDs
      */
     std::vector<int> getFileLinks(const std::string &file_path);
+
+    /**
+     * @brief Get links for a scanned file in a specific deduplication mode
+     * @param file_path Path to the file
+     * @param mode The deduplication mode (FAST, BALANCED, or QUALITY)
+     * @return Vector of linked file IDs
+     */
+    std::vector<int> getFileLinksForMode(const std::string &file_path, DedupMode mode);
+
+    /**
+     * @brief Get links for a scanned file in the current server mode
+     * @param file_path Path to the file
+     * @return Vector of linked file IDs for the current deduplication mode
+     */
+    std::vector<int> getFileLinksForCurrentMode(const std::string &file_path);
 
     /**
      * @brief Add a link to a scanned file
