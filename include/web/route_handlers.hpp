@@ -172,6 +172,12 @@ public:
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleGetScanResults(req, res); });
 
+        // Scan targets endpoint
+        svr.Get("/api/scan/targets", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetScanTargets(req, res); });
+
         // User inputs endpoints
         svr.Get("/user/inputs", [&](const httplib::Request &req, httplib::Response &res)
                 {
@@ -904,6 +910,47 @@ private:
             Logger::error("Get orchestration status error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Failed to get orchestration status: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Scan targets handler
+    static void handleGetScanTargets(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get scan targets request");
+        try
+        {
+            std::string db_path = req.get_param_value("database_path");
+            if (db_path.empty())
+            {
+                db_path = "scan_results.db"; // Default to scan_results.db
+            }
+
+            // Create DatabaseManager and get scan paths
+            DatabaseManager &db_manager = DatabaseManager::getInstance();
+            auto scan_paths = db_manager.getUserInputs("scan_path");
+
+            json response = {
+                {"total_targets", scan_paths.size()},
+                {"database_path", db_path},
+                {"scan_targets", json::array()}};
+
+            for (const auto &scan_path : scan_paths)
+            {
+                json target_json = {
+                    {"path", scan_path},
+                    {"type", "directory"},
+                    {"status", "active"}};
+                response["scan_targets"].push_back(target_json);
+            }
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Scan targets retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get scan targets error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to retrieve scan targets: " + std::string(e.what())}}.dump(), "application/json");
         }
     }
 

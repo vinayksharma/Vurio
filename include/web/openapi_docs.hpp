@@ -269,6 +269,43 @@ public:
           "500": {"description": "Scan failed"}
         }
       }
+    },
+    "/api/scan/targets": {
+      "get": {
+        "summary": "Get scan targets",
+        "description": "Retrieve a list of directories configured for scanning",
+        "tags": ["Scanning"],
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Scan targets retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_targets": {"type": "integer"},
+                    "database_path": {"type": "string"},
+                    "scan_targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {"type": "string"},
+                          "type": {"type": "string"},
+                          "status": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Authentication required"},
+          "500": {"description": "Failed to retrieve scan targets"}
+        }
+      }
     }
   }
 })";
