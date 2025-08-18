@@ -196,8 +196,9 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     Logger::info("Raw file missing transcoded output; queued and deferred: " + file_path);
                                     TranscodingManager::getInstance().queueForTranscoding(file_path);
                                     last_error = "Transcoding pending";
-                                    // Allow retry in a future cycle
-                                    dbMan_.setProcessingFlag(file_path, process_mode);
+                                    // CRITICAL: Keep flag at -1 (in progress) - DO NOT change it!
+                                    // The transcoding thread will reset it to 0 when transcoding completes
+                                    Logger::debug("Keeping processing flag at -1 (in progress) for RAW file: " + file_path);
                                     failed_processed.fetch_add(1);
                                     continue;
                                 }
@@ -235,8 +236,8 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
                                     Logger::warn("Failed to process file: " + file_path + " - " + result.error_message);
                                     last_error = result.error_message;
                                     
-                                    // Mark as failed (set to 0 to allow retry)
-                                    dbMan_.setProcessingFlag(file_path, process_mode);
+                                    // Mark as failed (set to 2 for error state)
+                                    dbMan_.setProcessingFlagError(file_path, process_mode);
                                     
                                     // Update failure counter
                                     failed_processed.fetch_add(1);

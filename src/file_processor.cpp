@@ -101,17 +101,31 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
             return FileProcessResult(false, msg);
         }
 
-        // Set processing flag after successful processing to prevent reprocessing
+        // Handle processing flag based on result
         if (result.success)
         {
+            // Success: Set processing flag to 1 (completed)
             auto flag_result = db_manager_->setProcessingFlag(file_path, current_mode);
             if (!flag_result.success)
             {
-                Logger::warn("Failed to set processing flag after processing: " + file_path + " - " + flag_result.error_message);
+                Logger::warn("Failed to set processing flag after successful processing: " + file_path + " - " + flag_result.error_message);
             }
             else
             {
-                Logger::debug("Set processing flag after successful processing: " + file_path + " for mode: " + DedupModes::getModeName(current_mode));
+                Logger::debug("Set processing flag to completed (1) for: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+        else
+        {
+            // Failure: Set processing flag to 2 (error state) to indicate processing failure
+            auto flag_result = db_manager_->setProcessingFlagError(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag to error state after failed processing: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag to error state (2) after failed processing: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
             }
         }
 
@@ -133,6 +147,27 @@ FileProcessResult FileProcessor::processFile(const std::string &file_path)
     {
         std::string msg = "Error processing file " + file_path + ": " + std::string(e.what());
         Logger::error(msg);
+
+        // Set processing flag to 2 (error state) when exception occurs
+        try
+        {
+            auto &config_manager = ServerConfigManager::getInstance();
+            DedupMode current_mode = config_manager.getDedupMode();
+            auto flag_result = db_manager_->setProcessingFlagError(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag to error state after exception: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag to error state (2) after exception for: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+        catch (...)
+        {
+            Logger::error("Failed to reset processing flag after exception for: " + file_path);
+        }
+
         return FileProcessResult(false, msg);
     }
 }
@@ -194,17 +229,31 @@ void FileProcessor::handleFile(const std::string &file_path)
             return;
         }
 
-        // Set processing flag after successful processing to prevent reprocessing
+        // Handle processing flag based on result
         if (result.success)
         {
+            // Success: Set processing flag to 1 (completed)
             auto flag_result = db_manager_->setProcessingFlag(file_path, current_mode);
             if (!flag_result.success)
             {
-                Logger::warn("Failed to set processing flag after processing: " + file_path + " - " + flag_result.error_message);
+                Logger::warn("Failed to set processing flag after successful processing: " + file_path + " - " + flag_result.error_message);
             }
             else
             {
-                Logger::debug("Set processing flag after successful processing: " + file_path + " for mode: " + DedupModes::getModeName(current_mode));
+                Logger::debug("Set processing flag to completed (1) for: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+        else
+        {
+            // Failure: Set processing flag to 2 (error state) to indicate processing failure
+            auto flag_result = db_manager_->setProcessingFlagError(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag to error state after failed processing: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag to error state (2) after failed processing: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
             }
         }
 
@@ -224,6 +273,26 @@ void FileProcessor::handleFile(const std::string &file_path)
     catch (const std::exception &e)
     {
         Logger::error("Error handling file " + file_path + ": " + std::string(e.what()));
+
+        // Set processing flag to 2 (error state) when exception occurs
+        try
+        {
+            auto &config_manager = ServerConfigManager::getInstance();
+            DedupMode current_mode = config_manager.getDedupMode();
+            auto flag_result = db_manager_->setProcessingFlagError(file_path, current_mode);
+            if (!flag_result.success)
+            {
+                Logger::warn("Failed to set processing flag to error state after exception: " + file_path + " - " + flag_result.error_message);
+            }
+            else
+            {
+                Logger::debug("Set processing flag to error state (2) after exception for: " + file_path + " mode: " + DedupModes::getModeName(current_mode));
+            }
+        }
+        catch (...)
+        {
+            Logger::error("Failed to reset processing flag after exception for: " + file_path);
+        }
     }
 }
 

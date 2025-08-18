@@ -118,6 +118,22 @@ public:
     DBOpResult setProcessingFlag(const std::string &file_path, DedupMode mode);
 
     /**
+     * @brief Reset processing flag for a specific mode after failed processing
+     * @param file_path Path to the file
+     * @param mode Processing mode
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult resetProcessingFlag(const std::string &file_path, DedupMode mode);
+
+    /**
+     * @brief Set processing flag to error state (2) for a specific mode
+     * @param file_path Path to the file
+     * @param mode Processing mode
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setProcessingFlagError(const std::string &file_path, DedupMode mode);
+
+    /**
      * @brief Get files that need processing for any mode
      * @return Vector of file paths and names that need processing for any mode
      */

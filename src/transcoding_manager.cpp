@@ -222,6 +222,43 @@ void TranscodingManager::transcodingThreadFunction()
                 {
                     completed_count_.fetch_add(1);
                     Logger::info("Transcoding completed successfully: " + file_path + " -> " + transcoded_path);
+
+                    // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry)
+                    // This allows the processing thread to pick up the file again
+                    Logger::info("Resetting processing flags for transcoded file: " + file_path);
+                    auto &config_manager = ServerConfigManager::getInstance();
+
+                    // Get the current dedup mode and check if quality stack processing is enabled
+                    DedupMode current_mode = config_manager.getDedupMode();
+                    bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+                    // Determine which modes to reset based on configuration
+                    std::vector<DedupMode> modes_to_reset;
+                    if (pre_process_quality_stack)
+                    {
+                        // Reset all three quality levels
+                        modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                    }
+                    else
+                    {
+                        // Reset only the current mode
+                        modes_to_reset = {current_mode};
+                    }
+
+                    for (const auto &mode : modes_to_reset)
+                    {
+                        auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
+                        if (!flag_result.success)
+                        {
+                            Logger::warn("Failed to reset processing flag after transcoding for: " + file_path +
+                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        }
+                        else
+                        {
+                            Logger::debug("Reset processing flag to retry (0) after transcoding for: " + file_path +
+                                          " mode: " + DedupModes::getModeName(mode));
+                        }
+                    }
                 }
                 else
                 {
@@ -233,12 +270,93 @@ void TranscodingManager::transcodingThreadFunction()
             {
                 failed_count_.fetch_add(1);
                 Logger::error("Transcoding failed - transcodeFile returned empty path: " + file_path);
+
+                // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry) on transcoding failure
+                // This allows the processing thread to retry the file in a future cycle
+                Logger::info("Resetting processing flags for failed transcoding: " + file_path);
+                auto &config_manager = ServerConfigManager::getInstance();
+
+                // Get the current dedup mode and check if quality stack processing is enabled
+                DedupMode current_mode = config_manager.getDedupMode();
+                bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+                // Determine which modes to reset based on configuration
+                std::vector<DedupMode> modes_to_reset;
+                if (pre_process_quality_stack)
+                {
+                    // Reset all three quality levels
+                    modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                }
+                else
+                {
+                    // Reset only the current mode
+                    modes_to_reset = {current_mode};
+                }
+
+                for (const auto &mode : modes_to_reset)
+                {
+                    auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
+                    if (!flag_result.success)
+                    {
+                        Logger::warn("Failed to reset processing flag after transcoding failure for: " + file_path +
+                                     " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                    }
+                    else
+                    {
+                        Logger::debug("Reset processing flag to retry (0) after transcoding failure for: " + file_path +
+                                      " mode: " + DedupModes::getModeName(mode));
+                    }
+                }
             }
         }
         catch (const std::exception &e)
         {
             failed_count_.fetch_add(1);
             Logger::error("Exception during transcoding: " + file_path + " - " + std::string(e.what()));
+
+            // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry) on transcoding exception
+            // This allows the processing thread to retry the file in a future cycle
+            Logger::info("Resetting processing flags for transcoding exception: " + file_path);
+            try
+            {
+                auto &config_manager = ServerConfigManager::getInstance();
+
+                // Get the current dedup mode and check if quality stack processing is enabled
+                DedupMode current_mode = config_manager.getDedupMode();
+                bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+                // Determine which modes to reset based on configuration
+                std::vector<DedupMode> modes_to_reset;
+                if (pre_process_quality_stack)
+                {
+                    // Reset all three quality levels
+                    modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                }
+                else
+                {
+                    // Reset only the current mode
+                    modes_to_reset = {current_mode};
+                }
+
+                for (const auto &mode : modes_to_reset)
+                {
+                    auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
+                    if (!flag_result.success)
+                    {
+                        Logger::warn("Failed to reset processing flag after transcoding exception for: " + file_path +
+                                     " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                    }
+                    else
+                    {
+                        Logger::debug("Reset processing flag to retry (0) after transcoding exception for: " + file_path +
+                                      " mode: " + DedupModes::getModeName(mode));
+                    }
+                }
+            }
+            catch (...)
+            {
+                Logger::error("Failed to reset processing flags after transcoding exception for: " + file_path);
+            }
         }
     }
 
