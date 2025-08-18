@@ -12,7 +12,14 @@ tests/
 ├── scripts/                            # Test execution scripts
 │   ├── run_all_tests.sh               # Master test runner
 │   ├── run_unit_tests.sh              # Unit test runner
-│   └── run_integration_tests.sh       # Integration test runner
+│   ├── run_integration_tests.sh       # Integration test runner
+│   ├── test_quality_stack.sh          # Quality stack testing
+│   ├── test_raw_support.sh            # RAW format support testing
+│   ├── test_scan.sh                   # File scanning testing
+│   ├── run_tests.sh                   # Legacy test runner
+│   ├── clean_db.sh                    # Database cleanup utility
+│   ├── clear_database.sh              # Basic database clearing
+│   └── clear_database_advanced.sh     # Advanced database management
 ├── integration/                        # Integration tests (standalone executables)
 │   ├── cache_size_test.cpp            # Cache management tests
 │   ├── smart_cache_cleanup_test.cpp   # Smart cache cleanup tests
@@ -25,10 +32,18 @@ tests/
 │   ├── test_arw_detection.cpp         # ARW format detection tests
 │   ├── test_libraw_formats.cpp        # LibRaw format support tests
 │   ├── test_libraw_raf.cpp            # RAF format tests
-│   └── test_mount_manager.cpp         # Mount manager tests
+│   ├── test_mount_manager.cpp         # Mount manager tests
+│   ├── test_mode_change.cpp           # Mode change testing
+│   ├── test_mode_change               # Mode change executable
+│   └── migrate_to_relative_paths.cpp # Path migration tests
 ├── libraw/                             # LibRaw-specific tests
 │   ├── libraw_probe.cpp               # LibRaw probe tool
 │   └── raw_to_jpeg.cpp                # RAW to JPEG conversion tests
+├── test_data/                          # Test media files and data
+│   ├── audio/                         # Audio test files
+│   │   └── test_audio.mp3            # Test MP3 file
+│   └── images/                        # Image test files
+│       └── test_balance.jpg           # Test JPG file
 └── [unit test files]                   # Google Test-based unit tests
     ├── database_manager_test.cpp
     ├── file_processor_test.cpp
@@ -61,6 +76,13 @@ tests/
 - **Purpose**: Test system-level functionality and workflows
 - **Execution**: Automatically run by integration test harness
 - **Output**: Included in integration test results
+
+### Test Data
+- **Location**: `tests/test_data/`
+- **Audio Files**: `tests/test_data/audio/` - Contains test MP3 files for audio processing tests
+- **Image Files**: `tests/test_data/images/` - Contains test JPG files for image processing tests
+- **Purpose**: Provides consistent test media files for reproducible testing
+- **Usage**: Tests can reference these files using relative paths from the test data directory
 
 ## Test Execution
 

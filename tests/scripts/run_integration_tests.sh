@@ -236,6 +236,85 @@ run_script_tests() {
             log_error "test_scan.sh failed in ${duration}s"
         fi
     fi
+    
+    # Database cleanup scripts
+    if [[ -f "clean_db.sh" ]]; then
+        TOTAL_TESTS=$((TOTAL_TESTS + 1))
+        log "Running clean_db.sh..."
+        
+        local start_time=$(date +%s.%N)
+        if cd "$TESTS_DIR" && bash clean_db.sh --help > /dev/null 2>&1; then
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clean_db.sh"]="PASSED"
+            TEST_DURATIONS["clean_db.sh"]="$duration"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+            
+            log_success "clean_db.sh passed in ${duration}s"
+        else
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clean_db.sh"]="FAILED"
+            TEST_DURATIONS["clean_db.sh"]="$duration"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            
+            log_error "clean_db.sh failed in ${duration}s"
+        fi
+    fi
+    
+    if [[ -f "clear_database.sh" ]]; then
+        TOTAL_TESTS=$((TOTAL_TESTS + 1))
+        log "Running clear_database.sh..."
+        
+        local start_time=$(date +%s.%N)
+        if cd "$TESTS_DIR" && bash clear_database.sh --help > /dev/null 2>&1; then
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clear_database.sh"]="PASSED"
+            TEST_DURATIONS["clear_database.sh"]="$duration"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+            
+            log_success "clear_database.sh passed in ${duration}s"
+        else
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clear_database.sh"]="FAILED"
+            TEST_DURATIONS["clear_database.sh"]="$duration"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            
+            log_error "clear_database.sh failed in ${duration}s"
+        fi
+    fi
+    
+    if [[ -f "clear_database_advanced.sh" ]]; then
+        TOTAL_TESTS=$((TOTAL_TESTS + 1))
+        log "Running clear_database_advanced.sh..."
+        
+        local start_time=$(date +%s.%N)
+        if cd "$TESTS_DIR" && bash clear_database_advanced.sh --help > /dev/null 2>&1; then
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clear_database_advanced.sh"]="PASSED"
+            TEST_DURATIONS["clear_database_advanced.sh"]="$duration"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+            
+            log_success "clear_database_advanced.sh passed in ${duration}s"
+        else
+            local end_time=$(date +%s.%N)
+            local duration=$(echo "$end_time - $start_time" | bc -l)
+            
+            TEST_RESULTS["clear_database_advanced.sh"]="FAILED"
+            TEST_DURATIONS["clear_database_advanced.sh"]="$duration"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            
+            log_error "clear_database_advanced.sh failed in ${duration}s"
+        fi
+    fi
 }
 
 generate_report() {
