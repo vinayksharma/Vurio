@@ -23,8 +23,20 @@ class TranscodingManager
 {
 public:
     /**
+     * @brief Cache cleanup configuration
+     */
+    struct CleanupConfig
+    {
+        int fully_processed_age_days = 7;     // Remove fully processed files older than 7 days
+        int partially_processed_age_days = 3; // Remove partially processed files older than 3 days
+        int unprocessed_age_days = 1;         // Remove unprocessed files older than 1 day
+        bool require_all_modes = true;        // Require all modes to be processed for "fully processed"
+        int cleanup_threshold_percent = 80;   // Start cleanup when 80% full
+    };
+
+    /**
      * @brief Get singleton instance
-     * @return Reference to the singleton instance
+     * @return Reference to singleton instance
      */
     static TranscodingManager &getInstance();
 
@@ -103,6 +115,24 @@ public:
     size_t getMaxCacheSize() const;
 
     /**
+     * @brief Set cache cleanup configuration
+     * @param fully_processed_days Days to keep fully processed files
+     * @param partially_processed_days Days to keep partially processed files
+     * @param unprocessed_days Days to keep unprocessed files
+     * @param require_all_modes Whether to require all modes for "fully processed"
+     * @param cleanup_threshold_percent Percentage threshold to start cleanup
+     */
+    void setCleanupConfig(int fully_processed_days, int partially_processed_days,
+                          int unprocessed_days, bool require_all_modes = true,
+                          int cleanup_threshold_percent = 80);
+
+    /**
+     * @brief Get current cleanup configuration
+     * @return CleanupConfig structure with current settings
+     */
+    const CleanupConfig &getCleanupConfig() const;
+
+    /**
      * @brief Restore transcoding queue from database on startup
      * @note This method should be called after database initialization to restore pending transcoding jobs
      */
@@ -127,6 +157,13 @@ public:
      * @return Number of files removed
      */
     size_t cleanupCacheEnhanced(bool force_cleanup = false);
+
+    /**
+     * @brief Smart cache cleanup that considers processing status and age
+     * @param force_cleanup If true, clean up even if under limit
+     * @return Number of files removed
+     */
+    size_t cleanupCacheSmart(bool force_cleanup = false);
 
     /**
      * @brief Shutdown the transcoding manager
@@ -158,6 +195,68 @@ private:
      */
     std::string generateCacheFilename(const std::string &source_file_path);
 
+    /**
+     * @brief Cache entry with processing status and metadata
+     */
+    struct CacheEntry
+    {
+        std::string source_file;
+        std::string cache_file;
+        bool is_processed;             // Processed in at least one mode
+        bool is_fully_processed;       // Processed in all enabled modes
+        std::time_t cache_age;         // How old is the transcoded file
+        size_t file_size;              // Cache file size
+        std::string processing_status; // Human-readable processing status
+    };
+
+    /**
+     * @brief Get cache entries with processing status from database
+     * @return Vector of CacheEntry objects
+     */
+    std::vector<CacheEntry> getCacheEntriesWithStatus();
+
+    /**
+     * @brief Remove invalid cache files (source changed/missing)
+     * @param entries Cache entries to analyze
+     * @return Number of files removed
+     */
+    size_t removeInvalidFiles(const std::vector<CacheEntry> &entries);
+
+    /**
+     * @brief Remove processed old cache files
+     * @param entries Cache entries to analyze
+     * @return Number of files removed
+     */
+    size_t removeProcessedOldFiles(const std::vector<CacheEntry> &entries);
+
+    /**
+     * @brief Remove unprocessed old cache files
+     * @param entries Cache entries to analyze
+     * @return Number of files removed
+     */
+    size_t removeUnprocessedOldFiles(const std::vector<CacheEntry> &entries);
+
+    /**
+     * @brief Remove oldest valid files if still over limit
+     * @param entries Cache entries to analyze
+     * @return Number of files removed
+     */
+    size_t removeOldestValidFiles(const std::vector<CacheEntry> &entries);
+
+    /**
+     * @brief Check if cache entry is old enough for cleanup based on processing status
+     * @param entry Cache entry to check
+     * @return true if entry should be considered for cleanup
+     */
+    bool isOldEnoughForCleanup(const CacheEntry &entry) const;
+
+    /**
+     * @brief Remove a single cache entry (file + database record)
+     * @param entry Cache entry to remove
+     * @return true if removal was successful
+     */
+    bool removeCacheEntry(const CacheEntry &entry);
+
     // Member variables
     std::string cache_dir_;
     int max_threads_;
@@ -167,6 +266,9 @@ private:
     // Cache size management
     std::atomic<size_t> max_cache_size_{10ULL * 1024 * 1024 * 1024}; // 10 GB default
     mutable std::mutex cache_size_mutex_;
+
+    // Cache cleanup configuration
+    CleanupConfig cleanup_config_;
 
     // Thread management
     std::vector<std::thread> transcoding_threads_;

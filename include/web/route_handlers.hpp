@@ -17,6 +17,7 @@
 #include "core/file_processor.hpp"
 #include "core/media_processor.hpp"
 #include "core/thread_pool_manager.hpp"
+#include "core/transcoding_manager.hpp"
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
 #include <yaml-cpp/yaml.h> // Added for YAML::Node
@@ -219,6 +220,27 @@ public:
                  {
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleUpdateProcessingConfig(req, res); });
+
+        // Cache management endpoints
+        svr.Get("/api/cache/status", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetCacheStatus(req, res); });
+
+        svr.Post("/api/cache/cleanup", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleCacheCleanup(req, res); });
+
+        svr.Get("/api/cache/config", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetCacheConfig(req, res); });
+
+        svr.Post("/api/cache/config", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleUpdateCacheConfig(req, res); });
     }
 
 private:
@@ -1087,6 +1109,152 @@ private:
         catch (const std::exception &e)
         {
             Logger::error("Update processing config error: " + std::string(e.what()));
+            res.status = 400;
+            res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Cache management handlers
+    static void handleGetCacheStatus(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get cache status request");
+        try
+        {
+            auto &transcoding_manager = TranscodingManager::getInstance();
+            size_t current_size = transcoding_manager.getCacheSize();
+            size_t max_size = transcoding_manager.getMaxCacheSize();
+            auto cleanup_config = transcoding_manager.getCleanupConfig();
+
+            json response = {
+                {"status", "success"},
+                {"current_size_bytes", current_size},
+                {"max_size_bytes", max_size},
+                {"current_size_mb", current_size / (1024 * 1024)},
+                {"max_size_mb", max_size / (1024 * 1024)},
+                {"cleanup_config", {{"fully_processed_age_days", cleanup_config.fully_processed_age_days}, {"partially_processed_age_days", cleanup_config.partially_processed_age_days}, {"unprocessed_age_days", cleanup_config.unprocessed_age_days}, {"require_all_modes", cleanup_config.require_all_modes}, {"cleanup_threshold_percent", cleanup_config.cleanup_threshold_percent}}}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Cache status retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get cache status error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to get cache status: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleCacheCleanup(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received cache cleanup request");
+        try
+        {
+            auto body = json::parse(req.body);
+            std::string cleanup_type = body.value("type", "smart"); // smart, enhanced, basic
+
+            auto &transcoding_manager = TranscodingManager::getInstance();
+            size_t files_removed = 0;
+
+            if (cleanup_type == "smart")
+            {
+                files_removed = transcoding_manager.cleanupCacheSmart(true);
+            }
+            else if (cleanup_type == "enhanced")
+            {
+                files_removed = transcoding_manager.cleanupCacheEnhanced(true);
+            }
+            else if (cleanup_type == "basic")
+            {
+                files_removed = transcoding_manager.cleanupCache(true);
+            }
+            else
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Invalid cleanup type. Use 'smart', 'enhanced', or 'basic'"}}.dump(), "application/json");
+                return;
+            }
+
+            json response = {
+                {"message", "Cache cleanup completed"},
+                {"cleanup_type", cleanup_type},
+                {"files_removed", files_removed}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Cache cleanup completed: " + std::to_string(files_removed) + " files removed");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Cache cleanup error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to initiate cache cleanup: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleGetCacheConfig(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get cache config request");
+        try
+        {
+            auto &transcoding_manager = TranscodingManager::getInstance();
+            auto cleanup_config = transcoding_manager.getCleanupConfig();
+
+            json response = {
+                {"status", "success"},
+                {"config", {{"fully_processed_age_days", cleanup_config.fully_processed_age_days}, {"partially_processed_age_days", cleanup_config.partially_processed_age_days}, {"unprocessed_age_days", cleanup_config.unprocessed_age_days}, {"require_all_modes", cleanup_config.require_all_modes}, {"cleanup_threshold_percent", cleanup_config.cleanup_threshold_percent}}}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Cache configuration retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get cache config error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
+        }
+    }
+
+    static void handleUpdateCacheConfig(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received update cache config request");
+        try
+        {
+            auto body = json::parse(req.body);
+
+            int fully_processed_days = body.value("fully_processed_age_days", 7);
+            int partially_processed_days = body.value("partially_processed_age_days", 3);
+            int unprocessed_days = body.value("unprocessed_age_days", 1);
+            bool require_all_modes = body.value("require_all_modes", true);
+            int cleanup_threshold_percent = body.value("cleanup_threshold_percent", 80);
+
+            // Validate input
+            if (fully_processed_days < 1 || partially_processed_days < 1 || unprocessed_days < 1)
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Age values must be at least 1 day"}}.dump(), "application/json");
+                return;
+            }
+
+            if (cleanup_threshold_percent < 50 || cleanup_threshold_percent > 95)
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Cleanup threshold must be between 50 and 95 percent"}}.dump(), "application/json");
+                return;
+            }
+
+            auto &transcoding_manager = TranscodingManager::getInstance();
+            transcoding_manager.setCleanupConfig(
+                fully_processed_days,
+                partially_processed_days,
+                unprocessed_days,
+                require_all_modes,
+                cleanup_threshold_percent);
+
+            res.set_content(json{{"message", "Cache configuration updated successfully"}}.dump(), "application/json");
+            Logger::info("Cache configuration updated successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Update cache config error: " + std::string(e.what()));
             res.status = 400;
             res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
         }

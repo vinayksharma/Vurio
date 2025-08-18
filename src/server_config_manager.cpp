@@ -86,6 +86,12 @@ void ServerConfigManager::initializeDefaultConfig()
           decoder_cache_size_mb: 1024
         processing:
           batch_size: 100
+        cache_cleanup:
+          fully_processed_age_days: 7
+          partially_processed_age_days: 3
+          unprocessed_age_days: 1
+          require_all_modes: true
+          cleanup_threshold_percent: 80
         categories:
           images:
             jpg: true
@@ -1248,6 +1254,275 @@ void ServerConfigManager::updateProcessingConfig(const YAML::Node &config)
     catch (const std::exception &e)
     {
         Logger::error("Error updating processing config: " + std::string(e.what()));
+        throw;
+    }
+}
+
+YAML::Node ServerConfigManager::getCacheConfig() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+
+    YAML::Node cache_config;
+
+    // Get max cache size from existing config
+    if (config_["cache"] && config_["cache"]["decoder_cache_size_mb"])
+    {
+        cache_config["max_cache_size_gb"] = config_["cache"]["decoder_cache_size_mb"].as<int>() / 1024;
+    }
+    else
+    {
+        cache_config["max_cache_size_gb"] = 1; // Default 1 GB
+    }
+
+    // Add cache cleanup configuration if it exists
+    if (config_["cache_cleanup"])
+    {
+        cache_config["cache_cleanup"] = config_["cache_cleanup"];
+    }
+    else
+    {
+        // Default cache cleanup configuration
+        cache_config["cache_cleanup"] = YAML::Load(R"(
+            fully_processed_age_days: 7
+            partially_processed_age_days: 3
+            unprocessed_age_days: 1
+            require_all_modes: true
+            cleanup_threshold_percent: 80
+        )");
+    }
+
+    return cache_config;
+}
+
+bool ServerConfigManager::validateCacheConfig(const YAML::Node &config) const
+{
+    try
+    {
+        if (config["cache_cleanup"])
+        {
+            auto cleanup = config["cache_cleanup"];
+
+            // Validate age values
+            if (cleanup["fully_processed_age_days"] &&
+                cleanup["fully_processed_age_days"].as<int>() < 1)
+            {
+                Logger::warn("Invalid fully_processed_age_days: must be at least 1");
+                return false;
+            }
+
+            if (cleanup["partially_processed_age_days"] &&
+                cleanup["partially_processed_age_days"].as<int>() < 1)
+            {
+                Logger::warn("Invalid partially_processed_age_days: must be at least 1");
+                return false;
+            }
+
+            if (cleanup["unprocessed_age_days"] &&
+                cleanup["unprocessed_age_days"].as<int>() < 1)
+            {
+                Logger::warn("Invalid unprocessed_age_days: must be at least 1");
+                return false;
+            }
+
+            // Validate cleanup threshold
+            if (cleanup["cleanup_threshold_percent"])
+            {
+                int threshold = cleanup["cleanup_threshold_percent"].as<int>();
+                if (threshold < 50 || threshold > 95)
+                {
+                    Logger::warn("Invalid cleanup_threshold_percent: must be between 50 and 95");
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error validating cache config: " + std::string(e.what()));
+        return false;
+    }
+}
+
+void ServerConfigManager::updateCacheConfig(const YAML::Node &config)
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+
+    try
+    {
+        bool config_changed = false;
+
+        // Update cache cleanup configuration
+        if (config["cache_cleanup"])
+        {
+            auto cleanup = config["cache_cleanup"];
+
+            if (cleanup["fully_processed_age_days"])
+            {
+                int old_days = 7; // Default value
+                if (config_["cache_cleanup"] && config_["cache_cleanup"]["fully_processed_age_days"])
+                {
+                    old_days = config_["cache_cleanup"]["fully_processed_age_days"].as<int>();
+                }
+                int new_days = cleanup["fully_processed_age_days"].as<int>();
+
+                if (!config_["cache_cleanup"])
+                {
+                    config_["cache_cleanup"] = YAML::Node();
+                }
+                config_["cache_cleanup"]["fully_processed_age_days"] = new_days;
+
+                if (old_days != new_days)
+                {
+                    ConfigEvent event;
+                    event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                    event.key = "fully_processed_age_days";
+                    event.old_value = YAML::Node(old_days);
+                    event.new_value = YAML::Node(new_days);
+                    event.description = "Fully processed age days changed from " + std::to_string(old_days) + " to " + std::to_string(new_days);
+
+                    Logger::info("Fully processed age days updated: " + std::to_string(old_days) + " -> " + std::to_string(new_days));
+                    publishEvent(event);
+                    config_changed = true;
+                }
+            }
+
+            if (cleanup["partially_processed_age_days"])
+            {
+                int old_days = 3; // Default value
+                if (config_["cache_cleanup"] && config_["cache_cleanup"]["partially_processed_age_days"])
+                {
+                    old_days = config_["cache_cleanup"]["partially_processed_age_days"].as<int>();
+                }
+                int new_days = cleanup["partially_processed_age_days"].as<int>();
+
+                if (!config_["cache_cleanup"])
+                {
+                    config_["cache_cleanup"] = YAML::Node();
+                }
+                config_["cache_cleanup"]["partially_processed_age_days"] = new_days;
+
+                if (old_days != new_days)
+                {
+                    ConfigEvent event;
+                    event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                    event.key = "partially_processed_age_days";
+                    event.old_value = YAML::Node(old_days);
+                    event.new_value = YAML::Node(new_days);
+                    event.description = "Partially processed age days changed from " + std::to_string(old_days) + " to " + std::to_string(new_days);
+
+                    Logger::info("Partially processed age days updated: " + std::to_string(old_days) + " -> " + std::to_string(new_days));
+                    publishEvent(event);
+                    config_changed = true;
+                }
+            }
+
+            if (cleanup["unprocessed_age_days"])
+            {
+                int old_days = 1; // Default value
+                if (config_["cache_cleanup"] && config_["cache_cleanup"]["unprocessed_age_days"])
+                {
+                    old_days = config_["cache_cleanup"]["unprocessed_age_days"].as<int>();
+                }
+                int new_days = cleanup["unprocessed_age_days"].as<int>();
+
+                if (!config_["cache_cleanup"])
+                {
+                    config_["cache_cleanup"] = YAML::Node();
+                }
+                config_["cache_cleanup"]["unprocessed_age_days"] = new_days;
+
+                if (old_days != new_days)
+                {
+                    ConfigEvent event;
+                    event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                    event.key = "unprocessed_age_days";
+                    event.old_value = YAML::Node(old_days);
+                    event.new_value = YAML::Node(new_days);
+                    event.description = "Unprocessed age days changed from " + std::to_string(old_days) + " to " + std::to_string(new_days);
+
+                    Logger::info("Unprocessed age days updated: " + std::to_string(old_days) + " -> " + std::to_string(new_days));
+                    publishEvent(event);
+                    config_changed = true;
+                }
+            }
+
+            if (cleanup["require_all_modes"])
+            {
+                bool old_require = true; // Default value
+                if (config_["cache_cleanup"] && config_["cache_cleanup"]["require_all_modes"])
+                {
+                    old_require = config_["cache_cleanup"]["require_all_modes"].as<bool>();
+                }
+                bool new_require = cleanup["require_all_modes"].as<bool>();
+
+                if (!config_["cache_cleanup"])
+                {
+                    config_["cache_cleanup"] = YAML::Node();
+                }
+                config_["cache_cleanup"]["require_all_modes"] = new_require;
+
+                if (old_require != new_require)
+                {
+                    ConfigEvent event;
+                    event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                    event.key = "require_all_modes";
+                    event.old_value = YAML::Node(old_require);
+                    event.new_value = YAML::Node(new_require);
+                    std::string old_str = old_require ? "true" : "false";
+                    std::string new_str = new_require ? "true" : "false";
+                    event.description = "Require all modes changed from " + old_str + " to " + new_str;
+
+                    Logger::info("Require all modes updated: " + old_str + " -> " + new_str);
+                    publishEvent(event);
+                    config_changed = true;
+                }
+            }
+
+            if (cleanup["cleanup_threshold_percent"])
+            {
+                int old_threshold = 80; // Default value
+                if (config_["cache_cleanup"] && config_["cache_cleanup"]["cleanup_threshold_percent"])
+                {
+                    old_threshold = config_["cache_cleanup"]["cleanup_threshold_percent"].as<int>();
+                }
+                int new_threshold = cleanup["cleanup_threshold_percent"].as<int>();
+
+                if (!config_["cache_cleanup"])
+                {
+                    config_["cache_cleanup"] = YAML::Node();
+                }
+                config_["cache_cleanup"]["cleanup_threshold_percent"] = new_threshold;
+
+                if (old_threshold != new_threshold)
+                {
+                    ConfigEvent event;
+                    event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                    event.key = "cleanup_threshold_percent";
+                    event.old_value = YAML::Node(old_threshold);
+                    event.new_value = YAML::Node(new_threshold);
+                    event.description = "Cleanup threshold changed from " + std::to_string(old_threshold) + "% to " + std::to_string(new_threshold) + "%";
+
+                    Logger::info("Cleanup threshold updated: " + std::to_string(old_threshold) + "% -> " + std::to_string(new_threshold) + "%");
+                    publishEvent(event);
+                    config_changed = true;
+                }
+            }
+        }
+
+        if (config_changed)
+        {
+            Logger::info("Cache configuration updated successfully");
+        }
+        else
+        {
+            Logger::debug("No cache configuration changes detected");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error updating cache config: " + std::string(e.what()));
         throw;
     }
 }

@@ -132,6 +132,11 @@ public:
     bool validateProcessingConfig(const YAML::Node &config) const;
     void updateProcessingConfig(const YAML::Node &config);
 
+    // Cache configuration specific methods
+    YAML::Node getCacheConfig() const;
+    bool validateCacheConfig(const YAML::Node &config) const;
+    void updateCacheConfig(const YAML::Node &config);
+
 private:
     ServerConfigManager();
     ~ServerConfigManager();
