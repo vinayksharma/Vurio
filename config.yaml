@@ -1,4 +1,4 @@
-log_level: INFO
+log_level: WARN
 auth_secret: your-secret-key-here
 dedup_mode: FAST
 server_host: localhost

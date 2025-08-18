@@ -116,12 +116,21 @@ public:
     void subscribe(ConfigObserver *observer);
     void unsubscribe(ConfigObserver *observer);
 
+    // Observer management aliases for consistency
+    void addObserver(ConfigObserver *observer) { subscribe(observer); }
+    void removeObserver(ConfigObserver *observer) { unsubscribe(observer); }
+
     // Configuration persistence
     bool loadConfig(const std::string &file_path);
     bool saveConfig(const std::string &file_path) const;
 
     // Configuration validation
     bool validateConfig(const YAML::Node &config) const;
+
+    // Processing configuration specific methods
+    YAML::Node getProcessingConfig() const;
+    bool validateProcessingConfig(const YAML::Node &config) const;
+    void updateProcessingConfig(const YAML::Node &config);
 
 private:
     ServerConfigManager();

@@ -74,7 +74,7 @@ check_orchestration_status() {
     STATUS=$(curl -s -X GET http://localhost:8080/orchestration/status \
         -H "Authorization: Bearer $TOKEN")
     
-    if echo "$STATUS" | grep -q '"timer_processing_running":true'; then
+    if echo "$STATUS" | grep -q '"tpm_processing_running":true'; then
         echo -e "${GREEN}✓ Scheduled processing is running${NC}"
         return 0
     else

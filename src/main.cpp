@@ -207,11 +207,11 @@ int main(int argc, char *argv[])
                                     {
             Logger::info("Executing scheduled processing operation");
             try {
-                // Process files that need processing
-                MediaProcessingOrchestrator orchestrator(db_manager);
+                // Process files that need processing using ThreadPoolManager
                 auto &config_manager = ServerConfigManager::getInstance();
-                auto observable = orchestrator.processAllScannedFiles(config_manager.getMaxProcessingThreads());
-                observable.subscribe(
+                ThreadPoolManager::processAllScannedFilesAsync(
+                    config_manager.getMaxProcessingThreads(),
+                    // on_event callback
                     [](const FileProcessingEvent &event) {
                         if (event.success) {
                             Logger::info("Processed file: " + event.file_path + 
@@ -222,9 +222,11 @@ int main(int argc, char *argv[])
                                        " - " + event.error_message);
                         }
                     },
+                    // on_error callback
                     [](const std::exception &e) {
                         Logger::error("Processing error: " + std::string(e.what()));
                     },
+                    // on_complete callback
                     []() {
                         Logger::info("Scheduled processing completed");
                     });

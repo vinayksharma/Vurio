@@ -1074,3 +1074,180 @@ std::vector<std::string> ServerConfigManager::getEnabledAudioExtensions() const
     }
     return audio_exts;
 }
+
+YAML::Node ServerConfigManager::getProcessingConfig() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    YAML::Node processing_config;
+
+    try
+    {
+        // Extract processing-related configuration
+        if (config_["max_processing_threads"])
+            processing_config["max_processing_threads"] = config_["max_processing_threads"];
+        if (config_["dedup_mode"])
+            processing_config["dedup_mode"] = config_["dedup_mode"];
+        if (config_["pre_process_quality_stack"])
+            processing_config["pre_process_quality_stack"] = config_["pre_process_quality_stack"];
+        if (config_["processing_batch_size"])
+            processing_config["processing_batch_size"] = config_["processing_batch_size"];
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error building processing config: " + std::string(e.what()));
+    }
+
+    return processing_config;
+}
+
+bool ServerConfigManager::validateProcessingConfig(const YAML::Node &config) const
+{
+    try
+    {
+        // Validate processing-specific configuration
+        if (config["max_processing_threads"])
+        {
+            int threads = config["max_processing_threads"].as<int>();
+            if (threads < 1 || threads > 64)
+            {
+                Logger::error("Invalid max_processing_threads: " + std::to_string(threads) + ". Must be between 1 and 64.");
+                return false;
+            }
+        }
+
+        if (config["dedup_mode"])
+        {
+            std::string mode = config["dedup_mode"].as<std::string>();
+            if (mode != "FAST" && mode != "BALANCED" && mode != "QUALITY")
+            {
+                Logger::error("Invalid dedup_mode: " + mode + ". Must be FAST, BALANCED, or QUALITY.");
+                return false;
+            }
+        }
+
+        if (config["pre_process_quality_stack"])
+        {
+            if (!config["pre_process_quality_stack"].IsScalar())
+            {
+                Logger::error("Invalid pre_process_quality_stack: must be a boolean value.");
+                return false;
+            }
+        }
+
+        if (config["processing_batch_size"])
+        {
+            int batch_size = config["processing_batch_size"].as<int>();
+            if (batch_size < 1 || batch_size > 10000)
+            {
+                Logger::error("Invalid processing_batch_size: " + std::to_string(batch_size) + ". Must be between 1 and 10000.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error validating processing config: " + std::string(e.what()));
+        return false;
+    }
+}
+
+void ServerConfigManager::updateProcessingConfig(const YAML::Node &config)
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+
+    try
+    {
+        // Update processing-related configuration
+        if (config["max_processing_threads"])
+        {
+            int old_threads = getMaxProcessingThreads();
+            int new_threads = config["max_processing_threads"].as<int>();
+            config_["max_processing_threads"] = new_threads;
+
+            if (old_threads != new_threads)
+            {
+                ConfigEvent event;
+                event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                event.key = "max_processing_threads";
+                event.old_value = YAML::Node(old_threads);
+                event.new_value = YAML::Node(new_threads);
+                event.description = "Processing thread count changed from " + std::to_string(old_threads) + " to " + std::to_string(new_threads);
+
+                Logger::info("Processing thread count updated: " + std::to_string(old_threads) + " -> " + std::to_string(new_threads));
+                publishEvent(event);
+            }
+        }
+
+        if (config["dedup_mode"])
+        {
+            DedupMode old_mode_enum = getDedupMode();
+            std::string old_mode = DedupModes::getModeName(old_mode_enum);
+            std::string new_mode = config["dedup_mode"].as<std::string>();
+            config_["dedup_mode"] = new_mode;
+
+            if (old_mode != new_mode)
+            {
+                ConfigEvent event;
+                event.type = ConfigEventType::DEDUP_MODE_CHANGED;
+                event.key = "dedup_mode";
+                event.old_value = YAML::Node(old_mode);
+                event.new_value = YAML::Node(new_mode);
+                event.description = "Dedup mode changed from " + old_mode + " to " + new_mode;
+
+                Logger::info("Dedup mode updated: " + old_mode + " -> " + new_mode);
+                publishEvent(event);
+            }
+        }
+
+        if (config["pre_process_quality_stack"])
+        {
+            bool old_stack = getPreProcessQualityStack();
+            bool new_stack = config["pre_process_quality_stack"].as<bool>();
+            config_["pre_process_quality_stack"] = new_stack;
+
+            if (old_stack != new_stack)
+            {
+                ConfigEvent event;
+                event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                event.key = "pre_process_quality_stack";
+                event.old_value = YAML::Node(old_stack);
+                event.new_value = YAML::Node(new_stack);
+                std::string old_str = old_stack ? "enabled" : "disabled";
+                std::string new_str = new_stack ? "enabled" : "disabled";
+                event.description = "Pre-process quality stack changed from " + old_str + " to " + new_str;
+
+                Logger::info("Pre-process quality stack updated: " + old_str + " -> " + new_str);
+                publishEvent(event);
+            }
+        }
+
+        if (config["processing_batch_size"])
+        {
+            int old_batch = getProcessingBatchSize();
+            int new_batch = config["processing_batch_size"].as<int>();
+            config_["processing_batch_size"] = new_batch;
+
+            if (old_batch != new_batch)
+            {
+                ConfigEvent event;
+                event.type = ConfigEventType::GENERAL_CONFIG_CHANGED;
+                event.key = "processing_batch_size";
+                event.old_value = YAML::Node(old_batch);
+                event.new_value = YAML::Node(new_batch);
+                event.description = "Processing batch size changed from " + std::to_string(old_batch) + " to " + std::to_string(new_batch);
+
+                Logger::info("Processing batch size updated: " + std::to_string(old_batch) + " -> " + std::to_string(new_batch));
+                publishEvent(event);
+            }
+        }
+
+        Logger::info("Processing configuration updated successfully");
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error updating processing config: " + std::string(e.what()));
+        throw;
+    }
+}

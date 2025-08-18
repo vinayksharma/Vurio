@@ -9,13 +9,16 @@
 #include <string>
 #include <memory>
 #include <thread>
+#include <mutex>
+#include <atomic>
+#include <chrono>
 #include "core/status.hpp"
 #include "core/file_utils.hpp"
 #include "core/file_processor.hpp"
+#include "core/media_processor.hpp"
 #include "core/thread_pool_manager.hpp"
 #include "auth/auth.hpp"
 #include "auth/auth_middleware.hpp"
-#include "core/media_processor.hpp"
 #include <yaml-cpp/yaml.h> // Added for YAML::Node
 
 using json = nlohmann::json;
@@ -88,6 +91,7 @@ void convertYamlToJson(const YAML::Node &yaml, nlohmann::json &json)
 static std::unique_ptr<MediaProcessingOrchestrator> global_orchestrator;
 static std::mutex orchestrator_mutex;
 static std::atomic<bool> background_processing_running{false};
+static std::atomic<bool> tpm_processing_running{false};
 
 class RouteHandlers
 {
@@ -193,6 +197,28 @@ public:
                 {
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleGetOrchestrationStatus(req, res); });
+
+        // Thread pool management endpoints
+        svr.Get("/api/thread_pool/status", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetThreadPoolStatus(req, res); });
+
+        svr.Post("/api/thread_pool/resize", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleResizeThreadPool(req, res); });
+
+        // Processing configuration endpoints
+        svr.Get("/api/processing/config", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetProcessingConfig(req, res); });
+
+        svr.Post("/api/processing/config", [&](const httplib::Request &req, httplib::Response &res)
+                 {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleUpdateProcessingConfig(req, res); });
     }
 
 private:
@@ -739,23 +765,56 @@ private:
             auto &config_manager = ServerConfigManager::getInstance();
             int max_threads = config_manager.getMaxProcessingThreads();
 
-            Logger::info("Starting orchestration with interval: " + std::to_string(processing_interval_seconds) + " seconds");
+            Logger::info("Starting orchestration with TPM interval: " + std::to_string(processing_interval_seconds) + " seconds");
 
-            // Create global database manager and orchestrator instances
+            // Start TPM-based processing
             std::lock_guard<std::mutex> lock(orchestrator_mutex);
-            global_orchestrator = std::make_unique<MediaProcessingOrchestrator>(DatabaseManager::getInstance());
+            tpm_processing_running.store(true);
 
-            // Start timer-based processing
-            global_orchestrator->startTimerBasedProcessing(processing_interval_seconds, max_threads);
+            // Start a background thread for periodic processing
+            std::thread([processing_interval_seconds, max_threads]()
+                        {
+                while (tpm_processing_running.load()) {
+                    try {
+                        Logger::info("Executing TPM-based processing cycle");
+                        ThreadPoolManager::processAllScannedFilesAsync(
+                            max_threads,
+                            // on_event callback
+                            [](const FileProcessingEvent &event) {
+                                if (event.success) {
+                                    Logger::info("TPM processed file: " + event.file_path + 
+                                               " (format: " + event.artifact_format + 
+                                               ", confidence: " + std::to_string(event.artifact_confidence) + ")");
+                                } else {
+                                    Logger::warn("TPM processing failed for: " + event.file_path + 
+                                               " - " + event.error_message);
+                                }
+                            },
+                            // on_error callback
+                            [](const std::exception &e) {
+                                Logger::error("TPM processing error: " + std::string(e.what()));
+                            },
+                            // on_complete callback
+                            []() {
+                                Logger::info("TPM processing cycle completed");
+                            });
+                    } catch (const std::exception &e) {
+                        Logger::error("Error in TPM processing cycle: " + std::string(e.what()));
+                    }
+                    
+                    // Wait for next cycle
+                    std::this_thread::sleep_for(std::chrono::seconds(processing_interval_seconds));
+                } })
+                .detach();
 
             json response = {
-                {"message", "Orchestration started successfully"},
+                {"message", "TPM-based orchestration started successfully"},
                 {"processing_interval_seconds", processing_interval_seconds},
                 {"max_threads", max_threads},
                 {"database_path", db_path}};
 
             res.set_content(response.dump(), "application/json");
-            Logger::info("Orchestration started successfully");
+            Logger::info("TPM-based orchestration started successfully");
         }
         catch (const std::exception &e)
         {
@@ -776,25 +835,17 @@ private:
                 db_path = "scan_results.db";
             }
 
-            // Stop global orchestrator instance
+            // Stop TPM-based processing
             std::lock_guard<std::mutex> lock(orchestrator_mutex);
-            if (global_orchestrator)
-            {
-                global_orchestrator->stopTimerBasedProcessing();
-                global_orchestrator.reset();
-                Logger::info("Orchestration stopped and global instances cleared");
-            }
-            else
-            {
-                Logger::warn("No orchestration running to stop");
-            }
+            tpm_processing_running.store(false);
+            Logger::info("TPM-based orchestration stopped");
 
             json response = {
-                {"message", "Orchestration stopped successfully"},
+                {"message", "TPM-based orchestration stopped successfully"},
                 {"database_path", db_path}};
 
             res.set_content(response.dump(), "application/json");
-            Logger::info("Orchestration stopped successfully");
+            Logger::info("TPM-based orchestration stopped successfully");
         }
         catch (const std::exception &e)
         {
@@ -815,20 +866,16 @@ private:
                 db_path = "scan_results.db";
             }
 
-            // Check global orchestrator status
+            // Check TPM-based processing status
             std::lock_guard<std::mutex> lock(orchestrator_mutex);
-            bool is_running = false;
-            if (global_orchestrator)
-            {
-                is_running = global_orchestrator->isTimerBasedProcessingRunning();
-            }
+            bool is_running = tpm_processing_running.load();
 
             json response = {
-                {"timer_processing_running", is_running},
+                {"tpm_processing_running", is_running},
                 {"database_path", db_path}};
 
             res.set_content(response.dump(), "application/json");
-            Logger::info("Orchestration status retrieved successfully");
+            Logger::info("TPM orchestration status retrieved successfully");
         }
         catch (const std::exception &e)
         {
@@ -913,6 +960,135 @@ private:
             Logger::error("Get user inputs by type error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Failed to retrieve user inputs by type: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Thread pool management endpoints
+    static void handleGetThreadPoolStatus(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get thread pool status request");
+        try
+        {
+            size_t current_threads = ThreadPoolManager::getCurrentThreadCount();
+            size_t max_allowed_threads = ThreadPoolManager::getMaxAllowedThreadCount();
+
+            json response = {
+                {"status", "success"},
+                {"data", {{"current_threads", current_threads}, {"max_allowed_threads", max_allowed_threads}, {"is_initialized", ThreadPoolManager::getCurrentThreadCount() > 0}}}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Thread pool status retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get thread pool status error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to get thread pool status: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleResizeThreadPool(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received resize thread pool request");
+        try
+        {
+            auto body = json::parse(req.body);
+            int new_max_threads = body.value("max_threads", -1);
+
+            if (new_max_threads == -1)
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Invalid request: max_threads must be provided"}}.dump(), "application/json");
+                return;
+            }
+
+            if (new_max_threads < 1 || new_max_threads > 64)
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Invalid thread count. Must be between 1 and 64"}}.dump(), "application/json");
+                return;
+            }
+
+            bool success = ThreadPoolManager::resizeThreadPool(static_cast<size_t>(new_max_threads));
+            if (success)
+            {
+                json response = {
+                    {"message", "Thread pool resized successfully"},
+                    {"new_thread_count", new_max_threads},
+                    {"current_thread_count", ThreadPoolManager::getCurrentThreadCount()}};
+                res.set_content(response.dump(), "application/json");
+                Logger::info("Thread pool resized to " + std::to_string(new_max_threads) + " threads via API");
+            }
+            else
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Failed to resize thread pool"}}.dump(), "application/json");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Resize thread pool error: " + std::string(e.what()));
+            res.status = 400;
+            res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Processing configuration handlers
+    static void handleGetProcessingConfig(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get processing config request");
+        try
+        {
+            auto &config_manager = ServerConfigManager::getInstance();
+            YAML::Node config = config_manager.getProcessingConfig();
+
+            // For now, just return the YAML as a string to avoid conversion issues
+            std::stringstream ss;
+            ss << config;
+            std::string yaml_str = ss.str();
+
+            // Create a simple JSON response with the YAML content
+            nlohmann::json response = {
+                {"status", "success"},
+                {"config", yaml_str}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Processing configuration retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get processing config error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
+        }
+    }
+
+    static void handleUpdateProcessingConfig(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received update processing config request");
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            // Convert JSON to YAML::Node
+            YAML::Node yaml_body = YAML::Load(body.dump());
+            auto &config_manager = ServerConfigManager::getInstance();
+            // Validate the configuration
+            if (!config_manager.validateProcessingConfig(yaml_body))
+            {
+                res.status = 400;
+                res.set_content(json{{"error", "Invalid configuration"}}.dump(), "application/json");
+                return;
+            }
+            // Update configuration (this will trigger reactive events)
+            config_manager.updateProcessingConfig(yaml_body);
+            res.set_content(json{{"message", "Processing configuration updated successfully"}}.dump(), "application/json");
+            Logger::info("Processing configuration updated successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Update processing config error: " + std::string(e.what()));
+            res.status = 400;
+            res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
         }
     }
 };
