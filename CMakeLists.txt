@@ -182,137 +182,14 @@ FetchContent_MakeAvailable(spdlog)
 
 # Tests
 enable_testing()
+# All tests are now organized in the tests/ directory
+# See tests/CMakeLists.txt for test configurations
 add_subdirectory(tests)
 
-# Add MediaProcessor example
-add_executable(media_processor_example examples/media_processor_example.cpp src/media_processor.cpp src/server_config_manager.cpp src/mount_manager.cpp)
-target_include_directories(media_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(media_processor_example
-    PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    nlohmann_json::nlohmann_json
-    spdlog::spdlog
-    pthread
-    PkgConfig::SQLITE3
-    TBB::tbb
-    PkgConfig::OpenCV
-    ${FFMPEG_LIBRARIES}
-    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
-    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
-    yaml-cpp
-)
 
-# Add FileProcessor example
-add_executable(file_processor_example examples/file_processor_example.cpp 
-               src/media_processor.cpp src/server_config_manager.cpp 
-               src/database/database_manager.cpp src/duplicate_linker.cpp src/file_processor.cpp src/file_utils.cpp
-               src/database/database_access_queue.cpp src/mount_manager.cpp)
-target_include_directories(file_processor_example PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(file_processor_example
-    PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    nlohmann_json::nlohmann_json
-    spdlog::spdlog
-    pthread
-    PkgConfig::SQLITE3
-    TBB::tbb
-    PkgConfig::OpenCV
-    ${FFMPEG_LIBRARIES}
-    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
-    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
-    yaml-cpp
-)
 
-# Add Raw File Test example
-add_executable(raw_file_test examples/raw_file_test.cpp 
-               src/media_processor.cpp src/transcoding_manager.cpp 
-               src/server_config_manager.cpp src/mount_manager.cpp
-               src/database/database_manager.cpp src/duplicate_linker.cpp src/database/database_access_queue.cpp
-               src/file_utils.cpp)
-target_include_directories(raw_file_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(raw_file_test
-    PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    nlohmann_json::nlohmann_json
-    spdlog::spdlog
-    pthread
-    PkgConfig::SQLITE3
-    TBB::tbb
-    PkgConfig::OpenCV
-    ${FFMPEG_LIBRARIES}
-    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
-    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
-    PkgConfig::LIBRAW
-    yaml-cpp
-)
 
-# Add Cache Size Test example
-add_executable(cache_size_test
-    examples/cache_size_test.cpp
-    src/transcoding_manager.cpp
-    src/media_processor.cpp
-    src/server_config_manager.cpp
-    src/mount_manager.cpp
-    src/database/database_manager.cpp
-    src/duplicate_linker.cpp
-    src/database/database_access_queue.cpp
-    src/file_utils.cpp
-)
 
-add_executable(file_type_config_test
-    examples/file_type_config_test.cpp
-    src/server_config_manager.cpp
-)
 
-target_include_directories(cache_size_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(cache_size_test
-    PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    nlohmann_json::nlohmann_json
-    spdlog::spdlog
-    pthread
-    PkgConfig::SQLITE3
-    TBB::tbb
-    PkgConfig::OpenCV
-    ${FFMPEG_LIBRARIES}
-    $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
-    $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
-    PkgConfig::LIBRAW
-    yaml-cpp
-)
-
-target_include_directories(file_type_config_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(file_type_config_test
-    PRIVATE
-    spdlog::spdlog
-    yaml-cpp
-    PkgConfig::SQLITE3
-    pthread
-)
-target_include_directories(file_type_config_test PRIVATE /opt/homebrew/include) 
-
-# Add LibRaw probe tool
-add_executable(libraw_probe
-    examples/libraw_probe.cpp
-)
-target_include_directories(libraw_probe PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(libraw_probe
-    PRIVATE
-    PkgConfig::LIBRAW
-)
-
-add_executable(raw_to_jpeg
-    examples/raw_to_jpeg.cpp
-)
-target_include_directories(raw_to_jpeg PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(raw_to_jpeg
-    PRIVATE
-    PkgConfig::LIBRAW
-    PkgConfig::OpenCV
-)
 
  

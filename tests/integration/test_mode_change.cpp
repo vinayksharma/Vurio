@@ -1,9 +1,9 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include "include/core/server_config_manager.hpp"
-#include "include/core/dedup_modes.hpp"
-#include "include/logging/logger.hpp"
+#include "../../include/core/server_config_manager.hpp"
+#include "../../include/core/dedup_modes.hpp"
+#include "../../include/logging/logger.hpp"
 
 class TestConfigObserver : public ConfigObserver
 {

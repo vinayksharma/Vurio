@@ -1,7 +1,8 @@
 #include <iostream>
-#include "include/core/server_config_manager.hpp"
-#include "include/core/dedup_modes.hpp"
-#include "include/logging/logger.hpp"
+#include <fstream>
+#include "../../include/core/server_config_manager.hpp"
+#include "../../include/core/dedup_modes.hpp"
+#include "../../include/logging/logger.hpp"
 
 int main()
 {
