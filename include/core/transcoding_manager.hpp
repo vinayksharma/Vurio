@@ -257,6 +257,14 @@ private:
      */
     bool removeCacheEntry(const CacheEntry &entry);
 
+    /**
+     * @brief Transcode a raw file using LibRaw directly
+     * @param source_file_path Path to the source raw file
+     * @param output_path Path for the output JPEG file
+     * @return true if transcoding succeeded
+     */
+    bool transcodeRawFileDirectly(const std::string &source_file_path, const std::string &output_path);
+
     // Member variables
     std::string cache_dir_;
     int max_threads_;

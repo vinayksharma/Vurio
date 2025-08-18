@@ -9,7 +9,10 @@
 #include <chrono>
 #include "core/server_config_manager.hpp"
 #include <libraw/libraw.h>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <algorithm> // Required for std::clamp and std::max
+#include <cstring>   // Required for std::memcpy
 
 // Raw file extensions that need transcoding - now configuration-driven
 // These are no longer used as we use ServerConfigManager::needsTranscoding()
@@ -274,18 +277,13 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
         cleanupCacheSmart(true);
     }
 
-    // Use isolated LibRaw helper only (no FFmpeg first) for stability
-    std::stringstream helper;
-    helper << "\"" << std::filesystem::absolute("./build/tests/raw_to_jpeg").string() << "\" "
-           << '"' << source_file_path << '"' << ' '
-           << '"' << output_path << '"';
-    int hrc = std::system(helper.str().c_str());
-    if (hrc == 0 && std::filesystem::exists(output_path))
+    // Use LibRaw directly for transcoding (no external executables)
+    if (transcodeRawFileDirectly(source_file_path, output_path))
     {
-        Logger::info("Isolated LibRaw helper succeeded: " + source_file_path + " -> " + output_path);
+        Logger::info("LibRaw transcoding succeeded: " + source_file_path + " -> " + output_path);
         return output_path;
     }
-    Logger::error("Isolated LibRaw helper failed (rc=" + std::to_string(hrc) + ") for: " + source_file_path);
+    Logger::error("LibRaw transcoding failed for: " + source_file_path);
     return "";
 }
 
@@ -981,4 +979,162 @@ void TranscodingManager::restoreQueueFromDatabase()
     {
         Logger::warn(std::string("Exception resetting flag: ") + e.what());
     }
+}
+
+bool TranscodingManager::transcodeRawFileDirectly(const std::string &source_file_path, const std::string &output_path)
+{
+    std::lock_guard<std::mutex> lock(libraw_mutex_);
+
+    LibRaw *raw = nullptr;
+    libraw_processed_image_t *img = nullptr;
+
+    try
+    {
+        // Validate input file exists and is readable
+        if (!std::filesystem::exists(source_file_path))
+        {
+            Logger::error("Source file does not exist: " + source_file_path);
+            return false;
+        }
+
+        // Ensure parent directory exists
+        std::filesystem::create_directories(std::filesystem::path(output_path).parent_path());
+
+        // Create LibRaw instance
+        raw = new LibRaw();
+        if (!raw)
+        {
+            Logger::error("Failed to create LibRaw instance for: " + source_file_path);
+            return false;
+        }
+
+        // Configure LibRaw parameters
+        raw->imgdata.params.use_camera_wb = 1;
+        raw->imgdata.params.use_auto_wb = 0;
+        raw->imgdata.params.no_auto_bright = 1;
+        raw->imgdata.params.output_bps = 8;
+        raw->imgdata.params.output_color = 1; // sRGB
+        raw->imgdata.params.half_size = 0;
+        raw->imgdata.params.output_tiff = 0; // JPEG output
+
+        Logger::debug("Opening RAW file: " + source_file_path);
+        int rc = raw->open_file(source_file_path.c_str());
+        if (rc != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw open_file failed: " + std::string(libraw_strerror(rc)) + " (" + std::to_string(rc) + ") for: " + source_file_path);
+            return false;
+        }
+
+        Logger::debug("Unpacking RAW data for: " + source_file_path);
+        rc = raw->unpack();
+        if (rc != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw unpack failed: " + std::string(libraw_strerror(rc)) + " (" + std::to_string(rc) + ") for: " + source_file_path);
+            return false;
+        }
+
+        Logger::debug("Processing RAW data for: " + source_file_path);
+        rc = raw->dcraw_process();
+        if (rc != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw dcraw_process failed: " + std::string(libraw_strerror(rc)) + " (" + std::to_string(rc) + ") for: " + source_file_path);
+            return false;
+        }
+
+        Logger::debug("Creating memory image for: " + source_file_path);
+        img = raw->dcraw_make_mem_image(&rc);
+        if (!img || rc != LIBRAW_SUCCESS)
+        {
+            Logger::error("LibRaw dcraw_make_mem_image failed: " + std::string(libraw_strerror(rc)) + " (" + std::to_string(rc) + ") for: " + source_file_path);
+            return false;
+        }
+
+        // Validate image buffer
+        if (img->type != LIBRAW_IMAGE_BITMAP)
+        {
+            Logger::error("Unsupported image type: " + std::to_string(img->type) + " for: " + source_file_path);
+            return false;
+        }
+
+        if (img->colors != 3)
+        {
+            Logger::error("Unsupported color channels: " + std::to_string(img->colors) + " for: " + source_file_path);
+            return false;
+        }
+
+        if (img->bits != 8)
+        {
+            Logger::error("Unsupported bit depth: " + std::to_string(img->bits) + " for: " + source_file_path);
+            return false;
+        }
+
+        if (img->width <= 0 || img->height <= 0)
+        {
+            Logger::error("Invalid image dimensions: " + std::to_string(img->width) + "x" + std::to_string(img->height) + " for: " + source_file_path);
+            return false;
+        }
+
+        // Note: img->data is an array, so it's always valid if img exists
+
+        Logger::debug("Creating OpenCV Mat for: " + source_file_path + " (" + std::to_string(img->width) + "x" + std::to_string(img->height) + ")");
+
+        // Create a copy of the data to avoid memory issues
+        size_t data_size = img->width * img->height * 3;
+        std::vector<unsigned char> rgb_data(data_size);
+        std::memcpy(rgb_data.data(), img->data, data_size);
+
+        // Construct cv::Mat with copied data (RGB to BGR for OpenCV)
+        cv::Mat rgb(img->height, img->width, CV_8UC3, rgb_data.data());
+        cv::Mat bgr;
+        cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
+
+        Logger::debug("Writing JPEG output: " + output_path);
+        std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 92};
+        if (!cv::imwrite(output_path, bgr, params))
+        {
+            Logger::error("OpenCV imwrite failed for: " + output_path);
+            return false;
+        }
+
+        Logger::info("Successfully transcoded: " + source_file_path + " -> " + output_path);
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception during LibRaw transcoding: " + std::string(e.what()) + " for: " + source_file_path);
+        return false;
+    }
+    catch (...)
+    {
+        Logger::error("Unknown exception during LibRaw transcoding for: " + source_file_path);
+        return false;
+    }
+
+    // Cleanup section - always executed
+    if (img)
+    {
+        try
+        {
+            LibRaw::dcraw_clear_mem(img);
+        }
+        catch (...)
+        {
+            Logger::warn("Exception during image memory cleanup for: " + source_file_path);
+        }
+    }
+
+    if (raw)
+    {
+        try
+        {
+            raw->recycle();
+            delete raw;
+        }
+        catch (...)
+        {
+            Logger::warn("Exception during LibRaw cleanup for: " + source_file_path);
+        }
+    }
+
+    return false;
 }
