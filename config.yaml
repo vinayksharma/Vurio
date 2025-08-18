@@ -10,7 +10,7 @@ threading:
   http_server_threads: auto
   database_threads: 2
 scan_interval_seconds: 300
-processing_interval_seconds: 10
+duplicate_linker_check_interval: 10
 processing:
   batch_size: 100
 categories:

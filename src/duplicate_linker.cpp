@@ -82,19 +82,35 @@ void DuplicateLinker::workerLoop()
 
             Logger::info("DuplicateLinker running for mode: " + mode_name);
 
-            // If requested, run a full pass over all successful results for this mode
+            // Check if we need a full rescan (requested or periodic)
+            bool should_do_full_rescan = needs_full_rescan_.load();
+
+            // Periodic full rescan: every FULL_RESCAN_INTERVAL incremental runs
+            if (!should_do_full_rescan && incremental_run_count_.load() >= FULL_RESCAN_INTERVAL)
+            {
+                Logger::info("DuplicateLinker performing periodic full rescan for mode: " + mode_name +
+                             " (after " + std::to_string(incremental_run_count_.load()) + " incremental runs)");
+                should_do_full_rescan = true;
+                incremental_run_count_.store(0); // Reset counter
+            }
+
+            // Always scan for duplicates among existing files
+            // The issue was that we were only looking for NEW processing results,
+            // but we should always check for duplicates among ALL successful results
             std::vector<std::tuple<long, std::string, std::string>> new_rows;
-            if (needs_full_rescan_.load())
+            if (should_do_full_rescan)
             {
                 Logger::info("DuplicateLinker performing full rescan for mode: " + mode_name);
-                // A full pass can be implemented by setting last_seen_result_id_ to 0
-                // and processing all rows in batches if needed. Here we fetch all successful rows.
+                // Full rescan: get all successful results by using last_seen_id = 0
                 new_rows = db_->getNewSuccessfulResults(mode, 0);
             }
             else
             {
-                // Incremental fetch of new successful results since last_seen_result_id_
-                new_rows = db_->getNewSuccessfulResults(mode, last_seen_result_id_);
+                // FIXED: Always get all successful results for duplicate detection
+                // The incremental approach was broken - we need to check ALL files for duplicates
+                Logger::info("DuplicateLinker performing incremental duplicate scan for mode: " + mode_name);
+                new_rows = db_->getNewSuccessfulResults(mode, 0); // Get ALL results, not just new ones
+                incremental_run_count_.fetch_add(1);
             }
             std::unordered_map<std::string, std::vector<std::string>> groups; // hash -> [file_path]
             long max_seen = last_seen_result_id_;
@@ -137,17 +153,35 @@ void DuplicateLinker::workerLoop()
                 }
             }
 
-            // Advance the high-water mark so we do not reprocess the same rows
-            last_seen_result_id_ = max_seen;
-
-            if (needs_full_rescan_.load())
+            // Update the high-water mark for tracking purposes
+            // Note: Since we now always scan all results, this is mainly for logging
+            if (!new_rows.empty())
             {
-                needs_full_rescan_.store(false);
+                last_seen_result_id_ = max_seen;
+            }
+
+            if (should_do_full_rescan)
+            {
+                if (needs_full_rescan_.load())
+                {
+                    needs_full_rescan_.store(false);
+                }
                 full_pass_completed_.store(true);
                 Logger::info("DuplicateLinker full rescan completed for mode: " + mode_name);
             }
 
-            Logger::info("DuplicateLinker updated links for " + std::to_string(groups.size()) + " hash groups (last_seen_id=" + std::to_string(last_seen_result_id_) + ")");
+            if (new_rows.empty())
+            {
+                Logger::info("DuplicateLinker found no successful results for mode: " + mode_name);
+            }
+            else if (groups.empty())
+            {
+                Logger::info("DuplicateLinker scanned " + std::to_string(new_rows.size()) + " files but found no duplicates for mode: " + mode_name);
+            }
+            else
+            {
+                Logger::info("DuplicateLinker found " + std::to_string(groups.size()) + " duplicate groups among " + std::to_string(new_rows.size()) + " files for mode: " + mode_name);
+            }
         }
         catch (const std::exception &e)
         {

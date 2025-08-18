@@ -225,8 +225,8 @@ int ServerConfigManager::getScanIntervalSeconds() const
 int ServerConfigManager::getProcessingIntervalSeconds() const
 {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    if (config_["processing_interval_seconds"])
-        return config_["processing_interval_seconds"].as<int>();
+    if (config_["duplicate_linker_check_interval"])
+        return config_["duplicate_linker_check_interval"].as<int>();
     return 1800;
 }
 

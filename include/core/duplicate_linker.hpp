@@ -43,4 +43,6 @@ private:
     long long last_seen_result_id_{0};
     std::atomic<bool> needs_full_rescan_{false};
     std::atomic<bool> full_pass_completed_{false};
+    std::atomic<int> incremental_run_count_{0};
+    static const int FULL_RESCAN_INTERVAL = 10; // Do full rescan every 10 incremental runs
 };
