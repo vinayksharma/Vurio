@@ -21,6 +21,7 @@
 #include <unordered_set>
 #include <any>
 #include <functional>
+#include <openssl/sha.h>
 
 using json = nlohmann::json;
 
@@ -283,7 +284,7 @@ bool DatabaseManager::createFlagsTable()
     const std::string sql = R"(
         CREATE TABLE IF NOT EXISTS flags (
             name TEXT PRIMARY KEY,
-            value INTEGER NOT NULL DEFAULT 0,
+            value TEXT NOT NULL DEFAULT '0',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     )";
@@ -4174,4 +4175,541 @@ std::vector<int> DatabaseManager::getFileLinksForCurrentMode(const std::string &
         Logger::error("Failed to get current deduplication mode: " + std::string(e.what()));
         return std::vector<int>();
     }
+}
+
+std::pair<bool, std::string> DatabaseManager::getTableHash(const std::string &table_name)
+{
+    Logger::debug("getTableHash called for table: " + table_name);
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return {false, "Access queue not initialized"};
+    }
+
+    // Capture table name for async execution
+    std::string captured_table_name = table_name;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_table_name](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getTableHash in access queue for table: " + captured_table_name);
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::pair<bool, std::string>(false, "Database not initialized"));
+        }
+        
+        // First, check if the table exists
+        const std::string check_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
+        sqlite3_stmt *check_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, check_sql.c_str(), -1, &check_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare table check statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::pair<bool, std::string>(false, "Failed to check table existence"));
+        }
+
+        sqlite3_bind_text(check_stmt, 1, captured_table_name.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(check_stmt);
+        sqlite3_finalize(check_stmt);
+        
+        if (rc != SQLITE_ROW)
+        {
+            return std::any(std::pair<bool, std::string>(false, "Table does not exist: " + captured_table_name));
+        }
+
+        // Get all data from the table
+        const std::string select_sql = "SELECT * FROM " + captured_table_name + " ORDER BY rowid";
+        sqlite3_stmt *stmt;
+        rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::pair<bool, std::string>(false, "Failed to prepare select statement"));
+        }
+
+        // Build a string representation of all table data
+        std::stringstream table_data;
+        int row_count = 0;
+        
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            row_count++;
+            int columns = sqlite3_column_count(stmt);
+            
+            for (int i = 0; i < columns; i++)
+            {
+                if (i > 0) table_data << "|";
+                
+                int column_type = sqlite3_column_type(stmt, i);
+                switch (column_type)
+                {
+                    case SQLITE_NULL:
+                        table_data << "NULL";
+                        break;
+                    case SQLITE_INTEGER:
+                        table_data << sqlite3_column_int64(stmt, i);
+                        break;
+                    case SQLITE_FLOAT:
+                        table_data << sqlite3_column_double(stmt, i);
+                        break;
+                    case SQLITE_TEXT:
+                        table_data << reinterpret_cast<const char *>(sqlite3_column_text(stmt, i));
+                        break;
+                    case SQLITE_BLOB:
+                        // For BLOBs, we'll hash the binary data
+                        const void *blob_data = sqlite3_column_blob(stmt, i);
+                        int blob_size = sqlite3_column_bytes(stmt, i);
+                        if (blob_data && blob_size > 0)
+                        {
+                            // Create a simple hash of the blob data
+                            unsigned char hash[SHA256_DIGEST_LENGTH];
+                            SHA256_CTX sha256;
+                            SHA256_Init(&sha256);
+                            SHA256_Update(&sha256, blob_data, blob_size);
+                            SHA256_Final(hash, &sha256);
+                            
+                            std::stringstream blob_hash;
+                            for (int j = 0; j < SHA256_DIGEST_LENGTH; j++)
+                            {
+                                blob_hash << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[j]);
+                            }
+                            table_data << "BLOB:" << blob_hash.str();
+                        }
+                        else
+                        {
+                            table_data << "BLOB:NULL";
+                        }
+                        break;
+                }
+            }
+            table_data << "\n";
+        }
+
+        sqlite3_finalize(stmt);
+
+        // Hash the table data
+        std::string table_data_str = table_data.str();
+        unsigned char hash[SHA256_DIGEST_LENGTH];
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, table_data_str.c_str(), table_data_str.length());
+        SHA256_Final(hash, &sha256);
+
+        std::stringstream hash_ss;
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        {
+            hash_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+        }
+
+        Logger::debug("Generated hash for table " + captured_table_name + " with " + std::to_string(row_count) + " rows");
+        return std::any(std::pair<bool, std::string>(true, hash_ss.str())); });
+
+    // Wait for the result
+    try
+    {
+        auto result = std::any_cast<std::pair<bool, std::string>>(future.get());
+        return result;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get table hash: " + std::string(e.what()));
+        return {false, "Failed to get table hash: " + std::string(e.what())};
+    }
+}
+
+std::pair<bool, std::string> DatabaseManager::getDatabaseHash()
+{
+    Logger::debug("getDatabaseHash called");
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return {false, "Access queue not initialized"};
+    }
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getDatabaseHash in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::pair<bool, std::string>(false, "Database not initialized"));
+        }
+        
+        // Get all table names
+        const std::string tables_sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+        sqlite3_stmt *tables_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, tables_sql.c_str(), -1, &tables_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare tables select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::pair<bool, std::string>(false, "Failed to get table list"));
+        }
+
+        std::vector<std::string> table_names;
+        while (sqlite3_step(tables_stmt) == SQLITE_ROW)
+        {
+            std::string table_name = reinterpret_cast<const char *>(sqlite3_column_text(tables_stmt, 0));
+            table_names.push_back(table_name);
+        }
+        sqlite3_finalize(tables_stmt);
+
+        // Build combined data from all tables
+        std::stringstream combined_data;
+        for (const auto &table_name : table_names)
+        {
+            combined_data << "TABLE:" << table_name << "\n";
+            
+            const std::string select_sql = "SELECT * FROM " + table_name + " ORDER BY rowid";
+            sqlite3_stmt *stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                Logger::error("Failed to prepare select statement for table " + table_name + ": " + std::string(sqlite3_errmsg(dbMan.db_)));
+                continue;
+            }
+
+            int row_count = 0;
+            while (sqlite3_step(stmt) == SQLITE_ROW)
+            {
+                row_count++;
+                int columns = sqlite3_column_count(stmt);
+                
+                for (int i = 0; i < columns; i++)
+                {
+                    if (i > 0) combined_data << "|";
+                    
+                    int column_type = sqlite3_column_type(stmt, i);
+                    switch (column_type)
+                    {
+                        case SQLITE_NULL:
+                            combined_data << "NULL";
+                            break;
+                        case SQLITE_INTEGER:
+                            combined_data << sqlite3_column_int64(stmt, i);
+                            break;
+                        case SQLITE_FLOAT:
+                            combined_data << sqlite3_column_double(stmt, i);
+                            break;
+                        case SQLITE_TEXT:
+                            combined_data << reinterpret_cast<const char *>(sqlite3_column_text(stmt, i));
+                            break;
+                        case SQLITE_BLOB:
+                            // For BLOBs, we'll hash the binary data
+                            const void *blob_data = sqlite3_column_blob(stmt, i);
+                            int blob_size = sqlite3_column_bytes(stmt, i);
+                            if (blob_data && blob_size > 0)
+                            {
+                                // Create a simple hash of the blob data
+                                unsigned char hash[SHA256_DIGEST_LENGTH];
+                                SHA256_CTX sha256;
+                                SHA256_Init(&sha256);
+                                SHA256_Update(&sha256, blob_data, blob_size);
+                                SHA256_Final(hash, &sha256);
+                                
+                                std::stringstream blob_hash;
+                                for (int j = 0; j < SHA256_DIGEST_LENGTH; j++)
+                                {
+                                    blob_hash << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[j]);
+                                }
+                                combined_data << "BLOB:" << blob_hash.str();
+                            }
+                            else
+                            {
+                                combined_data << "BLOB:NULL";
+                            }
+                            break;
+                    }
+                }
+                combined_data << "\n";
+            }
+            sqlite3_finalize(stmt);
+            combined_data << "END_TABLE:" << table_name << "\n";
+        }
+
+        // Hash the combined data
+        std::string combined_data_str = combined_data.str();
+        unsigned char hash[SHA256_DIGEST_LENGTH];
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, combined_data_str.c_str(), combined_data_str.length());
+        SHA256_Final(hash, &sha256);
+
+        std::stringstream hash_ss;
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        {
+            hash_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+        }
+
+        Logger::debug("Generated database hash for " + std::to_string(table_names.size()) + " tables");
+        return std::any(std::pair<bool, std::string>(true, hash_ss.str())); });
+
+    // Wait for the result
+    try
+    {
+        auto result = std::any_cast<std::pair<bool, std::string>>(future.get());
+        return result;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get database hash: " + std::string(e.what()));
+        return {false, "Failed to get database hash: " + std::string(e.what())};
+    }
+}
+
+std::pair<bool, std::string> DatabaseManager::getDuplicateDetectionHash()
+{
+    Logger::debug("getDuplicateDetectionHash called");
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return {false, "Access queue not initialized"};
+    }
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getDuplicateDetectionHash in access queue");
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::pair<bool, std::string>(false, "Database not initialized"));
+        }
+        
+        // Get hashes for the three relevant tables
+        std::vector<std::string> table_names = {"scanned_files", "cache_map", "media_processing_results"};
+        std::vector<std::string> table_hashes;
+        
+        for (const auto &table_name : table_names)
+        {
+            // Check if table exists
+            const std::string check_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
+            sqlite3_stmt *check_stmt;
+            int rc = sqlite3_prepare_v2(dbMan.db_, check_sql.c_str(), -1, &check_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                Logger::error("Failed to prepare table check statement for " + table_name + ": " + std::string(sqlite3_errmsg(dbMan.db_)));
+                return std::any(std::pair<bool, std::string>(false, "Failed to check table existence"));
+            }
+
+            sqlite3_bind_text(check_stmt, 1, table_name.c_str(), -1, SQLITE_STATIC);
+            rc = sqlite3_step(check_stmt);
+            sqlite3_finalize(check_stmt);
+            
+            if (rc != SQLITE_ROW)
+            {
+                // Table doesn't exist, use empty hash
+                table_hashes.push_back("EMPTY_TABLE");
+                continue;
+            }
+
+            // Get table data
+            const std::string select_sql = "SELECT * FROM " + table_name + " ORDER BY rowid";
+            sqlite3_stmt *stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                Logger::error("Failed to prepare select statement for " + table_name + ": " + std::string(sqlite3_errmsg(dbMan.db_)));
+                return std::any(std::pair<bool, std::string>(false, "Failed to prepare select statement"));
+            }
+
+            // Build string representation of table data
+            std::stringstream table_data;
+            int row_count = 0;
+            
+            while (sqlite3_step(stmt) == SQLITE_ROW)
+            {
+                row_count++;
+                int columns = sqlite3_column_count(stmt);
+                
+                for (int i = 0; i < columns; i++)
+                {
+                    if (i > 0) table_data << "|";
+                    
+                    int column_type = sqlite3_column_type(stmt, i);
+                    switch (column_type)
+                    {
+                        case SQLITE_NULL:
+                            table_data << "NULL";
+                            break;
+                        case SQLITE_INTEGER:
+                            table_data << sqlite3_column_int64(stmt, i);
+                            break;
+                        case SQLITE_FLOAT:
+                            table_data << sqlite3_column_double(stmt, i);
+                            break;
+                        case SQLITE_TEXT:
+                            table_data << reinterpret_cast<const char *>(sqlite3_column_text(stmt, i));
+                            break;
+                        case SQLITE_BLOB:
+                            // For BLOBs, hash the binary data
+                            const void *blob_data = sqlite3_column_blob(stmt, i);
+                            int blob_size = sqlite3_column_bytes(stmt, i);
+                            if (blob_data && blob_size > 0)
+                            {
+                                unsigned char hash[SHA256_DIGEST_LENGTH];
+                                SHA256_CTX sha256;
+                                SHA256_Init(&sha256);
+                                SHA256_Update(&sha256, blob_data, blob_size);
+                                SHA256_Final(hash, &sha256);
+                                
+                                std::stringstream blob_hash;
+                                for (int j = 0; j < SHA256_DIGEST_LENGTH; j++)
+                                {
+                                    blob_hash << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[j]);
+                                }
+                                table_data << "BLOB:" << blob_hash.str();
+                            }
+                            else
+                            {
+                                table_data << "BLOB:NULL";
+                            }
+                            break;
+                    }
+                }
+                table_data << "\n";
+            }
+
+            sqlite3_finalize(stmt);
+
+            // Hash the table data
+            std::string table_data_str = table_data.str();
+            unsigned char hash[SHA256_DIGEST_LENGTH];
+            SHA256_CTX sha256;
+            SHA256_Init(&sha256);
+            SHA256_Update(&sha256, table_data_str.c_str(), table_data_str.length());
+            SHA256_Final(hash, &sha256);
+
+            std::stringstream hash_ss;
+            for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+            {
+                hash_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+            }
+
+            table_hashes.push_back(hash_ss.str());
+            Logger::debug("Generated hash for table " + table_name + " with " + std::to_string(row_count) + " rows");
+        }
+
+        // Combine the three table hashes with | delimiter
+        std::string combined_data = table_hashes[0] + "|" + table_hashes[1] + "|" + table_hashes[2];
+        
+        // Hash the combined data
+        unsigned char final_hash[SHA256_DIGEST_LENGTH];
+        SHA256_CTX final_sha256;
+        SHA256_Init(&final_sha256);
+        SHA256_Update(&final_sha256, combined_data.c_str(), combined_data.length());
+        SHA256_Final(final_hash, &final_sha256);
+
+        std::stringstream final_hash_ss;
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        {
+            final_hash_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(final_hash[i]);
+        }
+
+        Logger::debug("Generated combined duplicate detection hash for 3 tables");
+        return std::any(std::pair<bool, std::string>(true, final_hash_ss.str())); });
+
+    // Wait for the result
+    try
+    {
+        auto result = std::any_cast<std::pair<bool, std::string>>(future.get());
+        return result;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to get duplicate detection hash: " + std::string(e.what()));
+        return {false, "Failed to get duplicate detection hash: " + std::string(e.what())};
+    }
+}
+
+std::string DatabaseManager::getTextFlag(const std::string &flag_name)
+{
+    if (!waitForQueueInitialization())
+        return "";
+
+    std::string value = "";
+    auto future = access_queue_->enqueueRead([&flag_name, &value](DatabaseManager &dbMan)
+                                             {
+        if (!dbMan.db_) return std::any(std::string(""));
+        const std::string select_sql = "SELECT value FROM flags WHERE name = ?";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return std::any(std::string(""));
+        sqlite3_bind_text(stmt, 1, flag_name.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        }
+        sqlite3_finalize(stmt);
+        return std::any(value); });
+    try
+    {
+        value = std::any_cast<std::string>(future.get());
+    }
+    catch (...)
+    {
+        value = "";
+    }
+    return value;
+}
+
+DBOpResult DatabaseManager::setTextFlag(const std::string &flag_name, const std::string &value)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_flag_name = flag_name;
+    std::string captured_value = value;
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    access_queue_->enqueueWrite([captured_flag_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
+                                {
+        Logger::debug("Executing setTextFlag in write queue for: " + captured_flag_name);
+        
+        const std::string sql = "INSERT OR REPLACE INTO flags(name, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_flag_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured_value.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to set text flag: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Set text flag: " + captured_flag_name + " = " + captured_value);
+        return WriteOperationResult(); });
+
+    waitForWrites();
+    if (!success)
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
 }

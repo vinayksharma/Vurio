@@ -306,6 +306,70 @@ public:
           "500": {"description": "Failed to retrieve scan targets"}
         }
       }
+    },
+    "/api/database/hash": {
+      "get": {
+        "summary": "Get database hash",
+        "description": "Retrieve a SHA256 hash of all database table contents combined",
+        "tags": ["Database"],
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Database hash retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string", "example": "success"},
+                    "database_hash": {"type": "string", "description": "SHA256 hash of all database contents"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Authentication required"},
+          "500": {"description": "Failed to get database hash"}
+        }
+      }
+    },
+    "/api/database/table/{table_name}/hash": {
+      "get": {
+        "summary": "Get table hash",
+        "description": "Retrieve a SHA256 hash of a specific database table's contents",
+        "tags": ["Database"],
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "table_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the database table to hash"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Table hash retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string", "example": "success"},
+                    "table_name": {"type": "string", "description": "Name of the table that was hashed"},
+                    "table_hash": {"type": "string", "description": "SHA256 hash of the table contents"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Authentication required"},
+          "500": {"description": "Failed to get table hash"}
+        }
+      }
     }
   }
 })";

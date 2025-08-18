@@ -19,7 +19,9 @@ tests/
 │   ├── run_tests.sh                   # Legacy test runner
 │   ├── clean_db.sh                    # Database cleanup utility
 │   ├── clear_database.sh              # Basic database clearing
-│   └── clear_database_advanced.sh     # Advanced database management
+│   ├── clear_database_advanced.sh     # Advanced database management
+│   ├── test_database_hash.sh          # Database hash functionality testing
+│   └── test_hash_changes.sh           # Hash change behavior testing
 ├── integration/                        # Integration tests (standalone executables)
 │   ├── cache_size_test.cpp            # Cache management tests
 │   ├── smart_cache_cleanup_test.cpp   # Smart cache cleanup tests
@@ -77,7 +79,19 @@ tests/
 - **Execution**: Automatically run by integration test harness
 - **Output**: Included in integration test results
 
+#### Database Hash Tests
+
+- **test_database_hash.sh**: Comprehensive testing of database hash functionality
+  - Tests database and table hash generation
+  - Validates error handling for non-existent tables
+  - Demonstrates hash changes when data is modified
+- **test_hash_changes.sh**: Tests hash behavior with data changes
+  - Verifies hash changes only when content changes
+  - Confirms hash stability during internal database operations
+  - Demonstrates deterministic hash generation
+
 ### Test Data
+
 - **Location**: `tests/test_data/`
 - **Audio Files**: `tests/test_data/audio/` - Contains test MP3 files for audio processing tests
 - **Image Files**: `tests/test_data/images/` - Contains test JPG files for image processing tests

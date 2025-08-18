@@ -247,6 +247,17 @@ public:
                  {
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleUpdateCacheConfig(req, res); });
+
+        // Database hash endpoints
+        svr.Get("/api/database/hash", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetDatabaseHash(req, res); });
+
+        svr.Get("/api/database/table/([^/]+)/hash", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleGetTableHash(req, res); });
     }
 
 private:
@@ -1304,6 +1315,69 @@ private:
             Logger::error("Update cache config error: " + std::string(e.what()));
             res.status = 400;
             res.set_content(json{{"error", "Invalid request: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    // Database hash handlers
+    static void handleGetDatabaseHash(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get database hash request");
+        try
+        {
+            auto &db_manager = DatabaseManager::getInstance();
+            auto [success, hash] = db_manager.getDatabaseHash();
+
+            if (!success)
+            {
+                res.status = 500;
+                res.set_content(json{{"error", "Failed to get database hash: " + hash}}.dump(), "application/json");
+                return;
+            }
+
+            json response = {
+                {"status", "success"},
+                {"database_hash", hash}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Database hash retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get database hash error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to get database hash: " + std::string(e.what())}}.dump(), "application/json");
+        }
+    }
+
+    static void handleGetTableHash(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received get table hash request");
+        try
+        {
+            std::string table_name = req.matches[1]; // matches[1] is the table_name
+            auto &db_manager = DatabaseManager::getInstance();
+            auto [success, hash] = db_manager.getTableHash(table_name);
+
+            if (!success)
+            {
+                res.status = 500;
+                res.set_content(json{{"error", "Failed to get table hash: " + hash}}.dump(), "application/json");
+                return;
+            }
+
+            json response = {
+                {"status", "success"},
+                {"table_name", table_name},
+                {"table_hash", hash}};
+
+            res.set_content(response.dump(), "application/json");
+            Logger::info("Table hash retrieved successfully for table: " + table_name);
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Get table hash error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Failed to get table hash: " + std::string(e.what())}}.dump(), "application/json");
         }
     }
 };

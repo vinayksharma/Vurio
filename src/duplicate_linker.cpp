@@ -94,94 +94,149 @@ void DuplicateLinker::workerLoop()
                 incremental_run_count_.store(0); // Reset counter
             }
 
-            // Always scan for duplicates among existing files
-            // The issue was that we were only looking for NEW processing results,
-            // but we should always check for duplicates among ALL successful results
-            std::vector<std::tuple<long, std::string, std::string>> new_rows;
-            if (should_do_full_rescan)
+            // Generate current hash of relevant tables (needed for both optimization and storage)
+            auto [hash_success, current_hash] = db_->getDuplicateDetectionHash();
+
+            // Hash-based optimization: Check if relevant data has changed
+            bool should_run_duplicate_detection = true;
+            if (!should_do_full_rescan)
             {
-                Logger::info("DuplicateLinker performing full rescan for mode: " + mode_name);
-                // Full rescan: get all successful results by using last_seen_id = 0
-                new_rows = db_->getNewSuccessfulResults(mode, 0);
+                if (hash_success)
+                {
+                    // Get stored hash from flags table
+                    std::string stored_hash = db_->getTextFlag("dedup_linker_state");
+
+                    if (!stored_hash.empty() && stored_hash == current_hash)
+                    {
+                        // Hash matches, no relevant data has changed
+                        Logger::info("DuplicateLinker skipping duplicate detection - no relevant data changes detected for mode: " + mode_name);
+                        should_run_duplicate_detection = false;
+                    }
+                    else
+                    {
+                        // Hash differs or no stored hash exists, need to run duplicate detection
+                        Logger::debug("DuplicateLinker will run duplicate detection - data changes detected or first run for mode: " + mode_name);
+                    }
+                }
+                else
+                {
+                    Logger::warn("Failed to generate duplicate detection hash, will run duplicate detection anyway: " + current_hash);
+                }
             }
             else
             {
-                // FIXED: Always get all successful results for duplicate detection
-                // The incremental approach was broken - we need to check ALL files for duplicates
-                Logger::info("DuplicateLinker performing incremental duplicate scan for mode: " + mode_name);
-                new_rows = db_->getNewSuccessfulResults(mode, 0); // Get ALL results, not just new ones
-                incremental_run_count_.fetch_add(1);
-            }
-            std::unordered_map<std::string, std::vector<std::string>> groups; // hash -> [file_path]
-            long max_seen = last_seen_result_id_;
-            for (const auto &row : new_rows)
-            {
-                long row_id;
-                std::string path, hash;
-                std::tie(row_id, path, hash) = row;
-                if (!hash.empty())
-                {
-                    groups[hash].push_back(path);
-                }
-                if (row_id > max_seen)
-                    max_seen = row_id;
+                // Full rescan requested, always run duplicate detection
+                Logger::debug("DuplicateLinker will run duplicate detection - full rescan requested for mode: " + mode_name);
             }
 
-            // Update links for groups with >= 2 items
-            // To get IDs, map file_path -> id
-            // Build a quick lookup via a query per group file (lightweight compared to full join)
-            for (auto &[hash, paths] : groups)
+            // Run duplicate detection only if needed
+            if (should_run_duplicate_detection)
             {
-                if (paths.size() < 2)
-                    continue;
-                // Fetch real DB IDs for each path
-                std::vector<int> ids;
-                ids.reserve(paths.size());
-                for (const auto &path : paths)
+                // Always scan for duplicates among existing files
+                // The issue was that we were only looking for NEW processing results,
+                // but we should always check for duplicates among ALL successful results
+                std::vector<std::tuple<long, std::string, std::string>> new_rows;
+                if (should_do_full_rescan)
                 {
-                    ids.push_back(db_->getFileId(path));
+                    Logger::info("DuplicateLinker performing full rescan for mode: " + mode_name);
+                    // Full rescan: get all successful results by using last_seen_id = 0
+                    new_rows = db_->getNewSuccessfulResults(mode, 0);
                 }
-                // Update links per file
-                for (size_t i = 0; i < paths.size(); ++i)
+                else
                 {
-                    std::vector<int> linked;
-                    linked.reserve(paths.size() - 1);
-                    for (size_t j = 0; j < paths.size(); ++j)
-                        if (j != i)
-                            linked.push_back(ids[j]);
-                    db_->setFileLinksForMode(paths[i], linked, mode);
+                    // FIXED: Always get all successful results for duplicate detection
+                    // The incremental approach was broken - we need to check ALL files for duplicates
+                    Logger::info("DuplicateLinker performing incremental duplicate scan for mode: " + mode_name);
+                    new_rows = db_->getNewSuccessfulResults(mode, 0); // Get ALL results, not just new ones
+                    incremental_run_count_.fetch_add(1);
                 }
-            }
-
-            // Update the high-water mark for tracking purposes
-            // Note: Since we now always scan all results, this is mainly for logging
-            if (!new_rows.empty())
-            {
-                last_seen_result_id_ = max_seen;
-            }
-
-            if (should_do_full_rescan)
-            {
-                if (needs_full_rescan_.load())
+                std::unordered_map<std::string, std::vector<std::string>> groups; // hash -> [file_path]
+                long max_seen = last_seen_result_id_;
+                for (const auto &row : new_rows)
                 {
-                    needs_full_rescan_.store(false);
+                    long row_id;
+                    std::string path, hash;
+                    std::tie(row_id, path, hash) = row;
+                    if (!hash.empty())
+                    {
+                        groups[hash].push_back(path);
+                    }
+                    if (row_id > max_seen)
+                        max_seen = row_id;
                 }
-                full_pass_completed_.store(true);
-                Logger::info("DuplicateLinker full rescan completed for mode: " + mode_name);
-            }
 
-            if (new_rows.empty())
-            {
-                Logger::info("DuplicateLinker found no successful results for mode: " + mode_name);
-            }
-            else if (groups.empty())
-            {
-                Logger::info("DuplicateLinker scanned " + std::to_string(new_rows.size()) + " files but found no duplicates for mode: " + mode_name);
-            }
-            else
-            {
-                Logger::info("DuplicateLinker found " + std::to_string(groups.size()) + " duplicate groups among " + std::to_string(new_rows.size()) + " files for mode: " + mode_name);
-            }
+                // Update links for groups with >= 2 items
+                // To get IDs, map file_path -> id
+                // Build a quick lookup via a query per group file (lightweight compared to full join)
+                for (auto &[hash, paths] : groups)
+                {
+                    if (paths.size() < 2)
+                        continue;
+                    // Fetch real DB IDs for each path
+                    std::vector<int> ids;
+                    ids.reserve(paths.size());
+                    for (const auto &path : paths)
+                    {
+                        ids.push_back(db_->getFileId(path));
+                    }
+                    // Update links per file
+                    for (size_t i = 0; i < paths.size(); ++i)
+                    {
+                        std::vector<int> linked;
+                        linked.reserve(paths.size() - 1);
+                        for (size_t j = 0; j < paths.size(); ++j)
+                            if (j != i)
+                                linked.push_back(ids[j]);
+                        db_->setFileLinksForMode(paths[i], linked, mode);
+                    }
+                }
+
+                // Update the high-water mark for tracking purposes
+                // Note: Since we now always scan all results, this is mainly for logging
+                if (!new_rows.empty())
+                {
+                    last_seen_result_id_ = max_seen;
+                }
+
+                if (should_do_full_rescan)
+                {
+                    if (needs_full_rescan_.load())
+                    {
+                        needs_full_rescan_.store(false);
+                    }
+                    full_pass_completed_.store(true);
+                    Logger::info("DuplicateLinker full rescan completed for mode: " + mode_name);
+                }
+
+                if (new_rows.empty())
+                {
+                    Logger::info("DuplicateLinker found no successful results for mode: " + mode_name);
+                }
+                else if (groups.empty())
+                {
+                    Logger::info("DuplicateLinker scanned " + std::to_string(new_rows.size()) + " files but found no duplicates for mode: " + mode_name);
+                }
+                else
+                {
+                    Logger::info("DuplicateLinker found " + std::to_string(groups.size()) + " duplicate groups among " + std::to_string(new_rows.size()) + " files for mode: " + mode_name);
+                }
+
+                // Store the hash after duplicate detection completes successfully
+                // This ensures that if the server crashes during duplicate detection,
+                // the next run will have the opportunity to complete the task
+                if (should_run_duplicate_detection)
+                {
+                    auto store_result = db_->setTextFlag("dedup_linker_state", current_hash);
+                    if (!store_result.success)
+                    {
+                        Logger::warn("Failed to store duplicate detection hash after completion: " + store_result.error_message);
+                    }
+                    else
+                    {
+                        Logger::debug("Stored duplicate detection hash after successful completion for mode: " + mode_name);
+                    }
+                }
+            } // End of should_run_duplicate_detection block
         }
         catch (const std::exception &e)
         {

@@ -304,6 +304,25 @@ public:
     DBOpResult clearAllUserInputs();
 
     /**
+     * @brief Get a hash of the contents of a database table
+     * @param table_name Name of the table to hash
+     * @return Pair of success flag and hash string, or error message
+     */
+    std::pair<bool, std::string> getTableHash(const std::string &table_name);
+
+    /**
+     * @brief Get a hash of all database tables combined
+     * @return Pair of success flag and hash string, or error message
+     */
+    std::pair<bool, std::string> getDatabaseHash();
+
+    /**
+     * @brief Get a combined hash of tables relevant for duplicate detection
+     * @return Pair of success flag and hash string, or error message
+     */
+    std::pair<bool, std::string> getDuplicateDetectionHash();
+
+    /**
      * @brief Insert a file path that needs transcoding into cache_map
      * @param source_file_path Path to the source file that needs transcoding
      * @return DBOpResult with success flag and error message
@@ -381,9 +400,27 @@ public:
     bool getFlag(const std::string &flag_name);
 
     /**
-     * @brief Set the boolean value of a named flag in the flags table
+     * @brief Set a flag in the database
+     * @param flag_name Name of the flag
+     * @param value Boolean value to set
+     * @return DBOpResult indicating success or failure
      */
     DBOpResult setFlag(const std::string &flag_name, bool value);
+
+    /**
+     * @brief Get a TEXT flag value from the database
+     * @param flag_name Name of the flag
+     * @return String value of the flag, or empty string if not found
+     */
+    std::string getTextFlag(const std::string &flag_name);
+
+    /**
+     * @brief Set a TEXT flag value in the database
+     * @param flag_name Name of the flag
+     * @param value String value to set
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setTextFlag(const std::string &flag_name, const std::string &value);
 
     /**
      * @brief Get server status metrics from database
