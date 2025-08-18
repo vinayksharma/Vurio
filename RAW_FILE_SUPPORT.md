@@ -9,63 +9,81 @@ The dedup server now supports camera raw file formats with automatic transcoding
 The system now supports the following camera raw file formats:
 
 ### Canon
+
 - **CR2** - Canon Raw 2
 - **CR3** - Canon Raw 3
 
 ### Nikon
+
 - **NEF** - Nikon Electronic Format
 
 ### Sony
+
 - **ARW** - Sony Alpha Raw
 
 ### Adobe
+
 - **DNG** - Digital Negative
 
 ### Fujifilm
+
 - **RAF** - Fujifilm Raw
 
 ### Olympus
+
 - **ORF** - Olympus Raw Format
 
 ### Pentax
+
 - **PEF** - Pentax Electronic Format
 
 ### Samsung
+
 - **SRW** - Samsung Raw
 
 ### Kodak
+
 - **KDC** - Kodak Digital Camera
 - **DCR** - Kodak Digital Camera Raw
 
 ### Minolta
+
 - **MOS** - Minolta Raw
 - **MRW** - Minolta Raw
 
 ### Generic
+
 - **RAW** - Generic Raw
 - **BAY** - Bayer Pattern Raw
 
 ### Phase One
+
 - **3FR** - Phase One Raw
 - **FFF** - Phase One Raw
 
 ### Mamiya
+
 - **MEF** - Mamiya Raw
 
 ### Hasselblad
+
 - **IIQ** - Hasselblad Raw
 
 ### Ricoh
+
 - **RWZ** - Ricoh Raw
 
 ### Nikon (Additional)
+
 - **NRW** - Nikon Raw
 - **RWL** - Nikon Raw
 
 ### Red Digital Cinema
+
 - **R3D** - Red Raw
 
 ### Medical Imaging
+
 - **DCM** - DICOM
 - **DICOM** - Digital Imaging and Communications in Medicine
 
@@ -114,16 +132,19 @@ CREATE TABLE cache_map (
 ## Workflow
 
 ### 1. Scanning Phase
+
 ```
 Raw File Detected → Queue for Transcoding → Store in scanned_files
 ```
 
 ### 2. Transcoding Phase
+
 ```
 Transcoding Thread → FFmpeg Processing → Store in Cache → Update Database
 ```
 
 ### 3. Processing Phase
+
 ```
 Check for Transcoded File → Use Transcoded File → Process with MediaProcessor
 ```
@@ -131,14 +152,17 @@ Check for Transcoded File → Use Transcoded File → Process with MediaProcesso
 ## Configuration
 
 ### Cache Directory
+
 - Default: `./cache`
 - Configurable via `TranscodingManager::initialize()`
 
 ### Transcoding Threads
+
 - Default: 4 threads (same as processing threads)
 - Configurable via `TranscodingManager::initialize()`
 
 ### FFmpeg Settings
+
 - Output format: JPEG
 - Quality: `-q:v 2` (high quality)
 - Command: `ffmpeg -i input.raw -y -q:v 2 output.jpg`
@@ -146,6 +170,7 @@ Check for Transcoded File → Use Transcoded File → Process with MediaProcesso
 ## File Naming Convention
 
 Transcoded files use a hash-based naming scheme:
+
 ```
 {hash}_{original_extension}.jpg
 ```
@@ -162,12 +187,14 @@ Example: `a1b2c3d4e5f6_cr2.jpg`
 ## Performance Considerations
 
 ### Benefits
+
 - **Faster Processing**: JPEG files process much faster than raw files
 - **Reduced Memory Usage**: JPEG files are significantly smaller
 - **Better Compatibility**: JPEG format is universally supported
 - **Caching**: Transcoded files are reused for subsequent processing
 
 ### Trade-offs
+
 - **Storage Space**: Cache directory requires additional storage
 - **Transcoding Time**: Initial transcoding adds processing time
 - **Quality Loss**: JPEG compression may reduce image quality slightly
@@ -175,12 +202,15 @@ Example: `a1b2c3d4e5f6_cr2.jpg`
 ## Testing
 
 ### Test Program
+
 Run the raw file test to verify functionality:
+
 ```bash
 ./build/raw_file_test
 ```
 
 ### Expected Output
+
 ```
 Testing Raw File Support
 =======================
@@ -201,21 +231,25 @@ arw: ✓
 ## Integration Points
 
 ### Main Application
+
 - `main.cpp`: Initializes and starts TranscodingManager
 - `file_scanner.cpp`: Detects and queues raw files
 - `media_processing_orchestrator.cpp`: Uses transcoded files for processing
 
 ### Database Operations
+
 - `database_manager.cpp`: Manages cache_map table operations
 - `cache_map` table: Tracks transcoding status and file paths
 
 ### File System
+
 - Cache directory: Stores transcoded JPEG files
 - FFmpeg: External transcoding tool
 
 ## Future Enhancements
 
 ### Potential Improvements
+
 1. **Quality Settings**: Configurable transcoding quality
 2. **Format Options**: Support for other output formats (PNG, TIFF)
 3. **Batch Processing**: Optimized batch transcoding
@@ -223,6 +257,7 @@ arw: ✓
 5. **Progress Tracking**: Real-time transcoding progress reporting
 
 ### Additional Raw Formats
+
 - Support for more camera-specific raw formats
 - Better format detection and handling
 - Camera-specific transcoding optimizations
@@ -230,12 +265,14 @@ arw: ✓
 ## Dependencies
 
 ### Required
+
 - **FFmpeg**: For raw file transcoding
 - **OpenCV**: For image processing
 - **SQLite**: For database operations
 - **TBB**: For thread management
 
 ### Optional
+
 - **libvips**: For enhanced image processing (BALANCED mode)
 - **ONNX Runtime**: For CNN embeddings (QUALITY mode)
 
@@ -244,15 +281,18 @@ arw: ✓
 ### Common Issues
 
 1. **FFmpeg Not Found**
+
    - Install FFmpeg: `brew install ffmpeg` (macOS)
    - Verify installation: `which ffmpeg`
 
 2. **Transcoding Failures**
+
    - Check file permissions
    - Verify raw file format support
    - Check FFmpeg error logs
 
 3. **Cache Directory Issues**
+
    - Ensure write permissions
    - Check available disk space
    - Verify directory creation
@@ -264,4 +304,4 @@ arw: ✓
 
 ## API Integration
 
-The raw file support is transparent to the API layer. Raw files are handled automatically during scanning and processing phases, with no changes required to the REST API interface. 
+The raw file support is transparent to the API layer. Raw files are handled automatically during scanning and processing phases, with no changes required to the REST API interface.

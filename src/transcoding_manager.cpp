@@ -276,7 +276,7 @@ std::string TranscodingManager::transcodeFile(const std::string &source_file_pat
 
     // Use isolated LibRaw helper only (no FFmpeg first) for stability
     std::stringstream helper;
-    helper << "\"" << std::filesystem::absolute("./build/raw_to_jpeg").string() << "\" "
+    helper << "\"" << std::filesystem::absolute("./build/tests/raw_to_jpeg").string() << "\" "
            << '"' << source_file_path << '"' << ' '
            << '"' << output_path << '"';
     int hrc = std::system(helper.str().c_str());
