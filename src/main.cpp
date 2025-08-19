@@ -113,6 +113,154 @@ int main(int argc, char *argv[])
     // Start duplicate linker async process (wake on schedule and when new results land)
     DuplicateLinker::getInstance().start(db_manager, config_manager.getProcessingIntervalSeconds());
 
+    // Start the scheduler first to ensure it's ready
+    scheduler.start();
+
+    // Perform immediate scan on startup in a separate thread to avoid blocking
+    Logger::info("Starting immediate scan on server startup in background thread...");
+    std::thread startup_scan_thread([&]()
+                                    {
+        try
+        {
+            // Small delay to ensure server is fully started
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Get all stored scan paths from database
+            auto scan_paths = db_manager.getUserInputs("scan_path");
+
+            if (scan_paths.empty())
+            {
+                Logger::warn("No scan paths configured, using default: /tmp");
+                scan_paths.push_back("/tmp");
+            }
+
+            Logger::info("Found " + std::to_string(scan_paths.size()) + " scan paths for immediate scan");
+
+            // Get configured scan thread limit
+            auto &config_manager = ServerConfigManager::getInstance();
+            int max_scan_threads = config_manager.getMaxScanThreads();
+
+            Logger::info("Starting immediate parallel scan with " + std::to_string(max_scan_threads) + " threads for " +
+                         std::to_string(scan_paths.size()) + " scan paths");
+
+            // Thread-safe counters for progress tracking
+            std::atomic<size_t> total_files_stored{0};
+            std::atomic<size_t> successful_scans{0};
+            std::atomic<size_t> failed_scans{0};
+
+            // Thread-safe mutex for database operations to prevent race conditions
+            tbb::mutex db_mutex;
+
+            // Process scan paths in parallel using TBB with round-robin distribution
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, scan_paths.size()),
+                              [&](const tbb::blocked_range<size_t> &range)
+                              {
+                                  // Round-robin distribution: each thread processes every Nth path
+                                  // where N is the number of threads
+                                  int max_scan_threads = config_manager.getMaxScanThreads();
+
+                                  // Get thread ID for round-robin distribution
+                                  size_t thread_id = tbb::this_task_arena::current_thread_index();
+                                  if (thread_id >= max_scan_threads)
+                                  {
+                                      thread_id = thread_id % max_scan_threads;
+                                  }
+
+                                  // Process paths assigned to this thread in round-robin fashion
+                                  for (size_t i = thread_id; i < scan_paths.size(); i += max_scan_threads)
+                                  {
+                                      const auto &scan_path = scan_paths[i];
+
+                                      try
+                                      {
+                                          Logger::info("Thread " + std::to_string(thread_id) +
+                                                       " scanning directory: " + scan_path);
+
+                                          // Create scanner instance for this thread
+                                          FileScanner scanner("scan_results.db");
+
+                                          // Lock database operations to prevent race conditions
+                                          tbb::mutex::scoped_lock lock(db_mutex);
+
+                                          // Perform the scan
+                                          size_t files_stored = scanner.scanDirectory(scan_path, true);
+
+                                          // Update counters
+                                          total_files_stored += files_stored;
+                                          successful_scans++;
+
+                                          Logger::info("Thread " + std::to_string(thread_id) +
+                                                       " completed scan for " + scan_path +
+                                                       " - Files stored: " + std::to_string(files_stored));
+                                      }
+                                      catch (const std::exception &e)
+                                      {
+                                          failed_scans++;
+                                          Logger::error("Thread " + std::to_string(thread_id) +
+                                                        " error scanning directory " + scan_path + ": " + std::string(e.what()));
+                                      }
+                                  }
+                              });
+
+            // Log final statistics for immediate scan
+            Logger::info("Immediate startup scan completed - Total files stored: " + std::to_string(total_files_stored.load()) +
+                         ", Successful scans: " + std::to_string(successful_scans.load()) +
+                         ", Failed scans: " + std::to_string(failed_scans.load()));
+
+            Logger::info("All immediate startup scans completed - Total files stored: " + std::to_string(total_files_stored.load()));
+
+            // If files were found, trigger immediate processing
+            if (total_files_stored.load() > 0)
+            {
+                Logger::info("Files found during startup scan, triggering immediate processing...");
+                try
+                {
+                    ThreadPoolManager::processAllScannedFilesAsync(
+                        config_manager.getMaxProcessingThreads(),
+                        // on_event callback
+                        [](const FileProcessingEvent &event)
+                        {
+                            if (event.success)
+                            {
+                                Logger::info("Startup processing: " + event.file_path +
+                                             " (format: " + event.artifact_format +
+                                             ", confidence: " + std::to_string(event.artifact_confidence) + ")");
+                            }
+                            else
+                            {
+                                Logger::warn("Startup processing failed: " + event.file_path +
+                                             " - " + event.error_message);
+                            }
+                        },
+                        // on_error callback
+                        [](const std::exception &e)
+                        {
+                            Logger::error("Startup processing error: " + std::string(e.what()));
+                        },
+                        // on_complete callback
+                        []()
+                        {
+                            Logger::info("Startup processing completed");
+                        });
+                }
+                catch (const std::exception &e)
+                {
+                    Logger::error("Error in startup processing: " + std::string(e.what()));
+                }
+            }
+            else
+            {
+                Logger::info("No files found during startup scan, skipping immediate processing");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Error in immediate startup scan: " + std::string(e.what()));
+        } });
+
+    // Detach the thread so it runs independently
+    startup_scan_thread.detach();
+
     // Set up scan callback - scan all stored directories
     scheduler.setScanCallback([]()
                               {
@@ -233,8 +381,6 @@ int main(int argc, char *argv[])
             } catch (const std::exception &e) {
                 Logger::error("Error in scheduled processing: " + std::string(e.what()));
             } });
-
-    scheduler.start();
 
     Status status;
     Auth auth(config_manager.getAuthSecret()); // Use config from manager
