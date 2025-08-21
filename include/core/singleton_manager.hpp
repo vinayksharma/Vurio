@@ -9,18 +9,13 @@
 
 class SingletonManager
 {
-private:
-    static SingletonManager *instance;
-    static std::string pid_file_path;
-    static std::ofstream pid_file;
-    static bool is_running;
-
+public:
+    // FIXED: Made constructor public so it can be used with std::make_unique
     SingletonManager() = default;
     ~SingletonManager() = default;
     SingletonManager(const SingletonManager &) = delete;
     SingletonManager &operator=(const SingletonManager &) = delete;
 
-public:
     static SingletonManager &getInstance();
 
     // Check if another instance is running
@@ -49,4 +44,10 @@ public:
 
     // Cleanup singleton
     static void cleanup();
+
+private:
+    // FIXED: Removed static member declaration - now using local static smart pointer
+    static std::string pid_file_path;
+    static std::ofstream pid_file;
+    static bool is_running;
 };

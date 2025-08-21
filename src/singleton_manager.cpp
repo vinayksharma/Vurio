@@ -1,21 +1,26 @@
 #include "core/singleton_manager.hpp"
 #include "logging/logger.hpp"
-#include <cstring>
-#include <sys/types.h>
-#include <errno.h>
+#include <iostream>
+#include <fstream>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/stat.h>
 #include <fcntl.h>
+#include <memory>
 
-// Static member initialization
-SingletonManager *SingletonManager::instance = nullptr;
+// FIXED: Using smart pointer instead of raw pointer
+static std::unique_ptr<SingletonManager> instance;
+
+// Static member definitions
 std::string SingletonManager::pid_file_path = "";
 std::ofstream SingletonManager::pid_file;
 bool SingletonManager::is_running = false;
 
 SingletonManager &SingletonManager::getInstance()
 {
-    if (instance == nullptr)
+    if (!instance)
     {
-        instance = new SingletonManager();
+        instance = std::make_unique<SingletonManager>(); // FIXED: Using smart pointer
     }
     return *instance;
 }
@@ -213,7 +218,6 @@ void SingletonManager::cleanup()
     if (instance)
     {
         instance->removePidFile();
-        delete instance;
-        instance = nullptr;
+        instance.reset(); // Reset smart pointer
     }
 }

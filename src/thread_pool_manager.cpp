@@ -18,8 +18,8 @@ std::atomic<bool> ThreadPoolManager::initialized_{false};
 std::atomic<size_t> ThreadPoolManager::current_thread_count_{0};
 std::mutex ThreadPoolManager::resize_mutex_;
 
-// Singleton instance for ConfigObserver registration
-static ThreadPoolManager *instance_ptr = nullptr;
+// Singleton instance for ConfigObserver registration - FIXED: Using smart pointer
+static std::unique_ptr<ThreadPoolManager> instance_ptr;
 
 void ThreadPoolManager::initialize(size_t num_threads)
 {
@@ -35,14 +35,14 @@ void ThreadPoolManager::initialize(size_t num_threads)
                 current_thread_count_.store(num_threads);
                 initialized_.store(true);
 
-                // Create singleton instance for ConfigObserver registration
+                // Create singleton instance for ConfigObserver registration - FIXED: Using smart pointer
                 if (!instance_ptr)
                 {
-                    instance_ptr = new ThreadPoolManager();
+                    instance_ptr = std::make_unique<ThreadPoolManager>();
                 }
 
                 // Register as config observer for dynamic updates
-                ServerConfigManager::getInstance().addObserver(instance_ptr);
+                ServerConfigManager::getInstance().addObserver(instance_ptr.get());
 
                 Logger::info("Thread pool manager initialized with " + std::to_string(num_threads) + " threads");
             }
@@ -54,14 +54,14 @@ void ThreadPoolManager::initialize(size_t num_threads)
                 current_thread_count_.store(4);
                 initialized_.store(true);
 
-                // Create singleton instance for ConfigObserver registration
+                // Create singleton instance for ConfigObserver registration - FIXED: Using smart pointer
                 if (!instance_ptr)
                 {
-                    instance_ptr = new ThreadPoolManager();
+                    instance_ptr = std::make_unique<ThreadPoolManager>();
                 }
 
                 // Register as config observer for dynamic updates
-                ServerConfigManager::getInstance().addObserver(instance_ptr);
+                ServerConfigManager::getInstance().addObserver(instance_ptr.get());
 
                 Logger::info("Thread pool manager initialized with default 4 threads");
             }
@@ -76,14 +76,14 @@ void ThreadPoolManager::shutdown()
         std::lock_guard<std::mutex> lock(resize_mutex_);
         if (initialized_.load()) // Double-check pattern
         {
-            // Unregister as config observer
+            // Unregister as config observer - FIXED: No manual delete needed
             try
             {
                 if (instance_ptr)
                 {
-                    ServerConfigManager::getInstance().removeObserver(instance_ptr);
-                    delete instance_ptr;
-                    instance_ptr = nullptr;
+                    ServerConfigManager::getInstance().removeObserver(instance_ptr.get());
+                    // FIXED: Smart pointer automatically cleans up - no manual delete needed
+                    instance_ptr.reset();
                 }
             }
             catch (...)

@@ -25,6 +25,12 @@ extern "C"
 #include <libavutil/opt.h>
 }
 
+// Enhanced safety mechanisms for external libraries
+#include "core/external_library_wrappers.hpp"
+#include "core/error_recovery.hpp"
+#include "core/memory_pool.hpp"
+#include "core/resource_monitor.hpp"
+
 // Helper function to create hardware-accelerated scaling context
 SwsContext *createHardwareScaler(int src_width, int src_height, AVPixelFormat src_fmt,
                                  int dst_width, int dst_height, AVPixelFormat dst_fmt)
@@ -515,8 +521,23 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
 
     try
     {
-        AVFormatContext *format_ctx = nullptr;
-        if (avformat_open_input(&format_ctx, file_path.c_str(), nullptr, nullptr) < 0)
+        // Use RAII wrappers for automatic resource cleanup
+        AVFormatContextRAII format_ctx;
+        AVCodecContextRAII codec_ctx;
+        AVFrameRAII frame, rgb_frame;
+        AVPacketRAII packet;
+        SwsContextRAII sws_ctx;
+
+        // Initialize resource monitoring
+        ScopedResourceMonitor resource_monitor(0, "video_processing", "processVideoFast");
+
+        // Open video file with error recovery
+        int open_result = ErrorRecovery::retryWithBackoff(
+            [&]()
+            { return avformat_open_input(format_ctx.address(), file_path.c_str(), nullptr, nullptr); },
+            3, "avformat_open_input");
+
+        if (open_result < 0)
         {
             // Check if file exists first
             std::ifstream test_file(file_path);
@@ -528,27 +549,30 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
 
             // Try to get more specific error information
             char err_buf[AV_ERROR_MAX_STRING_SIZE];
-            av_strerror(AVERROR(EINVAL), err_buf, AV_ERROR_MAX_STRING_SIZE);
+            av_strerror(open_result, err_buf, AV_ERROR_MAX_STRING_SIZE);
             return ProcessingResult(false, "Could not open video file (possibly corrupted or unsupported format): " + file_path + " - " + std::string(err_buf));
         }
 
-        // Add validation for corrupted files
-        if (avformat_find_stream_info(format_ctx, nullptr) < 0)
+        // Add validation for corrupted files with error recovery
+        int stream_info_result = ErrorRecovery::retryWithBackoff(
+            [&]()
+            { return avformat_find_stream_info(format_ctx.get(), nullptr); },
+            3, "avformat_find_stream_info");
+
+        if (stream_info_result < 0)
         {
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Could not find stream information (file may be corrupted): " + file_path);
         }
 
         // Check if file has valid duration
-        if (format_ctx->duration <= 0)
+        if (format_ctx.get()->duration <= 0)
         {
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Video file has invalid or zero duration (possibly corrupted): " + file_path);
         }
         int video_stream_index = -1;
-        for (unsigned int i = 0; i < format_ctx->nb_streams; i++)
+        for (unsigned int i = 0; i < format_ctx.get()->nb_streams; i++)
         {
-            if (format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+            if (format_ctx.get()->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
             {
                 video_stream_index = i;
                 break;
@@ -556,10 +580,9 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         }
         if (video_stream_index == -1)
         {
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "No video stream found");
         }
-        AVStream *video_stream = format_ctx->streams[video_stream_index];
+        AVStream *video_stream = format_ctx.get()->streams[video_stream_index];
         AVCodecParameters *codec_params = video_stream->codecpar;
         int64_t duration = video_stream->duration;
         double time_base = av_q2d(video_stream->time_base);
@@ -582,100 +605,104 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
         const AVCodec *codec = avcodec_find_decoder(codec_params->codec_id);
         if (!codec)
         {
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Unsupported video codec");
         }
-        AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
-        if (!codec_ctx)
+
+        // Allocate codec context with error recovery
+        AVCodecContext *temp_codec_ctx = avcodec_alloc_context3(codec);
+        if (!temp_codec_ctx)
         {
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Could not allocate decoder context");
         }
-        if (avcodec_parameters_to_context(codec_ctx, codec_params) < 0)
+        codec_ctx.set(temp_codec_ctx);
+
+        if (avcodec_parameters_to_context(codec_ctx.get(), codec_params) < 0)
         {
-            avcodec_free_context(&codec_ctx);
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Could not copy codec parameters");
         }
-        if (avcodec_open2(codec_ctx, codec, nullptr) < 0)
+        if (avcodec_open2(codec_ctx.get(), codec, nullptr) < 0)
         {
-            avcodec_free_context(&codec_ctx);
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Could not open decoder");
         }
-        AVFrame *frame = av_frame_alloc();
-        AVFrame *rgb_frame = av_frame_alloc();
-        AVPacket *packet = av_packet_alloc();
-        if (!frame || !rgb_frame || !packet)
+
+        // Allocate frames and packet
+        AVFrame *temp_frame = av_frame_alloc();
+        AVFrame *temp_rgb_frame = av_frame_alloc();
+        AVPacket *temp_packet = av_packet_alloc();
+        if (!temp_frame || !temp_rgb_frame || !temp_packet)
         {
-            av_frame_free(&frame);
-            av_frame_free(&rgb_frame);
-            av_packet_free(&packet);
-            avcodec_free_context(&codec_ctx);
-            avformat_close_input(&format_ctx);
+            if (temp_frame)
+                av_frame_free(&temp_frame);
+            if (temp_rgb_frame)
+                av_frame_free(&temp_rgb_frame);
+            if (temp_packet)
+                av_packet_free(&temp_packet);
             return ProcessingResult(false, "Could not allocate frame or packet");
         }
-        rgb_frame->format = AV_PIX_FMT_RGB24;
-        rgb_frame->width = codec_ctx->width;
-        rgb_frame->height = codec_ctx->height;
-        av_frame_get_buffer(rgb_frame, 0);
-        SwsContext *sws_ctx = createHardwareScaler(
-            codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-            codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24);
-        if (!sws_ctx)
+
+        frame.set(temp_frame);
+        rgb_frame.set(temp_rgb_frame);
+        packet.set(temp_packet);
+
+        rgb_frame.get()->format = AV_PIX_FMT_RGB24;
+        rgb_frame.get()->width = codec_ctx.get()->width;
+        rgb_frame.get()->height = codec_ctx.get()->height;
+        av_frame_get_buffer(rgb_frame.get(), 0);
+
+        // Create scaler context
+        SwsContext *temp_sws_ctx = createHardwareScaler(
+            codec_ctx.get()->width, codec_ctx.get()->height, codec_ctx.get()->pix_fmt,
+            codec_ctx.get()->width, codec_ctx.get()->height, AV_PIX_FMT_RGB24);
+        if (!temp_sws_ctx)
         {
-            av_frame_free(&frame);
-            av_frame_free(&rgb_frame);
-            av_packet_free(&packet);
-            avcodec_free_context(&codec_ctx);
-            avformat_close_input(&format_ctx);
             return ProcessingResult(false, "Could not create scaler context");
         }
+        sws_ctx.set(temp_sws_ctx);
         std::vector<std::vector<uint8_t>> frame_hashes;
         int frame_count_extracted = 0;
         for (int skip_idx = 0; skip_idx < (int)target_pts.size(); ++skip_idx)
         {
             int64_t seek_target = target_pts[skip_idx];
             // Seek to nearest keyframe before target
-            av_seek_frame(format_ctx, video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
-            avcodec_flush_buffers(codec_ctx);
+            av_seek_frame(format_ctx.get(), video_stream_index, seek_target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
+            avcodec_flush_buffers(codec_ctx.get());
             int frames_found = 0;
             int valid_frames = 0;
-            while (av_read_frame(format_ctx, packet) >= 0 && frames_found < frames_to_extract && valid_frames < frames_per_skip)
+            while (av_read_frame(format_ctx.get(), packet.get()) >= 0 && frames_found < frames_to_extract && valid_frames < frames_per_skip)
             {
-                if (packet->stream_index == video_stream_index)
+                if (packet.get()->stream_index == video_stream_index)
                 {
-                    int response = avcodec_send_packet(codec_ctx, packet);
+                    int response = avcodec_send_packet(codec_ctx.get(), packet.get());
                     if (response < 0)
                     {
-                        av_packet_unref(packet);
+                        av_packet_unref(packet.get());
                         continue;
                     }
                     while (response >= 0)
                     {
-                        response = avcodec_receive_frame(codec_ctx, frame);
+                        response = avcodec_receive_frame(codec_ctx.get(), frame.get());
                         if (response == AVERROR(EAGAIN) || response == AVERROR_EOF)
                             break;
                         else if (response < 0)
                         {
-                            av_packet_unref(packet);
+                            av_packet_unref(packet.get());
                             break;
                         }
                         // Only process keyframes or frames after a keyframe
-                        if (frame->key_frame || valid_frames > 0)
+                        if (frame.get()->key_frame || valid_frames > 0)
                         {
                             // Check for corrupted frames (black/low-variance or error flags)
                             bool corrupted = false;
-                            if (frame->flags & AV_FRAME_FLAG_CORRUPT)
+                            if (frame.get()->flags & AV_FRAME_FLAG_CORRUPT)
                                 corrupted = true;
                             // Convert to OpenCV for further checks
-                            sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
-                                      rgb_frame->data, rgb_frame->linesize);
-                            cv::Mat cv_frame(frame->height, frame->width, CV_8UC3);
-                            for (int y = 0; y < frame->height; y++)
-                                for (int x = 0; x < frame->width; x++)
+                            sws_scale(sws_ctx.get(), frame.get()->data, frame.get()->linesize, 0, frame.get()->height,
+                                      rgb_frame.get()->data, rgb_frame.get()->linesize);
+                            cv::Mat cv_frame(frame.get()->height, frame.get()->width, CV_8UC3);
+                            for (int y = 0; y < frame.get()->height; y++)
+                                for (int x = 0; x < frame.get()->width; x++)
                                     for (int c = 0; c < 3; c++)
-                                        cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame->data[0][y * rgb_frame->linesize[0] + x * 3 + c];
+                                        cv_frame.at<cv::Vec3b>(y, x)[c] = rgb_frame.get()->data[0][y * rgb_frame.get()->linesize[0] + x * 3 + c];
                             // Check for black/low-variance frames
                             cv::Scalar mean, stddev;
                             cv::meanStdDev(cv_frame, mean, stddev);
@@ -696,15 +723,10 @@ ProcessingResult MediaProcessor::processVideoFast(const std::string &file_path)
                             break;
                     }
                 }
-                av_packet_unref(packet);
+                av_packet_unref(packet.get());
             }
         }
-        sws_freeContext(sws_ctx);
-        av_frame_free(&frame);
-        av_frame_free(&rgb_frame);
-        av_packet_free(&packet);
-        avcodec_free_context(&codec_ctx);
-        avformat_close_input(&format_ctx);
+        // RAII wrappers automatically clean up resources
         if (frame_hashes.empty())
             return ProcessingResult(false, "No valid frames could be extracted from video");
         std::vector<uint8_t> video_hash_data = combineFrameHashes(frame_hashes, algorithm->data_size_bytes);

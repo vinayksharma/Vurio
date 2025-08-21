@@ -17,6 +17,7 @@ add_executable(dedup_tests
     ../src/auth.cpp
     ../src/file_utils.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/database/database_manager.cpp
     ../src/duplicate_linker.cpp
     ../src/file_processor.cpp
@@ -56,6 +57,7 @@ add_executable(media_processing_orchestrator_test
     ../src/media_processing_orchestrator.cpp
     ../src/server_config_manager.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/file_utils.cpp
     ../src/database/database_access_queue.cpp
     ../src/mount_manager.cpp
@@ -91,6 +93,7 @@ add_executable(cache_size_test
     integration/cache_size_test.cpp
     ../src/transcoding_manager.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
     ../src/database/database_manager.cpp
@@ -103,6 +106,7 @@ add_executable(smart_cache_cleanup_test
     integration/smart_cache_cleanup_test.cpp
     ../src/transcoding_manager.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
     ../src/database/database_manager.cpp
@@ -115,6 +119,7 @@ add_executable(smart_cache_cleanup_test
 add_executable(raw_file_test
     integration/raw_file_test.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/transcoding_manager.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
@@ -133,6 +138,7 @@ add_executable(file_type_config_test
 add_executable(media_processor_example
     integration/media_processor_example.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
 )
@@ -140,6 +146,7 @@ add_executable(media_processor_example
 add_executable(file_processor_example
     integration/file_processor_example.cpp
     ../src/media_processor.cpp
+    ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/database/database_manager.cpp
     ../src/duplicate_linker.cpp

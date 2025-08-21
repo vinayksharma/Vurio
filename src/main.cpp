@@ -14,6 +14,8 @@
 #include "core/status.hpp"
 #include "core/singleton_manager.hpp"
 #include "core/duplicate_linker.hpp"
+#include "core/resource_monitor.hpp"
+#include "core/crash_recovery.hpp"
 #include <httplib.h>
 #include <iostream>
 #include <memory>
@@ -92,6 +94,25 @@ int main(int argc, char *argv[])
 
     // Start watching configuration for runtime changes
     config_manager.startWatching("config.yaml", 2);
+
+    // Initialize safety mechanisms for external library calls
+    Logger::info("Initializing safety mechanisms...");
+
+    // Initialize resource monitoring with default settings
+    ResourceMonitor::LeakDetectionSettings leak_settings;
+    leak_settings.warning_threshold_mb = 100;      // 100MB warning threshold
+    leak_settings.critical_threshold_mb = 500;     // 500MB critical threshold
+    leak_settings.leak_suspicion_threshold = 1000; // 1000 allocation difference threshold
+    leak_settings.enable_warnings = true;
+    leak_settings.enable_critical_alerts = true;
+    leak_settings.enable_leak_suspicion = true;
+
+    ResourceMonitor::initialize(leak_settings);
+    Logger::info("Resource monitoring initialized");
+
+    // Initialize crash recovery system
+    CrashRecovery::initialize();
+    Logger::info("Crash recovery system initialized");
 
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
@@ -262,6 +283,12 @@ int main(int argc, char *argv[])
     scheduler.stop();
     DatabaseManager::shutdown();
     ThreadPoolManager::shutdown();
+
+    // Shutdown safety mechanisms
+    Logger::info("Shutting down safety mechanisms...");
+    ResourceMonitor::shutdown();
+    CrashRecovery::shutdown();
+
     SingletonManager::cleanup();
     return 0;
 }

@@ -109,15 +109,15 @@ public:
      */
     void onConfigChanged(const ConfigEvent &event) override;
 
+    // FIXED: Made constructor public so it can be used with std::make_unique
+    ThreadPoolManager() = default;
+
 private:
     // Static member variables
     static std::unique_ptr<tbb::global_control> global_control_;
     static std::atomic<bool> initialized_;
     static std::atomic<size_t> current_thread_count_;
     static std::mutex resize_mutex_;
-
-    // Private constructor for singleton pattern
-    ThreadPoolManager() = default;
 
     // Helper methods
     static void updateThreadPoolSize(size_t new_size);

@@ -100,6 +100,7 @@ set(SOURCES
     src/cache/decoder_cache.cpp
     src/decoder/media_decoder.cpp
     src/transcoding_manager.cpp
+    src/core/memory_pool.cpp
 )
 
 # Add header files
