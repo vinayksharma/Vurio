@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <memory>
+#include <atomic>
 
 // FIXED: Using smart pointer instead of raw pointer
 static std::unique_ptr<SingletonManager> instance;
@@ -79,7 +80,7 @@ bool SingletonManager::createPidFile()
 
     is_running = true;
 
-    // Set up signal handlers for graceful shutdown
+    // Set up signal handlers for graceful shutdown with PID file cleanup
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
     signal(SIGQUIT, signalHandler);
@@ -194,22 +195,25 @@ void SingletonManager::signalHandler(int signal)
 {
     Logger::info("Received signal " + std::to_string(signal) + ", shutting down gracefully...");
 
-    // Safely remove PID file
+    // CRITICAL: Clean up PID file immediately to prevent stale PID issues
     try
     {
+        Logger::info("Cleaning up PID file due to signal " + std::to_string(signal));
         SingletonManager::getInstance().removePidFile();
+        Logger::info("PID file cleanup completed");
     }
     catch (...)
     {
         // Ignore any exceptions during cleanup
-        Logger::warn("Error during PID file cleanup");
+        Logger::warn("Error during PID file cleanup in signal handler");
     }
 
     // Flush any pending output
     std::cout.flush();
     std::cerr.flush();
 
-    // Exit cleanly without calling destructors that might cause issues
+    // Exit cleanly - this ensures PID file is removed even if main() cleanup doesn't run
+    Logger::info("Signal handler cleanup complete, exiting...");
     _exit(0);
 }
 

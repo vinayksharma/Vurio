@@ -134,6 +134,38 @@ public:
     DBOpResult setProcessingFlagError(const std::string &file_path, DedupMode mode);
 
     /**
+     * @brief Set processing flag to transcoding error state (3) for a specific mode
+     * @param file_path Path to the file
+     * @param mode Processing mode
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setProcessingFlagTranscodingError(const std::string &file_path, DedupMode mode);
+
+    /**
+     * @brief Set processing flag to final error state (4) for a specific mode
+     * @param file_path Path to the file
+     * @param mode Processing mode
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult setProcessingFlagFinalError(const std::string &file_path, DedupMode mode);
+
+    /**
+     * @brief Get files with a specific processing flag value for a mode
+     * @param flag_value The processing flag value to search for
+     * @param mode The deduplication mode
+     * @return Vector of file paths with the specified flag value
+     */
+    std::vector<std::string> getFilesWithProcessingFlag(int flag_value, DedupMode mode);
+
+    /**
+     * @brief Get the current processing flag value for a file and mode
+     * @param file_path Path to the file
+     * @param mode The deduplication mode
+     * @return The processing flag value, or -1 if not found
+     */
+    int getProcessingFlag(const std::string &file_path, DedupMode mode);
+
+    /**
      * @brief Get files that need processing for any mode
      * @return Vector of file paths and names that need processing for any mode
      */

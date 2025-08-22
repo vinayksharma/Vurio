@@ -275,6 +275,22 @@ void TranscodingManager::transcodingThreadFunction()
 
             if (transcoding_queue_.empty())
             {
+                // When queue is empty, check if we should retry files in transcoding error state (3)
+                static auto last_retry_check = std::chrono::steady_clock::now();
+                auto now = std::chrono::steady_clock::now();
+
+                // Check for retry opportunities every 30 seconds
+                if (now - last_retry_check > std::chrono::seconds(30))
+                {
+                    Logger::debug("Queue empty, checking for transcoding error files to retry...");
+                    size_t retry_count = retryTranscodingErrorFiles();
+                    if (retry_count > 0)
+                    {
+                        Logger::info("Retried " + std::to_string(retry_count) + " files from transcoding error state");
+                    }
+                    last_retry_check = now;
+                }
+
                 continue;
             }
 
@@ -348,40 +364,89 @@ void TranscodingManager::transcodingThreadFunction()
                 failed_count_.fetch_add(1);
                 Logger::error("Transcoding failed - transcodeFile returned empty path: " + file_path);
 
-                // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry) on transcoding failure
-                // This allows the processing thread to retry the file in a future cycle
-                Logger::info("Resetting processing flags for failed transcoding: " + file_path);
+                // IMPROVED: Check if this is a retry attempt and handle accordingly
                 auto &config_manager = ServerConfigManager::getInstance();
-
-                // Get the current dedup mode and check if quality stack processing is enabled
-                DedupMode current_mode = config_manager.getDedupMode();
                 bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
 
-                // Determine which modes to reset based on configuration
-                std::vector<DedupMode> modes_to_reset;
+                // Determine which modes to check and update
+                std::vector<DedupMode> modes_to_check;
                 if (pre_process_quality_stack)
                 {
-                    // Reset all three quality levels
-                    modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                    modes_to_check = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
                 }
                 else
                 {
-                    // Reset only the current mode
-                    modes_to_reset = {current_mode};
+                    DedupMode current_mode = config_manager.getDedupMode();
+                    modes_to_check = {current_mode};
                 }
 
-                for (const auto &mode : modes_to_reset)
+                // Check current flag state to determine if this is a retry
+                bool is_retry_attempt = false;
+                for (const auto &mode : modes_to_check)
                 {
-                    auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
-                    if (!flag_result.success)
+                    auto current_flag = db_manager_->getProcessingFlag(file_path, mode);
+                    if (current_flag == 3) // Already in transcoding error state
                     {
-                        Logger::warn("Failed to reset processing flag after transcoding failure for: " + file_path +
-                                     " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        is_retry_attempt = true;
+                        break;
+                    }
+                }
+
+                if (is_retry_attempt)
+                {
+                    // This is a retry attempt that failed - set to final error state (4)
+                    Logger::warn("Transcoding retry failed - setting to final error state (4): " + file_path);
+                    for (const auto &mode : modes_to_check)
+                    {
+                        auto flag_result = db_manager_->setProcessingFlagFinalError(file_path, mode);
+                        if (!flag_result.success)
+                        {
+                            Logger::warn("Failed to set processing flag to final error state: " + file_path +
+                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        }
+                        else
+                        {
+                            Logger::debug("Set processing flag to final error state (4) for: " + file_path +
+                                          " mode: " + DedupModes::getModeName(mode));
+                        }
+                    }
+                }
+                else
+                {
+                    // First failure - set to transcoding error state (3)
+                    Logger::info("Setting processing flags to transcoding error state (3) for failed transcoding: " + file_path);
+                    auto &config_manager = ServerConfigManager::getInstance();
+
+                    // Get the current dedup mode and check if quality stack processing is enabled
+                    DedupMode current_mode = config_manager.getDedupMode();
+                    bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+                    // Determine which modes to set error state for based on configuration
+                    std::vector<DedupMode> modes_to_error;
+                    if (pre_process_quality_stack)
+                    {
+                        // Set error state for all three quality levels
+                        modes_to_error = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
                     }
                     else
                     {
-                        Logger::debug("Reset processing flag to retry (0) after transcoding failure for: " + file_path +
-                                      " mode: " + DedupModes::getModeName(mode));
+                        // Set error state only for the current mode
+                        modes_to_error = {current_mode};
+                    }
+
+                    for (const auto &mode : modes_to_error)
+                    {
+                        auto flag_result = db_manager_->setProcessingFlagTranscodingError(file_path, mode);
+                        if (!flag_result.success)
+                        {
+                            Logger::warn("Failed to set processing flag to transcoding error state for: " + file_path +
+                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        }
+                        else
+                        {
+                            Logger::debug("Set processing flag to transcoding error state (3) for: " + file_path +
+                                          " mode: " + DedupModes::getModeName(mode));
+                        }
                     }
                 }
             }
@@ -391,9 +456,7 @@ void TranscodingManager::transcodingThreadFunction()
             failed_count_.fetch_add(1);
             Logger::error("Exception during transcoding: " + file_path + " - " + std::string(e.what()));
 
-            // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry) on transcoding exception
-            // This allows the processing thread to retry the file in a future cycle
-            Logger::info("Resetting processing flags for transcoding exception: " + file_path);
+            // IMPROVED: Check if this is a retry attempt and handle accordingly
             try
             {
                 auto &config_manager = ServerConfigManager::getInstance();
@@ -402,37 +465,71 @@ void TranscodingManager::transcodingThreadFunction()
                 DedupMode current_mode = config_manager.getDedupMode();
                 bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
 
-                // Determine which modes to reset based on configuration
-                std::vector<DedupMode> modes_to_reset;
+                // Determine which modes to check and update
+                std::vector<DedupMode> modes_to_check;
                 if (pre_process_quality_stack)
                 {
-                    // Reset all three quality levels
-                    modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                    modes_to_check = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
                 }
                 else
                 {
-                    // Reset only the current mode
-                    modes_to_reset = {current_mode};
+                    modes_to_check = {current_mode};
                 }
 
-                for (const auto &mode : modes_to_reset)
+                // Check current flag state to determine if this is a retry
+                bool is_retry_attempt = false;
+                for (const auto &mode : modes_to_check)
                 {
-                    auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
-                    if (!flag_result.success)
+                    auto current_flag = db_manager_->getProcessingFlag(file_path, mode);
+                    if (current_flag == 3) // Already in transcoding error state
                     {
-                        Logger::warn("Failed to reset processing flag after transcoding exception for: " + file_path +
-                                     " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        is_retry_attempt = true;
+                        break;
                     }
-                    else
+                }
+
+                if (is_retry_attempt)
+                {
+                    // This is a retry attempt that failed - set to final error state (4)
+                    Logger::warn("Transcoding retry failed due to exception - setting to final error state (4): " + file_path);
+                    for (const auto &mode : modes_to_check)
                     {
-                        Logger::debug("Reset processing flag to retry (0) after transcoding exception for: " + file_path +
-                                      " mode: " + DedupModes::getModeName(mode));
+                        auto flag_result = db_manager_->setProcessingFlagFinalError(file_path, mode);
+                        if (!flag_result.success)
+                        {
+                            Logger::warn("Failed to set processing flag to final error state after exception: " + file_path +
+                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        }
+                        else
+                        {
+                            Logger::debug("Set processing flag to final error state (4) after exception for: " + file_path +
+                                          " mode: " + DedupModes::getModeName(mode));
+                        }
+                    }
+                }
+                else
+                {
+                    // First failure - set to transcoding error state (3)
+                    Logger::info("Setting processing flags to transcoding error state (3) for transcoding exception: " + file_path);
+                    for (const auto &mode : modes_to_check)
+                    {
+                        auto flag_result = db_manager_->setProcessingFlagTranscodingError(file_path, mode);
+                        if (!flag_result.success)
+                        {
+                            Logger::warn("Failed to set processing flag to transcoding error state after transcoding exception for: " + file_path +
+                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        }
+                        else
+                        {
+                            Logger::debug("Set processing flag to transcoding error state (3) after transcoding exception for: " + file_path +
+                                          " mode: " + DedupModes::getModeName(mode));
+                        }
                     }
                 }
             }
             catch (...)
             {
-                Logger::error("Failed to reset processing flags after transcoding exception for: " + file_path);
+                Logger::error("Failed to set processing flags to error state after transcoding exception for: " + file_path);
             }
         }
     }
@@ -1309,4 +1406,104 @@ bool TranscodingManager::transcodeRawFileDirectly(const std::string &source_file
     libraw_raii.cleanup();
 
     return false;
+}
+
+size_t TranscodingManager::retryTranscodingErrorFiles()
+{
+    Logger::info("Checking for files in transcoding error state (3) to retry...");
+
+    if (!db_manager_)
+    {
+        Logger::error("Database manager not available for retry operation");
+        return 0;
+    }
+
+    try
+    {
+        // Get files that are in transcoding error state (3) for any mode
+        auto &config_manager = ServerConfigManager::getInstance();
+        bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+        std::vector<std::string> files_to_retry;
+
+        if (pre_process_quality_stack)
+        {
+            // Check all three modes for transcoding error state (3)
+            auto fast_error_files = db_manager_->getFilesWithProcessingFlag(3, DedupMode::FAST);
+            auto balanced_error_files = db_manager_->getFilesWithProcessingFlag(3, DedupMode::BALANCED);
+            auto quality_error_files = db_manager_->getFilesWithProcessingFlag(3, DedupMode::QUALITY);
+
+            // Combine all files that need retry
+            files_to_retry.insert(files_to_retry.end(), fast_error_files.begin(), fast_error_files.end());
+            files_to_retry.insert(files_to_retry.end(), balanced_error_files.begin(), balanced_error_files.end());
+            files_to_retry.insert(files_to_retry.end(), quality_error_files.begin(), quality_error_files.end());
+        }
+        else
+        {
+            // Check only current mode
+            DedupMode current_mode = config_manager.getDedupMode();
+            files_to_retry = db_manager_->getFilesWithProcessingFlag(3, current_mode);
+        }
+
+        if (files_to_retry.empty())
+        {
+            Logger::debug("No files in transcoding error state (3) found for retry");
+            return 0;
+        }
+
+        Logger::info("Found " + std::to_string(files_to_retry.size()) + " files in transcoding error state (3) to retry");
+
+        size_t retry_count = 0;
+        for (const auto &file_path : files_to_retry)
+        {
+            // Check if this is a RAW file that needs transcoding
+            if (isRawFile(file_path))
+            {
+                Logger::info("Retrying transcoding for file in error state: " + file_path);
+
+                // Reset the flag to -1 (in progress) to allow retry
+                auto &config_manager = ServerConfigManager::getInstance();
+                bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
+
+                std::vector<DedupMode> modes_to_reset;
+                if (pre_process_quality_stack)
+                {
+                    modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                }
+                else
+                {
+                    DedupMode current_mode = config_manager.getDedupMode();
+                    modes_to_reset = {current_mode};
+                }
+
+                bool reset_success = true;
+                for (const auto &mode : modes_to_reset)
+                {
+                    auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
+                    if (!flag_result.success)
+                    {
+                        Logger::warn("Failed to reset processing flag for retry: " + file_path +
+                                     " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
+                        reset_success = false;
+                    }
+                }
+
+                if (reset_success)
+                {
+                    // Queue the file for transcoding retry
+                    queueForTranscoding(file_path);
+                    retry_count++;
+                    Logger::debug("Queued file for transcoding retry: " + file_path);
+                }
+            }
+        }
+
+        Logger::info("Retry operation completed. " + std::to_string(retry_count) + " files queued for transcoding retry");
+        return retry_count;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception during retry operation: " + std::string(e.what()));
+        return 0;
+    }
 }

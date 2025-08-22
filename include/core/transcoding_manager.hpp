@@ -265,6 +265,12 @@ private:
      */
     bool transcodeRawFileDirectly(const std::string &source_file_path, const std::string &output_path);
 
+    /**
+     * @brief Retry transcoding files that are in transcoding error state (3)
+     * @return Number of files retried
+     */
+    size_t retryTranscodingErrorFiles();
+
     // Member variables
     std::string cache_dir_;
     int max_threads_;

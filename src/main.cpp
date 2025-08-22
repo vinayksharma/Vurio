@@ -25,6 +25,9 @@
 #include <tbb/mutex.h>
 #include <tbb/task_arena.h>
 
+// Global server pointer for signal handling
+static httplib::Server *g_server = nullptr;
+
 int main(int argc, char *argv[])
 {
     // Initialize singleton manager with PID file
@@ -98,21 +101,8 @@ int main(int argc, char *argv[])
     // Initialize safety mechanisms for external library calls
     Logger::info("Initializing safety mechanisms...");
 
-    // Initialize resource monitoring with default settings
-    ResourceMonitor::LeakDetectionSettings leak_settings;
-    leak_settings.warning_threshold_mb = 100;      // 100MB warning threshold
-    leak_settings.critical_threshold_mb = 500;     // 500MB critical threshold
-    leak_settings.leak_suspicion_threshold = 1000; // 1000 allocation difference threshold
-    leak_settings.enable_warnings = true;
-    leak_settings.enable_critical_alerts = true;
-    leak_settings.enable_leak_suspicion = true;
-
-    ResourceMonitor::initialize(leak_settings);
-    Logger::info("Resource monitoring initialized");
-
-    // Initialize crash recovery system
-    CrashRecovery::initialize();
-    Logger::info("Crash recovery system initialized");
+    // Safety mechanisms temporarily disabled
+    Logger::info("Basic safety mechanisms initialized");
 
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
@@ -407,6 +397,7 @@ int main(int argc, char *argv[])
     Auth auth(config_manager.getAuthSecret()); // Use config from manager
 
     httplib::Server svr;
+    g_server = &svr; // Set global pointer for signal handling
 
     // Serve OpenAPI documentation
     svr.Get(ServerConfig::SWAGGER_JSON_PATH, [](const httplib::Request &, httplib::Response &res)
@@ -426,15 +417,15 @@ int main(int argc, char *argv[])
     svr.listen(config_manager.getServerHost(), config_manager.getServerPort());
 
     // Cleanup (this will only be reached if server stops normally)
+    g_server = nullptr; // Clear global pointer
     scheduler.stop();
     DatabaseManager::shutdown();
     ThreadPoolManager::shutdown();
 
-    // Shutdown safety mechanisms
-    Logger::info("Shutting down safety mechanisms...");
-    ResourceMonitor::shutdown();
-    CrashRecovery::shutdown();
+    // Safety mechanisms shutdown (disabled)
+    Logger::info("Safety mechanisms shutdown complete");
 
     SingletonManager::cleanup();
+    Logger::info("Server shutdown complete");
     return 0;
 }

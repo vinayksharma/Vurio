@@ -3356,6 +3356,370 @@ DBOpResult DatabaseManager::setProcessingFlagError(const std::string &file_path,
     return DBOpResult(true);
 }
 
+// Set processing flag to transcoding error state (3) for a specific mode
+DBOpResult DatabaseManager::setProcessingFlagTranscodingError(const std::string &file_path, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    std::atomic<bool> operation_completed{false};
+    std::atomic<bool> success{true};
+    std::string error_msg;
+
+    // Enqueue the write operation
+    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                                      {
+        Logger::debug("Executing setProcessingFlagTranscodingError in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Build the SQL query based on the mode - set to transcoding error state (3)
+        std::string update_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                update_sql = "UPDATE scanned_files SET processed_fast = 3 WHERE file_path = ?";
+                break;
+            case DedupMode::BALANCED:
+                update_sql = "UPDATE scanned_files SET processed_balanced = 3 WHERE file_path = ?";
+                break;
+            case DedupMode::QUALITY:
+                update_sql = "UPDATE scanned_files SET processed_quality = 3 WHERE file_path = ?";
+                break;
+            default:
+                error_msg = "Unknown processing mode: " + DedupModes::getModeName(captured_mode);
+                Logger::error(error_msg);
+                success.store(false);
+                operation_completed.store(true);
+                return WriteOperationResult::Failure(error_msg);
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to set processing flag transcoding error: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Set processing flag to transcoding error state (3) for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        operation_completed.store(true);
+        return WriteOperationResult(); });
+
+    // Wait for the operation to complete with timeout
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(5); // 5 second timeout
+
+    while (!operation_completed.load())
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+        {
+            Logger::error("setProcessingFlagTranscodingError timed out after 5 seconds for: " + file_path);
+            return DBOpResult(false, "Operation timed out");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (!success.load())
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+// Set processing flag to final error state (4) for a specific mode
+DBOpResult DatabaseManager::setProcessingFlagFinalError(const std::string &file_path, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    std::atomic<bool> operation_completed{false};
+    std::atomic<bool> success{true};
+    std::string error_msg;
+
+    // Enqueue the write operation
+    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                                      {
+        Logger::debug("Executing setProcessingFlagFinalError in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Build the SQL query based on the mode - set to final error state (4)
+        std::string update_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                update_sql = "UPDATE scanned_files SET processed_fast = 4 WHERE file_path = ?";
+                break;
+            case DedupMode::BALANCED:
+                update_sql = "UPDATE scanned_files SET processed_balanced = 4 WHERE file_path = ?";
+                break;
+            case DedupMode::QUALITY:
+                update_sql = "UPDATE scanned_files SET processed_quality = 4 WHERE file_path = ?";
+                break;
+            default:
+                error_msg = "Unknown processing mode: " + DedupModes::getModeName(captured_mode);
+                Logger::error(error_msg);
+                success.store(false);
+                operation_completed.store(true);
+                return WriteOperationResult::Failure(error_msg);
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to set processing flag final error: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success.store(false);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        Logger::debug("Set processing flag to final error state (4) for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        operation_completed.store(true);
+        return WriteOperationResult(); });
+
+    // Wait for the operation to complete with timeout
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(5); // 5 second timeout
+
+    while (!operation_completed.load())
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+        {
+            Logger::error("setProcessingFlagFinalError timed out after 5 seconds for: " + file_path);
+            return DBOpResult(false, "Operation timed out");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (!success.load())
+        return DBOpResult(false, error_msg);
+    return DBOpResult(true);
+}
+
+std::vector<std::string> DatabaseManager::getFilesWithProcessingFlag(int flag_value, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return {};
+    }
+
+    // Capture parameters for async execution
+    int captured_flag_value = flag_value;
+    DedupMode captured_mode = mode;
+    std::vector<std::string> results;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_flag_value, captured_mode, &results](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getFilesWithProcessingFlag in read queue for flag value: " + std::to_string(captured_flag_value) + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::vector<std::string>());
+        }
+        
+        // Build the SQL query based on the mode
+        std::string select_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                select_sql = "SELECT file_path FROM scanned_files WHERE processed_fast = ?";
+                break;
+            case DedupMode::BALANCED:
+                select_sql = "SELECT file_path FROM scanned_files WHERE processed_balanced = ?";
+                break;
+            case DedupMode::QUALITY:
+                select_sql = "SELECT file_path FROM scanned_files WHERE processed_quality = ?";
+                break;
+            default:
+                Logger::error("Unknown processing mode: " + DedupModes::getModeName(captured_mode));
+                return std::any(std::vector<std::string>());
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::vector<std::string>());
+        }
+
+        sqlite3_bind_int(stmt, 1, captured_flag_value);
+        
+        std::vector<std::string> file_paths;
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            const char *file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            if (file_path)
+            {
+                file_paths.push_back(std::string(file_path));
+            }
+        }
+        
+        sqlite3_finalize(stmt);
+        
+        Logger::debug("Found " + std::to_string(file_paths.size()) + " files with processing flag " + std::to_string(captured_flag_value) + " for mode " + DedupModes::getModeName(captured_mode));
+        return std::any(file_paths); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            results = std::any_cast<std::vector<std::string>>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting files with processing flag: " + std::string(e.what()));
+    }
+
+    return results;
+}
+
+int DatabaseManager::getProcessingFlag(const std::string &file_path, DedupMode mode)
+{
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return -1;
+    }
+
+    // Capture parameters for async execution
+    std::string captured_file_path = file_path;
+    DedupMode captured_mode = mode;
+    int flag_value = -1;
+
+    // Enqueue the read operation
+    auto future = access_queue_->enqueueRead([captured_file_path, captured_mode, &flag_value](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing getProcessingFlag in read queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(-1);
+        }
+        
+        // Build the SQL query based on the mode
+        std::string select_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                select_sql = "SELECT processed_fast FROM scanned_files WHERE file_path = ?";
+                break;
+            case DedupMode::BALANCED:
+                select_sql = "SELECT processed_balanced FROM scanned_files WHERE file_path = ?";
+                break;
+            case DedupMode::QUALITY:
+                select_sql = "SELECT processed_quality FROM scanned_files WHERE file_path = ?";
+                break;
+            default:
+                Logger::error("Unknown processing mode: " + DedupModes::getModeName(captured_mode));
+                return std::any(-1);
+        }
+        
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare select statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(-1);
+        }
+
+        sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
+        
+        int result_flag = -1;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            result_flag = sqlite3_column_int(stmt, 0);
+        }
+        
+        sqlite3_finalize(stmt);
+        
+        Logger::debug("Processing flag for " + captured_file_path + " mode " + DedupModes::getModeName(captured_mode) + ": " + std::to_string(result_flag));
+        return std::any(result_flag); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            flag_value = std::any_cast<int>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error getting processing flag: " + std::string(e.what()));
+    }
+
+    return flag_value;
+}
+
 bool DatabaseManager::tryAcquireProcessingLock(const std::string &file_path, DedupMode mode)
 {
     if (!waitForQueueInitialization())
