@@ -135,7 +135,8 @@ public:
                         "files_scanned": {"type": "integer", "description": "Total files discovered and stored"},
                         "files_queued": {"type": "integer", "description": "Files waiting to be processed"},
                         "files_processed": {"type": "integer", "description": "Files successfully processed in any mode"},
-                        "duplicates_found": {"type": "integer", "description": "Files identified as duplicates"}
+                        "duplicates_found": {"type": "integer", "description": "Files identified as duplicates"},
+                        "files_in_error": {"type": "integer", "description": "Files that failed processing"}
                       }
                     }
                   }

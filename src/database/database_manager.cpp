@@ -4474,7 +4474,7 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 
 DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
 {
-    ServerStatus status = {0, 0, 0, 0};
+    ServerStatus status = {0, 0, 0, 0, 0};
 
     if (!waitForQueueInitialization())
     {
@@ -4531,10 +4531,23 @@ DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
                 sqlite3_finalize(duplicates_stmt);
             }
 
+            // 5. Files in error (files with success = 0 in media_processing_results)
+            const std::string error_sql = "SELECT COUNT(DISTINCT file_path) FROM media_processing_results WHERE success = 0";
+            sqlite3_stmt *error_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, error_sql.c_str(), -1, &error_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(error_stmt) == SQLITE_ROW)
+                {
+                    status.files_in_error = static_cast<size_t>(sqlite3_column_int(error_stmt, 0));
+                }
+                sqlite3_finalize(error_stmt);
+            }
+
             Logger::debug("Server status retrieved - Scanned: " + std::to_string(status.files_scanned) + 
                          ", Queued: " + std::to_string(status.files_queued) + 
                          ", Processed: " + std::to_string(status.files_processed) + 
-                         ", Duplicates: " + std::to_string(status.duplicates_found));
+                         ", Duplicates: " + std::to_string(status.duplicates_found) +
+                         ", Errors: " + std::to_string(status.files_in_error));
         }
         catch (const std::exception &e)
         {

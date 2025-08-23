@@ -470,6 +470,7 @@ public:
         size_t files_queued;
         size_t files_processed;
         size_t duplicates_found;
+        size_t files_in_error;
     };
     ServerStatus getServerStatus();
 

@@ -318,13 +318,14 @@ private:
 
             json response = {
                 {"status", "success"},
-                {"data", {{"files_scanned", server_status.files_scanned}, {"files_queued", server_status.files_queued}, {"files_processed", server_status.files_processed}, {"duplicates_found", server_status.duplicates_found}}}};
+                {"data", {{"files_scanned", server_status.files_scanned}, {"files_queued", server_status.files_queued}, {"files_processed", server_status.files_processed}, {"duplicates_found", server_status.duplicates_found}, {"files_in_error", server_status.files_in_error}}}};
 
             res.set_content(response.dump(), "application/json");
             Logger::info("Server status retrieved successfully - Scanned: " + std::to_string(server_status.files_scanned) +
                          ", Queued: " + std::to_string(server_status.files_queued) +
                          ", Processed: " + std::to_string(server_status.files_processed) +
-                         ", Duplicates: " + std::to_string(server_status.duplicates_found));
+                         ", Duplicates: " + std::to_string(server_status.duplicates_found) +
+                         ", Errors: " + std::to_string(server_status.files_in_error));
         }
         catch (const std::exception &e)
         {
