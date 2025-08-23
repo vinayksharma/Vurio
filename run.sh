@@ -26,6 +26,17 @@ if [ ! -f "build/dedup_server" ]; then
     exit 1
 fi
 
+# Proactively clean up stale PID file if present
+if [ -f "dedup_server.pid" ]; then
+    EXISTING_PID=$(cat dedup_server.pid 2>/dev/null || echo "")
+    if [ -n "$EXISTING_PID" ]; then
+        if ! kill -0 "$EXISTING_PID" 2>/dev/null; then
+            echo -e "${YELLOW}Found stale PID file (PID $EXISTING_PID not running). Removing...${NC}"
+            rm -f dedup_server.pid || true
+        fi
+    fi
+fi
+
 # Function to get auth token
 get_auth_token() {
     echo -e "${YELLOW}Getting authentication token...${NC}"
@@ -98,10 +109,16 @@ for arg in "$@"; do
     fi
 done
 
-# Start the server in background
-echo -e "${YELLOW}Starting dedup server...${NC}"
-./build/dedup_server $FORCE_SHUTDOWN &
-SERVER_PID=$!
+# Start the server (ensure true detach survives shell exit)
+if [ $DETACH_MODE -eq 1 ]; then
+    echo -e "${YELLOW}Starting dedup server (detached with nohup)...${NC}"
+    nohup ./build/dedup_server $FORCE_SHUTDOWN >/dev/null 2>&1 &
+    SERVER_PID=$!
+else
+    echo -e "${YELLOW}Starting dedup server...${NC}"
+    ./build/dedup_server $FORCE_SHUTDOWN &
+    SERVER_PID=$!
+fi
 
 # If in detach mode, just wait a moment for server to start and then exit
 if [ $DETACH_MODE -eq 1 ]; then

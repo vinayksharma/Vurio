@@ -38,14 +38,35 @@ bool SingletonManager::isAnotherInstanceRunning()
         return false;
     }
 
-    // Check if PID file exists (regardless of whether process is running)
+    // Check if PID file exists
     std::ifstream file(pid_file_path);
     if (!file.is_open())
     {
         return false;
     }
+
+    // Read PID and validate process
+    pid_t existing_pid = -1;
+    file >> existing_pid;
     file.close();
 
+    if (existing_pid <= 0)
+    {
+        // Invalid PID in file, treat as stale and remove
+        Logger::info("Invalid PID in file, removing stale PID file...");
+        unlink(pid_file_path.c_str());
+        return false;
+    }
+
+    // If process is not running, remove stale PID file and allow startup
+    if (kill(existing_pid, 0) != 0)
+    {
+        Logger::info("Process " + std::to_string(existing_pid) + " is not running, removing stale PID file...");
+        unlink(pid_file_path.c_str());
+        return false;
+    }
+
+    // Another instance is truly running
     return true;
 }
 
@@ -84,6 +105,7 @@ bool SingletonManager::createPidFile()
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
     signal(SIGQUIT, signalHandler);
+    signal(SIGHUP, signalHandler);
 
     return true;
 }

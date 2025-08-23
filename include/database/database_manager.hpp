@@ -406,6 +406,12 @@ public:
      */
     DBOpResult clearAllTranscodingRecords();
 
+    // Transcoding job management helpers (serialized via DatabaseAccessQueue)
+    std::string claimNextTranscodingJob();
+    bool markTranscodingJobInProgress(const std::string &source_file_path);
+    bool markTranscodingJobCompleted(const std::string &source_file_path, const std::string &transcoded_file_path);
+    bool markTranscodingJobFailed(const std::string &source_file_path);
+
     /**
      * @brief Wait for all pending write operations to complete
      */
@@ -481,6 +487,9 @@ private:
 
     // Make db_ accessible to DatabaseAccessQueue
     friend class DatabaseAccessQueue;
+
+    // Make db_ accessible to TranscodingManager for database-only transcoding
+    friend class TranscodingManager;
 
     // Initialization
     void initialize();

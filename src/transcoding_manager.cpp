@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <iostream> // Required for std::cerr
 #include "core/server_config_manager.hpp"
 #include <libraw/libraw.h>
 #include <opencv2/imgcodecs.hpp>
@@ -14,6 +15,7 @@
 #include <algorithm> // Required for std::clamp and std::max
 #include <cstring>   // Required for std::memcpy
 #include <memory>    // For smart pointers
+#include <unistd.h>
 
 // FIXED: RAII wrapper for LibRaw to prevent memory leaks
 class LibRawRAII
@@ -97,20 +99,305 @@ public:
 TranscodingManager &TranscodingManager::getInstance()
 {
     static TranscodingManager instance;
+
+    // Ensure the instance is properly initialized before returning
+    if (!instance.isInitialized())
+    {
+        Logger::warn("TranscodingManager instance accessed before full initialization");
+        // Return the instance anyway, but the methods will handle the uninitialized case
+    }
+
     return instance;
 }
 
 void TranscodingManager::initialize(const std::string &cache_dir, int max_threads)
 {
+    Logger::info("Initializing TranscodingManager with cache dir: " + cache_dir +
+                 ", max threads: " + std::to_string(max_threads));
+
     cache_dir_ = cache_dir;
     max_threads_ = max_threads;
-    db_manager_ = &DatabaseManager::getInstance();
 
-    // Create cache directory if it doesn't exist
-    std::filesystem::create_directories(cache_dir_);
+    if (!db_manager_)
+    {
+        Logger::error("Database manager not available for transcoding initialization");
+        return;
+    }
 
-    Logger::info("TranscodingManager initialized with cache dir: " + cache_dir_ +
-                 ", max threads: " + std::to_string(max_threads_));
+    // Ensure cache directory exists
+    if (!std::filesystem::exists(cache_dir_))
+    {
+        try
+        {
+            std::filesystem::create_directories(cache_dir_);
+            Logger::info("Created cache directory: " + cache_dir_);
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Failed to create cache directory: " + cache_dir_ + " - " + std::string(e.what()));
+            return;
+        }
+    }
+
+    // Upgrade database schema to add status and worker_id fields to cache_map table
+    if (!upgradeCacheMapSchema())
+    {
+        Logger::error("Failed to upgrade cache_map table schema");
+        return;
+    }
+
+    // Load configuration
+    loadConfiguration();
+
+    // Mark as fully initialized
+    initialized_ = true;
+
+    Logger::info("TranscodingManager initialized successfully");
+}
+
+void TranscodingManager::loadConfiguration()
+{
+    try
+    {
+        ServerConfigManager &config = ServerConfigManager::getInstance();
+
+        // Load raw file extensions that need transcoding
+        auto transcoding_types = config.getTranscodingFileTypes();
+        for (const auto &[ext, enabled] : transcoding_types)
+        {
+            if (enabled)
+            {
+                raw_extensions_.push_back(ext);
+            }
+        }
+
+        // Load cache size configuration
+        size_t max_cache_mb = config.getDecoderCacheSizeMB();
+        max_cache_size_mb_ = max_cache_mb;
+        max_cache_size_.store(max_cache_mb * 1024 * 1024); // Convert MB to bytes
+
+        // Set reasonable defaults for cleanup configuration
+        cleanup_config_.fully_processed_age_days = 30;    // 30 days
+        cleanup_config_.partially_processed_age_days = 7; // 7 days
+        cleanup_config_.unprocessed_age_days = 3;         // 3 days
+        cleanup_config_.require_all_modes = false;        // Don't require all modes
+        cleanup_config_.cleanup_threshold_percent = 80;   // 80% threshold
+
+        Logger::info("Loaded transcoding configuration: " +
+                     std::string("Raw extensions: ") + std::to_string(raw_extensions_.size()) + ", " +
+                     std::string("Max cache: ") + std::to_string(max_cache_mb) + "MB, " +
+                     std::string("Fully processed: ") + std::to_string(cleanup_config_.fully_processed_age_days) + " days, " +
+                     std::string("Partially processed: ") + std::to_string(cleanup_config_.partially_processed_age_days) + " days, " +
+                     std::string("Unprocessed: ") + std::to_string(cleanup_config_.unprocessed_age_days) + " days, " +
+                     std::string("Require all modes: ") + (cleanup_config_.require_all_modes ? "true" : "false") + ", " +
+                     std::string("Cleanup threshold: ") + std::to_string(cleanup_config_.cleanup_threshold_percent) + "%");
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Failed to load transcoding configuration: " + std::string(e.what()));
+        // Use default values if configuration loading fails
+        cleanup_config_.fully_processed_age_days = 30;
+        cleanup_config_.partially_processed_age_days = 7;
+        cleanup_config_.unprocessed_age_days = 3;
+        cleanup_config_.require_all_modes = false;
+        cleanup_config_.cleanup_threshold_percent = 80;
+    }
+}
+
+void TranscodingManager::restoreQueueFromDatabase()
+{
+    Logger::info("Restoring transcoding queue from database...");
+
+    if (!db_manager_)
+    {
+        Logger::error("Database manager not available for queue restoration");
+        return;
+    }
+
+    try
+    {
+        // Query for files that need transcoding (status = 0, not yet processed)
+        std::string sql = "SELECT source_file_path FROM cache_map WHERE status = 0";
+        sqlite3_stmt *stmt;
+
+        if (sqlite3_prepare_v2(db_manager_->db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare queue restoration statement");
+            return;
+        }
+
+        int restored_count = 0;
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            std::string source_file = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            if (!source_file.empty())
+            {
+                // Check if the source file still exists
+                if (std::filesystem::exists(source_file))
+                {
+                    // Check if it's not already transcoded
+                    std::string transcoded_path = getTranscodedFilePath(source_file);
+                    if (transcoded_path.empty())
+                    {
+                        // Queue for transcoding
+                        queueForTranscoding(source_file);
+                        restored_count++;
+                    }
+                }
+            }
+        }
+
+        sqlite3_finalize(stmt);
+        Logger::info("Restored " + std::to_string(restored_count) + " files to transcoding queue");
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception during queue restoration: " + std::string(e.what()));
+    }
+}
+
+void TranscodingManager::setDatabaseManager(DatabaseManager *db_manager)
+{
+    db_manager_ = db_manager;
+    Logger::info("Database manager set for transcoding manager");
+}
+
+bool TranscodingManager::upgradeCacheMapSchema()
+{
+    Logger::info("Upgrading cache_map table schema...");
+
+    try
+    {
+        // Check if status column exists
+        std::string check_sql = "PRAGMA table_info(cache_map)";
+        sqlite3_stmt *check_stmt;
+
+        if (sqlite3_prepare_v2(db_manager_->db_, check_sql.c_str(), -1, &check_stmt, nullptr) != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare schema check statement");
+            return false;
+        }
+
+        bool status_exists = false;
+        bool worker_id_exists = false;
+        bool created_at_exists = false;
+        bool updated_at_exists = false;
+
+        while (sqlite3_step(check_stmt) == SQLITE_ROW)
+        {
+            std::string column_name = reinterpret_cast<const char *>(sqlite3_column_text(check_stmt, 1));
+            if (column_name == "status")
+                status_exists = true;
+            if (column_name == "worker_id")
+                worker_id_exists = true;
+            if (column_name == "created_at")
+                created_at_exists = true;
+            if (column_name == "updated_at")
+                updated_at_exists = true;
+        }
+        sqlite3_finalize(check_stmt);
+
+        // Add missing columns
+        if (!status_exists)
+        {
+            std::string alter_sql = "ALTER TABLE cache_map ADD COLUMN status INTEGER DEFAULT 0";
+            if (sqlite3_exec(db_manager_->db_, alter_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+            {
+                Logger::error("Failed to add status column to cache_map table");
+                return false;
+            }
+            Logger::info("Added status column to cache_map table");
+        }
+
+        if (!worker_id_exists)
+        {
+            std::string alter_sql = "ALTER TABLE cache_map ADD COLUMN worker_id TEXT";
+            if (sqlite3_exec(db_manager_->db_, alter_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+            {
+                Logger::error("Failed to add worker_id column to cache_map table");
+                return false;
+            }
+            Logger::info("Added worker_id column to cache_map table");
+        }
+
+        if (!created_at_exists)
+        {
+            std::string alter_sql = "ALTER TABLE cache_map ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP";
+            if (sqlite3_exec(db_manager_->db_, alter_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+            {
+                Logger::error("Failed to add created_at column to cache_map table");
+                return false;
+            }
+            Logger::info("Added created_at column to cache_map table");
+        }
+
+        if (!updated_at_exists)
+        {
+            std::string alter_sql = "ALTER TABLE cache_map ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP";
+            if (sqlite3_exec(db_manager_->db_, alter_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+            {
+                Logger::error("Failed to add updated_at column to cache_map table");
+                return false;
+            }
+            Logger::info("Added updated_at column to cache_map table");
+        }
+
+        // Create index on status for faster job selection
+        std::string index_sql = "CREATE INDEX IF NOT EXISTS idx_cache_map_status ON cache_map(status, created_at)";
+        if (sqlite3_exec(db_manager_->db_, index_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+        {
+            Logger::warn("Failed to create index on cache_map status (may already exist)");
+        }
+
+        Logger::info("cache_map table schema upgrade completed successfully");
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception during schema upgrade: " + std::string(e.what()));
+        return false;
+    }
+}
+
+std::string TranscodingManager::getNextTranscodingJob()
+{
+    Logger::debug("getNextTranscodingJob called");
+
+    if (!db_manager_)
+    {
+        Logger::error("Database manager not available for job selection");
+        return "";
+    }
+
+    // Route through DatabaseManager access queue to serialize with other DB operations
+    return db_manager_->claimNextTranscodingJob();
+}
+
+bool TranscodingManager::markJobInProgress(const std::string &file_path)
+{
+    if (!db_manager_ || file_path.empty())
+    {
+        return false;
+    }
+    return db_manager_->markTranscodingJobInProgress(file_path);
+}
+
+bool TranscodingManager::markJobCompleted(const std::string &file_path, const std::string &output_path)
+{
+    if (!db_manager_ || file_path.empty() || output_path.empty())
+    {
+        return false;
+    }
+    return db_manager_->markTranscodingJobCompleted(file_path, output_path);
+}
+
+bool TranscodingManager::markJobFailed(const std::string &file_path)
+{
+    if (!db_manager_ || file_path.empty())
+    {
+        return false;
+    }
+    return db_manager_->markTranscodingJobFailed(file_path);
 }
 
 void TranscodingManager::startTranscoding()
@@ -124,13 +411,10 @@ void TranscodingManager::startTranscoding()
     running_.store(true);
     cancelled_.store(false);
 
-    // Start transcoding threads
-    for (int i = 0; i < max_threads_; ++i)
-    {
-        transcoding_threads_.emplace_back(&TranscodingManager::transcodingThreadFunction, this);
-    }
+    // Start only ONE transcoding thread since we process files sequentially
+    transcoding_threads_.emplace_back(&TranscodingManager::transcodingThread, this);
 
-    Logger::info("Started " + std::to_string(max_threads_) + " transcoding threads");
+    Logger::info("Started 1 transcoding thread (database-only approach)");
 }
 
 void TranscodingManager::stopTranscoding()
@@ -175,67 +459,80 @@ void TranscodingManager::queueForTranscoding(const std::string &file_path)
 {
     Logger::debug("queueForTranscoding called for: " + file_path);
 
+    if (!isInitialized())
+    {
+        Logger::warn("TranscodingManager not fully initialized for queueForTranscoding");
+        return;
+    }
+
     if (!running_.load())
     {
         Logger::warn("Transcoding not running, cannot queue file: " + file_path);
         return;
     }
 
-    // Use a single mutex lock to keep database and in-memory queue operations atomic
-    // This prevents race conditions where multiple threads could queue the same file
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-
-    // Check if already transcoded (database check)
-    std::string existing_transcoded = getTranscodedFilePath(file_path);
-    if (!existing_transcoded.empty())
+    if (!isDatabaseAvailable())
     {
-        Logger::debug("File already transcoded: " + file_path);
+        Logger::error("Database manager not available for transcoding queue");
         return;
     }
 
-    // Check if already in the in-memory queue to prevent duplicates
-    bool already_queued = false;
-    std::queue<std::string> temp_queue = transcoding_queue_; // Create a copy to check
-    while (!temp_queue.empty())
+    try
     {
-        if (temp_queue.front() == file_path)
+        // Check if already transcoded (database check)
+        std::string existing_transcoded = getTranscodedFilePath(file_path);
+        if (!existing_transcoded.empty())
         {
-            already_queued = true;
-            break;
+            Logger::debug("File already transcoded: " + file_path + " -> " + existing_transcoded);
+            return;
         }
-        temp_queue.pop();
-    }
 
-    if (already_queued)
+        // Queue via DatabaseManager to ensure serialized DB access
+        DBOpResult insert_result = db_manager_->insertTranscodingFile(file_path);
+        if (!insert_result.success)
+        {
+            Logger::error("Failed to queue file for transcoding: " + file_path + " - " + insert_result.error_message);
+            return;
+        }
+
+        Logger::info("Queued file for transcoding: " + file_path);
+    }
+    catch (const std::exception &e)
     {
-        Logger::debug("File already queued for transcoding: " + file_path);
-        return;
+        Logger::error("Exception queuing file for transcoding: " + std::string(e.what()));
     }
-
-    // Add to database queue first
-    DBOpResult result = db_manager_->insertTranscodingFile(file_path);
-    if (!result.success)
-    {
-        Logger::error("Failed to queue file for transcoding: " + file_path + " - " + result.error_message);
-        return;
-    }
-
-    // Add to in-memory queue (still under the same mutex lock)
-    transcoding_queue_.push(file_path);
-    queued_count_.fetch_add(1);
-
-    // Release the mutex before notifying (to avoid potential deadlock)
-    // The mutex is automatically released when lock goes out of scope
-
-    Logger::info("Successfully queued file for transcoding: " + file_path);
-
-    // Notify transcoding threads that new work is available
-    queue_cv_.notify_one();
 }
 
 std::string TranscodingManager::getTranscodedFilePath(const std::string &source_file_path)
 {
+    if (!isInitialized())
+    {
+        Logger::warn("TranscodingManager not fully initialized for getTranscodedFilePath");
+        return "";
+    }
+    if (!db_manager_)
+    {
+        Logger::warn("Database manager not available for getTranscodedFilePath");
+        return "";
+    }
     return db_manager_->getTranscodedFilePath(source_file_path);
+}
+
+// Helper method to check if database manager is available
+bool TranscodingManager::isDatabaseAvailable() const
+{
+    return db_manager_ != nullptr;
+}
+
+// Helper method to safely access database manager
+DatabaseManager *TranscodingManager::getDatabaseManager() const
+{
+    if (!db_manager_)
+    {
+        Logger::warn("Database manager not available");
+        return nullptr;
+    }
+    return db_manager_;
 }
 
 bool TranscodingManager::isTranscodingRunning() const
@@ -254,287 +551,80 @@ void TranscodingManager::shutdown()
     Logger::info("TranscodingManager shutdown complete");
 }
 
-void TranscodingManager::transcodingThreadFunction()
+void TranscodingManager::transcodingThread()
 {
-    Logger::debug("Transcoding thread started");
+    Logger::info("Transcoding thread started (database-only mode)");
 
     while (running_.load() && !cancelled_.load())
     {
-        std::string file_path;
-
-        // Get next file from queue
+        try
         {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            queue_cv_.wait(lock, [this]
-                           { return !transcoding_queue_.empty() || !running_.load() || cancelled_.load(); });
+            Logger::debug("Transcoding thread checking for jobs...");
 
-            if (!running_.load() || cancelled_.load())
+            // Get next job from database
+            std::string file_path = getNextTranscodingJob();
+
+            if (file_path.empty())
             {
-                break;
-            }
-
-            if (transcoding_queue_.empty())
-            {
-                // When queue is empty, check if we should retry files in transcoding error state (3)
-                static auto last_retry_check = std::chrono::steady_clock::now();
-                auto now = std::chrono::steady_clock::now();
-
-                // Check for retry opportunities every 30 seconds
-                if (now - last_retry_check > std::chrono::seconds(30))
-                {
-                    Logger::debug("Queue empty, checking for transcoding error files to retry...");
-                    size_t retry_count = retryTranscodingErrorFiles();
-                    if (retry_count > 0)
-                    {
-                        Logger::info("Retried " + std::to_string(retry_count) + " files from transcoding error state");
-                    }
-                    last_retry_check = now;
-                }
-
+                // No jobs available, wait a bit before checking again
+                Logger::debug("No jobs available, waiting...");
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 continue;
             }
 
-            file_path = transcoding_queue_.front();
-            transcoding_queue_.pop();
-        }
+            Logger::debug("Got job: " + file_path);
 
-        Logger::info("Starting transcoding: " + file_path);
-
-        try
-        {
-            Logger::info("Calling transcodeFile for: " + file_path);
-            std::string transcoded_path = transcodeFile(file_path);
-            Logger::info("transcodeFile returned: " + (transcoded_path.empty() ? "EMPTY" : transcoded_path));
-
-            if (!transcoded_path.empty())
+            // Mark job as in progress
+            if (!markJobInProgress(file_path))
             {
-                // Update database with transcoded file path
-                Logger::info("Updating database with transcoded path: " + file_path + " -> " + transcoded_path);
-                DBOpResult result = db_manager_->updateTranscodedFilePath(file_path, transcoded_path);
-                if (result.success)
+                Logger::warn("Failed to mark job as in progress, skipping: " + file_path);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            Logger::info("Processing transcoding job: " + file_path);
+
+            // Attempt to transcode the file
+            std::string output_path = transcodeFile(file_path);
+
+            if (!output_path.empty())
+            {
+                // Transcoding succeeded
+                if (markJobCompleted(file_path, output_path))
                 {
-                    completed_count_.fetch_add(1);
-                    Logger::info("Transcoding completed successfully: " + file_path + " -> " + transcoded_path);
-
-                    // CRITICAL: Reset processing flags from -1 (in progress) to 0 (retry)
-                    // This allows the processing thread to pick up the file again
-                    Logger::info("Resetting processing flags for transcoded file: " + file_path);
-                    auto &config_manager = ServerConfigManager::getInstance();
-
-                    // Get the current dedup mode and check if quality stack processing is enabled
-                    DedupMode current_mode = config_manager.getDedupMode();
-                    bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
-
-                    // Determine which modes to reset based on configuration
-                    std::vector<DedupMode> modes_to_reset;
-                    if (pre_process_quality_stack)
-                    {
-                        // Reset all three quality levels
-                        modes_to_reset = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
-                    }
-                    else
-                    {
-                        // Reset only the current mode
-                        modes_to_reset = {current_mode};
-                    }
-
-                    for (const auto &mode : modes_to_reset)
-                    {
-                        auto flag_result = db_manager_->resetProcessingFlag(file_path, mode);
-                        if (!flag_result.success)
-                        {
-                            Logger::warn("Failed to reset processing flag after transcoding for: " + file_path +
-                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
-                        }
-                        else
-                        {
-                            Logger::debug("Reset processing flag to retry (0) after transcoding for: " + file_path +
-                                          " mode: " + DedupModes::getModeName(mode));
-                        }
-                    }
+                    processed_count_.fetch_add(1);
+                    Logger::info("Transcoding completed successfully: " + file_path + " -> " + output_path);
                 }
                 else
                 {
-                    failed_count_.fetch_add(1);
-                    Logger::error("Failed to update transcoded file path in database: " + file_path + " - " + result.error_message);
+                    Logger::warn("Failed to mark job as completed: " + file_path);
                 }
             }
             else
             {
-                failed_count_.fetch_add(1);
-                Logger::error("Transcoding failed - transcodeFile returned empty path: " + file_path);
-
-                // IMPROVED: Check if this is a retry attempt and handle accordingly
-                auto &config_manager = ServerConfigManager::getInstance();
-                bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
-
-                // Determine which modes to check and update
-                std::vector<DedupMode> modes_to_check;
-                if (pre_process_quality_stack)
+                // Transcoding failed
+                if (markJobFailed(file_path))
                 {
-                    modes_to_check = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
+                    failed_count_.fetch_add(1);
+                    Logger::warn("Transcoding failed: " + file_path);
                 }
                 else
                 {
-                    DedupMode current_mode = config_manager.getDedupMode();
-                    modes_to_check = {current_mode};
-                }
-
-                // Check current flag state to determine if this is a retry
-                bool is_retry_attempt = false;
-                for (const auto &mode : modes_to_check)
-                {
-                    auto current_flag = db_manager_->getProcessingFlag(file_path, mode);
-                    if (current_flag == 3) // Already in transcoding error state
-                    {
-                        is_retry_attempt = true;
-                        break;
-                    }
-                }
-
-                if (is_retry_attempt)
-                {
-                    // This is a retry attempt that failed - set to final error state (4)
-                    Logger::warn("Transcoding retry failed - setting to final error state (4): " + file_path);
-                    for (const auto &mode : modes_to_check)
-                    {
-                        auto flag_result = db_manager_->setProcessingFlagFinalError(file_path, mode);
-                        if (!flag_result.success)
-                        {
-                            Logger::warn("Failed to set processing flag to final error state: " + file_path +
-                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
-                        }
-                        else
-                        {
-                            Logger::debug("Set processing flag to final error state (4) for: " + file_path +
-                                          " mode: " + DedupModes::getModeName(mode));
-                        }
-                    }
-                }
-                else
-                {
-                    // First failure - set to transcoding error state (3)
-                    Logger::info("Setting processing flags to transcoding error state (3) for failed transcoding: " + file_path);
-                    auto &config_manager = ServerConfigManager::getInstance();
-
-                    // Get the current dedup mode and check if quality stack processing is enabled
-                    DedupMode current_mode = config_manager.getDedupMode();
-                    bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
-
-                    // Determine which modes to set error state for based on configuration
-                    std::vector<DedupMode> modes_to_error;
-                    if (pre_process_quality_stack)
-                    {
-                        // Set error state for all three quality levels
-                        modes_to_error = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
-                    }
-                    else
-                    {
-                        // Set error state only for the current mode
-                        modes_to_error = {current_mode};
-                    }
-
-                    for (const auto &mode : modes_to_error)
-                    {
-                        auto flag_result = db_manager_->setProcessingFlagTranscodingError(file_path, mode);
-                        if (!flag_result.success)
-                        {
-                            Logger::warn("Failed to set processing flag to transcoding error state for: " + file_path +
-                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
-                        }
-                        else
-                        {
-                            Logger::debug("Set processing flag to transcoding error state (3) for: " + file_path +
-                                          " mode: " + DedupModes::getModeName(mode));
-                        }
-                    }
+                    Logger::warn("Failed to mark job as failed: " + file_path);
                 }
             }
+
+            // Small delay between jobs to prevent overwhelming the system
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         catch (const std::exception &e)
         {
-            failed_count_.fetch_add(1);
-            Logger::error("Exception during transcoding: " + file_path + " - " + std::string(e.what()));
-
-            // IMPROVED: Check if this is a retry attempt and handle accordingly
-            try
-            {
-                auto &config_manager = ServerConfigManager::getInstance();
-
-                // Get the current dedup mode and check if quality stack processing is enabled
-                DedupMode current_mode = config_manager.getDedupMode();
-                bool pre_process_quality_stack = config_manager.getPreProcessQualityStack();
-
-                // Determine which modes to check and update
-                std::vector<DedupMode> modes_to_check;
-                if (pre_process_quality_stack)
-                {
-                    modes_to_check = {DedupMode::FAST, DedupMode::BALANCED, DedupMode::QUALITY};
-                }
-                else
-                {
-                    modes_to_check = {current_mode};
-                }
-
-                // Check current flag state to determine if this is a retry
-                bool is_retry_attempt = false;
-                for (const auto &mode : modes_to_check)
-                {
-                    auto current_flag = db_manager_->getProcessingFlag(file_path, mode);
-                    if (current_flag == 3) // Already in transcoding error state
-                    {
-                        is_retry_attempt = true;
-                        break;
-                    }
-                }
-
-                if (is_retry_attempt)
-                {
-                    // This is a retry attempt that failed - set to final error state (4)
-                    Logger::warn("Transcoding retry failed due to exception - setting to final error state (4): " + file_path);
-                    for (const auto &mode : modes_to_check)
-                    {
-                        auto flag_result = db_manager_->setProcessingFlagFinalError(file_path, mode);
-                        if (!flag_result.success)
-                        {
-                            Logger::warn("Failed to set processing flag to final error state after exception: " + file_path +
-                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
-                        }
-                        else
-                        {
-                            Logger::debug("Set processing flag to final error state (4) after exception for: " + file_path +
-                                          " mode: " + DedupModes::getModeName(mode));
-                        }
-                    }
-                }
-                else
-                {
-                    // First failure - set to transcoding error state (3)
-                    Logger::info("Setting processing flags to transcoding error state (3) for transcoding exception: " + file_path);
-                    for (const auto &mode : modes_to_check)
-                    {
-                        auto flag_result = db_manager_->setProcessingFlagTranscodingError(file_path, mode);
-                        if (!flag_result.success)
-                        {
-                            Logger::warn("Failed to set processing flag to transcoding error state after transcoding exception for: " + file_path +
-                                         " mode: " + DedupModes::getModeName(mode) + " - " + flag_result.error_message);
-                        }
-                        else
-                        {
-                            Logger::debug("Set processing flag to transcoding error state (3) after transcoding exception for: " + file_path +
-                                          " mode: " + DedupModes::getModeName(mode));
-                        }
-                    }
-                }
-            }
-            catch (...)
-            {
-                Logger::error("Failed to set processing flags to error state after transcoding exception for: " + file_path);
-            }
+            Logger::error("Exception in transcoding thread: " + std::string(e.what()));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
 
-    Logger::debug("Transcoding thread stopped");
+    Logger::info("Transcoding thread stopped");
 }
 
 std::string TranscodingManager::transcodeFile(const std::string &source_file_path)
@@ -1197,79 +1287,6 @@ bool TranscodingManager::removeCacheEntry(const CacheEntry &entry)
     {
         Logger::error("Error removing cache entry: " + entry.cache_file + " - " + std::string(e.what()));
         return false;
-    }
-}
-
-void TranscodingManager::restoreQueueFromDatabase()
-{
-    Logger::info("Restoring transcoding queue from database...");
-
-    // Check change flag to avoid redundant surveys
-    try
-    {
-        if (db_manager_)
-        {
-            bool changed = db_manager_->getFlag("transcode_preprocess_scanned_files_changed");
-            if (!changed)
-            {
-                Logger::info("Transcoding survey skipped: no changes in scanned_files (flag not set)");
-                return;
-            }
-        }
-    }
-    catch (const std::exception &e)
-    {
-        Logger::warn(std::string("Error checking change flag; proceeding with survey: ") + e.what());
-    }
-
-    try
-    {
-        // Get all files that need transcoding from the database
-        std::vector<std::string> files_needing_transcoding = db_manager_->getFilesNeedingTranscoding();
-
-        if (files_needing_transcoding.empty())
-        {
-            Logger::info("No pending transcoding jobs found in database");
-            return;
-        }
-
-        Logger::info("Found " + std::to_string(files_needing_transcoding.size()) + " pending transcoding jobs in database");
-
-        // Fast restoration: add all files to queue without validation
-        // Worker threads will handle file validation and cleanup during processing
-        {
-            std::lock_guard<std::mutex> lock(queue_mutex_);
-            for (const auto &file_path : files_needing_transcoding)
-            {
-                transcoding_queue_.push(file_path);
-            }
-        }
-
-        Logger::info("Restored " + std::to_string(files_needing_transcoding.size()) + " transcoding jobs to queue");
-
-        // Notify worker threads that new work is available
-        queue_cv_.notify_all();
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("Error restoring transcoding queue from database: " + std::string(e.what()));
-    }
-
-    // Reset the change flag now that survey is complete
-    try
-    {
-        if (db_manager_)
-        {
-            auto res = db_manager_->setFlag("transcode_preprocess_scanned_files_changed", false);
-            if (!res.success)
-            {
-                Logger::warn("Failed to reset transcode_preprocess_scanned_files_changed flag: " + res.error_message);
-            }
-        }
-    }
-    catch (const std::exception &e)
-    {
-        Logger::warn(std::string("Exception resetting flag: ") + e.what());
     }
 }
 

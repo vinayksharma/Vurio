@@ -22,6 +22,7 @@
 #include <any>
 #include <functional>
 #include <openssl/sha.h>
+#include <unistd.h>
 
 using json = nlohmann::json;
 
@@ -2664,6 +2665,212 @@ std::string DatabaseManager::getTranscodedFilePath(const std::string &source_fil
     }
 
     return transcoded_file_path;
+}
+
+std::string DatabaseManager::claimNextTranscodingJob()
+{
+    Logger::debug("claimNextTranscodingJob called");
+
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return "";
+    }
+
+    std::string file_path;
+    auto future = access_queue_->enqueueRead([&file_path](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing claimNextTranscodingJob in access queue");
+
+        if (!dbMan.db_)
+        {
+            Logger::error("Database not initialized");
+            return std::any(std::string(""));
+        }
+
+        const std::string select_sql =
+            "SELECT source_file_path FROM cache_map WHERE status = 0 AND transcoded_file_path IS NULL ORDER BY created_at ASC LIMIT 1";
+        sqlite3_stmt *stmt = nullptr;
+        int rc = sqlite3_prepare_v2(dbMan.db_, select_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            Logger::error("Failed to prepare job selection statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+            return std::any(std::string(""));
+        }
+
+        rc = sqlite3_step(stmt);
+        if (rc == SQLITE_ROW)
+        {
+            file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        }
+
+        sqlite3_finalize(stmt);
+        return std::any(file_path); });
+
+    try
+    {
+        auto result = future.get();
+        if (result.has_value())
+        {
+            file_path = std::any_cast<std::string>(result);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Error in claimNextTranscodingJob: " + std::string(e.what()));
+    }
+
+    if (!file_path.empty())
+    {
+        Logger::debug("Claimed next transcoding job: " + file_path);
+    }
+    return file_path;
+}
+
+bool DatabaseManager::markTranscodingJobInProgress(const std::string &source_file_path)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return false;
+    }
+
+    std::string captured = source_file_path;
+    bool success = true;
+    std::string error_msg;
+    access_queue_->enqueueWrite([captured, &success, &error_msg](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        const std::string update_sql =
+            "UPDATE cache_map SET status = 1, worker_id = ?, updated_at = CURRENT_TIMESTAMP WHERE source_file_path = ?";
+        sqlite3_stmt *stmt = nullptr;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare mark in-progress: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        std::string worker_id = std::to_string(getpid());
+        sqlite3_bind_text(stmt, 1, worker_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, captured.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to mark in-progress: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        Logger::debug("Marked job in progress: " + captured);
+        return WriteOperationResult(); });
+    waitForWrites();
+    return success;
+}
+
+bool DatabaseManager::markTranscodingJobCompleted(const std::string &source_file_path, const std::string &transcoded_file_path)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return false;
+    }
+    std::string src = source_file_path;
+    std::string out = transcoded_file_path;
+    bool success = true;
+    std::string error_msg;
+    access_queue_->enqueueWrite([src, out, &success, &error_msg](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        const std::string update_sql =
+            "UPDATE cache_map SET status = 2, transcoded_file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE source_file_path = ?";
+        sqlite3_stmt *stmt = nullptr;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare mark completed: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        sqlite3_bind_text(stmt, 1, out.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, src.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to mark completed: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        Logger::debug("Marked job completed: " + src + " -> " + out);
+        return WriteOperationResult(); });
+    waitForWrites();
+    return success;
+}
+
+bool DatabaseManager::markTranscodingJobFailed(const std::string &source_file_path)
+{
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return false;
+    }
+    std::string src = source_file_path;
+    bool success = true;
+    std::string error_msg;
+    access_queue_->enqueueWrite([src, &success, &error_msg](DatabaseManager &dbMan)
+                                {
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        const std::string update_sql =
+            "UPDATE cache_map SET status = 3, updated_at = CURRENT_TIMESTAMP WHERE source_file_path = ?";
+        sqlite3_stmt *stmt = nullptr;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare mark failed: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        sqlite3_bind_text(stmt, 1, src.c_str(), -1, SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to mark failed: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            success = false;
+            return WriteOperationResult::Failure(error_msg);
+        }
+        Logger::debug("Marked job failed: " + src);
+        return WriteOperationResult(); });
+    waitForWrites();
+    return success;
 }
 
 std::vector<std::string> DatabaseManager::getFilesNeedingTranscoding()

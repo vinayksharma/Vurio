@@ -70,8 +70,16 @@ void DatabaseAccessQueue::wait_for_completion(std::chrono::milliseconds timeout)
         }
 
         // Continue waiting indefinitely for operations to complete
-        while (!((operation_queue_.empty() && pending_write_operations_.load() == 0) || should_stop_))
+        // Use a more robust condition check to avoid race conditions
+        while (!should_stop_)
         {
+            // Check if both conditions are met atomically
+            if (operation_queue_.empty() && pending_write_operations_.load() == 0)
+            {
+                break;
+            }
+
+            // Wait for notification that something changed
             queue_cv_.wait(lock);
         }
     }
@@ -173,6 +181,11 @@ void DatabaseAccessQueue::access_thread_worker()
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
             if (operation_queue_.empty() && pending_write_operations_.load() == 0)
+            {
+                queue_cv_.notify_all();
+            }
+            // Also notify when any operation completes to wake up waiters
+            else
             {
                 queue_cv_.notify_all();
             }

@@ -35,6 +35,20 @@ public:
     };
 
     /**
+     * @brief Cache entry with processing status and metadata
+     */
+    struct CacheEntry
+    {
+        std::string source_file;
+        std::string cache_file;
+        bool is_processed;             // Processed in at least one mode
+        bool is_fully_processed;       // Processed in all enabled modes
+        std::time_t cache_age;         // How old is the transcoded file
+        size_t file_size;              // Cache file size
+        std::string processing_status; // Human-readable processing status
+    };
+
+    /**
      * @brief Get singleton instance
      * @return Reference to singleton instance
      */
@@ -63,6 +77,13 @@ public:
      * @return true if the file needs transcoding
      */
     static bool isRawFile(const std::string &file_path);
+
+    // Helper methods for safe database access
+    bool isDatabaseAvailable() const;
+    DatabaseManager *getDatabaseManager() const;
+
+    // Check if fully initialized
+    bool isInitialized() const { return initialized_; }
 
     /**
      * @brief Queue a file for transcoding
@@ -170,50 +191,51 @@ public:
      */
     void shutdown();
 
-private:
-    TranscodingManager() = default;
-    ~TranscodingManager() = default;
-    TranscodingManager(const TranscodingManager &) = delete;
-    TranscodingManager &operator=(const TranscodingManager &) = delete;
+    /**
+     * @brief Force sync in-memory queue with database (for debugging/testing)
+     * @return Number of files synced
+     */
+    size_t forceSyncQueueWithDatabase();
 
     /**
-     * @brief Transcoding thread function
+     * @brief Retry transcoding files that are in transcoding error state (3)
+     * @return Number of files retried
      */
-    void transcodingThreadFunction();
-
-    /**
-     * @brief Transcode a single raw file
-     * @param source_file_path Path to the source raw file
-     * @return Path to the transcoded file, or empty if failed
-     */
-    std::string transcodeFile(const std::string &source_file_path);
-
-    /**
-     * @brief Generate a unique cache filename
-     * @param source_file_path Path to the source file
-     * @return Unique cache filename
-     */
-    std::string generateCacheFilename(const std::string &source_file_path);
-
-    /**
-     * @brief Cache entry with processing status and metadata
-     */
-    struct CacheEntry
-    {
-        std::string source_file;
-        std::string cache_file;
-        bool is_processed;             // Processed in at least one mode
-        bool is_fully_processed;       // Processed in all enabled modes
-        std::time_t cache_age;         // How old is the transcoded file
-        size_t file_size;              // Cache file size
-        std::string processing_status; // Human-readable processing status
-    };
+    size_t retryTranscodingErrorFiles();
 
     /**
      * @brief Get cache entries with processing status from database
      * @return Vector of CacheEntry objects
      */
     std::vector<CacheEntry> getCacheEntriesWithStatus();
+
+    /**
+     * @brief Get next transcoding job from database (database-only approach)
+     * @return File path of next job, or empty string if none available
+     */
+    std::string getNextTranscodingJob();
+
+    /**
+     * @brief Mark transcoding job as in progress (database-only approach)
+     * @param file_path Path to the file
+     * @return True if successfully marked
+     */
+    bool markJobInProgress(const std::string &file_path);
+
+    /**
+     * @brief Mark transcoding job as completed (database-only approach)
+     * @param file_path Path to the file
+     * @param output_path Path to transcoded output
+     * @return True if successfully marked
+     */
+    bool markJobCompleted(const std::string &file_path, const std::string &output_path);
+
+    /**
+     * @brief Mark transcoding job as failed (database-only approach)
+     * @param file_path Path to the file
+     * @return True if successfully marked
+     */
+    bool markJobFailed(const std::string &file_path);
 
     /**
      * @brief Remove invalid cache files (source changed/missing)
@@ -265,42 +287,90 @@ private:
      */
     bool transcodeRawFileDirectly(const std::string &source_file_path, const std::string &output_path);
 
-    /**
-     * @brief Retry transcoding files that are in transcoding error state (3)
-     * @return Number of files retried
-     */
-    size_t retryTranscodingErrorFiles();
-
     // Member variables
-    std::string cache_dir_;
-    int max_threads_;
     std::atomic<bool> running_{false};
-    std::atomic<bool> cancelled_{false};
+    std::atomic<size_t> processed_count_{0};
+    std::atomic<size_t> failed_count_{0};
+    std::atomic<size_t> skipped_count_{0};
+    std::atomic<size_t> retry_count_{0};
 
-    // Cache size management
-    std::atomic<size_t> max_cache_size_{10ULL * 1024 * 1024 * 1024}; // 10 GB default
-    mutable std::mutex cache_size_mutex_;
+    // Database manager for transcoding operations
+    DatabaseManager *db_manager_{nullptr};
+
+    // Cache management
+    std::string cache_dir_;
+    size_t max_cache_size_mb_{1024}; // 1GB default
+    std::atomic<size_t> current_cache_size_mb_{0};
 
     // Cache cleanup configuration
-    CleanupConfig cleanup_config_;
-
-    // Thread management
-    std::vector<std::thread> transcoding_threads_;
-    std::mutex queue_mutex_;
-    std::condition_variable queue_cv_;
-    std::queue<std::string> transcoding_queue_;
-
-    // Statistics
-    std::atomic<size_t> queued_count_{0};
-    std::atomic<size_t> completed_count_{0};
-    std::atomic<size_t> failed_count_{0};
+    size_t cleanup_threshold_mb_{800}; // 800MB threshold for cleanup
+    size_t cleanup_target_mb_{600};    // Target size after cleanup
 
     // LibRaw is not thread-safe, so we need a mutex for LibRaw operations
     mutable std::mutex libraw_mutex_;
 
-    // Database manager reference
-    DatabaseManager *db_manager_{nullptr};
-
     // Raw file extensions - now configuration-driven
-    // These are no longer used as we use ServerConfigManager::needsTranscoding()
+    std::vector<std::string> raw_extensions_;
+
+    // Threading and queue management
+    int max_threads_{4};
+    std::vector<std::thread> transcoding_threads_;
+    std::atomic<bool> cancelled_{false};
+    std::atomic<bool> initialized_{false};
+    std::condition_variable queue_cv_;
+    std::atomic<size_t> queued_count_{0};
+    std::atomic<size_t> completed_count_{0};
+
+    // Cache size management
+    std::atomic<size_t> max_cache_size_{1073741824}; // 1GB in bytes
+    mutable std::mutex cache_size_mutex_;
+
+    // Cleanup configuration
+    CleanupConfig cleanup_config_;
+
+    /**
+     * @brief Get the transcoded file path for a source file
+     * @param source_file_path Path to the source file
+     * @return Path to the transcoded file, or empty string if not found
+     */
+    std::string getTranscodedFilePath(const std::string &source_file_path) const;
+
+    // Database schema upgrade
+    bool upgradeCacheMapSchema();
+
+    /**
+     * @brief Load configuration from server config manager
+     */
+    void loadConfiguration();
+
+    /**
+     * @brief Set the database manager instance
+     * @param db_manager Pointer to the database manager
+     */
+    void setDatabaseManager(DatabaseManager *db_manager);
+
+private:
+    TranscodingManager() = default;
+    ~TranscodingManager() = default;
+    TranscodingManager(const TranscodingManager &) = delete;
+    TranscodingManager &operator=(const TranscodingManager &) = delete;
+
+    /**
+     * @brief Transcoding thread function
+     */
+    void transcodingThread();
+
+    /**
+     * @brief Transcode a single raw file
+     * @param source_file_path Path to the source raw file
+     * @return Path to the transcoded file, or empty if failed
+     */
+    std::string transcodeFile(const std::string &source_file_path);
+
+    /**
+     * @brief Generate a unique cache filename
+     * @param source_file_path Path to the source file
+     * @return Unique cache filename
+     */
+    std::string generateCacheFilename(const std::string &source_file_path);
 };

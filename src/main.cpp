@@ -80,6 +80,9 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Initialize crash recovery early so we can capture stack traces on faults
+    CrashRecovery::initialize();
+
     // Try to create PID file (this will fail if another instance is running)
     if (!singleton_manager.createPidFile())
     {
@@ -101,8 +104,8 @@ int main(int argc, char *argv[])
     // Initialize safety mechanisms for external library calls
     Logger::info("Initializing safety mechanisms...");
 
-    // Safety mechanisms temporarily disabled
-    Logger::info("Basic safety mechanisms initialized");
+    // Basic safety mechanisms initialized (crash recovery enabled)
+    Logger::info("Basic safety mechanisms initialized (crash recovery active)");
 
     // Initialize thread pool manager with configured thread count
     ThreadPoolManager::initialize(config_manager.getMaxProcessingThreads());
@@ -112,11 +115,14 @@ int main(int argc, char *argv[])
 
     // Initialize transcoding manager
     auto &transcoding_manager = TranscodingManager::getInstance();
+    transcoding_manager.setDatabaseManager(&db_manager);
     transcoding_manager.initialize("./cache", config_manager.getMaxProcessingThreads());
-    transcoding_manager.startTranscoding();
 
     // Restore transcoding queue from database on startup
     transcoding_manager.restoreQueueFromDatabase();
+
+    // Start transcoding after queue restoration
+    transcoding_manager.startTranscoding();
 
     // Initialize and start the simple scheduler
     auto &scheduler = SimpleScheduler::getInstance();
@@ -224,6 +230,11 @@ int main(int argc, char *argv[])
             if (total_files_stored.load() > 0)
             {
                 Logger::info("Files found during startup scan, triggering immediate processing...");
+                
+                // Ensure TranscodingManager is fully ready before starting TBB processing
+                Logger::info("Waiting for TranscodingManager to be fully ready...");
+                std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // Wait 2 seconds
+                
                 try
                 {
                     ThreadPoolManager::processAllScannedFilesAsync(
