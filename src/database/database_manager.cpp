@@ -29,6 +29,7 @@ using json = nlohmann::json;
 size_t DatabaseManager::enqueueWriteInline(std::function<WriteOperationResult(DatabaseManager &)> operation)
 {
     size_t op_id = inline_next_operation_id_.fetch_add(1);
+    std::lock_guard<std::mutex> lock(db_exec_mutex_);
     try
     {
         auto result = operation(*this);
@@ -48,6 +49,7 @@ std::future<std::any> DatabaseManager::enqueueReadInline(std::function<std::any(
 {
     std::promise<std::any> p;
     auto f = p.get_future();
+    std::lock_guard<std::mutex> lock(db_exec_mutex_);
     try
     {
         p.set_value(operation(*this));

@@ -515,6 +515,7 @@ private:
     std::string db_path_;
     std::mutex queue_check_mutex;
     std::mutex file_processing_mutex; // Mutex for file processing operations to prevent race conditions
+    std::mutex db_exec_mutex_;        // Mutex to serialize SQLite access and prevent concurrent database operations
 
     // Inline operation helpers to replace access queue
     size_t enqueueWriteInline(std::function<WriteOperationResult(DatabaseManager &)> operation);
