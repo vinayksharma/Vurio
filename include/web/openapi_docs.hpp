@@ -114,43 +114,102 @@ public:
         }
       }
     },
-    "/api/status": {
-      "get": {
-        "summary": "Get server status metrics",
-        "description": "Retrieve real-time server status including file counts and processing statistics",
-        "tags": ["Server Status"],
-        "security": [{"bearerAuth": []}],
-        "responses": {
-          "200": {
-            "description": "Server status retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {"type": "string", "example": "success"},
-                    "data": {
+            "/api/status": {
+          "get": {
+            "summary": "Get server status metrics",
+            "description": "Retrieve real-time server status including file counts and processing statistics",
+            "tags": ["Server Status"],
+            "security": [{"bearerAuth": []}],
+            "responses": {
+              "200": {
+                "description": "Server status retrieved successfully",
+                "content": {
+                  "application/json": {
+                    "schema": {
                       "type": "object",
                       "properties": {
-                        "files_scanned": {"type": "integer", "description": "Total files discovered and stored"},
-                        "files_queued": {"type": "integer", "description": "Files waiting to be processed"},
-                        "files_processed": {"type": "integer", "description": "Files successfully processed in any mode"},
-                        "duplicates_found": {"type": "integer", "description": "Files identified as duplicates"},
-                        "files_in_error": {"type": "integer", "description": "Files that failed processing"},
-                        "files_in_transcoding_queue": {"type": "integer", "description": "Files waiting in transcoding queue"},
-                        "files_transcoded": {"type": "integer", "description": "Files successfully transcoded"}
+                        "status": {"type": "string", "example": "success"},
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "files_scanned": {"type": "integer", "description": "Total files discovered and stored"},
+                            "files_queued": {"type": "integer", "description": "Files waiting to be processed"},
+                            "files_processed": {"type": "integer", "description": "description": "Files successfully processed in any mode"},
+                            "duplicates_found": {"type": "integer", "description": "Files identified as duplicates"},
+                            "files_in_error": {"type": "integer", "description": "Files that failed processing"},
+                            "files_in_transcoding_queue": {"type": "integer", "description": "Files waiting in transcoding queue"},
+                            "files_transcoded": {"type": "integer", "description": "Files successfully transcoded"}
+                          }
+                        }
                       }
                     }
                   }
                 }
-              }
+              },
+              "401": {"description": "Authentication required"},
+              "500": {"description": "Internal server error"}
             }
-          },
-          "401": {"description": "Authentication required"},
-          "500": {"description": "Internal server error"}
-        }
-      }
-    },
+          }
+        },
+        "/api/db/performance": {
+          "get": {
+            "summary": "Get database performance statistics",
+            "description": "Retrieve detailed database performance metrics including operation timing, queue wait times, and execution statistics",
+            "tags": ["Database"],
+            "security": [{"bearerAuth": []}],
+            "responses": {
+              "200": {
+                "description": "Database performance statistics retrieved successfully",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "total_operations": {"type": "integer", "description": "Total operations tracked", "example": 1000},
+                        "completed_operations": {"type": "integer", "description": "Completed operations", "example": 950},
+                        "total_time_ms": {
+                          "type": "object",
+                          "properties": {
+                            "avg": {"type": "number", "description": "Average total operation time", "example": 150.5},
+                            "min": {"type": "integer", "description": "Minimum total operation time", "example": 10},
+                            "max": {"type": "integer", "description": "Maximum total operation time", "example": 5000},
+                            "p50": {"type": "integer", "description": "50th percentile", "example": 120},
+                            "p95": {"type": "integer", "description": "95th percentile", "example": 400},
+                            "p99": {"type": "integer", "description": "99th percentile", "example": 800}
+                          }
+                        },
+                        "queue_wait_time_ms": {
+                          "type": "object",
+                          "properties": {
+                            "avg": {"type": "number", "description": "Average queue wait time", "example": "50.2"},
+                            "min": {"type": "integer", "description": "Minimum queue wait time", "example": 1},
+                            "max": {"type": "integer", "description": "Maximum queue wait time", "example": 2000},
+                            "p50": {"type": "integer", "description": "50th percentile", "example": 30},
+                            "p95": {"type": "integer", "description": "95th percentile", "example": 150},
+                            "p99": {"type": "integer", "description": "99th percentile", "example": 500}
+                          }
+                        },
+                        "execution_time_ms": {
+                          "type": "object",
+                          "properties": {
+                            "avg": {"type": "number", "description": "Average execution time", "example": 100.3},
+                            "min": {"type": "integer", "description": "Minimum execution time", "example": 5},
+                            "max": {"type": "integer", "description": "Maximum execution time", "example": 3000},
+                            "p50": {"type": "integer", "description": "50th percentile", "example": 80},
+                            "p95": {"type": "integer", "description": "95th percentile", "example": 250},
+                            "p99": {"type": "integer", "description": "99th percentile", "example": 600}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "401": {"description": "Authentication required"},
+              "500": {"description": "Internal server error"}
+            }
+          }
+        },
     "/duplicates/find": {
       "post": {
         "summary": "Find duplicate files",

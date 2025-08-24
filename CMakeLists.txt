@@ -91,7 +91,7 @@ set(SOURCES
     src/file_processor.cpp
     src/media_processing_orchestrator.cpp
     src/thread_pool_manager.cpp
-    src/database/database_access_queue.cpp
+    src/database/db_performance_logger.cpp
     src/simple_scheduler.cpp
     src/file_scanner.cpp
     src/mount_manager.cpp
@@ -116,7 +116,6 @@ set(HEADERS
     include/core/simple_scheduler.hpp
     include/core/file_scanner.hpp
     include/database/database_manager.hpp
-    include/database/database_access_queue.hpp
     include/core/file_processor.hpp
     include/core/media_processing_orchestrator.hpp
     include/core/thread_pool_manager.hpp

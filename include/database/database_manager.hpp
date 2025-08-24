@@ -1,6 +1,7 @@
 #pragma once
 
-#include "database/database_access_queue.hpp"
+#include <future>
+#include <any>
 #include "core/processing_result.hpp"
 #include "core/dedup_modes.hpp"
 #include <memory>
@@ -10,8 +11,14 @@
 #include <functional>
 #include <sqlite3.h>
 
-// Forward declaration
-class DatabaseAccessQueue;
+// Result type for inline DB write operations (previously in access queue)
+struct WriteOperationResult
+{
+    bool success;
+    std::string error_message;
+    WriteOperationResult(bool s = true, const std::string &msg = "") : success(s), error_message(msg) {}
+    static WriteOperationResult Failure(const std::string &msg = "") { return WriteOperationResult(false, msg); }
+};
 
 /**
  * @brief Result of a database operation
@@ -506,12 +513,12 @@ private:
     explicit DatabaseManager(const std::string &db_path);
     sqlite3 *db_;
     std::string db_path_;
-    std::unique_ptr<DatabaseAccessQueue> access_queue_;
     std::mutex queue_check_mutex;
     std::mutex file_processing_mutex; // Mutex for file processing operations to prevent race conditions
 
-    // Make db_ accessible to DatabaseAccessQueue
-    friend class DatabaseAccessQueue;
+    // Inline operation helpers to replace access queue
+    size_t enqueueWriteInline(std::function<WriteOperationResult(DatabaseManager &)> operation);
+    std::future<std::any> enqueueReadInline(std::function<std::any(DatabaseManager &)> operation);
 
     // Make db_ accessible to TranscodingManager for database-only transcoding
     friend class TranscodingManager;
@@ -554,4 +561,5 @@ public:
     DBOpResult executeWithRetry(std::function<DBOpResult()> operation, int max_retries = -1);
 
 private:
+    std::atomic<size_t> inline_next_operation_id_{0};
 };

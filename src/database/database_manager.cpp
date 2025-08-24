@@ -1,5 +1,4 @@
 #include "database/database_manager.hpp"
-#include "database/database_access_queue.hpp"
 #include "core/server_config_manager.hpp"
 #include "core/duplicate_linker.hpp"
 #include "core/dedup_modes.hpp"
@@ -20,11 +19,52 @@
 #include <atomic>
 #include <unordered_set>
 #include <any>
+#include <future>
 #include <functional>
 #include <openssl/sha.h>
 #include <unistd.h>
 
 using json = nlohmann::json;
+
+size_t DatabaseManager::enqueueWriteInline(std::function<WriteOperationResult(DatabaseManager &)> operation)
+{
+    size_t op_id = inline_next_operation_id_.fetch_add(1);
+    try
+    {
+        auto result = operation(*this);
+        if (!result.success)
+        {
+            Logger::error("Inline DB write op failed: " + result.error_message);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error(std::string("Inline DB write exception: ") + e.what());
+    }
+    return op_id;
+}
+
+std::future<std::any> DatabaseManager::enqueueReadInline(std::function<std::any(DatabaseManager &)> operation)
+{
+    std::promise<std::any> p;
+    auto f = p.get_future();
+    try
+    {
+        p.set_value(operation(*this));
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error(std::string("Inline DB read exception: ") + e.what());
+        try
+        {
+            p.set_value(std::any());
+        }
+        catch (...)
+        {
+        }
+    }
+    return f;
+}
 
 std::unique_ptr<DatabaseManager> DatabaseManager::instance_ = nullptr;
 std::mutex DatabaseManager::instance_mutex_;
@@ -88,12 +128,9 @@ DatabaseManager::DatabaseManager(const std::string &db_path)
     : db_(nullptr), db_path_(db_path)
 {
     Logger::info("DatabaseManager constructor called for: " + db_path);
-    // Initialize the access queue first
-    access_queue_ = std::make_unique<DatabaseAccessQueue>(*this);
-
-    // Enqueue the open operation and wait for it to complete
-    auto open_future = access_queue_->enqueueRead([db_path](DatabaseManager &dbMan)
-                                                  {
+    // Open database inline
+    auto open_future = enqueueReadInline([db_path](DatabaseManager &dbMan)
+                                         {
         int rc = sqlite3_open(db_path.c_str(), &dbMan.db_);
         if (rc != SQLITE_OK)
         {
@@ -158,11 +195,10 @@ DatabaseManager::DatabaseManager(const std::string &db_path)
 DatabaseManager::~DatabaseManager()
 {
     Logger::info("DatabaseManager destructor called");
-    if (access_queue_)
     {
-        // Enqueue the close operation and wait for it to complete
-        auto close_future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                                       {
+        // Close database inline
+        auto close_future = enqueueReadInline([](DatabaseManager &dbMan)
+                                              {
             if (dbMan.db_)
             {
                 sqlite3_close(dbMan.db_);
@@ -177,23 +213,17 @@ DatabaseManager::~DatabaseManager()
         catch (...)
         {
         }
-        access_queue_->stop();
     }
 }
 
 void DatabaseManager::waitForWrites()
 {
-    if (access_queue_)
-    {
-        Logger::debug("Waiting for database writes to complete");
-        access_queue_->wait_for_completion();
-        Logger::debug("Database writes completed");
-    }
+    // No-op with inline execution
 }
 
 bool DatabaseManager::checkLastOperationSuccess()
 {
-    return access_queue_->checkLastOperationSuccess();
+    return true;
 }
 
 void DatabaseManager::initialize()
@@ -347,8 +377,8 @@ bool DatabaseManager::getFlag(const std::string &flag_name)
         return false;
 
     bool value = false;
-    auto future = access_queue_->enqueueRead([&flag_name, &value](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([&flag_name, &value](DatabaseManager &dbMan)
+                                    {
         if (!dbMan.db_) return std::any(false);
         const std::string select_sql = "SELECT value FROM flags WHERE name = ?";
         sqlite3_stmt *stmt = nullptr;
@@ -382,8 +412,8 @@ DBOpResult DatabaseManager::setFlag(const std::string &flag_name, bool flag_valu
     std::string error_msg;
     bool success = true;
 
-    access_queue_->enqueueWrite([captured_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -439,10 +469,10 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
     std::string error_msg;
     bool success = true;
 
-    // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
-                                {
-        Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path);
+    // Enqueue the write operation (inline)
+    enqueueWriteInline([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
+                       {
+        Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
         {
@@ -452,29 +482,36 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
             return WriteOperationResult::Failure(error_msg);
         }
         
-        const std::string insert_sql = R"(
-            INSERT OR REPLACE INTO media_processing_results 
-            (file_path, processing_mode, success, 
-             artifact_format, artifact_hash, artifact_confidence, 
-             artifact_metadata, artifact_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        )";
-
+        // Build the SQL query based on the mode
+        std::string insert_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+            case DedupMode::BALANCED:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+            case DedupMode::QUALITY:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+        }
+        
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            error_msg = "Failed to prepare insert statement: " + std::string(sqlite3_errmsg(dbMan.db_));
             Logger::error(error_msg);
             success = false;
             return WriteOperationResult::Failure(error_msg);
         }
-
+        
         // Bind parameters
         sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, DedupModes::getModeName(captured_mode).c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 3, captured_result.success ? 1 : 0);
-
+        
         if (captured_result.artifact.format.empty())
         {
             sqlite3_bind_null(stmt, 4);
@@ -483,7 +520,7 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         {
             sqlite3_bind_text(stmt, 4, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         if (captured_result.artifact.hash.empty())
         {
             sqlite3_bind_null(stmt, 5);
@@ -492,9 +529,9 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         {
             sqlite3_bind_text(stmt, 5, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         sqlite3_bind_double(stmt, 6, captured_result.artifact.confidence);
-
+        
         if (captured_result.artifact.metadata.empty())
         {
             sqlite3_bind_null(stmt, 7);
@@ -503,7 +540,7 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
         {
             sqlite3_bind_text(stmt, 7, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         if (captured_result.artifact.data.empty())
         {
             sqlite3_bind_blob(stmt, 8, nullptr, 0, SQLITE_STATIC);
@@ -513,19 +550,20 @@ DBOpResult DatabaseManager::storeProcessingResult(const std::string &file_path,
             sqlite3_bind_blob(stmt, 8, captured_result.artifact.data.data(),
                               static_cast<int>(captured_result.artifact.data.size()), SQLITE_STATIC);
         }
-
+        
+        // Execute the statement
         rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
         if (rc != SQLITE_DONE)
         {
-            error_msg = "Failed to insert result: " + std::string(sqlite3_errmsg(dbMan.db_));
+            error_msg = "Failed to execute insert statement: " + std::string(sqlite3_errmsg(dbMan.db_));
             Logger::error(error_msg);
+            sqlite3_finalize(stmt);
             success = false;
             return WriteOperationResult::Failure(error_msg);
         }
-
-        Logger::info("Stored processing result (basic) for: " + captured_file_path);
+        
+        sqlite3_finalize(stmt);
+        Logger::debug("Successfully stored processing result for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         return WriteOperationResult(); });
 
     waitForWrites();
@@ -554,10 +592,10 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
     std::string error_msg;
     bool success = true;
 
-    // Enqueue the write operation and get the operation ID
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
-                                                      {
-        Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path);
+    // Enqueue the write operation and get the operation ID (inline)
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, captured_result, &error_msg, &success](DatabaseManager &dbMan)
+                                             {
+        Logger::debug("Executing storeProcessingResult in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
         {
@@ -567,29 +605,36 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
             return WriteOperationResult::Failure(error_msg);
         }
         
-        const std::string insert_sql = R"(
-            INSERT OR REPLACE INTO media_processing_results 
-            (file_path, processing_mode, success, 
-             artifact_format, artifact_hash, artifact_confidence, 
-             artifact_metadata, artifact_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        )";
-
+        // Build the SQL query based on the mode
+        std::string insert_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+            case DedupMode::BALANCED:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+            case DedupMode::QUALITY:
+                insert_sql = "INSERT OR REPLACE INTO media_processing_results (file_path, processing_mode, success, artifact_format, artifact_hash, artifact_confidence, artifact_metadata, artifact_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                break;
+        }
+        
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(dbMan.db_, insert_sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            error_msg = "Failed to prepare statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            error_msg = "Failed to prepare insert statement: " + std::string(sqlite3_errmsg(dbMan.db_));
             Logger::error(error_msg);
             success = false;
             return WriteOperationResult::Failure(error_msg);
         }
-
+        
         // Bind parameters
         sqlite3_bind_text(stmt, 1, captured_file_path.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, DedupModes::getModeName(captured_mode).c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 3, captured_result.success ? 1 : 0);
-
+        
         if (captured_result.artifact.format.empty())
         {
             sqlite3_bind_null(stmt, 4);
@@ -598,7 +643,7 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         {
             sqlite3_bind_text(stmt, 4, captured_result.artifact.format.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         if (captured_result.artifact.hash.empty())
         {
             sqlite3_bind_null(stmt, 5);
@@ -607,9 +652,9 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         {
             sqlite3_bind_text(stmt, 5, captured_result.artifact.hash.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         sqlite3_bind_double(stmt, 6, captured_result.artifact.confidence);
-
+        
         if (captured_result.artifact.metadata.empty())
         {
             sqlite3_bind_null(stmt, 7);
@@ -618,7 +663,7 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
         {
             sqlite3_bind_text(stmt, 7, captured_result.artifact.metadata.c_str(), -1, SQLITE_STATIC);
         }
-
+        
         if (captured_result.artifact.data.empty())
         {
             sqlite3_bind_blob(stmt, 8, nullptr, 0, SQLITE_STATIC);
@@ -628,19 +673,20 @@ std::pair<DBOpResult, size_t> DatabaseManager::storeProcessingResultWithId(const
             sqlite3_bind_blob(stmt, 8, captured_result.artifact.data.data(),
                               static_cast<int>(captured_result.artifact.data.size()), SQLITE_STATIC);
         }
-
+        
+        // Execute the statement
         rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
         if (rc != SQLITE_DONE)
         {
-            error_msg = "Failed to insert result: " + std::string(sqlite3_errmsg(dbMan.db_));
+            error_msg = "Failed to execute insert statement: " + std::string(sqlite3_errmsg(dbMan.db_));
             Logger::error(error_msg);
+            sqlite3_finalize(stmt);
             success = false;
             return WriteOperationResult::Failure(error_msg);
         }
-
-        Logger::info("Stored processing result (with ID) for: " + captured_file_path);
+        
+        sqlite3_finalize(stmt);
+        Logger::debug("Successfully stored processing result for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         return WriteOperationResult(); });
 
     waitForWrites();
@@ -664,8 +710,8 @@ std::vector<ProcessingResult> DatabaseManager::getProcessingResults(const std::s
     std::string captured_file_path = file_path;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getProcessingResults in access queue for: " + captured_file_path);
         
         if (!dbMan.db_)
@@ -757,8 +803,8 @@ std::vector<std::pair<std::string, ProcessingResult>> DatabaseManager::getAllPro
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getAllProcessingResults in access queue");
         
         if (!dbMan.db_)
@@ -849,8 +895,8 @@ DBOpResult DatabaseManager::clearAllResults()
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([&error_msg, &success](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -890,8 +936,8 @@ DBOpResult DatabaseManager::executeStatement(const std::string &sql)
     }
     std::string error_msg;
     bool success = true;
-    access_queue_->enqueueWrite([&](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([&](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -1025,8 +1071,8 @@ DBOpResult DatabaseManager::storeScannedFile(const std::string &file_path,
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_metadata_str, captured_callback, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_file_path, captured_file_name, captured_relative_path, captured_share_name, captured_is_network, captured_metadata_str, captured_callback, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -1171,8 +1217,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllScannedF
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getAllScannedFiles in access queue");
         
         if (!dbMan.db_)
@@ -1233,8 +1279,8 @@ bool DatabaseManager::fileExistsInDatabase(const std::string &file_path)
     bool captured_is_network = is_network_file;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path, captured_is_network](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path, captured_is_network](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing fileExistsInDatabase in access queue for: " + captured_file_path);
         
         if (!dbMan.db_)
@@ -1312,8 +1358,8 @@ DBOpResult DatabaseManager::clearAllScannedFiles()
     }
     std::string error_msg;
     bool success = true;
-    access_queue_->enqueueWrite([&](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([&](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -1354,8 +1400,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
     DedupMode captured_mode = current_mode;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_mode, this](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_mode, this](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFilesNeedingProcessing in access queue for mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -1434,8 +1480,8 @@ DBOpResult DatabaseManager::updateFileHash(const std::string &file_path, const s
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing updateFileHash in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
@@ -1488,8 +1534,8 @@ std::pair<DBOpResult, size_t> DatabaseManager::updateFileHashWithId(const std::s
     bool success = true;
 
     // Enqueue the write operation and get the operation ID
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_file_hash, &error_msg, &success](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing updateFileHash in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET hash = ? WHERE file_path = ?";
@@ -1544,8 +1590,8 @@ DBOpResult DatabaseManager::storeUserInput(const std::string &input_type, const 
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_input_type, captured_input_value, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_input_type, captured_input_value, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing storeUserInput in write queue for type: " + captured_input_type);
         
         if (!dbMan.db_)
@@ -1608,8 +1654,8 @@ std::vector<std::string> DatabaseManager::getUserInputs(const std::string &input
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([input_type](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([input_type](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getUserInputs in access queue for type: " + input_type);
         
         if (!dbMan.db_)
@@ -1668,8 +1714,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAllUserInpu
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getAllUserInputs in access queue");
         
         if (!dbMan.db_)
@@ -1726,8 +1772,8 @@ DBOpResult DatabaseManager::clearAllUserInputs()
     }
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing clearAllUserInputs in write queue");
         
         if (!dbMan.db_)
@@ -1755,54 +1801,8 @@ DBOpResult DatabaseManager::clearAllUserInputs()
 
 bool DatabaseManager::waitForQueueInitialization(int max_retries, int retry_delay_ms)
 {
-    static std::mutex queue_check_mutex;
-    static std::atomic<bool> queue_initialized{false};
-    static std::atomic<int> initialization_attempts{0};
-
-    // Use double-checked locking pattern for thread safety
-    if (queue_initialized.load())
-    {
-        return true;
-    }
-
-    std::lock_guard<std::mutex> lock(queue_check_mutex);
-
-    // Check again after acquiring lock
-    if (queue_initialized.load())
-    {
-        return true;
-    }
-
-    // Check if queue is already initialized
-    if (access_queue_)
-    {
-        queue_initialized.store(true);
-        return true;
-    }
-
-    // Wait for queue initialization with retries
-    for (int attempt = 0; attempt < max_retries; ++attempt)
-    {
-        initialization_attempts.fetch_add(1);
-        Logger::debug("Queue initialization attempt " + std::to_string(attempt + 1) + "/" + std::to_string(max_retries));
-
-        // Check if queue has been initialized
-        if (access_queue_)
-        {
-            queue_initialized.store(true);
-            Logger::info("Queue initialized successfully after " + std::to_string(attempt + 1) + " attempts");
-            return true;
-        }
-
-        // Wait before next attempt (except on last attempt)
-        if (attempt < max_retries - 1)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
-        }
-    }
-
-    Logger::error("Queue initialization failed after " + std::to_string(max_retries) + " attempts");
-    return false;
+    // Inline mode: always initialized
+    return true;
 }
 
 DBOpResult DatabaseManager::executeWithRetry(std::function<DBOpResult()> operation, int max_retries)
@@ -1856,8 +1856,8 @@ bool DatabaseManager::isValid()
     {
         return false;
     }
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             { return dbMan.db_ != nullptr; });
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    { return dbMan.db_ != nullptr; });
     try
     {
         return std::any_cast<bool>(future.get());
@@ -1873,8 +1873,8 @@ int DatabaseManager::getFileId(const std::string &file_path)
     if (!waitForQueueInitialization())
         return -1;
     std::string captured = file_path;
-    auto future = access_queue_->enqueueRead([captured](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured](DatabaseManager &dbMan)
+                                    {
         if (!dbMan.db_)
             return std::any(-1);
         const char *sql = "SELECT id FROM scanned_files WHERE file_path = ?";
@@ -1902,8 +1902,8 @@ long DatabaseManager::getMaxProcessingResultId()
 {
     if (!waitForQueueInitialization())
         return 0;
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         if (!dbMan.db_)
             return std::any(0L);
         const char *sql = "SELECT IFNULL(MAX(id),0) FROM media_processing_results";
@@ -1934,8 +1934,8 @@ DatabaseManager::getNewSuccessfulResults(DedupMode mode, long last_seen_id)
     std::vector<std::tuple<long, std::string, std::string>> out;
     if (!waitForQueueInitialization())
         return out;
-    auto future = access_queue_->enqueueRead([mode, last_seen_id](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([mode, last_seen_id](DatabaseManager &dbMan)
+                                    {
         std::vector<std::tuple<long, std::string, std::string>> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -1973,8 +1973,8 @@ DatabaseManager::getSuccessfulFileHashesForMode(DedupMode mode)
     std::vector<std::pair<std::string, std::string>> out;
     if (!waitForQueueInitialization())
         return out;
-    auto future = access_queue_->enqueueRead([mode](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([mode](DatabaseManager &dbMan)
+                                    {
         std::vector<std::pair<std::string, std::string>> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -2011,8 +2011,8 @@ DatabaseManager::getAllFilePathsForHashAndMode(const std::string &artifact_hash,
     if (!waitForQueueInitialization())
         return out;
     std::string captured_hash = artifact_hash;
-    auto future = access_queue_->enqueueRead([captured_hash, mode](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_hash, mode](DatabaseManager &dbMan)
+                                    {
         std::vector<std::string> rows;
         if (!dbMan.db_)
             return std::any(rows);
@@ -2068,8 +2068,8 @@ DBOpResult DatabaseManager::setFileLinks(const std::string &file_path, const std
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_links_json, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_file_path, captured_links_json, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing setFileLinks in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET links = ? WHERE file_path = ?";
@@ -2119,8 +2119,8 @@ std::vector<int> DatabaseManager::getFileLinks(const std::string &file_path)
     std::string captured_file_path = file_path;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFileLinks in access queue for: " + captured_file_path);
         
         if (!dbMan.db_)
@@ -2247,8 +2247,8 @@ std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file
     // Get the ID of the current file first
     int current_id = -1;
     {
-        auto future = access_queue_->enqueueRead([file_path](DatabaseManager &dbMan)
-                                                 {
+        auto future = enqueueReadInline([file_path](DatabaseManager &dbMan)
+                                        {
             Logger::debug("Getting file ID for: " + file_path);
             
             if (!dbMan.db_)
@@ -2295,8 +2295,8 @@ std::vector<std::string> DatabaseManager::getLinkedFiles(const std::string &file
     }
 
     // Find all files that link to this file
-    auto future = access_queue_->enqueueRead([current_id](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([current_id](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Finding files linked to ID: " + std::to_string(current_id));
         
         if (!dbMan.db_)
@@ -2354,8 +2354,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([this](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([this](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFilesNeedingProcessingAnyMode in access queue");
         
         if (!dbMan.db_)
@@ -2427,8 +2427,8 @@ bool DatabaseManager::fileNeedsProcessingForMode(const std::string &file_path, D
     bool needs_processing = false;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path, captured_mode, &needs_processing](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path, captured_mode, &needs_processing](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing fileNeedsProcessingForMode in access queue for: " + captured_file_path + ", mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -2532,8 +2532,8 @@ DBOpResult DatabaseManager::insertTranscodingFile(const std::string &source_file
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing insertTranscodingFile in write queue for: " + captured_source_file_path);
         
         if (!dbMan.db_)
@@ -2602,8 +2602,8 @@ DBOpResult DatabaseManager::updateTranscodedFilePath(const std::string &source_f
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_source_file_path, captured_transcoded_file_path, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_source_file_path, captured_transcoded_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing updateTranscodedFilePath in write queue for: " + captured_source_file_path);
         
         if (!dbMan.db_)
@@ -2670,8 +2670,8 @@ std::string DatabaseManager::getTranscodedFilePath(const std::string &source_fil
     std::string transcoded_file_path = "";
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_source_file_path, &transcoded_file_path](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_source_file_path, &transcoded_file_path](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getTranscodedFilePath in access queue for: " + captured_source_file_path);
         
         if (!dbMan.db_)
@@ -2730,8 +2730,8 @@ std::string DatabaseManager::claimNextTranscodingJob()
     }
 
     std::string file_path;
-    auto future = access_queue_->enqueueRead([&file_path](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([&file_path](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing claimNextTranscodingJob in access queue");
 
         if (!dbMan.db_)
@@ -2791,8 +2791,8 @@ bool DatabaseManager::markTranscodingJobInProgress(const std::string &source_fil
     std::string captured = source_file_path;
     bool success = true;
     std::string error_msg;
-    access_queue_->enqueueWrite([captured, &success, &error_msg](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured, &success, &error_msg](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -2841,8 +2841,8 @@ bool DatabaseManager::markTranscodingJobCompleted(const std::string &source_file
     std::string out = transcoded_file_path;
     bool success = true;
     std::string error_msg;
-    access_queue_->enqueueWrite([src, out, &success, &error_msg](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([src, out, &success, &error_msg](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -2889,8 +2889,8 @@ bool DatabaseManager::markTranscodingJobFailed(const std::string &source_file_pa
     std::string src = source_file_path;
     bool success = true;
     std::string error_msg;
-    access_queue_->enqueueWrite([src, &success, &error_msg](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([src, &success, &error_msg](DatabaseManager &dbMan)
+                       {
         if (!dbMan.db_)
         {
             error_msg = "Database not initialized";
@@ -2938,8 +2938,8 @@ std::vector<std::string> DatabaseManager::getFilesNeedingTranscoding()
     std::vector<std::string> files_needing_transcoding;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([&files_needing_transcoding](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([&files_needing_transcoding](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFilesNeedingTranscoding in access queue");
         
         if (!dbMan.db_)
@@ -3035,8 +3035,8 @@ bool DatabaseManager::fileNeedsTranscoding(const std::string &source_file_path)
     bool needs_transcoding = false;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_source_file_path, &needs_transcoding](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_source_file_path, &needs_transcoding](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing fileNeedsTranscoding in access queue for: " + captured_source_file_path);
         
         if (!dbMan.db_)
@@ -3095,8 +3095,8 @@ DBOpResult DatabaseManager::removeTranscodingRecord(const std::string &source_fi
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_source_file_path, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing removeTranscodingRecord in write queue for: " + captured_source_file_path);
         
         if (!dbMan.db_)
@@ -3158,8 +3158,8 @@ DBOpResult DatabaseManager::clearAllTranscodingRecords()
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([&error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing clearAllTranscodingRecords in write queue");
         
         if (!dbMan.db_)
@@ -3220,8 +3220,8 @@ DBOpResult DatabaseManager::updateFileMetadata(const std::string &file_path, con
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing updateFileMetadata in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET file_metadata = ? WHERE file_path = ?";
@@ -3274,8 +3274,8 @@ std::pair<DBOpResult, size_t> DatabaseManager::updateFileMetadataWithId(const st
     bool success = true;
 
     // Enqueue the write operation and get the operation ID
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_metadata_str, &error_msg, &success](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing updateFileMetadata in write queue for: " + captured_file_path);
         
         const std::string update_sql = "UPDATE scanned_files SET file_metadata = ? WHERE file_path = ?";
@@ -3330,8 +3330,8 @@ DBOpResult DatabaseManager::setProcessingFlag(const std::string &file_path, Dedu
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing setProcessingFlag in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3431,8 +3431,8 @@ DBOpResult DatabaseManager::resetProcessingFlag(const std::string &file_path, De
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing resetProcessingFlag in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3532,8 +3532,8 @@ DBOpResult DatabaseManager::setProcessingFlagError(const std::string &file_path,
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing setProcessingFlagError in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3633,8 +3633,8 @@ DBOpResult DatabaseManager::setProcessingFlagTranscodingError(const std::string 
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing setProcessingFlagTranscodingError in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3734,8 +3734,8 @@ DBOpResult DatabaseManager::setProcessingFlagFinalError(const std::string &file_
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &operation_completed, &success, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing setProcessingFlagFinalError in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3831,8 +3831,8 @@ std::vector<std::string> DatabaseManager::getFilesWithProcessingFlag(int flag_va
     std::vector<std::string> results;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_flag_value, captured_mode, &results](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_flag_value, captured_mode, &results](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFilesWithProcessingFlag in read queue for flag value: " + std::to_string(captured_flag_value) + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3914,8 +3914,8 @@ int DatabaseManager::getProcessingFlag(const std::string &file_path, DedupMode m
     int flag_value = -1;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path, captured_mode, &flag_value](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path, captured_mode, &flag_value](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getProcessingFlag in read queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -3995,8 +3995,8 @@ bool DatabaseManager::tryAcquireProcessingLock(const std::string &file_path, Ded
     std::string error_msg;
 
     // Enqueue the write operation
-    size_t operation_id = access_queue_->enqueueWrite([captured_file_path, captured_mode, &lock_acquired, &operation_completed, &error_msg](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_file_path, captured_mode, &lock_acquired, &operation_completed, &error_msg](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing tryAcquireProcessingLockAtomic in write queue for: " + captured_file_path + " mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -4107,8 +4107,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     std::string error_msg;
 
     // Use enqueueWrite since we're performing write operations (UPDATE statements)
-    size_t operation_id = access_queue_->enqueueWrite([captured_mode, captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan)
-                                                      {
+    size_t operation_id = enqueueWriteInline([captured_mode, captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan)
+                                             {
         Logger::debug("Executing getAndMarkFilesForProcessing in write queue for mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -4267,8 +4267,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     auto shared_results = std::make_shared<std::vector<std::pair<std::string, std::string>>>();
 
     // Use enqueueWrite since we're performing write operations (UPDATE statements)
-    auto future = access_queue_->enqueueWrite([captured_batch_size, &operation_completed, &error_msg, shared_results, this](DatabaseManager &dbMan) -> WriteOperationResult
-                                              {
+    auto future = enqueueWriteInline([captured_batch_size, &operation_completed, &error_msg, shared_results, this](DatabaseManager &dbMan) -> WriteOperationResult
+                                     {
         Logger::debug("Executing getAndMarkFilesForProcessingAnyMode in write queue");
         
         if (!dbMan.db_)
@@ -4443,8 +4443,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
     std::string error_msg;
 
     // Use enqueueRead since we're only reading files that need processing
-    auto future = access_queue_->enqueueRead([captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan) -> std::any
-                                             {
+    auto future = enqueueReadInline([captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan) -> std::any
+                                    {
         Logger::debug("Executing getFilesNeedingProcessingAnyMode in read queue");
         
         if (!dbMan.db_)
@@ -4521,8 +4521,8 @@ DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
         return status;
     }
 
-    auto future = access_queue_->enqueueRead([&status](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([&status](DatabaseManager &dbMan)
+                                    {
         if (!dbMan.db_)
         {
             Logger::error("Database not initialized in getServerStatus");
@@ -4677,8 +4677,8 @@ DBOpResult DatabaseManager::setFileLinksForMode(const std::string &file_path, co
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_file_path, captured_links_text, captured_field_name, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_file_path, captured_links_text, captured_field_name, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing setFileLinksForMode in write queue for: " + captured_file_path + " mode: " + captured_field_name);
         
         const std::string update_sql = "UPDATE scanned_files SET " + captured_field_name + " = ? WHERE file_path = ?";
@@ -4747,8 +4747,8 @@ std::vector<int> DatabaseManager::getFileLinksForMode(const std::string &file_pa
     std::string captured_field_name = field_name;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_file_path, captured_field_name](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_file_path, captured_field_name](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getFileLinksForMode in access queue for: " + captured_file_path + " mode: " + captured_field_name);
         
         if (!dbMan.db_)
@@ -4840,8 +4840,8 @@ std::pair<bool, std::string> DatabaseManager::getTableHash(const std::string &ta
     std::string captured_table_name = table_name;
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([captured_table_name](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([captured_table_name](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getTableHash in access queue for table: " + captured_table_name);
         
         if (!dbMan.db_)
@@ -4980,8 +4980,8 @@ std::pair<bool, std::string> DatabaseManager::getDatabaseHash()
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getDatabaseHash in access queue");
         
         if (!dbMan.db_)
@@ -5122,8 +5122,8 @@ std::pair<bool, std::string> DatabaseManager::getDuplicateDetectionHash()
     }
 
     // Enqueue the read operation
-    auto future = access_queue_->enqueueRead([](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([](DatabaseManager &dbMan)
+                                    {
         Logger::debug("Executing getDuplicateDetectionHash in access queue");
         
         if (!dbMan.db_)
@@ -5284,8 +5284,8 @@ std::string DatabaseManager::getTextFlag(const std::string &flag_name)
         return "";
 
     std::string value = "";
-    auto future = access_queue_->enqueueRead([&flag_name, &value](DatabaseManager &dbMan)
-                                             {
+    auto future = enqueueReadInline([&flag_name, &value](DatabaseManager &dbMan)
+                                    {
         if (!dbMan.db_) return std::any(std::string(""));
         const std::string select_sql = "SELECT value FROM flags WHERE name = ?";
         sqlite3_stmt *stmt = nullptr;
@@ -5325,8 +5325,8 @@ DBOpResult DatabaseManager::setTextFlag(const std::string &flag_name, const std:
     bool success = true;
 
     // Enqueue the write operation
-    access_queue_->enqueueWrite([captured_flag_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
-                                {
+    enqueueWriteInline([captured_flag_name, captured_value, &error_msg, &success](DatabaseManager &dbMan)
+                       {
         Logger::debug("Executing setTextFlag in write queue for: " + captured_flag_name);
         
         const std::string sql = "INSERT OR REPLACE INTO flags(name, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)";
@@ -5378,8 +5378,8 @@ DBOpResult DatabaseManager::resetAllProcessingFlagsOnStartup()
     bool success = true;
 
     // Enqueue the write operation
-    auto operation_id = access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
-                                                    {
+    auto operation_id = enqueueWriteInline([&error_msg, &success](DatabaseManager &dbMan)
+                                           {
         Logger::debug("Executing resetAllProcessingFlagsOnStartup in write queue");
         
         if (!dbMan.db_)
@@ -5447,8 +5447,8 @@ DBOpResult DatabaseManager::resetAllProcessingFlagsOnStartup()
 
     waitForWrites();
 
-    auto result = access_queue_->getOperationResult(operation_id);
-    return DBOpResult(result.success, result.error_message);
+    // In inline mode, success reflects immediate execution
+    return DBOpResult(true);
 }
 
 std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFilesForProcessingWithPriority(DedupMode mode, int batch_size)
@@ -5477,8 +5477,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     std::string error_msg;
 
     // Use enqueueWrite since we're performing write operations (UPDATE statements)
-    auto future = access_queue_->enqueueWrite([captured_mode, captured_stuck_batch_size, captured_regular_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan)
-                                              {
+    auto future = enqueueWriteInline([captured_mode, captured_stuck_batch_size, captured_regular_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan)
+                                     {
         Logger::debug("Executing getAndMarkFilesForProcessingWithPriority in write queue for mode: " + DedupModes::getModeName(captured_mode));
         
         if (!dbMan.db_)
@@ -5721,8 +5721,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     std::string error_msg;
 
     // Use enqueueWrite since we're performing write operations (UPDATE statements)
-    auto future = access_queue_->enqueueWrite([captured_stuck_batch_size, captured_regular_batch_size, &operation_completed, &error_msg, &results, this](DatabaseManager &dbMan) -> WriteOperationResult
-                                              {
+    auto future = enqueueWriteInline([captured_stuck_batch_size, captured_regular_batch_size, &operation_completed, &error_msg, &results, this](DatabaseManager &dbMan) -> WriteOperationResult
+                                     {
         Logger::debug("Executing getAndMarkFilesForProcessingAnyModeWithPriority in write queue");
         
         if (!dbMan.db_)

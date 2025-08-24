@@ -23,7 +23,7 @@ add_executable(dedup_tests
     ../src/file_processor.cpp
     ../src/file_scanner.cpp
     ../src/server_config_manager.cpp
-    ../src/database/database_access_queue.cpp
+    ../src/database/db_performance_logger.cpp
     ../src/mount_manager.cpp
     ../src/transcoding_manager.cpp
 )
@@ -59,7 +59,7 @@ add_executable(media_processing_orchestrator_test
     ../src/media_processor.cpp
     ../src/core/memory_pool.cpp
     ../src/file_utils.cpp
-    ../src/database/database_access_queue.cpp
+    ../src/database/db_performance_logger.cpp
     ../src/mount_manager.cpp
     ../src/duplicate_linker.cpp
     ../src/transcoding_manager.cpp
@@ -96,10 +96,11 @@ add_executable(cache_size_test
     ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
-    ../src/database/database_manager.cpp
     ../src/duplicate_linker.cpp
-    ../src/database/database_access_queue.cpp
+    ../src/database/database_manager.cpp
+    ../src/file_processor.cpp
     ../src/file_utils.cpp
+    ../src/database/db_performance_logger.cpp
 )
 
 add_executable(smart_cache_cleanup_test
@@ -109,24 +110,24 @@ add_executable(smart_cache_cleanup_test
     ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
-    ../src/database/database_manager.cpp
     ../src/duplicate_linker.cpp
-    ../src/database/database_access_queue.cpp
+    ../src/database/database_manager.cpp
     ../src/file_utils.cpp
+    ../src/database/db_performance_logger.cpp
 )
 
 # File processing tests
 add_executable(raw_file_test
     integration/raw_file_test.cpp
+    ../src/transcoding_manager.cpp
     ../src/media_processor.cpp
     ../src/core/memory_pool.cpp
-    ../src/transcoding_manager.cpp
     ../src/server_config_manager.cpp
     ../src/mount_manager.cpp
-    ../src/database/database_manager.cpp
     ../src/duplicate_linker.cpp
-    ../src/database/database_access_queue.cpp
+    ../src/database/database_manager.cpp
     ../src/file_utils.cpp
+    ../src/database/db_performance_logger.cpp
 )
 
 add_executable(file_type_config_test
@@ -145,15 +146,16 @@ add_executable(media_processor_example
 
 add_executable(file_processor_example
     integration/file_processor_example.cpp
+    ../src/file_processor.cpp
+    ../src/transcoding_manager.cpp
     ../src/media_processor.cpp
     ../src/core/memory_pool.cpp
     ../src/server_config_manager.cpp
-    ../src/database/database_manager.cpp
-    ../src/duplicate_linker.cpp
-    ../src/file_processor.cpp
-    ../src/file_utils.cpp
-    ../src/database/database_access_queue.cpp
     ../src/mount_manager.cpp
+    ../src/duplicate_linker.cpp
+    ../src/database/database_manager.cpp
+    ../src/database/db_performance_logger.cpp
+    ../src/file_utils.cpp
 )
 
 # Utility tests
@@ -299,6 +301,7 @@ target_link_libraries(file_processor_example
     ${FFMPEG_LIBRARIES}
     $<$<BOOL:${VIPS_FOUND}>:PkgConfig::VIPS>
     $<$<BOOL:${ONNXRUNTIME_FOUND}>:PkgConfig::ONNXRUNTIME>
+    PkgConfig::LIBRAW
     yaml-cpp
 )
 

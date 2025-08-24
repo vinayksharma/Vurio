@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/database_manager.hpp"
+#include "database/db_performance_logger.hpp"
 #include "core/media_processing_orchestrator.hpp"
 #include "core/server_config_manager.hpp"
 #include "logging/logger.hpp"
@@ -117,6 +118,12 @@ public:
                 {
             if (!AuthMiddleware::verify_auth(req, res, auth)) return;
             handleServerStatus(req, res); });
+
+        // Database performance stats endpoint
+        svr.Get("/api/db/performance", [&](const httplib::Request &req, httplib::Response &res)
+                {
+            if (!AuthMiddleware::verify_auth(req, res, auth)) return;
+            handleDatabasePerformanceStats(req, res); });
 
         // Find duplicates endpoint
         svr.Post("/duplicates/find", [&](const httplib::Request &req, httplib::Response &res)
@@ -332,6 +339,25 @@ private:
         catch (const std::exception &e)
         {
             Logger::error("Server status error: " + std::string(e.what()));
+            res.status = 500;
+            res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
+        }
+    }
+
+    static void handleDatabasePerformanceStats(const httplib::Request &req, httplib::Response &res)
+    {
+        Logger::trace("Received database performance stats request");
+        try
+        {
+            auto &perf_logger = DatabasePerformanceLogger::getInstance();
+            std::string stats = perf_logger.getPerformanceStats();
+
+            res.set_content(stats, "application/json");
+            Logger::info("Database performance stats retrieved successfully");
+        }
+        catch (const std::exception &e)
+        {
+            Logger::error("Database performance stats error: " + std::string(e.what()));
             res.status = 500;
             res.set_content(json{{"error", "Internal server error"}}.dump(), "application/json");
         }
