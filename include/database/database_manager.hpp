@@ -150,6 +150,13 @@ public:
     DBOpResult setProcessingFlagFinalError(const std::string &file_path, DedupMode mode);
 
     /**
+     * @brief Reset all processing flags from -1 (in progress) to 0 (not processed) on startup
+     * This ensures a clean state when the server restarts
+     * @return DBOpResult indicating success or failure
+     */
+    DBOpResult resetAllProcessingFlagsOnStartup();
+
+    /**
      * @brief Get files with a specific processing flag value for a mode
      * @param flag_value The processing flag value to search for
      * @param mode The deduplication mode

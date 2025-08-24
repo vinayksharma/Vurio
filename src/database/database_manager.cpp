@@ -4198,9 +4198,10 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
     int captured_batch_size = batch_size;
     std::atomic<bool> operation_completed{false};
     std::string error_msg;
+    auto shared_results = std::make_shared<std::vector<std::pair<std::string, std::string>>>();
 
     // Use enqueueWrite since we're performing write operations (UPDATE statements)
-    auto future = access_queue_->enqueueWrite([captured_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan) -> WriteOperationResult
+    auto future = access_queue_->enqueueWrite([captured_batch_size, &operation_completed, &error_msg, shared_results, this](DatabaseManager &dbMan) -> WriteOperationResult
                                               {
         Logger::debug("Executing getAndMarkFilesForProcessingAnyMode in write queue");
         
@@ -4218,36 +4219,6 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         // Build the SQL query to get files that need processing for ANY mode
         // Use a more precise approach to avoid race conditions
         std::string file_type_clauses = generateFileTypeLikeClauses();
-        
-        // Check for files that have been stuck in processing (-1) for too long
-        // This indicates a processing failure or crash that left files in an inconsistent state
-        std::string stuck_check_sql = "SELECT COUNT(*) FROM scanned_files WHERE (" + file_type_clauses + ") AND "
-                                     "(processed_fast = -1 OR processed_balanced = -1 OR processed_quality = -1)";
-        
-        sqlite3_stmt *stuck_stmt;
-        int stuck_rc = sqlite3_prepare_v2(dbMan.db_, stuck_check_sql.c_str(), -1, &stuck_stmt, nullptr);
-        if (stuck_rc == SQLITE_OK) {
-            if (sqlite3_step(stuck_stmt) == SQLITE_ROW) {
-                int stuck_count = sqlite3_column_int(stuck_stmt, 0);
-                if (stuck_count > 0) {
-                    Logger::warn("Found " + std::to_string(stuck_count) + " files stuck in processing state (-1). "
-                                "This indicates a previous processing failure. Files will be retried.");
-                    
-                    // Reset stuck flags to allow retry
-                    std::string reset_sql = "UPDATE scanned_files SET processed_fast = 0, processed_balanced = 0, processed_quality = 0 "
-                                           "WHERE (" + file_type_clauses + ") AND "
-                                           "(processed_fast = -1 OR processed_balanced = -1 OR processed_quality = -1)";
-                    
-                    int reset_rc = sqlite3_exec(dbMan.db_, reset_sql.c_str(), nullptr, nullptr, nullptr);
-                    if (reset_rc != SQLITE_OK) {
-                        Logger::error("Failed to reset stuck processing flags: " + std::string(sqlite3_errmsg(dbMan.db_)));
-                    } else {
-                        Logger::info("Reset " + std::to_string(stuck_count) + " stuck processing flags to allow retry");
-                    }
-                }
-            }
-            sqlite3_finalize(stuck_stmt);
-        }
         
         std::string select_sql = "SELECT file_path, file_name FROM scanned_files WHERE "
                                 "(" + file_type_clauses + ") AND "
@@ -4272,35 +4243,19 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         sqlite3_bind_int(stmt, 1, captured_batch_size);
 
         std::vector<std::string> file_paths_to_mark;
+        std::vector<std::pair<std::string, std::string>> local_results;
         Logger::debug("Executing query with batch size: " + std::to_string(captured_batch_size));
         
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
             std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
             std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-            results.emplace_back(file_path, file_name);
+            shared_results->emplace_back(file_path, file_name);
             file_paths_to_mark.push_back(file_path);
             Logger::debug("Found file needing processing: " + file_path);
         }
         
-        Logger::debug("Total files found: " + std::to_string(results.size()));
-
-        // Debug: Let's also check what files are in the database
-        std::string debug_sql = "SELECT file_path, file_name, processed_fast, processed_balanced, processed_quality FROM scanned_files WHERE (" + file_type_clauses + ") LIMIT 5";
-        sqlite3_stmt *debug_stmt;
-        rc = sqlite3_prepare_v2(dbMan.db_, debug_sql.c_str(), -1, &debug_stmt, nullptr);
-        if (rc == SQLITE_OK) {
-            Logger::debug("Debug: Sample files in database:");
-            while (sqlite3_step(debug_stmt) == SQLITE_ROW) {
-                std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(debug_stmt, 0));
-                std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(debug_stmt, 1));
-                int fast = sqlite3_column_int(debug_stmt, 2);
-                int balanced = sqlite3_column_int(debug_stmt, 3);
-                int quality = sqlite3_column_int(debug_stmt, 4);
-                Logger::debug("  " + file_path + " (fast=" + std::to_string(fast) + ", balanced=" + std::to_string(balanced) + ", quality=" + std::to_string(quality) + ")");
-            }
-            sqlite3_finalize(debug_stmt);
-        }
+        Logger::debug("Total files found: " + std::to_string(shared_results->size()));
 
         sqlite3_finalize(stmt);
 
@@ -4345,9 +4300,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         // Commit transaction
         sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
         
-        Logger::debug("Atomically marked " + std::to_string(results.size()) + " files as in progress for any mode");
+        Logger::debug("Atomically marked " + std::to_string(shared_results->size()) + " files as in progress for any mode");
         operation_completed.store(true);
-        return WriteOperationResult(); });
+        return WriteOperationResult(true); });
 
     // Wait for the operation to complete with timeout
     auto start_time = std::chrono::steady_clock::now();
@@ -4363,6 +4318,9 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+
+    // Copy results from shared pointer
+    results = *shared_results;
 
     return results;
 }
@@ -5296,4 +5254,92 @@ DBOpResult DatabaseManager::setTextFlag(const std::string &flag_name, const std:
     if (!success)
         return DBOpResult(false, error_msg);
     return DBOpResult(true);
+}
+
+DBOpResult DatabaseManager::resetAllProcessingFlagsOnStartup()
+{
+    Logger::info("Resetting all processing flags from -1 (in progress) to 0 (not processed) on startup");
+
+    if (!waitForQueueInitialization())
+    {
+        std::string msg = "Access queue not initialized after retries";
+        Logger::error(msg);
+        return DBOpResult(false, msg);
+    }
+
+    std::string error_msg;
+    bool success = true;
+
+    // Enqueue the write operation
+    auto operation_id = access_queue_->enqueueWrite([&error_msg, &success](DatabaseManager &dbMan)
+                                                    {
+        Logger::debug("Executing resetAllProcessingFlagsOnStartup in write queue");
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Start transaction
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+        
+        // Reset all processing flags from -1 to 0 for all modes
+        const std::string update_sql = R"(
+            UPDATE scanned_files 
+            SET processed_fast = CASE WHEN processed_fast = -1 THEN 0 ELSE processed_fast END,
+                processed_balanced = CASE WHEN processed_balanced = -1 THEN 0 ELSE processed_balanced END,
+                processed_quality = CASE WHEN processed_quality = -1 THEN 0 ELSE processed_quality END
+            WHERE processed_fast = -1 OR processed_balanced = -1 OR processed_quality = -1
+        )";
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare reset statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            error_msg = "Failed to reset processing flags: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        // Get count of affected rows
+        const std::string count_sql = "SELECT COUNT(*) FROM scanned_files WHERE processed_fast = -1 OR processed_balanced = -1 OR processed_quality = -1";
+        sqlite3_stmt *count_stmt;
+        rc = sqlite3_prepare_v2(dbMan.db_, count_sql.c_str(), -1, &count_stmt, nullptr);
+        if (rc == SQLITE_OK)
+        {
+            if (sqlite3_step(count_stmt) == SQLITE_ROW)
+            {
+                int remaining_count = sqlite3_column_int(count_stmt, 0);
+                if (remaining_count > 0)
+                {
+                    Logger::warn("Warning: " + std::to_string(remaining_count) + " files still have -1 status after reset");
+                }
+            }
+            sqlite3_finalize(count_stmt);
+        }
+
+        // Commit transaction
+        sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+        
+        Logger::info("Successfully reset all processing flags on startup");
+        return WriteOperationResult(true); });
+
+    waitForWrites();
+
+    auto result = access_queue_->getOperationResult(operation_id);
+    return DBOpResult(result.success, result.error_message);
 }

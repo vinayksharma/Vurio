@@ -113,10 +113,28 @@ int main(int argc, char *argv[])
     // At the start of main, initialize the DatabaseManager singleton with default db path
     auto &db_manager = DatabaseManager::getInstance("scan_results.db");
 
+    // Reset all processing flags from -1 (in progress) to 0 (not processed) on startup
+    // This ensures a clean state when the server restarts
+    Logger::info("Resetting processing flags on startup...");
+    auto reset_result = db_manager.resetAllProcessingFlagsOnStartup();
+    if (!reset_result.success)
+    {
+        Logger::warn("Warning: Failed to reset processing flags: " + reset_result.error_message);
+    }
+    else
+    {
+        Logger::info("Successfully reset all processing flags on startup");
+    }
+
     // Initialize transcoding manager
     auto &transcoding_manager = TranscodingManager::getInstance();
     transcoding_manager.setDatabaseManager(&db_manager);
     transcoding_manager.initialize("./cache", config_manager.getMaxProcessingThreads());
+
+    // Reset all transcoding job statuses from 1 (in progress) to 0 (queued) on startup
+    // This ensures a clean state when the server restarts
+    Logger::info("Resetting transcoding job statuses on startup...");
+    transcoding_manager.resetTranscodingJobStatusesOnStartup();
 
     // Restore transcoding queue from database on startup
     transcoding_manager.restoreQueueFromDatabase();

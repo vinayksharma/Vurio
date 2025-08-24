@@ -160,6 +160,12 @@ public:
     void restoreQueueFromDatabase();
 
     /**
+     * @brief Reset all transcoding job statuses from 1 (in progress) to 0 (queued) on startup
+     * This ensures a clean state when the server restarts
+     */
+    void resetTranscodingJobStatusesOnStartup();
+
+    /**
      * @brief Check if cache is over size limit
      * @return true if cache size exceeds limit
      */

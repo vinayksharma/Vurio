@@ -256,6 +256,52 @@ void TranscodingManager::restoreQueueFromDatabase()
     }
 }
 
+void TranscodingManager::resetTranscodingJobStatusesOnStartup()
+{
+    Logger::info("Resetting all transcoding job statuses from 1 (in progress) to 0 (queued) on startup");
+
+    if (!db_manager_)
+    {
+        Logger::error("Database manager not available for status reset");
+        return;
+    }
+
+    try
+    {
+        // Reset all transcoding job statuses from 1 (in progress) to 0 (queued)
+        std::string update_sql = "UPDATE cache_map SET status = 0, worker_id = NULL WHERE status = 1";
+
+        if (sqlite3_exec(db_manager_->db_, update_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
+        {
+            Logger::error("Failed to reset transcoding job statuses: " + std::string(sqlite3_errmsg(db_manager_->db_)));
+            return;
+        }
+
+        // Get count of affected rows
+        std::string count_sql = "SELECT COUNT(*) FROM cache_map WHERE status = 1";
+        sqlite3_stmt *count_stmt;
+
+        if (sqlite3_prepare_v2(db_manager_->db_, count_sql.c_str(), -1, &count_stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step(count_stmt) == SQLITE_ROW)
+            {
+                int remaining_count = sqlite3_column_int(count_stmt, 0);
+                if (remaining_count > 0)
+                {
+                    Logger::warn("Warning: " + std::to_string(remaining_count) + " transcoding jobs still have status 1 after reset");
+                }
+            }
+            sqlite3_finalize(count_stmt);
+        }
+
+        Logger::info("Successfully reset all transcoding job statuses on startup");
+    }
+    catch (const std::exception &e)
+    {
+        Logger::error("Exception during transcoding job status reset: " + std::string(e.what()));
+    }
+}
+
 void TranscodingManager::setDatabaseManager(DatabaseManager *db_manager)
 {
     db_manager_ = db_manager;
