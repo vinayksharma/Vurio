@@ -136,7 +136,9 @@ public:
                         "files_queued": {"type": "integer", "description": "Files waiting to be processed"},
                         "files_processed": {"type": "integer", "description": "Files successfully processed in any mode"},
                         "duplicates_found": {"type": "integer", "description": "Files identified as duplicates"},
-                        "files_in_error": {"type": "integer", "description": "Files that failed processing"}
+                        "files_in_error": {"type": "integer", "description": "Files that failed processing"},
+                        "files_in_transcoding_queue": {"type": "integer", "description": "Files waiting in transcoding queue"},
+                        "files_transcoded": {"type": "integer", "description": "Files successfully transcoded"}
                       }
                     }
                   }

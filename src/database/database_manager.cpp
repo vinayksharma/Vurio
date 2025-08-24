@@ -103,6 +103,13 @@ DatabaseManager::DatabaseManager(const std::string &db_path)
             return false;
         }
         Logger::info("Database opened successfully: " + db_path);
+        
+        // Set busy timeout to prevent indefinite waiting on locks
+        auto &config_manager = ServerConfigManager::getInstance();
+        int busy_timeout_ms = config_manager.getDatabaseBusyTimeoutMs();
+        sqlite3_busy_timeout(dbMan.db_, busy_timeout_ms);
+        Logger::info("Database busy timeout set to " + std::to_string(busy_timeout_ms) + "ms");
+        
         // Enable WAL mode for better concurrency
         rc = sqlite3_exec(dbMan.db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
         if (rc != SQLITE_OK)
@@ -1796,6 +1803,51 @@ bool DatabaseManager::waitForQueueInitialization(int max_retries, int retry_dela
 
     Logger::error("Queue initialization failed after " + std::to_string(max_retries) + " attempts");
     return false;
+}
+
+DBOpResult DatabaseManager::executeWithRetry(std::function<DBOpResult()> operation, int max_retries)
+{
+    // Use configurable values if not specified
+    if (max_retries == -1)
+    {
+        auto &config_manager = ServerConfigManager::getInstance();
+        max_retries = config_manager.getDatabaseMaxRetries();
+    }
+
+    // Get configurable backoff settings
+    auto &config_manager = ServerConfigManager::getInstance();
+    int base_backoff = config_manager.getDatabaseBackoffBaseMs();
+    int max_backoff = config_manager.getDatabaseMaxBackoffMs();
+
+    for (int attempt = 0; attempt < max_retries; attempt++)
+    {
+        try
+        {
+            auto result = operation();
+            if (result.success)
+                return result;
+
+            // Exponential backoff with configurable base and max values
+            if (attempt < max_retries - 1)
+            {
+                int backoff_ms = std::min(base_backoff * (1 << attempt), max_backoff);
+                Logger::debug("Database operation attempt " + std::to_string(attempt + 1) + " failed, retrying in " + std::to_string(backoff_ms) + "ms");
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Logger::warn("Database operation attempt " + std::to_string(attempt + 1) + " failed with exception: " + std::string(e.what()));
+            if (attempt < max_retries - 1)
+            {
+                int backoff_ms = std::min(base_backoff * (1 << attempt), max_backoff);
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            }
+        }
+    }
+
+    Logger::error("Database operation failed after " + std::to_string(max_retries) + " attempts");
+    return DBOpResult(false, "Max retries exceeded");
 }
 
 bool DatabaseManager::isValid()
@@ -4067,8 +4119,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
             return WriteOperationResult::Failure(error_msg);
         }
         
-        // Start transaction with immediate mode for better concurrency
-        sqlite3_exec(dbMan.db_, "BEGIN IMMEDIATE TRANSACTION", nullptr, nullptr, nullptr);
+        // Start transaction for better concurrency (using regular BEGIN instead of IMMEDIATE)
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
         
         // Build the SQL query to get files that need processing
         // Exclude files that are already marked as in progress (-1) to prevent race conditions
@@ -4111,7 +4163,7 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
 
         sqlite3_finalize(stmt);
 
-        // If we found files, mark them as in progress
+        // If we found files, mark them as in progress in smaller batches
         if (!file_paths_to_mark.empty())
         {
             // Build the update SQL
@@ -4141,18 +4193,32 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
                 return WriteOperationResult::Failure("Failed to prepare update statement");
             }
 
-            // Mark each file as in progress
-            for (const auto& file_path : file_paths_to_mark)
+            // Process files in smaller batches to reduce transaction size
+            const int batch_size = 100; // Process 100 files at a time
+            for (size_t i = 0; i < file_paths_to_mark.size(); i += batch_size)
             {
-                sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
-                rc = sqlite3_step(update_stmt);
-                if (rc != SQLITE_DONE)
+                // Commit current batch and start new transaction if not first batch
+                if (i > 0)
                 {
-                    Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                    sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+                    sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
                 }
-                sqlite3_reset(update_stmt);
+                
+                // Process current batch
+                size_t end_idx = std::min(i + batch_size, file_paths_to_mark.size());
+                for (size_t j = i; j < end_idx; j++)
+                {
+                    const auto& file_path = file_paths_to_mark[j];
+                    sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                    rc = sqlite3_step(update_stmt);
+                    if (rc != SQLITE_DONE)
+                    {
+                        Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                    }
+                    sqlite3_reset(update_stmt);
+                }
             }
-
+            
             sqlite3_finalize(update_stmt);
         }
 
@@ -4213,8 +4279,8 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
             return WriteOperationResult::Failure(error_msg);
         }
         
-        // Start transaction with immediate mode for better concurrency
-        sqlite3_exec(dbMan.db_, "BEGIN IMMEDIATE TRANSACTION", nullptr, nullptr, nullptr);
+        // Start transaction for better concurrency (using regular BEGIN instead of IMMEDIATE)
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
         
         // Build the SQL query to get files that need processing for ANY mode
         // Use a more precise approach to avoid race conditions
@@ -4269,31 +4335,46 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFile
                 "UPDATE scanned_files SET processed_quality = -1 WHERE file_path = ? AND processed_quality = 0"
             };
 
-            for (const auto& update_sql : update_sqls)
+            // Process files in smaller batches to reduce transaction size
+            const int batch_size = 100; // Process 100 files at a time
+            for (size_t i = 0; i < file_paths_to_mark.size(); i += batch_size)
             {
-                sqlite3_stmt *update_stmt;
-                rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
-                if (rc != SQLITE_OK)
+                // Commit current batch and start new transaction if not first batch
+                if (i > 0)
                 {
-                    Logger::error("Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
-                    sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
-                    operation_completed.store(true);
-                    return WriteOperationResult::Failure("Failed to prepare update statement");
+                    sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+                    sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
                 }
-
-                // Mark each file as in progress for this mode
-                for (const auto& file_path : file_paths_to_mark)
+                
+                // Process current batch for each mode
+                size_t end_idx = std::min(i + batch_size, file_paths_to_mark.size());
+                for (const auto& update_sql : update_sqls)
                 {
-                    sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
-                    rc = sqlite3_step(update_stmt);
-                    if (rc != SQLITE_DONE)
+                    sqlite3_stmt *update_stmt;
+                    rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                    if (rc != SQLITE_OK)
                     {
-                        Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                        Logger::error("Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+                        sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                        operation_completed.store(true);
+                        return WriteOperationResult::Failure("Failed to prepare update statement");
                     }
-                    sqlite3_reset(update_stmt);
-                }
 
-                sqlite3_finalize(update_stmt);
+                    // Mark each file in current batch as in progress for this mode
+                    for (size_t j = i; j < end_idx; j++)
+                    {
+                        const auto& file_path = file_paths_to_mark[j];
+                        sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                        rc = sqlite3_step(update_stmt);
+                        if (rc != SQLITE_DONE)
+                        {
+                            Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                        }
+                        sqlite3_reset(update_stmt);
+                    }
+                    
+                    sqlite3_finalize(update_stmt);
+                }
             }
         }
 
@@ -4432,7 +4513,7 @@ std::vector<std::pair<std::string, std::string>> DatabaseManager::getFilesNeedin
 
 DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
 {
-    ServerStatus status = {0, 0, 0, 0, 0};
+    ServerStatus status = {0, 0, 0, 0, 0, 0, 0};
 
     if (!waitForQueueInitialization())
     {
@@ -4501,11 +4582,37 @@ DatabaseManager::ServerStatus DatabaseManager::getServerStatus()
                 sqlite3_finalize(error_stmt);
             }
 
+            // 6. Files in transcoding queue (files with status = 0 in cache_map table)
+            const std::string transcoding_queue_sql = "SELECT COUNT(*) FROM cache_map WHERE status = 0";
+            sqlite3_stmt *transcoding_queue_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, transcoding_queue_sql.c_str(), -1, &transcoding_queue_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(transcoding_queue_stmt) == SQLITE_ROW)
+                {
+                    status.files_in_transcoding_queue = static_cast<size_t>(sqlite3_column_int(transcoding_queue_stmt, 0));
+                }
+                sqlite3_finalize(transcoding_queue_stmt);
+            }
+
+            // 7. Files transcoded (files with status = 2 in cache_map table - completed)
+            const std::string transcoded_sql = "SELECT COUNT(*) FROM cache_map WHERE status = 2";
+            sqlite3_stmt *transcoded_stmt = nullptr;
+            if (sqlite3_prepare_v2(dbMan.db_, transcoded_sql.c_str(), -1, &transcoded_stmt, nullptr) == SQLITE_OK)
+            {
+                if (sqlite3_step(transcoded_stmt) == SQLITE_ROW)
+                {
+                    status.files_transcoded = static_cast<size_t>(sqlite3_column_int(transcoded_stmt, 0));
+                }
+                sqlite3_finalize(transcoded_stmt);
+            }
+
             Logger::debug("Server status retrieved - Scanned: " + std::to_string(status.files_scanned) + 
                          ", Queued: " + std::to_string(status.files_queued) + 
                          ", Processed: " + std::to_string(status.files_processed) + 
                          ", Duplicates: " + std::to_string(status.duplicates_found) +
-                         ", Errors: " + std::to_string(status.files_in_error));
+                         ", Errors: " + std::to_string(status.files_in_error) +
+                         ", Transcoding Queue: " + std::to_string(status.files_in_transcoding_queue) +
+                         ", Transcoded: " + std::to_string(status.files_transcoded));
         }
         catch (const std::exception &e)
         {
@@ -5342,4 +5449,447 @@ DBOpResult DatabaseManager::resetAllProcessingFlagsOnStartup()
 
     auto result = access_queue_->getOperationResult(operation_id);
     return DBOpResult(result.success, result.error_message);
+}
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFilesForProcessingWithPriority(DedupMode mode, int batch_size)
+{
+    Logger::debug("getAndMarkFilesForProcessingWithPriority called for mode: " + DedupModes::getModeName(mode) + " with batch size: " + std::to_string(batch_size));
+
+    // Calculate split: 50% stuck transcoded files, 50% regular files
+    int stuck_batch_size = batch_size / 2;
+    int regular_batch_size = batch_size - stuck_batch_size; // Handle odd batch sizes
+
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Use a mutex to ensure only one thread can get files at a time
+    std::lock_guard<std::mutex> lock(file_processing_mutex);
+
+    // Capture the parameters for async execution
+    DedupMode captured_mode = mode;
+    int captured_stuck_batch_size = stuck_batch_size;
+    int captured_regular_batch_size = regular_batch_size;
+    std::atomic<bool> operation_completed{false};
+    std::string error_msg;
+
+    // Use enqueueWrite since we're performing write operations (UPDATE statements)
+    auto future = access_queue_->enqueueWrite([captured_mode, captured_stuck_batch_size, captured_regular_batch_size, &results, &operation_completed, &error_msg, this](DatabaseManager &dbMan)
+                                              {
+        Logger::debug("Executing getAndMarkFilesForProcessingWithPriority in write queue for mode: " + DedupModes::getModeName(captured_mode));
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Start transaction for better concurrency
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+        
+        std::string file_type_clauses = generateFileTypeLikeClauses();
+        std::vector<std::string> file_paths_to_mark;
+        
+        // PRIORITY 1: Get stuck transcoded files (files with status = 2 in cache_map but processed_X = -1)
+        std::string stuck_transcoded_sql;
+        switch (captured_mode)
+        {
+            case DedupMode::FAST:
+                stuck_transcoded_sql = R"(
+                    SELECT sf.file_path, sf.file_name 
+                    FROM scanned_files sf
+                    JOIN cache_map cm ON sf.file_path = cm.source_file_path
+                    WHERE cm.status = 2 
+                      AND sf.processed_fast = -1 
+                      AND (sf.processed_fast != 0)
+                      AND ()" + file_type_clauses + R"()
+                    ORDER BY sf.created_at DESC 
+                    LIMIT ?
+                )";
+                break;
+            case DedupMode::BALANCED:
+                stuck_transcoded_sql = R"(
+                    SELECT sf.file_path, sf.file_name 
+                    FROM scanned_files sf
+                    JOIN cache_map cm ON sf.file_path = cm.source_file_path
+                    WHERE cm.status = 2 
+                      AND sf.processed_balanced = -1 
+                      AND (sf.processed_balanced != 0)
+                      AND ()" + file_type_clauses + R"()
+                    ORDER BY sf.created_at DESC 
+                    LIMIT ?
+                )";
+                break;
+            case DedupMode::QUALITY:
+                stuck_transcoded_sql = R"(
+                    SELECT sf.file_path, sf.file_name 
+                    FROM scanned_files sf
+                    JOIN cache_map cm ON sf.file_path = cm.source_file_path
+                    WHERE cm.status = 2 
+                      AND sf.processed_quality = -1 
+                      AND (sf.processed_quality != 0)
+                      AND ()" + file_type_clauses + R"()
+                    ORDER BY sf.created_at DESC 
+                    LIMIT ?
+                )";
+                break;
+        }
+        
+        Logger::debug("Priority 1 SQL (stuck transcoded): " + stuck_transcoded_sql);
+        
+        sqlite3_stmt *stuck_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, stuck_transcoded_sql.c_str(), -1, &stuck_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare stuck transcoded statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_int(stuck_stmt, 1, captured_stuck_batch_size);
+        
+        int stuck_files_found = 0;
+        while (sqlite3_step(stuck_stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stuck_stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stuck_stmt, 1));
+            results.emplace_back(file_path, file_name);
+            file_paths_to_mark.push_back(file_path);
+            stuck_files_found++;
+            Logger::debug("Found stuck transcoded file: " + file_path);
+        }
+        
+        sqlite3_finalize(stuck_stmt);
+        Logger::debug("Found " + std::to_string(stuck_files_found) + " stuck transcoded files");
+
+        // PRIORITY 2: Fill remaining batch with regular unprocessed files
+        int remaining_batch_size = captured_stuck_batch_size + captured_regular_batch_size - stuck_files_found;
+        if (remaining_batch_size > 0)
+        {
+            std::string regular_sql;
+            switch (captured_mode)
+            {
+                case DedupMode::FAST:
+                    regular_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_fast = 0 AND processed_fast != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                    break;
+                case DedupMode::BALANCED:
+                    regular_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_balanced = 0 AND processed_balanced != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                    break;
+                case DedupMode::QUALITY:
+                    regular_sql = "SELECT file_path, file_name FROM scanned_files WHERE processed_quality = 0 AND processed_quality != -1 AND (" + file_type_clauses + ") ORDER BY created_at DESC LIMIT ?";
+                    break;
+            }
+            
+            Logger::debug("Priority 2 SQL (regular): " + regular_sql);
+            
+            sqlite3_stmt *regular_stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, regular_sql.c_str(), -1, &regular_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                error_msg = "Failed to prepare regular statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                Logger::error(error_msg);
+                sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                operation_completed.store(true);
+                return WriteOperationResult::Failure(error_msg);
+            }
+
+            sqlite3_bind_int(regular_stmt, 1, remaining_batch_size);
+            
+            int regular_files_found = 0;
+            while (sqlite3_step(regular_stmt) == SQLITE_ROW)
+            {
+                std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(regular_stmt, 0));
+                std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(regular_stmt, 1));
+                results.emplace_back(file_path, file_name);
+                file_paths_to_mark.push_back(file_path);
+                regular_files_found++;
+                Logger::debug("Found regular file: " + file_path);
+            }
+            
+            sqlite3_finalize(regular_stmt);
+            Logger::debug("Found " + std::to_string(regular_files_found) + " regular files");
+        }
+
+        // Mark all found files as in progress
+        if (!file_paths_to_mark.empty())
+        {
+            std::string update_sql;
+            switch (captured_mode)
+            {
+                case DedupMode::FAST:
+                    update_sql = "UPDATE scanned_files SET processed_fast = -1 WHERE file_path = ?";
+                    break;
+                case DedupMode::BALANCED:
+                    update_sql = "UPDATE scanned_files SET processed_balanced = -1 WHERE file_path = ?";
+                    break;
+                case DedupMode::QUALITY:
+                    update_sql = "UPDATE scanned_files SET processed_quality = -1 WHERE file_path = ?";
+                    break;
+                default:
+                    break;
+            }
+
+            sqlite3_stmt *update_stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                error_msg = "Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                Logger::error(error_msg);
+                sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                operation_completed.store(true);
+                return WriteOperationResult::Failure(error_msg);
+            }
+
+            // Process files in smaller batches to reduce transaction size
+            const int batch_size = 100; // Process 100 files at a time
+            for (size_t i = 0; i < file_paths_to_mark.size(); i += batch_size)
+            {
+                // Commit current batch and start new transaction if not first batch
+                if (i > 0)
+                {
+                    sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+                    sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+                }
+                
+                // Process current batch
+                size_t end_idx = std::min(i + batch_size, file_paths_to_mark.size());
+                for (size_t j = i; j < end_idx; j++)
+                {
+                    const auto& file_path = file_paths_to_mark[j];
+                    sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                    rc = sqlite3_step(update_stmt);
+                    if (rc != SQLITE_DONE)
+                    {
+                        Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                    }
+                    sqlite3_reset(update_stmt);
+                }
+            }
+            
+            sqlite3_finalize(update_stmt);
+        }
+
+        // Commit transaction
+        sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+        
+        Logger::debug("Atomically marked " + std::to_string(results.size()) + " files as in progress for mode: " + DedupModes::getModeName(captured_mode) + 
+                     " (stuck transcoded: " + std::to_string(stuck_files_found) + ", regular: " + std::to_string(results.size() - stuck_files_found) + ")");
+        operation_completed.store(true);
+        return WriteOperationResult(); });
+
+    // Wait for the operation to complete
+    while (!operation_completed.load())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Operation completion is already handled by the atomic flag
+    // No need to wait for future since we're using operation_completed
+
+    return results;
+}
+
+std::vector<std::pair<std::string, std::string>> DatabaseManager::getAndMarkFilesForProcessingAnyModeWithPriority(int batch_size)
+{
+    Logger::debug("getAndMarkFilesForProcessingAnyModeWithPriority called with batch size: " + std::to_string(batch_size));
+
+    // Calculate split: 50% stuck transcoded files, 50% regular files
+    int stuck_batch_size = batch_size / 2;
+    int regular_batch_size = batch_size - stuck_batch_size; // Handle odd batch sizes
+
+    std::vector<std::pair<std::string, std::string>> results;
+    if (!waitForQueueInitialization())
+    {
+        Logger::error("Access queue not initialized after retries");
+        return results;
+    }
+
+    // Use a mutex to ensure only one thread can get files at a time
+    std::lock_guard<std::mutex> lock(file_processing_mutex);
+
+    // Capture the parameters for async execution
+    int captured_stuck_batch_size = stuck_batch_size;
+    int captured_regular_batch_size = regular_batch_size;
+    std::atomic<bool> operation_completed{false};
+    std::string error_msg;
+
+    // Use enqueueWrite since we're performing write operations (UPDATE statements)
+    auto future = access_queue_->enqueueWrite([captured_stuck_batch_size, captured_regular_batch_size, &operation_completed, &error_msg, &results, this](DatabaseManager &dbMan) -> WriteOperationResult
+                                              {
+        Logger::debug("Executing getAndMarkFilesForProcessingAnyModeWithPriority in write queue");
+        
+        if (!dbMan.db_)
+        {
+            error_msg = "Database not initialized";
+            Logger::error(error_msg);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+        
+        // Start transaction for better concurrency
+        sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+        
+        std::string file_type_clauses = generateFileTypeLikeClauses();
+        std::vector<std::string> file_paths_to_mark;
+        
+        // PRIORITY 1: Get stuck transcoded files (files with status = 2 in cache_map but any processed_X = -1)
+        std::string stuck_transcoded_sql = R"(
+            SELECT DISTINCT sf.file_path, sf.file_name 
+            FROM scanned_files sf
+            JOIN cache_map cm ON sf.file_path = cm.source_file_path
+            WHERE cm.status = 2 
+              AND (sf.processed_fast = -1 OR sf.processed_balanced = -1 OR sf.processed_quality = -1)
+              AND ()" + file_type_clauses + R"()
+            ORDER BY sf.created_at DESC 
+            LIMIT ?
+        )";
+        
+        Logger::debug("Priority 1 SQL (stuck transcoded): " + stuck_transcoded_sql);
+        
+        sqlite3_stmt *stuck_stmt;
+        int rc = sqlite3_prepare_v2(dbMan.db_, stuck_transcoded_sql.c_str(), -1, &stuck_stmt, nullptr);
+        if (rc != SQLITE_OK)
+        {
+            error_msg = "Failed to prepare stuck transcoded statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+            Logger::error(error_msg);
+            sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            operation_completed.store(true);
+            return WriteOperationResult::Failure(error_msg);
+        }
+
+        sqlite3_bind_int(stuck_stmt, 1, captured_stuck_batch_size);
+        
+        int stuck_files_found = 0;
+        while (sqlite3_step(stuck_stmt) == SQLITE_ROW)
+        {
+            std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(stuck_stmt, 0));
+            std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(stuck_stmt, 1));
+            results.emplace_back(file_path, file_name);
+            file_paths_to_mark.push_back(file_path);
+            stuck_files_found++;
+            Logger::debug("Found stuck transcoded file: " + file_path);
+        }
+        
+        sqlite3_finalize(stuck_stmt);
+        Logger::debug("Found " + std::to_string(stuck_files_found) + " stuck transcoded files");
+
+        // PRIORITY 2: Fill remaining batch with regular unprocessed files
+        int remaining_batch_size = captured_stuck_batch_size + captured_regular_batch_size - stuck_files_found;
+        if (remaining_batch_size > 0)
+        {
+            std::string regular_sql = "SELECT file_path, file_name FROM scanned_files WHERE "
+                                    "(" + file_type_clauses + ") AND "
+                                    "((processed_fast = 0 AND processed_fast != -1) OR "
+                                    "(processed_balanced = 0 AND processed_balanced != -1) OR "
+                                    "(processed_quality = 0 AND processed_quality != -1)) "
+                                    "ORDER BY created_at DESC LIMIT ?";
+            
+            Logger::debug("Priority 2 SQL (regular): " + regular_sql);
+            
+            sqlite3_stmt *regular_stmt;
+            rc = sqlite3_prepare_v2(dbMan.db_, regular_sql.c_str(), -1, &regular_stmt, nullptr);
+            if (rc != SQLITE_OK)
+            {
+                error_msg = "Failed to prepare regular statement: " + std::string(sqlite3_errmsg(dbMan.db_));
+                Logger::error(error_msg);
+                sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                operation_completed.store(true);
+                return WriteOperationResult::Failure(error_msg);
+            }
+
+            sqlite3_bind_int(regular_stmt, 1, remaining_batch_size);
+            
+            int regular_files_found = 0;
+            while (sqlite3_step(regular_stmt) == SQLITE_ROW)
+            {
+                std::string file_path = reinterpret_cast<const char *>(sqlite3_column_text(regular_stmt, 0));
+                std::string file_name = reinterpret_cast<const char *>(sqlite3_column_text(regular_stmt, 1));
+                results.emplace_back(file_path, file_name);
+                file_paths_to_mark.push_back(file_path);
+                regular_files_found++;
+                Logger::debug("Found regular file: " + file_path);
+            }
+            
+            sqlite3_finalize(regular_stmt);
+            Logger::debug("Found " + std::to_string(regular_files_found) + " regular files");
+        }
+
+        // Mark all found files as in progress for ALL modes that need processing
+        if (!file_paths_to_mark.empty())
+        {
+            // Mark files as in progress for each mode that needs processing
+            std::vector<std::string> update_sqls = {
+                "UPDATE scanned_files SET processed_fast = -1 WHERE file_path = ? AND processed_fast = 0",
+                "UPDATE scanned_files SET processed_balanced = -1 WHERE file_path = ? AND processed_balanced = 0",
+                "UPDATE scanned_files SET processed_quality = -1 WHERE file_path = ? AND processed_quality = 0"
+            };
+
+            // Process files in smaller batches to reduce transaction size
+            const int batch_size = 100; // Process 100 files at a time
+            for (size_t i = 0; i < file_paths_to_mark.size(); i += batch_size)
+            {
+                // Commit current batch and start new transaction if not first batch
+                if (i > 0)
+                {
+                    sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+                    sqlite3_exec(dbMan.db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+                }
+                
+                // Process current batch for each mode
+                size_t end_idx = std::min(i + batch_size, file_paths_to_mark.size());
+                for (const auto& update_sql : update_sqls)
+                {
+                    sqlite3_stmt *update_stmt;
+                    rc = sqlite3_prepare_v2(dbMan.db_, update_sql.c_str(), -1, &update_stmt, nullptr);
+                    if (rc != SQLITE_OK)
+                    {
+                        Logger::error("Failed to prepare update statement: " + std::string(sqlite3_errmsg(dbMan.db_)));
+                        sqlite3_exec(dbMan.db_, "ROLLBACK", nullptr, nullptr, nullptr);
+                        operation_completed.store(true);
+                        return WriteOperationResult::Failure("Failed to prepare update statement");
+                    }
+
+                    // Mark each file in current batch as in progress for this mode
+                    for (size_t j = i; j < end_idx; j++)
+                    {
+                        const auto& file_path = file_paths_to_mark[j];
+                        sqlite3_bind_text(update_stmt, 1, file_path.c_str(), -1, SQLITE_STATIC);
+                        rc = sqlite3_step(update_stmt);
+                        if (rc != SQLITE_DONE)
+                        {
+                            Logger::error("Failed to mark file as in progress: " + file_path + " - " + std::string(sqlite3_errmsg(dbMan.db_)));
+                        }
+                        sqlite3_reset(update_stmt);
+                    }
+                    
+                    sqlite3_finalize(update_stmt);
+                }
+            }
+        }
+
+        // Commit transaction
+        sqlite3_exec(dbMan.db_, "COMMIT", nullptr, nullptr, nullptr);
+        
+        Logger::debug("Atomically marked " + std::to_string(results.size()) + " files as in progress for any mode" + 
+                     " (stuck transcoded: " + std::to_string(stuck_files_found) + ", regular: " + std::to_string(results.size() - stuck_files_found) + ")");
+        operation_completed.store(true);
+        return WriteOperationResult(); });
+
+    // Wait for the operation to complete
+    while (!operation_completed.load())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Operation completion is already handled by the atomic flag
+    // No need to wait for future since we're using operation_completed
+
+    return results;
 }

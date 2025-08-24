@@ -93,6 +93,13 @@ public:
     // Decoder configuration getters
     int getMaxDecoderThreads() const;
 
+    // Database configuration getters
+    int getDatabaseMaxRetries() const;
+    int getDatabaseBackoffBaseMs() const;
+    int getDatabaseMaxBackoffMs() const;
+    int getDatabaseBusyTimeoutMs() const;
+    int getDatabaseOperationTimeoutMs() const;
+
     // Quality stack configuration
     bool getPreProcessQualityStack() const;
 

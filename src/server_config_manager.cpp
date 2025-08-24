@@ -82,6 +82,14 @@ void ServerConfigManager::initializeDefaultConfig()
           http_server_threads: "auto"
           database_threads: 2
           max_decoder_threads: 4
+        database:
+          retry:
+            max_attempts: 3
+            backoff_base_ms: 100
+            max_backoff_ms: 1000
+          timeout:
+            busy_timeout_ms: 30000
+            operation_timeout_ms: 60000
         cache:
           decoder_cache_size_mb: 1024
         processing:
@@ -378,6 +386,146 @@ int ServerConfigManager::getProcessingBatchSize() const
                      ", using default: 100");
     }
     return 100; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseMaxRetries() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["database"] && config_["database"]["retry"] && config_["database"]["retry"]["max_attempts"])
+        {
+            int value = config_["database"]["retry"]["max_attempts"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 10)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database max_attempts value: " + std::to_string(value) +
+                             ", using default: 3");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database max_attempts: " + std::string(e.what()) +
+                     ", using default: 3");
+    }
+    return 3; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseBackoffBaseMs() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["database"] && config_["database"]["retry"] && config_["database"]["retry"]["backoff_base_ms"])
+        {
+            int value = config_["database"]["retry"]["backoff_base_ms"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 1000)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database backoff_base_ms value: " + std::to_string(value) +
+                             ", using default: 100");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database backoff_base_ms: " + std::string(e.what()) +
+                     ", using default: 100");
+    }
+    return 100; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseMaxBackoffMs() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["database"] && config_["database"]["retry"] && config_["database"]["retry"]["max_backoff_ms"])
+        {
+            int value = config_["database"]["retry"]["max_backoff_ms"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 10000)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database max_backoff_ms value: " + std::to_string(value) +
+                             ", using default: 1000");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database max_backoff_ms: " + std::string(e.what()) +
+                     ", using default: 1000");
+    }
+    return 1000; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseBusyTimeoutMs() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["database"] && config_["database"]["timeout"] && config_["database"]["timeout"]["busy_timeout_ms"])
+        {
+            int value = config_["database"]["timeout"]["busy_timeout_ms"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 300000)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database busy_timeout_ms value: " + std::to_string(value) +
+                             ", using default: 30000");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database busy_timeout_ms: " + std::string(e.what()) +
+                     ", using default: 30000");
+    }
+    return 30000; // Default fallback
+}
+
+int ServerConfigManager::getDatabaseOperationTimeoutMs() const
+{
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    try
+    {
+        if (config_["database"] && config_["database"]["timeout"] && config_["database"]["timeout"]["operation_timeout_ms"])
+        {
+            int value = config_["database"]["timeout"]["operation_timeout_ms"].as<int>();
+            // Validate: must be positive and reasonable
+            if (value > 0 && value <= 600000)
+            {
+                return value;
+            }
+            else
+            {
+                Logger::warn("Invalid database operation_timeout_ms value: " + std::to_string(value) +
+                             ", using default: 60000");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        Logger::warn("Error parsing database operation_timeout_ms: " + std::string(e.what()) +
+                     ", using default: 60000");
+    }
+    return 60000; // Default fallback
 }
 
 std::map<std::string, bool> ServerConfigManager::getSupportedFileTypes() const

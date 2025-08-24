@@ -337,11 +337,11 @@ void ThreadPoolManager::processAllScannedFilesAsync(
         std::vector<std::pair<std::string, std::string>> files_to_process;
         if (pre_process_quality_stack)
         {
-            files_to_process = dbMan.getAndMarkFilesForProcessingAnyMode(batch_size);
+            files_to_process = dbMan.getAndMarkFilesForProcessingAnyModeWithPriority(batch_size);
         }
         else
         {
-            files_to_process = dbMan.getAndMarkFilesForProcessing(current_mode, batch_size);
+            files_to_process = dbMan.getAndMarkFilesForProcessingWithPriority(current_mode, batch_size);
         }
 
         if (files_to_process.empty())

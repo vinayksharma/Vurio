@@ -110,6 +110,21 @@ public:
     std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessingAnyMode(int batch_size = 10);
 
     /**
+     * @brief Get files that need processing with priority for stuck transcoded files
+     * @param mode Processing mode to get files for
+     * @param batch_size Total batch size (50% stuck transcoded, 50% regular)
+     * @return Vector of file paths and names to process
+     */
+    std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessingWithPriority(DedupMode mode, int batch_size);
+
+    /**
+     * @brief Get files that need processing for ANY mode with priority for stuck transcoded files
+     * @param batch_size Total batch size (50% stuck transcoded, 50% regular)
+     * @return Vector of file paths and names to process
+     */
+    std::vector<std::pair<std::string, std::string>> getAndMarkFilesForProcessingAnyModeWithPriority(int batch_size);
+
+    /**
      * @brief Set processing flag for a specific mode after successful processing
      * @param file_path Path to the file
      * @param mode The deduplication mode that was processed
@@ -478,6 +493,8 @@ public:
         size_t files_processed;
         size_t duplicates_found;
         size_t files_in_error;
+        size_t files_in_transcoding_queue;
+        size_t files_transcoded;
     };
     ServerStatus getServerStatus();
 
@@ -527,6 +544,14 @@ private:
 public:
     // Queue initialization utility (public for testing)
     bool waitForQueueInitialization(int max_retries = 5, int retry_delay_ms = 1000);
+
+    /**
+     * @brief Execute a database operation with automatic retry and exponential backoff
+     * @param operation Function to execute that returns a DBOpResult
+     * @param max_retries Maximum number of retry attempts (-1 to use config default, 0+ for custom value)
+     * @return DBOpResult from the operation or failure after max retries
+     */
+    DBOpResult executeWithRetry(std::function<DBOpResult()> operation, int max_retries = -1);
 
 private:
 };

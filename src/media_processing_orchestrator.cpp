@@ -122,10 +122,10 @@ SimpleObservable<FileProcessingEvent> MediaProcessingOrchestrator::processAllSca
             if (pre_process_quality_stack) {
                 // Get files that need processing for ANY mode and atomically mark them as in progress
                 // This prevents race conditions where multiple threads get the same files
-                files_to_process = dbMan_.getAndMarkFilesForProcessingAnyMode(batch_size);
+                files_to_process = dbMan_.getAndMarkFilesForProcessingAnyModeWithPriority(batch_size);
             } else {
                 // Get files that need processing for the specific mode using atomic batch processing
-                files_to_process = dbMan_.getAndMarkFilesForProcessing(mode, batch_size);
+                files_to_process = dbMan_.getAndMarkFilesForProcessingWithPriority(mode, batch_size);
             }
             
             if (files_to_process.empty()) {

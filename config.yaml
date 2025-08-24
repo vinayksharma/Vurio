@@ -1,4 +1,4 @@
-log_level: WARN
+log_level: INFO
 auth_secret: your-secret-key-here
 dedup_mode: FAST
 server_host: localhost
@@ -93,3 +93,11 @@ video_processing:
     skip_duration_seconds: 1
     frames_per_skip: 3
     skip_count: 12
+database:
+  retry:
+    max_attempts: 3
+    backoff_base_ms: 100
+    max_backoff_ms: 1000
+  timeout:
+    busy_timeout_ms: 30000
+    operation_timeout_ms: 60000

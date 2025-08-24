@@ -318,14 +318,16 @@ private:
 
             json response = {
                 {"status", "success"},
-                {"data", {{"files_scanned", server_status.files_scanned}, {"files_queued", server_status.files_queued}, {"files_processed", server_status.files_processed}, {"duplicates_found", server_status.duplicates_found}, {"files_in_error", server_status.files_in_error}}}};
+                {"data", {{"files_scanned", server_status.files_scanned}, {"files_queued", server_status.files_queued}, {"files_processed", server_status.files_processed}, {"duplicates_found", server_status.duplicates_found}, {"files_in_error", server_status.files_in_error}, {"files_in_transcoding_queue", server_status.files_in_transcoding_queue}, {"files_transcoded", server_status.files_transcoded}}}};
 
             res.set_content(response.dump(), "application/json");
             Logger::info("Server status retrieved successfully - Scanned: " + std::to_string(server_status.files_scanned) +
                          ", Queued: " + std::to_string(server_status.files_queued) +
                          ", Processed: " + std::to_string(server_status.files_processed) +
                          ", Duplicates: " + std::to_string(server_status.duplicates_found) +
-                         ", Errors: " + std::to_string(server_status.files_in_error));
+                         ", Errors: " + std::to_string(server_status.files_in_error) +
+                         ", Transcoding Queue: " + std::to_string(server_status.files_in_transcoding_queue) +
+                         ", Transcoded: " + std::to_string(server_status.files_transcoded));
         }
         catch (const std::exception &e)
         {
