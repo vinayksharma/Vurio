@@ -196,6 +196,9 @@ main() {
     echo "=========================================="
     echo ""
     
+    # Change to project root directory
+    cd ../..
+    
     # Parse command line arguments
     case "${1:-}" in
         -h|--help)

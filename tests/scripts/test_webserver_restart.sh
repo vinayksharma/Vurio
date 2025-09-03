@@ -100,6 +100,9 @@ main() {
     echo "=========================================="
     echo ""
     
+    # Change to project root directory
+    cd ../..
+    
     # Cleanup any existing server
     stop_server
     

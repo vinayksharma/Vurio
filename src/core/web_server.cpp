@@ -116,7 +116,15 @@ namespace MediaDedup
         }
 
         running_ = false;
-        cleanupServer();
+
+        // Wait for server thread to finish (it will call http_server_->stop())
+        if (server_thread_.joinable())
+        {
+            server_thread_.join();
+        }
+
+        // Clean up resources
+        http_server_.reset();
     }
 
     void WebServer::initializeServer()
@@ -155,16 +163,16 @@ namespace MediaDedup
 
     void WebServer::cleanupServer()
     {
+        // This method is now only used for cleanup during restart
+        // The main stop() method handles the primary cleanup logic
+
         if (server_thread_.joinable())
         {
             server_thread_.join();
         }
 
-        if (http_server_)
-        {
-            http_server_->stop();
-            http_server_.reset();
-        }
+        // Reset the HTTP server (it should already be stopped by the server thread)
+        http_server_.reset();
     }
 
     bool WebServer::restart()

@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 PROJECT_NAME="Media Deduplication Server Tests"
-BUILD_DIR="../build"
+BUILD_DIR="build"
 TEST_RESULTS_DIR="$BUILD_DIR/test_results"
 COVERAGE_DIR="$BUILD_DIR/coverage"
 
@@ -87,11 +87,11 @@ EXAMPLES:
 EOF
 }
 
-# Function to check if we're in the tests directory
+# Function to check if we're in the tests/scripts directory
 check_directory() {
-    if [ ! -f "run_tests.sh" ]; then
-        print_error "This script must be run from the tests directory"
-        print_status "Please run: cd tests && ./run_tests.sh"
+    if [ ! -f "run_tests.sh" ] || [ ! -f "README.md" ]; then
+        print_error "This script must be run from the tests/scripts directory"
+        print_status "Please run: cd tests/scripts && ./run_tests.sh"
         exit 1
     fi
 }
@@ -360,7 +360,7 @@ show_test_results() {
         
         echo
         print_status "Recent test output:"
-        for test_file in "${test_files[@]}" | head -3; do
+        for test_file in "${test_files[@]:0:3}"; do
             echo
             print_status "=== $test_file ==="
             tail -10 "$test_file" 2>/dev/null || true
@@ -391,6 +391,12 @@ clean_test_results() {
 
 # Main script logic
 main() {
+    # Check directory first
+    check_directory
+    
+    # Change to project root directory
+    cd ../..
+    
     # Default values
     VERBOSE=false
     DEBUG_MODE=false
@@ -467,7 +473,6 @@ main() {
     done
     
     # Check environment
-    check_directory
     check_build_directory
     
     # Create test directories

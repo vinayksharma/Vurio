@@ -7,10 +7,15 @@ This directory contains a comprehensive testing framework for the Media Deduplic
 ```
 tests/
 ├── CMakeLists.txt              # Test build configuration
-├── run_tests.sh                # Test runner script
 ├── test_utils.hpp              # Test utilities header
 ├── test_utils.cpp              # Test utilities implementation
 ├── README.md                   # This file
+├── scripts/                    # Test scripts directory
+│   ├── README.md              # Scripts documentation
+│   ├── run_tests.sh           # Test runner script
+│   ├── demo_web_server.sh     # Web server demo script
+│   ├── test_web_server.sh     # Web server test script
+│   └── test_webserver_restart.sh # Web server restart test
 ├── unit/                       # Unit tests
 │   ├── test_observable_property.cpp
 │   ├── test_log_level.cpp
@@ -81,8 +86,8 @@ make
 # From project root
 ./run.sh test
 
-# Or from tests directory
-cd tests
+# Or from tests/scripts directory
+cd tests/scripts
 ./run_tests.sh
 ```
 
