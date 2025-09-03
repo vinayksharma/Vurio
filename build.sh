@@ -54,7 +54,16 @@ check_dependencies() {
     
     # Check for Poco libraries
     if ! pkg-config --exists Poco; then
-        missing_deps+=("libpoco-dev")
+        # On macOS, check if Poco is installed via Homebrew
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if [ -d "/opt/homebrew/include/Poco" ] || [ -d "/usr/local/include/Poco" ]; then
+                print_status "Poco libraries found via Homebrew (macOS)"
+            else
+                missing_deps+=("poco")
+            fi
+        else
+            missing_deps+=("libpoco-dev")
+        fi
     fi
     
     # Check for SQLite3

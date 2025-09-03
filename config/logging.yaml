@@ -1,0 +1,133 @@
+# Logging Configuration for Media Deduplication Server
+# This file contains all logging-related configuration options
+
+# Log Level Configuration
+# Valid values: trace, debug, info, warn, error
+# The log level determines the minimum level of messages that will be logged
+log_level: "info"
+
+# Log Output Configuration
+log_output:
+  # Enable console logging (stdout/stderr)
+  console: true
+  
+  # Enable file logging
+  file: true
+  
+  # Enable syslog logging (Unix systems)
+  syslog: false
+  
+  # Enable remote logging (UDP/TCP)
+  remote: false
+
+# File Logging Configuration
+file_logging:
+  # Log file path
+  path: "logs/media_dedup.log"
+  
+  # Maximum log file size in bytes (10MB)
+  max_size: 10485760
+  
+  # Maximum number of log files to keep
+  max_files: 5
+  
+  # Log file rotation (daily, weekly, monthly)
+  rotation: "daily"
+  
+  # Enable compression for old log files
+  compress: true
+
+# Console Logging Configuration
+console_logging:
+  # Enable colored output
+  colored: true
+  
+  # Show timestamps
+  show_timestamp: true
+  
+  # Show log level
+  show_level: true
+  
+  # Show source file and line number
+  show_source: false
+
+# Remote Logging Configuration
+remote_logging:
+  # Remote log server host
+  host: "localhost"
+  
+  # Remote log server port
+  port: 514
+  
+  # Protocol (udp, tcp)
+  protocol: "udp"
+  
+  # Connection timeout in seconds
+  timeout: 5
+
+# Log Format Configuration
+format:
+  # Timestamp format (strftime format)
+  timestamp: "%Y-%m-%d %H:%M:%S"
+  
+  # Log message format
+  # Available placeholders: {timestamp}, {level}, {logger}, {message}, {file}, {line}
+  message: "[{timestamp}] [{level}] {logger}: {message}"
+  
+  # Include source file and line number in format
+  include_source: false
+
+# Logger-Specific Configuration
+loggers:
+  # Main server logger
+  server:
+    level: "info"
+    output: ["console", "file"]
+  
+  # Database logger
+  database:
+    level: "debug"
+    output: ["console", "file"]
+  
+  # Media processing logger
+  media_processor:
+    level: "info"
+    output: ["console", "file"]
+  
+  # HTTP API logger
+  http_api:
+    level: "info"
+    output: ["console", "file"]
+  
+  # Configuration logger
+  config:
+    level: "debug"
+    output: ["console"]
+
+# Performance Configuration
+performance:
+  # Enable asynchronous logging
+  async: true
+  
+  # Log buffer size
+  buffer_size: 8192
+  
+  # Flush interval in milliseconds
+  flush_interval: 100
+  
+  # Maximum queue size for async logging
+  max_queue_size: 10000
+
+# Security Configuration
+security:
+  # Mask sensitive information in logs
+  mask_sensitive: true
+  
+  # Sensitive fields to mask
+  sensitive_fields: ["password", "token", "key", "secret"]
+  
+  # Enable audit logging
+  audit: false
+  
+  # Audit log file path
+  audit_file: "logs/audit.log"

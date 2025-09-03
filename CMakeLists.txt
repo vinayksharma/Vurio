@@ -16,7 +16,19 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Find Poco packages
-find_package(Poco REQUIRED COMPONENTS Foundation Data SQLite Util)
+find_package(Poco REQUIRED COMPONENTS Foundation Data DataSQLite Util)
+
+# On macOS, set Poco paths if not found by find_package
+if(APPLE)
+    if(NOT Poco_FOUND)
+        set(POCO_ROOT "/opt/homebrew")
+        if(EXISTS "${POCO_ROOT}/include/Poco")
+            set(Poco_INCLUDE_DIRS "${POCO_ROOT}/include")
+            set(Poco_LIBRARY_DIRS "${POCO_ROOT}/lib")
+            message(STATUS "Using Poco from Homebrew: ${POCO_ROOT}")
+        endif()
+    endif()
+endif()
 
 # Find SQLite3
 find_package(PkgConfig REQUIRED)

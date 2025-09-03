@@ -12,145 +12,145 @@
 #include <memory>
 #include <string>
 
-// Forward declarations
-namespace MediaDedup {
-    class ConfigManager;
-    class DatabaseManager;
-}
+// Include the actual headers instead of forward declarations
+#include "config/config_manager.hpp"
+#include "database/database_manager.hpp"
 
-namespace MediaDedup {
+namespace MediaDedup
+{
 
-/**
- * @brief Main server application for the media deduplication server
- * 
- * This class extends Poco::Util::ServerApplication to provide:
- * - Command-line argument parsing
- * - Configuration management
- * - Database initialization
- * - HTTP server setup
- * - Graceful shutdown handling
- */
-class MediaDedupServer : public Poco::Util::ServerApplication {
-public:
     /**
-     * @brief Constructor
+     * @brief Main server application for the media deduplication server
+     *
+     * This class extends Poco::Util::ServerApplication to provide:
+     * - Command-line argument parsing
+     * - Configuration management
+     * - Database initialization
+     * - HTTP server setup
+     * - Graceful shutdown handling
      */
-    MediaDedupServer();
-    
-    /**
-     * @brief Destructor
-     */
-    ~MediaDedupServer() override = default;
+    class MediaDedupServer : public Poco::Util::ServerApplication
+    {
+    public:
+        /**
+         * @brief Constructor
+         */
+        MediaDedupServer();
 
-protected:
-    /**
-     * @brief Initialize the application
-     * @param self Reference to self
-     */
-    void initialize(Application& self) override;
-    
-    /**
-     * @brief Uninitialize the application
-     */
-    void uninitialize() override;
-    
-    /**
-     * @brief Define command line options
-     * @param options Option set to populate
-     */
-    void defineOptions(Poco::Util::OptionSet& options) override;
-    
-    /**
-     * @brief Handle command line options
-     * @param name Option name
-     * @param value Option value
-     */
-    void handleOption(const std::string& name, const std::string& value) override;
-    
-    /**
-     * @brief Display help information
-     */
-    void handleHelp(const std::string& name, const std::string& value);
-    
-    /**
-     * @brief Main application logic
-     * @return Exit code
-     */
-    int main(const std::vector<std::string>& args) override;
+        /**
+         * @brief Destructor
+         */
+        ~MediaDedupServer() override = default;
 
-private:
-    // Configuration and components
-    std::unique_ptr<ConfigManager> config_manager_;
-    std::unique_ptr<DatabaseManager> database_manager_;
-    
-    // Server components
-    std::unique_ptr<Poco::Net::HTTPServer> http_server_;
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket_;
-    
-    // Configuration options
-    std::string config_file_;
-    std::string database_path_;
-    std::string server_host_;
-    uint16_t server_port_;
-    bool help_requested_;
-    bool daemon_mode_;
-    
-    // Logging
-    Poco::Logger& logger_;
-    
-    /**
-     * @brief Initialize configuration
-     * @return true if successful, false otherwise
-     */
-    bool initializeConfiguration();
-    
-    /**
-     * @brief Initialize database
-     * @return true if successful, false otherwise
-     */
-    bool initializeDatabase();
-    
-    /**
-     * @brief Initialize HTTP server
-     * @return true if successful, false otherwise
-     */
-    bool initializeHTTPServer();
-    
-    /**
-     * @brief Setup request handlers
-     */
-    void setupRequestHandlers();
-    
-    /**
-     * @brief Start HTTP server
-     * @return true if successful, false otherwise
-     */
-    bool startHTTPServer();
-    
-    /**
-     * @brief Stop HTTP server
-     */
-    void stopHTTPServer();
-    
-    /**
-     * @brief Wait for shutdown signal
-     */
-    void waitForShutdown();
-    
-    /**
-     * @brief Handle shutdown gracefully
-     */
-    void handleShutdown();
-    
-    /**
-     * @brief Log server startup information
-     */
-    void logStartupInfo();
-    
-    /**
-     * @brief Log server shutdown information
-     */
-    void logShutdownInfo();
-};
+    protected:
+        /**
+         * @brief Initialize the application
+         * @param self Reference to self
+         */
+        void initialize(Application &self) override;
+
+        /**
+         * @brief Uninitialize the application
+         */
+        void uninitialize() override;
+
+        /**
+         * @brief Define command line options
+         * @param options Option set to populate
+         */
+        void defineOptions(Poco::Util::OptionSet &options) override;
+
+        /**
+         * @brief Handle command line options
+         * @param name Option name
+         * @param value Option value
+         */
+        void handleOption(const std::string &name, const std::string &value) override;
+
+        /**
+         * @brief Display help information
+         */
+        void handleHelp(const std::string &name, const std::string &value);
+
+        /**
+         * @brief Main application logic
+         * @return Exit code
+         */
+        int main(const std::vector<std::string> &args) override;
+
+    private:
+        // Configuration and components
+        std::unique_ptr<ConfigManager> config_manager_;
+        std::unique_ptr<DatabaseManager> database_manager_;
+
+        // Server components
+        std::unique_ptr<Poco::Net::HTTPServer> http_server_;
+        std::unique_ptr<Poco::Net::ServerSocket> server_socket_;
+
+        // Configuration options
+        std::string config_file_;
+        std::string database_path_;
+        std::string server_host_;
+        uint16_t server_port_;
+        bool help_requested_;
+        bool daemon_mode_;
+
+        // Logging
+        Poco::Logger &logger_;
+
+        /**
+         * @brief Initialize configuration
+         * @return true if successful, false otherwise
+         */
+        bool initializeConfiguration();
+
+        /**
+         * @brief Initialize database
+         * @return true if successful, false otherwise
+         */
+        bool initializeDatabase();
+
+        /**
+         * @brief Initialize HTTP server
+         * @return true if successful, false otherwise
+         */
+        bool initializeHTTPServer();
+
+        /**
+         * @brief Setup request handlers
+         */
+        void setupRequestHandlers();
+
+        /**
+         * @brief Start HTTP server
+         * @return true if successful, false otherwise
+         */
+        bool startHTTPServer();
+
+        /**
+         * @brief Stop HTTP server
+         */
+        void stopHTTPServer();
+
+        /**
+         * @brief Wait for shutdown signal
+         */
+        void waitForShutdown();
+
+        /**
+         * @brief Handle shutdown gracefully
+         */
+        void handleShutdown();
+
+        /**
+         * @brief Log server startup information
+         */
+        void logStartupInfo();
+
+        /**
+         * @brief Log server shutdown information
+         */
+        void logShutdownInfo();
+    };
 
 } // namespace MediaDedup
