@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/log_level.hpp"
+// Removed log_level.hpp dependency - using unified config system now
 #include <string>
 #include <vector>
 #include <map>
@@ -29,7 +29,6 @@ namespace MediaDedup::Test
         static int generateRandomInt(int min, int max);
         static double generateRandomDouble(double min, double max);
         static bool generateRandomBool();
-        static LogLevel generateRandomLogLevel();
 
         // File and directory operations
         static std::string generateTempFilePath(const std::string &prefix = "test",
@@ -245,10 +244,9 @@ namespace MediaDedup::Test
      */
     namespace TestData
     {
-        // Log level test data
-        std::vector<LogLevel> getAllLogLevels();
+        // Log level test data (removed LogLevel dependency)
         std::vector<std::string> getAllLogLevelStrings();
-        std::map<LogLevel, std::string> getLogLevelStringMap();
+        std::map<std::string, std::string> getLogLevelStringMap();
 
         // Configuration test data
         std::map<std::string, std::string> getValidLoggingConfig();

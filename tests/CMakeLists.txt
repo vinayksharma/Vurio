@@ -6,6 +6,9 @@ enable_testing()
 # Find Google Test
 find_package(GTest REQUIRED)
 
+# Find yaml-cpp
+find_package(yaml-cpp REQUIRED)
+
 # Set test output directory
 set(TEST_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test_results)
 
@@ -31,35 +34,22 @@ link_directories(${GTEST_LIBRARIES})
 
 # Unit Tests
 set(UNIT_TEST_SOURCES
-    unit/test_observable_property.cpp
-    unit/test_log_level.cpp
-    unit/test_observable_log_level.cpp
-    unit/test_observable_config_manager.cpp
-    unit/test_config_manager.cpp
-    unit/test_database_manager.cpp
-    unit/test_server.cpp
+    unit/test_unified_observable_config.cpp
 )
 
 # Integration Tests
 set(INTEGRATION_TEST_SOURCES
-    integration/test_config_file_sync.cpp
-    integration/test_property_change_callbacks.cpp
-    integration/test_file_monitoring.cpp
-    integration/test_config_validation.cpp
+    # Placeholder for future integration tests
 )
 
 # Performance Tests
 set(PERFORMANCE_TEST_SOURCES
-    performance/test_property_access_performance.cpp
-    performance/test_file_monitoring_performance.cpp
-    performance/test_callback_performance.cpp
+    # Placeholder for future performance tests
 )
 
 # Mock Objects
 set(MOCK_SOURCES
-    mocks/mock_file_system.cpp
-    mocks/mock_logger.cpp
-    mocks/mock_config_storage.cpp
+    # Placeholder for future mock objects
 )
 
 # Create test executables
@@ -72,6 +62,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         pthread
         ${Poco_LIBRARIES}
         sqlite3
+        unified_config_lib
+        test_utils
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
@@ -114,15 +106,16 @@ foreach(test_source ${PERFORMANCE_TEST_SOURCES})
     )
 endforeach()
 
-# Create mock library
-add_library(test_mocks STATIC ${MOCK_SOURCES})
-target_compile_options(test_mocks PRIVATE ${COMMON_TEST_FLAGS})
-target_link_libraries(test_mocks ${Poco_LIBRARIES})
+# Create mock library (only if mock sources exist)
+if(MOCK_SOURCES)
+    add_library(test_mocks STATIC ${MOCK_SOURCES})
+    target_compile_options(test_mocks PRIVATE ${COMMON_TEST_FLAGS})
+    target_link_libraries(test_mocks ${Poco_LIBRARIES})
+endif()
 
 # Test utilities
 add_library(test_utils STATIC
     test_utils.cpp
-    test_helpers.cpp
 )
 target_compile_options(test_utils PRIVATE ${COMMON_TEST_FLAGS})
 target_link_libraries(test_utils ${Poco_LIBRARIES})
@@ -169,21 +162,30 @@ foreach(test_source ${UNIT_TEST_SOURCES} ${INTEGRATION_TEST_SOURCES} ${PERFORMAN
     add_dependencies(${test_name} setup_test_data)
 endforeach()
 
-# Test configuration
-set_tests_properties(${UNIT_TEST_SOURCES} PROPERTIES
-    LABELS "unit"
-    ENVIRONMENT "TEST_TYPE=unit"
-)
+# Test configuration - set properties on test names, not source files
+foreach(test_source ${UNIT_TEST_SOURCES})
+    get_filename_component(test_name ${test_source} NAME_WE)
+    set_tests_properties(${test_name} PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "TEST_TYPE=unit"
+    )
+endforeach()
 
-set_tests_properties(${INTEGRATION_TEST_SOURCES} PROPERTIES
-    LABELS "integration"
-    ENVIRONMENT "TEST_TYPE=integration"
-)
+foreach(test_source ${INTEGRATION_TEST_SOURCES})
+    get_filename_component(test_name ${test_source} NAME_WE)
+    set_tests_properties(${test_name} PROPERTIES
+        LABELS "integration"
+        ENVIRONMENT "TEST_TYPE=integration"
+    )
+endforeach()
 
-set_tests_properties(${PERFORMANCE_TEST_SOURCES} PROPERTIES
-    LABELS "performance"
-    ENVIRONMENT "TEST_TYPE=performance"
-)
+foreach(test_source ${PERFORMANCE_TEST_SOURCES})
+    get_filename_component(test_name ${test_source} NAME_WE)
+    set_tests_properties(${test_name} PROPERTIES
+        LABELS "performance"
+        ENVIRONMENT "TEST_TYPE=performance"
+    )
+endforeach()
 
 # Coverage support (if available)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

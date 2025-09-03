@@ -4,6 +4,7 @@
 #include <random>
 #include <chrono>
 #include <filesystem>
+#include <thread>
 
 namespace MediaDedup::Test
 {
@@ -52,13 +53,7 @@ namespace MediaDedup::Test
         return dis(gen) == 1;
     }
 
-    LogLevel TestUtils::generateRandomLogLevel()
-    {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, 5);
-        return static_cast<LogLevel>(dis(gen));
-    }
+    // Removed LogLevel dependency
 
     std::string TestUtils::generateTempFilePath(const std::string &prefix, const std::string &extension)
     {

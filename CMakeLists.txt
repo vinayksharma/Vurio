@@ -34,6 +34,9 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
+# Find yaml-cpp
+find_package(yaml-cpp REQUIRED)
+
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -43,12 +46,25 @@ include_directories(
 # Add subdirectories
 add_subdirectory(src)
 add_subdirectory(tests)
+add_subdirectory(examples)
+
+# Create unified config library
+add_library(unified_config_lib STATIC
+    src/config/unified_observable_config.cpp
+)
+
+target_include_directories(unified_config_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(unified_config_lib
+    yaml-cpp::yaml-cpp
+)
 
 # Main executable
 add_executable(media_dedup_server
     src/main.cpp
     src/core/server.cpp
-    src/config/config_manager.cpp
     src/database/database_manager.cpp
 )
 
@@ -59,6 +75,7 @@ target_link_libraries(media_dedup_server
     Poco::DataSQLite
     Poco::Util
     ${SQLITE3_LIBRARIES}
+    unified_config_lib
 )
 
 # Set compile definitions

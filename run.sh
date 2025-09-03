@@ -218,21 +218,21 @@ build_project() {
 
 # Function to run the configuration demo
 run_demo() {
-    print_header "Running Configuration Demo"
+    print_header "Running Unified Configuration Demo"
     
     # Check if demo executable exists
-    if [ ! -f "$BUILD_DIR/examples/config_demo" ]; then
+    if [ ! -f "$BUILD_DIR/examples/unified_config_demo" ]; then
         print_error "Demo executable not found. Building first..."
         build_project
     fi
     
-    print_status "Starting configuration demo..."
-    print_status "This will demonstrate bidirectional observable configuration"
+    print_status "Starting unified configuration demo..."
+    print_status "This will demonstrate the unified observable configuration system"
     print_status "Press Ctrl+C to stop the demo"
     echo
     
     # Run the demo
-    "$BUILD_DIR/examples/config_demo"
+    "$BUILD_DIR/examples/unified_config_demo"
 }
 
 # Function to run the main server

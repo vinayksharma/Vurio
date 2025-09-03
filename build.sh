@@ -71,6 +71,11 @@ check_dependencies() {
         missing_deps+=("libsqlite3-dev")
     fi
     
+    # Check for yaml-cpp
+    if ! pkg-config --exists yaml-cpp; then
+        missing_deps+=("libyaml-cpp-dev")
+    fi
+    
     if [ ${#missing_deps[@]} -ne 0 ]; then
         print_error "Missing dependencies: ${missing_deps[*]}"
         print_status "Please install the missing dependencies:"
