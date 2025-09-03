@@ -24,8 +24,9 @@ namespace MediaDedup
     // ConfigRequestHandlerFactory Implementation
     // ============================================================================
 
-    ConfigRequestHandlerFactory::ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager)
-        : config_manager_(config_manager)
+    ConfigRequestHandlerFactory::ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                             std::shared_ptr<WebServer> web_server)
+        : config_manager_(config_manager), web_server_(web_server)
     {
     }
 
@@ -46,6 +47,10 @@ namespace MediaDedup
         else if (uri == "/api/v1/config/status" && method == "GET")
         {
             return new ConfigStatusHandler(config_manager_);
+        }
+        else if (uri == "/api/v1/config/restart-webserver" && method == "POST")
+        {
+            return new RestartWebServerHandler(config_manager_, web_server_);
         }
         else if (uri == "/api/openapi.json" && method == "GET")
         {
@@ -121,10 +126,14 @@ namespace MediaDedup
         auto server_socket = std::make_unique<Poco::Net::ServerSocket>(socket_address);
 
         // Create request handler factory
-        auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_);
+        auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
+                                                                     std::shared_ptr<WebServer>(this, [](WebServer *) {})); // Non-owning shared_ptr
 
         // Create HTTP server
-        http_server_ = std::make_unique<Poco::Net::HTTPServer>(factory.release(), *server_socket, new Poco::Net::HTTPServerParams);
+        http_server_ = std::make_unique<Poco::Net::HTTPServer>(
+            Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()),
+            *server_socket,
+            new Poco::Net::HTTPServerParams);
 
         // Start server in background thread
         server_thread_ = std::thread([this]()
@@ -155,6 +164,65 @@ namespace MediaDedup
         {
             http_server_->stop();
             http_server_.reset();
+        }
+    }
+
+    bool WebServer::restart()
+    {
+        try
+        {
+            if (running_)
+            {
+                stop();
+                // Wait a moment for cleanup
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+
+            return start();
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Failed to restart web server: " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    bool WebServer::restartWithNewConfig()
+    {
+        try
+        {
+            if (!config_manager_)
+            {
+                std::cerr << "No configuration manager available" << std::endl;
+                return false;
+            }
+
+            // Get new configuration values
+            std::string new_host = config_manager_->getPropertyValue<std::string>("server.host", host_);
+            uint16_t new_port = config_manager_->getPropertyValue<uint16_t>("server.port", port_);
+
+            // Check if configuration actually changed
+            if (new_host == host_ && new_port == port_)
+            {
+                std::cout << "Web server configuration unchanged, no restart needed" << std::endl;
+                return true;
+            }
+
+            std::cout << "Web server configuration changed:" << std::endl;
+            std::cout << "  Host: " << host_ << " -> " << new_host << std::endl;
+            std::cout << "  Port: " << port_ << " -> " << new_port << std::endl;
+
+            // Update configuration
+            host_ = new_host;
+            port_ = new_port;
+
+            // Restart with new configuration
+            return restart();
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Failed to restart web server with new config: " << e.what() << std::endl;
+            return false;
         }
     }
 
@@ -689,6 +757,60 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             sendErrorResponse(response, "Failed to generate OpenAPI spec: " + std::string(e.what()), 500);
+        }
+    }
+
+    // ============================================================================
+    // RestartWebServerHandler Implementation
+    // ============================================================================
+
+    RestartWebServerHandler::RestartWebServerHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                     std::shared_ptr<WebServer> web_server)
+        : ConfigRequestHandler(config_manager), web_server_(web_server)
+    {
+    }
+
+    void RestartWebServerHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                Poco::Net::HTTPServerResponse &response)
+    {
+        try
+        {
+            if (!web_server_)
+            {
+                sendErrorResponse(response, "Web server not available", 503);
+                return;
+            }
+
+            // Check if web server is running
+            if (!web_server_->isRunning())
+            {
+                sendErrorResponse(response, "Web server is not running", 503);
+                return;
+            }
+
+            // Restart web server with new configuration
+            bool success = web_server_->restartWithNewConfig();
+
+            if (success)
+            {
+                Poco::JSON::Object result;
+                result.set("status", "success");
+                result.set("message", "Web server restarted successfully");
+                result.set("host", web_server_->getHost());
+                result.set("port", static_cast<int>(web_server_->getPort()));
+
+                std::ostringstream oss;
+                result.stringify(oss);
+                sendJsonResponse(response, oss.str());
+            }
+            else
+            {
+                sendErrorResponse(response, "Failed to restart web server", 500);
+            }
+        }
+        catch (const std::exception &e)
+        {
+            sendErrorResponse(response, "Error restarting web server: " + std::string(e.what()), 500);
         }
     }
 

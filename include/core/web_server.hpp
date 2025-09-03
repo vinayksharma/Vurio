@@ -18,6 +18,7 @@
 namespace MediaDedup
 {
     class UnifiedObservableConfigManager;
+    class WebServer;
 
     /**
      * @brief Request handler factory for routing HTTP requests
@@ -25,12 +26,14 @@ namespace MediaDedup
     class ConfigRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
     {
     public:
-        ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+        ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                    std::shared_ptr<WebServer> web_server = nullptr);
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        std::shared_ptr<WebServer> web_server_;
     };
 
     /**
@@ -59,6 +62,8 @@ namespace MediaDedup
         bool start();
         void stop();
         bool isRunning() const { return running_; }
+        bool restart();
+        bool restartWithNewConfig();
 
         // Configuration
         void setHost(const std::string &host) { host_ = host; }
@@ -184,6 +189,22 @@ namespace MediaDedup
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
+    };
+
+    /**
+     * @brief Handler for POST /api/v1/config/restart-webserver (restart web server)
+     */
+    class RestartWebServerHandler : public ConfigRequestHandler
+    {
+    public:
+        RestartWebServerHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                std::shared_ptr<WebServer> web_server);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<WebServer> web_server_;
     };
 
 } // namespace MediaDedup

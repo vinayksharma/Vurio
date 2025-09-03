@@ -1,30 +1,10 @@
-# Media Deduplication Server Configuration
-
-# Server settings
-server:
-  host: "0.0.0.0"
-  port: 8080
-  name: "Media Deduplication Server"
-
-# Database settings
-database:
-  path: "data/dedup_server.db"
-
-# Logging settings
-logging:
-  level: "info"
-  file: "logs/dedup_server.log"
-  console: true
-
-# Processing settings
-processing:
-  max_file_size: 1073741824  # 1GB in bytes
-  supported_formats: ["jpg", "jpeg", "png", "gif", "mp4", "avi", "mov"]
-  hash_algorithm: "sha256"
-  batch_size: 100
-
-# Storage settings
-storage:
-  temp_directory: "temp"
-  cache_size: 104857600  # 100MB in bytes
-  cleanup_interval: 3600  # 1 hour in seconds
+logging.level: info
+database: ""
+server.host: 0.0.0.0
+logging: ""
+processing: ""
+server: ""
+server.port: ~
+server.name: ~
+database.path: ""
+storage: ""
