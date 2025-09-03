@@ -58,6 +58,8 @@ OPTIONS:
 
 COMMANDS:
     demo                Run the configuration demo
+    web-demo            Run the web server demo (starts server + tests API)
+    web-server          Start web server only (for manual testing)
     server              Run the main server
     test                Run all tests
     build               Build the project
@@ -72,7 +74,9 @@ COMMANDS:
 
 EXAMPLES:
     $0 demo                    # Run configuration demo
-    $0 server                  # Run main server
+    $0 web-demo               # Run web server demo
+    $0 web-server             # Start web server only
+    $0 server                 # Run main server
     $0 demo --debug           # Run demo in debug mode
     $0 server --config my.yaml # Run server with custom config
     $0 --clean build          # Clean build and rebuild
@@ -235,12 +239,62 @@ run_demo() {
     "$BUILD_DIR/examples/unified_config_demo"
 }
 
+# Function to run the web server demo
+run_web_demo() {
+    print_header "Running Web Server Demo"
+    
+    # Check if demo script exists
+    if [ ! -f "demo_web_server.sh" ]; then
+        print_error "Web demo script not found: demo_web_server.sh"
+        return 1
+    fi
+    
+    print_status "Starting web server demo..."
+    print_status "This will start the web server and test all API endpoints"
+    print_status "Press Ctrl+C to stop the demo"
+    echo
+    
+    # Run the demo
+    ./demo_web_server.sh
+}
+
+# Function to start web server only
+start_web_server() {
+    print_header "Starting Web Server Only"
+    
+    # Check if server executable exists
+    if [ ! -f "$BUILD_DIR/bin/media_dedup_server" ]; then
+        print_error "Server executable not found. Building first..."
+        build_project
+    fi
+    
+    print_status "Starting web server..."
+    print_status "Configuration file: $CONFIG_FILE"
+    print_status "Web server will be available at: http://localhost:8080"
+    print_status "API endpoints:"
+    print_status "  GET  /api/v1/config - Get all configuration"
+    print_status "  GET  /api/v1/config/{key} - Get specific property"
+    print_status "  PUT  /api/v1/config/{key} - Update property"
+    print_status "  POST /api/v1/config/reload - Reload configuration"
+    print_status "  GET  /api/v1/config/status - Get system status"
+    print_status "  GET  /api/openapi.json - OpenAPI specification"
+    echo
+    
+    # Run server in foreground
+    if [ "$DEBUG_MODE" = true ]; then
+        print_status "Running in debug mode..."
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug
+    else
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE"
+    fi
+}
+
 # Function to run the main server
 run_server() {
     print_header "Running Main Server"
     
     # Check if server executable exists
-    if [ ! -f "$BUILD_DIR/media_dedup_server" ]; then
+    if [ ! -f "$BUILD_DIR/bin/media_dedup_server" ]; then
         print_error "Server executable not found. Building first..."
         build_project
     fi
@@ -263,9 +317,9 @@ run_server() {
     # Run server in background
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Running in debug mode..."
-        "$BUILD_DIR/media_dedup_server" --config "$CONFIG_FILE" --debug &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug &
     else
-        "$BUILD_DIR/media_dedup_server" --config "$CONFIG_FILE" &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" &
     fi
     
     local server_pid=$!
@@ -539,7 +593,7 @@ main() {
                 CLEAN_BUILD=true
                 shift
                 ;;
-            demo|server|test|build|clean|install|status|stop|restart|logs|config|monitor)
+            demo|web-demo|web-server|server|test|build|clean|install|status|stop|restart|logs|config|monitor)
                 COMMAND="$1"
                 shift
                 ;;
@@ -564,6 +618,12 @@ main() {
     case $COMMAND in
         demo)
             run_demo
+            ;;
+        web-demo)
+            run_web_demo
+            ;;
+        web-server)
+            start_web_server
             ;;
         server)
             run_server

@@ -13,8 +13,9 @@
 #include <string>
 
 // Include the actual headers instead of forward declarations
-#include "config/config_manager.hpp"
+#include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
+#include "core/web_server.hpp"
 
 namespace MediaDedup
 {
@@ -80,12 +81,11 @@ namespace MediaDedup
 
     private:
         // Configuration and components
-        std::unique_ptr<ConfigManager> config_manager_;
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::unique_ptr<DatabaseManager> database_manager_;
 
         // Server components
-        std::unique_ptr<Poco::Net::HTTPServer> http_server_;
-        std::unique_ptr<Poco::Net::ServerSocket> server_socket_;
+        std::unique_ptr<WebServer> web_server_;
 
         // Configuration options
         std::string config_file_;
@@ -111,10 +111,10 @@ namespace MediaDedup
         bool initializeDatabase();
 
         /**
-         * @brief Initialize HTTP server
+         * @brief Initialize web server
          * @return true if successful, false otherwise
          */
-        bool initializeHTTPServer();
+        bool initializeWebServer();
 
         /**
          * @brief Setup request handlers

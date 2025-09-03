@@ -1,100 +1,30 @@
 # Media Deduplication Server Configuration
-# This file contains all configuration options for the server
 
-# Server Configuration
+# Server settings
 server:
-  host: "0.0.0.0"          # Server host address (0.0.0.0 for all interfaces)
-  port: 8080                # Server port number
-  threads: 4                 # Number of worker threads
-  max_connections: 100       # Maximum concurrent connections
-  timeout: 30                # Request timeout in seconds
-  enable_compression: true   # Enable HTTP compression
-  enable_logging: true       # Enable access logging
+  host: "0.0.0.0"
+  port: 8080
+  name: "Media Deduplication Server"
 
-# Database Configuration
+# Database settings
 database:
-  type: "sqlite"            # Database type (sqlite, mysql, postgresql)
-  path: "media_dedup.db"    # Database file path (for SQLite)
-  host: "localhost"         # Database host (for network databases)
-  port: 3306                # Database port (for network databases)
-  name: "media_dedup"       # Database name
-  username: ""              # Database username
-  password: ""              # Database password
-  pool_size: 10             # Connection pool size
-  timeout: 30               # Database connection timeout
-  enable_foreign_keys: true # Enable SQLite foreign key constraints
+  path: "data/dedup_server.db"
 
-# Media Processing Configuration
-media:
-  supported_formats:
-    images: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
-    videos: ["mp4", "avi", "mov", "wmv", "flv", "mkv", "webm"]
-    audio: ["mp3", "wav", "flac", "aac", "ogg", "wma"]
-  
-  hash_algorithm: "sha256"   # Hash algorithm for file deduplication
-  chunk_size: 1048576        # Chunk size for large file processing (1MB)
-  max_file_size: 1073741824  # Maximum file size to process (1GB)
-  enable_metadata_extraction: true  # Extract and store file metadata
-  
-  # Image processing
-  image:
-    enable_thumbnail_generation: true
-    thumbnail_size: 256
-    enable_exif_extraction: true
-    quality_threshold: 0.8
-  
-  # Video processing
-  video:
-    enable_frame_extraction: false
-    frame_interval: 1.0      # Extract frame every N seconds
-    enable_metadata_extraction: true
-  
-  # Audio processing
-  audio:
-    enable_waveform_analysis: false
-    enable_metadata_extraction: true
-
-# Storage Configuration
-storage:
-  base_path: "./media"       # Base path for media storage
-  temp_path: "./temp"        # Temporary file storage path
-  backup_path: "./backups"   # Backup storage path
-  enable_compression: false  # Enable storage compression
-  cleanup_interval: 3600     # Cleanup interval in seconds (1 hour)
-
-# Logging Configuration
+# Logging settings
 logging:
-  level: "info"              # Log level (trace, debug, info, warn, error)
-  file: "media_dedup.log"    # Log file path
-  max_size: 10485760         # Maximum log file size (10MB)
-  max_files: 5               # Maximum number of log files
-  enable_console: true       # Enable console logging
-  enable_syslog: false       # Enable syslog logging
-  format: "%Y-%m-%d %H:%M:%S [%L] %t"  # Log message format
+  level: "info"
+  file: "logs/dedup_server.log"
+  console: true
 
-# Security Configuration
-security:
-  enable_authentication: false  # Enable user authentication
-  enable_ssl: false             # Enable SSL/TLS
-  ssl_certificate: ""           # SSL certificate file path
-  ssl_private_key: ""           # SSL private key file path
-  allowed_origins: ["*"]        # CORS allowed origins
-  max_upload_size: 104857600    # Maximum upload size (100MB)
+# Processing settings
+processing:
+  max_file_size: 1073741824  # 1GB in bytes
+  supported_formats: ["jpg", "jpeg", "png", "gif", "mp4", "avi", "mov"]
+  hash_algorithm: "sha256"
+  batch_size: 100
 
-# Performance Configuration
-performance:
-  enable_caching: true          # Enable response caching
-  cache_size: 104857600         # Cache size in bytes (100MB)
-  cache_ttl: 3600               # Cache TTL in seconds (1 hour)
-  enable_compression: true      # Enable response compression
-  compression_level: 6          # Compression level (1-9)
-  enable_async_processing: true # Enable asynchronous processing
-  worker_threads: 4             # Number of worker threads
-
-# Monitoring Configuration
-monitoring:
-  enable_health_check: true     # Enable health check endpoint
-  enable_metrics: true          # Enable metrics collection
-  metrics_interval: 60          # Metrics collection interval in seconds
-  enable_profiling: false       # Enable performance profiling
-  profiling_output: "./profiles" # Profiling output directory
+# Storage settings
+storage:
+  temp_directory: "temp"
+  cache_size: 104857600  # 100MB in bytes
+  cleanup_interval: 3600  # 1 hour in seconds

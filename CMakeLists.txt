@@ -16,7 +16,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Find Poco packages
-find_package(Poco REQUIRED COMPONENTS Foundation Data DataSQLite Util)
+find_package(Poco REQUIRED COMPONENTS Foundation Data DataSQLite Util Net JSON)
 
 # On macOS, set Poco paths if not found by find_package
 if(APPLE)
@@ -65,6 +65,7 @@ target_link_libraries(unified_config_lib
 add_executable(media_dedup_server
     src/main.cpp
     src/core/server.cpp
+    src/core/web_server.cpp
     src/database/database_manager.cpp
 )
 
@@ -74,6 +75,8 @@ target_link_libraries(media_dedup_server
     Poco::Data
     Poco::DataSQLite
     Poco::Util
+    Poco::Net
+    Poco::JSON
     ${SQLITE3_LIBRARIES}
     unified_config_lib
 )
