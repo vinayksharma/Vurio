@@ -17,9 +17,7 @@ namespace MediaDedup
           console_input_manager_(::MediaDedupServer::Core::ConsoleInputManager::getInstance()),
           console_subscription_id_(0),
           help_requested_(false),
-          daemon_mode_(false),
-          server_port_(8080),
-          server_host_("0.0.0.0")
+          daemon_mode_(false)
     {
     }
 
@@ -33,6 +31,23 @@ namespace MediaDedup
     {
         // TODO: Implement cleanup
         logger_.information("Uninitializing Media Deduplication Server");
+    }
+
+    void MediaDedupServer::applyDefaultConfigValues()
+    {
+        // Keep all default config-related values in one place
+        if (server_host_.empty())
+        {
+            server_host_ = "0.0.0.0";
+        }
+        if (server_port_ == 0)
+        {
+            server_port_ = 8080;
+        }
+        if (database_path_.empty())
+        {
+            database_path_ = "data/dedup_server.db";
+        }
     }
 
     void MediaDedupServer::defineOptions(Poco::Util::OptionSet &options)
@@ -168,12 +183,48 @@ namespace MediaDedup
                 return false;
             }
 
-            // Create some default configuration properties
-            config_manager_->createProperty("server.host", server_host_, "Server host address");
-            config_manager_->createProperty("server.port", server_port_, "Server port number");
-            config_manager_->createProperty("server.name", "Media Deduplication Server", "Server name");
-            config_manager_->createProperty("database.path", database_path_, "Database file path");
-            config_manager_->createProperty("logging.level", std::string("info"), "Logging level");
+            // Ensure consistent defaults before creating properties
+            applyDefaultConfigValues();
+
+            // Seed defaults only if missing; otherwise read existing values
+            if (!config_manager_->hasProperty("server.host"))
+            {
+                config_manager_->createProperty("server.host", server_host_, "Server host address");
+            }
+            else
+            {
+                server_host_ = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
+            }
+
+            if (!config_manager_->hasProperty("server.port"))
+            {
+                config_manager_->createProperty("server.port", server_port_, "Server port number");
+            }
+            else
+            {
+                // Read as int to be tolerant of YAML integer typing, then cast
+                int port_val = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
+                server_port_ = static_cast<uint16_t>(port_val);
+            }
+
+            if (!config_manager_->hasProperty("server.name"))
+            {
+                config_manager_->createProperty("server.name", std::string("Media Deduplication Server"), "Server name");
+            }
+
+            if (!config_manager_->hasProperty("database.path"))
+            {
+                config_manager_->createProperty("database.path", database_path_, "Database file path");
+            }
+            else
+            {
+                database_path_ = config_manager_->getPropertyValue<std::string>("database.path", database_path_);
+            }
+
+            if (!config_manager_->hasProperty("logging.level"))
+            {
+                config_manager_->createProperty("logging.level", std::string("info"), "Logging level");
+            }
 
             // Save initial configuration
             if (!config_manager_->triggerSave())

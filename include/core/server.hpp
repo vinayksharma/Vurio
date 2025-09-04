@@ -162,6 +162,14 @@ namespace MediaDedup
          * @brief Log server shutdown information
          */
         void logShutdownInfo();
+
+        /**
+         * @brief Apply default values for configuration-related members
+         *
+         * Ensures defaults like server host/port and database path are set
+         * consistently in one place before properties are created.
+         */
+        void applyDefaultConfigValues();
     };
 
 } // namespace MediaDedup
