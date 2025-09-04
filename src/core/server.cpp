@@ -135,7 +135,23 @@ namespace MediaDedup
             // Set default config file path if not specified
             if (config_file_.empty())
             {
-                config_file_ = "config/config.yaml";
+                // Prefer config/config.yaml; if not present, fallback to ./config.yaml
+                const std::string config_in_folder = "config/config.yaml";
+                const std::string config_in_root = "config.yaml";
+
+                if (std::filesystem::exists(config_in_folder))
+                {
+                    config_file_ = config_in_folder;
+                }
+                else if (std::filesystem::exists(config_in_root))
+                {
+                    config_file_ = config_in_root;
+                }
+                else
+                {
+                    // Neither exists; keep the folder path so the manager can create defaults
+                    config_file_ = config_in_folder;
+                }
             }
 
             // Create configuration manager
