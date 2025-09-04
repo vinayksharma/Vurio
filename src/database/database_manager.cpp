@@ -21,8 +21,32 @@ namespace MediaDedup
 
     bool DatabaseManager::initialize()
     {
-        // TODO: Implement database connection initialization
-        return false;
+        try
+        {
+            // Register SQLite connector
+            Poco::Data::SQLite::Connector::registerConnector();
+
+            // Create session
+            session_ = std::make_unique<Poco::Data::Session>("SQLite", db_path_);
+
+            // Test connection
+            if (session_ && session_->isConnected())
+            {
+                connected_ = true;
+                logger_.information("Database connected successfully: " + db_path_);
+                return true;
+            }
+            else
+            {
+                logger_.error("Failed to connect to database: " + db_path_);
+                return false;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            logger_.error("Database initialization failed: " + std::string(e.what()));
+            return false;
+        }
     }
 
     void DatabaseManager::close()

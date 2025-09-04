@@ -16,6 +16,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "core/web_server.hpp"
+#include "core/console_input_manager.hpp"
 
 namespace MediaDedup
 {
@@ -87,6 +88,10 @@ namespace MediaDedup
         // Server components
         std::unique_ptr<WebServer> web_server_;
 
+        // Console input management
+        ::MediaDedupServer::Core::ConsoleInputManager &console_input_manager_;
+        size_t console_subscription_id_;
+
         // Configuration options
         std::string config_file_;
         std::string database_path_;
@@ -141,6 +146,12 @@ namespace MediaDedup
          * @brief Handle shutdown gracefully
          */
         void handleShutdown();
+
+        /**
+         * @brief Handle console events
+         * @param event Console event to handle
+         */
+        void handleConsoleEvent(const ::MediaDedupServer::Core::ConsoleEvent &event);
 
         /**
          * @brief Log server startup information

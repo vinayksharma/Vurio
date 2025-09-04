@@ -1,16 +1,25 @@
 #include "core/server.hpp"
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
+#include "core/console_input_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <iostream>
 #include <filesystem>
+#include <thread>
+#include <chrono>
 
 namespace MediaDedup
 {
 
     MediaDedupServer::MediaDedupServer()
-        : logger_(Poco::Logger::get("MediaDedupServer")), help_requested_(false), daemon_mode_(false), server_port_(8080), server_host_("0.0.0.0")
+        : logger_(Poco::Logger::get("MediaDedupServer")),
+          console_input_manager_(::MediaDedupServer::Core::ConsoleInputManager::getInstance()),
+          console_subscription_id_(0),
+          help_requested_(false),
+          daemon_mode_(false),
+          server_port_(8080),
+          server_host_("0.0.0.0")
     {
     }
 
@@ -83,6 +92,23 @@ namespace MediaDedup
                 logger_.error("Failed to initialize web server");
                 return Application::EXIT_CONFIG;
             }
+
+            // Initialize console input manager
+            if (!console_input_manager_.initialize())
+            {
+                logger_.error("Failed to initialize console input manager");
+                return Application::EXIT_CONFIG;
+            }
+
+            // Subscribe to console events
+            console_subscription_id_ = console_input_manager_.subscribeToConsoleEvents(
+                [this](const ::MediaDedupServer::Core::ConsoleEvent &event)
+                {
+                    handleConsoleEvent(event);
+                });
+
+            // Start console input processing
+            console_input_manager_.start();
 
             // Log startup information
             logStartupInfo();
@@ -216,18 +242,27 @@ namespace MediaDedup
 
     void MediaDedupServer::waitForShutdown()
     {
-        logger_.information("Server running. Press Ctrl+C to stop...");
+        logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
 
-        // Simple shutdown wait - in production, you might want to use signals
-        while (true)
-        {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
+        // Wait for console input manager to finish
+        console_input_manager_.waitForShutdown();
     }
 
     void MediaDedupServer::handleShutdown()
     {
         logger_.information("Shutting down server...");
+
+        // Stop console input manager
+        console_input_manager_.stop();
+
+        // Unsubscribe from console events
+        if (console_subscription_id_ > 0)
+        {
+            console_input_manager_.unsubscribeFromConsoleEvents(console_subscription_id_);
+        }
+
+        // Shutdown console input manager
+        console_input_manager_.shutdown();
 
         if (web_server_)
         {
@@ -263,6 +298,57 @@ namespace MediaDedup
         logger_.information("=== Media Deduplication Server Shutdown ===");
         logger_.information("Shutdown complete");
         logger_.information("==========================================");
+    }
+
+    void MediaDedupServer::handleConsoleEvent(const ::MediaDedupServer::Core::ConsoleEvent &event)
+    {
+        using namespace ::MediaDedupServer::Core;
+
+        switch (event.type)
+        {
+        case ConsoleEventType::SIGNAL_INTERRUPT:
+        case ConsoleEventType::SIGNAL_TERMINATE:
+        case ConsoleEventType::SIGNAL_QUIT:
+            logger_.information("Received shutdown signal: {}", event.command);
+            // Stop the console input manager to trigger shutdown
+            console_input_manager_.stop();
+            break;
+
+        case ConsoleEventType::COMMAND_EXIT:
+        case ConsoleEventType::COMMAND_QUIT:
+        case ConsoleEventType::COMMAND_SHUTDOWN:
+            logger_.information("Received shutdown command: {}", event.command);
+            // Stop the console input manager to trigger shutdown
+            console_input_manager_.stop();
+            break;
+
+        case ConsoleEventType::COMMAND_RESTART:
+            logger_.information("Received restart command");
+            if (web_server_)
+            {
+                logger_.information("Restarting web server...");
+                web_server_->restart();
+            }
+            break;
+
+        case ConsoleEventType::COMMAND_STATUS:
+            logger_.information("Server status requested");
+            logStartupInfo();
+            break;
+
+        case ConsoleEventType::COMMAND_HELP:
+            logger_.information("Available commands:");
+            logger_.information("  exit, quit, shutdown - Stop the server");
+            logger_.information("  restart - Restart the web server");
+            logger_.information("  status - Show server status");
+            logger_.information("  help - Show this help message");
+            break;
+
+        case ConsoleEventType::UNKNOWN_COMMAND:
+            logger_.warning("Unknown command: {}", event.command);
+            logger_.information("Type 'help' for available commands");
+            break;
+        }
     }
 
 } // namespace MediaDedup

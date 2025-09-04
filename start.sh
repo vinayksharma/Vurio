@@ -170,7 +170,13 @@ main() {
     print_status "  GET  /api/v1/config/status - Get system status"
     print_status "  GET  /api/openapi.json - OpenAPI specification"
     echo ""
-    print_status "Press Ctrl+C to stop the server"
+    print_status "Console commands available:"
+    print_status "  help     - Show available commands"
+    print_status "  status   - Show server status"
+    print_status "  restart  - Restart web server"
+    print_status "  exit     - Stop the server"
+    echo ""
+    print_status "Press Ctrl+C or type 'exit' to stop the server"
     echo ""
     
     # Start the server

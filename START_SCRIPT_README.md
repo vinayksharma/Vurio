@@ -2,139 +2,131 @@
 
 ## Overview
 
-The `start.sh` script provides a simple and convenient way to start the Media Deduplication Server with the web API.
+The `start.sh` script provides a convenient way to start the Media Deduplication Server with various configuration options.
 
 ## Usage
 
 ### Basic Usage
 
 ```bash
-# Start the server with default settings
 ./start.sh
-
-# Show help information
-./start.sh --help
 ```
 
-### Options
+Starts the server with default settings.
 
-| Option         | Description                          | Example                       |
-| -------------- | ------------------------------------ | ----------------------------- |
-| `-h, --help`   | Show help message                    | `./start.sh --help`           |
-| `-b, --build`  | Build the project before starting    | `./start.sh --build`          |
-| `-d, --debug`  | Start in debug mode                  | `./start.sh --debug`          |
-| `-c, --config` | Use specific config file             | `./start.sh --config my.yaml` |
-| `-p, --port`   | Use specific port (default: 8080)    | `./start.sh --port 9090`      |
-| `--host`       | Use specific host (default: 0.0.0.0) | `./start.sh --host localhost` |
+### Available Options
+
+| Option         | Description                   | Example                              |
+| -------------- | ----------------------------- | ------------------------------------ |
+| `-h, --help`   | Show help message             | `./start.sh --help`                  |
+| `-b, --build`  | Build project before starting | `./start.sh --build`                 |
+| `-d, --debug`  | Start in debug mode           | `./start.sh --debug`                 |
+| `-c, --config` | Use specific config file      | `./start.sh --config my_config.yaml` |
+| `-p, --port`   | Use specific port             | `./start.sh --port 9090`             |
+| `--host`       | Use specific host             | `./start.sh --host localhost`        |
 
 ### Examples
 
+#### Start with defaults
+
 ```bash
-# Start server with defaults
 ./start.sh
+```
 
-# Build and start server
+#### Build and start
+
+```bash
 ./start.sh --build
+```
 
-# Start in debug mode
+#### Start in debug mode
+
+```bash
 ./start.sh --debug
+```
 
-# Start on different port
+#### Start on different port
+
+```bash
 ./start.sh --port 9090
+```
 
-# Start on localhost only
+#### Start on localhost only
+
+```bash
 ./start.sh --host localhost
-
-# Use custom config file
-./start.sh --config config/production.yaml
-
-# Combine options
-./start.sh --build --debug --port 9090
 ```
 
-## What the Script Does
+## Server Features
 
-1. **Validates Environment**: Checks if you're in the correct directory and if required files exist
-2. **Builds Project** (if requested): Runs `build.sh` to compile the project
-3. **Creates Directories**: Ensures necessary directories (`logs`, `data`, `config`) exist
-4. **Starts Server**: Launches the Media Deduplication Server with web API
-5. **Shows Information**: Displays server status and available API endpoints
+### Web API Endpoints
 
-## Server Information
+- `GET /api/v1/config` - Get all configuration
+- `GET /api/v1/config/{key}` - Get specific property
+- `PUT /api/v1/config/{key}` - Update property
+- `POST /api/v1/config/reload` - Reload configuration
+- `GET /api/v1/config/status` - Get system status
+- `GET /api/openapi.json` - OpenAPI specification
 
-When the server starts, you'll see:
+### Console Commands
 
-```
-==========================================
-  Media Deduplication Server
-==========================================
+When the server is running, you can use these console commands:
 
-[INFO] Starting Media Deduplication Server...
-[INFO] Web API will be available at: http://localhost:8080
-[INFO] API endpoints:
-[INFO]   GET  /api/v1/config - Get all configuration
-[INFO]   GET  /api/v1/config/{key} - Get specific property
-[INFO]   PUT  /api/v1/config/{key} - Update property
-[INFO]   POST /api/v1/config/reload - Reload configuration
-[INFO]   GET  /api/v1/config/status - Get system status
-[INFO]   GET  /api/openapi.json - OpenAPI specification
-[INFO] Press Ctrl+C to stop the server
-```
+- `help` - Show available commands
+- `status` - Show server status
+- `restart` - Restart web server
+- `exit` - Stop the server
 
-## API Endpoints
+### Signal Handling
 
-Once the server is running, you can access:
+- `Ctrl+C` - Gracefully shutdown the server
+- `SIGTERM` - Gracefully shutdown the server
+- `SIGQUIT` - Gracefully shutdown the server
 
-- **Configuration Management**: `http://localhost:8080/api/v1/config`
-- **System Status**: `http://localhost:8080/api/v1/config/status`
-- **OpenAPI Documentation**: `http://localhost:8080/api/openapi.json`
+## Directory Structure
 
-## Stopping the Server
+The script automatically creates necessary directories:
 
-Press `Ctrl+C` to stop the server gracefully.
+- `logs/` - Log files
+- `data/` - Database files
+- `config/` - Configuration files
+
+## Default Configuration
+
+- **Host**: 0.0.0.0 (all interfaces)
+- **Port**: 8080
+- **Config File**: config/config.yaml
+- **Database**: data/dedup_server.db
 
 ## Troubleshooting
 
-### Server Won't Start
+### Server executable not found
 
-- Make sure you're in the project root directory
-- Ensure the project has been built (`./build.sh`)
-- Check if port 8080 is available
+If you get an error about the server executable not being found, the script will automatically attempt to build the project first.
 
-### Build Issues
+### Permission denied
 
-- Run `./start.sh --build` to build before starting
-- Check that all dependencies are installed
-- Verify CMake and build tools are available
-
-### Configuration Issues
-
-- Use `--config` option to specify a custom config file
-- Check that the config file exists and is valid
-- Default config is created automatically if missing
-
-## Integration with Other Scripts
-
-The `start.sh` script works alongside other project scripts:
-
-- `build.sh` - Builds the project
-- `run.sh` - More comprehensive run script with additional options
-- `demo_web_server.sh` - Demonstrates the web API functionality
-- `rebuild.sh` - Clean build and test cycle
-
-## Development Workflow
-
-For development, you might use:
+Make sure the script is executable:
 
 ```bash
-# Quick start during development
-./start.sh --build --debug
-
-# Production-like start
-./start.sh --config config/production.yaml
-
-# Test with demo
-./demo_web_server.sh
+chmod +x start.sh
 ```
 
-This script provides a simple entry point for starting the Media Deduplication Server with all its web API capabilities.
+### Port already in use
+
+If port 8080 is already in use, try a different port:
+
+```bash
+./start.sh --port 9090
+```
+
+## Integration with Console Input Manager
+
+The start script works seamlessly with the new Console Input Manager, providing:
+
+- Interactive console interface
+- Thread-safe event handling
+- Graceful shutdown capabilities
+- Real-time command processing
+
+The server will run continuously until explicitly stopped via console commands or signals.
