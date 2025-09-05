@@ -161,7 +161,7 @@ main() {
     # Show server information
     echo ""
     print_status "Starting Media Deduplication Server..."
-    print_status "Web API will be available at: http://localhost:8080"
+    print_status "Web API (OpenAPI JSON) at: http://localhost:8080/api/openapi.json"
     print_status "API endpoints:"
     print_status "  GET  /api/v1/config - Get all configuration"
     print_status "  GET  /api/v1/config/{key} - Get specific property"
