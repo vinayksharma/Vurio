@@ -115,6 +115,31 @@ namespace MediaDedup
                 return Application::EXIT_CONFIG;
             }
 
+            // React to configuration file changes: restart web server if host/port changed
+            config_manager_->setFileChangeCallback([this](const std::string &file_path)
+                                                   {
+                try {
+                    std::string new_host = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
+                    int new_port_i = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
+                    uint16_t new_port = static_cast<uint16_t>(new_port_i);
+
+                    if (new_host != server_host_ || new_port != server_port_) {
+                        logger_.information("Configuration change detected (host/port). Restarting web server...");
+                        logger_.information("Old: " + server_host_ + ":" + std::to_string(server_port_) +
+                                            " -> New: " + new_host + ":" + std::to_string(new_port));
+
+                        server_host_ = new_host;
+                        server_port_ = new_port;
+                        if (web_server_) {
+                            web_server_->setHost(server_host_);
+                            web_server_->setPort(server_port_);
+                            web_server_->restart();
+                        }
+                    }
+                } catch (const std::exception &e) {
+                    logger_.warning(std::string("Failed to handle file change: ") + e.what());
+                } });
+
             // Subscribe to console events
             console_subscription_id_ = console_input_manager_.subscribeToConsoleEvents(
                 [this](const ::MediaDedupServer::Core::ConsoleEvent &event)

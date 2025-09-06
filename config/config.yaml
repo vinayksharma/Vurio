@@ -1,6 +1,6 @@
 storage: ""
 database.path: ""
-server.port: 8090
+server.port: 8080
 server.name: ~
 server: ""
 processing: ""
