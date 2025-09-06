@@ -2,6 +2,7 @@
 
 // Removed log_level.hpp dependency - using unified config system now
 #include <string>
+#include <gtest/gtest.h>
 #include <vector>
 #include <map>
 #include <functional>
@@ -70,7 +71,7 @@ namespace MediaDedup::Test
      *
      * Provides common setup and teardown functionality for tests
      */
-    class TestFixture
+    class TestFixture : public ::testing::Test
     {
     protected:
         virtual void SetUp()

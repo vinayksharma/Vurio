@@ -37,12 +37,11 @@ set(UNIT_TEST_SOURCES
     unit/test_unified_observable_config.cpp
     unit/test_console_input_manager.cpp
     unit/test_database_service.cpp
+    unit/test_user_settings_service.cpp
 )
 
 # Integration Tests
-set(INTEGRATION_TEST_SOURCES
-    # Placeholder for future integration tests
-)
+set(INTEGRATION_TEST_SOURCES)
 
 # Performance Tests
 set(PERFORMANCE_TEST_SOURCES

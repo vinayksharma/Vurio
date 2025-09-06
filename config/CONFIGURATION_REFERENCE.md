@@ -37,10 +37,9 @@ logging.level: info # trace | debug | info | warn | error (case-insensitive)
 
 ## Live updates
 
-- Changing `server.host` or `server.port` in the file triggers:
-  - Console log: old → new
-  - A web server restart with the new binding
-- Changing `logging.level` applies immediately to the server and root logger
+- Changing `server.host` or `server.port` triggers an automatic web server restart with the new binding (with console log old → new).
+- Changing `logging.level` applies immediately to the server and root logger.
+- API writes persist back to YAML; existing files are not replaced, only values are updated.
 
 ## HTTP API (OpenAPI)
 
@@ -70,4 +69,15 @@ curl -X PUT http://localhost:8080/api/v1/config/server.port \
 - If `config/config.yaml` exists, it is loaded as-is; only missing keys are seeded with defaults.
 - If no config is present, a new file is created with sane defaults.
 - The database file defined by `database.path` is created if missing (parent directories are auto-created).
+
+## User Settings
+
+Key/value settings persisted in SQLite.
+
+- Table: `user_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
+- Endpoints:
+  - `GET /api/v1/user-settings` – list all settings
+  - `GET /api/v1/user-settings/{key}` – get one setting
+  - `PUT /api/v1/user-settings/{key}` – create/update with body `{ "value": "..." }`
+  - `DELETE /api/v1/user-settings/{key}` – delete setting
 

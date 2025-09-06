@@ -6,10 +6,8 @@ set(CORE_SOURCES
     core/server.cpp
 )
 
-# Configuration management
-set(CONFIG_SOURCES
-    config/config_manager.cpp
-)
+# Configuration management (legacy ConfigManager removed)
+set(CONFIG_SOURCES)
 
 # Database management
 set(DATABASE_SOURCES
