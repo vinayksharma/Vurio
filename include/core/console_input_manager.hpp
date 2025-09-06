@@ -177,6 +177,7 @@ namespace MediaDedupServer
             // State management
             std::atomic<bool> running_{false};
             std::atomic<bool> initialized_{false};
+            std::atomic<bool> exit_requested_by_signal_{false};
 
             // Threading
             std::unique_ptr<std::thread> console_thread_;

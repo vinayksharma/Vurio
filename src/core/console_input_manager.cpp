@@ -5,6 +5,10 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <thread>
+#include <chrono>
+#include <unistd.h>
+#include <sys/select.h>
 
 namespace MediaDedupServer
 {
@@ -121,10 +125,14 @@ namespace MediaDedupServer
 
             if (console_thread_ && console_thread_->joinable())
             {
-                console_thread_->join();
+                // Avoid joining from the console thread itself
+                if (std::this_thread::get_id() != console_thread_->get_id())
+                {
+                    console_thread_->join();
+                    console_thread_.reset();
+                }
+                // If called from the console thread, let the caller or waitForShutdown() join later
             }
-
-            console_thread_.reset();
             Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager stopped");
         }
 
@@ -152,42 +160,102 @@ namespace MediaDedupServer
         {
             Poco::Logger::get("ConsoleInputManager").information("Console input thread started");
 
-            std::string line;
+            std::string input_buffer;
+            bool prompt_printed = false;
+            const int stdin_fd = fileno(stdin);
+
             while (running_.load())
             {
-                std::cout << "dedup_server> ";
-                std::cout.flush();
-
-                if (!std::getline(std::cin, line))
+                // If a signal requested exit, emit exit event and break
+                if (exit_requested_by_signal_.load())
                 {
-                    // EOF or error reading input
-                    if (running_.load())
-                    {
-                        Poco::Logger::get("ConsoleInputManager").information("Console input ended, shutting down");
-                        ConsoleEvent event(ConsoleEventType::COMMAND_EXIT, "exit");
-                        notifySubscribers(event);
-                    }
+                    exit_requested_by_signal_.store(false);
+                    ConsoleEvent event(ConsoleEventType::COMMAND_EXIT, "exit");
+                    notifySubscribers(event);
+                    running_.store(false);
+                    break;
+                }
+                if (!prompt_printed)
+                {
+                    std::cout << "dedup_server> ";
+                    std::cout.flush();
+                    prompt_printed = true;
+                }
+
+                // Wait for input readiness with timeout so we can react to shutdown
+                fd_set readfds;
+                FD_ZERO(&readfds);
+                FD_SET(stdin_fd, &readfds);
+                struct timeval tv;
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000; // 100ms
+
+                int sel = select(stdin_fd + 1, &readfds, nullptr, nullptr, &tv);
+                if (!running_.load())
+                {
                     break;
                 }
 
-                // Trim whitespace
-                line.erase(0, line.find_first_not_of(" \t\r\n"));
-                line.erase(line.find_last_not_of(" \t\r\n") + 1);
+                if (sel < 0)
+                {
+                    // select error; sleep briefly and continue
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
+                }
 
-                if (line.empty())
+                if (sel == 0)
+                {
+                    // timeout; loop again to check running_
+                    continue;
+                }
+
+                if (!FD_ISSET(stdin_fd, &readfds))
                 {
                     continue;
                 }
 
-                ConsoleEvent event = parseCommand(line);
-                notifySubscribers(event);
-
-                // Check if we should exit
-                if (event.type == ConsoleEventType::COMMAND_EXIT ||
-                    event.type == ConsoleEventType::COMMAND_QUIT ||
-                    event.type == ConsoleEventType::COMMAND_SHUTDOWN)
+                // Read available bytes
+                char buf[256];
+                ssize_t n = ::read(stdin_fd, buf, sizeof(buf));
+                if (n <= 0)
                 {
+                    if (running_.load())
+                    {
+                        Poco::Logger::get("ConsoleInputManager").information("Console input ended");
+                    }
                     break;
+                }
+
+                input_buffer.append(buf, static_cast<size_t>(n));
+
+                // Process complete lines
+                size_t pos = std::string::npos;
+                while ((pos = input_buffer.find('\n')) != std::string::npos)
+                {
+                    std::string line = input_buffer.substr(0, pos);
+                    input_buffer.erase(0, pos + 1);
+                    prompt_printed = false;
+
+                    // Trim whitespace
+                    line.erase(0, line.find_first_not_of(" \t\r\n"));
+                    line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+                    if (line.empty())
+                    {
+                        continue;
+                    }
+
+                    ConsoleEvent event = parseCommand(line);
+                    notifySubscribers(event);
+
+                    // Check if we should exit
+                    if (event.type == ConsoleEventType::COMMAND_EXIT ||
+                        event.type == ConsoleEventType::COMMAND_QUIT ||
+                        event.type == ConsoleEventType::COMMAND_SHUTDOWN)
+                    {
+                        running_.store(false);
+                        break;
+                    }
                 }
             }
 
@@ -201,15 +269,20 @@ namespace MediaDedupServer
                 return;
             }
 
+            // Map Ctrl+C (SIGINT) to behave exactly like typing 'exit' without doing heavy work in the handler
+            if (signal == SIGINT)
+            {
+                Poco::Logger::get("ConsoleInputManager").information("Received Ctrl+C (SIGINT); mapping to 'exit' command");
+                // Set a flag for the console thread to emit the exit event and shutdown
+                instance_->exit_requested_by_signal_.store(true);
+                return;
+            }
+
             ConsoleEventType eventType;
             std::string signalName;
 
             switch (signal)
             {
-            case SIGINT:
-                eventType = ConsoleEventType::SIGNAL_INTERRUPT;
-                signalName = "SIGINT";
-                break;
             case SIGTERM:
                 eventType = ConsoleEventType::SIGNAL_TERMINATE;
                 signalName = "SIGTERM";
