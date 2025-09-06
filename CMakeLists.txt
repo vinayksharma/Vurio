@@ -65,7 +65,9 @@ target_link_libraries(unified_config_lib
 add_executable(media_dedup_server
     src/main.cpp
     src/core/server.cpp
-    src/core/web_server.cpp
+    src/core/webserver/server_core.cpp
+    src/core/webserver/handlers_config.cpp
+    src/core/webserver/handlers_user_settings.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
     src/database/session/session_lease.cpp
