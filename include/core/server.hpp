@@ -96,7 +96,7 @@ namespace MediaDedup
         std::string config_file_;
         std::string database_path_;
         std::string server_host_;
-        uint16_t server_port_;
+        uint16_t server_port_ = 0; // value-initialize; defaults applied later
         bool help_requested_;
         bool daemon_mode_;
 

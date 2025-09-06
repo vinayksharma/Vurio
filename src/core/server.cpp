@@ -169,6 +169,9 @@ namespace MediaDedup
                 }
             }
 
+            // Track whether a config file existed prior to startup
+            bool config_file_existed = std::filesystem::exists(config_file_);
+
             // Create configuration manager
             config_manager_ = std::make_shared<UnifiedObservableConfigManager>(
                 config_file_,
@@ -187,9 +190,11 @@ namespace MediaDedup
             applyDefaultConfigValues();
 
             // Seed defaults only if missing; otherwise read existing values
+            bool created_any_property = false;
             if (!config_manager_->hasProperty("server.host"))
             {
                 config_manager_->createProperty("server.host", server_host_, "Server host address");
+                created_any_property = true;
             }
             else
             {
@@ -199,6 +204,7 @@ namespace MediaDedup
             if (!config_manager_->hasProperty("server.port"))
             {
                 config_manager_->createProperty("server.port", server_port_, "Server port number");
+                created_any_property = true;
             }
             else
             {
@@ -210,11 +216,13 @@ namespace MediaDedup
             if (!config_manager_->hasProperty("server.name"))
             {
                 config_manager_->createProperty("server.name", std::string("Media Deduplication Server"), "Server name");
+                created_any_property = true;
             }
 
             if (!config_manager_->hasProperty("database.path"))
             {
                 config_manager_->createProperty("database.path", database_path_, "Database file path");
+                created_any_property = true;
             }
             else
             {
@@ -224,12 +232,16 @@ namespace MediaDedup
             if (!config_manager_->hasProperty("logging.level"))
             {
                 config_manager_->createProperty("logging.level", std::string("info"), "Logging level");
+                created_any_property = true;
             }
 
-            // Save initial configuration
-            if (!config_manager_->triggerSave())
+            // Save only if config did not exist or we created any properties
+            if (!config_file_existed || created_any_property)
             {
-                logger_.warning("Failed to save initial configuration");
+                if (!config_manager_->triggerSave())
+                {
+                    logger_.warning("Failed to save initial configuration");
+                }
             }
 
             logger_.information("Configuration initialized successfully");
@@ -283,9 +295,12 @@ namespace MediaDedup
     {
         try
         {
-            // Get server configuration from config manager
+            // Get server configuration from config manager (read port as int to avoid any_cast mismatch)
             server_host_ = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
-            server_port_ = config_manager_->getPropertyValue<uint16_t>("server.port", server_port_);
+            {
+                int port_val = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
+                server_port_ = static_cast<uint16_t>(port_val);
+            }
 
             // Create web server
             web_server_ = std::make_unique<WebServer>(config_manager_, server_host_, server_port_);
@@ -349,14 +364,10 @@ namespace MediaDedup
         logger_.information("=== Media Deduplication Server Started ===");
         logger_.information("Configuration file: " + config_file_);
         logger_.information("Database path: " + database_path_);
+        // Prefer localhost for clickable links when binding to 0.0.0.0
+        std::string display_host = server_host_.empty() || server_host_ == "0.0.0.0" ? "localhost" : server_host_;
         logger_.information("Web server: " + server_host_ + ":" + std::to_string(server_port_));
-        logger_.information("API endpoints:");
-        logger_.information("  GET  /api/v1/config - Get all configuration");
-        logger_.information("  GET  /api/v1/config/{key} - Get specific property");
-        logger_.information("  PUT  /api/v1/config/{key} - Update property");
-        logger_.information("  POST /api/v1/config/reload - Reload configuration");
-        logger_.information("  GET  /api/v1/config/status - Get system status");
-        logger_.information("  GET  /api/openapi.json - OpenAPI specification");
+        logger_.information("OpenAPI: http://" + display_host + ":" + std::to_string(server_port_) + "/api/openapi.json");
         logger_.information("==========================================");
     }
 
