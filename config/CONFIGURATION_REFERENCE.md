@@ -80,4 +80,3 @@ Key/value settings persisted in SQLite.
   - `GET /api/v1/user-settings/{key}` – get one setting
   - `PUT /api/v1/user-settings/{key}` – create/update with body `{ "value": "..." }`
   - `DELETE /api/v1/user-settings/{key}` – delete setting
-

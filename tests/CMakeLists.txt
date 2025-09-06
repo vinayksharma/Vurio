@@ -64,6 +64,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     if(${test_name} STREQUAL "test_database_service")
         target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp)
     endif()
+    if(${test_name} STREQUAL "test_user_settings_service")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+        )
+    endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 

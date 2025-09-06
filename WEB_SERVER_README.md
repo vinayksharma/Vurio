@@ -153,12 +153,15 @@ Retrieves the OpenAPI 3.0 specification.
 CRUD for simple key/value user settings persisted in SQLite.
 
 #### GET /api/v1/user-settings
+
 Returns all settings as a flat object.
 
 #### GET /api/v1/user-settings/{key}
+
 Returns a single setting by key.
 
 #### PUT /api/v1/user-settings/{key}
+
 Create or update a setting.
 
 Request body:
@@ -168,6 +171,7 @@ Request body:
 ```
 
 #### DELETE /api/v1/user-settings/{key}
+
 Deletes a setting by key.
 
 ## Configuration Properties

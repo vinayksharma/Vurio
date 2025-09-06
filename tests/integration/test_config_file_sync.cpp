@@ -35,10 +35,10 @@ protected:
             file_change_called_ = true;
             last_file_change_ = file_path; });
 
-        config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev) {
+        config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
+                                                  {
             property_change_called_ = true;
-            last_property_change_ = {ev.key, "", ""};
-        });
+            last_property_change_ = {ev.key, "", ""}; });
 
         // Initialize
         ASSERT_TRUE(config_manager_->initialize());
