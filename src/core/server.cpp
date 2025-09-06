@@ -1,6 +1,7 @@
 #include "core/server.hpp"
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
+#include "database/database_service.hpp"
 #include "core/console_input_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Util/HelpFormatter.h>
@@ -47,6 +48,35 @@ namespace MediaDedup
         if (database_path_.empty())
         {
             database_path_ = "data/dedup_server.db";
+        }
+        if (logging_level_.empty())
+        {
+            logging_level_ = "info";
+        }
+    }
+
+    void MediaDedupServer::applyLogLevel(const std::string &level)
+    {
+        std::string lowered = level;
+        for (char &c : lowered)
+            c = static_cast<char>(::tolower(c));
+
+        // Map synonyms to Poco names
+        std::string pocoLevel = lowered;
+        if (lowered == "info")
+            pocoLevel = "information";
+        else if (lowered == "warn")
+            pocoLevel = "warning";
+
+        try
+        {
+            logger_.setLevel(pocoLevel);
+            Poco::Logger::root().setLevel(pocoLevel);
+        }
+        catch (...)
+        {
+            logger_.setLevel("information");
+            Poco::Logger::root().setLevel("information");
         }
     }
 
@@ -115,13 +145,14 @@ namespace MediaDedup
                 return Application::EXIT_CONFIG;
             }
 
-            // React to configuration file changes: restart web server if host/port changed
+            // React to configuration file changes: restart web server if host/port changed, apply log level
             config_manager_->setFileChangeCallback([this](const std::string &file_path)
                                                    {
                 try {
                     std::string new_host = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
                     int new_port_i = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
                     uint16_t new_port = static_cast<uint16_t>(new_port_i);
+                    std::string new_log_level = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
 
                     if (new_host != server_host_ || new_port != server_port_) {
                         logger_.information("Configuration change detected (host/port). Restarting web server...");
@@ -135,6 +166,13 @@ namespace MediaDedup
                             web_server_->setPort(server_port_);
                             web_server_->restart();
                         }
+                    }
+
+                    if (new_log_level != logging_level_)
+                    {
+                        logger_.information("Logging level changed: " + logging_level_ + " -> " + new_log_level);
+                        logging_level_ = new_log_level;
+                        applyLogLevel(logging_level_);
                     }
                 } catch (const std::exception &e) {
                     logger_.warning(std::string("Failed to handle file change: ") + e.what());
@@ -259,6 +297,11 @@ namespace MediaDedup
                 config_manager_->createProperty("logging.level", std::string("info"), "Logging level");
                 created_any_property = true;
             }
+            else
+            {
+                logging_level_ = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
+                applyLogLevel(logging_level_);
+            }
 
             // Save only if config did not exist or we created any properties
             if (!config_file_existed || created_any_property)
@@ -296,7 +339,18 @@ namespace MediaDedup
                 std::filesystem::create_directories(db_dir);
             }
 
-            // Create database manager
+            // Ensure DB file exists using database service
+            {
+                auto db_service = std::make_unique<DatabaseService>(config_manager_);
+                if (!db_service->ensureDatabaseFileExists())
+                {
+                    logger_.error("Failed to ensure database file exists");
+                    return false;
+                }
+                database_path_ = db_service->getDatabasePath();
+            }
+
+            // Create database manager (connection/session)
             database_manager_ = std::make_unique<DatabaseManager>(database_path_);
 
             // Initialize database

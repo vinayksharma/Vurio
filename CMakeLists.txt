@@ -66,6 +66,7 @@ add_executable(media_dedup_server
     src/main.cpp
     src/core/server.cpp
     src/core/web_server.cpp
+    src/database/database_service.cpp
     src/core/console_input_manager.cpp
     src/database/database_manager.cpp
 )

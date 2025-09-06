@@ -36,6 +36,7 @@ link_directories(${GTEST_LIBRARIES})
 set(UNIT_TEST_SOURCES
     unit/test_unified_observable_config.cpp
     unit/test_console_input_manager.cpp
+    unit/test_database_service.cpp
 )
 
 # Integration Tests
@@ -60,6 +61,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     # Add extra sources for specific tests
     if(${test_name} STREQUAL "test_console_input_manager")
         target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/console_input_manager.cpp)
+    endif()
+    if(${test_name} STREQUAL "test_database_service")
+        target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp)
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 

@@ -97,6 +97,7 @@ namespace MediaDedup
         std::string database_path_;
         std::string server_host_;
         uint16_t server_port_ = 0; // value-initialize; defaults applied later
+        std::string logging_level_;
         bool help_requested_;
         bool daemon_mode_;
 
@@ -170,6 +171,11 @@ namespace MediaDedup
          * consistently in one place before properties are created.
          */
         void applyDefaultConfigValues();
+
+        /**
+         * @brief Apply logging level to Poco logger based on string value
+         */
+        void applyLogLevel(const std::string &level);
     };
 
 } // namespace MediaDedup

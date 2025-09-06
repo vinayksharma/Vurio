@@ -1,10 +1,5 @@
-storage: ""
-database.path: ""
-server.port: 8080
-server.name: ~
-server: ""
-processing: ""
-logging: ""
 server.host: 0.0.0.0
-database: ""
+server.port: 8080
+server.name: Media Deduplication Server
+database.path: data/dedup_server.db
 logging.level: info
