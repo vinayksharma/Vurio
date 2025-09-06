@@ -35,6 +35,7 @@ link_directories(${GTEST_LIBRARIES})
 # Unit Tests
 set(UNIT_TEST_SOURCES
     unit/test_unified_observable_config.cpp
+    unit/test_console_input_manager.cpp
 )
 
 # Integration Tests
@@ -56,6 +57,10 @@ set(MOCK_SOURCES
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
     add_executable(${test_name} ${test_source})
+    # Add extra sources for specific tests
+    if(${test_name} STREQUAL "test_console_input_manager")
+        target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/console_input_manager.cpp)
+    endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
