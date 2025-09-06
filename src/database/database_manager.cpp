@@ -66,18 +66,19 @@ namespace MediaDedup
 
     // Removed direct getSession()/getConnectedSession(); use acquireSessionLease()
 
-    bool DatabaseManager::ensureSessionPoolReady()
+    bool DatabaseManager::ensureSessionManagerReady()
     {
         if (!session_manager_)
         {
             try
             {
                 session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 1, 8, 60);
-                if (!session_manager_->initialize()) return false;
+                if (!session_manager_->initialize())
+                    return false;
             }
             catch (const std::exception &e)
             {
-                logDatabaseError("ensureSessionPoolReady", e.what());
+                logDatabaseError("ensureSessionManagerReady", e.what());
                 return false;
             }
         }
@@ -86,7 +87,7 @@ namespace MediaDedup
 
     SessionManager::Lease DatabaseManager::acquireSessionLease()
     {
-        if (!ensureSessionPoolReady())
+        if (!ensureSessionManagerReady())
         {
             throw std::runtime_error("Database session manager not initialized");
         }

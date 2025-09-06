@@ -5,7 +5,7 @@ namespace MediaDedup
 {
 
     SessionLease::SessionLease(DatabaseManager &manager)
-        : manager_(manager), session_(manager.getConnectedSession())
+        : manager_(manager), session_(manager.acquireSessionLease().get())
     {
     }
 
@@ -16,7 +16,7 @@ namespace MediaDedup
 
     SessionLease::~SessionLease()
     {
-        manager_.releaseLease();
+        // no-op after SessionManager migration
     }
 
 } // namespace MediaDedup

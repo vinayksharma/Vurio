@@ -35,7 +35,7 @@ namespace MediaDedup
     class DatabaseManager
     {
     public:
-        // Lease a Session from the pool (bounded wait)
+        // Session access via SessionManager
         SessionManager::Lease acquireSessionLease();
         /**
          * @brief Constructor
@@ -236,10 +236,8 @@ namespace MediaDedup
          */
         static std::string readTextFile(const std::string &path);
 
-        /**
-         * @brief Ensure session_ exists and is connected; requires mutex held
-         */
-        bool ensureSessionPoolReady();
+        // Ensure SessionManager exists and is initialized
+        bool ensureSessionManagerReady();
 
         /**
          * @brief Log database error
