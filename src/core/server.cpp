@@ -2,6 +2,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/database_service.hpp"
+#include "database/user_settings_ops.hpp"
 #include "database/user_settings_service.hpp"
 #include "core/console_input_manager.hpp"
 #include <Poco/Logger.h>
@@ -25,13 +26,13 @@ namespace MediaDedup
 
     void MediaDedupServer::initialize(Application &self)
     {
-        // TODO: Implement initialization
+        // Initialization handled in main()
         logger_.information("Initializing Media Deduplication Server");
     }
 
     void MediaDedupServer::uninitialize()
     {
-        // TODO: Implement cleanup
+        // Cleanup handled in handleShutdown()
         logger_.information("Uninitializing Media Deduplication Server");
     }
 
@@ -83,7 +84,7 @@ namespace MediaDedup
 
     void MediaDedupServer::defineOptions(Poco::Util::OptionSet &options)
     {
-        // TODO: Implement command line options
+        // Basic help option
         options.addOption(
             Poco::Util::Option("help", "h", "Display help information")
                 .required(false)
@@ -93,7 +94,7 @@ namespace MediaDedup
 
     void MediaDedupServer::handleOption(const std::string &name, const std::string &value)
     {
-        // TODO: Implement option handling
+        // No-op for now
     }
 
     void MediaDedupServer::handleHelp(const std::string &name, const std::string &value)
@@ -362,7 +363,7 @@ namespace MediaDedup
             }
 
             // Ensure core tables exist (user_settings for now)
-            if (!database_manager_->ensureUserSettingsTable())
+            if (!UserSettingsOps::ensureTable(*database_manager_))
             {
                 logger_.error("Failed to ensure user_settings table exists");
                 return false;

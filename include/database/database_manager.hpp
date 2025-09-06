@@ -9,6 +9,7 @@
 #include <Poco/Data/DataException.h>
 #include <Poco/Logger.h>
 #include <string>
+#include <string_view>
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -35,6 +36,12 @@ namespace MediaDedup
     class DatabaseManager
     {
     public:
+        /**
+         * @brief Ensure a table exists, creating it with provided SQL if missing
+         * @param table_name Logical table name to check in sqlite_master
+         * @param create_if_not_exists_sql CREATE TABLE IF NOT EXISTS ... statement
+         */
+        bool ensureTableExists(const std::string &table_name, std::string_view create_if_not_exists_sql);
         // Session access via SessionManager
         SessionManager::Lease acquireSessionLease();
         /**
@@ -54,16 +61,7 @@ namespace MediaDedup
          */
         bool initialize();
 
-        /**
-         * @brief Close database connection
-         */
-        void close();
-
-        /**
-         * @brief Create database tables
-         * @return true if successful, false otherwise
-         */
-        bool createTables();
+        // Removed unimplemented close/createTables
 
         /**
          * @brief Check if database is connected
@@ -79,65 +77,24 @@ namespace MediaDedup
 
         // ...
 
-        // -------------------- User Settings operations --------------------
-        /**
-         * @brief Ensure that the user_settings table exists (create if missing)
-         * @return true if table exists or was created successfully
-         */
-        bool ensureUserSettingsTable();
-
-        /**
-         * @brief Upsert a user setting key/value
-         */
-        bool userSettingsUpsert(const std::string &key, const std::string &value);
-
-        /**
-         * @brief Delete a user setting by key
-         */
-        bool userSettingsDelete(const std::string &key);
-
-        /**
-         * @brief Get a user setting by key
-         * @param key setting key
-         * @param value_out output value if found
-         * @return true if found
-         */
-        bool userSettingsGet(const std::string &key, std::string &value_out);
-
-        /**
-         * @brief List all user settings as key->value map
-         */
-        std::unordered_map<std::string, std::string> userSettingsList();
+        // User Settings operations are declared under user_settings_* files
 
         // Media file operations
-        /**
-         * @brief Store media file information
-         * @param file_path File path
-         * @param file_hash File hash
-         * @param file_size File size in bytes
-         * @param file_type File type (image, video, audio)
-         * @param metadata Additional metadata
-         * @return true if successful, false otherwise
-         */
-        bool storeMediaFile(const std::string &file_path,
-                            const std::string &file_hash,
-                            uint64_t file_size,
-                            const std::string &file_type,
-                            const std::string &metadata = "");
+        // Removed unimplemented media file operations
 
         /**
          * @brief Get media file by hash
          * @param file_hash File hash to search for
          * @return Vector of file paths with matching hash
          */
-        std::vector<std::string> getMediaFilesByHash(const std::string &file_hash);
+        // removed
 
         /**
          * @brief Get media file by path
          * @param file_path File path to search for
          * @return File hash if found, empty string otherwise
          */
-        std::string getMediaFileHash(const std::string &file_path);
+        // removed
 
         /**
          * @brief Update media file metadata
@@ -145,14 +102,14 @@ namespace MediaDedup
          * @param metadata New metadata
          * @return true if successful, false otherwise
          */
-        bool updateMediaFileMetadata(const std::string &file_path, const std::string &metadata);
+        // removed
 
         /**
          * @brief Delete media file record
          * @param file_path File path to delete
          * @return true if successful, false otherwise
          */
-        bool deleteMediaFile(const std::string &file_path);
+        // removed
 
         // Duplicate detection operations
         /**
@@ -160,32 +117,32 @@ namespace MediaDedup
          * @param file_hash File hash to search for
          * @return Vector of duplicate file paths
          */
-        std::vector<std::string> findDuplicatesByHash(const std::string &file_hash);
+        // removed
 
         /**
          * @brief Find all duplicate files
          * @return Map of hash to vector of file paths
          */
-        std::unordered_map<std::string, std::vector<std::string>> findAllDuplicates();
+        // removed
 
         /**
          * @brief Get duplicate statistics
          * @return Map of hash to duplicate count
          */
-        std::unordered_map<std::string, size_t> getDuplicateStatistics();
+        // removed
 
         // Database maintenance
         /**
          * @brief Vacuum database (reclaim space)
          * @return true if successful, false otherwise
          */
-        bool vacuumDatabase();
+        // removed
 
         /**
          * @brief Get database statistics
          * @return Map of statistics
          */
-        std::unordered_map<std::string, std::string> getDatabaseStats();
+        // removed
 
         /**
          * @brief Backup database
@@ -205,19 +162,19 @@ namespace MediaDedup
          * @brief Create media files table
          * @return true if successful, false otherwise
          */
-        bool createMediaFilesTable();
+        // removed
 
         /**
          * @brief Create file hashes table
          * @return true if successful, false otherwise
          */
-        bool createFileHashesTable();
+        // removed
 
         /**
          * @brief Create metadata table
          * @return true if successful, false otherwise
          */
-        bool createMetadataTable();
+        // removed
 
         /**
          * @brief Execute SQL statement

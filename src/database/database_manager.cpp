@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/RecordSet.h>
 #include "database/session_manager.hpp"
+#include "database/user_settings_ops.hpp"
 #include <fstream>
 #include <sstream>
 #include "database/sql_constants.hpp"
@@ -12,17 +13,9 @@ namespace MediaDedup
 {
 
     DatabaseManager::DatabaseManager(const std::string &db_path)
-        : db_path_(db_path), connected_(false), logger_(Poco::Logger::get("DatabaseManager"))
-    {
-        // TODO: Implement database initialization
-        // Initialize session with a dummy connection string for now
-        // This will be properly initialized in the initialize() method
-    }
+        : db_path_(db_path), connected_(false), logger_(Poco::Logger::get("DatabaseManager")) {}
 
-    DatabaseManager::~DatabaseManager()
-    {
-        // TODO: Implement cleanup
-    }
+    DatabaseManager::~DatabaseManager() = default;
 
     bool DatabaseManager::initialize()
     {
@@ -47,17 +40,6 @@ namespace MediaDedup
             logger_.error("Database initialization failed: " + std::string(e.what()));
             return false;
         }
-    }
-
-    void DatabaseManager::close()
-    {
-        // TODO: Implement database connection closing
-    }
-
-    bool DatabaseManager::createTables()
-    {
-        // TODO: Implement table creation
-        return false;
     }
 
     bool DatabaseManager::isConnected() const
@@ -97,91 +79,9 @@ namespace MediaDedup
 
     // releaseLease removed (managed by SessionManager)
 
-    bool DatabaseManager::storeMediaFile(const std::string &file_path,
-                                         const std::string &file_hash,
-                                         uint64_t file_size,
-                                         const std::string &file_type,
-                                         const std::string &metadata)
-    {
-        // TODO: Implement media file storage
-        return false;
-    }
-
-    std::vector<std::string> DatabaseManager::getMediaFilesByHash(const std::string &file_hash)
-    {
-        // TODO: Implement hash-based file retrieval
-        return {};
-    }
-
-    std::string DatabaseManager::getMediaFileHash(const std::string &file_path)
-    {
-        // TODO: Implement path-based hash retrieval
-        return "";
-    }
-
-    bool DatabaseManager::updateMediaFileMetadata(const std::string &file_path, const std::string &metadata)
-    {
-        // TODO: Implement metadata update
-        return false;
-    }
-
-    bool DatabaseManager::deleteMediaFile(const std::string &file_path)
-    {
-        // TODO: Implement file deletion
-        return false;
-    }
-
-    std::vector<std::string> DatabaseManager::findDuplicatesByHash(const std::string &file_hash)
-    {
-        // TODO: Implement duplicate detection
-        return {};
-    }
-
-    std::unordered_map<std::string, std::vector<std::string>> DatabaseManager::findAllDuplicates()
-    {
-        // TODO: Implement bulk duplicate detection
-        return {};
-    }
-
-    std::unordered_map<std::string, size_t> DatabaseManager::getDuplicateStatistics()
-    {
-        // TODO: Implement statistics generation
-        return {};
-    }
-
-    bool DatabaseManager::vacuumDatabase()
-    {
-        // TODO: Implement database optimization
-        return false;
-    }
-
-    std::unordered_map<std::string, std::string> DatabaseManager::getDatabaseStats()
-    {
-        // TODO: Implement database statistics
-        return {};
-    }
-
     bool DatabaseManager::backupDatabase(const std::string &backup_path)
     {
-        // TODO: Implement database backup
-        return false;
-    }
-
-    bool DatabaseManager::createMediaFilesTable()
-    {
-        // TODO: Implement media files table creation
-        return false;
-    }
-
-    bool DatabaseManager::createFileHashesTable()
-    {
-        // TODO: Implement file hashes table creation
-        return false;
-    }
-
-    bool DatabaseManager::createMetadataTable()
-    {
-        // TODO: Implement metadata table creation
+        // Not implemented
         return false;
     }
 
@@ -216,7 +116,7 @@ namespace MediaDedup
             int count = 0;
             Poco::Data::Statement stmt(sess);
             std::string tableNameLvalue = table_name;
-            stmt << "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name=?",
+            stmt << std::string(MediaDedup::SQL::kTableExistsQuery),
                 Poco::Data::Keywords::use(tableNameLvalue),
                 Poco::Data::Keywords::into(count),
                 Poco::Data::Keywords::now;
@@ -227,6 +127,15 @@ namespace MediaDedup
             logDatabaseError("tableExists", e.what());
             return false;
         }
+    }
+
+    bool DatabaseManager::ensureTableExists(const std::string &table_name, std::string_view create_if_not_exists_sql)
+    {
+        if (tableExists(table_name))
+        {
+            return true;
+        }
+        return executeSQL(std::string(create_if_not_exists_sql));
     }
 
     std::string DatabaseManager::readTextFile(const std::string &path)
@@ -248,109 +157,6 @@ namespace MediaDedup
         }
     }
 
-    bool DatabaseManager::ensureUserSettingsTable()
-    {
-        if (tableExists("user_settings"))
-        {
-            return true;
-        }
-
-        return executeSQL(std::string(MediaDedup::SQL::kCreateUserSettingsTable));
-    }
-
-    bool DatabaseManager::userSettingsUpsert(const std::string &key, const std::string &value)
-    {
-        try
-        {
-            auto lease = acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            Poco::Data::Statement stmt(sess);
-            std::string keyCopy = key;
-            std::string valueCopy = value;
-            stmt << std::string(MediaDedup::SQL::kUpsertUserSetting),
-                Poco::Data::Keywords::use(keyCopy),
-                Poco::Data::Keywords::use(valueCopy),
-                Poco::Data::Keywords::now;
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            logDatabaseError("userSettingsUpsert", e.what());
-            return false;
-        }
-    }
-
-    bool DatabaseManager::userSettingsDelete(const std::string &key)
-    {
-        try
-        {
-            auto lease = acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            Poco::Data::Statement stmt(sess);
-            std::string keyCopy = key;
-            stmt << std::string(MediaDedup::SQL::kDeleteUserSetting),
-                Poco::Data::Keywords::use(keyCopy),
-                Poco::Data::Keywords::now;
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            logDatabaseError("userSettingsDelete", e.what());
-            return false;
-        }
-    }
-
-    bool DatabaseManager::userSettingsGet(const std::string &key, std::string &value_out)
-    {
-        try
-        {
-            auto lease = acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            Poco::Data::Statement stmt(sess);
-            std::string keyCopy = key;
-            stmt << std::string(MediaDedup::SQL::kSelectUserSetting),
-                Poco::Data::Keywords::use(keyCopy),
-                Poco::Data::Keywords::now;
-            Poco::Data::RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                value_out = rs[0].convert<std::string>();
-                return true;
-            }
-            return false;
-        }
-        catch (const std::exception &e)
-        {
-            logDatabaseError("userSettingsGet", e.what());
-            return false;
-        }
-    }
-
-    std::unordered_map<std::string, std::string> DatabaseManager::userSettingsList()
-    {
-        std::unordered_map<std::string, std::string> result;
-        try
-        {
-            auto lease = acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            Poco::Data::Statement stmt(sess);
-            stmt << std::string(MediaDedup::SQL::kListUserSettings),
-                Poco::Data::Keywords::now;
-            Poco::Data::RecordSet rs(stmt);
-            bool more = rs.moveFirst();
-            while (more)
-            {
-                std::string key = rs[0].convert<std::string>();
-                std::string value = rs[1].convert<std::string>();
-                result.emplace(std::move(key), std::move(value));
-                more = rs.moveNext();
-            }
-        }
-        catch (const std::exception &e)
-        {
-            logDatabaseError("userSettingsList", e.what());
-        }
-        return result;
-    }
+    // User settings operations moved to user_settings_* files
 
 } // namespace MediaDedup

@@ -6,6 +6,7 @@
 #include <Poco/Logger.h>
 
 #include "database/database_manager.hpp"
+#include "database/user_settings_ops.hpp"
 
 namespace MediaDedup
 {
@@ -16,30 +17,15 @@ namespace MediaDedup
         explicit UserSettingsService(DatabaseManager &db_manager)
             : db_manager_(db_manager), logger_(Poco::Logger::get("UserSettingsService")) {}
 
-        bool initialize()
-        {
-            return db_manager_.ensureUserSettingsTable();
-        }
+        bool initialize() { return UserSettingsOps::ensureTable(db_manager_); }
 
-        bool upsertSetting(const std::string &key, const std::string &value)
-        {
-            return db_manager_.userSettingsUpsert(key, value);
-        }
+        bool upsertSetting(const std::string &key, const std::string &value) { return UserSettingsOps::upsert(db_manager_, key, value); }
 
-        bool deleteSetting(const std::string &key)
-        {
-            return db_manager_.userSettingsDelete(key);
-        }
+        bool deleteSetting(const std::string &key) { return UserSettingsOps::remove(db_manager_, key); }
 
-        bool getSetting(const std::string &key, std::string &value_out)
-        {
-            return db_manager_.userSettingsGet(key, value_out);
-        }
+        bool getSetting(const std::string &key, std::string &value_out) { return UserSettingsOps::get(db_manager_, key, value_out); }
 
-        std::unordered_map<std::string, std::string> listSettings()
-        {
-            return db_manager_.userSettingsList();
-        }
+        std::unordered_map<std::string, std::string> listSettings() { return UserSettingsOps::list(db_manager_); }
 
     private:
         DatabaseManager &db_manager_;

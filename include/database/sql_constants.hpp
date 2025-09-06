@@ -27,5 +27,9 @@ namespace MediaDedup
         inline constexpr std::string_view kListUserSettings =
             "SELECT key, value FROM user_settings";
 
+        // Generic utility SQL
+        inline constexpr std::string_view kTableExistsQuery =
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name=?";
+
     } // namespace SQL
 } // namespace MediaDedup

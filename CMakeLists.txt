@@ -69,6 +69,7 @@ add_executable(media_dedup_server
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
     src/database/session/session_lease.cpp
+    src/database/user_settings/user_settings_ops.cpp
     include/database/user_settings_service.hpp
     src/core/console_input_manager.cpp
     src/database/database_manager.cpp
