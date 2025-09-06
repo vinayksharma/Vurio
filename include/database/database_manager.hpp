@@ -12,6 +12,10 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include "database/session_manager.hpp"
 
 namespace MediaDedup
 {
@@ -26,9 +30,13 @@ namespace MediaDedup
      * - Hash storage and retrieval
      * - Duplicate detection queries
      */
+    class SessionManager; // forward declaration
+
     class DatabaseManager
     {
     public:
+        // Lease a Session from the pool (bounded wait)
+        SessionManager::Lease acquireSessionLease();
         /**
          * @brief Constructor
          * @param db_path Path to SQLite database file
@@ -67,7 +75,39 @@ namespace MediaDedup
          * @brief Get database session
          * @return Reference to database session
          */
-        Poco::Data::Session &getSession();
+        // Removed direct Session accessors; use acquireSessionLease() instead
+
+        // ...
+
+        // -------------------- User Settings operations --------------------
+        /**
+         * @brief Ensure that the user_settings table exists (create if missing)
+         * @return true if table exists or was created successfully
+         */
+        bool ensureUserSettingsTable();
+
+        /**
+         * @brief Upsert a user setting key/value
+         */
+        bool userSettingsUpsert(const std::string &key, const std::string &value);
+
+        /**
+         * @brief Delete a user setting by key
+         */
+        bool userSettingsDelete(const std::string &key);
+
+        /**
+         * @brief Get a user setting by key
+         * @param key setting key
+         * @param value_out output value if found
+         * @return true if found
+         */
+        bool userSettingsGet(const std::string &key, std::string &value_out);
+
+        /**
+         * @brief List all user settings as key->value map
+         */
+        std::unordered_map<std::string, std::string> userSettingsList();
 
         // Media file operations
         /**
@@ -155,10 +195,11 @@ namespace MediaDedup
         bool backupDatabase(const std::string &backup_path);
 
     private:
+        // Session management
+        std::unique_ptr<SessionManager> session_manager_;
         std::string db_path_;
         bool connected_;
         Poco::Logger &logger_;
-        std::unique_ptr<Poco::Data::Session> session_;
 
         /**
          * @brief Create media files table
@@ -184,6 +225,21 @@ namespace MediaDedup
          * @return true if successful, false otherwise
          */
         bool executeSQL(const std::string &sql);
+
+        /**
+         * @brief Execute a scalar query to check if a table exists
+         */
+        bool tableExists(const std::string &table_name);
+
+        /**
+         * @brief Read a text file into a string; return empty on failure
+         */
+        static std::string readTextFile(const std::string &path);
+
+        /**
+         * @brief Ensure session_ exists and is connected; requires mutex held
+         */
+        bool ensureSessionPoolReady();
 
         /**
          * @brief Log database error

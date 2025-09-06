@@ -2,6 +2,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/database_service.hpp"
+#include "database/user_settings_service.hpp"
 #include "core/console_input_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Util/HelpFormatter.h>
@@ -360,6 +361,13 @@ namespace MediaDedup
                 return false;
             }
 
+            // Ensure core tables exist (user_settings for now)
+            if (!database_manager_->ensureUserSettingsTable())
+            {
+                logger_.error("Failed to ensure user_settings table exists");
+                return false;
+            }
+
             logger_.information("Database initialized successfully");
             return true;
         }
@@ -383,6 +391,19 @@ namespace MediaDedup
 
             // Create web server
             web_server_ = std::make_unique<WebServer>(config_manager_, server_host_, server_port_);
+
+            // Inject services
+            {
+                // Share DatabaseManager to service
+                auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+                auto user_settings_service = std::make_shared<UserSettingsService>(*db_shared);
+                if (!user_settings_service->initialize())
+                {
+                    logger_.error("Failed to initialize UserSettingsService");
+                    return false;
+                }
+                web_server_->setUserSettingsService(user_settings_service);
+            }
 
             // Start web server
             if (!web_server_->start())

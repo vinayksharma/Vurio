@@ -27,13 +27,15 @@ namespace MediaDedup
     {
     public:
         ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                    std::shared_ptr<WebServer> web_server = nullptr);
+                                    std::shared_ptr<WebServer> web_server = nullptr,
+                                    std::shared_ptr<class UserSettingsService> user_settings_service = nullptr);
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<WebServer> web_server_;
+        std::shared_ptr<class UserSettingsService> user_settings_service_;
     };
 
     /**
@@ -77,6 +79,9 @@ namespace MediaDedup
         // Status
         std::string getStatus() const;
 
+        // Inject database-backed services
+        void setUserSettingsService(std::shared_ptr<class UserSettingsService> service) { user_settings_service_ = std::move(service); }
+
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::string host_;
@@ -88,6 +93,9 @@ namespace MediaDedup
 
         ConfigUpdateCallback config_update_callback_;
         mutable std::mutex status_mutex_;
+
+        // Services
+        std::shared_ptr<class UserSettingsService> user_settings_service_;
 
         // Private methods
         void initializeServer();
@@ -205,6 +213,63 @@ namespace MediaDedup
 
     private:
         std::shared_ptr<WebServer> web_server_;
+    };
+
+    // -------------------- User Settings Handlers --------------------
+
+    class ListUserSettingsHandler : public ConfigRequestHandler
+    {
+    public:
+        ListUserSettingsHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+    };
+
+    class GetUserSettingHandler : public ConfigRequestHandler
+    {
+    public:
+        GetUserSettingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                              std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+        static std::string extractUserKey(const std::string &path);
+    };
+
+    class PutUserSettingHandler : public ConfigRequestHandler
+    {
+    public:
+        PutUserSettingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                              std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+        static std::string extractUserKey(const std::string &path);
+    };
+
+    class DeleteUserSettingHandler : public ConfigRequestHandler
+    {
+    public:
+        DeleteUserSettingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                 std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+        static std::string extractUserKey(const std::string &path);
     };
 
 } // namespace MediaDedup
