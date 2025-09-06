@@ -6,6 +6,7 @@
 #include "database/session_manager.hpp"
 #include <fstream>
 #include <sstream>
+#include "database/sql_constants.hpp"
 
 namespace MediaDedup
 {
@@ -254,14 +255,7 @@ namespace MediaDedup
             return true;
         }
 
-        const std::string script_path = "src/database/dbscripts/create_user_settings.sql";
-        std::string sql = readTextFile(script_path);
-        if (sql.empty())
-        {
-            // Fallback: inline SQL
-            sql = "CREATE TABLE IF NOT EXISTS user_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);";
-        }
-        return executeSQL(sql);
+        return executeSQL(std::string(MediaDedup::SQL::kCreateUserSettingsTable));
     }
 
     bool DatabaseManager::userSettingsUpsert(const std::string &key, const std::string &value)
@@ -273,7 +267,7 @@ namespace MediaDedup
             Poco::Data::Statement stmt(sess);
             std::string keyCopy = key;
             std::string valueCopy = value;
-            stmt << "INSERT INTO user_settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            stmt << std::string(MediaDedup::SQL::kUpsertUserSetting),
                 Poco::Data::Keywords::use(keyCopy),
                 Poco::Data::Keywords::use(valueCopy),
                 Poco::Data::Keywords::now;
@@ -294,7 +288,7 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
             std::string keyCopy = key;
-            stmt << "DELETE FROM user_settings WHERE key=?",
+            stmt << std::string(MediaDedup::SQL::kDeleteUserSetting),
                 Poco::Data::Keywords::use(keyCopy),
                 Poco::Data::Keywords::now;
             return true;
@@ -314,7 +308,7 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
             std::string keyCopy = key;
-            stmt << "SELECT value FROM user_settings WHERE key=?",
+            stmt << std::string(MediaDedup::SQL::kSelectUserSetting),
                 Poco::Data::Keywords::use(keyCopy),
                 Poco::Data::Keywords::now;
             Poco::Data::RecordSet rs(stmt);
@@ -340,7 +334,7 @@ namespace MediaDedup
             auto lease = acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
-            stmt << "SELECT key, value FROM user_settings",
+            stmt << std::string(MediaDedup::SQL::kListUserSettings),
                 Poco::Data::Keywords::now;
             Poco::Data::RecordSet rs(stmt);
             bool more = rs.moveFirst();
