@@ -41,7 +41,9 @@ set(UNIT_TEST_SOURCES
 )
 
 # Integration Tests
-set(INTEGRATION_TEST_SOURCES)
+set(INTEGRATION_TEST_SOURCES
+    integration/test_user_settings_http.cpp
+)
 
 # Performance Tests
 set(PERFORMANCE_TEST_SOURCES
@@ -121,11 +123,14 @@ foreach(test_source ${INTEGRATION_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
     add_executable(${test_name} ${test_source})
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
+    # Provide absolute path to server binary for Process::launch
+    target_compile_definitions(${test_name} PRIVATE MD_SERVER_BIN_PATH="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/media_dedup_server")
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
         pthread
         ${Poco_LIBRARIES}
         sqlite3
+        unified_config_lib
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES

@@ -75,8 +75,9 @@ namespace MediaDedup
         {
             if (running_)
                 return true;
-            initializeServer();
+            // Set running before starting the server thread to avoid a race
             running_ = true;
+            initializeServer();
             return true;
         }
         catch (const std::exception &e)

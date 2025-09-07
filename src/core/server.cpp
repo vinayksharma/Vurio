@@ -268,7 +268,8 @@ namespace MediaDedup
 
             if (!config_manager_->hasProperty("server.port"))
             {
-                config_manager_->createProperty("server.port", server_port_, "Server port number");
+                // Store port as int in config to avoid type-mismatch reads
+                config_manager_->createProperty("server.port", static_cast<int>(server_port_), "Server port number");
                 created_any_property = true;
             }
             else
