@@ -54,6 +54,11 @@ namespace MediaDedup
                 return new DeleteUserSettingHandler(config_manager_, user_settings_service_);
         }
 
+        if (uri == "/api/v1/media-locations/register" && method == "POST")
+            return new RegisterMediaLocationHandler(config_manager_, user_settings_service_);
+        if (uri == "/api/v1/media-locations/deregister" && method == "POST")
+            return new DeregisterMediaLocationHandler(config_manager_, user_settings_service_);
+
         return nullptr;
     }
 

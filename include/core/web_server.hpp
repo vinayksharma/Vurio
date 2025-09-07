@@ -272,4 +272,31 @@ namespace MediaDedup
         static std::string extractUserKey(const std::string &path);
     };
 
+    // Media locations handlers
+    class RegisterMediaLocationHandler : public ConfigRequestHandler
+    {
+    public:
+        RegisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                     std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+    };
+
+    class DeregisterMediaLocationHandler : public ConfigRequestHandler
+    {
+    public:
+        DeregisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                       std::shared_ptr<class UserSettingsService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class UserSettingsService> service_;
+    };
+
 } // namespace MediaDedup

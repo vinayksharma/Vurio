@@ -102,4 +102,48 @@ namespace MediaDedup
         return result;
     }
 
+    // ---------------- Media Locations ----------------
+
+    static std::string makeMediaKey(const std::string &path)
+    {
+        // Normalize simple: lowercased path; could hash for stability
+        std::string key = path;
+        for (char &c : key)
+            c = static_cast<char>(::tolower(c));
+        return std::string("mediaLocation:") + key;
+    }
+
+    bool UserSettingsOps::registerMediaLocation(DatabaseManager &db_manager, const std::string &directory_path)
+    {
+        // Overwrite any existing entry for the same path by using a deterministic key
+        std::string norm = directory_path;
+        if (norm.empty())
+            return false;
+        std::string key = makeMediaKey(norm);
+        return upsert(db_manager, key, directory_path);
+    }
+
+    bool UserSettingsOps::deregisterMediaLocation(DatabaseManager &db_manager, const std::string &directory_path)
+    {
+        if (directory_path.empty())
+            return false;
+        std::string key = makeMediaKey(directory_path);
+        return remove(db_manager, key);
+    }
+
+    std::unordered_map<std::string, std::string> UserSettingsOps::listMediaLocations(DatabaseManager &db_manager)
+    {
+        auto all = list(db_manager);
+        std::unordered_map<std::string, std::string> result;
+        for (const auto &kv : all)
+        {
+            if (kv.first.rfind("mediaLocation:", 0) == 0)
+            {
+                // key -> original directory path value
+                result.emplace(kv.first.substr(std::string("mediaLocation:").size()), kv.second);
+            }
+        }
+        return result;
+    }
+
 } // namespace MediaDedup

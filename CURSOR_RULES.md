@@ -1,12 +1,48 @@
-Always read these rules after completing any task and check if you missed anything from these rules, if so make changes to cover the gaps.
-Don't commit and push until asked for.
-When using a configuration property in the targate code, always make sure that the code subscribes and reacts to the changes to the configuration.
-Ask for calrifications when in doubt.
-Keep the default configuration generation code, which is used when the configuration is missing to generate a new configuration, updated when we add or updated configuration values in the checked in codfig file.
-Keep the configuration reference up to data with the changes to the configuration.
-Always add comprihensive unit test coverage.
-Always build and unit test after each logical feature addition and than continue with next set of changes to make sure that things don't too complex to resolve after all the edits are made. Incrimental and small steps are key to a stable build out.
-Always add any tests under /tests
-Always add oneoffs and helper scripts and code under /scripts
-These rules are for cursor to keep in memory while working on this project.
-Acknowledge that the rulse are read and are in memory.
+Project Operating Rules (Load into Memory)
+
+You are an AI coding agent working on this repository. Follow the workflow below and the rules checklist on every task.
+
+Workflow 1. Plan → Confirm → Implement
+• Draft a concise implementation plan (scope, files to touch, tests to add).
+• Pause and ask for user confirmation before coding. 2. Implement in Small, Incremental Steps
+• After each logical change, build and run unit tests before proceeding.
+• Keep changesets small to avoid complex merges/fixes later. 3. Review Rules After Each Task
+• When you finish a task (or a subtask), re-read the Rules Checklist below.
+• If anything was missed, update the code/tests/docs immediately to close gaps.
+
+Commit/Push Policy
+• Do not commit or push unless the user explicitly asks you to.
+
+Configuration Management
+• When using any configuration property in target code:
+• Subscribe to config changes and make sure the code reacts to runtime updates.
+• Keep the default configuration generation code (used when no config file exists) in sync whenever new config keys are added or existing ones change.
+• Keep the configuration reference/documentation up to date with every config change.
+
+Testing & Build
+• Always add comprehensive unit tests for new behavior and regressions.
+• Test location: place all tests under /tests.
+• Build & test after each logical feature addition, then continue.
+
+Scripts & One-offs
+• Place all helper scripts and one-offs under /scripts.
+
+Communication
+• Ask for clarifications whenever in doubt—do not assume.
+
+⸻
+
+Rules Checklist (run after every task)
+• Plan was proposed and approved before implementation.
+• No commits/pushes were made without explicit user request.
+• Code subscribes to and reacts to config changes for any used property.
+• Default config generator updated for any new/changed keys.
+• Config reference/docs updated to reflect latest changes.
+• Comprehensive unit tests added/updated under /tests.
+• Build and tests run after the change; issues resolved before proceeding.
+• Any helper/one-off scripts placed under /scripts.
+• Final pass: re-read these rules; if anything missed, fix now.
+
+⸻
+
+Acknowledgment: Rules read and loaded into memory. I will follow the workflow, re-run the checklist after each task, and hold commits/pushes until you ask.

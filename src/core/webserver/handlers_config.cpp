@@ -492,6 +492,62 @@ namespace MediaDedup
                 paths.set("/api/v1/user-settings/{key}", path);
             }
 
+            // Media locations
+            {
+                Poco::JSON::Object reg;
+                reg.set("summary", "Register a media location");
+                Poco::JSON::Object body;
+                body.set("required", true);
+                Poco::JSON::Object ct;
+                Poco::JSON::Object schema;
+                schema.set("type", "object");
+                Poco::JSON::Object props;
+                Poco::JSON::Object dir;
+                dir.set("type", "string");
+                props.set("directory", dir);
+                schema.set("properties", props);
+                ct.set("schema", schema);
+                Poco::JSON::Object app;
+                app.set("application/json", ct);
+                body.set("content", app);
+                reg.set("requestBody", body);
+                Poco::JSON::Object res;
+                Poco::JSON::Object ok;
+                ok.set("description", "OK");
+                res.set("200", ok);
+                reg.set("responses", res);
+                Poco::JSON::Object p;
+                p.set("post", reg);
+                paths.set("/api/v1/media-locations/register", p);
+            }
+            {
+                Poco::JSON::Object dereg;
+                dereg.set("summary", "Deregister a media location");
+                Poco::JSON::Object body;
+                body.set("required", true);
+                Poco::JSON::Object ct;
+                Poco::JSON::Object schema;
+                schema.set("type", "object");
+                Poco::JSON::Object props;
+                Poco::JSON::Object dir;
+                dir.set("type", "string");
+                props.set("directory", dir);
+                schema.set("properties", props);
+                ct.set("schema", schema);
+                Poco::JSON::Object app;
+                app.set("application/json", ct);
+                body.set("content", app);
+                dereg.set("requestBody", body);
+                Poco::JSON::Object res;
+                Poco::JSON::Object ok;
+                ok.set("description", "OK");
+                res.set("200", ok);
+                dereg.set("responses", res);
+                Poco::JSON::Object p;
+                p.set("post", dereg);
+                paths.set("/api/v1/media-locations/deregister", p);
+            }
+
             openapi_spec.set("paths", paths);
             std::stringstream ss;
             openapi_spec.stringify(ss);
