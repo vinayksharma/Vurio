@@ -17,6 +17,7 @@
 #include "database/database_manager.hpp"
 #include "core/web_server.hpp"
 #include "core/console_input_manager.hpp"
+#include "filesmanager/files_service.hpp"
 
 namespace MediaDedup
 {

@@ -72,6 +72,7 @@ add_executable(media_dedup_server
     src/database/session/session_manager.cpp
     src/database/session/session_lease.cpp
     src/database/user_settings/user_settings_ops.cpp
+    src/filesmanager/files_service.cpp
     include/database/user_settings_service.hpp
     src/core/console_input_manager.cpp
     src/database/database_manager.cpp
@@ -87,6 +88,7 @@ target_link_libraries(media_dedup_server
     Poco::JSON
     ${SQLITE3_LIBRARIES}
     unified_config_lib
+    yaml-cpp::yaml-cpp
 )
 
 # Set compile definitions

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "database/database_manager.hpp"
 #include "database/user_settings_service.hpp"
+#include "filesmanager/files_service.hpp"
 
 namespace MediaDedup
 {
@@ -45,13 +46,14 @@ namespace MediaDedup
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
-            UserSettingsService svc(dbm);
-            ASSERT_TRUE(svc.initialize());
+            UserSettingsService settingsSvc(dbm);
+            ASSERT_TRUE(settingsSvc.initialize());
+            FilesService filesSvc(dbm);
 
-            EXPECT_TRUE(svc.registerMediaLocation("/media/A"));
-            EXPECT_TRUE(svc.registerMediaLocation("/media/B"));
+            EXPECT_TRUE(filesSvc.registerMediaLocation("/media/A"));
+            EXPECT_TRUE(filesSvc.registerMediaLocation("/media/B"));
 
-            auto listed = svc.listMediaLocations();
+            auto listed = filesSvc.listMediaLocations();
             ASSERT_TRUE(listed.find("/media/a") != listed.end());
             ASSERT_TRUE(listed.find("/media/b") != listed.end());
             EXPECT_EQ(listed["/media/a"], std::string("/media/A"));
@@ -65,13 +67,14 @@ namespace MediaDedup
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
-            UserSettingsService svc(dbm);
-            ASSERT_TRUE(svc.initialize());
+            UserSettingsService settingsSvc(dbm);
+            ASSERT_TRUE(settingsSvc.initialize());
+            FilesService filesSvc(dbm);
 
-            EXPECT_TRUE(svc.registerMediaLocation("/Media/Lib"));
-            EXPECT_TRUE(svc.registerMediaLocation("/media/lib"));
+            EXPECT_TRUE(filesSvc.registerMediaLocation("/Media/Lib"));
+            EXPECT_TRUE(filesSvc.registerMediaLocation("/media/lib"));
 
-            auto listed = svc.listMediaLocations();
+            auto listed = filesSvc.listMediaLocations();
             ASSERT_TRUE(listed.find("/media/lib") != listed.end());
             EXPECT_EQ(listed["/media/lib"], std::string("/media/lib"));
         }
@@ -83,15 +86,16 @@ namespace MediaDedup
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
-            UserSettingsService svc(dbm);
-            ASSERT_TRUE(svc.initialize());
+            UserSettingsService settingsSvc(dbm);
+            ASSERT_TRUE(settingsSvc.initialize());
+            FilesService filesSvc(dbm);
 
-            EXPECT_TRUE(svc.registerMediaLocation("/mnt/data"));
-            auto listed1 = svc.listMediaLocations();
+            EXPECT_TRUE(filesSvc.registerMediaLocation("/mnt/data"));
+            auto listed1 = filesSvc.listMediaLocations();
             ASSERT_TRUE(listed1.find("/mnt/data") != listed1.end());
 
-            EXPECT_TRUE(svc.deregisterMediaLocation("/mnt/data"));
-            auto listed2 = svc.listMediaLocations();
+            EXPECT_TRUE(filesSvc.deregisterMediaLocation("/mnt/data"));
+            auto listed2 = filesSvc.listMediaLocations();
             EXPECT_TRUE(listed2.find("/mnt/data") == listed2.end());
         }
 

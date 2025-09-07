@@ -4,6 +4,7 @@
 #include <sstream>
 #include <regex>
 #include "database/user_settings_service.hpp"
+#include "filesmanager/files_service.hpp"
 
 namespace MediaDedup
 {
@@ -170,7 +171,7 @@ namespace MediaDedup
     // -------- Media Location endpoints (register/deregister) --------
 
     RegisterMediaLocationHandler::RegisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                                               std::shared_ptr<UserSettingsService> service)
+                                                               std::shared_ptr<FilesService> service)
         : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
     void RegisterMediaLocationHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                                      Poco::Net::HTTPServerResponse &response)
@@ -218,7 +219,7 @@ namespace MediaDedup
     }
 
     DeregisterMediaLocationHandler::DeregisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                                                   std::shared_ptr<UserSettingsService> service)
+                                                                   std::shared_ptr<FilesService> service)
         : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
     void DeregisterMediaLocationHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                                        Poco::Net::HTTPServerResponse &response)

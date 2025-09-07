@@ -13,10 +13,12 @@ namespace MediaDedup
     ConfigRequestHandlerFactory::ConfigRequestHandlerFactory(
         std::shared_ptr<UnifiedObservableConfigManager> config_manager,
         std::shared_ptr<WebServer> web_server,
-        std::shared_ptr<UserSettingsService> user_settings_service)
+        std::shared_ptr<UserSettingsService> user_settings_service,
+        std::shared_ptr<FilesService> files_service)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
-          user_settings_service_(std::move(user_settings_service)) {}
+          user_settings_service_(std::move(user_settings_service)),
+          files_service_(std::move(files_service)) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
         const Poco::Net::HTTPServerRequest &request)
@@ -55,9 +57,9 @@ namespace MediaDedup
         }
 
         if (uri == "/api/v1/media-locations/register" && method == "POST")
-            return new RegisterMediaLocationHandler(config_manager_, user_settings_service_);
+            return new RegisterMediaLocationHandler(config_manager_, files_service_);
         if (uri == "/api/v1/media-locations/deregister" && method == "POST")
-            return new DeregisterMediaLocationHandler(config_manager_, user_settings_service_);
+            return new DeregisterMediaLocationHandler(config_manager_, files_service_);
 
         return nullptr;
     }
@@ -104,7 +106,8 @@ namespace MediaDedup
 
         auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),
-                                                                     user_settings_service_);
+                                                                     user_settings_service_,
+                                                                     files_service_);
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
             Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket, new Poco::Net::HTTPServerParams);

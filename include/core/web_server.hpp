@@ -28,7 +28,8 @@ namespace MediaDedup
     public:
         ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                     std::shared_ptr<WebServer> web_server = nullptr,
-                                    std::shared_ptr<class UserSettingsService> user_settings_service = nullptr);
+                                    std::shared_ptr<class UserSettingsService> user_settings_service = nullptr,
+                                    std::shared_ptr<class FilesService> files_service = nullptr);
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 
@@ -36,6 +37,7 @@ namespace MediaDedup
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<WebServer> web_server_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
+        std::shared_ptr<class FilesService> files_service_;
     };
 
     /**
@@ -81,6 +83,7 @@ namespace MediaDedup
 
         // Inject database-backed services
         void setUserSettingsService(std::shared_ptr<class UserSettingsService> service) { user_settings_service_ = std::move(service); }
+        void setFilesService(std::shared_ptr<class FilesService> service) { files_service_ = std::move(service); }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
@@ -96,6 +99,7 @@ namespace MediaDedup
 
         // Services
         std::shared_ptr<class UserSettingsService> user_settings_service_;
+        std::shared_ptr<class FilesService> files_service_;
 
         // Private methods
         void initializeServer();
@@ -277,26 +281,26 @@ namespace MediaDedup
     {
     public:
         RegisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                     std::shared_ptr<class UserSettingsService> service);
+                                     std::shared_ptr<class FilesService> service);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
 
     private:
-        std::shared_ptr<class UserSettingsService> service_;
+        std::shared_ptr<class FilesService> service_;
     };
 
     class DeregisterMediaLocationHandler : public ConfigRequestHandler
     {
     public:
         DeregisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                       std::shared_ptr<class UserSettingsService> service);
+                                       std::shared_ptr<class FilesService> service);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
 
     private:
-        std::shared_ptr<class UserSettingsService> service_;
+        std::shared_ptr<class FilesService> service_;
     };
 
 } // namespace MediaDedup

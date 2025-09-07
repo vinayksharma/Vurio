@@ -72,6 +72,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
         )
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
@@ -103,6 +104,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
 )
 target_link_libraries(all_unit_tests 
     ${GTEST_LIBRARIES}

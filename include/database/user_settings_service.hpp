@@ -27,10 +27,7 @@ namespace MediaDedup
 
         std::unordered_map<std::string, std::string> listSettings() { return UserSettingsOps::list(db_manager_); }
 
-        // Media location helpers
-        bool registerMediaLocation(const std::string &dir) { return UserSettingsOps::registerMediaLocation(db_manager_, dir); }
-        bool deregisterMediaLocation(const std::string &dir) { return UserSettingsOps::deregisterMediaLocation(db_manager_, dir); }
-        std::unordered_map<std::string, std::string> listMediaLocations() { return UserSettingsOps::listMediaLocations(db_manager_); }
+        // Media location helpers moved to FilesService
 
     private:
         DatabaseManager &db_manager_;

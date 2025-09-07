@@ -406,6 +406,11 @@ namespace MediaDedup
                 }
                 web_server_->setUserSettingsService(user_settings_service);
             }
+            {
+                auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+                auto files_service = std::make_shared<FilesService>(*db_shared);
+                web_server_->setFilesService(files_service);
+            }
 
             // Start web server
             if (!web_server_->start())
