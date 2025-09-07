@@ -8,15 +8,15 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 
 ## Properties
 
-| Key             | Type    | Allowed values                                              | Default                      | Live effect                                       |
-| --------------- | ------- | ----------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| `server.host`   | string  | Any valid hostname/IP. `0.0.0.0` binds all                  | `0.0.0.0`                    | Restart web server on change                      |
-| `server.port`   | integer | 1–65535 (must be non-zero)                                  | `8080`                       | Restart web server on change                      |
-| `server.name`   | string  | Any non-empty string                                        | `Media Deduplication Server` | None (log-only)                                   |
-| `database.path` | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization |
-| `database.session.acquireTimeoutMs` | integer | > 0                                            | `3000`                      | Applied live (DB session acquire timeout)         |
-| `database.session.acquireBackoffMs` | integer | > 0                                            | `50`                        | Applied live (retry backoff while waiting)        |
-| `logging.level` | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                      |
+| Key                                 | Type    | Allowed values                                              | Default                      | Live effect                                       |
+| ----------------------------------- | ------- | ----------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
+| `server.host`                       | string  | Any valid hostname/IP. `0.0.0.0` binds all                  | `0.0.0.0`                    | Restart web server on change                      |
+| `server.port`                       | integer | 1–65535 (must be non-zero)                                  | `8080`                       | Restart web server on change                      |
+| `server.name`                       | string  | Any non-empty string                                        | `Media Deduplication Server` | None (log-only)                                   |
+| `database.path`                     | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization |
+| `database.session.acquireTimeoutMs` | integer | > 0                                                         | `3000`                       | Applied live (DB session acquire timeout)         |
+| `database.session.acquireBackoffMs` | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)        |
+| `logging.level`                     | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                      |
 
 Notes:
 

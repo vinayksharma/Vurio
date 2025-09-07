@@ -90,78 +90,40 @@ check_dependencies() {
 
 # Function to create build directory
 create_build_dir() {
-    print_status "Creating build directory..."
-    
-    if [ -d "build" ]; then
-        print_warning "Build directory already exists, cleaning..."
-        rm -rf build
-    fi
-    
+    print_status "Ensuring build directory exists..."
     mkdir -p build
-    print_success "Build directory created"
+    print_success "Build directory ready"
 }
 
 # Function to configure with CMake
 configure_project() {
     print_status "Configuring project with CMake..."
-    
-    cd build
-    
     local cmake_args=(
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE:-Release}"
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
     )
-    
-    # Add debug options if building in debug mode
     if [ "$BUILD_TYPE" = "Debug" ]; then
         cmake_args+=("-DCMAKE_BUILD_TYPE=Debug")
         cmake_args+=("-DCMAKE_CXX_FLAGS_DEBUG=-g -O0 -Wall -Wextra")
     fi
-    
-    # Add install prefix if specified
     if [ -n "$INSTALL_PREFIX" ]; then
         cmake_args+=("-DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX")
     fi
-    
-    cmake "${cmake_args[@]}" ..
-    
-    if [ $? -eq 0 ]; then
-        print_success "CMake configuration completed"
-    else
-        print_error "CMake configuration failed"
-        exit 1
-    fi
-    
-    cd ..
+    cmake -S . -B build "${cmake_args[@]}"
+    print_success "CMake configuration completed"
 }
 
 # Function to build the project
 build_project() {
     print_status "Building project..."
-    
-    cd build
-    
-    local make_args=()
-    
-    # Use all available CPU cores for building
+    local cores=1
     if command_exists nproc; then
-        local cores=$(nproc)
-        make_args+=("-j$cores")
-        print_status "Using $cores CPU cores for building"
-    else
-        print_warning "Could not determine CPU core count, using single core"
+        cores=$(nproc)
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        cores=$(sysctl -n hw.ncpu)
     fi
-    
-    make "${make_args[@]}"
-    
-    if [ $? -eq 0 ]; then
-        print_success "Build completed successfully"
-    else
-        print_error "Build failed"
-        exit 1
-    fi
-    
-    cd ..
+    cmake --build build -j"$cores"
+    print_success "Build completed successfully"
 }
 
 # Function to run tests
@@ -266,11 +228,6 @@ main() {
     print_status "Build type: $BUILD_TYPE"
     print_status "Run tests: $RUN_TESTS"
     print_status "Install: $INSTALL"
-    
-    if [ "$CLEAN" = "true" ]; then
-        print_status "Cleaning build directory..."
-        rm -rf build
-    fi
     
     check_dependencies
     create_build_dir

@@ -34,7 +34,7 @@ Testing & Build
 • Build & test after each logical feature addition, then continue.
 
 Scripts & One-offs
-• Place all helper scripts and one-offs under /scripts.
+• Place all helper scripts and one-offs under /scripts. Exceptions are 'build','rebuild' and 'start' scripts which must stay in the project root.
 
 Communication
 • Ask for clarifications whenever in doubt—do not assume.

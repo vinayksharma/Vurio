@@ -66,8 +66,8 @@ rebuild_project() {
     
     # Make build.sh executable if it isn't
     chmod +x build.sh
-    
-    # Run the build script
+
+    # Run the build script (no clean, no tests)
     if ./build.sh; then
         print_success "Project rebuilt successfully"
     else
