@@ -174,6 +174,38 @@ Request body:
 
 Deletes a setting by key.
 
+### 8. **Media Locations API**
+
+Register and deregister media library directories.
+
+#### POST /api/v1/media-locations/register
+
+Body:
+
+```json
+{ "directory": "/path/to/media" }
+```
+
+Response:
+
+```json
+{ "status": "ok", "directory": "/path/to/media" }
+```
+
+#### POST /api/v1/media-locations/deregister
+
+Body:
+
+```json
+{ "directory": "/path/to/media" }
+```
+
+Response:
+
+```json
+{ "status": "ok", "directory": "/path/to/media" }
+```
+
 ## Configuration Properties
 
 The server automatically creates and manages these configuration properties:

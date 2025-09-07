@@ -79,8 +79,7 @@ rebuild_project() {
 # Function to run tests
 run_tests() {
     print_status "Running all tests..."
-    
-    if [[ ! -f "build/bin/test_unified_observable_config" ]]; then
+    if [[ ! -f "build/bin/all_unit_tests" ]]; then
         print_error "Test executable not found! Build may have failed."
         exit 1
     fi
@@ -90,7 +89,7 @@ run_tests() {
     
     # Run the test executable
     print_status "Executing test suite..."
-    if ./bin/test_unified_observable_config; then
+    if ./bin/all_unit_tests; then
         print_success "All tests passed! 🎉"
     else
         print_error "Some tests failed!"
@@ -107,7 +106,7 @@ show_summary() {
     echo "  - Build directory: $(pwd)/build"
     echo "  - Main executable: build/bin/media_dedup_server"
     echo "  - Demo executable: build/bin/unified_config_demo"
-    echo "  - Test executable: build/bin/test_unified_observable_config"
+    echo "  - Test executable: build/bin/all_unit_tests"
     echo "  - Test results: build/test_results/"
 }
 

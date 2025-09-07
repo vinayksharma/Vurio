@@ -48,9 +48,11 @@ TEST(ConsoleInputManagerTest, ProcessesExitCommand)
     mgr.shutdown();
 }
 
-// Provide a test main for this test binary
+#if !defined(ALL_UNIT_TESTS)
+// Provide a test main for this standalone test binary
 int main(int argc, char **argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+#endif

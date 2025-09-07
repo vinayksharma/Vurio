@@ -85,6 +85,19 @@ namespace MediaDedup::Test
     {
         try
         {
+            // Ensure parent directory exists
+            try
+            {
+                auto parent = std::filesystem::path(filepath).parent_path();
+                if (!parent.empty() && !std::filesystem::exists(parent))
+                {
+                    std::filesystem::create_directories(parent);
+                }
+            }
+            catch (...)
+            {
+            }
+
             std::ofstream file(filepath);
             if (!file.is_open())
             {

@@ -421,22 +421,43 @@ namespace MediaDedup
         {
             YAML::Node config = YAML::LoadFile(config_file_path_);
 
-            // Update existing properties from file or create new ones
+            // Update existing properties from file or create new ones using the underlying type
             for (const auto &item : config)
             {
                 std::string key = item.first.Scalar();
-                auto property = getProperty<std::any>(key);
-                if (property)
+                auto value = yamlNodeToAny(item.second);
+
+                auto existing = getProperty<std::any>(key);
+                if (existing)
                 {
-                    // Property exists, update its value
-                    auto value = yamlNodeToAny(item.second);
-                    property->setValueFromFile(value);
+                    existing->setValueFromFile(value);
+                    continue;
+                }
+
+                if (value.type() == typeid(std::string))
+                {
+                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(int))
+                {
+                    createProperty<int>(key, std::any_cast<int>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(double))
+                {
+                    createProperty<double>(key, std::any_cast<double>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(bool))
+                {
+                    createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(std::vector<std::string>))
+                {
+                    createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
                 }
                 else
                 {
-                    // Property doesn't exist, create it with the value from file
-                    auto value = yamlNodeToAny(item.second);
-                    createProperty(key, value, "Loaded from file");
+                    // Fallback: store as string representation
+                    createProperty<std::string>(key, item.second.Scalar(), "Loaded from file");
                 }
             }
 

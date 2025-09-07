@@ -286,8 +286,10 @@ TEST_F(UnifiedObservableConfigTest, ConcurrentAccess)
     EXPECT_EQ(success_count.load(), num_threads * operations_per_thread);
 }
 
+#if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+#endif

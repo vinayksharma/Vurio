@@ -87,6 +87,35 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         TIMEOUT 300
     )
 endforeach()
+# Aggregate all unit tests into a single binary
+add_executable(all_unit_tests
+    unit/all_tests_main.cpp
+    ${UNIT_TEST_SOURCES}
+)
+target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS)
+target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
+target_sources(all_unit_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/core/console_input_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+)
+target_link_libraries(all_unit_tests 
+    ${GTEST_LIBRARIES}
+    pthread
+    ${Poco_LIBRARIES}
+    sqlite3
+    unified_config_lib
+    yaml-cpp::yaml-cpp
+    test_utils
+)
+add_test(NAME all_unit_tests COMMAND all_unit_tests)
+set_tests_properties(all_unit_tests PROPERTIES
+    OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/all_unit_tests.log"
+    TIMEOUT 600
+)
 
 foreach(test_source ${INTEGRATION_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
