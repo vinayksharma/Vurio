@@ -151,6 +151,10 @@ namespace MediaDedup
          */
         bool backupDatabase(const std::string &backup_path);
 
+        // Session pool tuning
+        void setSessionAcquireTimeoutMs(int ms);
+        void setSessionAcquireBackoffMs(int ms);
+
     private:
         // Session management
         std::unique_ptr<SessionManager> session_manager_;

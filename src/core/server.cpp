@@ -155,6 +155,8 @@ namespace MediaDedup
                     int new_port_i = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
                     uint16_t new_port = static_cast<uint16_t>(new_port_i);
                     std::string new_log_level = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
+                    int new_acquire_timeout = config_manager_->getPropertyValue<int>("database.session.acquireTimeoutMs", 3000);
+                    int new_backoff = config_manager_->getPropertyValue<int>("database.session.acquireBackoffMs", 50);
 
                     if (new_host != server_host_ || new_port != server_port_) {
                         logger_.information("Configuration change detected (host/port). Restarting web server...");
@@ -175,6 +177,13 @@ namespace MediaDedup
                         logger_.information("Logging level changed: " + logging_level_ + " -> " + new_log_level);
                         logging_level_ = new_log_level;
                         applyLogLevel(logging_level_);
+                    }
+
+                    // Apply DB session timings live
+                    if (database_manager_)
+                    {
+                        database_manager_->setSessionAcquireTimeoutMs(new_acquire_timeout);
+                        database_manager_->setSessionAcquireBackoffMs(new_backoff);
                     }
                 } catch (const std::exception &e) {
                     logger_.warning(std::string("Failed to handle file change: ") + e.what());
@@ -293,6 +302,18 @@ namespace MediaDedup
             else
             {
                 database_path_ = config_manager_->getPropertyValue<std::string>("database.path", database_path_);
+            }
+
+            // Database session acquire timings (ms)
+            if (!config_manager_->hasProperty("database.session.acquireTimeoutMs"))
+            {
+                config_manager_->createProperty("database.session.acquireTimeoutMs", 3000, "DB session acquire timeout in ms");
+                created_any_property = true;
+            }
+            if (!config_manager_->hasProperty("database.session.acquireBackoffMs"))
+            {
+                config_manager_->createProperty("database.session.acquireBackoffMs", 50, "DB session acquire backoff in ms");
+                created_any_property = true;
             }
 
             if (!config_manager_->hasProperty("logging.level"))

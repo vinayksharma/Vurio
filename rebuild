@@ -95,6 +95,20 @@ run_tests() {
         print_error "Some tests failed!"
         exit 1
     fi
+
+    # Run integration tests via ctest if present
+    if command -v ctest >/dev/null 2>&1; then
+        print_status "Running integration tests via ctest..."
+        if ctest --output-on-failure --tests-regex "test_user_settings_http"; then
+            print_success "Integration tests passed!"
+        else
+            print_error "Integration tests failed!"
+            cd ..
+            exit 1
+        fi
+    else
+        print_warning "ctest not found; skipping integration tests"
+    fi
     
     # Go back to project root
     cd ..

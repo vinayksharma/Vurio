@@ -85,6 +85,18 @@ namespace MediaDedup
         return false;
     }
 
+    void DatabaseManager::setSessionAcquireTimeoutMs(int ms)
+    {
+        if (session_manager_)
+            session_manager_->setAcquireTimeoutMs(ms);
+    }
+
+    void DatabaseManager::setSessionAcquireBackoffMs(int ms)
+    {
+        if (session_manager_)
+            session_manager_->setBackoffMs(ms);
+    }
+
     bool DatabaseManager::executeSQL(const std::string &sql)
     {
         try

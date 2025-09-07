@@ -14,6 +14,8 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `server.port`   | integer | 1–65535 (must be non-zero)                                  | `8080`                       | Restart web server on change                      |
 | `server.name`   | string  | Any non-empty string                                        | `Media Deduplication Server` | None (log-only)                                   |
 | `database.path` | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization |
+| `database.session.acquireTimeoutMs` | integer | > 0                                            | `3000`                      | Applied live (DB session acquire timeout)         |
+| `database.session.acquireBackoffMs` | integer | > 0                                            | `50`                        | Applied live (retry backoff while waiting)        |
 | `logging.level` | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                      |
 
 Notes:
@@ -30,6 +32,8 @@ server.name: Media Deduplication Server
 
 # Database
 database.path: data/dedupdb.db
+database.session.acquireTimeoutMs: 3000
+database.session.acquireBackoffMs: 50
 
 # Logging
 logging.level: info # trace | debug | info | warn | error (case-insensitive)
@@ -39,6 +43,7 @@ logging.level: info # trace | debug | info | warn | error (case-insensitive)
 
 - Changing `server.host` or `server.port` triggers an automatic web server restart with the new binding (with console log old → new).
 - Changing `logging.level` applies immediately to the server and root logger.
+- Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
 - API writes persist back to YAML; existing files are not replaced, only values are updated.
 
 ## HTTP API (OpenAPI)
