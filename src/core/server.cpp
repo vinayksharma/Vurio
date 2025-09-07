@@ -55,6 +55,10 @@ namespace MediaDedup
         {
             logging_level_ = "info";
         }
+        if (server_mode_.empty())
+        {
+            server_mode_ = "FAST"; // FAST | BALANCED | QUALITY
+        }
     }
 
     void MediaDedupServer::applyLogLevel(const std::string &level)
@@ -157,6 +161,7 @@ namespace MediaDedup
                     std::string new_log_level = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
                     int new_acquire_timeout = config_manager_->getPropertyValue<int>("database.session.acquireTimeoutMs", 3000);
                     int new_backoff = config_manager_->getPropertyValue<int>("database.session.acquireBackoffMs", 50);
+                    std::string new_mode = config_manager_->getPropertyValue<std::string>("server.mode", server_mode_);
 
                     if (new_host != server_host_ || new_port != server_port_) {
                         logger_.information("Configuration change detected (host/port). Restarting web server...");
@@ -184,6 +189,12 @@ namespace MediaDedup
                     {
                         database_manager_->setSessionAcquireTimeoutMs(new_acquire_timeout);
                         database_manager_->setSessionAcquireBackoffMs(new_backoff);
+                    }
+
+                    if (new_mode != server_mode_)
+                    {
+                        logger_.information("Server mode changed: " + server_mode_ + " -> " + new_mode);
+                        server_mode_ = new_mode;
                     }
                 } catch (const std::exception &e) {
                     logger_.warning(std::string("Failed to handle file change: ") + e.what());
@@ -314,6 +325,17 @@ namespace MediaDedup
             {
                 config_manager_->createProperty("database.session.acquireBackoffMs", 50, "DB session acquire backoff in ms");
                 created_any_property = true;
+            }
+
+            // Server processing mode
+            if (!config_manager_->hasProperty("server.mode"))
+            {
+                config_manager_->createProperty("server.mode", server_mode_, "Processing mode: FAST | BALANCED | QUALITY");
+                created_any_property = true;
+            }
+            else
+            {
+                server_mode_ = config_manager_->getPropertyValue<std::string>("server.mode", server_mode_);
             }
 
             if (!config_manager_->hasProperty("logging.level"))

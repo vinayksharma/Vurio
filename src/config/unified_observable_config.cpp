@@ -613,6 +613,19 @@ namespace MediaDedup
         }
     }
 
+    ServerMode UnifiedObservableConfigManager::getServerMode(const std::string &key, ServerMode default_mode)
+    {
+        try
+        {
+            std::string mode_str = getPropertyValue<std::string>(key, std::string(::MediaDedup::toString(default_mode)));
+            return parseServerMode(mode_str);
+        }
+        catch (...)
+        {
+            return default_mode;
+        }
+    }
+
     void UnifiedObservableConfigManager::notifyConfigChange(const ConfigChangeEvent &event)
     {
         std::lock_guard<std::mutex> lock(callbacks_mutex_);

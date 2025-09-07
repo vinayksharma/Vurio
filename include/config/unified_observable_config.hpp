@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <yaml-cpp/yaml.h>
+#include "config/config_enums.hpp"
 
 namespace MediaDedup
 {
@@ -210,6 +211,10 @@ namespace MediaDedup
         std::string getConfigFilePath() const { return config_file_path_; }
         void resetToDefaults();
         std::string toString() const;
+
+        // Convenience: get server processing mode as enum
+        ServerMode getServerMode(const std::string &key = "server.mode",
+                                 ServerMode default_mode = ServerMode::FAST);
 
     private:
         std::string config_file_path_;

@@ -17,6 +17,7 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `database.session.acquireTimeoutMs` | integer | > 0                                                         | `3000`                       | Applied live (DB session acquire timeout)         |
 | `database.session.acquireBackoffMs` | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)        |
 | `logging.level`                     | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                      |
+| `server.mode`                       | string  | `FAST` \| `BALANCED` \| `QUALITY`                           | `FAST`                       | Applied live; drives processing/de-dup strategy   |
 
 Notes:
 
@@ -37,12 +38,19 @@ database.session.acquireBackoffMs: 50
 
 # Logging
 logging.level: info # trace | debug | info | warn | error (case-insensitive)
+
+# Server processing mode
+server.mode: FAST # FAST | BALANCED | QUALITY
 ```
 
 ## Live updates
 
 - Changing `server.host` or `server.port` triggers an automatic web server restart with the new binding (with console log old → new).
 - Changing `logging.level` applies immediately to the server and root logger.
+- Changing `server.mode` applies immediately and influences processing behavior:
+  - FAST: prioritize speed, minimal metadata, quick duplicate checks
+  - BALANCED: trade-off between speed and quality
+  - QUALITY: most comprehensive metadata and de-duplication passes
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
 - API writes persist back to YAML; existing files are not replaced, only values are updated.
 

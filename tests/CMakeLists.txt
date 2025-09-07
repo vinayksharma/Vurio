@@ -38,6 +38,7 @@ set(UNIT_TEST_SOURCES
     unit/test_console_input_manager.cpp
     unit/test_database_service.cpp
     unit/test_user_settings_service.cpp
+    unit/test_scanned_files_ops.cpp
 )
 
 # Integration Tests
@@ -75,6 +76,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
         )
     endif()
+    if(${test_name} STREQUAL "test_scanned_files_ops")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+        )
+    endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
@@ -104,6 +113,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
 )
 target_link_libraries(all_unit_tests 
