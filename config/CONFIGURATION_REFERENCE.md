@@ -18,6 +18,9 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `database.session.acquireBackoffMs` | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)        |
 | `logging.level`                     | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                      |
 | `server.mode`                       | string  | `FAST` \| `BALANCED` \| `QUALITY`                           | `FAST`                       | Applied live; drives processing/de-dup strategy   |
+| `tpm.pool.max`                      | string  | `auto` or integer                                           | `auto`                       | Applied live; decrease is gradual                 |
+| `tpm.killTimeoutMs`                 | integer | > 0                                                         | `10000`                      | Drain timeout on shutdown                         |
+| `tpm.types.<name>.share`            | number  | (0,1]                                                       | `1.0`                        | Per-type slice; honor-based                       |
 
 Notes:
 
@@ -52,6 +55,8 @@ server.mode: FAST # FAST | BALANCED | QUALITY
   - BALANCED: trade-off between speed and quality
   - QUALITY: most comprehensive metadata and de-duplication passes
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
+- Changing `tpm.pool.max` applies immediately; if lowered, TPM stops starting new tasks until concurrency drops below the new cap.
+- Changing `tpm.types.<name>.share` updates the per-type allowance used for scheduling new tasks.
 - API writes persist back to YAML; existing files are not replaced, only values are updated.
 
 ## HTTP API (OpenAPI)
@@ -62,6 +67,7 @@ server.mode: FAST # FAST | BALANCED | QUALITY
 - Update key: `PUT /api/v1/config/{key}` with JSON body `{ "value": "..." }`
 - Reload from disk: `POST /api/v1/config/reload`
 - Status: `GET /api/v1/config/status`
+- TPM status: `GET /api/v1/tpm/status`
 
 ### Update examples
 

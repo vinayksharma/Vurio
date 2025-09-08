@@ -4,6 +4,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
+#include "orchestration/thread_pool_manager.hpp"
 #include <regex>
 #include <sstream>
 
@@ -307,6 +308,46 @@ namespace MediaDedup
         }
     }
 
+    // TPMStatusHandler implementation
+    TPMStatusHandler::TPMStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                       std::shared_ptr<ThreadPoolManager> tpm)
+        : ConfigRequestHandler(std::move(config_manager)), tpm_(std::move(tpm)) {}
+
+    void TPMStatusHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                         Poco::Net::HTTPServerResponse &response)
+    {
+        if (request.getMethod() != "GET")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+        Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
+        if (!tpm_)
+        {
+            root->set("status", "unavailable");
+            std::ostringstream oss;
+            root->stringify(oss);
+            sendJsonResponse(response, oss.str(), 503);
+            return;
+        }
+        auto st = tpm_->getStatus();
+        root->set("effectiveMax", static_cast<int>(st.effectiveMax));
+        root->set("runningTotal", static_cast<int>(st.runningTotal));
+        Poco::JSON::Object::Ptr perType = new Poco::JSON::Object();
+        for (const auto &kv : st.perType)
+        {
+            Poco::JSON::Object::Ptr ts = new Poco::JSON::Object();
+            ts->set("share", kv.second.share);
+            ts->set("running", static_cast<int>(kv.second.running));
+            ts->set("queued", static_cast<int>(kv.second.queued));
+            perType->set(kv.first, ts);
+        }
+        root->set("perType", perType);
+        std::ostringstream oss;
+        root->stringify(oss);
+        sendJsonResponse(response, oss.str(), 200);
+    }
+
     // OpenApiSpecHandler
     void OpenApiSpecHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                            Poco::Net::HTTPServerResponse &response)
@@ -323,7 +364,7 @@ namespace MediaDedup
             Poco::JSON::Object info;
             info.set("title", "Media Deduplication Server API");
             info.set("version", "1.0.0");
-            info.set("description", "Configuration and User Settings API");
+            info.set("description", "Configuration, User Settings, and TPM API");
             openapi_spec.set("info", info);
 
             Poco::JSON::Object paths;
@@ -546,6 +587,20 @@ namespace MediaDedup
                 Poco::JSON::Object p;
                 p.set("post", dereg);
                 paths.set("/api/v1/media-locations/deregister", p);
+            }
+
+            // TPM status
+            {
+                Poco::JSON::Object op;
+                op.set("summary", "Get TPM status");
+                Poco::JSON::Object res;
+                Poco::JSON::Object ok;
+                ok.set("description", "OK");
+                res.set("200", ok);
+                op.set("responses", res);
+                Poco::JSON::Object path;
+                path.set("get", op);
+                paths.set("/api/v1/tpm/status", path);
             }
 
             openapi_spec.set("paths", paths);

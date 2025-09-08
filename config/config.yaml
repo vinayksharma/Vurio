@@ -1,7 +1,8 @@
-database.session.acquireTimeoutMs: 3000
-database.session.acquireBackoffMs: 50
-logging.level: info
-server.port: 8080
-server.name: Media Deduplication Server
-database.path: data/dedup_server.db
+server.mode: FAST
 server.host: 0.0.0.0
+database.path: data/dedup_server.db
+server.name: Media Deduplication Server
+server.port: 8080
+logging.level: info
+database.session.acquireBackoffMs: 50
+database.session.acquireTimeoutMs: 3000

@@ -19,6 +19,7 @@ namespace MediaDedup
 {
     class UnifiedObservableConfigManager;
     class WebServer;
+    class ThreadPoolManager;
 
     /**
      * @brief Request handler factory for routing HTTP requests
@@ -29,7 +30,8 @@ namespace MediaDedup
         ConfigRequestHandlerFactory(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                     std::shared_ptr<WebServer> web_server = nullptr,
                                     std::shared_ptr<class UserSettingsService> user_settings_service = nullptr,
-                                    std::shared_ptr<class FilesService> files_service = nullptr);
+                                    std::shared_ptr<class FilesService> files_service = nullptr,
+                                    std::shared_ptr<class ThreadPoolManager> tpm = nullptr);
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 
@@ -38,6 +40,7 @@ namespace MediaDedup
         std::shared_ptr<WebServer> web_server_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
+        std::shared_ptr<class ThreadPoolManager> tpm_;
     };
 
     /**
@@ -84,6 +87,7 @@ namespace MediaDedup
         // Inject database-backed services
         void setUserSettingsService(std::shared_ptr<class UserSettingsService> service) { user_settings_service_ = std::move(service); }
         void setFilesService(std::shared_ptr<class FilesService> service) { files_service_ = std::move(service); }
+        void setThreadPoolManager(std::shared_ptr<class ThreadPoolManager> tpm) { tpm_ = std::move(tpm); }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
@@ -100,6 +104,7 @@ namespace MediaDedup
         // Services
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
+        std::shared_ptr<class ThreadPoolManager> tpm_;
 
         // Private methods
         void initializeServer();
@@ -301,6 +306,20 @@ namespace MediaDedup
 
     private:
         std::shared_ptr<class FilesService> service_;
+    };
+
+    // TPM status handler
+    class TPMStatusHandler : public ConfigRequestHandler
+    {
+    public:
+        TPMStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                         std::shared_ptr<class ThreadPoolManager> tpm);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class ThreadPoolManager> tpm_;
     };
 
 } // namespace MediaDedup

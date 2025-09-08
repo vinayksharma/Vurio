@@ -1,5 +1,6 @@
 #include "core/web_server.hpp"
 #include "config/unified_observable_config.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 #include "database/user_settings_service.hpp"
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -14,11 +15,13 @@ namespace MediaDedup
         std::shared_ptr<UnifiedObservableConfigManager> config_manager,
         std::shared_ptr<WebServer> web_server,
         std::shared_ptr<UserSettingsService> user_settings_service,
-        std::shared_ptr<FilesService> files_service)
+        std::shared_ptr<FilesService> files_service,
+        std::shared_ptr<ThreadPoolManager> tpm)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
           user_settings_service_(std::move(user_settings_service)),
-          files_service_(std::move(files_service)) {}
+          files_service_(std::move(files_service)),
+          tpm_(std::move(tpm)) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
         const Poco::Net::HTTPServerRequest &request)
@@ -32,6 +35,8 @@ namespace MediaDedup
             return new ReloadConfigHandler(config_manager_);
         if (uri == "/api/v1/config/status" && method == "GET")
             return new ConfigStatusHandler(config_manager_);
+        if (uri == "/api/v1/tpm/status" && method == "GET")
+            return new TPMStatusHandler(config_manager_, tpm_);
         if (uri == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
         if (uri == "/api/openapi.json" && method == "GET")
@@ -107,7 +112,8 @@ namespace MediaDedup
         auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),
                                                                      user_settings_service_,
-                                                                     files_service_);
+                                                                     files_service_,
+                                                                     tpm_);
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
             Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket, new Poco::Net::HTTPServerParams);
