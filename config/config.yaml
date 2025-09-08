@@ -6,3 +6,7 @@ server.port: 8080
 logging.level: info
 database.session.acquireBackoffMs: 50
 database.session.acquireTimeoutMs: 3000
+tpm.pool.max: auto
+tpm.killTimeoutMs: 10000
+# Example per-type share (uncomment and customize)
+# tpm.types.transcode.share: 0.4

@@ -81,6 +81,16 @@ curl -X PUT http://localhost:8080/api/v1/config/logging.level \
 curl -X PUT http://localhost:8080/api/v1/config/server.port \
   -H 'Content-Type: application/json' \
   -d '{"value":"9090"}'
+
+# Set TPM pool max to fixed size
+curl -X PUT http://localhost:8080/api/v1/config/tpm.pool.max \
+  -H 'Content-Type: application/json' \
+  -d '{"value":"4"}'
+
+# Set a per-type share
+curl -X PUT http://localhost:8080/api/v1/config/tpm.types.transcode.share \
+  -H 'Content-Type: application/json' \
+  -d '{"value":"0.4"}'
 ```
 
 ## Behavior on startup
