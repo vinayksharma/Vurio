@@ -19,6 +19,12 @@
 #include "core/console_input_manager.hpp"
 #include "filesmanager/files_service.hpp"
 
+// Orchestration
+namespace MediaDedup
+{
+    class ThreadPoolManager;
+}
+
 namespace MediaDedup
 {
 
@@ -88,6 +94,7 @@ namespace MediaDedup
 
         // Server components
         std::unique_ptr<WebServer> web_server_;
+        std::shared_ptr<ThreadPoolManager> tpm_;
 
         // Console input management
         ::MediaDedupServer::Core::ConsoleInputManager &console_input_manager_;

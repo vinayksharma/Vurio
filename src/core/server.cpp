@@ -12,6 +12,8 @@
 #include <thread>
 #include <chrono>
 
+// TPM
+#include "orchestration/thread_pool_manager.hpp"
 namespace MediaDedup
 {
 
@@ -150,6 +152,10 @@ namespace MediaDedup
                 logger_.error("Failed to initialize console input manager");
                 return Application::EXIT_CONFIG;
             }
+
+            // Initialize TPM
+            tpm_ = std::make_shared<ThreadPoolManager>(config_manager_);
+            tpm_->initialize();
 
             // React to configuration file changes: restart web server if host/port changed, apply log level
             config_manager_->setFileChangeCallback([this](const std::string &file_path)
@@ -436,6 +442,10 @@ namespace MediaDedup
 
             // Create web server
             web_server_ = std::make_unique<WebServer>(config_manager_, server_host_, server_port_);
+            if (tpm_)
+            {
+                web_server_->setThreadPoolManager(tpm_);
+            }
 
             // Inject services
             {
@@ -499,6 +509,13 @@ namespace MediaDedup
         if (web_server_)
         {
             web_server_->stop();
+        }
+
+        // Drain TPM with configured timeout
+        if (tpm_)
+        {
+            int killMs = config_manager_ ? config_manager_->getPropertyValue<int>("tpm.killTimeoutMs", 10000) : 10000;
+            tpm_->shutdownAndDrain(std::chrono::milliseconds(killMs));
         }
 
         if (config_manager_)
