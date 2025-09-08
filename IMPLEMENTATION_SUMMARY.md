@@ -11,12 +11,12 @@ Successfully implemented a **web server with OpenAPI-based endpoints** for the M
 │   HTTP Client   │ ──────────────────► │   Web Server     │ ──────────────────► │ Unified Observable  │
 │                 │                     │                  │                     │ Config Manager      │
 └─────────────────┘                     └──────────────────┘                     └─────────────────────┘
-                                                │
-                                                ▼
-                                        ┌──────────────────┐
-                                        │ Configuration    │
-                                        │ File (YAML)      │
-                                        └──────────────────┘
+                                               │
+                                               ▼
+                                       ┌──────────────────┐
+                                       │ Configuration    │
+                                       │ File (YAML)      │
+                                       └──────────────────┘
 ```
 
 ## ✨ **Key Features Implemented**
@@ -47,6 +47,19 @@ Successfully implemented a **web server with OpenAPI-based endpoints** for the M
 - **Cross-origin requests** supported for web applications
 - **Configurable CORS headers** for security
 - **Preflight OPTIONS requests** handled automatically
+
+### **5. Thread Pool Manager (TPM)**
+
+- Dedicated pool with configurable `tpm.pool.max` (auto or fixed)
+- Per-type shares `tpm.types.<name>.share` enforced via round-robin scheduling
+- Gradual decrease on cap changes; graceful drain on shutdown using `tpm.killTimeoutMs`
+- Live status at `GET /api/v1/tpm/status`
+
+## 📁 **References**
+
+- Configuration: `config/CONFIGURATION_REFERENCE.md`
+- Web API details: `WEB_SERVER_README.md`
+- Start scripts: `START_SCRIPT_README.md`
 
 ## 🚀 **API Endpoints**
 

@@ -206,23 +206,9 @@ Response:
 { "status": "ok", "directory": "/path/to/media" }
 ```
 
-## Configuration Properties
+## Configuration Reference
 
-The server automatically creates and manages these configuration properties:
-
-### **Server Configuration**
-
-- `server.host`: Server host address (default: "0.0.0.0")
-- `server.port`: Server port number (default: 8080)
-- `server.name`: Server name (default: "Media Deduplication Server")
-
-### **Database Configuration**
-
-- `database.path`: Database file path (default: "data/dedup_server.db")
-
-### **Logging Configuration**
-
-- `logging.level`: Logging level (default: "info")
+For the authoritative configuration keys, defaults, and live update behavior, see `config/CONFIGURATION_REFERENCE.md`.
 
 ## Usage Examples
 

@@ -76,13 +76,7 @@ sudo make install
 
 ## ⚙️ Configuration
 
-The server uses a YAML configuration file (`config/config.yaml`) with comprehensive options:
-
-- **Server settings**: Host, port, threads, timeouts
-- **Database configuration**: SQLite settings, connection pooling
-- **Media processing**: Supported formats, hash algorithms, chunk sizes
-- **Performance tuning**: Caching, compression, worker threads
-- **Security**: Authentication, SSL, CORS settings
+See `config/CONFIGURATION_REFERENCE.md` for the canonical list of configuration keys, defaults, and live effects. A minimal sample is provided in `config/config.yaml` and includes TPM defaults (`tpm.pool.max`, `tpm.killTimeoutMs`) and examples for per-type shares (`tpm.types.<name>.share`).
 
 ## 🚀 Usage
 
@@ -111,23 +105,12 @@ The server uses a YAML configuration file (`config/config.yaml`) with comprehens
 - `--daemon`: Run in daemon mode
 - `--help`: Show help information
 
-## 📊 API Endpoints
+## 📊 Web API
 
-### File Management
-- `POST /api/v1/files/upload` - Upload media file
-- `GET /api/v1/files/{hash}` - Get file information by hash
-- `GET /api/v1/files/search` - Search files by criteria
-- `DELETE /api/v1/files/{hash}` - Delete file by hash
-
-### Duplicate Detection
-- `GET /api/v1/duplicates` - List all duplicate files
-- `GET /api/v1/duplicates/{hash}` - Get duplicates by hash
-- `POST /api/v1/duplicates/scan` - Scan for new duplicates
-
-### System Information
-- `GET /api/v1/health` - Health check
-- `GET /api/v1/stats` - System statistics
-- `GET /api/v1/config` - Current configuration
+The web server API (config, user settings, media locations, OpenAPI, TPM status) is documented in `WEB_SERVER_README.md`. Quick links:
+- `GET /api/v1/config`, `GET /api/v1/config/{key}`, `PUT /api/v1/config/{key}`
+- `POST /api/v1/config/reload`, `GET /api/v1/config/status`, `GET /api/openapi.json`
+- `GET /api/v1/tpm/status`
 
 ## 🗄️ Database Schema
 
@@ -188,9 +171,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-- **Issues**: Report bugs and feature requests via GitHub Issues
-- **Documentation**: Check the [docs/](docs/) directory for detailed information
-- **Community**: Join our discussions and contribute to the project
+- Issues: use GitHub Issues
+- Documentation: `config/CONFIGURATION_REFERENCE.md`, `WEB_SERVER_README.md`, `START_SCRIPT_README.md`
 
 ## 🔮 Roadmap
 
