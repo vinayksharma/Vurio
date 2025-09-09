@@ -74,6 +74,8 @@ add_executable(media_dedup_server
     src/database/user_settings/user_settings_ops.cpp
     src/database/scanned_files/scanned_files_ops.cpp
     src/orchestration/thread_pool_manager.cpp
+    src/orchestration/scheduler_service.cpp
+    src/orchestration/files_manager.cpp
     src/filesmanager/file_scanner.cpp
     src/filesmanager/files_service.cpp
     include/database/user_settings_service.hpp

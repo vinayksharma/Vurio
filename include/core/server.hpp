@@ -18,6 +18,9 @@
 #include "core/web_server.hpp"
 #include "core/console_input_manager.hpp"
 #include "filesmanager/files_service.hpp"
+// Files orchestration
+#include "orchestration/files_manager.hpp"
+#include "orchestration/scheduler_service.hpp"
 
 // Orchestration
 namespace MediaDedup
@@ -95,6 +98,8 @@ namespace MediaDedup
         // Server components
         std::unique_ptr<WebServer> web_server_;
         std::shared_ptr<ThreadPoolManager> tpm_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+        std::shared_ptr<Orchestration::FilesManager> files_manager_;
 
         // Console input management
         ::MediaDedupServer::Core::ConsoleInputManager &console_input_manager_;

@@ -131,7 +131,7 @@ run_tests() {
     if [ "$RUN_TESTS" = "true" ]; then
         print_status "Running tests..."
         cd build
-        make test
+        ./bin/all_unit_tests
         cd ..
         print_success "Tests completed"
     fi

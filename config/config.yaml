@@ -3,10 +3,37 @@ server.host: 0.0.0.0
 database.path: data/dedup_server.db
 server.name: Media Deduplication Server
 server.port: 8080
-logging.level: info
+logging.level: debug
 database.session.acquireBackoffMs: 50
 database.session.acquireTimeoutMs: 3000
 tpm.pool.max: auto
 tpm.killTimeoutMs: 10000
 # Example per-type share (uncomment and customize)
 # tpm.types.transcode.share: 0.4
+
+# Files manager & scheduler configuration
+files.manager.enabled: true
+files.manager.scan.intervalMs: 300000
+
+# TPM share for file scanning (0 or 1)
+tpm.types.fileScan.share: 1
+
+# SchedulerService defaults
+scheduler.jitter.enabled: false
+scheduler.jitter.percent: 0
+scheduler.backoff.enabled: true
+scheduler.backoff.initialMs: 1000
+scheduler.backoff.maxMs: 30000
+scheduler.backoff.multiplier: 2.0
+scheduler.backoff.jitterPercent: 10
+scheduler.drift.mode: anchored
+scheduler.drift.maxDriftMs: 60000
+
+# Per-job overrides (optional)
+# scheduler.jobs.fileScan.jitter.percent: 0
+# scheduler.jobs.fileScan.backoff.initialMs: 1000
+# scheduler.jobs.fileScan.backoff.maxMs: 30000
+# scheduler.jobs.fileScan.backoff.multiplier: 2.0
+# scheduler.jobs.fileScan.backoff.jitterPercent: 10
+# scheduler.jobs.fileScan.drift.mode: anchored
+# scheduler.jobs.fileScan.drift.maxDriftMs: 60000

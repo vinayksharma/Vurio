@@ -14,6 +14,8 @@
 
 // TPM
 #include "orchestration/thread_pool_manager.hpp"
+#include "orchestration/scheduler_service.hpp"
+#include "orchestration/files_manager.hpp"
 namespace MediaDedup
 {
 
@@ -156,6 +158,19 @@ namespace MediaDedup
             // Initialize TPM
             tpm_ = std::make_shared<ThreadPoolManager>(config_manager_);
             tpm_->initialize();
+
+            // Initialize SchedulerService and FilesManager; auto-register fileScan job
+            scheduler_service_ = std::make_shared<Orchestration::SchedulerService>(config_manager_, tpm_);
+            scheduler_service_->start();
+            {
+                auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+                auto files_service = std::make_shared<FilesService>(*db_shared);
+                files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service);
+                files_manager_->initialize();
+                int intervalMs = config_manager_->getPropertyValue<int>("files.manager.scan.intervalMs", 300000);
+                scheduler_service_->registerJob("fileScan", std::chrono::milliseconds(intervalMs), "fileScan", [fm = files_manager_]()
+                                                { fm->runOnce(); });
+            }
 
             // React to configuration file changes: restart web server if host/port changed, apply log level
             config_manager_->setFileChangeCallback([this](const std::string &file_path)
@@ -509,6 +524,12 @@ namespace MediaDedup
         if (web_server_)
         {
             web_server_->stop();
+        }
+
+        // Stop SchedulerService before draining TPM
+        if (scheduler_service_)
+        {
+            scheduler_service_->stop();
         }
 
         // Drain TPM with configured timeout

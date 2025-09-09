@@ -41,6 +41,8 @@ set(UNIT_TEST_SOURCES
     unit/test_scanned_files_ops.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
+    unit/test_scheduler_service.cpp
+    unit/test_files_manager_scheduler.cpp
 )
 
 # Integration Tests
@@ -91,6 +93,28 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
         )
     endif()
+    if(${test_name} STREQUAL "test_scheduler_service")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
+        )
+        target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_SCHED=1)
+    endif()
+    if(${test_name} STREQUAL "test_files_manager_scheduler")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+        )
+        target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_FILESFM=1)
+    endif()
     if(${test_name} STREQUAL "test_file_scanner")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
@@ -128,6 +152,8 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
 )

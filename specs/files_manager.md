@@ -11,6 +11,7 @@ Pre-req: Adhere to Project Operating Rules in `specs/CURSOR_RULES.md`. If this s
 ## 2) Placement & Build
 
 - Location: `src/orchestration/files_manager.cpp`, header under `include/orchestration/files_manager.hpp`.
+- SchedulerService: `src/orchestration/scheduler_service.cpp`, header under `include/orchestration/scheduler_service.hpp`.
 - Unit tests: `tests/unit/test_files_manager.cpp` (added to `all_unit_tests`).
 
 ## 3) Responsibilities
@@ -43,6 +44,29 @@ namespace MediaDedup::Orchestration {
 
   private:
     // internal helpers (no scheduling logic here)
+  };
+}
+```
+
+### 4a) SchedulerService Public API
+
+```
+namespace MediaDedup::Orchestration {
+  class SchedulerService {
+  public:
+    SchedulerService(std::shared_ptr<UnifiedObservableConfigManager> config,
+                     std::shared_ptr<ThreadPoolManager> tpm);
+
+    void start();
+    void stop();
+
+    // Register a periodic job; supports dynamic interval updates via config subscription per job
+    void registerJob(const std::string& jobId,
+                     std::chrono::milliseconds interval,
+                     const std::string& typeKey,
+                     std::function<void()> callback);
+
+    void unregisterJob(const std::string& jobId);
   };
 }
 ```
@@ -177,10 +201,12 @@ Scheduling semantics:
 
 ## 13) Acceptance Criteria
 
-- SchedulerService triggers `FilesManager::runOnce()` based on `files.manager.scan.intervalMs` while enabled.
+- SchedulerService triggers `FilesManager::runOnce()` based on `files.manager.scan.intervalMs` while enabled, applying jitter/backoff/drift semantics per config.
+- File scanning job (`fileScan`) is auto-registered at server startup via SchedulerService.
 - Only one run may be active at a time; subsequent schedules are skipped if busy.
 - New files are inserted; changed files update metadata and reset processed flags to 0.
 - Honors observable scanner options and interval changes without restart.
+- SchedulerService reacts to config changes (jitter/backoff/drift and job intervals) without restart.
 - Shuts down cleanly with TPM draining on Ctrl+C/exit.
 
 ## 14) Implementation Notes

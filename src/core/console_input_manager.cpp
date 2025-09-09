@@ -28,7 +28,6 @@ namespace MediaDedupServer
         bool ConsoleInputManager::initialize()
         {
             std::lock_guard<std::mutex> lock(mutex_);
-
             if (initialized_.load())
             {
                 return true;
