@@ -1,5 +1,6 @@
 #include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Environment.h>
+#include <Poco/Exception.h>
 #include <cmath>
 
 namespace MediaDedup
@@ -133,7 +134,8 @@ namespace MediaDedup
 
     void ThreadPoolManager::FunctionRunnable::run()
     {
-        owner_.onTaskStarted(type_, id_);
+        // Keep this runnable alive for the duration of run to avoid self-destruction
+        auto keepAlive = owner_.lockRunnable(id_);
         try
         {
             fn_();
@@ -146,9 +148,8 @@ namespace MediaDedup
 
     void ThreadPoolManager::onTaskStarted(const std::string &type, uint64_t id)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        running_total_ += 1;
-        type_to_running_[type] += 1;
+        // No-op: we incremented before start to enforce allowance strictly
+        (void)type;
         (void)id;
     }
 
@@ -218,19 +219,35 @@ namespace MediaDedup
             if (running_total_ >= effective_max_)
                 break;
 
-            auto [fn, shareOverride] = queue.front();
-            queue.pop_front();
+            if (pool_.available() <= 0)
+                break;
 
-            // create runnable and start
+            auto task = queue.front();
+            queue.pop_front();
+            auto fn = std::move(task.first);
+            // auto shareOverride = task.second; // not used in current implementation
+
+            // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
             auto runnable = std::make_shared<FunctionRunnable>(*this, type, std::move(fn), id);
+            // Reserve counts before starting to enforce per-type allowance
+            running_total_ += 1;
+            type_to_running_[type] += 1;
             active_runnables_[id] = runnable;
-            // Start using Poco ThreadPool; concurrency limited by pool capacity and our counters
             pool_.start(*runnable);
 
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
         }
+    }
+
+    std::shared_ptr<ThreadPoolManager::FunctionRunnable> ThreadPoolManager::lockRunnable(uint64_t id)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = active_runnables_.find(id);
+        if (it != active_runnables_.end())
+            return it->second;
+        return nullptr;
     }
 
     void ThreadPoolManager::onConfigChange(const ConfigChangeEvent &event)

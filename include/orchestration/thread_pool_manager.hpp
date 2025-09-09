@@ -102,5 +102,7 @@ namespace MediaDedup
 
         std::unordered_map<uint64_t, std::shared_ptr<FunctionRunnable>> active_runnables_;
         uint64_t next_id_ = 1;
+
+        std::shared_ptr<FunctionRunnable> lockRunnable(uint64_t id);
     };
 }

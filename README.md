@@ -43,17 +43,20 @@ The server is built with a modular, layered architecture:
 ### 1. Install Dependencies
 
 #### Ubuntu/Debian:
+
 ```bash
 sudo apt update
 sudo apt install build-essential cmake libpoco-dev libsqlite3-dev pkg-config
 ```
 
 #### macOS:
+
 ```bash
 brew install cmake poco sqlite3 pkg-config
 ```
 
 #### CentOS/RHEL:
+
 ```bash
 sudo yum install gcc-c++ cmake3 poco-devel sqlite-devel pkgconfig
 ```
@@ -108,6 +111,7 @@ See `config/CONFIGURATION_REFERENCE.md` for the canonical list of configuration 
 ## 📊 Web API
 
 The web server API (config, user settings, media locations, OpenAPI, TPM status) is documented in `WEB_SERVER_README.md`. Quick links:
+
 - `GET /api/v1/config`, `GET /api/v1/config/{key}`, `PUT /api/v1/config/{key}`
 - `POST /api/v1/config/reload`, `GET /api/v1/config/status`, `GET /api/openapi.json`
 - `GET /api/v1/tpm/status`
