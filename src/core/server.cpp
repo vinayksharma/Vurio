@@ -6,11 +6,17 @@
 #include "database/user_settings_service.hpp"
 #include "core/console_input_manager.hpp"
 #include <Poco/Logger.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/PatternFormatter.h>
+#include <Poco/FormattingChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <iostream>
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <cstdlib>
 
 // TPM
 #include "orchestration/thread_pool_manager.hpp"
@@ -63,6 +69,141 @@ namespace MediaDedup
         {
             server_mode_ = "FAST"; // FAST | BALANCED | QUALITY
         }
+    }
+
+    void MediaDedupServer::setupColorLogging()
+    {
+        // Create a custom formatter that adds colors
+        class ColorFormatter : public Poco::Formatter
+        {
+        public:
+            void format(const Poco::Message &msg, std::string &text)
+            {
+                // Format the message with timestamp and log level
+                std::ostringstream oss;
+                Poco::DateTime dateTime(msg.getTime());
+                // Convert priority to string
+                std::string priorityStr;
+                switch (msg.getPriority())
+                {
+                case Poco::Message::PRIO_FATAL:
+                    priorityStr = "FATAL";
+                    break;
+                case Poco::Message::PRIO_CRITICAL:
+                    priorityStr = "CRITICAL";
+                    break;
+                case Poco::Message::PRIO_ERROR:
+                    priorityStr = "ERROR";
+                    break;
+                case Poco::Message::PRIO_WARNING:
+                    priorityStr = "WARNING";
+                    break;
+                case Poco::Message::PRIO_INFORMATION:
+                    priorityStr = "INFORMATION";
+                    break;
+                case Poco::Message::PRIO_DEBUG:
+                    priorityStr = "DEBUG";
+                    break;
+                case Poco::Message::PRIO_TRACE:
+                    priorityStr = "TRACE";
+                    break;
+                default:
+                    priorityStr = "UNKNOWN";
+                    break;
+                }
+
+                oss << std::setfill('0')
+                    << std::setw(4) << dateTime.year() << "-"
+                    << std::setw(2) << dateTime.month() << "-"
+                    << std::setw(2) << dateTime.day() << " "
+                    << std::setw(2) << dateTime.hour() << ":"
+                    << std::setw(2) << dateTime.minute() << ":"
+                    << std::setw(2) << dateTime.second() << "."
+                    << std::setw(3) << (dateTime.millisecond() / 1000) << " "
+                    << "[" << priorityStr << "] "
+                    << msg.getSource() << ": "
+                    << msg.getText();
+
+                text = oss.str();
+            }
+        };
+
+        class ColorChannel : public Poco::Channel
+        {
+        private:
+            bool supportsColors_;
+
+        public:
+            ColorChannel() : supportsColors_(false)
+            {
+                // Check if terminal supports colors
+                const char *term = std::getenv("TERM");
+                const char *colorterm = std::getenv("COLORTERM");
+                const char *forceColor = std::getenv("FORCE_COLOR");
+
+                if (forceColor || colorterm || (term && std::string(term) != "dumb"))
+                {
+                    supportsColors_ = true;
+                }
+            }
+
+            void log(const Poco::Message &msg)
+            {
+                // Format the message
+                ColorFormatter formatter;
+                std::string formattedMsg;
+                formatter.format(msg, formattedMsg);
+
+                if (supportsColors_)
+                {
+                    // Add color based on priority
+                    if (msg.getPriority() == Poco::Message::PRIO_FATAL || msg.getPriority() == Poco::Message::PRIO_CRITICAL)
+                    {
+                        // Bold red for fatal/critical
+                        std::cout << "\033[1;31m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else if (msg.getPriority() == Poco::Message::PRIO_ERROR)
+                    {
+                        // Red for errors
+                        std::cout << "\033[31m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else if (msg.getPriority() == Poco::Message::PRIO_WARNING)
+                    {
+                        // Yellow for warnings
+                        std::cout << "\033[33m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else if (msg.getPriority() == Poco::Message::PRIO_INFORMATION)
+                    {
+                        // Green for information
+                        std::cout << "\033[32m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else if (msg.getPriority() == Poco::Message::PRIO_DEBUG)
+                    {
+                        // Blue for debug
+                        std::cout << "\033[34m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else if (msg.getPriority() == Poco::Message::PRIO_TRACE)
+                    {
+                        // Cyan for trace
+                        std::cout << "\033[36m" << formattedMsg << "\033[0m" << std::endl;
+                    }
+                    else
+                    {
+                        // Default color for other priorities
+                        std::cout << formattedMsg << std::endl;
+                    }
+                }
+                else
+                {
+                    // No colors, just output the formatted message
+                    std::cout << formattedMsg << std::endl;
+                }
+            }
+        };
+
+        // Set the custom color channel
+        Poco::AutoPtr<Poco::Channel> colorChannel(new ColorChannel);
+        Poco::Logger::root().setChannel(colorChannel);
     }
 
     void MediaDedupServer::applyLogLevel(const std::string &level)
@@ -118,6 +259,12 @@ namespace MediaDedup
 
     int MediaDedupServer::main(const std::vector<std::string> &args)
     {
+        // Set up color-coded logging with timestamps and log levels
+        setupColorLogging();
+
+        // Set initial log level (will be updated after config is loaded)
+        Poco::Logger::root().setLevel(Poco::Message::PRIO_INFORMATION);
+
         logger_.information("Media Deduplication Server starting...");
 
         if (help_requested_)

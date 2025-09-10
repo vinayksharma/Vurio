@@ -17,25 +17,41 @@ namespace MediaDedup::Orchestration
 
     void SchedulerService::start()
     {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        logger.information("Starting SchedulerService...");
+
         running_.store(true, std::memory_order_relaxed);
+
+        logger.information("SchedulerService started successfully");
     }
 
     void SchedulerService::stop()
     {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        logger.information("Stopping SchedulerService...");
+
         running_.store(false, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(jobsMutex_);
+
+        logger.debug("Stopping %zu registered jobs", jobs_.size());
         for (auto &kv : jobs_)
         {
             auto &job = *kv.second;
             job.stopFlag.store(true, std::memory_order_relaxed);
+            logger.debug("Stopped job: %s", kv.first);
         }
         for (auto &kv : jobs_)
         {
             auto &job = *kv.second;
             if (job.worker.joinable())
+            {
+                logger.debug("Joining worker thread for job: %s", kv.first);
                 job.worker.join();
+            }
         }
         jobs_.clear();
+
+        logger.information("SchedulerService stopped successfully");
     }
 
     void SchedulerService::registerJob(const std::string &jobId,
@@ -43,6 +59,10 @@ namespace MediaDedup::Orchestration
                                        const std::string &typeKey,
                                        std::function<void()> callback)
     {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        logger.information("Registering job: %s (type: %s, interval: %lld ms)",
+                           jobId, typeKey, interval.count());
+
         auto job = std::make_unique<Job>();
         job->jobId = jobId;
         job->typeKey = typeKey;
@@ -59,6 +79,7 @@ namespace MediaDedup::Orchestration
         {
             std::lock_guard<std::mutex> lock(jobsMutex_);
             Job &ref = *jobs_[jobId];
+            logger.debug("Starting worker thread for job: %s", jobId);
             ref.worker = std::thread([this, &ref]
                                      {
                                          std::mt19937 rng{std::random_device{}()};
@@ -80,19 +101,20 @@ namespace MediaDedup::Orchestration
                                              if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
 
                                              // submit job
-                                             try
-                                             {
-                                                 // Info log that a new job dispatch is starting
-                                                 {
-                                                     Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-                                                     logger.information(std::string("Dispatching job: ") + ref.jobId +
-                                                                        ", typeKey=" + ref.typeKey +
-                                                                        ", intervalMs=" + std::to_string(ref.interval.count()));
-                                                 }
-                                                 tpm_->submit(ref.typeKey, [cb = ref.callback]() { cb(); });
-                                                 // reset backoff on success path (submission OK)
-                                                 ref.backoff = milliseconds(0);
-                                             }
+                                            try
+                                            {
+                                                // Info log that a new job dispatch is starting
+                                                {
+                                                    Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+                                                    logger.information(std::string("Dispatching job: ") + ref.jobId +
+                                                                       ", typeKey=" + ref.typeKey +
+                                                                       ", intervalMs=" + std::to_string(ref.interval.count()));
+                                                    logger.trace("Submitting job '%s' to ThreadPoolManager for execution", ref.jobId);
+                                                }
+                                                tpm_->submit(ref.typeKey, [cb = ref.callback]() { cb(); });
+                                                // reset backoff on success path (submission OK)
+                                                ref.backoff = milliseconds(0);
+                                            }
                                              catch (...)
                                              {
                                                  // submission failed, apply backoff
@@ -130,9 +152,27 @@ namespace MediaDedup::Orchestration
 
     void SchedulerService::refreshJobConfig(Job &job)
     {
-        // Dynamic interval per job (if key exists): scheduler.jobs.<jobId>.intervalMs
-        std::string key = std::string("scheduler.jobs.") + job.jobId + ".intervalMs";
-        int intervalMs = cfg_->getPropertyValue<int>(key, static_cast<int>(job.interval.count()));
+        int intervalMs = static_cast<int>(job.interval.count());
+
+        // Check for job-specific configuration first: scheduler.jobs.<jobId>.intervalMs
+        std::string jobKey = std::string("scheduler.jobs.") + job.jobId + ".intervalMs";
+        if (cfg_->hasProperty(jobKey))
+        {
+            intervalMs = cfg_->getPropertyValue<int>(jobKey, intervalMs);
+        }
+        // Special case for fileScan job: also check files.manager.scan.intervalMs
+        else if (job.jobId == "fileScan")
+        {
+            intervalMs = cfg_->getPropertyValue<int>("files.manager.scan.intervalMs", intervalMs);
+        }
+
+        if (intervalMs != static_cast<int>(job.interval.count()))
+        {
+            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+            logger.information("Job '%s' interval updated: %lld ms -> %d ms",
+                               job.jobId, job.interval.count(), intervalMs);
+        }
+
         job.interval = milliseconds(intervalMs);
     }
 

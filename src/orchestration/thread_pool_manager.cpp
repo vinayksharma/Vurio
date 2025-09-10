@@ -1,6 +1,7 @@
 #include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Environment.h>
 #include <Poco/Exception.h>
+#include <Poco/Logger.h>
 #include <cmath>
 
 namespace MediaDedup
@@ -36,6 +37,9 @@ namespace MediaDedup
 
     void ThreadPoolManager::initialize()
     {
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.information("Initializing ThreadPoolManager...");
+
         // Read config
         std::string maxKey = "tpm.pool.max";
         std::string killKey = "tpm.killTimeoutMs";
@@ -43,16 +47,19 @@ namespace MediaDedup
         if (maxStr == "auto")
         {
             effective_max_ = defaultPoolMaxFromPoco();
+            logger.information("Using auto-detected max threads: %zu", effective_max_);
         }
         else
         {
             try
             {
                 effective_max_ = static_cast<size_t>(std::stoul(maxStr));
+                logger.information("Using configured max threads: %zu", effective_max_);
             }
             catch (...)
             {
                 effective_max_ = defaultPoolMaxFromPoco();
+                logger.warning("Invalid max threads configuration, using auto-detected: %zu", effective_max_);
             }
         }
 
@@ -60,30 +67,54 @@ namespace MediaDedup
         if (killMs < 0)
             killMs = 10000;
         kill_timeout_ = std::chrono::milliseconds(killMs);
+        logger.debug("Kill timeout set to: %d ms", killMs);
 
         // Initialize pool capacity to desired effective max
         int current = pool_.capacity();
         if (static_cast<size_t>(current) < effective_max_)
         {
             pool_.addCapacity(static_cast<int>(effective_max_ - static_cast<size_t>(current)));
+            logger.information("Expanded thread pool capacity from %d to %zu threads", current, effective_max_);
+        }
+        else
+        {
+            logger.information("Thread pool capacity already sufficient: %d threads", current);
         }
 
         // Subscribe to config changes
         cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
                                        { onConfigChange(ev); });
+        logger.information("ThreadPoolManager initialized successfully");
     }
 
     void ThreadPoolManager::shutdownAndDrain(std::chrono::milliseconds killTimeout)
     {
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.information("Starting ThreadPoolManager shutdown (timeout: %lld ms)", killTimeout.count());
+
         accepting_.store(false);
         draining_.store(true);
+
         // Wait until running_total_ becomes 0 or timeout
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait_for(lock, killTimeout, [this]()
-                     { return running_total_ == 0 && this->active_runnables_.empty(); });
+        logger.debug("Waiting for %zu running tasks to complete...", running_total_);
+
+        bool completed = cv_.wait_for(lock, killTimeout, [this]()
+                                      { return running_total_ == 0 && this->active_runnables_.empty(); });
+
+        if (completed)
+        {
+            logger.information("All tasks completed gracefully");
+        }
+        else
+        {
+            logger.warning("Shutdown timeout reached, clearing remaining queues");
+        }
+
         // After timeout, stop all threads; Poco::ThreadPool doesn't preempt tasks, so just clear queues
         type_to_queue_.clear();
         round_robin_types_.clear();
+        logger.information("ThreadPoolManager shutdown complete");
     }
 
     void ThreadPoolManager::setShare(const std::string &type, double share)
@@ -97,7 +128,11 @@ namespace MediaDedup
     void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn)
     {
         if (!accepting_.load())
+        {
+            Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+            logger.warning("Rejecting task submission for type '%s' - not accepting new tasks", type);
             return;
+        }
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -106,8 +141,13 @@ namespace MediaDedup
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
             {
                 round_robin_types_.push_back(type);
+                Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+                logger.debug("Added new task type '%s' to round-robin queue", type);
             }
         }
+
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.debug("Submitted task for type '%s', queue size: %zu", type, type_to_queue_[type].size());
         schedule();
     }
 
@@ -180,19 +220,36 @@ namespace MediaDedup
     void ThreadPoolManager::schedule()
     {
         if (draining_.load())
+        {
+            Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+            logger.debug("Skipping schedule - draining in progress");
             return;
+        }
 
         std::unique_lock<std::mutex> lock(mutex_);
 
         // Gradual decrease policy: if running_total_ >= effective_max_, we can still finish tasks but avoid starting new ones
         if (running_total_ >= effective_max_)
+        {
+            Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+            logger.debug("Skipping schedule - at capacity (%zu/%zu threads)", running_total_, effective_max_);
             return;
+        }
 
         if (round_robin_types_.empty())
+        {
+            Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+            logger.debug("Skipping schedule - no task types registered");
             return;
+        }
+
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.debug("Scheduling tasks - running: %zu/%zu, types: %zu", running_total_, effective_max_, round_robin_types_.size());
 
         size_t startIndex = rr_index_;
         size_t numTypes = round_robin_types_.size();
+        size_t tasksStarted = 0;
+
         for (size_t i = 0; i < numTypes && running_total_ < effective_max_; ++i)
         {
             const std::string &type = round_robin_types_[(startIndex + i) % numTypes];
@@ -203,13 +260,19 @@ namespace MediaDedup
             size_t runningForType = type_to_running_[type];
             size_t allowance = allowanceFor(type);
             if (runningForType >= allowance)
+            {
+                logger.debug("Type '%s' at allowance limit (%zu/%zu)", type, runningForType, allowance);
                 continue; // this type is at its slice
+            }
 
             if (running_total_ >= effective_max_)
                 break;
 
             if (pool_.available() <= 0)
+            {
+                logger.debug("No available threads in pool");
                 break;
+            }
 
             auto task = queue.front();
             queue.pop_front();
@@ -222,10 +285,21 @@ namespace MediaDedup
             running_total_ += 1;
             type_to_running_[type] += 1;
             active_runnables_[id] = runnable;
+
+            logger.trace("Starting execution of task %llu for type '%s'", static_cast<unsigned long long>(id), type);
             pool_.start(*runnable);
+            tasksStarted++;
+
+            logger.debug("Started task %llu for type '%s' (running: %zu/%zu, allowance: %zu)",
+                         static_cast<unsigned long long>(id), type, type_to_running_[type], running_total_, allowance);
 
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
+        }
+
+        if (tasksStarted > 0)
+        {
+            logger.information("Scheduled %zu new tasks, total running: %zu/%zu", tasksStarted, running_total_, effective_max_);
         }
     }
 

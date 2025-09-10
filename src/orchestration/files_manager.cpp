@@ -130,6 +130,7 @@ namespace MediaDedup::Orchestration
         {
             // Build in-memory index
             logger.information("Building in-memory index from scanned_files");
+            logger.trace("Accessing database to retrieve scanned_files table data");
             std::unordered_map<std::string, ScannedFileRow> index;
             for (auto &r : ScannedFilesOps::listAll(*db_))
             {
@@ -137,8 +138,16 @@ namespace MediaDedup::Orchestration
             }
             logger.information(std::string("Loaded rows into index: ") + std::to_string(index.size()));
 
+            logger.trace("Accessing database to retrieve media locations for monitoring");
             auto locations = filesService_->listMediaLocations();
             logger.information(std::string("Media locations to scan: ") + std::to_string(locations.size()));
+
+            // Trace: List all directories being monitored
+            logger.trace("Directories being monitored:");
+            for (const auto &kv : locations)
+            {
+                logger.trace("  - %s -> %s", kv.first, kv.second);
+            }
             for (const auto &kv : locations)
             {
                 const std::string &normRoot = kv.first;

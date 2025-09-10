@@ -3,7 +3,7 @@ server.host: 0.0.0.0
 database.path: data/dedup_server.db
 server.name: Media Deduplication Server
 server.port: 8080
-logging.level: debug
+logging.level: trace
 database.session.acquireBackoffMs: 50
 database.session.acquireTimeoutMs: 3000
 tpm.pool.max: auto
@@ -13,7 +13,7 @@ tpm.killTimeoutMs: 10000
 
 # Files manager & scheduler configuration
 files.manager.enabled: true
-files.manager.scan.intervalMs: 300000
+files.manager.scan.intervalMs: 1000
 
 # TPM share for file scanning (0 or 1)
 tpm.types.fileScan.share: 1

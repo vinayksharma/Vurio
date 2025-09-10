@@ -187,6 +187,11 @@ namespace MediaDedup
         void applyDefaultConfigValues();
 
         /**
+         * @brief Set up color-coded logging for different log levels
+         */
+        void setupColorLogging();
+
+        /**
          * @brief Apply logging level to Poco logger based on string value
          */
         void applyLogLevel(const std::string &level);
