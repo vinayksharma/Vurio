@@ -65,6 +65,11 @@ target_link_libraries(unified_config_lib
 add_executable(media_dedup_server
     src/main.cpp
     src/core/server.cpp
+    src/core/logging_setup.cpp
+    src/core/instance_checker.cpp
+    src/core/config_manager.cpp
+    src/core/server_initializer.cpp
+    src/core/server_shutdown.cpp
     src/core/webserver/server_core.cpp
     src/core/webserver/handlers_config.cpp
     src/core/webserver/handlers_user_settings.cpp

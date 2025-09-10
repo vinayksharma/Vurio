@@ -4,6 +4,11 @@
 # Core components
 set(CORE_SOURCES
     core/server.cpp
+    core/logging_setup.cpp
+    core/instance_checker.cpp
+    core/config_manager.cpp
+    core/server_initializer.cpp
+    core/server_shutdown.cpp
 )
 
 # Configuration management (legacy ConfigManager removed)
