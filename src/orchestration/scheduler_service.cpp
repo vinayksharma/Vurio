@@ -163,7 +163,10 @@ namespace MediaDedup::Orchestration
         // Special case for fileScan job: also check files.manager.scan.intervalMs
         else if (job.jobId == "fileScan")
         {
+            int originalInterval = intervalMs;
             intervalMs = cfg_->getPropertyValue<int>("files.manager.scan.intervalMs", intervalMs);
+            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+            logger.debug("fileScan job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
 
         if (intervalMs != static_cast<int>(job.interval.count()))

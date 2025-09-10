@@ -315,6 +315,7 @@ namespace MediaDedup
                 files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service);
                 files_manager_->initialize();
                 int intervalMs = config_manager_->getPropertyValue<int>("files.manager.scan.intervalMs", 300000);
+                logger_.information("Loading fileScan interval from config: %d ms", intervalMs);
                 scheduler_service_->registerJob("fileScan", std::chrono::milliseconds(intervalMs), "fileScan", [fm = files_manager_]()
                                                 { fm->runOnce(); });
             }
