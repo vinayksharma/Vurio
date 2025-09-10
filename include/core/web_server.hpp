@@ -209,6 +209,18 @@ namespace MediaDedup
     };
 
     /**
+     * @brief Handler for GET /api/endpoints (list all API endpoints)
+     */
+    class ApiEndpointsHandler : public ConfigRequestHandler
+    {
+    public:
+        using ConfigRequestHandler::ConfigRequestHandler;
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+    };
+
+    /**
      * @brief Handler for POST /api/v1/config/restart-webserver (restart web server)
      */
     class RestartWebServerHandler : public ConfigRequestHandler

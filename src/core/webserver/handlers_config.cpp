@@ -626,4 +626,187 @@ namespace MediaDedup
         }
     }
 
+    // ApiEndpointsHandler
+    void ApiEndpointsHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                            Poco::Net::HTTPServerResponse &response)
+    {
+        // Set CORS headers
+        response.set("Access-Control-Allow-Origin", "*");
+        response.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        response.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+        if (request.getMethod() == "OPTIONS")
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+            response.send();
+            return;
+        }
+
+        if (request.getMethod() != "GET")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+
+        try
+        {
+            Poco::JSON::Object endpoints_info;
+            endpoints_info.set("title", "Media Deduplication Server API Endpoints");
+            endpoints_info.set("version", "1.0.0");
+            endpoints_info.set("description", "Available API endpoints for the Media Deduplication Server");
+
+            Poco::JSON::Array endpoints;
+
+            // Configuration Management endpoints
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/config");
+                endpoint.set("description", "Get all configuration properties");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/config/{key}");
+                endpoint.set("description", "Get specific configuration property");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "PUT");
+                endpoint.set("path", "/api/v1/config/{key}");
+                endpoint.set("description", "Update configuration property");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "POST");
+                endpoint.set("path", "/api/v1/config/reload");
+                endpoint.set("description", "Reload configuration from file");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/config/status");
+                endpoint.set("description", "Get configuration system status");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "POST");
+                endpoint.set("path", "/api/v1/config/restart-webserver");
+                endpoint.set("description", "Restart web server");
+                endpoint.set("category", "Configuration Management");
+                endpoints.add(endpoint);
+            }
+
+            // User Settings endpoints
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/user-settings");
+                endpoint.set("description", "List all user settings");
+                endpoint.set("category", "User Settings");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/user-settings/{key}");
+                endpoint.set("description", "Get specific user setting");
+                endpoint.set("category", "User Settings");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "PUT");
+                endpoint.set("path", "/api/v1/user-settings/{key}");
+                endpoint.set("description", "Create or update user setting");
+                endpoint.set("category", "User Settings");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "DELETE");
+                endpoint.set("path", "/api/v1/user-settings/{key}");
+                endpoint.set("description", "Delete user setting");
+                endpoint.set("category", "User Settings");
+                endpoints.add(endpoint);
+            }
+
+            // Media Locations endpoints
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "POST");
+                endpoint.set("path", "/api/v1/media-locations/register");
+                endpoint.set("description", "Register media location");
+                endpoint.set("category", "Media Locations");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "POST");
+                endpoint.set("path", "/api/v1/media-locations/deregister");
+                endpoint.set("description", "Deregister media location");
+                endpoint.set("category", "Media Locations");
+                endpoints.add(endpoint);
+            }
+
+            // System Status endpoints
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/v1/tpm/status");
+                endpoint.set("description", "Get Thread Pool Manager status");
+                endpoint.set("category", "System Status");
+                endpoints.add(endpoint);
+            }
+
+            // API Documentation endpoints
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/openapi.json");
+                endpoint.set("description", "OpenAPI 3.0 specification");
+                endpoint.set("category", "API Documentation");
+                endpoints.add(endpoint);
+            }
+
+            {
+                Poco::JSON::Object endpoint;
+                endpoint.set("method", "GET");
+                endpoint.set("path", "/api/endpoints");
+                endpoint.set("description", "List all available API endpoints");
+                endpoint.set("category", "API Documentation");
+                endpoints.add(endpoint);
+            }
+
+            endpoints_info.set("endpoints", endpoints);
+
+            std::stringstream ss;
+            endpoints_info.stringify(ss);
+            sendJsonResponse(response, ss.str());
+        }
+        catch (const std::exception &e)
+        {
+            sendErrorResponse(response, std::string("Failed to generate endpoints list: ") + e.what(), 500);
+        }
+    }
+
 } // namespace MediaDedup

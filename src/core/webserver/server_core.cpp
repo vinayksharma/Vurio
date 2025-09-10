@@ -41,6 +41,8 @@ namespace MediaDedup
             return new RestartWebServerHandler(config_manager_, web_server_);
         if (uri == "/api/openapi.json" && method == "GET")
             return new OpenApiSpecHandler(config_manager_);
+        if (uri == "/api/endpoints" && method == "GET")
+            return new ApiEndpointsHandler(config_manager_);
         if (uri.find("/api/v1/config/") == 0)
         {
             if (method == "GET")

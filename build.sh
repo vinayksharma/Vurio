@@ -168,9 +168,10 @@ show_help() {
     echo "  $0 --debug            # Build in debug mode"
     echo "  $0 --test             # Build and run tests"
     echo ""
-    echo "Other scripts:"
-    echo "  ./scripts/stopall     # Stop all running server instances"
-    echo "  $0 --install          # Build and install"
+echo "Other scripts:"
+echo "  ./scripts/stopall        # Stop all running server instances"
+echo "  ./scripts/show_endpoints # Show all available API endpoints"
+echo "  $0 --install             # Build and install"
     echo "  $0 --debug --test     # Build in debug mode and run tests"
 }
 
