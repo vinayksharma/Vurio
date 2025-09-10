@@ -3,6 +3,9 @@ server.host: 0.0.0.0
 database.path: data/dedup_server.db
 server.name: Media Deduplication Server
 server.port: 8080
+server.processName: media_dedup_server
+server.instanceCheck.enabled: true
+server.instanceCheck.bufferSize: 128
 logging.level: trace
 database.session.acquireBackoffMs: 50
 database.session.acquireTimeoutMs: 3000

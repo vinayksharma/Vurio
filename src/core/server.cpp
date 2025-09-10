@@ -17,6 +17,9 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
+#include <cstdio>
+#include <vector>
+#include <unistd.h>
 
 // TPM
 #include "orchestration/thread_pool_manager.hpp"
@@ -279,6 +282,13 @@ namespace MediaDedup
             {
                 logger_.error("Failed to initialize configuration");
                 return Application::EXIT_CONFIG;
+            }
+
+            // Check for existing instances after configuration is loaded
+            if (!checkForExistingInstances())
+            {
+                logger_.error("Another instance of Media Deduplication Server is already running. Exiting.");
+                return Application::EXIT_TEMPFAIL;
             }
 
             // Initialize database
@@ -763,6 +773,82 @@ namespace MediaDedup
             logger_.information("Type 'help' for available commands");
             break;
         }
+    }
+
+    bool MediaDedupServer::checkForExistingInstances()
+    {
+        // Check if instance checking is enabled
+        bool instance_check_enabled = config_manager_->getPropertyValue<bool>("server.instanceCheck.enabled", true);
+        if (!instance_check_enabled)
+        {
+            logger_.debug("Instance checking is disabled, proceeding with startup");
+            return true;
+        }
+
+        // Get current process ID
+        pid_t current_pid = getpid();
+
+        // Get process name from configuration
+        std::string process_name = config_manager_->getPropertyValue<std::string>("server.processName", "media_dedup_server");
+
+        // Use pgrep to find all processes matching the configured process name
+        // This is more reliable than checking /proc or using system calls
+        std::string command = "pgrep -f " + process_name + " 2>/dev/null || true";
+        FILE *pipe = popen(command.c_str(), "r");
+        if (!pipe)
+        {
+            logger_.warning("Could not check for existing instances (popen failed)");
+            return true; // Allow startup if we can't check
+        }
+
+        std::string result;
+        int buffer_size = config_manager_->getPropertyValue<int>("server.instanceCheck.bufferSize", 128);
+        std::vector<char> buffer(buffer_size);
+        while (fgets(buffer.data(), buffer_size, pipe) != nullptr)
+        {
+            result += std::string(buffer.data());
+        }
+        pclose(pipe);
+
+        // Parse the result to find PIDs
+        std::istringstream iss(result);
+        std::string line;
+        std::vector<pid_t> existing_pids;
+
+        while (std::getline(iss, line))
+        {
+            if (!line.empty())
+            {
+                try
+                {
+                    pid_t pid = std::stoi(line);
+                    if (pid != current_pid)
+                    { // Don't count ourselves
+                        existing_pids.push_back(pid);
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    // Ignore invalid PIDs
+                    continue;
+                }
+            }
+        }
+
+        if (!existing_pids.empty())
+        {
+            logger_.error("Found %d existing instance(s) of Media Deduplication Server:", static_cast<int>(existing_pids.size()));
+            for (pid_t pid : existing_pids)
+            {
+                logger_.error("  - PID: %d", static_cast<int>(pid));
+            }
+            logger_.error("Please stop existing instances before starting a new one.");
+            logger_.error("Use './scripts/stopall' to stop all instances.");
+            return false;
+        }
+
+        logger_.debug("No existing instances found, proceeding with startup");
+        return true;
     }
 
 } // namespace MediaDedup

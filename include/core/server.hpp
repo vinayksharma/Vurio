@@ -195,6 +195,12 @@ namespace MediaDedup
          * @brief Apply logging level to Poco logger based on string value
          */
         void applyLogLevel(const std::string &level);
+
+        /**
+         * @brief Check for existing instances of the server
+         * @return true if no other instances are running, false if another instance exists
+         */
+        bool checkForExistingInstances();
     };
 
 } // namespace MediaDedup

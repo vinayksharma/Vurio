@@ -352,6 +352,18 @@ namespace MediaDedup
     void OpenApiSpecHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                            Poco::Net::HTTPServerResponse &response)
     {
+        // Set CORS headers
+        response.set("Access-Control-Allow-Origin", "*");
+        response.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        response.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+        if (request.getMethod() == "OPTIONS")
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+            response.send();
+            return;
+        }
+
         if (request.getMethod() != "GET")
         {
             sendErrorResponse(response, "Method not allowed", 405);
