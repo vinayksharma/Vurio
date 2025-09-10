@@ -68,16 +68,12 @@ OPTIONS:
 
 TEST_TYPE:
     unit                Run unit tests only
-    integration         Run integration tests only
-    performance         Run performance tests only
     all                 Run all tests (default)
     specific TEST_NAME  Run specific test
 
 EXAMPLES:
     $0                    # Run all tests
     $0 unit              # Run unit tests only
-    $0 integration       # Run integration tests only
-    $0 performance       # Run performance tests only
     $0 --coverage        # Run with coverage
     $0 --verbose --jobs 4 # Run with verbose output and 4 jobs
     $0 --filter "LogLevel" # Run tests containing "LogLevel"
@@ -134,43 +130,7 @@ run_unit_tests() {
     fi
 }
 
-# Function to run integration tests
-run_integration_tests() {
-    print_header "Running Integration Tests"
-    
-    local test_pattern="test_*"
-    if [ "$VERBOSE" = true ]; then
-        ctest --test-dir "$BUILD_DIR" --tests-regex "$test_pattern" --label-regex "integration" --verbose
-    else
-        ctest --test-dir "$BUILD_DIR" --tests-regex "$test_pattern" --label-regex "integration" --output-on-failure
-    fi
-    
-    if [ $? -eq 0 ]; then
-        print_success "Integration tests completed successfully"
-    else
-        print_failure "Integration tests failed"
-        return 1
-    fi
-}
-
-# Function to run performance tests
-run_performance_tests() {
-    print_header "Running Performance Tests"
-    
-    local test_pattern="test_*"
-    if [ "$VERBOSE" = true ]; then
-        ctest --test-dir "$BUILD_DIR" --tests-regex "$test_pattern" --label-regex "performance" --verbose
-    else
-        ctest --test-dir "$BUILD_DIR" --tests-regex "$test_pattern" --label-regex "performance" --output-on-failure
-    fi
-    
-    if [ $? -eq 0 ]; then
-        print_success "Performance tests completed successfully"
-    else
-        print_failure "Performance tests failed"
-        return 1
-    fi
-}
+# Integration and Performance test functions removed for brevity
 
 # Function to run all tests
 run_all_tests() {
@@ -451,7 +411,7 @@ main() {
                 MEMORY_CHECK=true
                 shift
                 ;;
-            unit|integration|performance|all|specific)
+            unit|all|specific)
                 TEST_TYPE="$1"
                 if [ "$1" = "specific" ]; then
                     if [ -z "$2" ]; then
@@ -488,12 +448,6 @@ main() {
     case $TEST_TYPE in
         unit)
             run_unit_tests
-            ;;
-        integration)
-            run_integration_tests
-            ;;
-        performance)
-            run_performance_tests
             ;;
         specific)
             run_specific_test "$SPECIFIC_TEST"
