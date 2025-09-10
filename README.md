@@ -7,8 +7,13 @@ A high-performance, scalable media deduplication server built with C++ and moder
 - **Multi-format Support**: Handles images (JPG, PNG, GIF, etc.), videos (MP4, AVI, MOV, etc.), and audio files (MP3, WAV, FLAC, etc.)
 - **Intelligent Deduplication**: Uses SHA-256 hashing for accurate duplicate detection
 - **Database Management**: SQLite-based storage with Poco Data for efficient data handling
-- **Configuration Management**: Flexible YAML-based configuration with Poco Util
-- **HTTP API**: RESTful API for file upload, search, and management
+- **Unified Configuration System**: Observable YAML-based configuration with live updates
+- **RESTful HTTP API**: Complete OpenAPI 3.0 specification with 13 endpoints
+- **Thread Pool Management**: Configurable thread pools with per-type resource allocation
+- **Scheduler Service**: Advanced job scheduling with jitter, backoff, and drift management
+- **File Management**: Automated file scanning and media location monitoring
+- **Instance Management**: Prevents multiple server instances from running simultaneously
+- **Console Interface**: Interactive command-line interface with graceful shutdown
 - **Performance Optimized**: Asynchronous processing, caching, and connection pooling
 - **Extensible Architecture**: Modular design for easy feature additions
 
@@ -110,19 +115,37 @@ See `config/CONFIGURATION_REFERENCE.md` for the canonical list of configuration 
 
 ## 📊 Web API
 
-The web server API (config, user settings, media locations, OpenAPI, TPM status) is documented in `WEB_SERVER_README.md`. Quick links:
+The web server provides a comprehensive RESTful API with 13 endpoints for configuration management, user settings, media locations, and system monitoring. Full documentation is available in `WEB_SERVER_README.md`.
 
-- `GET /api/v1/config`, `GET /api/v1/config/{key}`, `PUT /api/v1/config/{key}`
-- `POST /api/v1/config/reload`, `GET /api/v1/config/status`, `GET /api/openapi.json`
-- `GET /api/v1/tpm/status`
+### Configuration Management
+
+- `GET /api/v1/config` - Get all configuration properties
+- `GET /api/v1/config/{key}` - Get specific configuration property
+- `PUT /api/v1/config/{key}` - Update configuration property
+- `POST /api/v1/config/reload` - Reload configuration from file
+- `GET /api/v1/config/status` - Get system status
+
+### User Settings & Media Locations
+
+- `GET /api/v1/user-settings` - Get all user settings
+- `GET /api/v1/user-settings/{key}` - Get specific user setting
+- `PUT /api/v1/user-settings/{key}` - Create/update user setting
+- `DELETE /api/v1/user-settings/{key}` - Delete user setting
+- `POST /api/v1/media-locations/register` - Register media location
+- `POST /api/v1/media-locations/deregister` - Deregister media location
+
+### System Monitoring
+
+- `GET /api/v1/tpm/status` - Get Thread Pool Manager status
+- `GET /api/openapi.json` - OpenAPI 3.0 specification
 
 ## 🗄️ Database Schema
 
 The server uses SQLite with the following main tables:
 
-- **media_files**: File metadata and paths
-- **file_hashes**: Hash values and file associations
-- **metadata**: Extended file information
+- **user_settings**: Key-value user settings (`key TEXT PRIMARY KEY, value TEXT NOT NULL`)
+- **scanned_files**: File metadata and processing status with fields for different processing modes
+- **Additional tables**: Created dynamically as needed for media processing
 
 ## 🔍 Development
 
@@ -134,14 +157,18 @@ dedup_server/
 │   ├── config/             # Configuration management
 │   ├── core/               # Core server components
 │   ├── database/           # Database management
-│   └── web/                # Web API components
+│   ├── filesmanager/       # File scanning and management
+│   └── orchestration/      # Thread pool and scheduler
 ├── src/                    # Source files
 │   ├── config/             # Configuration implementation
 │   ├── core/               # Core server implementation
 │   ├── database/           # Database implementation
-│   └── web/                # Web API implementation
+│   ├── filesmanager/       # File scanning implementation
+│   ├── orchestration/      # Thread pool and scheduler implementation
+│   └── webserver/          # Web API handlers
 ├── tests/                  # Test files
 ├── config/                 # Configuration files
+├── scripts/                # Utility scripts
 ├── CMakeLists.txt          # Build configuration
 └── README.md               # This file
 ```
@@ -190,11 +217,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📊 Performance
 
-- **File Processing**: Up to 1000 files/second (depending on file size)
-- **Hash Generation**: SHA-256 at ~50MB/s per core
-- **Database Operations**: 10,000+ queries/second
-- **Memory Usage**: ~50MB base + 10MB per 1000 files
-- **Storage Overhead**: Minimal - only metadata and hashes stored
+- **File Processing**: Configurable scanning with scheduler-based processing
+- **Thread Management**: Auto-detected or configurable thread pools with per-type resource allocation
+- **Database Operations**: Connection pooling with configurable timeouts and backoff
+- **Memory Usage**: Efficient memory management with configurable limits
+- **Storage Overhead**: Minimal - only metadata and processing status stored
+- **Configuration**: Live updates without server restart for most settings
+- **Scheduling**: Advanced job scheduling with jitter, backoff, and drift management
 
 ---
 

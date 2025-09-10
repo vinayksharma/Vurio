@@ -43,6 +43,7 @@ set(UNIT_TEST_SOURCES
     unit/test_file_scanner.cpp
     unit/test_scheduler_service.cpp
     unit/test_files_manager_scheduler.cpp
+    unit/test_property_manager.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -97,6 +98,11 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
         )
         target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_SCHED=1)
+    endif()
+    if(${test_name} STREQUAL "test_property_manager")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/config/property_manager.cpp
+        )
     endif()
     if(${test_name} STREQUAL "test_files_manager_scheduler")
         target_sources(${test_name} PRIVATE 

@@ -63,14 +63,21 @@ Successfully implemented a **web server with OpenAPI-based endpoints** for the M
 
 ## 🚀 **API Endpoints**
 
-| Method | Endpoint                | Description                         | Status         |
-| ------ | ----------------------- | ----------------------------------- | -------------- |
-| `GET`  | `/api/v1/config`        | Get all configuration properties    | ✅ Implemented |
-| `GET`  | `/api/v1/config/{key}`  | Get specific configuration property | ✅ Implemented |
-| `PUT`  | `/api/v1/config/{key}`  | Update configuration property       | ✅ Implemented |
-| `POST` | `/api/v1/config/reload` | Reload configuration from file      | ✅ Implemented |
-| `GET`  | `/api/v1/config/status` | Get system status                   | ✅ Implemented |
-| `GET`  | `/api/openapi.json`     | OpenAPI specification               | ✅ Implemented |
+| Method   | Endpoint                             | Description                         | Status         |
+| -------- | ------------------------------------ | ----------------------------------- | -------------- |
+| `GET`    | `/api/v1/config`                     | Get all configuration properties    | ✅ Implemented |
+| `GET`    | `/api/v1/config/{key}`               | Get specific configuration property | ✅ Implemented |
+| `PUT`    | `/api/v1/config/{key}`               | Update configuration property       | ✅ Implemented |
+| `POST`   | `/api/v1/config/reload`              | Reload configuration from file      | ✅ Implemented |
+| `GET`    | `/api/v1/config/status`              | Get system status                   | ✅ Implemented |
+| `GET`    | `/api/openapi.json`                  | OpenAPI specification               | ✅ Implemented |
+| `GET`    | `/api/v1/tpm/status`                 | Get Thread Pool Manager status      | ✅ Implemented |
+| `GET`    | `/api/v1/user-settings`              | Get all user settings               | ✅ Implemented |
+| `GET`    | `/api/v1/user-settings/{key}`        | Get specific user setting           | ✅ Implemented |
+| `PUT`    | `/api/v1/user-settings/{key}`        | Create/update user setting          | ✅ Implemented |
+| `DELETE` | `/api/v1/user-settings/{key}`        | Delete user setting                 | ✅ Implemented |
+| `POST`   | `/api/v1/media-locations/register`   | Register media location             | ✅ Implemented |
+| `POST`   | `/api/v1/media-locations/deregister` | Deregister media location           | ✅ Implemented |
 
 ## 📁 **Files Created/Modified**
 
@@ -211,13 +218,33 @@ await fetch("http://localhost:8080/api/v1/config/logging.level", {
 
 The server automatically manages these configuration properties:
 
-| Property        | Type     | Default                      | Description         |
-| --------------- | -------- | ---------------------------- | ------------------- |
-| `server.host`   | string   | "0.0.0.0"                    | Server host address |
-| `server.port`   | uint16_t | 8080                         | Server port number  |
-| `server.name`   | string   | "Media Deduplication Server" | Server name         |
-| `database.path` | string   | "data/dedup_server.db"       | Database file path  |
-| `logging.level` | string   | "info"                       | Logging level       |
+| Property                            | Type     | Default                      | Description                     |
+| ----------------------------------- | -------- | ---------------------------- | ------------------------------- |
+| `server.host`                       | string   | "0.0.0.0"                    | Server host address             |
+| `server.port`                       | uint16_t | 8080                         | Server port number              |
+| `server.name`                       | string   | "Media Deduplication Server" | Server name                     |
+| `server.mode`                       | string   | "FAST"                       | Server processing mode          |
+| `server.processName`                | string   | "media_dedup_server"         | Process name for instance check |
+| `server.instanceCheck.enabled`      | boolean  | true                         | Enable instance checking        |
+| `server.instanceCheck.bufferSize`   | integer  | 128                          | Instance check buffer size      |
+| `database.path`                     | string   | "data/dedup_server.db"       | Database file path              |
+| `database.session.acquireTimeoutMs` | integer  | 3000                         | DB session acquire timeout      |
+| `database.session.acquireBackoffMs` | integer  | 50                           | DB session acquire backoff      |
+| `logging.level`                     | string   | "info"                       | Logging level                   |
+| `files.manager.enabled`             | boolean  | true                         | Enable files manager            |
+| `files.manager.scan.intervalMs`     | integer  | 500                          | File scan interval              |
+| `scheduler.jitter.enabled`          | boolean  | false                        | Enable scheduler jitter         |
+| `scheduler.jitter.percent`          | integer  | 0                            | Scheduler jitter percentage     |
+| `scheduler.drift.mode`              | string   | "anchored"                   | Scheduler drift mode            |
+| `scheduler.drift.maxDriftMs`        | integer  | 60000                        | Maximum scheduler drift         |
+| `scheduler.backoff.enabled`         | boolean  | true                         | Enable scheduler backoff        |
+| `scheduler.backoff.initialMs`       | integer  | 1000                         | Initial backoff delay           |
+| `scheduler.backoff.multiplier`      | number   | 2.0                          | Backoff multiplier              |
+| `scheduler.backoff.maxMs`           | integer  | 30000                        | Maximum backoff delay           |
+| `scheduler.backoff.jitterPercent`   | integer  | 10                           | Backoff jitter percentage       |
+| `tpm.pool.max`                      | string   | "auto"                       | Thread pool max threads         |
+| `tpm.killTimeoutMs`                 | integer  | 10000                        | Thread pool shutdown timeout    |
+| `tpm.types.fileScan.share`          | number   | 1.0                          | File scan thread share          |
 
 ## 🚦 **Error Handling**
 

@@ -60,8 +60,8 @@ namespace MediaDedup::Orchestration
                                        std::function<void()> callback)
     {
         Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-        logger.information("Registering job: %s (type: %s, interval: %lld ms)",
-                           jobId, typeKey, interval.count());
+        logger.information("Registering job: %s (type: %s, interval: %ld ms)",
+                           jobId, typeKey, static_cast<long>(interval.count()));
 
         auto job = std::make_unique<Job>();
         job->jobId = jobId;
@@ -109,7 +109,7 @@ namespace MediaDedup::Orchestration
                                                     logger.information(std::string("Dispatching job: ") + ref.jobId +
                                                                        ", typeKey=" + ref.typeKey +
                                                                        ", intervalMs=" + std::to_string(ref.interval.count()));
-                                                    logger.trace("Submitting job '%s' to ThreadPoolManager for execution", ref.jobId);
+                                                    logger.trace("Submitting job '" + ref.jobId + "' to ThreadPoolManager for execution");
                                                 }
                                                 tpm_->submit(ref.typeKey, [cb = ref.callback]() { cb(); });
                                                 // reset backoff on success path (submission OK)
@@ -172,7 +172,7 @@ namespace MediaDedup::Orchestration
         if (intervalMs != static_cast<int>(job.interval.count()))
         {
             Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-            logger.information("Job '%s' interval updated: %lld ms -> %d ms",
+            logger.information("Job '%s' interval updated: %ld ms -> %d ms",
                                job.jobId, job.interval.count(), intervalMs);
         }
 

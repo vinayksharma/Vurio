@@ -148,7 +148,23 @@ Retrieves the OpenAPI 3.0 specification.
 
 **Response:** Complete OpenAPI specification in JSON format.
 
-### 7. **User Settings API**
+### 7. **GET /api/v1/tpm/status**
+
+Retrieves the Thread Pool Manager status.
+
+**Response:**
+
+```json
+{
+  "max_threads": 15,
+  "current_threads": 3,
+  "running_tasks": 2,
+  "queued_tasks": 0,
+  "shutdown_in_progress": false
+}
+```
+
+### 8. **User Settings API**
 
 CRUD for simple key/value user settings persisted in SQLite.
 
@@ -156,37 +172,74 @@ CRUD for simple key/value user settings persisted in SQLite.
 
 Returns all settings as a flat object.
 
+**Response:**
+
+```json
+{
+  "setting1": "value1",
+  "setting2": "value2"
+}
+```
+
 #### GET /api/v1/user-settings/{key}
 
 Returns a single setting by key.
+
+**Response:**
+
+```json
+{
+  "key": "setting1",
+  "value": "value1"
+}
+```
 
 #### PUT /api/v1/user-settings/{key}
 
 Create or update a setting.
 
-Request body:
+**Request body:**
 
 ```json
 { "value": "string" }
+```
+
+**Response:**
+
+```json
+{
+  "message": "Setting updated successfully",
+  "key": "setting1",
+  "value": "new_value"
+}
 ```
 
 #### DELETE /api/v1/user-settings/{key}
 
 Deletes a setting by key.
 
-### 8. **Media Locations API**
+**Response:**
+
+```json
+{
+  "message": "Setting deleted successfully",
+  "key": "setting1"
+}
+```
+
+### 9. **Media Locations API**
 
 Register and deregister media library directories.
 
 #### POST /api/v1/media-locations/register
 
-Body:
+**Request body:**
 
 ```json
 { "directory": "/path/to/media" }
 ```
 
-Response:
+**Response:**
 
 ```json
 { "status": "ok", "directory": "/path/to/media" }
@@ -194,13 +247,13 @@ Response:
 
 #### POST /api/v1/media-locations/deregister
 
-Body:
+**Request body:**
 
 ```json
 { "directory": "/path/to/media" }
 ```
 
-Response:
+**Response:**
 
 ```json
 { "status": "ok", "directory": "/path/to/media" }

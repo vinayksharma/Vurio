@@ -90,7 +90,7 @@ namespace MediaDedup
     void ThreadPoolManager::shutdownAndDrain(std::chrono::milliseconds killTimeout)
     {
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.information("Starting ThreadPoolManager shutdown (timeout: %lld ms)", killTimeout.count());
+        logger.information("Starting ThreadPoolManager shutdown (timeout: %ld ms)", static_cast<long>(killTimeout.count()));
 
         accepting_.store(false);
         draining_.store(true);
@@ -286,7 +286,7 @@ namespace MediaDedup
             type_to_running_[type] += 1;
             active_runnables_[id] = runnable;
 
-            logger.trace("Starting execution of task %llu for type '%s'", static_cast<unsigned long long>(id), type);
+            logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + type + "'");
             pool_.start(*runnable);
             tasksStarted++;
 

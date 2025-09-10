@@ -33,7 +33,7 @@ namespace MediaDedup::Orchestration
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
         if (rec.hasError())
         {
-            logger.warning("Scan error on %s: %s", rec.fullPath, rec.errorMessage);
+            logger.warning("Scan error on %s: %s", rec.fullPath.c_str(), rec.errorMessage.c_str());
             // Persist brief error info if row exists; otherwise skip creating new rows for errors only
             auto it = index.find(rec.fullPath);
             if (it != index.end())
@@ -146,7 +146,7 @@ namespace MediaDedup::Orchestration
             logger.trace("Directories being monitored:");
             for (const auto &kv : locations)
             {
-                logger.trace("  - %s -> %s", kv.first, kv.second);
+                logger.trace("  - " + kv.first + " -> " + kv.second);
             }
             for (const auto &kv : locations)
             {

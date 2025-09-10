@@ -51,6 +51,7 @@ add_subdirectory(examples)
 # Create unified config library
 add_library(unified_config_lib STATIC
     src/config/unified_observable_config.cpp
+    src/config/property_manager.cpp
 )
 
 target_include_directories(unified_config_lib PUBLIC

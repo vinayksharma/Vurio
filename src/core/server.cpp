@@ -79,7 +79,7 @@ namespace MediaDedup
             // Initialize configuration
             config_manager_ = std::make_shared<UnifiedObservableConfigManager>("config/config.yaml");
             ServerInitializer initializer(config_manager_);
-            
+
             if (!initializer.initializeConfiguration())
             {
                 logger_.error("Failed to initialize configuration");
@@ -131,7 +131,7 @@ namespace MediaDedup
 
             // Setup configuration change callback
             initializer.setupConfigChangeCallback([this, &initializer](const std::string &file_path)
-            {
+                                                  {
                 try {
                     // Handle configuration changes
                     std::string new_host = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
@@ -158,10 +158,13 @@ namespace MediaDedup
 
                     if (new_log_level != logging_level_)
                     {
+                        // Log the change before applying the new level to ensure it's visible
                         logger_.information("Logging level changed: " + logging_level_ + " -> " + new_log_level);
                         logging_level_ = new_log_level;
                         LoggingSetup logging_setup;
                         logging_setup.applyLogLevel(logging_level_);
+                        // Log confirmation after applying the new level
+                        logger_.information("Logging level successfully updated to: " + new_log_level);
                     }
 
                     // Apply DB session timings live
@@ -178,8 +181,7 @@ namespace MediaDedup
                     }
                 } catch (const std::exception &e) {
                     logger_.warning(std::string("Failed to handle file change: ") + e.what());
-                }
-            });
+                } });
 
             // Subscribe to console events
             console_subscription_id_ = console_input_manager_.subscribeToConsoleEvents(
@@ -188,15 +190,26 @@ namespace MediaDedup
                     handleConsoleEvent(event);
                 });
 
-            // Start console input processing
-            console_input_manager_.start();
-
             // Get initialized components
             database_manager_ = std::move(initializer.getDatabaseManager());
             web_server_ = std::move(initializer.getWebServer());
             tpm_ = initializer.getTPM();
             scheduler_service_ = initializer.getSchedulerService();
             files_manager_ = initializer.getFilesManager();
+
+            // Initialize server variables for logging
+            server_host_ = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
+            server_port_ = static_cast<uint16_t>(config_manager_->getPropertyValue<int>("server.port", 8080));
+            database_path_ = config_manager_->getPropertyValue<std::string>("database.path", "data/dedup_server.db");
+            logging_level_ = config_manager_->getPropertyValue<std::string>("logging.level", "info");
+            server_mode_ = config_manager_->getPropertyValue<std::string>("server.mode", "FAST");
+
+            // Apply the logging level from configuration
+            LoggingSetup logging_setup;
+            logging_setup.applyLogLevel(logging_level_);
+
+            // Start console input processing AFTER configuration is loaded
+            console_input_manager_.start();
 
             // Log startup information
             logStartupInfo();
@@ -213,22 +226,19 @@ namespace MediaDedup
                 scheduler_service_,
                 files_manager_,
                 console_input_manager_,
-                console_subscription_id_
-            );
+                console_subscription_id_);
 
             return Application::EXIT_OK;
         }
         catch (const std::exception &e)
         {
-            logger_.error("Server error: %s", std::string(e.what()));
+            logger_.error("Server error: %s", e.what());
             return Application::EXIT_SOFTWARE;
         }
     }
 
     void MediaDedupServer::waitForShutdown()
     {
-        logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
-
         // Wait for console input manager to finish
         console_input_manager_.waitForShutdown();
     }
@@ -288,9 +298,9 @@ namespace MediaDedup
     {
         logger_.information("=== Media Deduplication Server Started ===");
         logger_.information("Configuration file: config/config.yaml");
-        logger_.information("Database path: %s", database_path_);
-        logger_.information("Web server: %s:%d", server_host_, server_port_);
-        logger_.information("OpenAPI: http://localhost:%d/api/openapi.json", server_port_);
+        logger_.information("Database path: " + database_path_);
+        logger_.information("Web server: " + server_host_ + ":" + std::to_string(server_port_));
+        logger_.information("OpenAPI: http://localhost:" + std::to_string(server_port_) + "/api/openapi.json");
         logger_.information("==========================================");
         logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
     }

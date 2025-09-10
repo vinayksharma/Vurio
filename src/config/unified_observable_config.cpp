@@ -306,44 +306,23 @@ namespace MediaDedup
         reload_interval_ = interval;
     }
 
-    std::vector<std::string> UnifiedObservableConfigManager::getAllPropertyKeys() const
-    {
-        std::lock_guard<std::mutex> lock(properties_mutex_);
-        std::vector<std::string> keys;
-        keys.reserve(properties_.size());
-        for (const auto &[key, _] : properties_)
-        {
-            keys.push_back(key);
-        }
-        return keys;
-    }
-
-    bool UnifiedObservableConfigManager::hasProperty(const std::string &key) const
-    {
-        std::lock_guard<std::mutex> lock(properties_mutex_);
-        return properties_.find(key) != properties_.end();
-    }
+    // getAllPropertyKeys and hasProperty are now implemented inline in the header
+    // and delegate to ConfigPropertyManager
 
     void UnifiedObservableConfigManager::resetToDefaults()
     {
-        std::lock_guard<std::mutex> lock(properties_mutex_);
-        for (auto &[_, property] : properties_)
-        {
-            property->resetToDefault();
-        }
+        property_manager_.resetToDefaults();
         // Don't save immediately to avoid deadlock
         // The change events will handle saving if needed
     }
 
     std::string UnifiedObservableConfigManager::toString() const
     {
-        std::lock_guard<std::mutex> lock(properties_mutex_);
-
         std::stringstream ss;
         ss << "Configuration Manager Status:\n";
         ss << "  File: " << config_file_path_ << "\n";
         ss << "  Valid: " << (valid_ ? "yes" : "no") << "\n";
-        ss << "  Properties: " << properties_.size() << "\n";
+        ss << "  Properties: " << property_manager_.getPropertyCount() << "\n";
         ss << "  File monitoring: " << (enable_file_monitoring_ ? "enabled" : "disabled") << "\n";
 
         if (!validation_errors_.empty())
@@ -427,7 +406,7 @@ namespace MediaDedup
                 std::string key = item.first.Scalar();
                 auto value = yamlNodeToAny(item.second);
 
-                auto existing = getProperty<std::any>(key);
+                auto existing = property_manager_.getProperty<std::any>(key);
                 if (existing)
                 {
                     existing->setValueFromFile(value);
@@ -479,10 +458,14 @@ namespace MediaDedup
         {
             YAML::Node config;
 
-            std::lock_guard<std::mutex> lock(properties_mutex_);
-            for (const auto &[key, property] : properties_)
+            auto keys = property_manager_.getAllPropertyKeys();
+            for (const auto &key : keys)
             {
-                config[key] = anyToYamlNode(property->getValue());
+                auto property = const_cast<ConfigPropertyManager &>(property_manager_).getProperty<std::any>(key);
+                if (property)
+                {
+                    config[key] = anyToYamlNode(property->getValue());
+                }
             }
 
             std::ofstream file(config_file_path_);
@@ -648,10 +631,11 @@ namespace MediaDedup
         clearValidationErrors();
 
         // Basic validation - check if all required properties exist
-        std::lock_guard<std::mutex> lock(properties_mutex_);
-        for (const auto &[key, property] : properties_)
+        auto keys = property_manager_.getAllPropertyKeys();
+        for (const auto &key : keys)
         {
-            if (property->getValue().type() == typeid(std::string))
+            auto property = property_manager_.getProperty<std::any>(key);
+            if (property && property->getValue().type() == typeid(std::string))
             {
                 auto str_value = property->getValueAs<std::string>();
                 if (str_value.empty())

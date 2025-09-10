@@ -14,6 +14,7 @@
 #include <sstream>
 #include <yaml-cpp/yaml.h>
 #include "config/config_enums.hpp"
+#include "config/property_manager.hpp"
 
 namespace MediaDedup
 {
@@ -135,39 +136,23 @@ namespace MediaDedup
         bool saveConfiguration();
         bool reloadConfiguration();
 
-        // Property management
+        // Property management - delegated to ConfigPropertyManager
         template <typename T>
         std::shared_ptr<ObservableConfigProperty> getProperty(const std::string &key)
         {
-            std::lock_guard<std::mutex> lock(properties_mutex_);
-            auto it = properties_.find(key);
-            if (it != properties_.end())
-            {
-                return it->second;
-            }
-            return nullptr;
+            return property_manager_.getProperty<T>(key);
         }
 
         template <typename T>
         bool setPropertyValue(const std::string &key, const T &value)
         {
-            auto property = getProperty<T>(key);
-            if (property)
-            {
-                return property->setValue(value);
-            }
-            return false;
+            return property_manager_.setPropertyValue<T>(key, value);
         }
 
         template <typename T>
         T getPropertyValue(const std::string &key, const T &default_value = T{})
         {
-            auto property = getProperty<T>(key);
-            if (property)
-            {
-                return property->template getValueAs<T>();
-            }
-            return default_value;
+            return property_manager_.getPropertyValue<T>(key, default_value);
         }
 
         // Property creation and registration
@@ -176,15 +161,12 @@ namespace MediaDedup
                                                                  const T &default_value,
                                                                  const std::string &description = "")
         {
-            std::lock_guard<std::mutex> lock(properties_mutex_);
-
-            auto property = std::make_shared<ObservableConfigProperty>(key, default_value, description);
+            auto property = property_manager_.createProperty<T>(key, default_value, description);
 
             // Set up change callback to emit events
             property->setChangeCallback([this](const ConfigChangeEvent &event)
                                         { emitConfigChangeEvent(event); });
 
-            properties_[key] = property;
             return property;
         }
 
@@ -204,8 +186,8 @@ namespace MediaDedup
         // Configuration validation and status
         bool isValid() const { return valid_; }
         std::vector<std::string> getValidationErrors() const { return validation_errors_; }
-        std::vector<std::string> getAllPropertyKeys() const;
-        bool hasProperty(const std::string &key) const;
+        std::vector<std::string> getAllPropertyKeys() const { return property_manager_.getAllPropertyKeys(); }
+        bool hasProperty(const std::string &key) const { return property_manager_.hasProperty(key); }
 
         // Utility methods
         std::string getConfigFilePath() const { return config_file_path_; }
@@ -221,8 +203,7 @@ namespace MediaDedup
         bool enable_file_monitoring_;
         std::chrono::milliseconds reload_interval_;
 
-        std::unordered_map<std::string, std::shared_ptr<ObservableConfigProperty>> properties_;
-        mutable std::mutex properties_mutex_;
+        ConfigPropertyManager property_manager_;
 
         std::vector<ConfigChangeCallback> config_change_callbacks_;
         mutable std::mutex callbacks_mutex_;
