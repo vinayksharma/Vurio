@@ -46,8 +46,7 @@ namespace MediaDedup
 
         void setShare(const std::string &type, double share);
 
-        void submit(const std::string &type, std::function<void()> fn,
-                    std::optional<double> shareOverride = std::nullopt);
+        void submit(const std::string &type, std::function<void()> fn);
 
         Status getStatus() const;
 
@@ -78,7 +77,6 @@ namespace MediaDedup
 
         void schedule();
         size_t allowanceFor(const std::string &type) const;
-        double resolveShareFor(const std::string &type, std::optional<double> overrideShare) const;
         void onConfigChange(const ConfigChangeEvent &event);
 
         // Config
@@ -95,7 +93,7 @@ namespace MediaDedup
 
         std::unordered_map<std::string, double> type_to_share_;
         std::unordered_map<std::string, size_t> type_to_running_;
-        std::unordered_map<std::string, std::deque<std::pair<std::function<void()>, std::optional<double>>>> type_to_queue_;
+        std::unordered_map<std::string, std::deque<std::function<void()>>> type_to_queue_;
         std::vector<std::string> round_robin_types_;
         size_t rr_index_ = 0;
         size_t running_total_ = 0;

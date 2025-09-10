@@ -94,15 +94,14 @@ namespace MediaDedup
         type_to_share_[type] = share;
     }
 
-    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn,
-                                   std::optional<double> shareOverride)
+    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn)
     {
         if (!accepting_.load())
             return;
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            type_to_queue_[type].emplace_back(std::move(fn), shareOverride);
+            type_to_queue_[type].emplace_back(std::move(fn));
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
             {
@@ -178,16 +177,6 @@ namespace MediaDedup
         return allow;
     }
 
-    double ThreadPoolManager::resolveShareFor(const std::string &type, std::optional<double> overrideShare) const
-    {
-        if (overrideShare.has_value())
-            return *overrideShare;
-        auto it = type_to_share_.find(type);
-        if (it != type_to_share_.end())
-            return it->second;
-        return 1.0;
-    }
-
     void ThreadPoolManager::schedule()
     {
         if (draining_.load())
@@ -224,8 +213,7 @@ namespace MediaDedup
 
             auto task = queue.front();
             queue.pop_front();
-            auto fn = std::move(task.first);
-            // auto shareOverride = task.second; // not used in current implementation
+            auto fn = std::move(task);
 
             // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
