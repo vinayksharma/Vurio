@@ -8,79 +8,6 @@ namespace MediaDedup
 
     // ObservableConfigProperty implementation
 
-    std::string ObservableConfigProperty::getValueAsString() const
-    {
-        try
-        {
-            if (value_.type() == typeid(std::string))
-            {
-                return std::any_cast<std::string>(value_);
-            }
-            else if (value_.type() == typeid(int))
-            {
-                return std::to_string(std::any_cast<int>(value_));
-            }
-            else if (value_.type() == typeid(double))
-            {
-                return std::to_string(std::any_cast<double>(value_));
-            }
-            else if (value_.type() == typeid(bool))
-            {
-                return std::any_cast<bool>(value_) ? "true" : "false";
-            }
-            else if (value_.type() == typeid(std::vector<std::string>))
-            {
-                auto vec = std::any_cast<std::vector<std::string>>(value_);
-                std::string result = "[";
-                for (size_t i = 0; i < vec.size(); ++i)
-                {
-                    if (i > 0)
-                        result += ", ";
-                    result += vec[i];
-                }
-                result += "]";
-                return result;
-            }
-        }
-        catch (const std::bad_any_cast &)
-        {
-            // Fall through to return empty string
-        }
-        return "";
-    }
-
-    bool ObservableConfigProperty::setValueFromString(const std::string &value)
-    {
-        try
-        {
-            // Try to determine the type and convert
-            if (default_value_.type() == typeid(std::string))
-            {
-                return setValue(value);
-            }
-            else if (default_value_.type() == typeid(int))
-            {
-                return setValue(std::stoi(value));
-            }
-            else if (default_value_.type() == typeid(double))
-            {
-                return setValue(std::stod(value));
-            }
-            else if (default_value_.type() == typeid(bool))
-            {
-                std::string lower_value = value;
-                std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
-                bool bool_value = (lower_value == "true" || lower_value == "1" || lower_value == "yes");
-                return setValue(bool_value);
-            }
-        }
-        catch (const std::exception &)
-        {
-            return false;
-        }
-        return false;
-    }
-
     bool ObservableConfigProperty::setValue(const std::any &new_value, const std::string &source)
     {
         // Validate if validation callback is set
@@ -89,13 +16,14 @@ namespace MediaDedup
             return false;
         }
 
-        // Check if value actually changed (std::any doesn't support == operator)
-        // For now, we'll assume it changed and let the callback handle it
-        // In a production system, you might want to implement custom comparison
+        // Store old value for event emission
+        auto old_value = getValue();
 
-        auto old_value = value_;
-        value_ = new_value;
-        modified_ = true;
+        // Use base class to set the value
+        if (!ConfigProperty::setValue(new_value))
+        {
+            return false;
+        }
 
         // Emit change event
         emitChangeEvent(old_value, new_value, source, false);
@@ -105,10 +33,14 @@ namespace MediaDedup
 
     bool ObservableConfigProperty::setValueFromFile(const std::any &new_value)
     {
-        // Skip validation for file updates to avoid circular references
-        auto old_value = value_;
-        value_ = new_value;
-        modified_ = true;
+        // Store old value for event emission
+        auto old_value = getValue();
+
+        // Use base class to set the value (skip validation for file updates)
+        if (!ConfigProperty::setValueFromFile(new_value))
+        {
+            return false;
+        }
 
         // Emit change event with file source
         emitChangeEvent(old_value, new_value, "file", true);
@@ -118,13 +50,14 @@ namespace MediaDedup
 
     void ObservableConfigProperty::resetToDefault()
     {
-        // Reset to default (std::any doesn't support != operator)
-        // For now, we'll always reset and emit the event
-        auto old_value = value_;
-        value_ = default_value_;
-        modified_ = true;
+        // Store old value for event emission
+        auto old_value = getValue();
 
-        emitChangeEvent(old_value, default_value_, "default", false);
+        // Use base class to reset to default
+        ConfigProperty::resetToDefault();
+
+        // Emit change event
+        emitChangeEvent(old_value, getDefaultValue(), "default", false);
     }
 
     void ObservableConfigProperty::emitChangeEvent(const std::any &old_value, const std::any &new_value,

@@ -15,6 +15,7 @@
 #include <yaml-cpp/yaml.h>
 #include "config/config_enums.hpp"
 #include "config/property_manager.hpp"
+#include "config/config_property.hpp"
 
 namespace MediaDedup
 {
@@ -42,9 +43,9 @@ namespace MediaDedup
     /**
      * @brief Configuration property wrapper with unified observability
      *
-     * Generic property wrapper that can hold any type and emit change events
+     * Extends ConfigProperty with event emission and validation capabilities
      */
-    class ObservableConfigProperty
+    class ObservableConfigProperty : public ConfigProperty
     {
     public:
         using ChangeCallback = std::function<void(const ConfigChangeEvent &)>;
@@ -52,59 +53,20 @@ namespace MediaDedup
 
         ObservableConfigProperty(const std::string &key, const std::any &default_value,
                                  const std::string &description = "")
-            : key_(key), value_(default_value), default_value_(default_value),
-              description_(description), modified_(false) {}
-
-        // Getters
-        const std::string &getKey() const { return key_; }
-        const std::any &getValue() const { return value_; }
-        const std::any &getDefaultValue() const { return default_value_; }
-        const std::string &getDescription() const { return description_; }
-        bool isModified() const { return modified_; }
-
-        // Value type checking
-        template <typename T>
-        T getValueAs() const
-        {
-            try
-            {
-                return std::any_cast<T>(value_);
-            }
-            catch (const std::bad_any_cast &)
-            {
-                return T{};
-            }
-        }
-
-        // String conversion for file storage
-        std::string getValueAsString() const;
-        bool setValueFromString(const std::string &value);
+            : ConfigProperty(key, default_value, description) {}
 
         // Value setting with validation and event emission
         bool setValue(const std::any &new_value, const std::string &source = "programmatic");
         bool setValueFromFile(const std::any &new_value);
 
-        // Reset to default
+        // Reset to default (override to emit events)
         void resetToDefault();
 
         // Callback management
         void setChangeCallback(ChangeCallback callback) { change_callback_ = callback; }
         void setValidationCallback(ValidationCallback callback) { validation_callback_ = callback; }
 
-        // Modification tracking
-        void markUnmodified() { modified_ = false; }
-
-        // Implicit conversion to stored type (use with caution)
-        template <typename T>
-        operator T() const { return getValueAs<T>(); }
-
     private:
-        std::string key_;
-        std::any value_;
-        std::any default_value_;
-        std::string description_;
-        bool modified_;
-
         ChangeCallback change_callback_;
         ValidationCallback validation_callback_;
 
