@@ -31,6 +31,7 @@ namespace MediaDedup
                 logger.error("Failed to initialize configuration manager");
                 return false;
             }
+            
 
             logger.information("Configuration initialized successfully");
             return true;
@@ -86,10 +87,9 @@ namespace MediaDedup
             std::string host = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
             int port = config_manager_->getPropertyValue<int>("server.port", 8080);
 
+
             // Create web server
-            web_server_ = std::make_unique<WebServer>(config_manager_);
-            web_server_->setHost(host);
-            web_server_->setPort(static_cast<uint16_t>(port));
+            web_server_ = std::make_unique<WebServer>(config_manager_, host, static_cast<uint16_t>(port));
 
             // Setup request handlers
             setupRequestHandlers();

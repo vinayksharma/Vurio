@@ -108,8 +108,11 @@ namespace MediaDedup
 
     void WebServer::initializeServer()
     {
+        std::cout << "initializeServer: host='" << host_ << "', port=" << port_ << std::endl;
         Poco::Net::SocketAddress socket_address(host_, port_);
+        std::cout << "SocketAddress created successfully" << std::endl;
         auto server_socket = std::make_unique<Poco::Net::ServerSocket>(socket_address);
+        std::cout << "ServerSocket created successfully" << std::endl;
 
         auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),

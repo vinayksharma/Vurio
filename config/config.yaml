@@ -11,7 +11,7 @@ scheduler.jitter.enabled: false
 database.session.acquireBackoffMs: 50
 files.manager.scan.intervalMs: 500
 database.path: data/dedup_server.db
-server.host: 0.0.0.0
+server.host: localhost
 scheduler.backoff.multiplier: 2
 logging.level: trace
 scheduler.backoff.initialMs: 1000
