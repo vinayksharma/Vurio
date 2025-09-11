@@ -78,6 +78,7 @@ namespace MediaDedup
         : config_file_path_(config_file_path),
           enable_file_monitoring_(enable_file_monitoring),
           reload_interval_(reload_interval),
+          yaml_serializer_(config_file_path),
           running_(false),
           valid_(false)
     {
@@ -331,13 +332,13 @@ namespace MediaDedup
     {
         try
         {
-            YAML::Node config = YAML::LoadFile(config_file_path_);
+            auto properties = yaml_serializer_.parseYamlFile();
 
             // Update existing properties from file or create new ones using the underlying type
-            for (const auto &item : config)
+            for (const auto &item : properties)
             {
-                std::string key = item.first.Scalar();
-                auto value = yamlNodeToAny(item.second);
+                const std::string &key = item.first;
+                const std::any &value = item.second;
 
                 auto existing = property_manager_.getProperty<std::any>(key);
                 if (existing)
@@ -369,7 +370,7 @@ namespace MediaDedup
                 else
                 {
                     // Fallback: store as string representation
-                    createProperty<std::string>(key, item.second.Scalar(), "Loaded from file");
+                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
                 }
             }
 
@@ -389,7 +390,7 @@ namespace MediaDedup
     {
         try
         {
-            YAML::Node config;
+            std::unordered_map<std::string, std::any> properties;
 
             auto keys = property_manager_.getAllPropertyKeys();
             for (const auto &key : keys)
@@ -397,23 +398,18 @@ namespace MediaDedup
                 auto property = const_cast<ConfigPropertyManager &>(property_manager_).getProperty<std::any>(key);
                 if (property)
                 {
-                    config[key] = anyToYamlNode(property->getValue());
+                    properties[key] = property->getValue();
                 }
             }
 
-            std::ofstream file(config_file_path_);
-            if (!file.is_open())
+            bool success = yaml_serializer_.serializeToYamlFile(properties);
+            if (success)
             {
-                return false;
+                // Update last modification time (const_cast needed for const method)
+                const_cast<UnifiedObservableConfigManager *>(this)->last_file_modification_ = std::chrono::system_clock::now();
             }
 
-            file << config;
-            file.close();
-
-            // Update last modification time (const_cast needed for const method)
-            const_cast<UnifiedObservableConfigManager *>(this)->last_file_modification_ = std::chrono::system_clock::now();
-
-            return true;
+            return success;
         }
         catch (const std::exception &e)
         {
@@ -423,103 +419,6 @@ namespace MediaDedup
         }
     }
 
-    std::any UnifiedObservableConfigManager::yamlNodeToAny(const YAML::Node &node) const
-    {
-        if (node.IsScalar())
-        {
-            if (node.IsNull())
-            {
-                return std::any{};
-            }
-            else if (node.IsScalar())
-            {
-                std::string str_value = node.Scalar();
-
-                // Try to convert to appropriate type
-                try
-                {
-                    // Try int first
-                    return std::any{node.as<int>()};
-                }
-                catch (...)
-                {
-                    try
-                    {
-                        // Try double
-                        return std::any{node.as<double>()};
-                    }
-                    catch (...)
-                    {
-                        try
-                        {
-                            // Try bool
-                            return std::any{node.as<bool>()};
-                        }
-                        catch (...)
-                        {
-                            // Default to string
-                            return std::any{str_value};
-                        }
-                    }
-                }
-            }
-        }
-        else if (node.IsSequence())
-        {
-            std::vector<std::string> vec;
-            for (const auto &item : node)
-            {
-                vec.push_back(item.Scalar());
-            }
-            return std::any{vec};
-        }
-        else if (node.IsMap())
-        {
-            // For now, convert maps to strings. Could be enhanced to support nested structures
-            return std::any{node.Scalar()};
-        }
-
-        return std::any{};
-    }
-
-    YAML::Node UnifiedObservableConfigManager::anyToYamlNode(const std::any &value) const
-    {
-        try
-        {
-            if (value.type() == typeid(std::string))
-            {
-                return YAML::Node(std::any_cast<std::string>(value));
-            }
-            else if (value.type() == typeid(int))
-            {
-                return YAML::Node(std::any_cast<int>(value));
-            }
-            else if (value.type() == typeid(double))
-            {
-                return YAML::Node(std::any_cast<double>(value));
-            }
-            else if (value.type() == typeid(bool))
-            {
-                return YAML::Node(std::any_cast<bool>(value));
-            }
-            else if (value.type() == typeid(std::vector<std::string>))
-            {
-                YAML::Node node;
-                auto vec = std::any_cast<std::vector<std::string>>(value);
-                for (const auto &item : vec)
-                {
-                    node.push_back(item);
-                }
-                return node;
-            }
-        }
-        catch (const std::bad_any_cast &)
-        {
-            // Fall through to return null
-        }
-
-        return YAML::Node();
-    }
 
     void UnifiedObservableConfigManager::notifyFileChange(const std::string &file_path)
     {

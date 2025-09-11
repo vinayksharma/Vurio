@@ -16,6 +16,7 @@
 #include "config/config_enums.hpp"
 #include "config/property_manager.hpp"
 #include "config/config_property.hpp"
+#include "config/yaml_serializer.hpp"
 
 namespace MediaDedup
 {
@@ -166,6 +167,7 @@ namespace MediaDedup
         std::chrono::milliseconds reload_interval_;
 
         ConfigPropertyManager property_manager_;
+        YamlConfigSerializer yaml_serializer_;
 
         std::vector<ConfigChangeCallback> config_change_callbacks_;
         mutable std::mutex callbacks_mutex_;
@@ -188,8 +190,6 @@ namespace MediaDedup
         // YAML parsing and serialization
         bool parseYamlFile();
         bool serializeToYamlFile() const;
-        std::any yamlNodeToAny(const YAML::Node &node) const;
-        YAML::Node anyToYamlNode(const std::any &value) const;
 
         // Event emission helpers
         void notifyFileChange(const std::string &file_path);

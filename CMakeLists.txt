@@ -53,6 +53,7 @@ add_library(unified_config_lib STATIC
     src/config/unified_observable_config.cpp
     src/config/property_manager.cpp
     src/config/config_property.cpp
+    src/config/yaml_serializer.cpp
 )
 
 target_include_directories(unified_config_lib PUBLIC
