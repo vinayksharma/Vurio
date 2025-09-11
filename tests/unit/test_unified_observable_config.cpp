@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
 
 using namespace MediaDedup;
 

@@ -419,7 +419,6 @@ namespace MediaDedup
         }
     }
 
-
     void UnifiedObservableConfigManager::notifyFileChange(const std::string &file_path)
     {
         if (file_change_callback_)

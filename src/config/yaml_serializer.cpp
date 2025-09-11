@@ -150,15 +150,18 @@ namespace MediaDedup
             }
             catch (...)
             {
-                try
+                // Try bool
+                std::string lower_value = str_value;
+                std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
+                if (lower_value == "true" || lower_value == "1" || lower_value == "yes")
                 {
-                    // Try bool
-                    std::string lower_value = str_value;
-                    std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
-                    bool bool_value = (lower_value == "true" || lower_value == "1" || lower_value == "yes");
-                    return std::any{bool_value};
+                    return std::any{true};
                 }
-                catch (...)
+                else if (lower_value == "false" || lower_value == "0" || lower_value == "no")
+                {
+                    return std::any{false};
+                }
+                else
                 {
                     // Default to string
                     return std::any{str_value};
