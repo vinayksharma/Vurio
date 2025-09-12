@@ -54,6 +54,7 @@ add_library(unified_config_lib STATIC
     src/config/property_manager.cpp
     src/config/config_property.cpp
     src/config/yaml_serializer.cpp
+    src/config/file_manager.cpp
 )
 
 target_include_directories(unified_config_lib PUBLIC

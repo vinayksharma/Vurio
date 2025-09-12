@@ -78,25 +78,10 @@ namespace MediaDedup
         : config_file_path_(config_file_path),
           enable_file_monitoring_(enable_file_monitoring),
           reload_interval_(reload_interval),
-          yaml_serializer_(config_file_path),
+          file_manager_(std::make_unique<ConfigFileManager>(config_file_path)),
           running_(false),
           valid_(false)
     {
-        try
-        {
-            if (std::filesystem::exists(config_file_path_))
-            {
-                last_file_modification_ = std::filesystem::last_write_time(config_file_path_);
-            }
-            else
-            {
-                last_file_modification_ = std::filesystem::file_time_type::min();
-            }
-        }
-        catch (...)
-        {
-            last_file_modification_ = std::filesystem::file_time_type::min();
-        }
     }
 
     UnifiedObservableConfigManager::~UnifiedObservableConfigManager()
@@ -108,13 +93,6 @@ namespace MediaDedup
     {
         try
         {
-            // Create config directory if it doesn't exist
-            auto config_dir = std::filesystem::path(config_file_path_).parent_path();
-            if (!config_dir.empty() && !std::filesystem::exists(config_dir))
-            {
-                std::filesystem::create_directories(config_dir);
-            }
-
             // Load existing configuration or create default
             if (!loadConfiguration())
             {
@@ -125,6 +103,10 @@ namespace MediaDedup
 
             // If loading succeeds, ensure configuration is marked as valid
             valid_ = true;
+
+            // Set up file change callback
+            file_manager_->setFileChangeCallback([this](const std::string &file_path)
+                                                 { notifyFileChange(file_path); });
 
             // Start file monitoring if enabled
             if (enable_file_monitoring_)
@@ -157,13 +139,61 @@ namespace MediaDedup
     {
         try
         {
-            if (!std::filesystem::exists(config_file_path_))
+            if (!file_manager_->fileExists())
             {
                 // File doesn't exist, create with defaults
                 return saveConfiguration();
             }
 
-            return parseYamlFile();
+            auto properties = file_manager_->getLoadedProperties();
+            if (properties.empty())
+            {
+                return false;
+            }
+
+            // Update existing properties from file or create new ones using the underlying type
+            for (const auto &item : properties)
+            {
+                const std::string &key = item.first;
+                const std::any &value = item.second;
+
+                auto existing = property_manager_.getProperty<std::any>(key);
+                if (existing)
+                {
+                    existing->setValueFromFile(value);
+                    continue;
+                }
+
+                if (value.type() == typeid(std::string))
+                {
+                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(int))
+                {
+                    createProperty<int>(key, std::any_cast<int>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(double))
+                {
+                    createProperty<double>(key, std::any_cast<double>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(bool))
+                {
+                    createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
+                }
+                else if (value.type() == typeid(std::vector<std::string>))
+                {
+                    createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
+                }
+                else
+                {
+                    // Fallback: store as string representation
+                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                }
+            }
+
+            valid_ = true;
+            clearValidationErrors();
+            return true;
         }
         catch (const std::exception &e)
         {
@@ -176,7 +206,19 @@ namespace MediaDedup
     {
         try
         {
-            return serializeToYamlFile();
+            std::unordered_map<std::string, std::any> properties;
+
+            auto keys = property_manager_.getAllPropertyKeys();
+            for (const auto &key : keys)
+            {
+                auto property = const_cast<ConfigPropertyManager &>(property_manager_).getProperty<std::any>(key);
+                if (property)
+                {
+                    properties[key] = property->getValue();
+                }
+            }
+
+            return file_manager_->saveConfiguration(properties);
         }
         catch (const std::exception &e)
         {
@@ -187,22 +229,7 @@ namespace MediaDedup
 
     bool UnifiedObservableConfigManager::reloadConfiguration()
     {
-        if (loadConfiguration())
-        {
-            try
-            {
-                if (std::filesystem::exists(config_file_path_))
-                {
-                    last_file_modification_ = std::filesystem::last_write_time(config_file_path_);
-                }
-            }
-            catch (...)
-            {
-                // ignore
-            }
-            return true;
-        }
-        return false;
+        return file_manager_->reloadConfiguration() && loadConfiguration();
     }
 
     void UnifiedObservableConfigManager::subscribeToConfigChanges(ConfigChangeCallback callback)
@@ -319,129 +346,12 @@ namespace MediaDedup
     {
         while (running_)
         {
-            if (hasFileChanged())
+            if (file_manager_->hasFileChanged())
             {
                 reloadConfiguration();
                 notifyFileChange(config_file_path_);
             }
             std::this_thread::sleep_for(reload_interval_);
-        }
-    }
-
-    bool UnifiedObservableConfigManager::hasFileChanged() const
-    {
-        try
-        {
-            if (!std::filesystem::exists(config_file_path_))
-            {
-                return false;
-            }
-
-            auto current_time = std::filesystem::last_write_time(config_file_path_);
-            return current_time > last_file_modification_;
-        }
-        catch (const std::exception &)
-        {
-            return false;
-        }
-    }
-
-    bool UnifiedObservableConfigManager::parseYamlFile()
-    {
-        try
-        {
-            auto properties = yaml_serializer_.parseYamlFile();
-
-            // Update existing properties from file or create new ones using the underlying type
-            for (const auto &item : properties)
-            {
-                const std::string &key = item.first;
-                const std::any &value = item.second;
-
-                auto existing = property_manager_.getProperty<std::any>(key);
-                if (existing)
-                {
-                    existing->setValueFromFile(value);
-                    continue;
-                }
-
-                if (value.type() == typeid(std::string))
-                {
-                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(int))
-                {
-                    createProperty<int>(key, std::any_cast<int>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(double))
-                {
-                    createProperty<double>(key, std::any_cast<double>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(bool))
-                {
-                    createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(std::vector<std::string>))
-                {
-                    createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
-                }
-                else
-                {
-                    // Fallback: store as string representation
-                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
-                }
-            }
-
-            valid_ = true;
-            clearValidationErrors();
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            addValidationError("YAML parsing failed: " + std::string(e.what()));
-            valid_ = false;
-            return false;
-        }
-    }
-
-    bool UnifiedObservableConfigManager::serializeToYamlFile() const
-    {
-        try
-        {
-            std::unordered_map<std::string, std::any> properties;
-
-            auto keys = property_manager_.getAllPropertyKeys();
-            for (const auto &key : keys)
-            {
-                auto property = const_cast<ConfigPropertyManager &>(property_manager_).getProperty<std::any>(key);
-                if (property)
-                {
-                    properties[key] = property->getValue();
-                }
-            }
-
-            bool success = yaml_serializer_.serializeToYamlFile(properties);
-            if (success)
-            {
-                // Update last modification time to actual file write time
-                try
-                {
-                    const_cast<UnifiedObservableConfigManager *>(this)->last_file_modification_ =
-                        std::filesystem::last_write_time(config_file_path_);
-                }
-                catch (...)
-                {
-                    // ignore
-                }
-            }
-
-            return success;
-        }
-        catch (const std::exception &e)
-        {
-            // const_cast needed for const method
-            const_cast<UnifiedObservableConfigManager *>(this)->addValidationError("YAML serialization failed: " + std::string(e.what()));
-            return false;
         }
     }
 
