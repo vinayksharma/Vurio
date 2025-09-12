@@ -129,6 +129,8 @@ namespace MediaDedup
         void setFileChangeCallback(FileChangeCallback callback) { file_change_callback_ = callback; }
         void setAutoReload(bool enable);
         void setReloadInterval(std::chrono::milliseconds interval);
+        bool isFileMonitoringEnabled() const { return enable_file_monitoring_; }
+        std::chrono::milliseconds getReloadInterval() const { return reload_interval_; }
 
         // Configuration validation and status
         bool isValid() const { return validator_.isValid(); }
@@ -137,10 +139,23 @@ namespace MediaDedup
         std::vector<std::string> getAllPropertyKeys() const { return property_manager_.getAllPropertyKeys(); }
         bool hasProperty(const std::string &key) const { return property_manager_.hasProperty(key); }
 
+        // Enhanced validation methods
+        void setValidationEnabled(bool enabled) { validator_.setValidationEnabled(enabled); }
+        bool isValidationEnabled() const { return validator_.isValidationEnabled(); }
+        void registerValidationCallback(const std::string &key, std::function<bool(const std::string &, const std::any &)> callback)
+        {
+            validator_.registerValidationCallback(key, callback);
+        }
+        void unregisterValidationCallback(const std::string &key) { validator_.unregisterValidationCallback(key); }
+
         // Utility methods
         std::string getConfigFilePath() const { return config_file_path_; }
         void resetToDefaults();
         std::string toString() const;
+
+        // Enhanced property management
+        size_t getPropertyCount() const { return property_manager_.getPropertyCount(); }
+        void clearAllProperties() { property_manager_.clear(); }
 
         // Convenience: get server processing mode as enum
         ServerMode getServerMode(const std::string &key = "server.mode",

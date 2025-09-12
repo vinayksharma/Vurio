@@ -164,30 +164,65 @@ namespace MediaDedup
                     continue;
                 }
 
-                if (value.type() == typeid(std::string))
+                // Use ConfigTypeConverter to determine the appropriate type and create property
+                try
                 {
-                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                    if (value.type() == typeid(std::string))
+                    {
+                        createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(int))
+                    {
+                        createProperty<int>(key, std::any_cast<int>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(double))
+                    {
+                        createProperty<double>(key, std::any_cast<double>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(bool))
+                    {
+                        createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(float))
+                    {
+                        createProperty<float>(key, std::any_cast<float>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(long))
+                    {
+                        createProperty<long>(key, std::any_cast<long>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(long long))
+                    {
+                        createProperty<long long>(key, std::any_cast<long long>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(unsigned int))
+                    {
+                        createProperty<unsigned int>(key, std::any_cast<unsigned int>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(unsigned long))
+                    {
+                        createProperty<unsigned long>(key, std::any_cast<unsigned long>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(unsigned long long))
+                    {
+                        createProperty<unsigned long long>(key, std::any_cast<unsigned long long>(value), "Loaded from file");
+                    }
+                    else if (value.type() == typeid(std::vector<std::string>))
+                    {
+                        createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
+                    }
+                    else
+                    {
+                        // Fallback: store as string representation using ConfigTypeConverter
+                        std::string string_value = ConfigTypeConverter::toStringSafe(value, "<unknown>");
+                        createProperty<std::string>(key, string_value, "Loaded from file");
+                    }
                 }
-                else if (value.type() == typeid(int))
+                catch (const std::exception &e)
                 {
-                    createProperty<int>(key, std::any_cast<int>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(double))
-                {
-                    createProperty<double>(key, std::any_cast<double>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(bool))
-                {
-                    createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
-                }
-                else if (value.type() == typeid(std::vector<std::string>))
-                {
-                    createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
-                }
-                else
-                {
-                    // Fallback: store as string representation
-                    createProperty<std::string>(key, std::any_cast<std::string>(value), "Loaded from file");
+                    // If type conversion fails, store as string representation
+                    std::string string_value = ConfigTypeConverter::toStringSafe(value, "<unknown>");
+                    createProperty<std::string>(key, string_value, "Loaded from file");
                 }
             }
 
@@ -305,11 +340,8 @@ namespace MediaDedup
 
         if (!validator_.isValid())
         {
-            ss << "  Validation errors:\n";
-            for (const auto &error : validator_.getValidationErrors())
-            {
-                ss << "    - " << error.key << ": " << error.message << "\n";
-            }
+            ss << "\n"
+               << validator_.getValidationStatus();
         }
 
         return ss.str();
