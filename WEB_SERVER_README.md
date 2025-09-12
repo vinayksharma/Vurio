@@ -4,7 +4,7 @@ This document describes the web server component of the Media Deduplication Serv
 
 ## Overview
 
-The web server integrates with the unified observable configuration system to provide:
+The web server integrates with the unified observable configuration system and now serves static content directly from disk to provide:
 
 - **HTTP endpoints** for configuration management
 - **Real-time configuration updates** via the unified observable system
@@ -41,9 +41,9 @@ The web server integrates with the unified observable configuration system to pr
 - **Consistent response format** with proper HTTP status codes
 - **JSON request/response bodies** for easy integration
 
-### 📚 **OpenAPI Documentation**
+### 📚 **OpenAPI Documentation (Static)**
 
-- **Self-documenting API** via `/api/openapi.json`
+- **Static OpenAPI spec** served from `src/core/webserver/static/api/openapi.json`
 - **Interactive documentation** can be generated using Swagger UI
 - **Complete endpoint specifications** with request/response schemas
 
@@ -144,7 +144,7 @@ Retrieves the configuration system status.
 
 ### 6. **GET /api/openapi.json**
 
-Retrieves the OpenAPI 3.0 specification.
+Retrieves the OpenAPI 3.0 specification (served as a static JSON file).
 
 **Response:** Complete OpenAPI specification in JSON format.
 

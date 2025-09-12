@@ -1,3 +1,10 @@
+/*
+ * File: core/webserver/web_handlers_user_settings.cpp
+ * Purpose: Implements user settings API handlers backed by SQLite service.
+ * Endpoints:
+ *   - GET /api/v1/user-settings
+ *   - GET/PUT/DELETE /api/v1/user-settings/{key}
+ */
 #include "core/web_server.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>

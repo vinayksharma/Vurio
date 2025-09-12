@@ -1,3 +1,14 @@
+/*
+ * File: core/webserver/web_handlers_config.cpp
+ * Purpose: Implements configuration-related HTTP handlers.
+ * Summary:
+ *   - GET /api/v1/config, /api/v1/config/{key}
+ *   - PUT /api/v1/config/{key}
+ *   - POST /api/v1/config/reload
+ *   - GET /api/v1/config/status
+ * Notes:
+ *   - OpenAPI and endpoints listing moved to static files under webserver/static
+ */
 #include "core/web_server.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/StreamCopier.h>

@@ -1,3 +1,11 @@
+/*
+ * File: core/webserver/web_server_core.cpp
+ * Purpose: Implements WebServer and ConfigRequestHandlerFactory routing.
+ * Summary:
+ *   - Routes /api/* to C++ handlers and other paths to StaticFileHandler
+ *   - Manages Poco HTTPServer lifecycle (start/stop threads)
+ *   - Integrates with config manager and services (TPM, user settings)
+ */
 #include "core/web_server.hpp"
 #include "core/static_file_handler.hpp"
 #include "config/unified_observable_config.hpp"

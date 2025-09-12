@@ -1,3 +1,13 @@
+/*
+ * File: core/server_static_file_handler.cpp
+ * Purpose: Serves static files (HTML, CSS, JS, JSON) from the web root.
+ * Summary:
+ *   - Resolves request URI to on-disk file under configured web root
+ *   - Determines MIME type and streams file contents to response
+ *   - Emits 404/500 responses on errors
+ * Notes:
+ *   - Used by request handler factory for non-API routes
+ */
 #include "core/static_file_handler.hpp"
 #include <Poco/File.h>
 #include <Poco/Path.h>

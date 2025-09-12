@@ -1,3 +1,14 @@
+/*
+ * File: core/server.cpp
+ * Purpose: Implements the main server application (MediaDedupServer).
+ * Summary:
+ *   - Parses CLI options, initializes configuration and subsystems
+ *   - Starts HTTP web server and orchestrated services (DB, TPM, scheduler)
+ *   - Subscribes to console events and handles graceful shutdown
+ * Usage:
+ *   - Linked into the media_dedup_server executable (see CMakeLists.txt)
+ *   - Constructed by Poco::Util::ServerApplication runtime in main
+ */
 #include "core/server.hpp"
 #include "core/logging_setup.hpp"
 #include "core/instance_checker.hpp"

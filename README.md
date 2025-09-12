@@ -8,7 +8,7 @@ A high-performance, scalable media deduplication server built with C++ and moder
 - **Intelligent Deduplication**: Uses SHA-256 hashing for accurate duplicate detection
 - **Database Management**: SQLite-based storage with Poco Data for efficient data handling
 - **Unified Configuration System**: Observable YAML-based configuration with live updates
-- **RESTful HTTP API**: Complete OpenAPI 3.0 specification with 13 endpoints
+- **RESTful HTTP API**: Static OpenAPI 3.0 specification with 13 endpoints
 - **Thread Pool Management**: Configurable thread pools with per-type resource allocation
 - **Scheduler Service**: Advanced job scheduling with jitter, backoff, and drift management
 - **File Management**: Automated file scanning and media location monitoring
@@ -149,7 +149,7 @@ The server uses SQLite with the following main tables:
 
 ## 🔍 Development
 
-### Project Structure
+### Project Structure (Key Paths)
 
 ```
 dedup_server/
@@ -165,7 +165,8 @@ dedup_server/
 │   ├── database/           # Database implementation
 │   ├── filesmanager/       # File scanning implementation
 │   ├── orchestration/      # Thread pool and scheduler implementation
-│   └── webserver/          # Web API handlers
+│   └── webserver/          # Web API handlers and static files
+│       └── static/         # Static HTML/CSS/JS and OpenAPI spec
 ├── tests/                  # Test files
 ├── config/                 # Configuration files
 ├── scripts/                # Utility scripts
