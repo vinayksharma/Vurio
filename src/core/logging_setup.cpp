@@ -79,6 +79,21 @@ namespace MediaDedup
         public:
             void log(const Poco::Message &msg)
             {
+                // Enforce level filtering based on current root logger level
+                // Even if a message is delivered here, we suppress output when below threshold
+                try
+                {
+                    int rootLevel = Poco::Logger::root().getLevel();
+                    if (msg.getPriority() > rootLevel)
+                    {
+                        return;
+                    }
+                }
+                catch (...)
+                {
+                    // If anything goes wrong, fall through and log conservatively
+                }
+
                 ColorFormatter formatter;
                 std::string formattedMsg;
                 formatter.format(msg, formattedMsg);
@@ -163,7 +178,7 @@ namespace MediaDedup
         {
             // First set the root logger level
             Poco::Logger::root().setLevel(pocoLevel);
-            
+
             // Then set individual logger levels to ensure they don't inherit old levels
             logger_.setLevel(pocoLevel);
             Poco::Logger::get("MediaDedupServer").setLevel(pocoLevel);
@@ -179,7 +194,7 @@ namespace MediaDedup
             Poco::Logger::get("FilesService").setLevel(pocoLevel);
             Poco::Logger::get("DatabaseService").setLevel(pocoLevel);
             Poco::Logger::get("LoggingSetup").setLevel(pocoLevel);
-            
+
             // Log the change for debugging
             logger_.information("Logging level applied: " + pocoLevel);
         }
