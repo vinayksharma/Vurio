@@ -74,16 +74,16 @@ target_link_libraries(unified_config_lib
 # Main executable
 add_executable(media_dedup_server
     src/main.cpp
-    src/core/server.cpp
-    src/core/logging_setup.cpp
-    src/core/instance_checker.cpp
-    src/core/config_manager.cpp
-    src/core/server_initializer.cpp
-    src/core/server_shutdown.cpp
+    src/core/server_server.cpp
+    src/core/server_logging_setup.cpp
+    src/core/server_instance_checker.cpp
+    src/core/server_config_manager.cpp
+    src/core/server_server_initializer.cpp
+    src/core/server_server_shutdown.cpp
     src/core/webserver/web_server_core.cpp
     src/core/webserver/web_handlers_config.cpp
     src/core/webserver/web_handlers_user_settings.cpp
-    src/core/static_file_handler.cpp
+    src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
     src/database/session/session_lease.cpp
