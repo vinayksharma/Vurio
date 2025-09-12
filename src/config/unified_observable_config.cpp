@@ -81,7 +81,7 @@ namespace MediaDedup
           file_manager_(std::make_unique<ConfigFileManager>(config_file_path)),
           file_monitor_(std::make_unique<ConfigFileMonitor>(config_file_path, reload_interval)),
           event_manager_(std::make_unique<ConfigEventManager>()),
-          valid_(false)
+          validator_()
     {
     }
 
@@ -98,12 +98,12 @@ namespace MediaDedup
             if (!loadConfiguration())
             {
                 // If loading fails, create default configuration
-                valid_ = true;
+                validateConfiguration();
                 return true;
             }
 
-            // If loading succeeds, ensure configuration is marked as valid
-            valid_ = true;
+            // If loading succeeds, validate configuration
+            validateConfiguration();
 
             // Set up file change callback
             file_manager_->setFileChangeCallback([this](const std::string &file_path)
@@ -125,7 +125,7 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
-            addValidationError("Initialization failed: " + std::string(e.what()));
+            validator_.addValidationError("initialization", "Initialization failed: " + std::string(e.what()));
             return false;
         }
     }
@@ -191,13 +191,12 @@ namespace MediaDedup
                 }
             }
 
-            valid_ = true;
-            clearValidationErrors();
+            validateConfiguration();
             return true;
         }
         catch (const std::exception &e)
         {
-            addValidationError("Failed to load configuration: " + std::string(e.what()));
+            validator_.addValidationError("load", "Failed to load configuration: " + std::string(e.what()));
             return false;
         }
     }
@@ -222,7 +221,7 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
-            addValidationError("Failed to save configuration: " + std::string(e.what()));
+            validator_.addValidationError("save", "Failed to save configuration: " + std::string(e.what()));
             return false;
         }
     }
@@ -300,16 +299,16 @@ namespace MediaDedup
         std::stringstream ss;
         ss << "Configuration Manager Status:\n";
         ss << "  File: " << config_file_path_ << "\n";
-        ss << "  Valid: " << (valid_ ? "yes" : "no") << "\n";
+        ss << "  Valid: " << (validator_.isValid() ? "yes" : "no") << "\n";
         ss << "  Properties: " << property_manager_.getPropertyCount() << "\n";
         ss << "  File monitoring: " << (enable_file_monitoring_ ? "enabled" : "disabled") << "\n";
 
-        if (!validation_errors_.empty())
+        if (!validator_.isValid())
         {
             ss << "  Validation errors:\n";
-            for (const auto &error : validation_errors_)
+            for (const auto &error : validator_.getValidationErrors())
             {
-                ss << "    - " << error << "\n";
+                ss << "    - " << error.key << ": " << error.message << "\n";
             }
         }
 
@@ -357,34 +356,20 @@ namespace MediaDedup
 
     void UnifiedObservableConfigManager::validateConfiguration()
     {
-        clearValidationErrors();
-
-        // Basic validation - check if all required properties exist
+        // Get all properties as a map for validation
+        std::unordered_map<std::string, std::any> properties;
         auto keys = property_manager_.getAllPropertyKeys();
         for (const auto &key : keys)
         {
             auto property = property_manager_.getProperty<std::any>(key);
-            if (property && property->getValue().type() == typeid(std::string))
+            if (property)
             {
-                auto str_value = property->getValueAs<std::string>();
-                if (str_value.empty())
-                {
-                    addValidationError("Property '" + key + "' cannot be empty");
-                }
+                properties[key] = property->getValue();
             }
         }
 
-        valid_ = validation_errors_.empty();
-    }
-
-    void UnifiedObservableConfigManager::addValidationError(const std::string &error)
-    {
-        validation_errors_.push_back(error);
-    }
-
-    void UnifiedObservableConfigManager::clearValidationErrors()
-    {
-        validation_errors_.clear();
+        // Use the validator to validate the configuration
+        validator_.validateConfiguration(properties);
     }
 
 } // namespace MediaDedup

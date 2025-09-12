@@ -13,7 +13,7 @@ files.manager.scan.intervalMs: 500
 database.path: data/dedup_server.db
 server.host: localhost
 scheduler.backoff.multiplier: 2
-logging.level: debug
+logging.level: trace
 scheduler.backoff.initialMs: 1000
 server.instanceCheck.enabled: true
 scheduler.backoff.maxMs: 30000

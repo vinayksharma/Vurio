@@ -20,6 +20,7 @@
 #include "config/file_monitor.hpp"
 #include "config/event_manager.hpp"
 #include "config/config_change_event.hpp"
+#include "config/config_validator.hpp"
 
 namespace MediaDedup
 {
@@ -130,8 +131,9 @@ namespace MediaDedup
         void setReloadInterval(std::chrono::milliseconds interval);
 
         // Configuration validation and status
-        bool isValid() const { return valid_; }
-        std::vector<std::string> getValidationErrors() const { return validation_errors_; }
+        bool isValid() const { return validator_.isValid(); }
+        std::vector<ValidationError> getValidationErrors() const { return validator_.getValidationErrors(); }
+        std::string getValidationStatus() const { return validator_.getValidationStatus(); }
         std::vector<std::string> getAllPropertyKeys() const { return property_manager_.getAllPropertyKeys(); }
         bool hasProperty(const std::string &key) const { return property_manager_.hasProperty(key); }
 
@@ -153,11 +155,9 @@ namespace MediaDedup
         std::unique_ptr<ConfigFileManager> file_manager_;
         std::unique_ptr<ConfigFileMonitor> file_monitor_;
         std::unique_ptr<ConfigEventManager> event_manager_;
+        ConfigValidator validator_;
 
         FileChangeCallback file_change_callback_;
-
-        std::atomic<bool> valid_;
-        std::vector<std::string> validation_errors_;
 
         // File monitoring
         void startFileMonitoring();
@@ -168,8 +168,6 @@ namespace MediaDedup
 
         // Validation
         void validateConfiguration();
-        void addValidationError(const std::string &error);
-        void clearValidationErrors();
     };
 
 } // namespace MediaDedup
