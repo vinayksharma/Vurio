@@ -74,7 +74,7 @@ target_link_libraries(unified_config_lib
 # Main executable
 add_executable(media_dedup_server
     src/main.cpp
-    src/core/server_server.cpp
+    src/core/server.cpp
     src/core/server_logging_setup.cpp
     src/core/server_instance_checker.cpp
     src/core/server_config_manager.cpp
