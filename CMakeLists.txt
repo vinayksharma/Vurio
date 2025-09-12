@@ -60,6 +60,7 @@ add_library(unified_config_lib STATIC
     src/config/config_change_event.cpp
     src/config/config_validator.cpp
     src/config/type_converter.cpp
+    src/config/config_manager_factory.cpp
 )
 
 target_include_directories(unified_config_lib PUBLIC

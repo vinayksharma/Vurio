@@ -15,9 +15,21 @@ target_link_libraries(unified_config_demo
     pthread
 )
 
+# Config factory demo
+add_executable(config_factory_demo config_factory_demo.cpp)
+
+target_include_directories(config_factory_demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(config_factory_demo
+    unified_config_lib
+    pthread
+)
 
 
-# Install the demo
-install(TARGETS unified_config_demo
+
+# Install the demos
+install(TARGETS unified_config_demo config_factory_demo
     RUNTIME DESTINATION bin
 )
