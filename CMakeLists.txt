@@ -80,9 +80,9 @@ add_executable(media_dedup_server
     src/core/config_manager.cpp
     src/core/server_initializer.cpp
     src/core/server_shutdown.cpp
-    src/core/webserver/server_core.cpp
-    src/core/webserver/handlers_config.cpp
-    src/core/webserver/handlers_user_settings.cpp
+    src/core/webserver/web_server_core.cpp
+    src/core/webserver/web_handlers_config.cpp
+    src/core/webserver/web_handlers_user_settings.cpp
     src/core/static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
