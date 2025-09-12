@@ -31,16 +31,20 @@ namespace MediaDedup
                                     std::shared_ptr<WebServer> web_server = nullptr,
                                     std::shared_ptr<class UserSettingsService> user_settings_service = nullptr,
                                     std::shared_ptr<class FilesService> files_service = nullptr,
-                                    std::shared_ptr<class ThreadPoolManager> tpm = nullptr);
+                                    std::shared_ptr<class ThreadPoolManager> tpm = nullptr,
+                                    const std::string &web_root_path = "web/static/");
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 
     private:
+        Poco::Net::HTTPRequestHandler *createApiHandler(const std::string &uri, const std::string &method);
+
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<WebServer> web_server_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
+        std::string web_root_path_;
     };
 
     /**
@@ -196,29 +200,8 @@ namespace MediaDedup
                            Poco::Net::HTTPServerResponse &response) override;
     };
 
-    /**
-     * @brief Handler for GET /api/openapi.json (OpenAPI specification)
-     */
-    class OpenApiSpecHandler : public ConfigRequestHandler
-    {
-    public:
-        using ConfigRequestHandler::ConfigRequestHandler;
-
-        void handleRequest(Poco::Net::HTTPServerRequest &request,
-                           Poco::Net::HTTPServerResponse &response) override;
-    };
-
-    /**
-     * @brief Handler for GET /api/endpoints (list all API endpoints)
-     */
-    class ApiEndpointsHandler : public ConfigRequestHandler
-    {
-    public:
-        using ConfigRequestHandler::ConfigRequestHandler;
-
-        void handleRequest(Poco::Net::HTTPServerRequest &request,
-                           Poco::Net::HTTPServerResponse &response) override;
-    };
+    // OpenApiSpecHandler - REMOVED: Now served as static file web/static/api/openapi.json
+    // ApiEndpointsHandler - REMOVED: Now served as static file web/static/html/endpoints.html
 
     /**
      * @brief Handler for POST /api/v1/config/restart-webserver (restart web server)

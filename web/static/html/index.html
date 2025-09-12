@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Deduplication Server</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Media Deduplication Server</h1>
+            <nav>
+                <a href="#config" class="nav-link active">Configuration</a>
+                <a href="#tpm" class="nav-link">Thread Pool</a>
+                <a href="#settings" class="nav-link">User Settings</a>
+                <a href="#media" class="nav-link">Media Locations</a>
+            </nav>
+        </header>
+
+        <main>
+            <!-- Configuration Section -->
+            <section id="config" class="section active">
+                <h2>Configuration Management</h2>
+                <div class="controls">
+                    <button id="reload-config" class="btn btn-primary">Reload Config</button>
+                    <button id="save-config" class="btn btn-secondary">Save Config</button>
+                </div>
+                <div class="config-grid" id="config-grid">
+                    <!-- Configuration properties will be loaded here -->
+                </div>
+            </section>
+
+            <!-- TPM Section -->
+            <section id="tpm" class="section">
+                <h2>Thread Pool Manager Status</h2>
+                <div id="tpm-status">
+                    <!-- TPM status will be loaded here -->
+                </div>
+            </section>
+
+            <!-- User Settings Section -->
+            <section id="settings" class="section">
+                <h2>User Settings</h2>
+                <div class="settings-controls">
+                    <input type="text" id="new-setting-key" placeholder="Setting key">
+                    <input type="text" id="new-setting-value" placeholder="Setting value">
+                    <button id="add-setting" class="btn btn-primary">Add Setting</button>
+                </div>
+                <div id="settings-list">
+                    <!-- User settings will be loaded here -->
+                </div>
+            </section>
+
+            <!-- Media Locations Section -->
+            <section id="media" class="section">
+                <h2>Media Locations</h2>
+                <div class="media-controls">
+                    <input type="text" id="media-path" placeholder="Media path">
+                    <button id="register-media" class="btn btn-primary">Register</button>
+                    <button id="deregister-media" class="btn btn-danger">Deregister</button>
+                </div>
+                <div id="media-list">
+                    <!-- Media locations will be loaded here -->
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>API Documentation: <a href="/api/openapi.json" target="_blank">OpenAPI Spec</a></p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

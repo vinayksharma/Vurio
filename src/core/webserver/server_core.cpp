@@ -1,4 +1,5 @@
 #include "core/web_server.hpp"
+#include "core/static_file_handler.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "database/user_settings_service.hpp"
@@ -16,12 +17,14 @@ namespace MediaDedup
         std::shared_ptr<WebServer> web_server,
         std::shared_ptr<UserSettingsService> user_settings_service,
         std::shared_ptr<FilesService> files_service,
-        std::shared_ptr<ThreadPoolManager> tpm)
+        std::shared_ptr<ThreadPoolManager> tpm,
+        const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
           user_settings_service_(std::move(user_settings_service)),
           files_service_(std::move(files_service)),
-          tpm_(std::move(tpm)) {}
+          tpm_(std::move(tpm)),
+          web_root_path_(web_root_path) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
         const Poco::Net::HTTPServerRequest &request)
@@ -29,6 +32,20 @@ namespace MediaDedup
         const std::string &uri = request.getURI();
         const std::string &method = request.getMethod();
 
+        // API endpoints - these need C++ handlers for dynamic data
+        if (uri.find("/api/") == 0)
+        {
+            return createApiHandler(uri, method);
+        }
+
+        // Everything else (HTML, CSS, JS, images) served as static files
+        return new StaticFileHandler(web_root_path_);
+    }
+
+    Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createApiHandler(
+        const std::string &uri, const std::string &method)
+    {
+        // Dynamic API endpoints that require C++ handlers
         if (uri == "/api/v1/config" && method == "GET")
             return new GetAllConfigHandler(config_manager_);
         if (uri == "/api/v1/config/reload" && method == "POST")
@@ -39,10 +56,7 @@ namespace MediaDedup
             return new TPMStatusHandler(config_manager_, tpm_);
         if (uri == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
-        if (uri == "/api/openapi.json" && method == "GET")
-            return new OpenApiSpecHandler(config_manager_);
-        if (uri == "/api/endpoints" && method == "GET")
-            return new ApiEndpointsHandler(config_manager_);
+
         if (uri.find("/api/v1/config/") == 0)
         {
             if (method == "GET")
@@ -67,6 +81,12 @@ namespace MediaDedup
             return new RegisterMediaLocationHandler(config_manager_, files_service_);
         if (uri == "/api/v1/media-locations/deregister" && method == "POST")
             return new DeregisterMediaLocationHandler(config_manager_, files_service_);
+
+        // Static API responses served as files
+        if (uri == "/api/openapi.json" && method == "GET")
+            return new StaticFileHandler(web_root_path_ + "api/");
+        if (uri == "/api/endpoints" && method == "GET")
+            return new StaticFileHandler(web_root_path_ + "html/");
 
         return nullptr;
     }
@@ -115,7 +135,8 @@ namespace MediaDedup
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),
                                                                      user_settings_service_,
                                                                      files_service_,
-                                                                     tpm_);
+                                                                     tpm_,
+                                                                     "web/static/");
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
             Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket, new Poco::Net::HTTPServerParams);
