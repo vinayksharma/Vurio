@@ -6,29 +6,10 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include "config/config_change_event.hpp"
 
 namespace MediaDedup
 {
-
-    /**
-     * @brief Configuration change event structure
-     *
-     * Represents a configuration change with key, old value, new value, and metadata
-     */
-    struct ConfigChangeEvent
-    {
-        std::string key;                                 // Configuration key that changed
-        std::any old_value;                              // Previous value
-        std::any new_value;                              // New value
-        std::string source;                              // Source of change ("file", "programmatic", "default")
-        std::chrono::system_clock::time_point timestamp; // When the change occurred
-        bool is_file_update;                             // Whether this was triggered by file update
-
-        ConfigChangeEvent(const std::string &k, const std::any &old_val, const std::any &new_val,
-                          const std::string &src = "programmatic", bool file_update = false)
-            : key(k), old_value(old_val), new_value(new_val), source(src),
-              timestamp(std::chrono::system_clock::now()), is_file_update(file_update) {}
-    };
 
     /**
      * @brief Configuration change callback type

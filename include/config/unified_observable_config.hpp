@@ -19,6 +19,7 @@
 #include "config/file_manager.hpp"
 #include "config/file_monitor.hpp"
 #include "config/event_manager.hpp"
+#include "config/config_change_event.hpp"
 
 namespace MediaDedup
 {
