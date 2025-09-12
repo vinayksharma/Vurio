@@ -2,6 +2,7 @@
 
 #include <string>
 #include <any>
+#include "config/type_converter.hpp"
 
 namespace MediaDedup
 {

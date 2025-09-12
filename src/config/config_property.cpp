@@ -16,23 +16,8 @@ namespace MediaDedup
     {
         try
         {
-            if (value_.type() == typeid(std::string))
-            {
-                return std::any_cast<std::string>(value_);
-            }
-            else if (value_.type() == typeid(int))
-            {
-                return std::to_string(std::any_cast<int>(value_));
-            }
-            else if (value_.type() == typeid(double))
-            {
-                return std::to_string(std::any_cast<double>(value_));
-            }
-            else if (value_.type() == typeid(bool))
-            {
-                return std::any_cast<bool>(value_) ? "true" : "false";
-            }
-            else if (value_.type() == typeid(std::vector<std::string>))
+            // Handle special case for vector<string>
+            if (value_.type() == typeid(std::vector<std::string>))
             {
                 auto vec = std::any_cast<std::vector<std::string>>(value_);
                 std::string result = "[";
@@ -45,40 +30,63 @@ namespace MediaDedup
                 result += "]";
                 return result;
             }
+
+            // Use ConfigTypeConverter for standard types
+            return ConfigTypeConverter::toString(value_);
         }
-        catch (const std::bad_any_cast &)
+        catch (const TypeConversionError &)
         {
-            // Fall through to return empty string
+            return "";
         }
-        return "";
     }
 
     bool ConfigProperty::setValueFromString(const std::string &value)
     {
         try
         {
-            // Try to determine the type and convert
+            // Use ConfigTypeConverter based on the default value type
             if (default_value_.type() == typeid(std::string))
             {
-                return setValue(value);
+                return setValue(ConfigTypeConverter::fromString<std::string>(value));
             }
             else if (default_value_.type() == typeid(int))
             {
-                return setValue(std::stoi(value));
+                return setValue(ConfigTypeConverter::fromString<int>(value));
             }
             else if (default_value_.type() == typeid(double))
             {
-                return setValue(std::stod(value));
+                return setValue(ConfigTypeConverter::fromString<double>(value));
             }
             else if (default_value_.type() == typeid(bool))
             {
-                std::string lower_value = value;
-                std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
-                bool bool_value = (lower_value == "true" || lower_value == "1" || lower_value == "yes");
-                return setValue(bool_value);
+                return setValue(ConfigTypeConverter::fromString<bool>(value));
+            }
+            else if (default_value_.type() == typeid(float))
+            {
+                return setValue(ConfigTypeConverter::fromString<float>(value));
+            }
+            else if (default_value_.type() == typeid(long))
+            {
+                return setValue(ConfigTypeConverter::fromString<long>(value));
+            }
+            else if (default_value_.type() == typeid(long long))
+            {
+                return setValue(ConfigTypeConverter::fromString<long long>(value));
+            }
+            else if (default_value_.type() == typeid(unsigned int))
+            {
+                return setValue(ConfigTypeConverter::fromString<unsigned int>(value));
+            }
+            else if (default_value_.type() == typeid(unsigned long))
+            {
+                return setValue(ConfigTypeConverter::fromString<unsigned long>(value));
+            }
+            else if (default_value_.type() == typeid(unsigned long long))
+            {
+                return setValue(ConfigTypeConverter::fromString<unsigned long long>(value));
             }
         }
-        catch (const std::exception &)
+        catch (const TypeConversionError &)
         {
             return false;
         }
