@@ -79,7 +79,7 @@ namespace MediaDedup
           enable_file_monitoring_(enable_file_monitoring),
           reload_interval_(reload_interval),
           file_manager_(std::make_unique<ConfigFileManager>(config_file_path)),
-          running_(false),
+          file_monitor_(std::make_unique<ConfigFileMonitor>(config_file_path, reload_interval)),
           valid_(false)
     {
     }
@@ -108,6 +108,12 @@ namespace MediaDedup
             file_manager_->setFileChangeCallback([this](const std::string &file_path)
                                                  { notifyFileChange(file_path); });
 
+            // Set up file monitor callback
+            file_monitor_->setFileChangeCallback([this](const std::string &file_path)
+                                                 {
+                reloadConfiguration();
+                notifyFileChange(file_path); });
+
             // Start file monitoring if enabled
             if (enable_file_monitoring_)
             {
@@ -125,14 +131,7 @@ namespace MediaDedup
 
     void UnifiedObservableConfigManager::shutdown()
     {
-        if (running_)
-        {
-            running_ = false;
-            if (file_monitor_thread_.joinable())
-            {
-                file_monitor_thread_.join();
-            }
-        }
+        stopFileMonitoring();
     }
 
     bool UnifiedObservableConfigManager::loadConfiguration()
@@ -275,11 +274,11 @@ namespace MediaDedup
     void UnifiedObservableConfigManager::setAutoReload(bool enable)
     {
         enable_file_monitoring_ = enable;
-        if (enable && !running_)
+        if (enable)
         {
             startFileMonitoring();
         }
-        else if (!enable && running_)
+        else
         {
             stopFileMonitoring();
         }
@@ -288,6 +287,10 @@ namespace MediaDedup
     void UnifiedObservableConfigManager::setReloadInterval(std::chrono::milliseconds interval)
     {
         reload_interval_ = interval;
+        if (file_monitor_)
+        {
+            file_monitor_->setCheckInterval(interval);
+        }
     }
 
     // getAllPropertyKeys and hasProperty are now implemented inline in the header
@@ -325,33 +328,17 @@ namespace MediaDedup
 
     void UnifiedObservableConfigManager::startFileMonitoring()
     {
-        if (running_)
-            return;
-
-        running_ = true;
-        file_monitor_thread_ = std::thread([this]()
-                                           { fileMonitoringLoop(); });
+        if (file_monitor_)
+        {
+            file_monitor_->start();
+        }
     }
 
     void UnifiedObservableConfigManager::stopFileMonitoring()
     {
-        running_ = false;
-        if (file_monitor_thread_.joinable())
+        if (file_monitor_)
         {
-            file_monitor_thread_.join();
-        }
-    }
-
-    void UnifiedObservableConfigManager::fileMonitoringLoop()
-    {
-        while (running_)
-        {
-            if (file_manager_->hasFileChanged())
-            {
-                reloadConfiguration();
-                notifyFileChange(config_file_path_);
-            }
-            std::this_thread::sleep_for(reload_interval_);
+            file_monitor_->stop();
         }
     }
 

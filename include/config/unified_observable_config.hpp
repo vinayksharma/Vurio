@@ -17,6 +17,7 @@
 #include "config/property_manager.hpp"
 #include "config/config_property.hpp"
 #include "config/file_manager.hpp"
+#include "config/file_monitor.hpp"
 
 namespace MediaDedup
 {
@@ -168,14 +169,12 @@ namespace MediaDedup
 
         ConfigPropertyManager property_manager_;
         std::unique_ptr<ConfigFileManager> file_manager_;
+        std::unique_ptr<ConfigFileMonitor> file_monitor_;
 
         std::vector<ConfigChangeCallback> config_change_callbacks_;
         mutable std::mutex callbacks_mutex_;
 
         FileChangeCallback file_change_callback_;
-
-        std::atomic<bool> running_;
-        std::thread file_monitor_thread_;
 
         std::atomic<bool> valid_;
         std::vector<std::string> validation_errors_;
@@ -183,7 +182,6 @@ namespace MediaDedup
         // File monitoring
         void startFileMonitoring();
         void stopFileMonitoring();
-        void fileMonitoringLoop();
 
         // Event emission helpers
         void notifyFileChange(const std::string &file_path);
