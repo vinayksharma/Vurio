@@ -147,6 +147,7 @@ namespace MediaDedup
 
     void LoggingSetup::applyLogLevel(const std::string &level)
     {
+        std::cout << "DEBUG: applyLogLevel called with level: " << level << std::endl;
         std::string lowered = level;
         for (char &c : lowered)
             c = static_cast<char>(::tolower(c));
@@ -160,10 +161,11 @@ namespace MediaDedup
 
         try
         {
-            logger_.setLevel(pocoLevel);
+            // First set the root logger level
             Poco::Logger::root().setLevel(pocoLevel);
-
-            // Also update common loggers that might be used
+            
+            // Then set individual logger levels to ensure they don't inherit old levels
+            logger_.setLevel(pocoLevel);
             Poco::Logger::get("MediaDedupServer").setLevel(pocoLevel);
             Poco::Logger::get("ServerInitializer").setLevel(pocoLevel);
             Poco::Logger::get("FilesManager").setLevel(pocoLevel);
@@ -176,11 +178,15 @@ namespace MediaDedup
             Poco::Logger::get("UserSettingsService").setLevel(pocoLevel);
             Poco::Logger::get("FilesService").setLevel(pocoLevel);
             Poco::Logger::get("DatabaseService").setLevel(pocoLevel);
+            Poco::Logger::get("LoggingSetup").setLevel(pocoLevel);
+            
+            // Log the change for debugging
+            logger_.information("Logging level applied: " + pocoLevel);
         }
         catch (...)
         {
-            logger_.setLevel("information");
             Poco::Logger::root().setLevel("information");
+            logger_.setLevel("information");
         }
     }
 

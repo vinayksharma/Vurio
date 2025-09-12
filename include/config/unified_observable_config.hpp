@@ -176,7 +176,7 @@ namespace MediaDedup
 
         std::atomic<bool> running_;
         std::thread file_monitor_thread_;
-        std::chrono::system_clock::time_point last_file_modification_;
+        std::filesystem::file_time_type last_file_modification_;
 
         std::atomic<bool> valid_;
         std::vector<std::string> validation_errors_;

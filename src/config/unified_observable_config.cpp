@@ -82,8 +82,21 @@ namespace MediaDedup
           running_(false),
           valid_(false)
     {
-
-        last_file_modification_ = std::chrono::system_clock::now();
+        try
+        {
+            if (std::filesystem::exists(config_file_path_))
+            {
+                last_file_modification_ = std::filesystem::last_write_time(config_file_path_);
+            }
+            else
+            {
+                last_file_modification_ = std::filesystem::file_time_type::min();
+            }
+        }
+        catch (...)
+        {
+            last_file_modification_ = std::filesystem::file_time_type::min();
+        }
     }
 
     UnifiedObservableConfigManager::~UnifiedObservableConfigManager()
@@ -176,7 +189,17 @@ namespace MediaDedup
     {
         if (loadConfiguration())
         {
-            last_file_modification_ = std::chrono::system_clock::now();
+            try
+            {
+                if (std::filesystem::exists(config_file_path_))
+                {
+                    last_file_modification_ = std::filesystem::last_write_time(config_file_path_);
+                }
+            }
+            catch (...)
+            {
+                // ignore
+            }
             return true;
         }
         return false;
@@ -315,12 +338,7 @@ namespace MediaDedup
             }
 
             auto current_time = std::filesystem::last_write_time(config_file_path_);
-            // Convert file time to system time (simplified approach for C++17)
-            auto duration = current_time.time_since_epoch();
-            auto system_duration = std::chrono::duration_cast<std::chrono::system_clock::duration>(duration);
-            auto current_time_sys = std::chrono::system_clock::time_point(system_duration);
-
-            return current_time_sys > last_file_modification_;
+            return current_time > last_file_modification_;
         }
         catch (const std::exception &)
         {
@@ -405,8 +423,16 @@ namespace MediaDedup
             bool success = yaml_serializer_.serializeToYamlFile(properties);
             if (success)
             {
-                // Update last modification time (const_cast needed for const method)
-                const_cast<UnifiedObservableConfigManager *>(this)->last_file_modification_ = std::chrono::system_clock::now();
+                // Update last modification time to actual file write time
+                try
+                {
+                    const_cast<UnifiedObservableConfigManager *>(this)->last_file_modification_ =
+                        std::filesystem::last_write_time(config_file_path_);
+                }
+                catch (...)
+                {
+                    // ignore
+                }
             }
 
             return success;
