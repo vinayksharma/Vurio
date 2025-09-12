@@ -65,7 +65,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     add_executable(${test_name} ${test_source})
     # Add extra sources for specific tests
     if(${test_name} STREQUAL "test_console_input_manager")
-        target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/console_input_manager.cpp)
+        target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp)
     endif()
     if(${test_name} STREQUAL "test_database_service")
         target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp)
@@ -148,7 +148,7 @@ add_executable(all_unit_tests
 target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS)
 target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
 target_sources(all_unit_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/core/console_input_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp

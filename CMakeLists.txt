@@ -95,7 +95,7 @@ add_executable(media_dedup_server
     src/filesmanager/file_scanner.cpp
     src/filesmanager/files_service.cpp
     include/database/user_settings_service.hpp
-    src/core/console_input_manager.cpp
+    src/core/server_console_input_manager.cpp
     src/database/database_manager.cpp
 )
 
