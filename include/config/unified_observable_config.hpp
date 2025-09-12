@@ -18,29 +18,10 @@
 #include "config/config_property.hpp"
 #include "config/file_manager.hpp"
 #include "config/file_monitor.hpp"
+#include "config/event_manager.hpp"
 
 namespace MediaDedup
 {
-
-    /**
-     * @brief Configuration change event structure
-     *
-     * Represents a configuration change with key, old value, new value, and metadata
-     */
-    struct ConfigChangeEvent
-    {
-        std::string key;                                 // Configuration key that changed
-        std::any old_value;                              // Previous value
-        std::any new_value;                              // New value
-        std::string source;                              // Source of change ("file", "programmatic", "default")
-        std::chrono::system_clock::time_point timestamp; // When the change occurred
-        bool is_file_update;                             // Whether this was triggered by file update
-
-        ConfigChangeEvent(const std::string &k, const std::any &old_val, const std::any &new_val,
-                          const std::string &src = "programmatic", bool file_update = false)
-            : key(k), old_value(old_val), new_value(new_val), source(src),
-              timestamp(std::chrono::system_clock::now()), is_file_update(file_update) {}
-    };
 
     /**
      * @brief Configuration property wrapper with unified observability
@@ -170,9 +151,7 @@ namespace MediaDedup
         ConfigPropertyManager property_manager_;
         std::unique_ptr<ConfigFileManager> file_manager_;
         std::unique_ptr<ConfigFileMonitor> file_monitor_;
-
-        std::vector<ConfigChangeCallback> config_change_callbacks_;
-        mutable std::mutex callbacks_mutex_;
+        std::unique_ptr<ConfigEventManager> event_manager_;
 
         FileChangeCallback file_change_callback_;
 
@@ -185,7 +164,6 @@ namespace MediaDedup
 
         // Event emission helpers
         void notifyFileChange(const std::string &file_path);
-        void notifyConfigChange(const ConfigChangeEvent &event);
 
         // Validation
         void validateConfiguration();

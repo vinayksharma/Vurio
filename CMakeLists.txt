@@ -56,6 +56,7 @@ add_library(unified_config_lib STATIC
     src/config/yaml_serializer.cpp
     src/config/file_manager.cpp
     src/config/file_monitor.cpp
+    src/config/event_manager.cpp
 )
 
 target_include_directories(unified_config_lib PUBLIC

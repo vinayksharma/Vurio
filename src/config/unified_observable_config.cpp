@@ -80,6 +80,7 @@ namespace MediaDedup
           reload_interval_(reload_interval),
           file_manager_(std::make_unique<ConfigFileManager>(config_file_path)),
           file_monitor_(std::make_unique<ConfigFileMonitor>(config_file_path, reload_interval)),
+          event_manager_(std::make_unique<ConfigEventManager>()),
           valid_(false)
     {
     }
@@ -233,35 +234,26 @@ namespace MediaDedup
 
     void UnifiedObservableConfigManager::subscribeToConfigChanges(ConfigChangeCallback callback)
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        config_change_callbacks_.push_back(callback);
+        if (event_manager_)
+        {
+            event_manager_->subscribeToConfigChanges(callback);
+        }
     }
 
     void UnifiedObservableConfigManager::unsubscribeFromConfigChanges(ConfigChangeCallback callback)
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        // Note: std::function doesn't support == operator, so we can't use std::remove
-        // For now, we'll just clear all callbacks. In practice, you might want to use
-        // a more sophisticated callback management system with unique IDs
-        config_change_callbacks_.clear();
+        if (event_manager_)
+        {
+            event_manager_->unsubscribeFromConfigChanges(callback);
+        }
     }
 
     void UnifiedObservableConfigManager::emitConfigChangeEvent(const ConfigChangeEvent &event)
     {
-        // Prevent circular references by checking if this is a file update
-        if (event.is_file_update)
+        if (event_manager_)
         {
-            // Don't emit events for file updates to avoid infinite loops
-            return;
+            event_manager_->emitConfigChangeEvent(event);
         }
-
-        // Don't save configuration immediately to avoid deadlock
-        // Instead, notify subscribers first
-        notifyConfigChange(event);
-
-        // Schedule a deferred save operation to avoid deadlock
-        // This could be implemented with a background thread or deferred execution
-        // For now, we'll skip immediate saving to prevent deadlocks
     }
 
     bool UnifiedObservableConfigManager::triggerSave()
@@ -360,23 +352,6 @@ namespace MediaDedup
         catch (...)
         {
             return default_mode;
-        }
-    }
-
-    void UnifiedObservableConfigManager::notifyConfigChange(const ConfigChangeEvent &event)
-    {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        for (const auto &callback : config_change_callbacks_)
-        {
-            try
-            {
-                callback(event);
-            }
-            catch (const std::exception &e)
-            {
-                // Log error but don't crash
-                std::cerr << "Error in config change callback: " << e.what() << std::endl;
-            }
         }
     }
 
