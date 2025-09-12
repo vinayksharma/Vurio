@@ -35,11 +35,22 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `tpm.pool.max`                      | string  | `auto` or integer                                           | `auto`                       | Applied live; decrease is gradual                 |
 | `tpm.killTimeoutMs`                 | integer | > 0                                                         | `10000`                      | Drain timeout on shutdown                         |
 | `tpm.types.<name>.share`            | number  | (0,1]                                                       | `1.0`                        | Per-type slice; honor-based                       |
+| `server.max_connections`            | integer | > 0                                                         | `100`                        | Applied live                                      |
+| `server.timeout`                    | number  | > 0.0                                                       | `30.0`                       | Applied live                                      |
+| `logging.enable_console`            | boolean | `true` \| `false`                                           | `true`                       | Applied live                                      |
+| `logging.enable_file`               | boolean | `true` \| `false`                                           | `false`                      | Applied live                                      |
+| `debug.enabled`                     | boolean | `true` \| `false`                                           | `false`                      | Applied live                                      |
+| `debug.verbose`                     | boolean | `true` \| `false`                                           | `false`                      | Applied live                                      |
+| `file_monitoring.enabled`           | boolean | `true` \| `false`                                           | `true`                       | Applied live                                      |
+| `file_monitoring.interval`          | integer | > 0                                                         | `500`                        | Applied live                                      |
+| `validation.enabled`                | boolean | `true` \| `false`                                           | `true`                       | Applied live                                      |
+| `validation.strict`                 | boolean | `true` \| `false`                                           | `false`                      | Applied live                                      |
 
 Notes:
 
 - `logging.level` synonyms are mapped internally for Poco compatibility: `info → information`, `warn → warning`.
 - Unknown keys are ignored unless used by the application.
+- Factory-created properties are automatically generated when using `ConfigManagerFactory`.
 
 ## Example
 
@@ -52,6 +63,8 @@ server.mode: FAST # FAST | BALANCED | QUALITY
 server.processName: media_dedup_server
 server.instanceCheck.enabled: true
 server.instanceCheck.bufferSize: 128
+server.max_connections: 100
+server.timeout: 30.0
 
 # Database configuration
 database.path: data/dedup_server.db
@@ -60,6 +73,8 @@ database.session.acquireBackoffMs: 50
 
 # Logging configuration
 logging.level: info # trace | debug | info | warn | error (case-insensitive)
+logging.enable_console: true
+logging.enable_file: false
 
 # Files manager configuration
 files.manager.enabled: true
@@ -80,6 +95,18 @@ scheduler.backoff.jitterPercent: 10
 tpm.pool.max: auto
 tpm.killTimeoutMs: 10000
 tpm.types.fileScan.share: 1.0
+
+# Debug configuration
+debug.enabled: false
+debug.verbose: false
+
+# File monitoring configuration
+file_monitoring.enabled: true
+file_monitoring.interval: 500
+
+# Validation configuration
+validation.enabled: true
+validation.strict: false
 ```
 
 ## Live updates

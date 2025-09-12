@@ -294,16 +294,46 @@ namespace MediaDedup
             return;
         }
 
-        // Create default server properties
-        manager->createProperty<std::string>("server.host", "localhost", "Server host address");
+        // Create default server properties (matching CONFIGURATION_REFERENCE.md)
+        manager->createProperty<std::string>("server.host", "0.0.0.0", "Server host address");
         manager->createProperty<int>("server.port", 8080, "Server port number");
+        manager->createProperty<std::string>("server.name", "Media Deduplication Server", "Server name");
+        manager->createProperty<std::string>("server.mode", "FAST", "Server mode (FAST|BALANCED|QUALITY)");
+        manager->createProperty<std::string>("server.processName", "media_dedup_server", "Process name for instance checking");
+        manager->createProperty<bool>("server.instanceCheck.enabled", true, "Enable instance checking");
+        manager->createProperty<int>("server.instanceCheck.bufferSize", 128, "Instance check buffer size");
         manager->createProperty<int>("server.max_connections", 100, "Maximum number of connections");
         manager->createProperty<double>("server.timeout", 30.0, "Server timeout in seconds");
+
+        // Create default database properties
+        manager->createProperty<std::string>("database.path", "data/dedup_server.db", "Database file path");
+        manager->createProperty<int>("database.session.acquireTimeoutMs", 3000, "Database session acquire timeout");
+        manager->createProperty<int>("database.session.acquireBackoffMs", 50, "Database session acquire backoff");
 
         // Create default logging properties
         manager->createProperty<std::string>("logging.level", config.log_level, "Logging level");
         manager->createProperty<bool>("logging.enable_console", true, "Enable console logging");
         manager->createProperty<bool>("logging.enable_file", false, "Enable file logging");
+
+        // Create default files manager properties
+        manager->createProperty<bool>("files.manager.enabled", true, "Enable files manager");
+        manager->createProperty<int>("files.manager.scan.intervalMs", 500, "File scan interval in milliseconds");
+
+        // Create default scheduler properties
+        manager->createProperty<bool>("scheduler.jitter.enabled", false, "Enable scheduler jitter");
+        manager->createProperty<int>("scheduler.jitter.percent", 0, "Scheduler jitter percentage");
+        manager->createProperty<std::string>("scheduler.drift.mode", "anchored", "Scheduler drift mode");
+        manager->createProperty<int>("scheduler.drift.maxDriftMs", 60000, "Maximum scheduler drift");
+        manager->createProperty<bool>("scheduler.backoff.enabled", true, "Enable scheduler backoff");
+        manager->createProperty<int>("scheduler.backoff.initialMs", 1000, "Initial scheduler backoff");
+        manager->createProperty<double>("scheduler.backoff.multiplier", 2.0, "Scheduler backoff multiplier");
+        manager->createProperty<int>("scheduler.backoff.maxMs", 30000, "Maximum scheduler backoff");
+        manager->createProperty<int>("scheduler.backoff.jitterPercent", 10, "Scheduler backoff jitter percentage");
+
+        // Create default TPM properties
+        manager->createProperty<std::string>("tpm.pool.max", "auto", "TPM pool maximum size");
+        manager->createProperty<int>("tpm.killTimeoutMs", 10000, "TPM kill timeout");
+        manager->createProperty<double>("tpm.types.fileScan.share", 1.0, "File scan type share");
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");
