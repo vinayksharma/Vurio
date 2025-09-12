@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
-#include "config/property_manager.hpp"
+#include "config/config_property_manager.hpp"
 #include "config/unified_observable_config.hpp"
 #include "test_utils.hpp"
 

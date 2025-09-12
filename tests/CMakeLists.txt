@@ -101,7 +101,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     endif()
     if(${test_name} STREQUAL "test_property_manager")
         target_sources(${test_name} PRIVATE 
-            ${CMAKE_SOURCE_DIR}/src/config/property_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/config/config_property_manager.cpp
         )
     endif()
     if(${test_name} STREQUAL "test_files_manager_scheduler")

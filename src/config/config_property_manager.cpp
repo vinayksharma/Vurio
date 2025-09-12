@@ -1,4 +1,4 @@
-#include "config/property_manager.hpp"
+#include "config/config_property_manager.hpp"
 #include "config/unified_observable_config.hpp"
 
 namespace MediaDedup

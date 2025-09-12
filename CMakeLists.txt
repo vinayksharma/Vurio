@@ -51,15 +51,15 @@ add_subdirectory(examples)
 # Create unified config library
 add_library(unified_config_lib STATIC
     src/config/unified_observable_config.cpp
-    src/config/property_manager.cpp
+    src/config/config_property_manager.cpp
     src/config/config_property.cpp
-    src/config/yaml_serializer.cpp
-    src/config/file_manager.cpp
-    src/config/file_monitor.cpp
-    src/config/event_manager.cpp
+    src/config/config_yaml_serializer.cpp
+    src/config/config_file_manager.cpp
+    src/config/config_file_monitor.cpp
+    src/config/config_event_manager.cpp
     src/config/config_change_event.cpp
     src/config/config_validator.cpp
-    src/config/type_converter.cpp
+    src/config/config_type_converter.cpp
     src/config/config_manager_factory.cpp
 )
 
