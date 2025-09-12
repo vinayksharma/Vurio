@@ -32,7 +32,7 @@ namespace MediaDedup
                                     std::shared_ptr<class UserSettingsService> user_settings_service = nullptr,
                                     std::shared_ptr<class FilesService> files_service = nullptr,
                                     std::shared_ptr<class ThreadPoolManager> tpm = nullptr,
-                                    const std::string &web_root_path = "web/static/");
+                                    const std::string &web_root_path = "src/core/webserver/static/");
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
 

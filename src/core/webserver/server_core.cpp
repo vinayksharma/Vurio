@@ -136,7 +136,7 @@ namespace MediaDedup
                                                                      user_settings_service_,
                                                                      files_service_,
                                                                      tpm_,
-                                                                     "web/static/");
+                                                                     "src/core/webserver/static/");
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
             Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket, new Poco::Net::HTTPServerParams);
