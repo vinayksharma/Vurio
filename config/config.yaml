@@ -13,7 +13,7 @@ files.manager.scan.intervalMs: 500
 database.path: data/dedup_server.db
 server.host: localhost
 scheduler.backoff.multiplier: 2
-logging.level: info
+logging.level: trace
 scheduler.backoff.initialMs: 1000
 server.instanceCheck.enabled: true
 scheduler.backoff.maxMs: 30000
@@ -23,3 +23,74 @@ server.port: 8080
 tpm.killTimeoutMs: 10000
 server.instanceCheck.bufferSize: 128
 tpm.pool.max: auto
+
+# Media category configuration
+# Images
+media.images.jpg: true
+media.images.jpeg: true
+media.images.png: true
+media.images.bmp: true
+media.images.gif: true
+media.images.tiff: true
+media.images.webp: true
+media.images.jp2: true
+media.images.ppm: true
+media.images.pgm: true
+media.images.pbm: true
+media.images.pnm: true
+media.images.exr: true
+media.images.hdr: true
+
+# Video
+media.video.mp4: true
+media.video.avi: true
+media.video.mov: true
+media.video.mkv: true
+media.video.wmv: true
+media.video.flv: true
+media.video.webm: true
+media.video.m4v: true
+media.video.mpg: true
+media.video.mpeg: true
+media.video.ts: true
+media.video.mts: true
+media.video.m2ts: true
+media.video.ogv: true
+
+# Audio
+media.audio.mp3: true
+media.audio.wav: true
+media.audio.flac: true
+media.audio.ogg: true
+media.audio.m4a: true
+media.audio.aac: true
+media.audio.opus: true
+media.audio.wma: true
+media.audio.aiff: true
+media.audio.alac: true
+media.audio.amr: true
+media.audio.au: true
+
+# Raw Images (subcategory under images)
+media.images.raw.cr2: true
+media.images.raw.nef: true
+media.images.raw.arw: true
+media.images.raw.dng: true
+media.images.raw.raf: true
+media.images.raw.rw2: true
+media.images.raw.orf: true
+media.images.raw.pef: true
+media.images.raw.srw: true
+media.images.raw.kdc: true
+media.images.raw.dcr: true
+media.images.raw.mos: true
+media.images.raw.mrw: true
+media.images.raw.raw: true
+media.images.raw.bay: true
+media.images.raw.3fr: true
+media.images.raw.fff: true
+media.images.raw.mef: true
+media.images.raw.iiq: true
+media.images.raw.rwz: true
+media.images.raw.nrw: true
+media.images.raw.rwl: true

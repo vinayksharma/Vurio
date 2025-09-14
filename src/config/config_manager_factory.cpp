@@ -346,6 +346,77 @@ namespace MediaDedup
         // Create default validation properties
         manager->createProperty<bool>("validation.enabled", config.enable_validation, "Enable validation");
         manager->createProperty<bool>("validation.strict", config.strict_validation, "Enable strict validation");
+
+        // Create default media category properties
+        // Images
+        manager->createProperty<bool>("media.images.jpg", true, "Enable JPEG image processing");
+        manager->createProperty<bool>("media.images.jpeg", true, "Enable JPEG image processing");
+        manager->createProperty<bool>("media.images.png", true, "Enable PNG image processing");
+        manager->createProperty<bool>("media.images.bmp", true, "Enable BMP image processing");
+        manager->createProperty<bool>("media.images.gif", true, "Enable GIF image processing");
+        manager->createProperty<bool>("media.images.tiff", true, "Enable TIFF image processing");
+        manager->createProperty<bool>("media.images.webp", true, "Enable WebP image processing");
+        manager->createProperty<bool>("media.images.jp2", true, "Enable JPEG 2000 image processing");
+        manager->createProperty<bool>("media.images.ppm", true, "Enable PPM image processing");
+        manager->createProperty<bool>("media.images.pgm", true, "Enable PGM image processing");
+        manager->createProperty<bool>("media.images.pbm", true, "Enable PBM image processing");
+        manager->createProperty<bool>("media.images.pnm", true, "Enable PNM image processing");
+        manager->createProperty<bool>("media.images.exr", true, "Enable EXR image processing");
+        manager->createProperty<bool>("media.images.hdr", true, "Enable HDR image processing");
+
+        // Video
+        manager->createProperty<bool>("media.video.mp4", true, "Enable MP4 video processing");
+        manager->createProperty<bool>("media.video.avi", true, "Enable AVI video processing");
+        manager->createProperty<bool>("media.video.mov", true, "Enable MOV video processing");
+        manager->createProperty<bool>("media.video.mkv", true, "Enable MKV video processing");
+        manager->createProperty<bool>("media.video.wmv", true, "Enable WMV video processing");
+        manager->createProperty<bool>("media.video.flv", true, "Enable FLV video processing");
+        manager->createProperty<bool>("media.video.webm", true, "Enable WebM video processing");
+        manager->createProperty<bool>("media.video.m4v", true, "Enable M4V video processing");
+        manager->createProperty<bool>("media.video.mpg", true, "Enable MPG video processing");
+        manager->createProperty<bool>("media.video.mpeg", true, "Enable MPEG video processing");
+        manager->createProperty<bool>("media.video.ts", true, "Enable TS video processing");
+        manager->createProperty<bool>("media.video.mts", true, "Enable MTS video processing");
+        manager->createProperty<bool>("media.video.m2ts", true, "Enable M2TS video processing");
+        manager->createProperty<bool>("media.video.ogv", true, "Enable OGV video processing");
+
+        // Audio
+        manager->createProperty<bool>("media.audio.mp3", true, "Enable MP3 audio processing");
+        manager->createProperty<bool>("media.audio.wav", true, "Enable WAV audio processing");
+        manager->createProperty<bool>("media.audio.flac", true, "Enable FLAC audio processing");
+        manager->createProperty<bool>("media.audio.ogg", true, "Enable OGG audio processing");
+        manager->createProperty<bool>("media.audio.m4a", true, "Enable M4A audio processing");
+        manager->createProperty<bool>("media.audio.aac", true, "Enable AAC audio processing");
+        manager->createProperty<bool>("media.audio.opus", true, "Enable Opus audio processing");
+        manager->createProperty<bool>("media.audio.wma", true, "Enable WMA audio processing");
+        manager->createProperty<bool>("media.audio.aiff", true, "Enable AIFF audio processing");
+        manager->createProperty<bool>("media.audio.alac", true, "Enable ALAC audio processing");
+        manager->createProperty<bool>("media.audio.amr", true, "Enable AMR audio processing");
+        manager->createProperty<bool>("media.audio.au", true, "Enable AU audio processing");
+
+        // Raw Images (subcategory under images)
+        manager->createProperty<bool>("media.images.raw.cr2", true, "Enable Canon CR2 raw image processing");
+        manager->createProperty<bool>("media.images.raw.nef", true, "Enable Nikon NEF raw image processing");
+        manager->createProperty<bool>("media.images.raw.arw", true, "Enable Sony ARW raw image processing");
+        manager->createProperty<bool>("media.images.raw.dng", true, "Enable Adobe DNG raw image processing");
+        manager->createProperty<bool>("media.images.raw.raf", true, "Enable Fujifilm RAF raw image processing");
+        manager->createProperty<bool>("media.images.raw.rw2", true, "Enable Panasonic RW2 raw image processing");
+        manager->createProperty<bool>("media.images.raw.orf", true, "Enable Olympus ORF raw image processing");
+        manager->createProperty<bool>("media.images.raw.pef", true, "Enable Pentax PEF raw image processing");
+        manager->createProperty<bool>("media.images.raw.srw", true, "Enable Samsung SRW raw image processing");
+        manager->createProperty<bool>("media.images.raw.kdc", true, "Enable Kodak KDC raw image processing");
+        manager->createProperty<bool>("media.images.raw.dcr", true, "Enable Kodak DCR raw image processing");
+        manager->createProperty<bool>("media.images.raw.mos", true, "Enable Leaf MOS raw image processing");
+        manager->createProperty<bool>("media.images.raw.mrw", true, "Enable Minolta MRW raw image processing");
+        manager->createProperty<bool>("media.images.raw.raw", true, "Enable generic RAW image processing");
+        manager->createProperty<bool>("media.images.raw.bay", true, "Enable Casio BAY raw image processing");
+        manager->createProperty<bool>("media.images.raw.3fr", true, "Enable Hasselblad 3FR raw image processing");
+        manager->createProperty<bool>("media.images.raw.fff", true, "Enable Hasselblad FFF raw image processing");
+        manager->createProperty<bool>("media.images.raw.mef", true, "Enable Mamiya MEF raw image processing");
+        manager->createProperty<bool>("media.images.raw.iiq", true, "Enable Phase One IIQ raw image processing");
+        manager->createProperty<bool>("media.images.raw.rwz", true, "Enable Rawzor RWZ raw image processing");
+        manager->createProperty<bool>("media.images.raw.nrw", true, "Enable Nikon NRW raw image processing");
+        manager->createProperty<bool>("media.images.raw.rwl", true, "Enable Leica RWL raw image processing");
     }
 
     void ConfigManagerFactory::setupValidationCallbacks(UnifiedObservableConfigManager *manager, const ConfigManagerConfig &config)
