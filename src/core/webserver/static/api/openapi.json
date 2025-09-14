@@ -3,7 +3,7 @@
   "info": {
     "title": "Media Deduplication Server API",
     "version": "1.0.0",
-    "description": "Configuration, User Settings, and TPM API"
+    "description": "Configuration, User Settings, and TPM API. Interactive documentation available at the root endpoint (/) via Swagger UI."
   },
   "servers": [
     {
@@ -312,6 +312,24 @@
         "responses": {
           "200": {
             "description": "Location deregistered successfully"
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Swagger UI - Interactive API Documentation",
+        "description": "Serves the Swagger UI interface for interactive API testing and documentation",
+        "responses": {
+          "200": {
+            "description": "Swagger UI HTML page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

@@ -14,6 +14,7 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/ServerSocket.h>
 
 namespace MediaDedup
 {
@@ -100,6 +101,7 @@ namespace MediaDedup
         std::atomic<bool> running_;
 
         std::unique_ptr<Poco::Net::HTTPServer> http_server_;
+        std::unique_ptr<Poco::Net::ServerSocket> server_socket_;
         std::thread server_thread_;
 
         ConfigUpdateCallback config_update_callback_;
@@ -315,6 +317,30 @@ namespace MediaDedup
 
     private:
         std::shared_ptr<class ThreadPoolManager> tpm_;
+    };
+
+    /**
+     * @brief Handler for serving Swagger UI at the root endpoint
+     */
+    class SwaggerUIHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        /**
+         * @brief Constructor
+         * @param web_root_path Path to the web static files directory
+         */
+        explicit SwaggerUIHandler(const std::string &web_root_path);
+
+        /**
+         * @brief Handle HTTP request for Swagger UI
+         * @param request The HTTP request
+         * @param response The HTTP response
+         */
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::string web_root_path_;
     };
 
 } // namespace MediaDedup

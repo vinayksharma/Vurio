@@ -44,6 +44,7 @@ set(UNIT_TEST_SOURCES
     unit/test_scheduler_service.cpp
     unit/test_files_manager_scheduler.cpp
     unit/test_property_manager.cpp
+    unit/test_swagger_ui_handler.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -125,6 +126,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         )
         target_compile_definitions(${test_name} PRIVATE FILE_SCANNER_TEST_STANDALONE_MAIN=1)
     endif()
+    if(${test_name} STREQUAL "test_swagger_ui_handler")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
+            ${CMAKE_SOURCE_DIR}/src/config/unified_observable_config.cpp
+        )
+    endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
@@ -149,6 +156,7 @@ target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS)
 target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
 target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp

@@ -313,7 +313,7 @@ namespace MediaDedup
         logger_.information("Configuration file: config/config.yaml");
         logger_.information("Database path: " + database_path_);
         logger_.information("Web server: " + server_host_ + ":" + std::to_string(server_port_));
-        logger_.information("OpenAPI: http://localhost:" + std::to_string(server_port_) + "/api/openapi.json");
+        logger_.information("API Docs: http://" + server_host_ + ":" + std::to_string(server_port_) + "/ (Swagger UI)");
         logger_.information("==========================================");
         logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
     }

@@ -55,14 +55,12 @@ namespace MediaDedup
             Poco::Path requested_path(file_path);
             Poco::Path web_root(web_root_path_);
 
-            if (!requested_path.isAbsolute())
-            {
-                requested_path = web_root.resolve(requested_path);
-            }
-
             // Check if the resolved path is within the web root
-            if (!requested_path.isAbsolute() ||
-                !requested_path.toString().substr(0, web_root.toString().length()).compare(web_root.toString()))
+            std::string requested_path_str = requested_path.toString();
+            std::string web_root_str = web_root.toString();
+
+            if (requested_path_str.length() < web_root_str.length() ||
+                requested_path_str.substr(0, web_root_str.length()) != web_root_str)
             {
                 send404Response(response);
                 return;
@@ -119,9 +117,11 @@ namespace MediaDedup
         Poco::Path path(file_path);
         std::string extension = path.getExtension();
 
-        if (!extension.empty() && extension[0] == '.')
+        if (!extension.empty())
         {
-            auto it = mime_types.find(extension);
+            // Poco::Path::getExtension returns extension without leading '.'
+            std::string key = "." + extension;
+            auto it = mime_types.find(key);
             if (it != mime_types.end())
             {
                 return it->second;

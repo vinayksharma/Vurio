@@ -14,6 +14,9 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/HTTPServer.h>
+#include <Poco/File.h>
+#include <Poco/FileStream.h>
+#include <Poco/StreamCopier.h>
 #include <iostream>
 
 namespace MediaDedup
@@ -39,6 +42,14 @@ namespace MediaDedup
     {
         const std::string &uri = request.getURI();
         const std::string &method = request.getMethod();
+
+        // Root endpoint - serve Swagger UI
+        if (uri == "/" && method == "GET")
+            return new SwaggerUIHandler(web_root_path_);
+
+        // Swagger UI assets
+        if (uri.find("/swagger-ui/") == 0)
+            return new StaticFileHandler(web_root_path_);
 
         // API endpoints - these need C++ handlers for dynamic data
         if (uri.find("/api/") == 0)
@@ -92,9 +103,9 @@ namespace MediaDedup
 
         // Static API responses served as files
         if (uri == "/api/openapi.json" && method == "GET")
-            return new StaticFileHandler(web_root_path_ + "api/");
+            return new StaticFileHandler(web_root_path_);
         if (uri == "/api/endpoints" && method == "GET")
-            return new StaticFileHandler(web_root_path_ + "html/");
+            return new StaticFileHandler(web_root_path_);
 
         return nullptr;
     }
@@ -132,12 +143,13 @@ namespace MediaDedup
         if (server_thread_.joinable())
             server_thread_.join();
         http_server_.reset();
+        server_socket_.reset();
     }
 
     void WebServer::initializeServer()
     {
         Poco::Net::SocketAddress socket_address(host_, port_);
-        auto server_socket = std::make_unique<Poco::Net::ServerSocket>(socket_address);
+        server_socket_ = std::make_unique<Poco::Net::ServerSocket>(socket_address);
 
         auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),
@@ -147,7 +159,7 @@ namespace MediaDedup
                                                                      "src/core/webserver/static/");
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
-            Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket, new Poco::Net::HTTPServerParams);
+            Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket_, new Poco::Net::HTTPServerParams);
 
         server_thread_ = std::thread([this]()
                                      {
@@ -216,6 +228,52 @@ namespace MediaDedup
         ss << "  Port: " << port_ << "\n";
         ss << "  Running: " << (running_ ? "yes" : "no") << "\n";
         return ss.str();
+    }
+
+    // SwaggerUIHandler implementation
+    SwaggerUIHandler::SwaggerUIHandler(const std::string &web_root_path)
+        : web_root_path_(web_root_path)
+    {
+    }
+
+    void SwaggerUIHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                         Poco::Net::HTTPServerResponse &response)
+    {
+        if (request.getMethod() != "GET")
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED, "Method Not Allowed");
+            response.send();
+            return;
+        }
+
+        try
+        {
+            // Set response headers
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("text/html; charset=utf-8");
+            response.set("Cache-Control", "no-cache, no-store, must-revalidate");
+            response.set("Pragma", "no-cache");
+            response.set("Expires", "0");
+
+            // Read the Swagger UI HTML file
+            std::string swagger_ui_path = web_root_path_ + "swagger-ui/index.html";
+            Poco::File swagger_ui_file(swagger_ui_path);
+
+            if (!swagger_ui_file.exists())
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "Swagger UI not found");
+                response.send();
+                return;
+            }
+
+            Poco::FileInputStream fis(swagger_ui_path);
+            Poco::StreamCopier::copyStream(fis, response.send());
+        }
+        catch (const std::exception &e)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error");
+            response.send();
+        }
     }
 
 } // namespace MediaDedup
