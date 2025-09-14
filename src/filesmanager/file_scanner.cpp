@@ -83,12 +83,21 @@ namespace MediaDedup::Files
             }
             for (; it != end; ++it)
             {
-                const fs::directory_entry &de = *it;
-                FileRecord r;
-                fillStats(de, r);
-                if (!options.includeHidden && r.isHidden)
-                    continue;
-                onFile(r);
+                try
+                {
+                    const fs::directory_entry &de = *it;
+                    FileRecord r;
+                    fillStats(de, r);
+                    if (!options.includeHidden && r.isHidden)
+                        continue;
+                    onFile(r);
+                }
+                catch (const std::exception &e)
+                {
+                    // Log the error but continue with the next file/directory
+                    std::error_code ec;
+                    emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
+                }
             }
         }
         else
@@ -101,12 +110,21 @@ namespace MediaDedup::Files
             }
             for (; it != end; ++it)
             {
-                const fs::directory_entry &de = *it;
-                FileRecord r;
-                fillStats(de, r);
-                if (!options.includeHidden && r.isHidden)
-                    continue;
-                onFile(r);
+                try
+                {
+                    const fs::directory_entry &de = *it;
+                    FileRecord r;
+                    fillStats(de, r);
+                    if (!options.includeHidden && r.isHidden)
+                        continue;
+                    onFile(r);
+                }
+                catch (const std::exception &e)
+                {
+                    // Log the error but continue with the next file/directory
+                    std::error_code ec;
+                    emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
+                }
             }
         }
     }

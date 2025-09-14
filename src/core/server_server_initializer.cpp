@@ -66,6 +66,9 @@ namespace MediaDedup
                 return false;
             }
 
+            // Initialize UserSettingsService
+            user_settings_service_ = std::make_shared<UserSettingsService>(*database_manager_);
+
             logger.information("Database initialized successfully");
             return true;
         }
@@ -82,24 +85,53 @@ namespace MediaDedup
 
         try
         {
-            // Get server configuration
+            // Get host and port from config
             std::string host = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
-            int port = config_manager_->getPropertyValue<int>("server.port", 8080);
+            int port_int = config_manager_->getPropertyValue<int>("server.port", 8080);
+            uint16_t port = static_cast<uint16_t>(port_int);
 
             // Create web server
-            web_server_ = std::make_unique<WebServer>(config_manager_, host, static_cast<uint16_t>(port));
+            web_server_ = std::make_unique<WebServer>(config_manager_, host, port);
 
-            // Setup request handlers
-            setupRequestHandlers();
+            // Set up services
+            if (user_settings_service_)
+            {
+                web_server_->setUserSettingsService(user_settings_service_);
+                logger.information("UserSettingsService set on web server");
+            }
+            else
+            {
+                logger.warning("UserSettingsService is null - not setting on web server");
+            }
 
-            // Start web server
+            if (files_service_)
+            {
+                web_server_->setFilesService(files_service_);
+                logger.information("FilesService set on web server");
+            }
+            else
+            {
+                logger.warning("FilesService is null - not setting on web server");
+            }
+
+            if (tpm_)
+            {
+                web_server_->setThreadPoolManager(tpm_);
+                logger.information("ThreadPoolManager set on web server");
+            }
+            else
+            {
+                logger.warning("ThreadPoolManager is null - not setting on web server");
+            }
+
+            // Start the web server
             if (!web_server_->start())
             {
                 logger.error("Failed to start web server");
                 return false;
             }
 
-            logger.information("Web server started on %s:%d", host, port);
+            logger.information("Web server started on %s:%u", host, static_cast<unsigned int>(port));
             return true;
         }
         catch (const std::exception &e)
@@ -141,8 +173,8 @@ namespace MediaDedup
 
             // Initialize FilesManager
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
-            auto files_service = std::make_shared<FilesService>(*db_shared);
-            files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service);
+            files_service_ = std::make_shared<FilesService>(*db_shared);
+            files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_);
             files_manager_->initialize();
 
             // Register fileScan job

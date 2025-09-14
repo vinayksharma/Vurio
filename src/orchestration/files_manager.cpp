@@ -153,18 +153,26 @@ namespace MediaDedup::Orchestration
                 const std::string &normRoot = kv.first;
                 const std::string &root = kv.second;
 
-                FileScannerOptions opt;
-                opt.recursive = cfg_->getPropertyValue<bool>("filesservice.scan.recursive", true);
-                opt.followSymlinks = cfg_->getPropertyValue<bool>("filesservice.scan.followSymlinks", false);
-                opt.includeHidden = cfg_->getPropertyValue<bool>("filesservice.scan.includeHidden", true);
+                try
+                {
+                    FileScannerOptions opt;
+                    opt.recursive = cfg_->getPropertyValue<bool>("filesservice.scan.recursive", true);
+                    opt.followSymlinks = cfg_->getPropertyValue<bool>("filesservice.scan.followSymlinks", false);
+                    opt.includeHidden = cfg_->getPropertyValue<bool>("filesservice.scan.includeHidden", true);
 
-                logger.information(std::string("Scanning root: ") + root +
-                                   ", recursive=" + (opt.recursive ? "true" : "false") +
-                                   ", followSymlinks=" + (opt.followSymlinks ? "true" : "false") +
-                                   ", includeHidden=" + (opt.includeHidden ? "true" : "false"));
-                scan(root, opt, [this, root, &index](const FileRecord &rec)
-                     { onFileEmitted(root, rec, index); });
-                logger.information(std::string("Completed scanning root: ") + root);
+                    logger.information(std::string("Scanning root: ") + root +
+                                       ", recursive=" + (opt.recursive ? "true" : "false") +
+                                       ", followSymlinks=" + (opt.followSymlinks ? "true" : "false") +
+                                       ", includeHidden=" + (opt.includeHidden ? "true" : "false"));
+                    scan(root, opt, [this, root, &index](const FileRecord &rec)
+                         { onFileEmitted(root, rec, index); });
+                    logger.information(std::string("Completed scanning root: ") + root);
+                }
+                catch (const std::exception &e)
+                {
+                    logger.error("Failed to scan directory '%s': %s. Continuing with next directory...", root.c_str(), e.what());
+                    // Continue with the next directory instead of failing the entire scan
+                }
             }
 
             logger.information("FilesManager run completed");

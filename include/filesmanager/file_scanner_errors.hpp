@@ -12,6 +12,7 @@ namespace MediaDedup::Files
         STAT_FAILED,
         SYMLINK_LOOP,
         PATH_UNREADABLE,
+        SCAN_ERROR,
         UNKNOWN
     };
 
@@ -33,6 +34,8 @@ namespace MediaDedup::Files
             return "SYMLINK_LOOP";
         case ErrorCode::PATH_UNREADABLE:
             return "PATH_UNREADABLE";
+        case ErrorCode::SCAN_ERROR:
+            return "SCAN_ERROR";
         default:
             return "UNKNOWN";
         }

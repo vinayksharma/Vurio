@@ -113,7 +113,9 @@ namespace MediaDedup
     // WebServer
     WebServer::WebServer(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                          const std::string &host, uint16_t port)
-        : config_manager_(std::move(config_manager)), host_(host), port_(port), running_(false) {}
+        : config_manager_(std::move(config_manager)), host_(host), port_(port), running_(false)
+    {
+    }
 
     WebServer::~WebServer() { stop(); }
 

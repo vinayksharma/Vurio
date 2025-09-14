@@ -112,13 +112,6 @@ namespace MediaDedup
                 return Application::EXIT_CONFIG;
             }
 
-            // Initialize and start web server
-            if (!initializer.initializeWebServer())
-            {
-                logger_.error("Failed to initialize web server");
-                return Application::EXIT_CONFIG;
-            }
-
             // Initialize console input manager
             if (!console_input_manager_.initialize())
             {
@@ -137,6 +130,13 @@ namespace MediaDedup
             if (!initializer.initializeSchedulerAndFiles())
             {
                 logger_.error("Failed to initialize scheduler and files");
+                return Application::EXIT_CONFIG;
+            }
+
+            // Initialize and start web server (after all services are ready)
+            if (!initializer.initializeWebServer())
+            {
+                logger_.error("Failed to initialize web server");
                 return Application::EXIT_CONFIG;
             }
 
