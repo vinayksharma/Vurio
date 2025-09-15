@@ -1,5 +1,6 @@
 #include "filesmanager/file_scanner.hpp"
 #include <Poco/Path.h>
+#include <Poco/Logger.h>
 #include <filesystem>
 #include <system_error>
 
@@ -98,6 +99,11 @@ namespace MediaDedup::Files
                         const fs::directory_entry &de = *it;
                         FileRecord r;
                         fillStats(de, r);
+                        
+                        // Trace: Log the file being processed
+                        Poco::Logger &logger = Poco::Logger::get("FileScanner");
+                        logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
+                        
                         if (!options.includeHidden && r.isHidden)
                             continue;
                         onFile(r);
@@ -131,6 +137,11 @@ namespace MediaDedup::Files
                     const fs::directory_entry &de = *it;
                     FileRecord r;
                     fillStats(de, r);
+                    
+                    // Trace: Log the file being processed
+                    Poco::Logger &logger = Poco::Logger::get("FileScanner");
+                    logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
+                    
                     if (!options.includeHidden && r.isHidden)
                         continue;
                     onFile(r);
