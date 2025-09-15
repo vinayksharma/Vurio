@@ -33,9 +33,16 @@ namespace MediaDedup::Orchestration
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
         if (rec.hasError())
         {
-            const char *path = rec.fullPath.empty() ? "<empty_path>" : rec.fullPath.c_str();
-            const char *errorMsg = rec.errorMessage.empty() ? "<no_error_message>" : rec.errorMessage.c_str();
-            logger.warning("Scan error on %s: %s", path, errorMsg);
+            std::string path = rec.fullPath.empty() ? std::string("<empty_path>") : rec.fullPath;
+            std::string errorMsg = rec.errorMessage.empty() ? std::string("<no_error_message>") : rec.errorMessage;
+            std::string errorCode = to_string(rec.error);
+            std::string errnoStr = rec.platformErrno != 0 ? std::to_string(rec.platformErrno) : "0";
+            
+            // Enhanced error logging with more context
+            logger.warning(std::string("Scan error on ") + path + 
+                          " [ErrorCode: " + errorCode + 
+                          ", Errno: " + errnoStr + 
+                          ", Message: " + errorMsg + "]");
             // Persist brief error info if row exists; otherwise skip creating new rows for errors only
             auto it = index.find(rec.fullPath);
             if (it != index.end())
@@ -172,7 +179,12 @@ namespace MediaDedup::Orchestration
                 }
                 catch (const std::exception &e)
                 {
-                    logger.error("Failed to scan directory '%s': %s. Continuing with next directory...", root.c_str(), e.what());
+                    // Use safe string concatenation to avoid format string issues
+                    std::string errorMsg = std::string("Failed to scan directory '") + root + 
+                                         "' (normalized: '" + normRoot + "'): " + 
+                                         e.what() + ". Exception type: " + typeid(e).name() + 
+                                         ". Continuing with next directory...";
+                    logger.error(errorMsg);
                     // Continue with the next directory instead of failing the entire scan
                 }
             }

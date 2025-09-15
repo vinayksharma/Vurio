@@ -248,7 +248,7 @@ namespace MediaDedup
 
         // Make a copy of the round_robin_types_ vector to avoid modification during iteration
         std::vector<std::string> types_copy = round_robin_types_;
-        
+
         size_t startIndex = rr_index_;
         size_t numTypes = types_copy.size();
         size_t tasksStarted = 0;
@@ -292,27 +292,30 @@ namespace MediaDedup
 
             // Safety check for type string
             std::string safe_type = type.empty() ? "<empty_type>" : type;
-            if (safe_type.find('\0') != std::string::npos) {
+            if (safe_type.find('\0') != std::string::npos)
+            {
                 safe_type = "<invalid_type>";
             }
-            
+
             // Debug: Print type string in hex to see what's actually in it
             std::string hex_debug = "type_hex: ";
-            for (char c : type) {
+            for (char c : type)
+            {
                 hex_debug += std::to_string(static_cast<unsigned char>(c)) + " ";
             }
             logger.trace("DEBUG: " + hex_debug);
-            
+
             logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "'");
             pool_.start(*runnable);
             tasksStarted++;
 
-            // Test with a simple format string first
-            logger.debug("Started task %llu for type 'fileScan' (running: %u/%u, allowance: %u)",
-                         static_cast<unsigned long long>(id),
-                         static_cast<unsigned int>(type_to_running_[type]),
-                         static_cast<unsigned int>(running_total_),
-                         static_cast<unsigned int>(allowance));
+            // Log using safe string concatenation to avoid format specifier issues
+            logger.debug(std::string("Started task ") +
+                         std::to_string(static_cast<unsigned long long>(id)) +
+                         " for type '" + safe_type + "' (running: " +
+                         std::to_string(static_cast<unsigned int>(type_to_running_[type])) + "/" +
+                         std::to_string(static_cast<unsigned int>(running_total_)) + ", allowance: " +
+                         std::to_string(static_cast<unsigned int>(allowance)) + ")");
 
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
