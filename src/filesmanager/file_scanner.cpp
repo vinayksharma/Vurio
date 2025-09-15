@@ -83,29 +83,37 @@ namespace MediaDedup::Files
 
         if (options.recursive)
         {
-            fs::recursive_directory_iterator it(directory, fs::directory_options::skip_permission_denied, ec), end;
-            if (ec)
+            try
             {
-                emitError(directory, ErrorCode::PERMISSION_DENIED, static_cast<int>(ec.value()), ec.message(), onFile);
-                return;
+                fs::recursive_directory_iterator it(directory, fs::directory_options::skip_permission_denied, ec), end;
+                if (ec)
+                {
+                    emitError(directory, ErrorCode::PERMISSION_DENIED, static_cast<int>(ec.value()), ec.message(), onFile);
+                    return;
+                }
+                for (; it != end; ++it)
+                {
+                    try
+                    {
+                        const fs::directory_entry &de = *it;
+                        FileRecord r;
+                        fillStats(de, r);
+                        if (!options.includeHidden && r.isHidden)
+                            continue;
+                        onFile(r);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        // Log the error but continue with the next file/directory
+                        std::error_code ec;
+                        emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
+                    }
+                }
             }
-            for (; it != end; ++it)
+            catch (const std::exception &e)
             {
-                try
-                {
-                    const fs::directory_entry &de = *it;
-                    FileRecord r;
-                    fillStats(de, r);
-                    if (!options.includeHidden && r.isHidden)
-                        continue;
-                    onFile(r);
-                }
-                catch (const std::exception &e)
-                {
-                    // Log the error but continue with the next file/directory
-                    std::error_code ec;
-                    emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
-                }
+                // If the entire recursive iteration fails, emit an error for the directory
+                emitError(directory, ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
             }
         }
         else
