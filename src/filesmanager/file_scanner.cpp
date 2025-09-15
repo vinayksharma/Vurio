@@ -103,9 +103,6 @@ namespace MediaDedup::Files
                     FileRecord r;
                     fillStats(de, r);
 
-                    // Trace: Log the file being processed
-                    Poco::Logger &logger = Poco::Logger::get("FileScanner");
-                    logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
 
                     if (!options.includeHidden && r.isHidden)
                         continue;
@@ -124,7 +121,7 @@ namespace MediaDedup::Files
     void scanDirectoryRecursive(const fs::path &directory, const FileScannerOptions &options, const FileCallback &onFile)
     {
         Poco::Logger &logger = Poco::Logger::get("FileScanner");
-        
+
         try
         {
             fs::directory_iterator it(directory, fs::directory_options::skip_permission_denied), end;
@@ -136,8 +133,6 @@ namespace MediaDedup::Files
                     FileRecord r;
                     fillStats(de, r);
 
-                    // Trace: Log the file being processed
-                    logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
 
                     if (!options.includeHidden && r.isHidden)
                         continue;

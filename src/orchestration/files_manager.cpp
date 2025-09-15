@@ -66,11 +66,6 @@ namespace MediaDedup::Orchestration
         }
 
         // Success path
-        // Trace: Log successful file processing
-        logger.trace("Successfully processing file: " + rec.fullPath +
-                     " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
-                     "hidden: " + (rec.isHidden ? "true" : "false") + ")");
-
         // Build metadata JSON
         json meta;
         meta["sizeBytes"] = rec.fileSizeBytes;
@@ -114,6 +109,11 @@ namespace MediaDedup::Orchestration
         if (!exists || changed)
         {
             logger.information(std::string(!exists ? "Discovered new file: " : "Detected changed file: ") + rec.fullPath);
+            // Trace: Log database update for new/changed files
+            logger.trace("Updating database for file: " + rec.fullPath + 
+                        " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
+                        "hidden: " + (rec.isHidden ? "true" : "false") + ", " +
+                        (!exists ? "new" : "changed") + ")");
             row.processed_fast = 0;
             row.processed_balanced = 0;
             row.processed_quality = 0;
