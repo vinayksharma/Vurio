@@ -67,10 +67,10 @@ namespace MediaDedup::Orchestration
 
         // Success path
         // Trace: Log successful file processing
-        logger.trace("Successfully processing file: " + rec.fullPath + 
-                    " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
-                    "hidden: " + (rec.isHidden ? "true" : "false") + ")");
-        
+        logger.trace("Successfully processing file: " + rec.fullPath +
+                     " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
+                     "hidden: " + (rec.isHidden ? "true" : "false") + ")");
+
         // Build metadata JSON
         json meta;
         meta["sizeBytes"] = rec.fileSizeBytes;

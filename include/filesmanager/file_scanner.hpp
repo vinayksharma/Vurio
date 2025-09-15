@@ -12,6 +12,10 @@ namespace MediaDedup::Files
               const FileScannerOptions &options,
               const FileCallback &onFile);
 
+    void scanDirectoryRecursive(const std::filesystem::path &directory,
+                               const FileScannerOptions &options,
+                               const FileCallback &onFile);
+
     inline void scan(const std::filesystem::path &directory,
                      const FileCallback &onFile)
     {

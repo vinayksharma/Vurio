@@ -84,43 +84,8 @@ namespace MediaDedup::Files
 
         if (options.recursive)
         {
-            try
-            {
-                fs::recursive_directory_iterator it(directory, fs::directory_options::skip_permission_denied, ec), end;
-                if (ec)
-                {
-                    emitError(directory, ErrorCode::PERMISSION_DENIED, static_cast<int>(ec.value()), ec.message(), onFile);
-                    return;
-                }
-                for (; it != end; ++it)
-                {
-                    try
-                    {
-                        const fs::directory_entry &de = *it;
-                        FileRecord r;
-                        fillStats(de, r);
-                        
-                        // Trace: Log the file being processed
-                        Poco::Logger &logger = Poco::Logger::get("FileScanner");
-                        logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
-                        
-                        if (!options.includeHidden && r.isHidden)
-                            continue;
-                        onFile(r);
-                    }
-                    catch (const std::exception &e)
-                    {
-                        // Log the error but continue with the next file/directory
-                        std::error_code ec;
-                        emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
-                    }
-                }
-            }
-            catch (const std::exception &e)
-            {
-                // If the entire recursive iteration fails, emit an error for the directory
-                emitError(directory, ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
-            }
+            // Use manual recursive traversal to handle permission errors more gracefully
+            scanDirectoryRecursive(directory, options, onFile);
         }
         else
         {
@@ -137,11 +102,11 @@ namespace MediaDedup::Files
                     const fs::directory_entry &de = *it;
                     FileRecord r;
                     fillStats(de, r);
-                    
+
                     // Trace: Log the file being processed
                     Poco::Logger &logger = Poco::Logger::get("FileScanner");
                     logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
-                    
+
                     if (!options.includeHidden && r.isHidden)
                         continue;
                     onFile(r);
@@ -153,6 +118,59 @@ namespace MediaDedup::Files
                     emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
                 }
             }
+        }
+    }
+
+    void scanDirectoryRecursive(const fs::path &directory, const FileScannerOptions &options, const FileCallback &onFile)
+    {
+        Poco::Logger &logger = Poco::Logger::get("FileScanner");
+        
+        try
+        {
+            fs::directory_iterator it(directory, fs::directory_options::skip_permission_denied), end;
+            for (; it != end; ++it)
+            {
+                try
+                {
+                    const fs::directory_entry &de = *it;
+                    FileRecord r;
+                    fillStats(de, r);
+
+                    // Trace: Log the file being processed
+                    logger.trace("Processing file: " + r.fullPath + " (hidden: " + (r.isHidden ? "true" : "false") + ")");
+
+                    if (!options.includeHidden && r.isHidden)
+                        continue;
+                    onFile(r);
+
+                    // If it's a directory and we're doing recursive scanning, recurse into it
+                    if (de.is_directory() && options.recursive)
+                    {
+                        try
+                        {
+                            scanDirectoryRecursive(de.path(), options, onFile);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            // Log the error for this specific directory but continue with other entries
+                            logger.warning("Cannot access directory " + de.path().string() + ": " + e.what());
+                            emitError(de.path(), ErrorCode::PERMISSION_DENIED, 0, e.what(), onFile);
+                        }
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    // Log the error but continue with the next file/directory
+                    logger.warning("Error processing " + it->path().string() + ": " + e.what());
+                    emitError(it->path(), ErrorCode::SCAN_ERROR, 0, e.what(), onFile);
+                }
+            }
+        }
+        catch (const std::exception &e)
+        {
+            // If we can't even open the directory, emit an error
+            logger.error("Cannot open directory " + directory.string() + ": " + e.what());
+            emitError(directory, ErrorCode::PERMISSION_DENIED, 0, e.what(), onFile);
         }
     }
 
