@@ -47,19 +47,19 @@ namespace MediaDedup
         if (maxStr == "auto")
         {
             effective_max_ = defaultPoolMaxFromPoco();
-            logger.information("Using auto-detected max threads: %zu", effective_max_);
+            logger.information("Using auto-detected max threads: %u", static_cast<unsigned int>(effective_max_));
         }
         else
         {
             try
             {
                 effective_max_ = static_cast<size_t>(std::stoul(maxStr));
-                logger.information("Using configured max threads: %zu", effective_max_);
+                logger.information("Using configured max threads: %u", static_cast<unsigned int>(effective_max_));
             }
             catch (...)
             {
                 effective_max_ = defaultPoolMaxFromPoco();
-                logger.warning("Invalid max threads configuration, using auto-detected: %zu", effective_max_);
+                logger.warning("Invalid max threads configuration, using auto-detected: %u", static_cast<unsigned int>(effective_max_));
             }
         }
 
@@ -74,7 +74,7 @@ namespace MediaDedup
         if (static_cast<size_t>(current) < effective_max_)
         {
             pool_.addCapacity(static_cast<int>(effective_max_ - static_cast<size_t>(current)));
-            logger.information("Expanded thread pool capacity from %d to %zu threads", current, effective_max_);
+            logger.information("Expanded thread pool capacity from %d to %u threads", current, static_cast<unsigned int>(effective_max_));
         }
         else
         {
@@ -97,7 +97,7 @@ namespace MediaDedup
 
         // Wait until running_total_ becomes 0 or timeout
         std::unique_lock<std::mutex> lock(mutex_);
-        logger.debug("Waiting for %zu running tasks to complete...", running_total_);
+        logger.debug("Waiting for %u running tasks to complete...", static_cast<unsigned int>(running_total_));
 
         bool completed = cv_.wait_for(lock, killTimeout, [this]()
                                       { return running_total_ == 0 && this->active_runnables_.empty(); });
@@ -147,7 +147,7 @@ namespace MediaDedup
         }
 
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.debug("Submitted task for type '%s', queue size: %zu", type, type_to_queue_[type].size());
+        logger.debug("Submitted task for type '%s', queue size: %u", type, static_cast<unsigned int>(type_to_queue_[type].size()));
         schedule();
     }
 
@@ -232,7 +232,7 @@ namespace MediaDedup
         if (running_total_ >= effective_max_)
         {
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-            logger.debug("Skipping schedule - at capacity (%zu/%zu threads)", running_total_, effective_max_);
+            logger.debug("Skipping schedule - at capacity (%u/%u threads)", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_));
             return;
         }
 
@@ -244,15 +244,19 @@ namespace MediaDedup
         }
 
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.debug("Scheduling tasks - running: %zu/%zu, types: %zu", running_total_, effective_max_, round_robin_types_.size());
+        logger.debug("Scheduling tasks - running: %u/%u, types: %u", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_), static_cast<unsigned int>(round_robin_types_.size()));
 
+        // Make a copy of the round_robin_types_ vector to avoid modification during iteration
+        std::vector<std::string> types_copy = round_robin_types_;
+        
         size_t startIndex = rr_index_;
-        size_t numTypes = round_robin_types_.size();
+        size_t numTypes = types_copy.size();
         size_t tasksStarted = 0;
 
         for (size_t i = 0; i < numTypes && running_total_ < effective_max_; ++i)
         {
-            const std::string &type = round_robin_types_[(startIndex + i) % numTypes];
+            const std::string &type_ref = types_copy[(startIndex + i) % numTypes];
+            std::string type = type_ref; // Make a copy to avoid reference issues
             auto &queue = type_to_queue_[type];
             if (queue.empty())
                 continue;
@@ -261,7 +265,7 @@ namespace MediaDedup
             size_t allowance = allowanceFor(type);
             if (runningForType >= allowance)
             {
-                logger.debug("Type '%s' at allowance limit (%zu/%zu)", type, runningForType, allowance);
+                logger.debug("Type '%s' at allowance limit (%u/%u)", type, static_cast<unsigned int>(runningForType), static_cast<unsigned int>(allowance));
                 continue; // this type is at its slice
             }
 
@@ -286,12 +290,29 @@ namespace MediaDedup
             type_to_running_[type] += 1;
             active_runnables_[id] = runnable;
 
-            logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + type + "'");
+            // Safety check for type string
+            std::string safe_type = type.empty() ? "<empty_type>" : type;
+            if (safe_type.find('\0') != std::string::npos) {
+                safe_type = "<invalid_type>";
+            }
+            
+            // Debug: Print type string in hex to see what's actually in it
+            std::string hex_debug = "type_hex: ";
+            for (char c : type) {
+                hex_debug += std::to_string(static_cast<unsigned char>(c)) + " ";
+            }
+            logger.trace("DEBUG: " + hex_debug);
+            
+            logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "'");
             pool_.start(*runnable);
             tasksStarted++;
 
-            logger.debug("Started task %llu for type '%s' (running: %zu/%zu, allowance: %zu)",
-                         static_cast<unsigned long long>(id), type, type_to_running_[type], running_total_, allowance);
+            // Test with a simple format string first
+            logger.debug("Started task %llu for type 'fileScan' (running: %u/%u, allowance: %u)",
+                         static_cast<unsigned long long>(id),
+                         static_cast<unsigned int>(type_to_running_[type]),
+                         static_cast<unsigned int>(running_total_),
+                         static_cast<unsigned int>(allowance));
 
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
@@ -299,7 +320,7 @@ namespace MediaDedup
 
         if (tasksStarted > 0)
         {
-            logger.information("Scheduled %zu new tasks, total running: %zu/%zu", tasksStarted, running_total_, effective_max_);
+            logger.information("Scheduled %u new tasks, total running: %u/%u", static_cast<unsigned int>(tasksStarted), static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_));
         }
     }
 

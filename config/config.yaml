@@ -9,7 +9,7 @@ database.session.acquireTimeoutMs: 3000
 scheduler.backoff.jitterPercent: 10
 scheduler.jitter.enabled: false
 database.session.acquireBackoffMs: 50
-files.manager.scan.intervalMs: 30000
+files.manager.scan.intervalMs: 10000
 database.path: data/dedup_server.db
 server.host: localhost
 scheduler.backoff.multiplier: 2

@@ -33,7 +33,9 @@ namespace MediaDedup::Orchestration
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
         if (rec.hasError())
         {
-            logger.warning("Scan error on %s: %s", rec.fullPath.c_str(), rec.errorMessage.c_str());
+            const char *path = rec.fullPath.empty() ? "<empty_path>" : rec.fullPath.c_str();
+            const char *errorMsg = rec.errorMessage.empty() ? "<no_error_message>" : rec.errorMessage.c_str();
+            logger.warning("Scan error on %s: %s", path, errorMsg);
             // Persist brief error info if row exists; otherwise skip creating new rows for errors only
             auto it = index.find(rec.fullPath);
             if (it != index.end())

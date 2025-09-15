@@ -33,7 +33,7 @@ namespace MediaDedup::Orchestration
         running_.store(false, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(jobsMutex_);
 
-        logger.debug("Stopping %zu registered jobs", jobs_.size());
+        logger.debug("Stopping %u registered jobs", static_cast<unsigned int>(jobs_.size()));
         for (auto &kv : jobs_)
         {
             auto &job = *kv.second;

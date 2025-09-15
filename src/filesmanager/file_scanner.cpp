@@ -17,8 +17,16 @@ namespace MediaDedup::Files
     static void emitError(const fs::path &p, ErrorCode code, int err, const std::string &msg, const FileCallback &cb)
     {
         FileRecord r;
-        r.fullPath = p.string();
-        r.fileName = p.filename().string();
+        try
+        {
+            r.fullPath = p.string();
+            r.fileName = p.filename().string();
+        }
+        catch (const std::exception &e)
+        {
+            r.fullPath = "<invalid_path>";
+            r.fileName = "<invalid_filename>";
+        }
         r.extension.clear();
         r.error = code;
         r.platformErrno = err;
