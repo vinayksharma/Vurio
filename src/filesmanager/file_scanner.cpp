@@ -103,7 +103,6 @@ namespace MediaDedup::Files
                     FileRecord r;
                     fillStats(de, r);
 
-
                     if (!options.includeHidden && r.isHidden)
                         continue;
                     onFile(r);
@@ -132,7 +131,6 @@ namespace MediaDedup::Files
                     const fs::directory_entry &de = *it;
                     FileRecord r;
                     fillStats(de, r);
-
 
                     if (!options.includeHidden && r.isHidden)
                         continue;

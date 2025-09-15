@@ -108,20 +108,18 @@ namespace MediaDedup::Orchestration
         // FilesManager only sets processed_* to 0 on new/changed
         if (!exists || changed)
         {
-            logger.information(std::string(!exists ? "Discovered new file: " : "Detected changed file: ") + rec.fullPath);
             // Trace: Log database update for new/changed files
-            logger.trace("Updating database for file: " + rec.fullPath + 
-                        " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
-                        "hidden: " + (rec.isHidden ? "true" : "false") + ", " +
-                        (!exists ? "new" : "changed") + ")");
+            logger.trace("Updating database for file: " + rec.fullPath +
+                         " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
+                         "hidden: " + (rec.isHidden ? "true" : "false") + ", " +
+                         (!exists ? "new" : "changed") + ")");
             row.processed_fast = 0;
             row.processed_balanced = 0;
             row.processed_quality = 0;
         }
         else
         {
-            logger.information(std::string("Unchanged file (keeping processed states): ") + rec.fullPath);
-            // keep existing states
+            // keep existing states - no logging for unchanged files
             row.processed_fast = found->second.processed_fast;
             row.processed_balanced = found->second.processed_balanced;
             row.processed_quality = found->second.processed_quality;
