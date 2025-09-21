@@ -38,6 +38,7 @@ namespace MediaDedup
         static bool removeByPath(DatabaseManager &db, const std::string &file_path);
         static std::optional<ScannedFileRow> getByPath(DatabaseManager &db, const std::string &file_path);
         static std::vector<ScannedFileRow> listAll(DatabaseManager &db);
+        static int count(DatabaseManager &db);
 
         // Adjusted APIs based on stored data
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);

@@ -8,6 +8,7 @@
  */
 #include "core/web_server.hpp"
 #include "core/static_file_handler.hpp"
+#include "core/web_handlers_server_status.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "database/user_settings_service.hpp"
@@ -28,12 +29,14 @@ namespace MediaDedup
         std::shared_ptr<WebServer> web_server,
         std::shared_ptr<UserSettingsService> user_settings_service,
         std::shared_ptr<FilesService> files_service,
+        std::shared_ptr<ScannedFilesService> scanned_files_service,
         std::shared_ptr<ThreadPoolManager> tpm,
         const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
           user_settings_service_(std::move(user_settings_service)),
           files_service_(std::move(files_service)),
+          scanned_files_service_(std::move(scanned_files_service)),
           tpm_(std::move(tpm)),
           web_root_path_(web_root_path) {}
 
@@ -69,10 +72,8 @@ namespace MediaDedup
             return new GetAllConfigHandler(config_manager_);
         if (uri == "/api/v1/config/reload" && method == "POST")
             return new ReloadConfigHandler(config_manager_);
-        if (uri == "/api/v1/config/status" && method == "GET")
-            return new ConfigStatusHandler(config_manager_);
-        if (uri == "/api/v1/tpm/status" && method == "GET")
-            return new TPMStatusHandler(config_manager_, tpm_);
+        if (uri == "/api/v1/server/status" && method == "GET")
+            return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_);
         if (uri == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 
@@ -157,6 +158,7 @@ namespace MediaDedup
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),
                                                                      user_settings_service_,
                                                                      files_service_,
+                                                                     scanned_files_service_,
                                                                      tpm_,
                                                                      "src/core/webserver/static/");
 

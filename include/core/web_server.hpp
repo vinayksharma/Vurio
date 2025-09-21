@@ -32,6 +32,7 @@ namespace MediaDedup
                                     std::shared_ptr<WebServer> web_server = nullptr,
                                     std::shared_ptr<class UserSettingsService> user_settings_service = nullptr,
                                     std::shared_ptr<class FilesService> files_service = nullptr,
+                                    std::shared_ptr<class ScannedFilesService> scanned_files_service = nullptr,
                                     std::shared_ptr<class ThreadPoolManager> tpm = nullptr,
                                     const std::string &web_root_path = "src/core/webserver/static/");
 
@@ -44,6 +45,7 @@ namespace MediaDedup
         std::shared_ptr<WebServer> web_server_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
+        std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
         std::string web_root_path_;
     };
@@ -92,6 +94,7 @@ namespace MediaDedup
         // Inject database-backed services
         void setUserSettingsService(std::shared_ptr<class UserSettingsService> service) { user_settings_service_ = std::move(service); }
         void setFilesService(std::shared_ptr<class FilesService> service) { files_service_ = std::move(service); }
+        void setScannedFilesService(std::shared_ptr<class ScannedFilesService> service) { scanned_files_service_ = std::move(service); }
         void setThreadPoolManager(std::shared_ptr<class ThreadPoolManager> tpm) { tpm_ = std::move(tpm); }
 
     private:
@@ -110,6 +113,7 @@ namespace MediaDedup
         // Services
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
+        std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
 
         // Private methods

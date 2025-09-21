@@ -83,6 +83,7 @@ add_executable(media_dedup_server
     src/core/webserver/web_server_core.cpp
     src/core/webserver/web_handlers_config.cpp
     src/core/webserver/web_handlers_user_settings.cpp
+    src/core/webserver/web_handlers_server_status.cpp
     src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp

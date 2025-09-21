@@ -151,6 +151,26 @@ namespace MediaDedup
         return out;
     }
 
+    int ScannedFilesOps::count(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(SQL::kCountScannedFiles), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+        }
+        return 0;
+    }
+
     static std::string modeToLinksColumn(ServerMode mode)
     {
         switch (mode)

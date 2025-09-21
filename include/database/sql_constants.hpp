@@ -80,6 +80,9 @@ namespace MediaDedup
             " processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"
             " FROM scanned_files";
 
+        inline constexpr std::string_view kCountScannedFiles =
+            "SELECT COUNT(*) FROM scanned_files";
+
         inline constexpr std::string_view kUpdateProcessedFast =
             "UPDATE scanned_files SET processed_fast=? WHERE file_path=?";
         inline constexpr std::string_view kUpdateProcessedBalanced =

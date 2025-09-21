@@ -110,9 +110,10 @@
         }
       }
     },
-    "/api/v1/config/status": {
+    "/api/v1/server/status": {
       "get": {
-        "summary": "Get configuration status",
+        "summary": "Get comprehensive server status",
+        "description": "Returns server status including scanned files count, registered directories, configuration status, and thread pool information",
         "responses": {
           "200": {
             "description": "OK",
@@ -121,33 +122,62 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "valid": {
-                      "type": "boolean"
+                    "server_name": {
+                      "type": "string"
                     },
-                    "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "scanned_files_count": {
                       "type": "integer"
                     },
-                    "file_monitoring": {
-                      "type": "boolean"
+                    "registered_directories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "registered_directories_count": {
+                      "type": "integer"
+                    },
+                    "configuration": {
+                      "type": "object",
+                      "properties": {
+                        "valid": {
+                          "type": "boolean"
+                        },
+                        "config_file": {
+                          "type": "string"
+                        },
+                        "property_count": {
+                          "type": "integer"
+                        },
+                        "validation_errors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "thread_pool": {
+                      "type": "object",
+                      "properties": {
+                        "effective_max_threads": {
+                          "type": "integer"
+                        },
+                        "running_total": {
+                          "type": "integer"
+                        },
+                        "per_type": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "timestamp": {
+                      "type": "integer"
                     }
                   }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/tpm/status": {
-      "get": {
-        "summary": "Get Thread Pool Manager status",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
                 }
               }
             }
@@ -274,11 +304,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "path": {
+                  "directory": {
                     "type": "string"
                   }
                 },
-                "required": ["path"]
+                "required": ["directory"]
               }
             }
           }
@@ -300,11 +330,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "path": {
+                  "directory": {
                     "type": "string"
                   }
                 },
-                "required": ["path"]
+                "required": ["directory"]
               }
             }
           }

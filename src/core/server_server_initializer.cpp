@@ -4,6 +4,7 @@
 #include "database/database_service.hpp"
 #include "database/user_settings_ops.hpp"
 #include "database/user_settings_service.hpp"
+#include "database/scanned_files_service.hpp"
 #include "core/web_server.hpp"
 #include "filesmanager/files_service.hpp"
 #include "orchestration/thread_pool_manager.hpp"
@@ -68,6 +69,11 @@ namespace MediaDedup
 
             // Initialize UserSettingsService
             user_settings_service_ = std::make_shared<UserSettingsService>(*database_manager_);
+            if (!user_settings_service_->initialize())
+            {
+                logger.error("Failed to initialize user settings service");
+                return false;
+            }
 
             logger.information("Database initialized successfully");
             return true;
@@ -112,6 +118,16 @@ namespace MediaDedup
             else
             {
                 logger.warning("FilesService is null - not setting on web server");
+            }
+
+            if (scanned_files_service_)
+            {
+                web_server_->setScannedFilesService(scanned_files_service_);
+                logger.information("ScannedFilesService set on web server");
+            }
+            else
+            {
+                logger.warning("ScannedFilesService is null - not setting on web server");
             }
 
             if (tpm_)
@@ -174,6 +190,7 @@ namespace MediaDedup
             // Initialize FilesManager
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
             files_service_ = std::make_shared<FilesService>(*db_shared);
+            scanned_files_service_ = std::make_shared<ScannedFilesService>(*db_shared);
             files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_);
             files_manager_->initialize();
 

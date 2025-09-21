@@ -88,6 +88,7 @@ namespace MediaDedup
         std::shared_ptr<Orchestration::FilesManager> files_manager_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
+        std::shared_ptr<class ScannedFilesService> scanned_files_service_;
 
         /**
          * @brief Setup request handlers for web server

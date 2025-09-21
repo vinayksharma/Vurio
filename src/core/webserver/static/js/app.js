@@ -238,7 +238,7 @@ class MediaDedupApp {
             return;
         }
 
-        const result = await this.apiCall('/api/v1/media-locations/register', 'POST', { path });
+        const result = await this.apiCall('/api/v1/media-locations/register', 'POST', { directory: path });
         if (result) {
             this.showSuccess('Media location registered successfully');
             document.getElementById('media-path').value = '';
@@ -253,7 +253,7 @@ class MediaDedupApp {
             return;
         }
 
-        const result = await this.apiCall('/api/v1/media-locations/deregister', 'POST', { path });
+        const result = await this.apiCall('/api/v1/media-locations/deregister', 'POST', { directory: path });
         if (result) {
             this.showSuccess('Media location deregistered successfully');
             document.getElementById('media-path').value = '';

@@ -63,9 +63,58 @@ namespace MediaDedup
                     found = true;
             EXPECT_TRUE(found);
 
-            // Remove
+            // Test count functionality
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 1);
+
+            // Add another file
+            auto row2 = makeRow("/tmp/b.jpg");
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row2));
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 2);
+
+            // Remove one file
             EXPECT_TRUE(ScannedFilesOps::removeByPath(dbm, row.file_path));
-            EXPECT_FALSE(ScannedFilesOps::getByPath(dbm, row.file_path).has_value());
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 1);
+
+            // Remove the other file
+            EXPECT_TRUE(ScannedFilesOps::removeByPath(dbm, row2.file_path));
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
+        }
+
+        TEST(ScannedFilesOpsTest, CountMethodVerification)
+        {
+            std::string db_path = "test_count_verification.sqlite";
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            // Test empty table
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
+
+            // Add files and verify count increments
+            std::vector<ScannedFileRow> testFiles;
+            for (int i = 0; i < 5; ++i)
+            {
+                ScannedFileRow row = makeRow("/test/file" + std::to_string(i) + ".jpg");
+                testFiles.push_back(row);
+                ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
+                EXPECT_EQ(ScannedFilesOps::count(dbm), i + 1);
+            }
+
+            // Verify count matches listAll size
+            auto allFiles = ScannedFilesOps::listAll(dbm);
+            EXPECT_EQ(ScannedFilesOps::count(dbm), static_cast<int>(allFiles.size()));
+
+            // Remove files and verify count decrements
+            for (int i = 0; i < 5; ++i)
+            {
+                ASSERT_TRUE(ScannedFilesOps::removeByPath(dbm, testFiles[i].file_path));
+                EXPECT_EQ(ScannedFilesOps::count(dbm), 4 - i);
+            }
+
+            // Verify empty table again
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
         }
     }
 }
