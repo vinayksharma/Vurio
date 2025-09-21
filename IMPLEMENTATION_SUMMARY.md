@@ -83,7 +83,7 @@ Successfully implemented a **web server with OpenAPI-based endpoints** for the M
 
 ### **New Files Created**
 
-- `include/core/web_server.hpp` - Web server header with all handler classes
+- `include/core/web/web_server.hpp` - Web server header with all handler classes
 - `src/core/web_server.cpp` - Web server implementation with all endpoints
 - `demo_web_server.sh` - Comprehensive web server demo script
 - `WEB_SERVER_README.md` - Detailed API documentation

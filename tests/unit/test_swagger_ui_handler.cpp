@@ -14,7 +14,7 @@
 #include <memory>
 
 // Include the classes we're testing
-#include "core/static_file_handler.hpp"
+#include "core/web/static_file_handler.hpp"
 #include "config/unified_observable_config.hpp"
 
 using namespace MediaDedup;

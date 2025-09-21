@@ -5,7 +5,7 @@
 #include "database/user_settings_ops.hpp"
 #include "database/user_settings_service.hpp"
 #include "database/scanned_files_service.hpp"
-#include "core/web_server.hpp"
+#include "core/web/web_server.hpp"
 #include "filesmanager/files_service.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"

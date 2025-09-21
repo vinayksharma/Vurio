@@ -1,8 +1,8 @@
 // This is an example of how the web server could be dramatically simplified
 // by using static files instead of hardcoded C++ responses
 
-#include "core/static_file_handler.hpp"
-#include "core/web_server.hpp"
+#include "core/web/static_file_handler.hpp"
+#include "core/web/web_server.hpp"
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>

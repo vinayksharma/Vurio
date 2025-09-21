@@ -6,9 +6,9 @@
  *   - Manages Poco HTTPServer lifecycle (start/stop threads)
  *   - Integrates with config manager and services (TPM, user settings)
  */
-#include "core/web_server.hpp"
-#include "core/static_file_handler.hpp"
-#include "core/web_handlers_server_status.hpp"
+#include "core/web/web_server.hpp"
+#include "core/web/static_file_handler.hpp"
+#include "core/web/web_handlers_server_status.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "database/user_settings_service.hpp"

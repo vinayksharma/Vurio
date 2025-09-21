@@ -9,7 +9,7 @@
  * Notes:
  *   - OpenAPI and endpoints listing moved to static files under webserver/static
  */
-#include "core/web_server.hpp"
+#include "core/web/web_server.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/StreamCopier.h>
 #include <Poco/JSON/Object.h>

@@ -8,7 +8,7 @@
  * Notes:
  *   - Used by request handler factory for non-API routes
  */
-#include "core/static_file_handler.hpp"
+#include "core/web/static_file_handler.hpp"
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/FileStream.h>

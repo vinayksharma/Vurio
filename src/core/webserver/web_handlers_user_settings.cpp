@@ -5,7 +5,7 @@
  *   - GET /api/v1/user-settings
  *   - GET/PUT/DELETE /api/v1/user-settings/{key}
  */
-#include "core/web_server.hpp"
+#include "core/web/web_server.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <sstream>

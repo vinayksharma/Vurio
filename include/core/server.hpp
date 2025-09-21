@@ -15,7 +15,7 @@
 // Include the actual headers instead of forward declarations
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
-#include "core/web_server.hpp"
+#include "core/web/web_server.hpp"
 #include "core/console_input_manager.hpp"
 #include "filesmanager/files_service.hpp"
 // Files orchestration
