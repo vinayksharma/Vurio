@@ -98,6 +98,8 @@ add_executable(media_dedup_server
     include/database/user_settings_service.hpp
     src/core/server_console_input_manager.cpp
     src/database/database_manager.cpp
+    src/media_processors/media_processor.cpp
+    src/media_processors/image_processor.cpp
 )
 
 # Link libraries

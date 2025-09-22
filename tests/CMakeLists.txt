@@ -45,6 +45,7 @@ set(UNIT_TEST_SOURCES
     unit/test_files_manager_scheduler.cpp
     unit/test_property_manager.cpp
     unit/test_swagger_ui_handler.cpp
+    unit/test_media_processor.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -132,6 +133,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/config/unified_observable_config.cpp
         )
     endif()
+    if(${test_name} STREQUAL "test_media_processor")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+        )
+    endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
@@ -168,6 +175,8 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
 )
 target_link_libraries(all_unit_tests 
     ${GTEST_LIBRARIES}
