@@ -49,6 +49,9 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `media.images.raw.*`                | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls raw image format processing) |
 | `media.video.*`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls video format processing)     |
 | `media.audio.*`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls audio format processing)     |
+| `media.processor.enabled`           | boolean | `true` \| `false`                                           | `true`                       | Applied live (enables/disables media processing)    |
+| `media.processor.intervalMs`        | integer | > 0                                                         | `30000`                      | Applied live (media processing interval)            |
+| `media.processor.batchSize`         | integer | > 0                                                         | `10`                         | Applied live (unused - processes all files)         |
 
 Notes:
 
@@ -113,6 +116,11 @@ validation.enabled: true
 validation.strict: false
 
 # Media category configuration
+# Media Processor
+media.processor.enabled: true
+media.processor.intervalMs: 30000
+media.processor.batchSize: 10
+
 # Images
 media.images.jpg: true
 media.images.jpeg: true
@@ -195,6 +203,7 @@ media.images.raw.rwl: true
 - Changing `server.instanceCheck.enabled` or `server.instanceCheck.bufferSize` applies immediately to instance checking behavior.
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
 - Changing `files.manager.enabled` or `files.manager.scan.intervalMs` applies immediately to file scanning behavior.
+- Changing `media.processor.enabled` or `media.processor.intervalMs` applies immediately to media processing behavior.
 - Changing `scheduler.jitter.enabled`, `scheduler.jitter.percent`, `scheduler.drift.mode`, or `scheduler.drift.maxDriftMs` applies immediately to scheduler behavior.
 - Changing `scheduler.backoff.*` properties applies immediately to scheduler backoff behavior.
 - Changing `tpm.pool.max` applies immediately; if lowered, TPM stops starting new tasks until concurrency drops below the new cap.

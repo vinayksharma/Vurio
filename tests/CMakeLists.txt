@@ -137,6 +137,10 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
         )
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})

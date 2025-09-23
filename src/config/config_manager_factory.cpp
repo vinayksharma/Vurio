@@ -335,6 +335,11 @@ namespace MediaDedup
         manager->createProperty<int>("tpm.killTimeoutMs", 10000, "TPM kill timeout");
         manager->createProperty<double>("tpm.types.fileScan.share", 1.0, "File scan type share");
 
+        // Create default media processor properties
+        manager->createProperty<bool>("media.processor.enabled", true, "Enable media processor");
+        manager->createProperty<int>("media.processor.intervalMs", 30000, "Media processor interval in milliseconds");
+        manager->createProperty<int>("media.processor.batchSize", 10, "Media processor batch size (unused - processes all files)");
+
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");
         manager->createProperty<bool>("debug.verbose", false, "Enable verbose debug output");

@@ -1,6 +1,8 @@
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
 #include "config/config_enums.hpp"
+#include "database/database_manager.hpp"
+#include "database/scanned_files_ops.hpp"
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
 #include <algorithm>
@@ -8,8 +10,9 @@
 
 namespace MediaDedup
 {
-    MediaProcessor::MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager)
-        : config_manager_(config_manager)
+    MediaProcessor::MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                   std::shared_ptr<DatabaseManager> database_manager)
+        : config_manager_(config_manager), database_manager_(database_manager)
     {
         // Extension mapping will be initialized lazily when first needed
     }
@@ -52,7 +55,11 @@ namespace MediaDedup
     bool MediaProcessor::RouteToProcessor(const std::string &file_path)
     {
         std::lock_guard<std::mutex> lock(route_mutex_);
+        return RouteToProcessorInternal(file_path);
+    }
 
+    bool MediaProcessor::RouteToProcessorInternal(const std::string &file_path)
+    {
         if (!config_manager_)
         {
             Poco::Logger::get("MediaProcessor").warning("Configuration manager not available");
@@ -126,6 +133,120 @@ namespace MediaDedup
         }
 
         return true;
+    }
+
+    void MediaProcessor::ProcessMedia()
+    {
+        std::lock_guard<std::mutex> lock(route_mutex_);
+
+        if (!config_manager_)
+        {
+            Poco::Logger::get("MediaProcessor").warning("Configuration manager not available for ProcessMedia");
+            return;
+        }
+
+        if (!database_manager_)
+        {
+            Poco::Logger::get("MediaProcessor").warning("Database manager not available for ProcessMedia");
+            return;
+        }
+
+        // Check if media processing is enabled
+        bool processing_enabled = config_manager_->getPropertyValue<bool>("media.processor.enabled", true);
+        if (!processing_enabled)
+        {
+            Poco::Logger::get("MediaProcessor").debug("Media processing is disabled in configuration");
+            return;
+        }
+
+        // Get current server mode
+        ServerMode current_mode = getCurrentServerMode();
+        std::string mode_str;
+        if (current_mode == ServerMode::FAST)
+        {
+            mode_str = "FAST";
+        }
+        else if (current_mode == ServerMode::BALANCED)
+        {
+            mode_str = "BALANCED";
+        }
+        else if (current_mode == ServerMode::QUALITY)
+        {
+            mode_str = "QUALITY";
+        }
+        else
+        {
+            mode_str = "UNKNOWN";
+        }
+        Poco::Logger::get("MediaProcessor").information("Processing media files in mode: " + mode_str);
+
+        try
+        {
+            // Query unprocessed files for current server mode
+            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode);
+
+            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode");
+
+            if (unprocessed_files.empty())
+            {
+                Poco::Logger::get("MediaProcessor").debug("No unprocessed files found, skipping media processing");
+                return;
+            }
+
+            // Process each file
+            int processed_count = 0;
+            int error_count = 0;
+
+            for (const auto &file_row : unprocessed_files)
+            {
+                try
+                {
+                    // Mark file as in-progress (-1)
+                    bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
+                    if (!marked)
+                    {
+                        Poco::Logger::get("MediaProcessor").warning("Failed to mark file as in-progress: " + file_row.file_path);
+                        error_count++;
+                        continue;
+                    }
+
+                    Poco::Logger::get("MediaProcessor").debug("Processing file: " + file_row.file_path);
+
+                    // Route file to appropriate processor (using internal version to avoid deadlock)
+                    bool success = RouteToProcessorInternal(file_row.file_path);
+
+                    if (success)
+                    {
+                        // Mark file as processed (1)
+                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 1);
+                        processed_count++;
+                        Poco::Logger::get("MediaProcessor").debug("Successfully processed file: " + file_row.file_path);
+                    }
+                    else
+                    {
+                        // Mark file as failed (2) - could be retried later
+                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
+                        error_count++;
+                        Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_row.file_path);
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    // Log error and continue with next file
+                    Poco::Logger::get("MediaProcessor").error("Exception while processing file " + file_row.file_path + ": " + e.what());
+
+                    // Mark file as failed (2)
+                    ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
+                    error_count++;
+                }
+            }
+
+            Poco::Logger::get("MediaProcessor").information("Media processing completed - Processed: " + std::to_string(processed_count) + ", Errors: " + std::to_string(error_count));
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("MediaProcessor").error("Exception in ProcessMedia: " + std::string(e.what()));
+        }
     }
 
     void MediaProcessor::onConfigChange(const ConfigChangeEvent &event)

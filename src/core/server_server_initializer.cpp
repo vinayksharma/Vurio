@@ -10,6 +10,7 @@
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
+#include "media_processors/media_processor.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 
@@ -194,12 +195,23 @@ namespace MediaDedup
             files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_);
             files_manager_->initialize();
 
+            // Initialize MediaProcessor
+            media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared);
+            media_processor_->initialize();
+
             // Register fileScan job
             int intervalMs = config_manager_->getPropertyValue<int>("files.manager.scan.intervalMs", 300000);
             logger.information("Loading fileScan interval from config: %d ms", intervalMs);
             scheduler_service_->registerJob("fileScan", std::chrono::milliseconds(intervalMs), "fileScan",
                                             [fm = files_manager_]()
                                             { fm->runOnce(); });
+
+            // Register mediaProcessor job
+            int mediaIntervalMs = config_manager_->getPropertyValue<int>("media.processor.intervalMs", 30000);
+            logger.information("Loading mediaProcessor interval from config: %d ms", mediaIntervalMs);
+            scheduler_service_->registerJob("mediaProcessor", std::chrono::milliseconds(mediaIntervalMs), "fileScan",
+                                            [mp = media_processor_]()
+                                            { mp->ProcessMedia(); });
 
             logger.information("Scheduler and Files Manager initialized successfully");
             return true;
