@@ -132,8 +132,8 @@ namespace MediaDedup::Orchestration
 
                 // Only consider it a significant change if any of these three fields changed:
                 // 1. File size
-                // 2. Creation date  
-                // 3. Modification date
+                // 2. Creation date (only if both are non-zero - actual file timestamps)
+                // 3. Modification date (only if both are non-zero - actual file timestamps)
                 bool size_changed = false;
                 bool creation_changed = false;
                 bool modification_changed = false;
@@ -143,14 +143,26 @@ namespace MediaDedup::Orchestration
                     size_changed = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
                 }
                 
+                // Only compare creation time if both are non-zero (actual file timestamps)
                 if (existing_meta.contains("createdAt") && new_meta.contains("createdAt"))
                 {
-                    creation_changed = (existing_meta["createdAt"] != new_meta["createdAt"]);
+                    auto existing_created = existing_meta["createdAt"].get<int64_t>();
+                    auto new_created = new_meta["createdAt"].get<int64_t>();
+                    if (existing_created != 0 && new_created != 0)
+                    {
+                        creation_changed = (existing_created != new_created);
+                    }
                 }
                 
+                // Only compare modification time if both are non-zero (actual file timestamps)
                 if (existing_meta.contains("modifiedAt") && new_meta.contains("modifiedAt"))
                 {
-                    modification_changed = (existing_meta["modifiedAt"] != new_meta["modifiedAt"]);
+                    auto existing_modified = existing_meta["modifiedAt"].get<int64_t>();
+                    auto new_modified = new_meta["modifiedAt"].get<int64_t>();
+                    if (existing_modified != 0 && new_modified != 0)
+                    {
+                        modification_changed = (existing_modified != new_modified);
+                    }
                 }
                 
                 significant_change = size_changed || creation_changed || modification_changed;

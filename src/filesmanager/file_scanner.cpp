@@ -72,14 +72,8 @@ namespace MediaDedup::Files
             // since std::filesystem doesn't provide easy access to creation time on all platforms
             r.createdAt = sctp;
         }
-        else
-        {
-            // If we can't get file time, use current time as fallback
-            // This ensures we don't have 0 timestamps that cause false change detection
-            auto current_time = std::chrono::system_clock::now();
-            r.modifiedAt = current_time;
-            r.createdAt = current_time;
-        }
+        // If we can't get file time, leave timestamps at their default values (epoch time)
+        // This is correct behavior - we only care about actual file timestamps
         auto fsize = de.is_regular_file(ec) ? de.file_size(ec) : 0;
         if (!ec)
             r.fileSizeBytes = fsize;
