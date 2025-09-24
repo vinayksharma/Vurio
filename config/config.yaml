@@ -80,7 +80,6 @@ media.images.pnm: true
 files.manager.enabled: true
 media.processor.enabled: true
 media.processor.intervalMs: 30000
-media.processor.batchSize: 1000
 media.images.tiff: true
 media.audio.mp3: true
 database.session.acquireTimeoutMs: 3000

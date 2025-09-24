@@ -51,7 +51,6 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `media.audio.*`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls audio format processing)     |
 | `media.processor.enabled`           | boolean | `true` \| `false`                                           | `true`                       | Applied live (enables/disables media processing)    |
 | `media.processor.intervalMs`        | integer | > 0                                                         | `30000`                      | Applied live (media processing interval)            |
-| `media.processor.batchSize`         | integer | > 0                                                         | `10`                         | Applied live (unused - processes all files)         |
 
 Notes:
 
@@ -119,7 +118,6 @@ validation.strict: false
 # Media Processor
 media.processor.enabled: true
 media.processor.intervalMs: 30000
-media.processor.batchSize: 10
 
 # Images
 media.images.jpg: true

@@ -338,7 +338,6 @@ namespace MediaDedup
         // Create default media processor properties
         manager->createProperty<bool>("media.processor.enabled", true, "Enable media processor");
         manager->createProperty<int>("media.processor.intervalMs", 30000, "Media processor interval in milliseconds");
-        manager->createProperty<int>("media.processor.batchSize", 10, "Media processor batch size (unused - processes all files)");
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");
