@@ -93,8 +93,9 @@ namespace MediaDedup::Orchestration
         // Build metadata JSON - only store fields relevant for change detection
         json meta;
         meta["sizeBytes"] = rec.fileSizeBytes;
-        meta["createdAt"] = std::chrono::duration_cast<std::chrono::seconds>(rec.createdAt.time_since_epoch()).count();
-        meta["modifiedAt"] = std::chrono::duration_cast<std::chrono::seconds>(rec.modifiedAt.time_since_epoch()).count();
+        // Store file_time_type duration directly - no conversion needed!
+        meta["createdAt"] = rec.createdAt.time_since_epoch().count();
+        meta["modifiedAt"] = rec.modifiedAt.time_since_epoch().count();
 
         // Relative path
         std::string relativeStr;

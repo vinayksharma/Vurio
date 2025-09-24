@@ -2,11 +2,12 @@
 #include <cstdint>
 #include <string>
 #include <chrono>
+#include <filesystem>
 #include "filesmanager/file_scanner_errors.hpp"
 
 namespace MediaDedup::Files
 {
-    using TimePoint = std::chrono::system_clock::time_point;
+    using TimePoint = std::filesystem::file_time_type;
 
     struct FileRecord
     {

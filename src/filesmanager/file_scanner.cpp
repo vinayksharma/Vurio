@@ -62,15 +62,12 @@ namespace MediaDedup::Files
         auto ftime = de.last_write_time(ec);
         if (!ec)
         {
-            // Convert file_time_type to system_clock::time_point
-            // This is the proper way to handle file modification time
-            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-            r.modifiedAt = sctp;
+            // Store the original file_time_type directly - no conversion needed!
+            r.modifiedAt = ftime;
 
             // For creation time, we'll use the same as modification time for now
             // since std::filesystem doesn't provide easy access to creation time on all platforms
-            r.createdAt = sctp;
+            r.createdAt = ftime;
         }
         // If we can't get file time, leave timestamps at their default values (epoch time)
         // This is correct behavior - we only care about actual file timestamps
