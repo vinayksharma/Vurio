@@ -90,13 +90,11 @@ namespace MediaDedup::Orchestration
         }
 
         // Success path
-        // Build metadata JSON
+        // Build metadata JSON - only store fields relevant for change detection
         json meta;
         meta["sizeBytes"] = rec.fileSizeBytes;
-        meta["isHidden"] = rec.isHidden;
-        meta["symlinkTarget"] = rec.symlinkTarget;
-        meta["deviceId"] = rec.deviceId;
-        meta["inode"] = rec.inode;
+        meta["createdAt"] = std::chrono::duration_cast<std::chrono::seconds>(rec.createdAt.time_since_epoch()).count();
+        meta["modifiedAt"] = std::chrono::duration_cast<std::chrono::seconds>(rec.modifiedAt.time_since_epoch()).count();
 
         // Relative path
         std::string relativeStr;
@@ -123,26 +121,39 @@ namespace MediaDedup::Orchestration
         auto found = index.find(rec.fullPath);
         const bool exists = (found != index.end());
         bool significant_change = false;
-        
+
         if (exists)
         {
-            // Parse existing metadata to compare significant fields
+            // Parse existing metadata to compare only relevant fields: size, creation date, modification date
             try
             {
                 json existing_meta = json::parse(found->second.file_metadata);
                 json new_meta = json::parse(row.file_metadata);
                 
-                // Only consider it a significant change if file size changed
-                // This prevents processing status reset for minor metadata differences
+                // Only consider it a significant change if any of these three fields changed:
+                // 1. File size
+                // 2. Creation date  
+                // 3. Modification date
+                bool size_changed = false;
+                bool creation_changed = false;
+                bool modification_changed = false;
+                
                 if (existing_meta.contains("sizeBytes") && new_meta.contains("sizeBytes"))
                 {
-                    significant_change = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
+                    size_changed = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
                 }
-                else
+                
+                if (existing_meta.contains("createdAt") && new_meta.contains("createdAt"))
                 {
-                    // If we can't parse metadata, fall back to string comparison but preserve processing status
-                    significant_change = (found->second.file_metadata != row.file_metadata);
+                    creation_changed = (existing_meta["createdAt"] != new_meta["createdAt"]);
                 }
+                
+                if (existing_meta.contains("modifiedAt") && new_meta.contains("modifiedAt"))
+                {
+                    modification_changed = (existing_meta["modifiedAt"] != new_meta["modifiedAt"]);
+                }
+                
+                significant_change = size_changed || creation_changed || modification_changed;
             }
             catch (...)
             {
@@ -157,9 +168,8 @@ namespace MediaDedup::Orchestration
             // Trace: Log database update for new/significantly changed files
             logger.trace("Updating database for file: " + rec.fullPath +
                          " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
-                         "hidden: " + (rec.isHidden ? "true" : "false") + ", " +
-                         (!exists ? "new" : "significantly changed") + ")");
-            
+                         (!exists ? "new" : "significantly changed - size/creation/modification date") + ")");
+
             if (!exists)
             {
                 // New file - reset all processing status to 0
@@ -183,7 +193,7 @@ namespace MediaDedup::Orchestration
             row.processed_fast = found->second.processed_fast;
             row.processed_balanced = found->second.processed_balanced;
             row.processed_quality = found->second.processed_quality;
-            
+
             // Still update the metadata in case of minor changes, but preserve processing status
             logger.trace("Updating metadata for file: " + rec.fullPath + " (preserving processing status)");
         }
