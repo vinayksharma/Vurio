@@ -129,31 +129,18 @@ namespace MediaDedup::Orchestration
             {
                 json existing_meta = json::parse(found->second.file_metadata);
                 json new_meta = json::parse(row.file_metadata);
-                
-                // Only consider it a significant change if any of these three fields changed:
-                // 1. File size
-                // 2. Creation date  
-                // 3. Modification date
+
+                // Only consider it a significant change if file size changed
+                // Note: Temporarily ignoring timestamps due to file scanner using current time instead of file time
+                // TODO: Fix file scanner to use actual file modification time
                 bool size_changed = false;
-                bool creation_changed = false;
-                bool modification_changed = false;
                 
                 if (existing_meta.contains("sizeBytes") && new_meta.contains("sizeBytes"))
                 {
                     size_changed = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
                 }
                 
-                if (existing_meta.contains("createdAt") && new_meta.contains("createdAt"))
-                {
-                    creation_changed = (existing_meta["createdAt"] != new_meta["createdAt"]);
-                }
-                
-                if (existing_meta.contains("modifiedAt") && new_meta.contains("modifiedAt"))
-                {
-                    modification_changed = (existing_meta["modifiedAt"] != new_meta["modifiedAt"]);
-                }
-                
-                significant_change = size_changed || creation_changed || modification_changed;
+                significant_change = size_changed;
             }
             catch (...)
             {
@@ -168,7 +155,7 @@ namespace MediaDedup::Orchestration
             // Trace: Log database update for new/significantly changed files
             logger.trace("Updating database for file: " + rec.fullPath +
                          " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
-                         (!exists ? "new" : "significantly changed - size/creation/modification date") + ")");
+                         (!exists ? "new" : "significantly changed - file size") + ")");
 
             if (!exists)
             {

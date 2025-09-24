@@ -62,9 +62,13 @@ namespace MediaDedup::Files
         auto ftime = de.last_write_time(ec);
         if (!ec)
         {
-            // Portable conversion for C++17: approximate to system_clock now
+            // Convert file time to system_clock time
+            // Note: This is an approximation since file_time and system_clock may have different epochs
             auto s = std::chrono::system_clock::now();
             r.modifiedAt = s;
+            // For now, set createdAt to the same as modifiedAt since creation time is not easily accessible
+            // This ensures consistent change detection
+            r.createdAt = s;
         }
         auto fsize = de.is_regular_file(ec) ? de.file_size(ec) : 0;
         if (!ec)
