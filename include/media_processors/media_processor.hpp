@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <set>
 #include <filesystem>
 #include "config/unified_observable_config.hpp"
 #include "config/config_change_event.hpp"
@@ -55,9 +56,8 @@ namespace MediaDedup
          *
          * This method is thread-safe and will:
          * 1. Query database for unprocessed files in current server mode
-         * 2. Mark files as in-progress (-1) in the database
-         * 3. Route each file to appropriate processor via RouteToProcessor
-         * 4. Mark files as processed (1) on success or log errors and continue
+         * 2. Route each file to appropriate processor via RouteToProcessor
+         * 3. Mark files as picked up for processing (1) on success or error (-1) on failure
          *
          * This method processes all unprocessed files in a single run.
          */
@@ -72,6 +72,16 @@ namespace MediaDedup
          * @return true if file was successfully routed for processing, false if unsupported or disabled
          */
         bool RouteToProcessorInternal(const std::string &file_path);
+
+        /**
+         * @brief Get all supported media file extensions from configuration
+         *
+         * This method returns all media file extensions that are defined in the configuration,
+         * regardless of whether they are currently enabled or disabled.
+         *
+         * @return Set of supported media file extensions (lowercase, without leading dot)
+         */
+        std::set<std::string> getAllSupportedMediaExtensions() const;
 
         /**
          * @brief Initialize the processor and subscribe to configuration changes

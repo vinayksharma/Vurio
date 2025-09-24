@@ -10,6 +10,7 @@
 #include "filesmanager/files_service.hpp"
 #include "filesmanager/file_scanner.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "media_processors/media_processor.hpp"
 
 namespace MediaDedup
 {
@@ -20,8 +21,9 @@ namespace MediaDedup
         public:
             FilesManager(std::shared_ptr<UnifiedObservableConfigManager> cfg,
                          std::shared_ptr<DatabaseManager> db,
-                         std::shared_ptr<FilesService> filesService)
-                : cfg_(std::move(cfg)), db_(std::move(db)), filesService_(std::move(filesService)) {}
+                         std::shared_ptr<FilesService> filesService,
+                         std::shared_ptr<MediaProcessor> mediaProcessor)
+                : cfg_(std::move(cfg)), db_(std::move(db)), filesService_(std::move(filesService)), mediaProcessor_(std::move(mediaProcessor)) {}
 
             void initialize();
             void runOnce();
@@ -31,6 +33,7 @@ namespace MediaDedup
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<DatabaseManager> db_;
             std::shared_ptr<FilesService> filesService_;
+            std::shared_ptr<MediaProcessor> mediaProcessor_;
 
             std::mutex runMutex_;
             bool running_ = false;

@@ -188,16 +188,16 @@ namespace MediaDedup
             scheduler_service_ = std::make_shared<Orchestration::SchedulerService>(config_manager_, tpm_);
             scheduler_service_->start();
 
-            // Initialize FilesManager
+            // Initialize MediaProcessor first (needed by FilesManager)
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
-            files_service_ = std::make_shared<FilesService>(*db_shared);
-            scanned_files_service_ = std::make_shared<ScannedFilesService>(*db_shared);
-            files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_);
-            files_manager_->initialize();
-
-            // Initialize MediaProcessor
             media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared);
             media_processor_->initialize();
+
+            // Initialize FilesManager with MediaProcessor
+            files_service_ = std::make_shared<FilesService>(*db_shared);
+            scanned_files_service_ = std::make_shared<ScannedFilesService>(*db_shared);
+            files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_, media_processor_);
+            files_manager_->initialize();
 
             // Register fileScan job
             int intervalMs = config_manager_->getPropertyValue<int>("files.manager.scan.intervalMs", 300000);

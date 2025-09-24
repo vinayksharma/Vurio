@@ -137,6 +137,8 @@ namespace MediaDedup
 
     void MediaProcessor::ProcessMedia()
     {
+        Poco::Logger::get("MediaProcessor").information("Media processing thread started");
+
         std::lock_guard<std::mutex> lock(route_mutex_);
 
         if (!config_manager_)
@@ -201,15 +203,6 @@ namespace MediaDedup
             {
                 try
                 {
-                    // Mark file as in-progress (-1)
-                    bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
-                    if (!marked)
-                    {
-                        Poco::Logger::get("MediaProcessor").warning("Failed to mark file as in-progress: " + file_row.file_path);
-                        error_count++;
-                        continue;
-                    }
-
                     Poco::Logger::get("MediaProcessor").debug("Processing file: " + file_row.file_path);
 
                     // Route file to appropriate processor (using internal version to avoid deadlock)
@@ -217,15 +210,23 @@ namespace MediaDedup
 
                     if (success)
                     {
-                        // Mark file as processed (1)
-                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 1);
-                        processed_count++;
-                        Poco::Logger::get("MediaProcessor").debug("Successfully processed file: " + file_row.file_path);
+                        // Mark file as picked up for processing (1)
+                        bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 1);
+                        if (marked)
+                        {
+                            processed_count++;
+                            Poco::Logger::get("MediaProcessor").debug("Successfully picked up file for processing: " + file_row.file_path);
+                        }
+                        else
+                        {
+                            Poco::Logger::get("MediaProcessor").warning("Failed to mark file as picked up for processing: " + file_row.file_path);
+                            error_count++;
+                        }
                     }
                     else
                     {
-                        // Mark file as failed (2) - could be retried later
-                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
+                        // Mark file as error (-1)
+                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
                         error_count++;
                         Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_row.file_path);
                     }
@@ -235,8 +236,8 @@ namespace MediaDedup
                     // Log error and continue with next file
                     Poco::Logger::get("MediaProcessor").error("Exception while processing file " + file_row.file_path + ": " + e.what());
 
-                    // Mark file as failed (2)
-                    ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
+                    // Mark file as error (-1)
+                    ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
                     error_count++;
                 }
             }
@@ -247,6 +248,8 @@ namespace MediaDedup
         {
             Poco::Logger::get("MediaProcessor").error("Exception in ProcessMedia: " + std::string(e.what()));
         }
+
+        Poco::Logger::get("MediaProcessor").information("Media processing thread finished");
     }
 
     void MediaProcessor::onConfigChange(const ConfigChangeEvent &event)
@@ -456,5 +459,73 @@ namespace MediaDedup
         }
 
         Poco::Logger::get("MediaProcessor").information("Initialized extension mapping with " + std::to_string(extension_to_config_key_.size()) + " file types from configuration");
+    }
+
+    std::set<std::string> MediaProcessor::getAllSupportedMediaExtensions() const
+    {
+        std::set<std::string> supported_extensions;
+
+        if (!config_manager_)
+        {
+            Poco::Logger::get("MediaProcessor").warning("Configuration manager not available for getting supported extensions");
+            return supported_extensions;
+        }
+
+        // Get all property keys from configuration
+        auto all_keys = config_manager_->getAllPropertyKeys();
+
+        for (const auto &key : all_keys)
+        {
+            // Check for image formats (including raw)
+            if (key.find("media.images.") == 0)
+            {
+                std::string extension = key.substr(12); // Remove "media.images."
+                // Remove leading dot if present
+                if (!extension.empty() && extension[0] == '.')
+                {
+                    extension = extension.substr(1);
+                }
+
+                // Handle raw formats specially - add both "raw.cr2" and "cr2"
+                if (extension.find("raw.") == 0)
+                {
+                    // Add the full raw format name
+                    supported_extensions.insert(extension);
+
+                    // Also add just the extension part (e.g., "cr2" for "raw.cr2")
+                    std::string short_extension = extension.substr(4); // Remove "raw."
+                    supported_extensions.insert(short_extension);
+                }
+                else
+                {
+                    supported_extensions.insert(extension);
+                }
+            }
+            // Check for video formats
+            else if (key.find("media.video.") == 0)
+            {
+                std::string extension = key.substr(11); // Remove "media.video."
+                // Remove leading dot if present
+                if (!extension.empty() && extension[0] == '.')
+                {
+                    extension = extension.substr(1);
+                }
+                supported_extensions.insert(extension);
+            }
+            // Check for audio formats
+            else if (key.find("media.audio.") == 0)
+            {
+                std::string extension = key.substr(11); // Remove "media.audio."
+                // Remove leading dot if present
+                if (!extension.empty() && extension[0] == '.')
+                {
+                    extension = extension.substr(1);
+                }
+                supported_extensions.insert(extension);
+            }
+        }
+
+        Poco::Logger::get("MediaProcessor").debug("Found " + std::to_string(supported_extensions.size()) + " supported media extensions from configuration");
+        return supported_extensions;
     }
 }

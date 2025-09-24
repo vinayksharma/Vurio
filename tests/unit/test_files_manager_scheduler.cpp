@@ -8,6 +8,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "filesmanager/files_service.hpp"
+#include "media_processors/media_processor.hpp"
 
 using namespace MediaDedup;
 using namespace MediaDedup::Orchestration;
@@ -25,7 +26,11 @@ TEST(FilesManagerTest, NonOverlapRunOnce)
     FilesService filesService(*db);
     auto filesServicePtr = std::make_shared<FilesService>(*db);
 
-    FilesManager fm(cfg, db, filesServicePtr);
+    // Create MediaProcessor for FilesManager
+    auto mediaProcessor = std::make_shared<MediaProcessor>(cfg, db);
+    mediaProcessor->initialize();
+
+    FilesManager fm(cfg, db, filesServicePtr, mediaProcessor);
     fm.initialize();
 
     // Launch two runOnce calls concurrently; second should be skipped

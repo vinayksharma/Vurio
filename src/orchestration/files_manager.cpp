@@ -2,6 +2,7 @@
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -31,6 +32,29 @@ namespace MediaDedup::Orchestration
                                      std::unordered_map<std::string, MediaDedup::ScannedFileRow> &index)
     {
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
+
+        // Check if this file has a supported media extension
+        if (!mediaProcessor_)
+        {
+            logger.warning("MediaProcessor not available, skipping media type filtering");
+            return;
+        }
+
+        // Get all supported media extensions from configuration
+        auto supported_extensions = mediaProcessor_->getAllSupportedMediaExtensions();
+
+        // Check if the file extension is in the supported list
+        std::string extension = rec.extension;
+        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+        if (supported_extensions.find(extension) == supported_extensions.end())
+        {
+            // File extension is not supported, skip inserting into database
+            logger.trace("Skipping unsupported file type: " + rec.fullPath + " (extension: " + extension + ")");
+            return;
+        }
+
+        logger.trace("Processing supported media file: " + rec.fullPath + " (extension: " + extension + ")");
         if (rec.hasError())
         {
             std::string path = rec.fullPath.empty() ? std::string("<empty_path>") : rec.fullPath;

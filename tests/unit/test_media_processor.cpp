@@ -308,7 +308,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     // ProcessMedia should process the files
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Verify files were marked as processed (1) for FAST mode
+    // Verify files were marked as picked up for processing (1) for FAST mode
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
     ASSERT_TRUE(file1_result.has_value());
     EXPECT_EQ(file1_result->processed_fast, 1);
@@ -332,11 +332,11 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     unprocessed_file.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unprocessed_file));
 
-    // Add already processed file
+    // Add already picked up for processing file
     ScannedFileRow processed_file;
     processed_file.file_path = "/path/to/test/processed.jpg";
     processed_file.file_name = "processed.jpg";
-    processed_file.processed_fast = 1; // Already processed
+    processed_file.processed_fast = 1; // Already picked up for processing
     processed_file.processed_balanced = 0;
     processed_file.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, processed_file));
@@ -344,7 +344,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     // ProcessMedia should only process the unprocessed file
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Verify only unprocessed file was processed
+    // Verify only unprocessed file was picked up for processing
     auto unprocessed_result = ScannedFilesOps::getByPath(*database_manager_, unprocessed_file.file_path);
     ASSERT_TRUE(unprocessed_result.has_value());
     EXPECT_EQ(unprocessed_result->processed_fast, 1);
@@ -368,13 +368,13 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     unsupported_file.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unsupported_file));
 
-    // ProcessMedia should mark unsupported files as failed (2)
+    // ProcessMedia should mark unsupported files as error (-1)
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Verify file was marked as failed
+    // Verify file was marked as error
     auto result = ScannedFilesOps::getByPath(*database_manager_, unsupported_file.file_path);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->processed_fast, 2); // Failed
+    EXPECT_EQ(result->processed_fast, -1); // Error
 }
 
 TEST_F(MediaProcessorTest, ProcessMedia_DisabledInConfig_DoesNotProcess)
@@ -401,6 +401,43 @@ TEST_F(MediaProcessorTest, ProcessMedia_DisabledInConfig_DoesNotProcess)
     auto result = ScannedFilesOps::getByPath(*database_manager_, test_file.file_path);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->processed_fast, 0); // Still unprocessed
+}
+
+TEST_F(MediaProcessorTest, GetAllSupportedMediaExtensions_ReturnsAllConfiguredExtensions)
+{
+    // Get all supported extensions from configuration
+    auto supported_extensions = media_processor_->getAllSupportedMediaExtensions();
+
+    // Should have at least some extensions from the test configuration
+    EXPECT_GT(supported_extensions.size(), 0);
+
+    // Check for some common image formats that should be in the configuration
+    EXPECT_TRUE(supported_extensions.find("jpg") != supported_extensions.end());
+    EXPECT_TRUE(supported_extensions.find("jpeg") != supported_extensions.end());
+    EXPECT_TRUE(supported_extensions.find("png") != supported_extensions.end());
+
+    // Check for raw formats (both full and short names)
+    EXPECT_TRUE(supported_extensions.find("raw.cr2") != supported_extensions.end());
+    EXPECT_TRUE(supported_extensions.find("cr2") != supported_extensions.end());
+
+    // Check for video formats
+    EXPECT_TRUE(supported_extensions.find("mp4") != supported_extensions.end());
+    EXPECT_TRUE(supported_extensions.find("avi") != supported_extensions.end());
+
+    // Check for audio formats
+    EXPECT_TRUE(supported_extensions.find("mp3") != supported_extensions.end());
+    EXPECT_TRUE(supported_extensions.find("wav") != supported_extensions.end());
+
+    // Verify extensions are lowercase
+    for (const auto &ext : supported_extensions)
+    {
+        EXPECT_EQ(ext, std::string(ext.begin(), ext.end()));
+        // All extensions should be lowercase
+        for (char c : ext)
+        {
+            EXPECT_TRUE(std::islower(c) || !std::isalpha(c));
+        }
+    }
 }
 
 #if !defined(ALL_UNIT_TESTS)
