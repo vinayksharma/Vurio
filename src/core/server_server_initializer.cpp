@@ -206,6 +206,22 @@ namespace MediaDedup
                                             [fm = files_manager_]()
                                             { fm->runOnce(); });
 
+            // Clear any processing flags from interrupted sessions before starting media processing
+            logger.information("Clearing processing flags from any interrupted sessions...");
+            int cleared_count = media_processor_->clearProcessingFlags();
+            if (cleared_count > 0)
+            {
+                logger.information("Cleared processing flags for %d files that were left in processing state", cleared_count);
+            }
+            else if (cleared_count == 0)
+            {
+                logger.information("No files were left in processing state");
+            }
+            else
+            {
+                logger.warning("Failed to clear processing flags - database operation failed");
+            }
+
             // Register mediaProcessor job
             int mediaIntervalMs = config_manager_->getPropertyValue<int>("media.processor.intervalMs", 30000);
             logger.information("Loading mediaProcessor interval from config: %d ms", mediaIntervalMs);
