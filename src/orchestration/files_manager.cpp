@@ -137,12 +137,12 @@ namespace MediaDedup::Orchestration
                 bool size_changed = false;
                 bool creation_changed = false;
                 bool modification_changed = false;
-                
+
                 if (existing_meta.contains("sizeBytes") && new_meta.contains("sizeBytes"))
                 {
                     size_changed = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
                 }
-                
+
                 // Only compare creation time if both are non-zero (actual file timestamps)
                 if (existing_meta.contains("createdAt") && new_meta.contains("createdAt"))
                 {
@@ -153,7 +153,7 @@ namespace MediaDedup::Orchestration
                         creation_changed = (existing_created != new_created);
                     }
                 }
-                
+
                 // Only compare modification time if both are non-zero (actual file timestamps)
                 if (existing_meta.contains("modifiedAt") && new_meta.contains("modifiedAt"))
                 {
@@ -164,7 +164,7 @@ namespace MediaDedup::Orchestration
                         modification_changed = (existing_modified != new_modified);
                     }
                 }
-                
+
                 significant_change = size_changed || creation_changed || modification_changed;
             }
             catch (...)
@@ -197,21 +197,20 @@ namespace MediaDedup::Orchestration
                 row.processed_balanced = 0;
                 row.processed_quality = 0;
             }
+
+            // Perform upsert for new or significantly changed files
+            ScannedFilesOps::upsert(*db_, row);
+            index[row.file_path] = row;
         }
         else
         {
             // Minor metadata change or no change - preserve existing processing status
             // This prevents completed files (status=2) from being reset to 0
-            row.processed_fast = found->second.processed_fast;
-            row.processed_balanced = found->second.processed_balanced;
-            row.processed_quality = found->second.processed_quality;
-
-            // Still update the metadata in case of minor changes, but preserve processing status
-            logger.trace("Updating metadata for file: " + rec.fullPath + " (preserving processing status)");
+            // Do NOT upsert the row when unchanged to avoid any accidental state overwrites
+            // Optionally update only metadata if needed in future via a dedicated method
+            logger.trace("Skipping database update (no significant change) for file: " + rec.fullPath);
+            return;
         }
-
-        ScannedFilesOps::upsert(*db_, row);
-        index[row.file_path] = row;
     }
 
     void FilesManager::runOnce()

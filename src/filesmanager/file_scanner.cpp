@@ -67,7 +67,7 @@ namespace MediaDedup::Files
             auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                 ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
             r.modifiedAt = sctp;
-            
+
             // For creation time, we'll use the same as modification time for now
             // since std::filesystem doesn't provide easy access to creation time on all platforms
             r.createdAt = sctp;
