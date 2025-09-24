@@ -122,31 +122,70 @@ namespace MediaDedup::Orchestration
 
         auto found = index.find(rec.fullPath);
         const bool exists = (found != index.end());
-        bool changed = false;
+        bool significant_change = false;
+        
         if (exists)
         {
-            // compare minimal fields: size/time/attrs — simplified: if metadata string differs after update, treat as changed
-            changed = (found->second.file_metadata != row.file_metadata);
+            // Parse existing metadata to compare significant fields
+            try
+            {
+                json existing_meta = json::parse(found->second.file_metadata);
+                json new_meta = json::parse(row.file_metadata);
+                
+                // Only consider it a significant change if file size changed
+                // This prevents processing status reset for minor metadata differences
+                if (existing_meta.contains("sizeBytes") && new_meta.contains("sizeBytes"))
+                {
+                    significant_change = (existing_meta["sizeBytes"] != new_meta["sizeBytes"]);
+                }
+                else
+                {
+                    // If we can't parse metadata, fall back to string comparison but preserve processing status
+                    significant_change = (found->second.file_metadata != row.file_metadata);
+                }
+            }
+            catch (...)
+            {
+                // If JSON parsing fails, fall back to string comparison but preserve processing status
+                significant_change = (found->second.file_metadata != row.file_metadata);
+            }
         }
 
-        // FilesManager only sets processed_* to 0 on new/changed
-        if (!exists || changed)
+        // Only reset processing status for new files or significant changes (like file size changes)
+        if (!exists || significant_change)
         {
-            // Trace: Log database update for new/changed files
+            // Trace: Log database update for new/significantly changed files
             logger.trace("Updating database for file: " + rec.fullPath +
                          " (size: " + std::to_string(rec.fileSizeBytes) + " bytes, " +
                          "hidden: " + (rec.isHidden ? "true" : "false") + ", " +
-                         (!exists ? "new" : "changed") + ")");
-            row.processed_fast = 0;
-            row.processed_balanced = 0;
-            row.processed_quality = 0;
+                         (!exists ? "new" : "significantly changed") + ")");
+            
+            if (!exists)
+            {
+                // New file - reset all processing status to 0
+                row.processed_fast = 0;
+                row.processed_balanced = 0;
+                row.processed_quality = 0;
+            }
+            else
+            {
+                // Significant change (like file size change) - reset processing status to 0
+                // This ensures files are re-processed if their content actually changed
+                row.processed_fast = 0;
+                row.processed_balanced = 0;
+                row.processed_quality = 0;
+            }
         }
         else
         {
-            // keep existing states - no logging for unchanged files
+            // Minor metadata change or no change - preserve existing processing status
+            // This prevents completed files (status=2) from being reset to 0
             row.processed_fast = found->second.processed_fast;
             row.processed_balanced = found->second.processed_balanced;
             row.processed_quality = found->second.processed_quality;
+            
+            // Still update the metadata in case of minor changes, but preserve processing status
+            logger.trace("Updating metadata for file: " + rec.fullPath + " (preserving processing status)");
         }
 
         ScannedFilesOps::upsert(*db_, row);
