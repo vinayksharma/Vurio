@@ -45,7 +45,19 @@ namespace MediaDedup
                 if (leased_sessions_ < pool_max_)
                 {
                     ++leased_sessions_;
-                    break;
+                    try
+                    {
+                        // Try to get the session while holding the lock
+                        Poco::Data::Session session = getConnectedSession();
+                        lk.unlock(); // Release lock before creating Lease
+                        return Lease(*this, std::move(session));
+                    }
+                    catch (...)
+                    {
+                        // If session creation fails, decrement the counter
+                        --leased_sessions_;
+                        throw;
+                    }
                 }
             }
             if (std::chrono::steady_clock::now() >= deadline)
@@ -54,7 +66,6 @@ namespace MediaDedup
             }
             std::this_thread::sleep_for(acquire_backoff_);
         }
-        return Lease(*this);
     }
 
     Poco::Data::Session SessionManager::getConnectedSession()
@@ -75,6 +86,9 @@ namespace MediaDedup
     // Lease
     SessionManager::Lease::Lease(SessionManager &manager)
         : manager_(manager), session_(manager.getConnectedSession()) {}
+
+    SessionManager::Lease::Lease(SessionManager &manager, Poco::Data::Session &&session)
+        : manager_(manager), session_(std::move(session)) {}
 
     Poco::Data::Session &SessionManager::Lease::get() { return session_; }
 

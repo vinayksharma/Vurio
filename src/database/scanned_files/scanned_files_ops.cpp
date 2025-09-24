@@ -207,10 +207,8 @@ namespace MediaDedup
                 break;
             }
             
-            // Force commit for debugging
-            // sess.commit(); // Autocommit mode should handle this automatically
-            
-            Poco::Logger::get("ScannedFilesOps").debug("Successfully marked file " + file_path + " with state " + std::to_string(state));
+            // Log successful update for debugging
+            Poco::Logger::get("ScannedFilesOps").debug("Successfully updated file " + file_path + " to state " + std::to_string(state));
             return true;
         }
         catch (const std::exception& e)

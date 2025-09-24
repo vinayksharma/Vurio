@@ -14,6 +14,7 @@ public:
     class Lease {
     public:
         explicit Lease(SessionManager &manager);
+        Lease(SessionManager &manager, Poco::Data::Session &&session);
         ~Lease();
 
         Poco::Data::Session &get();
