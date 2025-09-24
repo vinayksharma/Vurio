@@ -308,14 +308,14 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     // ProcessMedia should process the files
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Verify files were marked as picked up for processing (1) for FAST mode
+    // Verify files were marked as completed (2) for FAST mode
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
     ASSERT_TRUE(file1_result.has_value());
-    EXPECT_EQ(file1_result->processed_fast, 1);
+    EXPECT_EQ(file1_result->processed_fast, 2);
 
     auto file2_result = ScannedFilesOps::getByPath(*database_manager_, test_file2.file_path);
     ASSERT_TRUE(file2_result.has_value());
-    EXPECT_EQ(file2_result->processed_fast, 1);
+    EXPECT_EQ(file2_result->processed_fast, 2);
 }
 
 TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnprocessed)
@@ -344,10 +344,10 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     // ProcessMedia should only process the unprocessed file
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Verify only unprocessed file was picked up for processing
+    // Verify only unprocessed file was completed
     auto unprocessed_result = ScannedFilesOps::getByPath(*database_manager_, unprocessed_file.file_path);
     ASSERT_TRUE(unprocessed_result.has_value());
-    EXPECT_EQ(unprocessed_result->processed_fast, 1);
+    EXPECT_EQ(unprocessed_result->processed_fast, 2);
 
     auto processed_result = ScannedFilesOps::getByPath(*database_manager_, processed_file.file_path);
     ASSERT_TRUE(processed_result.has_value());

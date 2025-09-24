@@ -98,22 +98,25 @@ namespace MediaDedup
         if (category == FileTypeCategory::IMAGE)
         {
             ImageProcessor image_processor;
+            bool processing_success = false;
 
             switch (server_mode)
             {
             case ServerMode::FAST:
-                image_processor.ProcessFast(file_path);
+                processing_success = image_processor.ProcessFast(file_path);
                 break;
             case ServerMode::BALANCED:
-                image_processor.ProcessBalanced(file_path);
+                processing_success = image_processor.ProcessBalanced(file_path);
                 break;
             case ServerMode::QUALITY:
-                image_processor.ProcessQuality(file_path);
+                processing_success = image_processor.ProcessQuality(file_path);
                 break;
             default:
-                image_processor.ProcessFast(file_path);
+                processing_success = image_processor.ProcessFast(file_path);
                 break;
             }
+
+            return processing_success;
         }
         // Future: Add video and audio processors here
         else if (category == FileTypeCategory::VIDEO)
@@ -210,16 +213,16 @@ namespace MediaDedup
 
                     if (success)
                     {
-                        // Mark file as picked up for processing (1)
-                        bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 1);
+                        // Mark file as completed (2) since processing is done synchronously
+                        bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
                         if (marked)
                         {
                             processed_count++;
-                            Poco::Logger::get("MediaProcessor").debug("Successfully picked up file for processing: " + file_row.file_path);
+                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_row.file_path);
                         }
                         else
                         {
-                            Poco::Logger::get("MediaProcessor").warning("Failed to mark file as picked up for processing: " + file_row.file_path);
+                            Poco::Logger::get("MediaProcessor").warning("Failed to mark file as completed: " + file_row.file_path);
                             error_count++;
                         }
                     }
