@@ -333,11 +333,13 @@ namespace MediaDedup
         // Create default TPM properties
         manager->createProperty<std::string>("tpm.pool.max", "auto", "TPM pool maximum size");
         manager->createProperty<int>("tpm.killTimeoutMs", 10000, "TPM kill timeout");
+        manager->createProperty<int>("tpm.thread.idleTimeoutSeconds", 120, "Thread idle timeout in seconds");
         manager->createProperty<double>("tpm.types.fileScan.share", 1.0, "File scan type share");
 
         // Create default media processor properties
         manager->createProperty<bool>("media.processor.enabled", true, "Enable media processor");
         manager->createProperty<int>("media.processor.intervalMs", 30000, "Media processor interval in milliseconds");
+        manager->createProperty<double>("media.processor.threadPool.share.image_processor", 1.0, "Thread pool share for image processing");
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");

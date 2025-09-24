@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <chrono>
+#include <thread>
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
 #include "config/unified_observable_config.hpp"
 #include "config/config_manager_factory.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 #include "test_utils.hpp"
 
 using namespace MediaDedup;
@@ -37,8 +40,12 @@ protected:
         database_manager_ = std::make_shared<DatabaseManager>(db_path_);
         ASSERT_TRUE(database_manager_->initialize());
 
+        // Create thread pool manager
+        thread_pool_manager_ = std::make_shared<ThreadPoolManager>(config_manager_);
+        thread_pool_manager_->initialize();
+
         // Create media processor
-        media_processor_ = std::make_unique<MediaProcessor>(config_manager_, database_manager_);
+        media_processor_ = std::make_unique<MediaProcessor>(config_manager_, database_manager_, thread_pool_manager_);
         ASSERT_TRUE(media_processor_->initialize());
     }
 
@@ -47,6 +54,10 @@ protected:
         if (media_processor_)
         {
             media_processor_->shutdown();
+        }
+        if (thread_pool_manager_)
+        {
+            thread_pool_manager_->shutdownAndDrain(std::chrono::milliseconds(1000));
         }
         if (config_manager_)
         {
@@ -73,6 +84,7 @@ protected:
 
     std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
     std::shared_ptr<DatabaseManager> database_manager_;
+    std::shared_ptr<ThreadPoolManager> thread_pool_manager_;
     std::unique_ptr<MediaProcessor> media_processor_;
     std::string db_path_;
 };
@@ -305,8 +317,11 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     test_file2.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file2));
 
-    // ProcessMedia should process the files
+    // ProcessMedia should submit files for processing (fire-and-forget)
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
+
+    // Wait a bit for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Verify files were marked as completed (2) for FAST mode
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
@@ -344,6 +359,9 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     // ProcessMedia should only process the unprocessed file
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
+    // Wait a bit for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     // Verify only unprocessed file was completed
     auto unprocessed_result = ScannedFilesOps::getByPath(*database_manager_, unprocessed_file.file_path);
     ASSERT_TRUE(unprocessed_result.has_value());
@@ -368,8 +386,11 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     unsupported_file.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unsupported_file));
 
-    // ProcessMedia should mark unsupported files as error (-1)
+    // ProcessMedia should submit files for processing (fire-and-forget)
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
+
+    // Wait a bit for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Verify file was marked as error
     auto result = ScannedFilesOps::getByPath(*database_manager_, unsupported_file.file_path);

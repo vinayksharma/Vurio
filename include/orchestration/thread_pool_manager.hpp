@@ -78,14 +78,16 @@ namespace MediaDedup
         void schedule();
         size_t allowanceFor(const std::string &type) const;
         void onConfigChange(const ConfigChangeEvent &event);
+        void recreateThreadPool();
 
         // Config
         std::shared_ptr<UnifiedObservableConfigManager> cfg_;
         size_t effective_max_;
         std::chrono::milliseconds kill_timeout_;
+        int idle_timeout_seconds_;
 
         // Pool and bookkeeping
-        Poco::ThreadPool pool_;
+        std::unique_ptr<Poco::ThreadPool> pool_;
         mutable std::mutex mutex_;
         std::condition_variable cv_;
         std::atomic<bool> accepting_{true};

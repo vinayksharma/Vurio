@@ -3,6 +3,7 @@
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
 #include <algorithm>
@@ -11,8 +12,9 @@
 namespace MediaDedup
 {
     MediaProcessor::MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                   std::shared_ptr<DatabaseManager> database_manager)
-        : config_manager_(config_manager), database_manager_(database_manager)
+                                   std::shared_ptr<DatabaseManager> database_manager,
+                                   std::shared_ptr<ThreadPoolManager> thread_pool_manager)
+        : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager)
     {
         // Extension mapping will be initialized lazily when first needed
     }
@@ -24,7 +26,7 @@ namespace MediaDedup
 
     bool MediaProcessor::initialize()
     {
-        if (!config_manager_)
+        if (!config_manager_ || !thread_pool_manager_)
         {
             return false;
         }
@@ -35,6 +37,10 @@ namespace MediaDedup
             {
                 onConfigChange(event);
             });
+
+        // Set up thread pool share for image processing
+        double image_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.image_processor", 1.0);
+        thread_pool_manager_->setShare("image_processor", image_processor_share);
 
         return true;
     }
@@ -97,26 +103,87 @@ namespace MediaDedup
 
         if (category == FileTypeCategory::IMAGE)
         {
-            ImageProcessor image_processor;
-            bool processing_success = false;
-
-            switch (server_mode)
+            // Submit fire-and-forget lambda to thread pool
+            if (thread_pool_manager_)
             {
-            case ServerMode::FAST:
-                processing_success = image_processor.ProcessFast(file_path);
-                break;
-            case ServerMode::BALANCED:
-                processing_success = image_processor.ProcessBalanced(file_path);
-                break;
-            case ServerMode::QUALITY:
-                processing_success = image_processor.ProcessQuality(file_path);
-                break;
-            default:
-                processing_success = image_processor.ProcessFast(file_path);
-                break;
-            }
+                // Capture by value for thread safety and to avoid dangling references
+                std::string file_path_copy = file_path;
+                ServerMode server_mode_copy = server_mode;
+                std::shared_ptr<DatabaseManager> db_manager = database_manager_;
 
-            return processing_success;
+                thread_pool_manager_->submit("image_processor", [file_path_copy, server_mode_copy, db_manager]()
+                                             {
+                    try
+                    {
+                        Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        ImageProcessor image_processor;
+                        bool processing_success = false;
+
+                        // Process based on server mode
+                        switch (server_mode_copy)
+                        {
+                        case ServerMode::FAST:
+                            processing_success = image_processor.ProcessFast(file_path_copy);
+                            break;
+                        case ServerMode::BALANCED:
+                            processing_success = image_processor.ProcessBalanced(file_path_copy);
+                            break;
+                        case ServerMode::QUALITY:
+                            processing_success = image_processor.ProcessQuality(file_path_copy);
+                            break;
+                        default:
+                            processing_success = image_processor.ProcessFast(file_path_copy);
+                            break;
+                        }
+
+                        // Update database status within the lambda using connection pool
+                        if (processing_success)
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
+                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
+                        }
+                        else
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Exception in image processing thread for file " + file_path_copy + ": " + e.what());
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Unknown exception in image processing thread for file: " + file_path_copy);
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    } });
+
+                Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
+                return true; // Successfully submitted to thread pool
+            }
+            else
+            {
+                Poco::Logger::get("MediaProcessor").error("Thread pool manager not available for file: " + file_path);
+                return false;
+            }
         }
         // Future: Add video and audio processors here
         else if (category == FileTypeCategory::VIDEO)
@@ -198,54 +265,41 @@ namespace MediaDedup
                 return;
             }
 
-            // Process each file
-            int processed_count = 0;
+            // Submit each file for processing (fire-and-forget)
+            int submitted_count = 0;
             int error_count = 0;
 
             for (const auto &file_row : unprocessed_files)
             {
                 try
                 {
-                    Poco::Logger::get("MediaProcessor").debug("Processing file: " + file_row.file_path);
+                    Poco::Logger::get("MediaProcessor").debug("Submitting file for processing: " + file_row.file_path);
 
-                    // Route file to appropriate processor (using internal version to avoid deadlock)
+                    // Route file to appropriate processor (fire-and-forget)
                     bool success = RouteToProcessorInternal(file_row.file_path);
 
                     if (success)
                     {
-                        // Mark file as completed (2) since processing is done synchronously
-                        bool marked = ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, 2);
-                        if (marked)
-                        {
-                            processed_count++;
-                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_row.file_path);
-                        }
-                        else
-                        {
-                            Poco::Logger::get("MediaProcessor").warning("Failed to mark file as completed: " + file_row.file_path);
-                            error_count++;
-                        }
+                        submitted_count++;
+                        Poco::Logger::get("MediaProcessor").debug("Successfully submitted file for processing: " + file_row.file_path);
                     }
                     else
                     {
-                        // Mark file as error (-1)
+                        // Mark unsupported files as failed (-1) immediately
                         ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
                         error_count++;
-                        Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_row.file_path);
+                        Poco::Logger::get("MediaProcessor").warning("Failed to submit file for processing: " + file_row.file_path);
                     }
                 }
                 catch (const std::exception &e)
                 {
                     // Log error and continue with next file
-                    Poco::Logger::get("MediaProcessor").error("Exception while processing file " + file_row.file_path + ": " + e.what());
-
-                    // Mark file as error (-1)
-                    ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
+                    Poco::Logger::get("MediaProcessor").error("Exception while submitting file " + file_row.file_path + ": " + e.what());
                     error_count++;
                 }
             }
 
-            Poco::Logger::get("MediaProcessor").information("Media processing completed - Processed: " + std::to_string(processed_count) + ", Errors: " + std::to_string(error_count));
+            Poco::Logger::get("MediaProcessor").information("Media processing submission completed - Submitted: " + std::to_string(submitted_count) + ", Errors: " + std::to_string(error_count));
         }
         catch (const std::exception &e)
         {
@@ -257,6 +311,18 @@ namespace MediaDedup
 
     void MediaProcessor::onConfigChange(const ConfigChangeEvent &event)
     {
+        // React to thread pool configuration changes
+        if (event.key == "media.processor.threadPool.share.image_processor")
+        {
+            if (thread_pool_manager_)
+            {
+                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
+                thread_pool_manager_->setShare("image_processor", new_share);
+                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for image_processor: " + std::to_string(new_share));
+            }
+            return;
+        }
+
         // React to configuration changes that affect file type support
         if (event.key.find("media.") == 0)
         {

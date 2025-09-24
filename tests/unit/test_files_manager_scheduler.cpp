@@ -26,8 +26,12 @@ TEST(FilesManagerTest, NonOverlapRunOnce)
     FilesService filesService(*db);
     auto filesServicePtr = std::make_shared<FilesService>(*db);
 
+    // Create ThreadPoolManager for MediaProcessor
+    auto tpm = std::make_shared<ThreadPoolManager>(cfg);
+    tpm->initialize();
+
     // Create MediaProcessor for FilesManager
-    auto mediaProcessor = std::make_shared<MediaProcessor>(cfg, db);
+    auto mediaProcessor = std::make_shared<MediaProcessor>(cfg, db, tpm);
     mediaProcessor->initialize();
 
     FilesManager fm(cfg, db, filesServicePtr, mediaProcessor);

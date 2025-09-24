@@ -7,7 +7,7 @@
 namespace MediaDedup
 {
     ThreadPoolManager::ThreadPoolManager(std::shared_ptr<UnifiedObservableConfigManager> cfg)
-        : cfg_(std::move(cfg)), effective_max_(0), kill_timeout_(std::chrono::seconds(10)), pool_(1, 1)
+        : cfg_(std::move(cfg)), effective_max_(0), kill_timeout_(std::chrono::seconds(10)), idle_timeout_seconds_(60), pool_(std::make_unique<Poco::ThreadPool>(1, 1, 60))
     {
     }
 
@@ -69,17 +69,18 @@ namespace MediaDedup
         kill_timeout_ = std::chrono::milliseconds(killMs);
         logger.debug("Kill timeout set to: %d ms", killMs);
 
-        // Initialize pool capacity to desired effective max
-        int current = pool_.capacity();
-        if (static_cast<size_t>(current) < effective_max_)
-        {
-            pool_.addCapacity(static_cast<int>(effective_max_ - static_cast<size_t>(current)));
-            logger.information("Expanded thread pool capacity from %d to %u threads", current, static_cast<unsigned int>(effective_max_));
-        }
-        else
-        {
-            logger.information("Thread pool capacity already sufficient: %d threads", current);
-        }
+        // Read idle timeout configuration
+        std::string idleKey = "tpm.thread.idleTimeoutSeconds";
+        int idleSeconds = cfg_->getPropertyValue<int>(idleKey, 120);
+        if (idleSeconds <= 0)
+            idleSeconds = 120;
+        idle_timeout_seconds_ = idleSeconds;
+        logger.debug("Thread idle timeout set to: %d seconds", idleSeconds);
+
+        // Recreate pool with configured idle timeout and desired capacity
+        pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
+        logger.information("Thread pool initialized with capacity: %u, idle timeout: %d seconds",
+                           static_cast<unsigned int>(effective_max_), idle_timeout_seconds_);
 
         // Subscribe to config changes
         cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
@@ -272,7 +273,7 @@ namespace MediaDedup
             if (running_total_ >= effective_max_)
                 break;
 
-            if (pool_.available() <= 0)
+            if (pool_->available() <= 0)
             {
                 logger.debug("No available threads in pool");
                 break;
@@ -306,7 +307,7 @@ namespace MediaDedup
             logger.trace("DEBUG: " + hex_debug);
 
             logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "'");
-            pool_.start(*runnable);
+            pool_->start(*runnable);
             tasksStarted++;
 
             // Log using safe string concatenation to avoid format specifier issues
@@ -334,6 +335,27 @@ namespace MediaDedup
         if (it != active_runnables_.end())
             return it->second;
         return nullptr;
+    }
+
+    void ThreadPoolManager::recreateThreadPool()
+    {
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.information("Recreating thread pool with idle timeout: %d seconds", idle_timeout_seconds_);
+
+        // Wait for current tasks to complete
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this]()
+                 { return running_total_ == 0 && active_runnables_.empty(); });
+
+        // Clear queues
+        type_to_queue_.clear();
+        round_robin_types_.clear();
+
+        // Recreate the thread pool with new idle timeout
+        pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
+
+        logger.information("Thread pool recreated successfully with capacity: %d, idle timeout: %d seconds",
+                           static_cast<int>(effective_max_), idle_timeout_seconds_);
     }
 
     void ThreadPoolManager::onConfigChange(const ConfigChangeEvent &event)
@@ -366,11 +388,11 @@ namespace MediaDedup
             // Gradual decrease: increase capacity immediately; if decreased, just update effective_max_ and avoid starting new ones until under target
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                int cur = pool_.capacity();
+                int cur = pool_->capacity();
                 effective_max_ = newMax;
                 if (static_cast<size_t>(cur) < effective_max_)
                 {
-                    pool_.addCapacity(static_cast<int>(effective_max_ - static_cast<size_t>(cur)));
+                    pool_->addCapacity(static_cast<int>(effective_max_ - static_cast<size_t>(cur)));
                 }
                 // If current capacity is higher than effective_max_, we keep the pool capacity as-is
                 // and rely on the scheduler to enforce the new lower cap (gradual decrease).
@@ -388,6 +410,28 @@ namespace MediaDedup
             }
             catch (...)
             {
+            }
+        }
+        else if (event.key == "tpm.thread.idleTimeoutSeconds")
+        {
+            try
+            {
+                int newIdleTimeout = 120;
+                if (event.new_value.type() == typeid(int))
+                    newIdleTimeout = std::any_cast<int>(event.new_value);
+                else if (event.new_value.type() == typeid(std::string))
+                    newIdleTimeout = std::stoi(std::any_cast<std::string>(event.new_value));
+
+                if (newIdleTimeout > 0 && newIdleTimeout != idle_timeout_seconds_)
+                {
+                    idle_timeout_seconds_ = newIdleTimeout;
+                    Poco::Logger::get("ThreadPoolManager").information("Thread idle timeout changed to: %d seconds, recreating thread pool", newIdleTimeout);
+                    recreateThreadPool();
+                }
+            }
+            catch (...)
+            {
+                Poco::Logger::get("ThreadPoolManager").warning("Invalid thread idle timeout value, keeping current: %d seconds", idle_timeout_seconds_);
             }
         }
         else if (event.key.rfind("tpm.types.", 0) == 0 && event.key.rfind(".share") != std::string::npos)

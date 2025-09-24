@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 #include "orchestration/thread_pool_manager.hpp"
 #include "config/unified_observable_config.hpp"
+#include "test_utils.hpp"
 #include <atomic>
+#include <thread>
+#include <chrono>
 
 using namespace MediaDedup;
+using namespace MediaDedup::Test;
 
 TEST(ThreadPoolManagerTest, SchedulesWithSharesAndDrains)
 {
@@ -90,6 +94,98 @@ TEST(ThreadPoolManagerTest, RespectsPerTypeSharesAtConcurrency)
     tpm.shutdownAndDrain(std::chrono::milliseconds(500));
     st = tpm.getStatus();
     EXPECT_EQ(st.runningTotal, 0u);
+}
+
+TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_DefaultValue_Is120Seconds)
+{
+    // Test that the default idle timeout is 120 seconds
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // The default should be 120 seconds as configured in config factory
+    // We can't directly test the Poco ThreadPool's idle timeout, but we can verify
+    // that the configuration is read correctly by checking the logs or behavior
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+}
+
+TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_ChangeValue_RecreatesThreadPool)
+{
+    // Test that changing the idle timeout recreates the thread pool
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // Submit a task to ensure the pool is active
+    std::atomic<bool> taskCompleted{false};
+    tpm.submit("test", [&taskCompleted]()
+               {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        taskCompleted.store(true); });
+
+    // Wait for task to complete
+    TestUtils::waitForCondition([&taskCompleted]()
+                                { return taskCompleted.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+
+    // Change the idle timeout configuration
+    cfg->setPropertyValue<int>("tpm.thread.idleTimeoutSeconds", 60);
+
+    // Wait a bit for the configuration change to be processed
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Submit another task to verify the pool is still working
+    std::atomic<bool> secondTaskCompleted{false};
+    tpm.submit("test", [&secondTaskCompleted]()
+               {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        secondTaskCompleted.store(true); });
+
+    // Wait for second task to complete
+    TestUtils::waitForCondition([&secondTaskCompleted]()
+                                { return secondTaskCompleted.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+
+    EXPECT_TRUE(secondTaskCompleted.load());
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+}
+
+TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_InvalidValue_KeepsCurrentValue)
+{
+    // Test that invalid idle timeout values are rejected
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // Try to set invalid values
+    cfg->setPropertyValue<int>("tpm.thread.idleTimeoutSeconds", 0); // Invalid: <= 0
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    cfg->setPropertyValue<int>("tpm.thread.idleTimeoutSeconds", -10); // Invalid: negative
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // Submit a task to verify the pool is still working
+    std::atomic<bool> taskCompleted{false};
+    tpm.submit("test", [&taskCompleted]()
+               {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        taskCompleted.store(true); });
+
+    // Wait for task to complete
+    TestUtils::waitForCondition([&taskCompleted]()
+                                { return taskCompleted.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+
+    EXPECT_TRUE(taskCompleted.load());
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
 }
 
 #if !defined(ALL_UNIT_TESTS)

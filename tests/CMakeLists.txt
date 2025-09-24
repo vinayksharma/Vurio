@@ -141,12 +141,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
         )
     endif()
     if(${test_name} STREQUAL "test_files_manager_scheduler")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
         )
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})

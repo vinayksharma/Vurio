@@ -8,49 +8,51 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 
 ## Properties
 
-| Key                                 | Type    | Allowed values                                              | Default                      | Live effect                                         |
-| ----------------------------------- | ------- | ----------------------------------------------------------- | ---------------------------- | --------------------------------------------------- |
-| `server.host`                       | string  | Any valid hostname/IP. `0.0.0.0` binds all                  | `0.0.0.0`                    | Restart web server on change                        |
-| `server.port`                       | integer | 1–65535 (must be non-zero)                                  | `8080`                       | Restart web server on change                        |
-| `server.name`                       | string  | Any non-empty string                                        | `Media Deduplication Server` | None (log-only)                                     |
-| `server.mode`                       | string  | `FAST` \| `BALANCED` \| `QUALITY`                           | `FAST`                       | Applied live; drives processing/de-dup strategy     |
-| `server.processName`                | string  | Process name for instance checking                          | `media_dedup_server`         | Applied live                                        |
-| `server.instanceCheck.enabled`      | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `server.instanceCheck.bufferSize`   | integer | > 0                                                         | `128`                        | Applied live                                        |
-| `database.path`                     | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization   |
-| `database.session.acquireTimeoutMs` | integer | > 0                                                         | `3000`                       | Applied live (DB session acquire timeout)           |
-| `database.session.acquireBackoffMs` | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)          |
-| `logging.level`                     | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                        |
-| `files.manager.enabled`             | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `files.manager.scan.intervalMs`     | integer | > 0                                                         | `500`                        | Applied live                                        |
-| `scheduler.jitter.enabled`          | boolean | `true` \| `false`                                           | `false`                      | Applied live                                        |
-| `scheduler.jitter.percent`          | integer | 0-100                                                       | `0`                          | Applied live                                        |
-| `scheduler.drift.mode`              | string  | `anchored` \| `floating`                                    | `anchored`                   | Applied live                                        |
-| `scheduler.drift.maxDriftMs`        | integer | > 0                                                         | `60000`                      | Applied live                                        |
-| `scheduler.backoff.enabled`         | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `scheduler.backoff.initialMs`       | integer | > 0                                                         | `1000`                       | Applied live                                        |
-| `scheduler.backoff.multiplier`      | number  | > 1.0                                                       | `2.0`                        | Applied live                                        |
-| `scheduler.backoff.maxMs`           | integer | > 0                                                         | `30000`                      | Applied live                                        |
-| `scheduler.backoff.jitterPercent`   | integer | 0-100                                                       | `10`                         | Applied live                                        |
-| `tpm.pool.max`                      | string  | `auto` or integer                                           | `auto`                       | Applied live; decrease is gradual                   |
-| `tpm.killTimeoutMs`                 | integer | > 0                                                         | `10000`                      | Drain timeout on shutdown                           |
-| `tpm.types.<name>.share`            | number  | (0,1]                                                       | `1.0`                        | Per-type slice; honor-based                         |
-| `server.max_connections`            | integer | > 0                                                         | `100`                        | Applied live                                        |
-| `server.timeout`                    | number  | > 0.0                                                       | `30.0`                       | Applied live                                        |
-| `logging.enable_console`            | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `logging.enable_file`               | boolean | `true` \| `false`                                           | `false`                      | Applied live                                        |
-| `debug.enabled`                     | boolean | `true` \| `false`                                           | `false`                      | Applied live                                        |
-| `debug.verbose`                     | boolean | `true` \| `false`                                           | `false`                      | Applied live                                        |
-| `file_monitoring.enabled`           | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `file_monitoring.interval`          | integer | > 0                                                         | `500`                        | Applied live                                        |
-| `validation.enabled`                | boolean | `true` \| `false`                                           | `true`                       | Applied live                                        |
-| `validation.strict`                 | boolean | `true` \| `false`                                           | `false`                      | Applied live                                        |
-| `media.images.*`                    | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls image format processing)     |
-| `media.images.raw.*`                | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls raw image format processing) |
-| `media.video.*`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls video format processing)     |
-| `media.audio.*`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls audio format processing)     |
-| `media.processor.enabled`           | boolean | `true` \| `false`                                           | `true`                       | Applied live (enables/disables media processing)    |
-| `media.processor.intervalMs`        | integer | > 0                                                         | `30000`                      | Applied live (media processing interval)            |
+| Key                                                | Type    | Allowed values                                              | Default                      | Live effect                                           |
+| -------------------------------------------------- | ------- | ----------------------------------------------------------- | ---------------------------- | ----------------------------------------------------- |
+| `server.host`                                      | string  | Any valid hostname/IP. `0.0.0.0` binds all                  | `0.0.0.0`                    | Restart web server on change                          |
+| `server.port`                                      | integer | 1–65535 (must be non-zero)                                  | `8080`                       | Restart web server on change                          |
+| `server.name`                                      | string  | Any non-empty string                                        | `Media Deduplication Server` | None (log-only)                                       |
+| `server.mode`                                      | string  | `FAST` \| `BALANCED` \| `QUALITY`                           | `FAST`                       | Applied live; drives processing/de-dup strategy       |
+| `server.processName`                               | string  | Process name for instance checking                          | `media_dedup_server`         | Applied live                                          |
+| `server.instanceCheck.enabled`                     | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `server.instanceCheck.bufferSize`                  | integer | > 0                                                         | `128`                        | Applied live                                          |
+| `database.path`                                    | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization     |
+| `database.session.acquireTimeoutMs`                | integer | > 0                                                         | `3000`                       | Applied live (DB session acquire timeout)             |
+| `database.session.acquireBackoffMs`                | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)            |
+| `logging.level`                                    | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                          |
+| `files.manager.enabled`                            | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `files.manager.scan.intervalMs`                    | integer | > 0                                                         | `500`                        | Applied live                                          |
+| `scheduler.jitter.enabled`                         | boolean | `true` \| `false`                                           | `false`                      | Applied live                                          |
+| `scheduler.jitter.percent`                         | integer | 0-100                                                       | `0`                          | Applied live                                          |
+| `scheduler.drift.mode`                             | string  | `anchored` \| `floating`                                    | `anchored`                   | Applied live                                          |
+| `scheduler.drift.maxDriftMs`                       | integer | > 0                                                         | `60000`                      | Applied live                                          |
+| `scheduler.backoff.enabled`                        | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `scheduler.backoff.initialMs`                      | integer | > 0                                                         | `1000`                       | Applied live                                          |
+| `scheduler.backoff.multiplier`                     | number  | > 1.0                                                       | `2.0`                        | Applied live                                          |
+| `scheduler.backoff.maxMs`                          | integer | > 0                                                         | `30000`                      | Applied live                                          |
+| `scheduler.backoff.jitterPercent`                  | integer | 0-100                                                       | `10`                         | Applied live                                          |
+| `tpm.pool.max`                                     | string  | `auto` or integer                                           | `auto`                       | Applied live; decrease is gradual                     |
+| `tpm.killTimeoutMs`                                | integer | > 0                                                         | `10000`                      | Drain timeout on shutdown                             |
+| `tpm.thread.idleTimeoutSeconds`                    | integer | > 0                                                         | `120`                        | Applied live; recreates thread pool                   |
+| `tpm.types.<name>.share`                           | number  | (0,1]                                                       | `1.0`                        | Per-type slice; honor-based                           |
+| `server.max_connections`                           | integer | > 0                                                         | `100`                        | Applied live                                          |
+| `server.timeout`                                   | number  | > 0.0                                                       | `30.0`                       | Applied live                                          |
+| `logging.enable_console`                           | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `logging.enable_file`                              | boolean | `true` \| `false`                                           | `false`                      | Applied live                                          |
+| `debug.enabled`                                    | boolean | `true` \| `false`                                           | `false`                      | Applied live                                          |
+| `debug.verbose`                                    | boolean | `true` \| `false`                                           | `false`                      | Applied live                                          |
+| `file_monitoring.enabled`                          | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `file_monitoring.interval`                         | integer | > 0                                                         | `500`                        | Applied live                                          |
+| `validation.enabled`                               | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          |
+| `validation.strict`                                | boolean | `true` \| `false`                                           | `false`                      | Applied live                                          |
+| `media.images.*`                                   | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls image format processing)       |
+| `media.images.raw.*`                               | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls raw image format processing)   |
+| `media.video.*`                                    | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls video format processing)       |
+| `media.audio.*`                                    | boolean | `true` \| `false`                                           | `true`                       | Applied live (controls audio format processing)       |
+| `media.processor.enabled`                          | boolean | `true` \| `false`                                           | `true`                       | Applied live (enables/disables media processing)      |
+| `media.processor.intervalMs`                       | integer | > 0                                                         | `30000`                      | Applied live (media processing interval)              |
+| `media.processor.threadPool.share.image_processor` | double  | 0.0 - 1.0                                                   | `1.0`                        | Applied live (thread pool share for image processing) |
 
 Notes:
 
@@ -100,6 +102,7 @@ scheduler.backoff.jitterPercent: 10
 # Thread Pool Manager configuration
 tpm.pool.max: auto
 tpm.killTimeoutMs: 10000
+tpm.thread.idleTimeoutSeconds: 120
 tpm.types.fileScan.share: 1.0
 
 # Debug configuration
@@ -118,6 +121,7 @@ validation.strict: false
 # Media Processor
 media.processor.enabled: true
 media.processor.intervalMs: 30000
+media.processor.threadPool.share.image_processor: 1.0
 
 # Images
 media.images.jpg: true
@@ -201,10 +205,11 @@ media.images.raw.rwl: true
 - Changing `server.instanceCheck.enabled` or `server.instanceCheck.bufferSize` applies immediately to instance checking behavior.
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
 - Changing `files.manager.enabled` or `files.manager.scan.intervalMs` applies immediately to file scanning behavior.
-- Changing `media.processor.enabled` or `media.processor.intervalMs` applies immediately to media processing behavior.
+- Changing `media.processor.enabled`, `media.processor.intervalMs`, or `media.processor.threadPool.share.image_processor` applies immediately to media processing behavior.
 - Changing `scheduler.jitter.enabled`, `scheduler.jitter.percent`, `scheduler.drift.mode`, or `scheduler.drift.maxDriftMs` applies immediately to scheduler behavior.
 - Changing `scheduler.backoff.*` properties applies immediately to scheduler backoff behavior.
 - Changing `tpm.pool.max` applies immediately; if lowered, TPM stops starting new tasks until concurrency drops below the new cap.
+- Changing `tpm.thread.idleTimeoutSeconds` recreates the thread pool with the new idle timeout.
 - Changing `tpm.types.<name>.share` updates the per-type allowance used for scheduling new tasks.
 - Changing any `media.*` property applies immediately to file scanning and processing behavior:
   - `media.images.*` properties control which image formats are processed during file scanning

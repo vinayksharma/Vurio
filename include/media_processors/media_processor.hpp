@@ -14,6 +14,7 @@ namespace MediaDedup
 {
     // Forward declarations
     class DatabaseManager;
+    class ThreadPoolManager;
     struct ScannedFileRow;
     /**
      * @brief Media processor router that determines processing strategy based on file type and server mode
@@ -28,9 +29,11 @@ namespace MediaDedup
          * @brief Constructor
          * @param config_manager Shared pointer to the unified configuration manager
          * @param database_manager Shared pointer to the database manager
+         * @param thread_pool_manager Shared pointer to the thread pool manager
          */
         explicit MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                std::shared_ptr<DatabaseManager> database_manager);
+                                std::shared_ptr<DatabaseManager> database_manager,
+                                std::shared_ptr<ThreadPoolManager> thread_pool_manager);
 
         /**
          * @brief Destructor
@@ -113,6 +116,9 @@ namespace MediaDedup
 
         // Database management
         std::shared_ptr<DatabaseManager> database_manager_;
+
+        // Thread pool management
+        std::shared_ptr<ThreadPoolManager> thread_pool_manager_;
 
         // Thread safety
         mutable std::mutex route_mutex_;

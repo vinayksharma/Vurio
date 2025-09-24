@@ -1,89 +1,145 @@
-media.video.m2ts: true
-media.audio.ogg: true
-media.images.raw.mrw: true
-media.images.raw.rw2: true
-media.video.mkv: true
-media.images.raw.3fr: true
-media.audio.m4a: true
-media.audio.wma: true
-media.audio.wav: true
-media.images.exr: true
-media.images.raw.nrw: true
-media.images.raw.fff: true
-media.images.raw.bay: true
-media.images.raw.orf: true
-media.video.flv: true
-media.images.raw.mos: true
-media.images.jp2: true
-media.audio.opus: true
-media.video.avi: true
-media.images.raw.dng: true
-media.audio.aiff: true
-media.images.raw.raf: true
-media.images.raw.arw: true
-media.images.raw.cr2: true
-media.video.mts: true
-media.images.raw.iiq: true
-media.images.raw.srw: true
-media.audio.flac: true
-media.video.ts: true
-media.images.jpeg: true
-media.video.mpg: true
-media.images.raw.rwl: true
-media.images.pbm: true
-media.audio.au: true
-media.video.m4v: true
-media.video.wmv: true
-media.video.mov: true
-media.images.jpg: true
-media.images.hdr: true
+# =============================================================================
+# Media Deduplication Server Configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+server.name: Media Deduplication Server
 server.processName: media_dedup_server
-media.images.gif: true
-media.images.pgm: true
-media.images.raw.mef: true
-media.images.png: true
-media.images.raw.kdc: true
-media.images.raw.pef: true
-media.images.webp: true
-tpm.pool.max: auto
-media.audio.aac: true
-server.instanceCheck.bufferSize: 128
-scheduler.backoff.maxMs: 30000
-tpm.killTimeoutMs: 10000
-server.port: 8080
-scheduler.jitter.percent: 0
-media.images.raw.rwz: true
-media.video.mpeg: true
-server.instanceCheck.enabled: true
-media.video.mp4: true
-media.audio.alac: true
-scheduler.backoff.multiplier: 2
-scheduler.backoff.initialMs: 1000
 server.host: localhost
-media.images.raw.raw: true
-logging.level: debug
+server.port: 8080
+server.mode: FAST
+
+# Server Instance Check
+server.instanceCheck.enabled: true
+server.instanceCheck.bufferSize: 128
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
 database.path: data/dedup_server.db
-files.manager.scan.intervalMs: 10000
-media.images.raw.dcr: true
-media.images.bmp: true
-media.video.ogv: true
+
+# Database Session Management
+database.session.acquireTimeoutMs: 3000
 database.session.acquireBackoffMs: 50
-media.images.raw.nef: true
-tpm.types.fileScan.share: 1
-media.video.webm: true
-scheduler.backoff.enabled: true
-media.images.ppm: true
-scheduler.backoff.jitterPercent: 10
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging.level: debug
+
+# -----------------------------------------------------------------------------
+# Scheduler Configuration
+# -----------------------------------------------------------------------------
+# Scheduler Jitter
 scheduler.jitter.enabled: false
-media.audio.amr: true
-media.images.pnm: true
+scheduler.jitter.percent: 0
+
+# Scheduler Drift
+scheduler.drift.mode: anchored
+scheduler.drift.maxDriftMs: 60000
+
+# Scheduler Backoff
+scheduler.backoff.enabled: true
+scheduler.backoff.initialMs: 1000
+scheduler.backoff.multiplier: 2
+scheduler.backoff.maxMs: 30000
+scheduler.backoff.jitterPercent: 10
+
+# -----------------------------------------------------------------------------
+# Thread Pool Manager (TPM) Configuration
+# -----------------------------------------------------------------------------
+tpm.pool.max: auto
+tpm.killTimeoutMs: 10000
+tpm.thread.idleTimeoutSeconds: 120
+
+# TPM Type Shares
+tpm.types.fileScan.share: 1
+
+# -----------------------------------------------------------------------------
+# Files Manager Configuration
+# -----------------------------------------------------------------------------
 files.manager.enabled: true
+files.manager.scan.intervalMs: 10000
+
+# -----------------------------------------------------------------------------
+# Media Processor Configuration
+# -----------------------------------------------------------------------------
 media.processor.enabled: true
 media.processor.intervalMs: 30000
+media.processor.threadPool.share.image_processor: 1.0
+
+# -----------------------------------------------------------------------------
+# Media Type Configuration
+# -----------------------------------------------------------------------------
+
+# Image Formats
+media.images.bmp: true
+media.images.exr: true
+media.images.gif: true
+media.images.hdr: true
+media.images.jpg: true
+media.images.jpeg: true
+media.images.jp2: true
+media.images.png: true
+media.images.pbm: true
+media.images.pgm: true
+media.images.pnm: true
+media.images.ppm: true
 media.images.tiff: true
+media.images.webp: true
+
+# Raw Image Formats
+media.images.raw.3fr: true
+media.images.raw.arw: true
+media.images.raw.bay: true
+media.images.raw.cr2: true
+media.images.raw.dcr: true
+media.images.raw.dng: true
+media.images.raw.fff: true
+media.images.raw.iiq: true
+media.images.raw.kdc: true
+media.images.raw.mef: true
+media.images.raw.mos: true
+media.images.raw.mrw: true
+media.images.raw.nef: true
+media.images.raw.nrw: true
+media.images.raw.orf: true
+media.images.raw.pef: true
+media.images.raw.raf: true
+media.images.raw.raw: true
+media.images.raw.rw2: true
+media.images.raw.rwl: true
+media.images.raw.rwz: true
+media.images.raw.srw: true
+
+# Video Formats
+media.video.avi: true
+media.video.flv: true
+media.video.m2ts: true
+media.video.m4v: true
+media.video.mkv: true
+media.video.mov: true
+media.video.mpg: true
+media.video.mpeg: true
+media.video.mp4: true
+media.video.mts: true
+media.video.ogv: true
+media.video.ts: true
+media.video.webm: true
+media.video.wmv: true
+
+# Audio Formats
+media.audio.aac: true
+media.audio.aiff: true
+media.audio.alac: true
+media.audio.amr: true
+media.audio.au: true
+media.audio.flac: true
+media.audio.m4a: true
 media.audio.mp3: true
-database.session.acquireTimeoutMs: 3000
-server.name: Media Deduplication Server
-server.mode: FAST
-scheduler.drift.maxDriftMs: 60000
-scheduler.drift.mode: anchored
+media.audio.ogg: true
+media.audio.opus: true
+media.audio.wav: true
+media.audio.wma: true
