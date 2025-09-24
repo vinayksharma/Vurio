@@ -528,4 +528,38 @@ namespace MediaDedup
         Poco::Logger::get("MediaProcessor").debug("Found " + std::to_string(supported_extensions.size()) + " supported media extensions from configuration");
         return supported_extensions;
     }
+
+    int MediaProcessor::clearProcessingFlags()
+    {
+        std::lock_guard<std::mutex> lock(route_mutex_);
+
+        if (!database_manager_)
+        {
+            Poco::Logger::get("MediaProcessor").warning("Database manager not available for clearing processing flags");
+            return -1;
+        }
+
+        Poco::Logger::get("MediaProcessor").information("Clearing all processing flags from 1 (picked up for processing) to 0 (ready to be processed)");
+
+        try
+        {
+            int cleared_count = ScannedFilesOps::clearProcessingFlags(*database_manager_);
+
+            if (cleared_count >= 0)
+            {
+                Poco::Logger::get("MediaProcessor").information("Successfully cleared processing flags for " + std::to_string(cleared_count) + " files");
+            }
+            else
+            {
+                Poco::Logger::get("MediaProcessor").error("Failed to clear processing flags - database operation failed");
+            }
+
+            return cleared_count;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("MediaProcessor").error("Exception while clearing processing flags: " + std::string(e.what()));
+            return -1;
+        }
+    }
 }

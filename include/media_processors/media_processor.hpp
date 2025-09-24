@@ -84,6 +84,19 @@ namespace MediaDedup
         std::set<std::string> getAllSupportedMediaExtensions() const;
 
         /**
+         * @brief Clear all processing flags from 1 (picked up for processing) to 0 (ready to be processed)
+         *
+         * This method resets all files that are currently marked as picked up for processing (status = 1)
+         * back to ready for processing (status = 0). This is useful for recovering from interrupted
+         * processing sessions or resetting files that may have been left in an in-progress state.
+         *
+         * The method operates on all server modes (FAST, BALANCED, QUALITY) and is thread-safe.
+         *
+         * @return Number of files that were reset from processing state to ready state
+         */
+        int clearProcessingFlags();
+
+        /**
          * @brief Initialize the processor and subscribe to configuration changes
          * @return true if initialization successful, false otherwise
          */

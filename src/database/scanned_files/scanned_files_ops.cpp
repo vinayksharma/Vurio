@@ -412,4 +412,37 @@ namespace MediaDedup
             return false;
         }
     }
+
+    int ScannedFilesOps::clearProcessingFlags(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            // First, count how many files are currently in processing state
+            Statement count_stmt(sess);
+            int count = 0;
+            count_stmt << std::string(SQL::kCountProcessingFiles), Keywords::into(count), Keywords::now;
+
+            if (count == 0)
+            {
+                Poco::Logger::get("ScannedFilesOps").information("No files in processing state to clear");
+                return 0;
+            }
+
+            // Now clear the processing flags
+            Statement clear_stmt(sess);
+            clear_stmt << std::string(SQL::kClearProcessingFlags), Keywords::now;
+
+            Poco::Logger::get("ScannedFilesOps").information("Cleared processing flags for " + std::to_string(count) + " files");
+
+            return count;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Failed to clear processing flags: " + std::string(e.what()));
+            return -1; // Return -1 to indicate error
+        }
+    }
 }

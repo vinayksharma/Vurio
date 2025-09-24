@@ -440,6 +440,116 @@ TEST_F(MediaProcessorTest, GetAllSupportedMediaExtensions_ReturnsAllConfiguredEx
     }
 }
 
+TEST_F(MediaProcessorTest, ClearProcessingFlags_WithNoProcessingFiles_ReturnsZero)
+{
+    // Ensure scanned_files table exists
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*database_manager_));
+
+    // Clear processing flags when no files are in processing state
+    int cleared_count = media_processor_->clearProcessingFlags();
+    
+    // Should return 0 since no files were in processing state
+    EXPECT_EQ(cleared_count, 0);
+}
+
+TEST_F(MediaProcessorTest, ClearProcessingFlags_WithProcessingFiles_ClearsAllFlags)
+{
+    // Ensure scanned_files table exists
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*database_manager_));
+
+    // Add some test files with different processing states
+    ScannedFileRow test_file1;
+    test_file1.file_path = "/path/to/test/image1.jpg";
+    test_file1.file_name = "image1.jpg";
+    test_file1.processed_fast = 1; // Picked up for processing
+    test_file1.processed_balanced = 0;
+    test_file1.processed_quality = 0;
+    ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file1));
+
+    ScannedFileRow test_file2;
+    test_file2.file_path = "/path/to/test/image2.png";
+    test_file2.file_name = "image2.png";
+    test_file2.processed_fast = 0;
+    test_file2.processed_balanced = 1; // Picked up for processing
+    test_file2.processed_quality = 0;
+    ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file2));
+
+    ScannedFileRow test_file3;
+    test_file3.file_path = "/path/to/test/image3.gif";
+    test_file3.file_name = "image3.gif";
+    test_file3.processed_fast = 0;
+    test_file3.processed_balanced = 0;
+    test_file3.processed_quality = 1; // Picked up for processing
+    ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file3));
+
+    ScannedFileRow test_file4;
+    test_file4.file_path = "/path/to/test/image4.bmp";
+    test_file4.file_name = "image4.bmp";
+    test_file4.processed_fast = 0; // Already ready for processing
+    test_file4.processed_balanced = 0;
+    test_file4.processed_quality = 0;
+    ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file4));
+
+    // Clear processing flags
+    int cleared_count = media_processor_->clearProcessingFlags();
+    
+    // Should return 3 (the number of files that had processing flags set to 1)
+    EXPECT_EQ(cleared_count, 3);
+
+    // Verify all files now have processing flags set to 0
+    auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
+    ASSERT_TRUE(file1_result.has_value());
+    EXPECT_EQ(file1_result->processed_fast, 0);
+    EXPECT_EQ(file1_result->processed_balanced, 0);
+    EXPECT_EQ(file1_result->processed_quality, 0);
+
+    auto file2_result = ScannedFilesOps::getByPath(*database_manager_, test_file2.file_path);
+    ASSERT_TRUE(file2_result.has_value());
+    EXPECT_EQ(file2_result->processed_fast, 0);
+    EXPECT_EQ(file2_result->processed_balanced, 0);
+    EXPECT_EQ(file2_result->processed_quality, 0);
+
+    auto file3_result = ScannedFilesOps::getByPath(*database_manager_, test_file3.file_path);
+    ASSERT_TRUE(file3_result.has_value());
+    EXPECT_EQ(file3_result->processed_fast, 0);
+    EXPECT_EQ(file3_result->processed_balanced, 0);
+    EXPECT_EQ(file3_result->processed_quality, 0);
+
+    auto file4_result = ScannedFilesOps::getByPath(*database_manager_, test_file4.file_path);
+    ASSERT_TRUE(file4_result.has_value());
+    EXPECT_EQ(file4_result->processed_fast, 0);
+    EXPECT_EQ(file4_result->processed_balanced, 0);
+    EXPECT_EQ(file4_result->processed_quality, 0);
+}
+
+TEST_F(MediaProcessorTest, ClearProcessingFlags_WithMixedStates_OnlyClearsProcessingFlags)
+{
+    // Ensure scanned_files table exists
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*database_manager_));
+
+    // Add test file with mixed states (some processing, some error, some ready)
+    ScannedFileRow test_file;
+    test_file.file_path = "/path/to/test/mixed.jpg";
+    test_file.file_name = "mixed.jpg";
+    test_file.processed_fast = 1; // Picked up for processing
+    test_file.processed_balanced = -1; // Error state
+    test_file.processed_quality = 0; // Ready for processing
+    ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file));
+
+    // Clear processing flags
+    int cleared_count = media_processor_->clearProcessingFlags();
+    
+    // Should return 1 (only the FAST mode was in processing state)
+    EXPECT_EQ(cleared_count, 1);
+
+    // Verify the file states after clearing
+    auto result = ScannedFilesOps::getByPath(*database_manager_, test_file.file_path);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->processed_fast, 0); // Should be cleared
+    EXPECT_EQ(result->processed_balanced, -1); // Should remain unchanged (error state)
+    EXPECT_EQ(result->processed_quality, 0); // Should remain unchanged (already ready)
+}
+
 #if !defined(ALL_UNIT_TESTS)
 // Provide a test main for this standalone test binary
 int main(int argc, char **argv)

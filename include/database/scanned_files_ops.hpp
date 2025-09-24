@@ -56,5 +56,8 @@ namespace MediaDedup
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
                                                            int limit = -1);
         static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
+
+        // Clear processing flags
+        static int clearProcessingFlags(DatabaseManager &db);
     };
 }
