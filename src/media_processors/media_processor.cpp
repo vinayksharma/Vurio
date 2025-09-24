@@ -187,10 +187,13 @@ namespace MediaDedup
 
         try
         {
-            // Query unprocessed files for current server mode
-            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode);
+            // Get batch size from configuration
+            int batch_size = config_manager_->getPropertyValue<int>("media.processor.batchSize", 10);
+            
+            // Query unprocessed files for current server mode with batch size limit
+            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode, batch_size);
 
-            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode");
+            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode (batch size: " + std::to_string(batch_size) + ")");
 
             if (unprocessed_files.empty())
             {

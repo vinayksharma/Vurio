@@ -206,12 +206,12 @@ namespace MediaDedup
                 stmt << std::string(SQL::kUpdateProcessedQuality), Keywords::use(flag), Keywords::use(p), Keywords::now;
                 break;
             }
-            
+
             // Log successful update for debugging
             Poco::Logger::get("ScannedFilesOps").debug("Successfully updated file " + file_path + " to state " + std::to_string(state));
             return true;
         }
-        catch (const std::exception& e)
+        catch (const std::exception &e)
         {
             Poco::Logger::get("ScannedFilesOps").error("Failed to mark file " + file_path + " with state " + std::to_string(state) + ": " + e.what());
             return false;
