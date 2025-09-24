@@ -62,13 +62,23 @@ namespace MediaDedup::Files
         auto ftime = de.last_write_time(ec);
         if (!ec)
         {
-            // Convert file time to system_clock time
-            // Note: This is an approximation since file_time and system_clock may have different epochs
-            auto s = std::chrono::system_clock::now();
-            r.modifiedAt = s;
-            // For now, set createdAt to the same as modifiedAt since creation time is not easily accessible
-            // This ensures consistent change detection
-            r.createdAt = s;
+            // Convert file_time_type to system_clock::time_point
+            // This is the proper way to handle file modification time
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            r.modifiedAt = sctp;
+            
+            // For creation time, we'll use the same as modification time for now
+            // since std::filesystem doesn't provide easy access to creation time on all platforms
+            r.createdAt = sctp;
+        }
+        else
+        {
+            // If we can't get file time, use current time as fallback
+            // This ensures we don't have 0 timestamps that cause false change detection
+            auto current_time = std::chrono::system_clock::now();
+            r.modifiedAt = current_time;
+            r.createdAt = current_time;
         }
         auto fsize = de.is_regular_file(ec) ? de.file_size(ec) : 0;
         if (!ec)
