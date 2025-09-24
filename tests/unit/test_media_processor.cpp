@@ -447,7 +447,7 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithNoProcessingFiles_ReturnsZer
 
     // Clear processing flags when no files are in processing state
     int cleared_count = media_processor_->clearProcessingFlags();
-    
+
     // Should return 0 since no files were in processing state
     EXPECT_EQ(cleared_count, 0);
 }
@@ -492,7 +492,7 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithProcessingFiles_ClearsAllFla
 
     // Clear processing flags
     int cleared_count = media_processor_->clearProcessingFlags();
-    
+
     // Should return 3 (the number of files that had processing flags set to 1)
     EXPECT_EQ(cleared_count, 3);
 
@@ -531,23 +531,23 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithMixedStates_OnlyClearsProces
     ScannedFileRow test_file;
     test_file.file_path = "/path/to/test/mixed.jpg";
     test_file.file_name = "mixed.jpg";
-    test_file.processed_fast = 1; // Picked up for processing
+    test_file.processed_fast = 1;      // Picked up for processing
     test_file.processed_balanced = -1; // Error state
-    test_file.processed_quality = 0; // Ready for processing
+    test_file.processed_quality = 0;   // Ready for processing
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file));
 
     // Clear processing flags
     int cleared_count = media_processor_->clearProcessingFlags();
-    
+
     // Should return 1 (only the FAST mode was in processing state)
     EXPECT_EQ(cleared_count, 1);
 
     // Verify the file states after clearing
     auto result = ScannedFilesOps::getByPath(*database_manager_, test_file.file_path);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->processed_fast, 0); // Should be cleared
+    EXPECT_EQ(result->processed_fast, 0);      // Should be cleared
     EXPECT_EQ(result->processed_balanced, -1); // Should remain unchanged (error state)
-    EXPECT_EQ(result->processed_quality, 0); // Should remain unchanged (already ready)
+    EXPECT_EQ(result->processed_quality, 0);   // Should remain unchanged (already ready)
 }
 
 #if !defined(ALL_UNIT_TESTS)

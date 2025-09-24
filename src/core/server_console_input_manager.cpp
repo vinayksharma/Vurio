@@ -220,7 +220,10 @@ namespace MediaDedupServer
                 {
                     if (running_.load())
                     {
-                        Poco::Logger::get("ConsoleInputManager").information("Console input ended");
+                        Poco::Logger::get("ConsoleInputManager").information("Console input ended - continuing in non-interactive mode for 60 seconds");
+                        // Instead of breaking immediately, continue running for 60 seconds to allow scheduled jobs to execute
+                        std::this_thread::sleep_for(std::chrono::seconds(60));
+                        Poco::Logger::get("ConsoleInputManager").information("Non-interactive mode timeout reached, shutting down");
                     }
                     break;
                 }
