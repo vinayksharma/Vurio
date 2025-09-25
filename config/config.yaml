@@ -69,6 +69,8 @@ files.manager.scan.intervalMs: 10000
 media.processor.enabled: true
 media.processor.intervalMs: 30000
 media.processor.threadPool.share.image_processor: 1.0
+media.processor.threadPool.share.audio_processor: 1.0
+media.processor.threadPool.share.video_processor: 1.0
 
 # -----------------------------------------------------------------------------
 # Media Type Configuration

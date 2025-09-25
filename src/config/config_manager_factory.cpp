@@ -340,6 +340,8 @@ namespace MediaDedup
         manager->createProperty<bool>("media.processor.enabled", true, "Enable media processor");
         manager->createProperty<int>("media.processor.intervalMs", 30000, "Media processor interval in milliseconds");
         manager->createProperty<double>("media.processor.threadPool.share.image_processor", 1.0, "Thread pool share for image processing");
+        manager->createProperty<double>("media.processor.threadPool.share.audio_processor", 1.0, "Thread pool share for audio processing");
+        manager->createProperty<double>("media.processor.threadPool.share.video_processor", 1.0, "Thread pool share for video processing");
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");

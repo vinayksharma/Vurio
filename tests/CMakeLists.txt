@@ -137,6 +137,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
@@ -148,6 +150,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
         )
     endif()
@@ -189,6 +193,8 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
 )
 target_link_libraries(all_unit_tests 
     ${GTEST_LIBRARIES}

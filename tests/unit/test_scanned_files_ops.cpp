@@ -26,7 +26,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, CrudAndProcessingStates)
         {
-            std::string db_path = "test_scanned_files.sqlite";
+            std::string db_path = "../tests/test_data/databases/test_scanned_files.sqlite";
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -82,7 +82,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, CountMethodVerification)
         {
-            std::string db_path = "test_count_verification.sqlite";
+            std::string db_path = "../tests/test_data/databases/test_count_verification.sqlite";
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);

@@ -21,7 +21,7 @@ protected:
     {
         // Create a test configuration manager
         ConfigManagerConfig config;
-        config.config_file_path = "test_media_processor.yaml";
+        config.config_file_path = "../tests/test_data/test_media_processor.yaml";
         config.enable_file_monitoring = false;
         config.emit_file_change_events = false;
         config.emit_programmatic_events = false;
@@ -35,7 +35,7 @@ protected:
         setupTestConfiguration();
 
         // Create test database
-        db_path_ = "test_media_processor.sqlite";
+        db_path_ = "../tests/test_data/databases/test_media_processor.sqlite";
         std::remove(db_path_.c_str());
         database_manager_ = std::make_shared<DatabaseManager>(db_path_);
         ASSERT_TRUE(database_manager_->initialize());
@@ -213,7 +213,7 @@ TEST_F(MediaProcessorTest, RouteToProcessor_InvalidServerMode_DefaultsToFast)
     EXPECT_TRUE(result);
 }
 
-TEST_F(MediaProcessorTest, RouteToProcessor_VideoFile_NotYetImplemented)
+TEST_F(MediaProcessorTest, RouteToProcessor_VideoFile_ReturnsTrue)
 {
     std::string test_file = "/path/to/test/video.mp4";
 
@@ -222,10 +222,10 @@ TEST_F(MediaProcessorTest, RouteToProcessor_VideoFile_NotYetImplemented)
 
     bool result = media_processor_->RouteToProcessor(test_file);
 
-    EXPECT_FALSE(result); // Should return false as video processing not implemented
+    EXPECT_TRUE(result); // Should return true as video processing is now implemented
 }
 
-TEST_F(MediaProcessorTest, RouteToProcessor_AudioFile_NotYetImplemented)
+TEST_F(MediaProcessorTest, RouteToProcessor_AudioFile_ReturnsTrue)
 {
     std::string test_file = "/path/to/test/audio.mp3";
 
@@ -234,7 +234,51 @@ TEST_F(MediaProcessorTest, RouteToProcessor_AudioFile_NotYetImplemented)
 
     bool result = media_processor_->RouteToProcessor(test_file);
 
-    EXPECT_FALSE(result); // Should return false as audio processing not implemented
+    EXPECT_TRUE(result); // Should return true as audio processing is now implemented
+}
+
+TEST_F(MediaProcessorTest, RouteToProcessor_MultipleVideoFormats_Work)
+{
+    // Test different video formats
+    std::vector<std::string> video_files = {
+        "/path/to/test/video.mp4",
+        "/path/to/test/video.avi",
+        "/path/to/test/video.mkv",
+        "/path/to/test/video.mov"};
+
+    for (const auto &file : video_files)
+    {
+        std::string extension = file.substr(file.find_last_of('.') + 1);
+        std::string config_key = "media.video." + extension;
+
+        // Enable the video format
+        config_manager_->setPropertyValue<bool>(config_key, true);
+
+        bool result = media_processor_->RouteToProcessor(file);
+        EXPECT_TRUE(result) << "Failed for video format: " << extension;
+    }
+}
+
+TEST_F(MediaProcessorTest, RouteToProcessor_MultipleAudioFormats_Work)
+{
+    // Test different audio formats
+    std::vector<std::string> audio_files = {
+        "/path/to/test/audio.mp3",
+        "/path/to/test/audio.wav",
+        "/path/to/test/audio.flac",
+        "/path/to/test/audio.aac"};
+
+    for (const auto &file : audio_files)
+    {
+        std::string extension = file.substr(file.find_last_of('.') + 1);
+        std::string config_key = "media.audio." + extension;
+
+        // Enable the audio format
+        config_manager_->setPropertyValue<bool>(config_key, true);
+
+        bool result = media_processor_->RouteToProcessor(file);
+        EXPECT_TRUE(result) << "Failed for audio format: " << extension;
+    }
 }
 
 // ImageProcessor tests

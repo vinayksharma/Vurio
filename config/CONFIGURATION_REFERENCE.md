@@ -53,6 +53,8 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `media.processor.enabled`                          | boolean | `true` \| `false`                                           | `true`                       | Applied live (enables/disables media processing)      | Master switch for media processing                    |
 | `media.processor.intervalMs`                       | integer | > 0                                                         | `30000`                      | Applied live (media processing interval)              | Dispatch frequency for processing loop (ms)           |
 | `media.processor.threadPool.share.image_processor` | double  | 0.0 - 1.0                                                   | `1.0`                        | Applied live (thread pool share for image processing) | TPM share allocated to `image_processor` tasks        |
+| `media.processor.threadPool.share.audio_processor` | double  | 0.0 - 1.0                                                   | `1.0`                        | Applied live (thread pool share for audio processing) | TPM share allocated to `audio_processor` tasks        |
+| `media.processor.threadPool.share.video_processor` | double  | 0.0 - 1.0                                                   | `1.0`                        | Applied live (thread pool share for video processing) | TPM share allocated to `video_processor` tasks        |
 
 Notes:
 
@@ -122,6 +124,8 @@ validation.strict: false
 media.processor.enabled: true
 media.processor.intervalMs: 30000
 media.processor.threadPool.share.image_processor: 1.0
+media.processor.threadPool.share.audio_processor: 1.0
+media.processor.threadPool.share.video_processor: 1.0
 
 # Images
 media.images.jpg: true
@@ -205,7 +209,7 @@ media.images.raw.rwl: true
 - Changing `server.instanceCheck.enabled` or `server.instanceCheck.bufferSize` applies immediately to instance checking behavior.
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
 - Changing `files.manager.enabled` or `files.manager.scan.intervalMs` applies immediately to file scanning behavior.
-- Changing `media.processor.enabled`, `media.processor.intervalMs`, or `media.processor.threadPool.share.image_processor` applies immediately to media processing behavior.
+- Changing `media.processor.enabled`, `media.processor.intervalMs`, or `media.processor.threadPool.share.*` applies immediately to media processing behavior.
 - Changing `scheduler.jitter.enabled`, `scheduler.jitter.percent`, `scheduler.drift.mode`, or `scheduler.drift.maxDriftMs` applies immediately to scheduler behavior.
 - Changing `scheduler.backoff.*` properties applies immediately to scheduler backoff behavior.
 - Changing `tpm.pool.max` applies immediately; if lowered, TPM stops starting new tasks until concurrency drops below the new cap.

@@ -1,5 +1,7 @@
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
+#include "media_processors/audio_processor.hpp"
+#include "media_processors/video_processor.hpp"
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
@@ -38,9 +40,15 @@ namespace MediaDedup
                 onConfigChange(event);
             });
 
-        // Set up thread pool share for image processing
+        // Set up thread pool shares for media processing
         double image_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.image_processor", 1.0);
         thread_pool_manager_->setShare("image_processor", image_processor_share);
+
+        double audio_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.audio_processor", 1.0);
+        thread_pool_manager_->setShare("audio_processor", audio_processor_share);
+
+        double video_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.video_processor", 1.0);
+        thread_pool_manager_->setShare("video_processor", video_processor_share);
 
         return true;
     }
@@ -185,16 +193,173 @@ namespace MediaDedup
                 return false;
             }
         }
-        // Future: Add video and audio processors here
         else if (category == FileTypeCategory::VIDEO)
         {
-            Poco::Logger::get("MediaProcessor").information("Video processing not yet implemented for: " + file_path);
-            return false;
+            // Submit fire-and-forget lambda to thread pool
+            if (thread_pool_manager_)
+            {
+                // Capture by value for thread safety and to avoid dangling references
+                std::string file_path_copy = file_path;
+                ServerMode server_mode_copy = server_mode;
+                std::shared_ptr<DatabaseManager> db_manager = database_manager_;
+
+                thread_pool_manager_->submit("video_processor", [file_path_copy, server_mode_copy, db_manager]()
+                                             {
+                    try
+                    {
+                        Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        VideoProcessor video_processor;
+                        bool processing_success = false;
+
+                        // Process based on server mode
+                        switch (server_mode_copy)
+                        {
+                        case ServerMode::FAST:
+                            processing_success = video_processor.ProcessFast(file_path_copy);
+                            break;
+                        case ServerMode::BALANCED:
+                            processing_success = video_processor.ProcessBalanced(file_path_copy);
+                            break;
+                        case ServerMode::QUALITY:
+                            processing_success = video_processor.ProcessQuality(file_path_copy);
+                            break;
+                        default:
+                            processing_success = video_processor.ProcessFast(file_path_copy);
+                            break;
+                        }
+
+                        // Update database status within the lambda using connection pool
+                        if (processing_success)
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
+                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
+                        }
+                        else
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Exception in video processing thread for file " + file_path_copy + ": " + e.what());
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Unknown exception in video processing thread for file: " + file_path_copy);
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    } });
+
+                Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
+                return true; // Successfully submitted to thread pool
+            }
+            else
+            {
+                Poco::Logger::get("MediaProcessor").error("Thread pool manager not available for file: " + file_path);
+                return false;
+            }
         }
         else if (category == FileTypeCategory::AUDIO)
         {
-            Poco::Logger::get("MediaProcessor").information("Audio processing not yet implemented for: " + file_path);
-            return false;
+            // Submit fire-and-forget lambda to thread pool
+            if (thread_pool_manager_)
+            {
+                // Capture by value for thread safety and to avoid dangling references
+                std::string file_path_copy = file_path;
+                ServerMode server_mode_copy = server_mode;
+                std::shared_ptr<DatabaseManager> db_manager = database_manager_;
+
+                thread_pool_manager_->submit("audio_processor", [file_path_copy, server_mode_copy, db_manager]()
+                                             {
+                    try
+                    {
+                        Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        AudioProcessor audio_processor;
+                        bool processing_success = false;
+
+                        // Process based on server mode
+                        switch (server_mode_copy)
+                        {
+                        case ServerMode::FAST:
+                            processing_success = audio_processor.ProcessFast(file_path_copy);
+                            break;
+                        case ServerMode::BALANCED:
+                            processing_success = audio_processor.ProcessBalanced(file_path_copy);
+                            break;
+                        case ServerMode::QUALITY:
+                            processing_success = audio_processor.ProcessQuality(file_path_copy);
+                            break;
+                        default:
+                            processing_success = audio_processor.ProcessFast(file_path_copy);
+                            break;
+                        }
+
+                        // Update database status within the lambda using connection pool
+                        if (processing_success)
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
+                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
+                        }
+                        else
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Exception in audio processing thread for file " + file_path_copy + ": " + e.what());
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Unknown exception in audio processing thread for file: " + file_path_copy);
+                        // Mark as error in database
+                        try
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                        }
+                        catch (...)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
+                        }
+                    } });
+
+                Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
+                return true; // Successfully submitted to thread pool
+            }
+            else
+            {
+                Poco::Logger::get("MediaProcessor").error("Thread pool manager not available for file: " + file_path);
+                return false;
+            }
         }
         else
         {
@@ -319,6 +484,26 @@ namespace MediaDedup
                 double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
                 thread_pool_manager_->setShare("image_processor", new_share);
                 Poco::Logger::get("MediaProcessor").information("Updated thread pool share for image_processor: " + std::to_string(new_share));
+            }
+            return;
+        }
+        else if (event.key == "media.processor.threadPool.share.audio_processor")
+        {
+            if (thread_pool_manager_)
+            {
+                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
+                thread_pool_manager_->setShare("audio_processor", new_share);
+                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for audio_processor: " + std::to_string(new_share));
+            }
+            return;
+        }
+        else if (event.key == "media.processor.threadPool.share.video_processor")
+        {
+            if (thread_pool_manager_)
+            {
+                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
+                thread_pool_manager_->setShare("video_processor", new_share);
+                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for video_processor: " + std::to_string(new_share));
             }
             return;
         }

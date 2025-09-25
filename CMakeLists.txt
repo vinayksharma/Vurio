@@ -100,6 +100,8 @@ add_executable(media_dedup_server
     src/database/database_manager.cpp
     src/media_processors/media_processor.cpp
     src/media_processors/image_processor.cpp
+    src/media_processors/audio_processor.cpp
+    src/media_processors/video_processor.cpp
 )
 
 # Link libraries
