@@ -50,6 +50,53 @@ namespace MediaDedup
             "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
             ");";
 
+        // Image artifacts (metadata produced by image pipelines)
+        inline constexpr std::string_view kCreateImageArtifactsTable =
+            "CREATE TABLE IF NOT EXISTS image_artifacts (\n"
+            "    file_path TEXT PRIMARY KEY,\n"
+            "    phash BLOB,\n"
+            "    thumb_w INTEGER,\n"
+            "    thumb_h INTEGER,\n"
+            "    features_method TEXT,\n"
+            "    features BLOB,\n"
+            "    embedding_model TEXT,\n"
+            "    embedding_dim INTEGER,\n"
+            "    embedding BLOB,\n"
+            "    version INTEGER NOT NULL DEFAULT 1,\n"
+            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            ");";
+
+        // Per-artifact upserts to avoid null-binding complexity
+        inline constexpr std::string_view kUpsertImagePhash =
+            "INSERT INTO image_artifacts(file_path, phash, thumb_w, thumb_h, version, updated_at)\n"
+            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "  phash=excluded.phash,\n"
+            "  thumb_w=excluded.thumb_w,\n"
+            "  thumb_h=excluded.thumb_h,\n"
+            "  version=excluded.version,\n"
+            "  updated_at=CURRENT_TIMESTAMP";
+
+        inline constexpr std::string_view kUpsertImageFeatures =
+            "INSERT INTO image_artifacts(file_path, features_method, features, version, updated_at)\n"
+            "VALUES(?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "  features_method=excluded.features_method,\n"
+            "  features=excluded.features,\n"
+            "  version=excluded.version,\n"
+            "  updated_at=CURRENT_TIMESTAMP";
+
+        inline constexpr std::string_view kUpsertImageEmbedding =
+            "INSERT INTO image_artifacts(file_path, embedding_model, embedding_dim, embedding, version, updated_at)\n"
+            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "  embedding_model=excluded.embedding_model,\n"
+            "  embedding_dim=excluded.embedding_dim,\n"
+            "  embedding=excluded.embedding,\n"
+            "  version=excluded.version,\n"
+            "  updated_at=CURRENT_TIMESTAMP";
+
         inline constexpr std::string_view kUpsertScannedFile =
             "INSERT INTO scanned_files (file_path, relative_path, share_name, file_name, file_metadata,\n"
             " processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file)\n"

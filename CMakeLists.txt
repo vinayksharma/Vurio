@@ -36,6 +36,105 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
 # Find yaml-cpp
 find_package(yaml-cpp REQUIRED)
+find_package(OpenCV QUIET)
+if(OpenCV_FOUND)
+    message(STATUS "OpenCV found: ${OpenCV_VERSION}")
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    add_definitions(-DHAVE_OPENCV)
+else()
+    message(STATUS "OpenCV not found - image pipelines will use stubs")
+endif()
+
+# Optional ONNX Runtime (generic, cross-platform friendly)
+# Allow user to provide ONNXRUNTIME_ROOT (var or env) or rely on common prefixes
+if(NOT ONNXRUNTIME_ROOT AND DEFINED ENV{ONNXRUNTIME_ROOT})
+    set(ONNXRUNTIME_ROOT $ENV{ONNXRUNTIME_ROOT})
+endif()
+
+set(_onnx_hints
+    ${ONNXRUNTIME_ROOT}/include
+    ${ONNXRUNTIME_ROOT}
+    /opt/homebrew/include
+    /usr/local/include
+    /usr/include
+    ${CMAKE_PREFIX_PATH}
+)
+set(_onnx_lib_hints
+    ${ONNXRUNTIME_ROOT}/lib
+    ${ONNXRUNTIME_ROOT}
+    /opt/homebrew/lib
+    /usr/local/lib
+    /usr/lib
+    ${CMAKE_PREFIX_PATH}
+)
+
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime/core/session/onnxruntime_cxx_api.h
+    HINTS ${_onnx_hints}
+    PATH_SUFFIXES include)
+find_library(ONNXRUNTIME_LIBRARY NAMES onnxruntime onnxruntime.1 libonnxruntime
+    HINTS ${_onnx_lib_hints})
+
+# Fallback manual detection on Apple/Homebrew if not found
+if(NOT ONNXRUNTIME_INCLUDE_DIR)
+    foreach(prefix /opt/homebrew /usr/local /usr)
+        if(EXISTS "${prefix}/include/onnxruntime/core/session/onnxruntime_cxx_api.h")
+            set(ONNXRUNTIME_INCLUDE_DIR "${prefix}/include")
+            break()
+        endif()
+    endforeach()
+endif()
+if(NOT ONNXRUNTIME_LIBRARY)
+    foreach(prefix /opt/homebrew /usr/local /usr)
+        if(EXISTS "${prefix}/lib/libonnxruntime.dylib")
+            set(ONNXRUNTIME_LIBRARY "${prefix}/lib/libonnxruntime.dylib")
+            break()
+        elseif(EXISTS "${prefix}/lib/libonnxruntime.so")
+            set(ONNXRUNTIME_LIBRARY "${prefix}/lib/libonnxruntime.so")
+            break()
+        endif()
+    endforeach()
+endif()
+if(ONNXRUNTIME_LIBRARY AND NOT ONNXRUNTIME_INCLUDE_DIR)
+    include(FetchContent)
+    if(NOT ONNXRUNTIME_GIT_TAG)
+        set(ONNXRUNTIME_GIT_TAG v1.22.2)
+    endif()
+    message(STATUS "Fetching ONNX Runtime headers from release tarball (tag: ${ONNXRUNTIME_GIT_TAG})")
+    FetchContent_Declare(
+        onnxruntime_headers
+        URL https://github.com/microsoft/onnxruntime/archive/refs/tags/${ONNXRUNTIME_GIT_TAG}.tar.gz
+        SOURCE_SUBDIR ""
+    )
+    FetchContent_MakeAvailable(onnxruntime_headers)
+    if(onnxruntime_headers_SOURCE_DIR)
+        set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_SOURCE_DIR}/include")
+    endif()
+endif()
+if(ONNXRUNTIME_LIBRARY AND ONNXRUNTIME_INCLUDE_DIR)
+    if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime/core/session/onnxruntime_cxx_api.h")
+        include(FetchContent)
+        if(NOT ONNXRUNTIME_GIT_TAG)
+            set(ONNXRUNTIME_GIT_TAG v1.22.2)
+        endif()
+        message(STATUS "Vendoring ONNX Runtime headers from tarball (tag: ${ONNXRUNTIME_GIT_TAG}) due to missing header in provided include dir")
+        FetchContent_Declare(
+            onnxruntime_headers_fallback
+            URL https://github.com/microsoft/onnxruntime/archive/refs/tags/${ONNXRUNTIME_GIT_TAG}.tar.gz
+            SOURCE_SUBDIR ""
+        )
+        FetchContent_MakeAvailable(onnxruntime_headers_fallback)
+        if(onnxruntime_headers_fallback_SOURCE_DIR)
+            set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_fallback_SOURCE_DIR}/include")
+        endif()
+    endif()
+endif()
+if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
+    message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIBRARY}")
+    include_directories(${ONNXRUNTIME_INCLUDE_DIR})
+    add_definitions(-DHAVE_ONNXRUNTIME)
+else()
+    message(STATUS "ONNX Runtime not found - QUALITY pipeline will remain stubbed")
+endif()
 
 # Include directories
 include_directories(
@@ -100,6 +199,14 @@ add_executable(media_dedup_server
     src/database/database_manager.cpp
     src/media_processors/media_processor.cpp
     src/media_processors/image_processor.cpp
+    src/media_processors/image/image_task.cpp
+    src/media_processors/image/pipelines/fast_pipeline.cpp
+    src/media_processors/image/backends/opencv_adapter.cpp
+    src/media_processors/image/pipelines/balanced_pipeline.cpp
+    src/media_processors/image/pipelines/quality_pipeline.cpp
+    src/media_processors/image/backends/features_adapter.cpp
+    src/media_processors/image/backends/onnx_adapter.cpp
+    src/database/image_artifacts_ops.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp
 )
@@ -115,6 +222,8 @@ target_link_libraries(media_dedup_server
     ${SQLITE3_LIBRARIES}
     unified_config_lib
     yaml-cpp::yaml-cpp
+    ${OpenCV_LIBS}
+    ${ONNXRUNTIME_LIBRARY}
 )
 
 # Set compile definitions

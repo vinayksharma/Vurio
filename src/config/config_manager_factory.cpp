@@ -343,6 +343,20 @@ namespace MediaDedup
         manager->createProperty<double>("media.processor.threadPool.share.audio_processor", 1.0, "Thread pool share for audio processing");
         manager->createProperty<double>("media.processor.threadPool.share.video_processor", 1.0, "Thread pool share for video processing");
 
+        // Image pipelines SAFE TREO configuration
+        manager->createProperty<int>("media.image.timeoutMs", 30000, "Per-image processing timeout in milliseconds");
+        manager->createProperty<bool>("media.image.retry.enabled", true, "Enable retries for transient errors");
+        manager->createProperty<int>("media.image.retry.maxAttempts", 2, "Max retry attempts (not counting first try)");
+        manager->createProperty<int>("media.image.retry.baseDelayMs", 500, "Base delay for exponential backoff in ms");
+
+        manager->createProperty<int>("media.image.fast.thumbSize", 256, "Thumbnail size for FAST pipeline");
+        manager->createProperty<int>("media.image.balanced.resizeLongEdge", 1024, "Resize long edge for BALANCED pipeline");
+        manager->createProperty<int>("media.image.balanced.maxKeypoints", 1000, "Max keypoints to keep for BALANCED pipeline");
+
+        manager->createProperty<std::string>("media.image.quality.onnx.modelPath", "models/clip-RN50.onnx", "ONNX model path for QUALITY pipeline");
+        manager->createProperty<int>("media.image.quality.onnx.inputSize", 224, "ONNX input size for QUALITY pipeline");
+        manager->createProperty<int>("media.image.quality.embeddingDim", 512, "Embedding dimension for QUALITY pipeline");
+
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");
         manager->createProperty<bool>("debug.verbose", false, "Enable verbose debug output");

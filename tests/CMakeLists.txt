@@ -39,6 +39,7 @@ set(UNIT_TEST_SOURCES
     unit/test_database_service.cpp
     unit/test_user_settings_service.cpp
     unit/test_scanned_files_ops.cpp
+    unit/test_image_artifacts_ops.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
     unit/test_scheduler_service.cpp
@@ -89,6 +90,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
         )
     endif()
+    if(${test_name} STREQUAL "test_image_artifacts_ops")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+        )
+    endif()
     if(${test_name} STREQUAL "test_tpm")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -137,6 +146,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
@@ -150,6 +167,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -163,6 +188,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         sqlite3
         unified_config_lib
         test_utils
+        ${OpenCV_LIBS}
+        ${ONNXRUNTIME_LIBRARY}
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
@@ -182,6 +209,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+        ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
@@ -193,6 +221,13 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
 )
@@ -204,6 +239,8 @@ target_link_libraries(all_unit_tests
     unified_config_lib
     yaml-cpp::yaml-cpp
     test_utils
+    ${OpenCV_LIBS}
+    ${ONNXRUNTIME_LIBRARY}
 )
 add_test(NAME all_unit_tests COMMAND all_unit_tests)
 set_tests_properties(all_unit_tests PROPERTIES

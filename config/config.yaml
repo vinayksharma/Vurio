@@ -73,6 +73,22 @@ media.processor.threadPool.share.audio_processor: 1.0
 media.processor.threadPool.share.video_processor: 1.0
 
 # -----------------------------------------------------------------------------
+# Image Pipelines (SAFE TREO)
+# -----------------------------------------------------------------------------
+media.image.timeoutMs: 30000
+media.image.retry.enabled: true
+media.image.retry.maxAttempts: 2
+media.image.retry.baseDelayMs: 500
+
+media.image.fast.thumbSize: 256
+media.image.balanced.resizeLongEdge: 1024
+media.image.balanced.maxKeypoints: 1000
+
+media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
+media.image.quality.onnx.inputSize: 224
+media.image.quality.embeddingDim: 512
+
+# -----------------------------------------------------------------------------
 # Media Type Configuration
 # -----------------------------------------------------------------------------
 

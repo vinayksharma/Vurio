@@ -1,0 +1,124 @@
+#include "database/image_artifacts_ops.hpp"
+#include "database/database_manager.hpp"
+#include "database/sql_constants.hpp"
+#include <Poco/Data/Session.h>
+#include <Poco/Data/Statement.h>
+#include <Poco/Logger.h>
+#include <string>
+
+namespace MediaDedup
+{
+    using namespace Poco::Data;
+
+    bool ImageArtifactsOps::ensureTable(DatabaseManager &db)
+    {
+        return db.ensureTableExists("image_artifacts", SQL::kCreateImageArtifactsTable);
+    }
+
+    namespace
+    {
+        static std::string toBinaryString(const std::vector<std::uint8_t> &in)
+        {
+            if (in.empty())
+                return std::string();
+            return std::string(reinterpret_cast<const char *>(in.data()), static_cast<size_t>(in.size()));
+        }
+    }
+
+    bool ImageArtifactsOps::upsertPhash(DatabaseManager &db, const ImagePhashRecord &r)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string file_path = r.file_path;
+            std::string blob = toBinaryString(r.phash);
+            int tw = r.thumb_w;
+            int th = r.thumb_h;
+            int v = r.version;
+            stmt << std::string(SQL::kUpsertImagePhash),
+                Keywords::use(file_path),
+                Keywords::use(blob),
+                Keywords::use(tw),
+                Keywords::use(th),
+                Keywords::use(v),
+                Keywords::now;
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error(std::string("upsertPhash exception: ") + e.what());
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error("upsertPhash unknown exception");
+            return false;
+        }
+    }
+
+    bool ImageArtifactsOps::upsertFeatures(DatabaseManager &db, const ImageFeaturesRecord &r)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string file_path = r.file_path;
+            std::string method = r.method;
+            std::string blob = toBinaryString(r.features_blob);
+            int v = r.version;
+            stmt << std::string(SQL::kUpsertImageFeatures),
+                Keywords::use(file_path),
+                Keywords::use(method),
+                Keywords::use(blob),
+                Keywords::use(v),
+                Keywords::now;
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error(std::string("upsertFeatures exception: ") + e.what());
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error("upsertFeatures unknown exception");
+            return false;
+        }
+    }
+
+    bool ImageArtifactsOps::upsertEmbedding(DatabaseManager &db, const ImageEmbeddingRecord &r)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string file_path = r.file_path;
+            std::string model = r.model;
+            int dim = r.dim;
+            std::string blob = toBinaryString(r.embedding_blob);
+            int v = r.version;
+            stmt << std::string(SQL::kUpsertImageEmbedding),
+                Keywords::use(file_path),
+                Keywords::use(model),
+                Keywords::use(dim),
+                Keywords::use(blob),
+                Keywords::use(v),
+                Keywords::now;
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error(std::string("upsertEmbedding exception: ") + e.what());
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ImageArtifactsOps").error("upsertEmbedding unknown exception");
+            return false;
+        }
+    }
+}
