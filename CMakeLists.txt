@@ -132,6 +132,20 @@ if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIBRARY}")
     include_directories(${ONNXRUNTIME_INCLUDE_DIR})
     add_definitions(-DHAVE_ONNXRUNTIME)
+    
+    # Model download targets
+    # Create models directory
+    file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/models)
+    
+    # Download placeholder models for testing
+    add_custom_target(download_models
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR} 
+            ${CMAKE_SOURCE_DIR}/scripts/download_placeholder_models.sh
+        COMMENT "Creating placeholder ONNX models for testing"
+        VERBATIM
+    )
+    
+    message(STATUS "ONNX models will be downloaded automatically during build")
 else()
     message(STATUS "ONNX Runtime not found - QUALITY pipeline will remain stubbed")
 endif()
@@ -211,6 +225,11 @@ add_executable(media_dedup_server
     src/media_processors/video_processor.cpp
 )
 
+# Add model download dependency if ONNX Runtime is available
+if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
+    add_dependencies(media_dedup_server download_models)
+endif()
+
 # Link libraries
 target_link_libraries(media_dedup_server
     Poco::Foundation
@@ -230,6 +249,7 @@ target_link_libraries(media_dedup_server
 target_compile_definitions(media_dedup_server PRIVATE
     ${SQLITE3_CFLAGS_OTHER}
 )
+
 
 # Install rules
 install(TARGETS media_dedup_server

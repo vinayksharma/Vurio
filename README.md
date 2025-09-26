@@ -42,6 +42,9 @@ The server is built with a modular, layered architecture:
 - **Poco Libraries** (Foundation, Data, SQLite, Util, Net)
 - **SQLite3** development libraries
 - **pkg-config** (for dependency detection)
+- **Python 3** (for ONNX model downloading)
+- **huggingface_hub** Python package (for automatic model downloads)
+- **curl or wget** (for model downloads)
 
 ## 🔧 Installation
 
@@ -51,13 +54,15 @@ The server is built with a modular, layered architecture:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libpoco-dev libsqlite3-dev pkg-config
+sudo apt install build-essential cmake libpoco-dev libsqlite3-dev pkg-config python3-pip
+pip3 install huggingface_hub
 ```
 
 #### macOS:
 
 ```bash
 brew install cmake poco sqlite3 pkg-config
+pip3 install huggingface_hub
 ```
 
 #### CentOS/RHEL:
@@ -81,6 +86,43 @@ make -j$(nproc)
 ```bash
 sudo make install
 ```
+
+## 🤖 ONNX Models (Optional)
+
+The server includes advanced image processing capabilities using ONNX models for deep learning-based deduplication. These models are **automatically downloaded** during the build process if ONNX Runtime is available.
+
+### Automatic Model Download
+
+When you build the project, CMake will automatically:
+
+- Download CLIP ViT-B/32 model (~350MB) for quality image processing
+- Download CLIP RN50 model (~600MB) for alternative quality processing
+- Place models in the `models/` directory
+- Configure the server to use these models
+
+### Manual Model Management
+
+If you need to manage models manually:
+
+```bash
+# Download all models
+make download_models
+
+# Download specific models
+make download_clip_vitb32
+make download_clip_rn50
+
+# Use custom model URLs
+python3 scripts/fetch_clip_from_hub.py
+./scripts/fetch_clip_rn50_onnx.sh <MODEL_URL>
+```
+
+### Model Requirements
+
+- **CLIP ViT-B/32**: `models/clip-image-vitb32.onnx` (~350MB)
+- **CLIP RN50**: `models/clip-RN50.onnx` (~600MB)
+
+The server will work without these models, but the Quality image processing pipeline will be disabled.
 
 ## ⚙️ Configuration
 

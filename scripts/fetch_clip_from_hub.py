@@ -2,7 +2,7 @@
 import os
 from huggingface_hub import list_repo_files, hf_hub_download
 
-REPO = os.environ.get('CLIP_REPO', 'onnx-community/clip-vit-base-patch32')
+REPO = os.environ.get('CLIP_REPO', 'microsoft/DialoGPT-medium')
 
 def pick_file(files):
     # Prefer image/vision encoder ONNX
