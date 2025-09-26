@@ -132,16 +132,16 @@ namespace MediaDedup
                         switch (server_mode_copy)
                         {
                         case ServerMode::FAST:
-                            processing_success = image_processor.ProcessFast(file_path_copy);
+                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager);
                             break;
                         case ServerMode::BALANCED:
-                            processing_success = image_processor.ProcessBalanced(file_path_copy);
+                            processing_success = image_processor.ProcessBalanced(file_path_copy, *db_manager);
                             break;
                         case ServerMode::QUALITY:
-                            processing_success = image_processor.ProcessQuality(file_path_copy);
+                            processing_success = image_processor.ProcessQuality(file_path_copy, *db_manager);
                             break;
                         default:
-                            processing_success = image_processor.ProcessFast(file_path_copy);
+                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager);
                             break;
                         }
 

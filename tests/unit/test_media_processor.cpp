@@ -287,46 +287,58 @@ class ImageProcessorTest : public ::testing::Test
 protected:
     void SetUp() override
     {
+        // Create test database
+        std::string db_path = "../tests/test_data/databases/test_image_processor.sqlite";
+        std::remove(db_path.c_str());
+        database_manager_ = std::make_shared<DatabaseManager>(db_path);
+        ASSERT_TRUE(database_manager_->initialize());
+
         image_processor_ = std::make_unique<ImageProcessor>();
     }
 
     std::unique_ptr<ImageProcessor> image_processor_;
+    std::shared_ptr<DatabaseManager> database_manager_;
 };
 
-TEST_F(ImageProcessorTest, ProcessFast_ReturnsTrue)
+TEST_F(ImageProcessorTest, ProcessFast_WithInvalidFile_ReturnsTrue)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    bool result = image_processor_->ProcessFast(test_file);
+    bool result = image_processor_->ProcessFast(test_file, *database_manager_);
 
+    // Fast pipeline has fallback mechanism - should return true even for invalid files
     EXPECT_TRUE(result);
 }
 
-TEST_F(ImageProcessorTest, ProcessBalanced_ReturnsTrue)
+TEST_F(ImageProcessorTest, ProcessBalanced_WithInvalidFile_ReturnsFalse)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    bool result = image_processor_->ProcessBalanced(test_file);
+    bool result = image_processor_->ProcessBalanced(test_file, *database_manager_);
 
-    EXPECT_TRUE(result);
+    // Balanced pipeline should return false for non-existent files
+    EXPECT_FALSE(result);
 }
 
-TEST_F(ImageProcessorTest, ProcessQuality_ReturnsTrue)
+TEST_F(ImageProcessorTest, ProcessQuality_WithInvalidFile_ReturnsFalse)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    bool result = image_processor_->ProcessQuality(test_file);
+    bool result = image_processor_->ProcessQuality(test_file, *database_manager_);
 
-    EXPECT_TRUE(result);
+    // Quality pipeline should return false for non-existent files
+    EXPECT_FALSE(result);
 }
 
-TEST_F(ImageProcessorTest, ProcessMethods_WithEmptyPath_ReturnTrue)
+TEST_F(ImageProcessorTest, ProcessMethods_WithEmptyPath_ReturnExpectedResults)
 {
     std::string empty_file = "";
 
-    EXPECT_TRUE(image_processor_->ProcessFast(empty_file));
-    EXPECT_TRUE(image_processor_->ProcessBalanced(empty_file));
-    EXPECT_TRUE(image_processor_->ProcessQuality(empty_file));
+    // Fast pipeline has fallback - returns true even for empty paths
+    // Balanced and Quality pipelines should return false for empty file paths
+    EXPECT_TRUE(image_processor_->ProcessFast(empty_file, *database_manager_));
+    EXPECT_FALSE(image_processor_->ProcessBalanced(empty_file, *database_manager_));
+    EXPECT_FALSE(image_processor_->ProcessQuality(empty_file, *database_manager_));
 }
 
 // ProcessMedia Tests
