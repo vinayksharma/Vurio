@@ -40,6 +40,7 @@ namespace MediaDedup
         static std::vector<ScannedFileRow> listAll(DatabaseManager &db);
         static int count(DatabaseManager &db);
         static int countProcessed(DatabaseManager &db);
+        static int countProcessed(DatabaseManager &db, ServerMode mode);
 
         // Adjusted APIs based on stored data
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);

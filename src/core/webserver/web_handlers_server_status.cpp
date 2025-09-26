@@ -79,9 +79,21 @@ namespace MediaDedup
             if (scanned_files_service_)
             {
                 int scanned_count = scanned_files_service_->count();
-                int processed_count = scanned_files_service_->countProcessed();
                 status_obj.set("scanned_files_count", scanned_count);
-                status_obj.set("processed_files_count", processed_count);
+                
+                // Get processed count for current server mode
+                if (config_manager_)
+                {
+                    auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
+                    int processed_count = scanned_files_service_->countProcessed(server_mode);
+                    status_obj.set("processed_files_count", processed_count);
+                }
+                else
+                {
+                    // Fallback to total processed count if config manager not available
+                    int processed_count = scanned_files_service_->countProcessed();
+                    status_obj.set("processed_files_count", processed_count);
+                }
             }
 
             // Registered directories

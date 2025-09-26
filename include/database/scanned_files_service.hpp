@@ -20,6 +20,7 @@ namespace MediaDedup
         std::vector<ScannedFileRow> listAll() { return ScannedFilesOps::listAll(db_); }
         int count() { return ScannedFilesOps::count(db_); }
         int countProcessed() { return ScannedFilesOps::countProcessed(db_); }
+        int countProcessed(ServerMode mode) { return ScannedFilesOps::countProcessed(db_, mode); }
 
         // Convenience wrappers
         bool markProcessed(const std::string &file_path, ServerMode mode, int state)

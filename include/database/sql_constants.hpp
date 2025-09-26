@@ -143,6 +143,13 @@ namespace MediaDedup
         inline constexpr std::string_view kCountProcessedFiles =
             "SELECT COUNT(*) FROM scanned_files WHERE processed_fast=2 OR processed_balanced=2 OR processed_quality=2";
 
+        inline constexpr std::string_view kCountProcessedFilesFast =
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_fast=2";
+        inline constexpr std::string_view kCountProcessedFilesBalanced =
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_balanced=2";
+        inline constexpr std::string_view kCountProcessedFilesQuality =
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_quality=2";
+
         inline constexpr std::string_view kClearProcessingFlags =
             "UPDATE scanned_files SET processed_fast=CASE WHEN processed_fast=1 THEN 0 ELSE processed_fast END, processed_balanced=CASE WHEN processed_balanced=1 THEN 0 ELSE processed_balanced END, processed_quality=CASE WHEN processed_quality=1 THEN 0 ELSE processed_quality END WHERE processed_fast=1 OR processed_balanced=1 OR processed_quality=1";
 

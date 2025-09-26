@@ -9,7 +9,7 @@ server.name: Media Deduplication Server
 server.processName: media_dedup_server
 server.host: localhost
 server.port: 8080
-server.mode: FAST
+server.mode: BALANCED
 
 # Server Instance Check
 server.instanceCheck.enabled: true

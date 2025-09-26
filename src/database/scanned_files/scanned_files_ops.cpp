@@ -191,6 +191,44 @@ namespace MediaDedup
         return 0;
     }
 
+    int ScannedFilesOps::countProcessed(DatabaseManager &db, ServerMode mode)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            
+            std::string_view query;
+            switch (mode)
+            {
+            case ServerMode::FAST:
+                query = SQL::kCountProcessedFilesFast;
+                break;
+            case ServerMode::BALANCED:
+                query = SQL::kCountProcessedFilesBalanced;
+                break;
+            case ServerMode::QUALITY:
+                query = SQL::kCountProcessedFilesQuality;
+                break;
+            default:
+                query = SQL::kCountProcessedFilesFast;
+                break;
+            }
+            
+            stmt << std::string(query), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+        }
+        return 0;
+    }
+
     static std::string modeToLinksColumn(ServerMode mode)
     {
         switch (mode)
