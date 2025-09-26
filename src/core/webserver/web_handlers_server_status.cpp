@@ -1,4 +1,5 @@
 #include "core/web/web_handlers_server_status.hpp"
+#include "config/config_enums.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <sstream>
@@ -68,13 +69,19 @@ namespace MediaDedup
                 config_status.set("validation_errors", errors_array);
 
                 status_obj.set("configuration", config_status);
+                
+                // Server mode
+                auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
+                status_obj.set("server_mode", toString(server_mode));
             }
 
             // Scanned files count
             if (scanned_files_service_)
             {
                 int scanned_count = scanned_files_service_->count();
+                int processed_count = scanned_files_service_->countProcessed();
                 status_obj.set("scanned_files_count", scanned_count);
+                status_obj.set("processed_files_count", processed_count);
             }
 
             // Registered directories

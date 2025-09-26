@@ -19,6 +19,7 @@ namespace MediaDedup
         std::optional<ScannedFileRow> getByPath(const std::string &file_path) { return ScannedFilesOps::getByPath(db_, file_path); }
         std::vector<ScannedFileRow> listAll() { return ScannedFilesOps::listAll(db_); }
         int count() { return ScannedFilesOps::count(db_); }
+        int countProcessed() { return ScannedFilesOps::countProcessed(db_); }
 
         // Convenience wrappers
         bool markProcessed(const std::string &file_path, ServerMode mode, int state)
