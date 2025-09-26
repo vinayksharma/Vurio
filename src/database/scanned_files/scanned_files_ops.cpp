@@ -198,7 +198,7 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            
+
             std::string_view query;
             switch (mode)
             {
@@ -215,7 +215,7 @@ namespace MediaDedup
                 query = SQL::kCountProcessedFilesFast;
                 break;
             }
-            
+
             stmt << std::string(query), Keywords::now;
             RecordSet rs(stmt);
             if (rs.moveFirst())

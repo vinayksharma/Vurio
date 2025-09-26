@@ -69,7 +69,7 @@ namespace MediaDedup
                 config_status.set("validation_errors", errors_array);
 
                 status_obj.set("configuration", config_status);
-                
+
                 // Server mode
                 auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
                 status_obj.set("server_mode", toString(server_mode));
@@ -80,7 +80,7 @@ namespace MediaDedup
             {
                 int scanned_count = scanned_files_service_->count();
                 status_obj.set("scanned_files_count", scanned_count);
-                
+
                 // Get processed count for current server mode
                 if (config_manager_)
                 {
