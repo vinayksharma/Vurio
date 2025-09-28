@@ -57,6 +57,17 @@ Exceptions are build.sh, rebuild, and start scripts which must stay in the proje
 
 ⸻
 
+Repository Content & Privacy
+• NEVER commit or check in any image files (jpg, jpeg, png, tiff, tif, arw, cr2, dng, heic, raw, etc.).
+• NEVER commit or check in any personal information, user data, or sensitive content.
+• NEVER commit or check in any large binary files or media files.
+• Test images should be created dynamically during test execution, not stored in the repository.
+• Use .gitignore to properly exclude test data directories, models, and any generated content.
+• Keep the repository lightweight and focused on source code only.
+• If test data is needed, create it programmatically in test setup/teardown methods.
+
+⸻
+
 Communication
 • Ask for clarifications whenever in doubt—do not assume.
 
@@ -75,6 +86,8 @@ Rules Checklist (run after every task)
 • Explicit timeouts applied in server tests/connections to prevent blocking calls.
 • Build and tests run after the change; issues resolved before proceeding.
 • Any helper/one-off scripts placed under /scripts.
+• No images, personal information, or large binary files committed to repository.
+• Test data created dynamically rather than stored in repository.
 • Final pass: re-read these rules; if anything missed, fix now.
 
 ⸻

@@ -9,7 +9,7 @@ server.name: Media Deduplication Server
 server.processName: media_dedup_server
 server.host: localhost
 server.port: 8080
-server.mode: QUALITY
+server.mode: BALANCED
 
 # Server Instance Check
 server.instanceCheck.enabled: true
@@ -106,6 +106,7 @@ media.images.pgm: true
 media.images.pnm: true
 media.images.ppm: true
 media.images.tiff: true
+media.images.tif: true
 media.images.webp: true
 
 # Raw Image Formats

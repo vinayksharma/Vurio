@@ -36,6 +36,15 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
 # Find yaml-cpp
 find_package(yaml-cpp REQUIRED)
+
+# Find ImageMagick++
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ImageMagick++ REQUIRED Magick++)
+
+# Set ImageMagick++ compile definitions
+add_definitions(-DMAGICKCORE_QUANTUM_DEPTH=16)
+add_definitions(-DMAGICKCORE_HDRI_ENABLE=1)
+
 find_package(OpenCV QUIET)
 if(OpenCV_FOUND)
     message(STATUS "OpenCV found: ${OpenCV_VERSION}")
@@ -110,6 +119,10 @@ if(ONNXRUNTIME_LIBRARY AND NOT ONNXRUNTIME_INCLUDE_DIR)
         set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_SOURCE_DIR}/include")
     endif()
 endif()
+# Temporarily disable ONNX Runtime due to library dependency issues
+set(ONNXRUNTIME_INCLUDE_DIR "")
+set(ONNXRUNTIME_LIBRARY "")
+
 if(ONNXRUNTIME_LIBRARY AND ONNXRUNTIME_INCLUDE_DIR)
     if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime/core/session/onnxruntime_cxx_api.h")
         include(FetchContent)
@@ -154,7 +167,11 @@ endif()
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${ImageMagick++_INCLUDE_DIRS}
 )
+
+# Link directories
+link_directories(${ImageMagick++_LIBRARY_DIRS})
 
 # Add subdirectories
 add_subdirectory(src)
@@ -216,6 +233,7 @@ add_executable(media_dedup_server
     src/media_processors/image/image_task.cpp
     src/media_processors/image/pipelines/fast_pipeline.cpp
     src/media_processors/image/backends/opencv_adapter.cpp
+    src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/pipelines/balanced_pipeline.cpp
     src/media_processors/image/pipelines/quality_pipeline.cpp
     src/media_processors/image/backends/features_adapter.cpp
@@ -242,7 +260,8 @@ target_link_libraries(media_dedup_server
     unified_config_lib
     yaml-cpp::yaml-cpp
     ${OpenCV_LIBS}
-    ${ONNXRUNTIME_LIBRARY}
+    # ${ONNXRUNTIME_LIBRARY}  # Temporarily disabled due to library dependency issues
+    ${ImageMagick++_LIBRARIES}
 )
 
 # Set compile definitions

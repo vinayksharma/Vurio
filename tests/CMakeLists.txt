@@ -27,10 +27,12 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/tests
     ${GTEST_INCLUDE_DIRS}
+    ${ImageMagick++_INCLUDE_DIRS}
 )
 
 # Link directories
 link_directories(${GTEST_LIBRARIES})
+link_directories(${ImageMagick++_LIBRARY_DIRS})
 
 # Unit Tests
 set(UNIT_TEST_SOURCES
@@ -47,6 +49,7 @@ set(UNIT_TEST_SOURCES
     unit/test_property_manager.cpp
     unit/test_swagger_ui_handler.cpp
     unit/test_media_processor.cpp
+    unit/test_image_magick_adapter.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -65,6 +68,15 @@ set(MOCK_SOURCES
 # Create test executables
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
+    if(${test_name} STREQUAL "test_image_magick_adapter")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        # Just add the test to the test list without creating executable
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ImageMagickAdapterTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    else()
     add_executable(${test_name} ${test_source})
     # Add extra sources for specific tests
     if(${test_name} STREQUAL "test_console_input_manager")
@@ -189,13 +201,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         unified_config_lib
         test_utils
         ${OpenCV_LIBS}
-        ${ONNXRUNTIME_LIBRARY}
+        ${ImageMagick++_LIBRARIES}
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
         OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
         TIMEOUT 300
     )
+    endif()
 endforeach()
 # Aggregate all unit tests into a single binary
 add_executable(all_unit_tests
@@ -228,6 +241,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
 )
@@ -240,7 +254,7 @@ target_link_libraries(all_unit_tests
     yaml-cpp::yaml-cpp
     test_utils
     ${OpenCV_LIBS}
-    ${ONNXRUNTIME_LIBRARY}
+    ${ImageMagick++_LIBRARIES}
 )
 add_test(NAME all_unit_tests COMMAND all_unit_tests)
 set_tests_properties(all_unit_tests PROPERTIES
@@ -291,16 +305,20 @@ add_custom_target(setup_test_data
 # Make all tests depend on test data setup
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
-    add_dependencies(${test_name} setup_test_data)
+    if(NOT ${test_name} STREQUAL "test_image_magick_adapter")
+        add_dependencies(${test_name} setup_test_data)
+    endif()
 endforeach()
 
 # Test configuration - set properties on test names, not source files
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
-    set_tests_properties(${test_name} PROPERTIES
-        LABELS "unit"
-        ENVIRONMENT "TEST_TYPE=unit"
-    )
+    if(NOT ${test_name} STREQUAL "test_image_magick_adapter")
+        set_tests_properties(${test_name} PROPERTIES
+            LABELS "unit"
+            ENVIRONMENT "TEST_TYPE=unit"
+        )
+    endif()
 endforeach()
 
 # Integration and Performance test property loops removed for brevity
