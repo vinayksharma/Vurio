@@ -44,6 +44,7 @@ target_link_libraries(quality_smoke
     pthread
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}
+    ${ImageMagick++_LIBRARIES}
     Poco::Foundation
     Poco::Data
     Poco::DataSQLite
@@ -55,4 +56,7 @@ target_sources(quality_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
 )

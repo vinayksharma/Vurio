@@ -50,6 +50,8 @@ set(UNIT_TEST_SOURCES
     unit/test_swagger_ui_handler.cpp
     unit/test_media_processor.cpp
     unit/test_image_magick_adapter.cpp
+    unit/test_raw_file_detector.cpp
+    unit/test_transcoding_pipeline.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -72,6 +74,20 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         # Just add the test to the test list without creating executable
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ImageMagickAdapterTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_raw_file_detector")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="RawFileDetectorTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_transcoding_pipeline")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="TranscodingPipelineTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -162,6 +178,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -183,6 +202,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -242,6 +264,8 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
 )
@@ -305,7 +329,9 @@ add_custom_target(setup_test_data
 # Make all tests depend on test data setup
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
-    if(NOT ${test_name} STREQUAL "test_image_magick_adapter")
+    if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
+       NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
+       NOT ${test_name} STREQUAL "test_transcoding_pipeline")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
@@ -313,7 +339,9 @@ endforeach()
 # Test configuration - set properties on test names, not source files
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
-    if(NOT ${test_name} STREQUAL "test_image_magick_adapter")
+    if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
+       NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
+       NOT ${test_name} STREQUAL "test_transcoding_pipeline")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"
             ENVIRONMENT "TEST_TYPE=unit"

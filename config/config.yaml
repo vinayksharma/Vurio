@@ -88,6 +88,12 @@ media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
 media.image.quality.onnx.inputSize: 224
 media.image.quality.embeddingDim: 512
 
+# Image Transcoding Configuration
+media.image.transcoding.enabled: true
+media.image.transcoding.timeoutMs: 60000
+media.image.transcoding.quality: "high"  # high, medium, low
+media.image.transcoding.preserveMetadata: true
+
 # -----------------------------------------------------------------------------
 # Media Type Configuration
 # -----------------------------------------------------------------------------
