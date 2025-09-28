@@ -22,6 +22,19 @@ Workflow
 
 Commit/Push Policy
 • Do not commit or push unless the user explicitly asks you to.
+• Every commit MUST include a comprehensive, detailed commit message with:
+
+- Clear feature/change description in the subject line
+- Detailed explanation of what was implemented/changed
+- Technical details about implementation approach
+- Files modified and their purpose
+- Testing coverage and validation performed
+- Any breaking changes or backward compatibility notes
+- Configuration changes and their impact
+- Dependencies added/removed and their purpose
+- Performance implications if applicable
+- Security considerations if relevant
+- Follow conventional commit format when possible (feat:, fix:, docs:, etc.)
 
 ⸻
 
@@ -70,12 +83,14 @@ Repository Content & Privacy
 
 Communication
 • Ask for clarifications whenever in doubt—do not assume.
+• When committing, provide detailed commit messages that serve as comprehensive documentation of changes.
 
 ⸻
 
 Rules Checklist (run after every task)
 • Plan was proposed and approved before implementation.
 • No commits/pushes were made without explicit user request.
+• Commit messages include comprehensive details (what, why, how, impact, testing).
 • Code subscribes to and reacts to config changes for any used property.
 • Default config generator updated for any new/changed keys.
 • Config reference/docs updated to reflect latest changes.
