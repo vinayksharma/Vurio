@@ -237,45 +237,58 @@ namespace MediaDedup
                 Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
                 logger.debug("Path registered, triggering immediate scan and process: %s", directory_path);
                 
-                // Check if scheduler is still running before attempting to trigger jobs
-                if (!scheduler_service_->isRunning()) {
-                    logger.debug("Scheduler is not running, skipping immediate scan and process");
-                    return;
-                }
-                
-                // Step 1: Trigger fileScan
-                bool scanTriggered = scheduler_service_->triggerJob("fileScan");
-                if (!scanTriggered) {
-                    logger.debug("fileScan job was already running or not found, skipping immediate scan");
-                    return;
-                }
-                
-                // Step 2: Wait for fileScan to complete (with timeout)
-                auto start = std::chrono::steady_clock::now();
-                int timeoutMs = config_manager_->getPropertyValue<int>("files.service.immediateJobTrigger.timeoutMs", 30000);
-                auto timeout = std::chrono::milliseconds(timeoutMs);
-                
-                while (scheduler_service_->isJobRunning("fileScan") && scheduler_service_->isRunning()) {
-                    if (std::chrono::steady_clock::now() - start > timeout) {
-                        logger.warning("fileScan job did not complete within timeout, skipping immediate processing");
+                // Run the immediate scan and process in a separate thread to avoid blocking the API response
+                std::thread immediateScanThread([this, directory_path]() {
+                    Poco::Logger &threadLogger = Poco::Logger::get("ServerInitializer");
+                    threadLogger.debug("Starting immediate scan thread for: %s", directory_path);
+                    
+                    // Check if scheduler is still running before attempting to trigger jobs
+                    if (!scheduler_service_->isRunning()) {
+                        threadLogger.debug("Scheduler is not running, skipping immediate scan and process");
                         return;
                     }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Poll every 100ms
-                }
+                    
+                    // Step 1: Trigger fileScan
+                    bool scanTriggered = scheduler_service_->triggerJob("fileScan");
+                    if (!scanTriggered) {
+                        threadLogger.debug("fileScan job was already running or not found, skipping immediate scan");
+                        return;
+                    }
+                    
+                    // Step 2: Wait for fileScan to complete (with timeout)
+                    auto start = std::chrono::steady_clock::now();
+                    int timeoutMs = config_manager_->getPropertyValue<int>("files.service.immediateJobTrigger.timeoutMs", 30000);
+                    auto timeout = std::chrono::milliseconds(timeoutMs);
+                    
+                    while (scheduler_service_->isJobRunning("fileScan") && scheduler_service_->isRunning()) {
+                        if (std::chrono::steady_clock::now() - start > timeout) {
+                            threadLogger.warning("fileScan job did not complete within timeout, skipping immediate processing");
+                            return;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Poll every 100ms
+                    }
+                    
+                    // Check if scheduler is still running before triggering mediaProcessor
+                    if (!scheduler_service_->isRunning()) {
+                        threadLogger.debug("Scheduler stopped during fileScan wait, skipping immediate processing");
+                        return;
+                    }
+                    
+                    // Step 3: Trigger mediaProcessor
+                    bool processTriggered = scheduler_service_->triggerJob("mediaProcessor");
+                    if (processTriggered) {
+                        threadLogger.debug("mediaProcessor job triggered successfully");
+                    } else {
+                        threadLogger.debug("mediaProcessor job was already running or not found");
+                    }
+                    
+                    threadLogger.debug("Immediate scan thread completed for: %s", directory_path);
+                });
                 
-                // Check if scheduler is still running before triggering mediaProcessor
-                if (!scheduler_service_->isRunning()) {
-                    logger.debug("Scheduler stopped during fileScan wait, skipping immediate processing");
-                    return;
-                }
-                
-                // Step 3: Trigger mediaProcessor
-                bool processTriggered = scheduler_service_->triggerJob("mediaProcessor");
-                if (processTriggered) {
-                    logger.debug("mediaProcessor job triggered successfully");
-                } else {
-                    logger.debug("mediaProcessor job was already running or not found");
-                } });
+                // Detach the thread so it runs independently
+                immediateScanThread.detach();
+                logger.debug("Immediate scan thread started for: %s", directory_path);
+            });
 
             logger.information("Scheduler and Files Manager initialized successfully");
             return true;
