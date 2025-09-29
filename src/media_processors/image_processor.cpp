@@ -24,18 +24,31 @@ namespace MediaDedup
                 std::vector<std::uint8_t> tiff_data;
                 TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
 
-                if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                try
                 {
-                    Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
+                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                    {
+                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
 
-                    FastPipelineConfig config;
-                    config.thumb_size = DEFAULT_THUMB_SIZE;
+                        FastPipelineConfig config;
+                        config.thumb_size = DEFAULT_THUMB_SIZE;
 
-                    return FastPipeline::Run(tiff_data, file_path, config, db);
+                        return FastPipeline::Run(tiff_data, file_path, config, db);
+                    }
+                    else
+                    {
+                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file, falling back to stub: %s", file_path);
+                        // Fall through to regular processing with stub
+                    }
                 }
-                else
+                catch (const std::exception &e)
                 {
-                    Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file, falling back to stub: %s", file_path);
+                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
+                    // Fall through to regular processing with stub
+                }
+                catch (...)
+                {
+                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
                     // Fall through to regular processing with stub
                 }
             }
@@ -67,19 +80,32 @@ namespace MediaDedup
                 std::vector<std::uint8_t> tiff_data;
                 TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
 
-                if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                try
                 {
-                    Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
+                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                    {
+                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
 
-                    BalancedPipelineConfig config;
-                    config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
-                    config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
+                        BalancedPipelineConfig config;
+                        config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
+                        config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
 
-                    return BalancedPipeline::Run(tiff_data, file_path, config, db);
+                        return BalancedPipeline::Run(tiff_data, file_path, config, db);
+                    }
+                    else
+                    {
+                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file: %s", file_path);
+                        return false;
+                    }
                 }
-                else
+                catch (const std::exception &e)
                 {
-                    Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file: %s", file_path);
+                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
+                    return false;
+                }
+                catch (...)
+                {
+                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
                     return false;
                 }
             }
@@ -112,20 +138,33 @@ namespace MediaDedup
                 std::vector<std::uint8_t> tiff_data;
                 TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
 
-                if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                try
                 {
-                    Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
+                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
+                    {
+                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
 
-                    QualityPipelineConfig config;
-                    config.input_size = DEFAULT_INPUT_SIZE;
-                    config.embedding_dim = DEFAULT_EMBEDDING_DIM;
-                    config.model = "CLIP-RN50";
+                        QualityPipelineConfig config;
+                        config.input_size = DEFAULT_INPUT_SIZE;
+                        config.embedding_dim = DEFAULT_EMBEDDING_DIM;
+                        config.model = "CLIP-RN50";
 
-                    return QualityPipeline::Run(tiff_data, file_path, config, db);
+                        return QualityPipeline::Run(tiff_data, file_path, config, db);
+                    }
+                    else
+                    {
+                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file: %s", file_path);
+                        return false;
+                    }
                 }
-                else
+                catch (const std::exception &e)
                 {
-                    Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file: %s", file_path);
+                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
+                    return false;
+                }
+                catch (...)
+                {
+                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
                     return false;
                 }
             }

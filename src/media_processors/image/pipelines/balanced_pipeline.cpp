@@ -63,15 +63,13 @@ namespace MediaDedup
             Poco::Logger &logger = Poco::Logger::get("BalancedPipeline");
             logger.debug("Processing image from memory data for: %s", original_file_path);
 
-            // For now, we'll use a stub approach for memory data
-            // In a full implementation, we would need to modify FeaturesAdapter
-            // to accept memory data instead of file paths
-            logger.warning("Memory-based processing not fully implemented, using stub for: %s", original_file_path);
-
-            // Create a stub features blob based on the original file path
+            // Extract features from memory data
             std::vector<std::uint8_t> blob;
-            std::string stub_data = "STUB_FEATURES_" + original_file_path;
-            blob.assign(stub_data.begin(), stub_data.end());
+            if (!FeaturesAdapter::ExtractFeaturesToBlob(image_data, cfg.resize_long_edge, cfg.max_keypoints, blob))
+            {
+                logger.warning("Features extraction failed for memory data: %s", original_file_path);
+                return false;
+            }
 
             ImageFeaturesRecord rec;
             rec.file_path = original_file_path;

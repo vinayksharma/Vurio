@@ -3,6 +3,7 @@
 #include "media_processors/image/backends/image_magick_adapter.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
+#include <filesystem>
 
 namespace MediaDedup
 {
@@ -26,9 +27,31 @@ namespace MediaDedup
 
         logger.information("Starting transcoding for raw file: %s", file_path);
 
+        // Log file properties for debugging
+        try
+        {
+            std::filesystem::path file_path_obj(file_path);
+            if (std::filesystem::exists(file_path_obj))
+            {
+                auto file_size = std::filesystem::file_size(file_path_obj);
+                logger.debug("File properties - path: %s, size: %zu bytes", file_path, file_size);
+            }
+            else
+            {
+                logger.error("File does not exist: %s", file_path);
+                tiff_data.clear();
+                return false;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            logger.warning("Could not get file properties for %s: %s", file_path, e.what());
+        }
+
         try
         {
             // Use ImageMagickAdapter for the actual transcoding
+            logger.debug("Calling ImageMagickAdapter::TranscodeToTiff for: %s", file_path);
             bool success = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
 
             if (success)
@@ -38,7 +61,7 @@ namespace MediaDedup
             }
             else
             {
-                logger.error("Failed to transcode file: %s", file_path);
+                logger.error("ImageMagickAdapter failed to transcode file: %s", file_path);
                 tiff_data.clear();
             }
 

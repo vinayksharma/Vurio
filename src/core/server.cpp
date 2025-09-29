@@ -228,18 +228,44 @@ namespace MediaDedup
             logStartupInfo();
 
             // Wait for shutdown signal
-            waitForShutdown();
+            try
+            {
+                logger_.debug("Waiting for shutdown signal...");
+                waitForShutdown();
+                logger_.debug("Shutdown signal received");
+            }
+            catch (const std::exception &e)
+            {
+                logger_.error("Exception while waiting for shutdown: %s", e.what());
+            }
+            catch (...)
+            {
+                logger_.error("Unknown exception while waiting for shutdown");
+            }
 
             // Handle shutdown gracefully
-            ServerShutdown shutdown_handler(config_manager_);
-            shutdown_handler.handleShutdown(
-                database_manager_,
-                web_server_,
-                tpm_,
-                scheduler_service_,
-                files_manager_,
-                console_input_manager_,
-                console_subscription_id_);
+            try
+            {
+                logger_.debug("Starting graceful shutdown sequence...");
+                ServerShutdown shutdown_handler(config_manager_);
+                shutdown_handler.handleShutdown(
+                    database_manager_,
+                    web_server_,
+                    tpm_,
+                    scheduler_service_,
+                    files_manager_,
+                    console_input_manager_,
+                    console_subscription_id_);
+                logger_.debug("Graceful shutdown completed successfully");
+            }
+            catch (const std::exception &e)
+            {
+                logger_.error("Exception during graceful shutdown: %s", e.what());
+            }
+            catch (...)
+            {
+                logger_.error("Unknown exception during graceful shutdown");
+            }
 
             return Application::EXIT_OK;
         }
@@ -252,58 +278,106 @@ namespace MediaDedup
 
     void MediaDedupServer::waitForShutdown()
     {
-        // Wait for console input manager to finish
-        console_input_manager_.waitForShutdown();
+        try
+        {
+            logger_.debug("Waiting for console input manager to finish...");
+            // Wait for console input manager to finish
+            console_input_manager_.waitForShutdown();
+            logger_.debug("Console input manager finished");
+        }
+        catch (const std::exception &e)
+        {
+            logger_.error("Exception while waiting for console input manager: %s", e.what());
+        }
+        catch (...)
+        {
+            logger_.error("Unknown exception while waiting for console input manager");
+        }
     }
 
     void MediaDedupServer::handleConsoleEvent(const ::MediaDedupServer::Core::ConsoleEvent &event)
     {
         using namespace ::MediaDedupServer::Core;
 
-        switch (event.type)
+        try
         {
-        case ConsoleEventType::SIGNAL_INTERRUPT:
-        case ConsoleEventType::SIGNAL_TERMINATE:
-        case ConsoleEventType::SIGNAL_QUIT:
-            logger_.information("Received shutdown signal: {}", event.command);
-            // Stop the console input manager to trigger shutdown
-            console_input_manager_.stop();
-            break;
-
-        case ConsoleEventType::COMMAND_EXIT:
-        case ConsoleEventType::COMMAND_QUIT:
-        case ConsoleEventType::COMMAND_SHUTDOWN:
-            logger_.information("Received shutdown command: {}", event.command);
-            // Stop the console input manager to trigger shutdown
-            console_input_manager_.stop();
-            break;
-
-        case ConsoleEventType::COMMAND_RESTART:
-            logger_.information("Received restart command");
-            if (web_server_)
+            switch (event.type)
             {
-                logger_.information("Restarting web server...");
-                web_server_->restart();
+            case ConsoleEventType::SIGNAL_INTERRUPT:
+            case ConsoleEventType::SIGNAL_TERMINATE:
+            case ConsoleEventType::SIGNAL_QUIT:
+                logger_.information("Received shutdown signal: {}", event.command);
+                // Stop the console input manager to trigger shutdown
+                try
+                {
+                    console_input_manager_.stop();
+                    logger_.debug("Console input manager stopped successfully");
+                }
+                catch (const std::exception &e)
+                {
+                    logger_.error("Exception stopping console input manager: %s", e.what());
+                }
+                catch (...)
+                {
+                    logger_.error("Unknown exception stopping console input manager");
+                }
+                break;
+
+            case ConsoleEventType::COMMAND_EXIT:
+            case ConsoleEventType::COMMAND_QUIT:
+            case ConsoleEventType::COMMAND_SHUTDOWN:
+                logger_.information("Received shutdown command: {}", event.command);
+                // Stop the console input manager to trigger shutdown
+                try
+                {
+                    console_input_manager_.stop();
+                    logger_.debug("Console input manager stopped successfully");
+                }
+                catch (const std::exception &e)
+                {
+                    logger_.error("Exception stopping console input manager: %s", e.what());
+                }
+                catch (...)
+                {
+                    logger_.error("Unknown exception stopping console input manager");
+                }
+                break;
+
+            case ConsoleEventType::COMMAND_RESTART:
+                logger_.information("Received restart command");
+                if (web_server_)
+                {
+                    logger_.information("Restarting web server...");
+                    web_server_->restart();
+                }
+                break;
+
+            case ConsoleEventType::COMMAND_STATUS:
+                logger_.information("Server status requested");
+                logStartupInfo();
+                break;
+
+            case ConsoleEventType::COMMAND_HELP:
+                logger_.information("Available commands:");
+                logger_.information("  exit, quit, shutdown - Stop the server");
+                logger_.information("  restart - Restart the web server");
+                logger_.information("  status - Show server status");
+                logger_.information("  help - Show this help message");
+                break;
+
+            case ConsoleEventType::UNKNOWN_COMMAND:
+                logger_.warning("Unknown command: {}", event.command);
+                logger_.information("Type 'help' for available commands");
+                break;
             }
-            break;
-
-        case ConsoleEventType::COMMAND_STATUS:
-            logger_.information("Server status requested");
-            logStartupInfo();
-            break;
-
-        case ConsoleEventType::COMMAND_HELP:
-            logger_.information("Available commands:");
-            logger_.information("  exit, quit, shutdown - Stop the server");
-            logger_.information("  restart - Restart the web server");
-            logger_.information("  status - Show server status");
-            logger_.information("  help - Show this help message");
-            break;
-
-        case ConsoleEventType::UNKNOWN_COMMAND:
-            logger_.warning("Unknown command: {}", event.command);
-            logger_.information("Type 'help' for available commands");
-            break;
+        }
+        catch (const std::exception &e)
+        {
+            logger_.error("Exception in console event handler: %s", e.what());
+        }
+        catch (...)
+        {
+            logger_.error("Unknown exception in console event handler");
         }
     }
 

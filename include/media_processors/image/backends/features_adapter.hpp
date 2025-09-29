@@ -17,7 +17,10 @@ namespace MediaDedup
                                           int resize_long_edge,
                                           int max_keypoints,
                                           std::vector<std::uint8_t> &out_blob);
+
+        static bool ExtractFeaturesToBlob(const std::vector<std::uint8_t> &image_data,
+                                          int resize_long_edge,
+                                          int max_keypoints,
+                                          std::vector<std::uint8_t> &out_blob);
     };
 }
-
-

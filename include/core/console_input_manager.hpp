@@ -68,6 +68,11 @@ namespace MediaDedupServer
             static ConsoleInputManager &getInstance();
 
             /**
+             * @brief Cleanup static instance (call during shutdown)
+             */
+            static void cleanupStaticInstance();
+
+            /**
              * @brief Initialize the console input manager
              * @return true if initialization successful, false otherwise
              */
@@ -126,7 +131,7 @@ namespace MediaDedupServer
 
         private:
             ConsoleInputManager() = default;
-            ~ConsoleInputManager() = default;
+            ~ConsoleInputManager();
 
             // Disable copy constructor and assignment operator
             ConsoleInputManager(const ConsoleInputManager &) = delete;

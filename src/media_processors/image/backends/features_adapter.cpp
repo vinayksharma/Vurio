@@ -111,6 +111,104 @@ namespace MediaDedup
         return false;
 #endif
     }
+
+    bool FeaturesAdapter::ExtractFeaturesToBlob(const std::vector<std::uint8_t> &image_data,
+                                                int resize_long_edge,
+                                                int max_keypoints,
+                                                std::vector<std::uint8_t> &out_blob)
+    {
+#ifdef HAVE_OPENCV
+        try
+        {
+            Poco::Logger &logger = Poco::Logger::get("FeaturesAdapter");
+            logger.debug("Extracting features from memory data, size: %zu bytes", image_data.size());
+
+            // Decode image from memory data
+            cv::Mat img = cv::imdecode(image_data, cv::IMREAD_COLOR);
+            if (img.empty())
+            {
+                logger.error("Failed to decode image from memory data");
+                return false;
+            }
+
+            logger.debug("Decoded image from memory: %dx%d", img.cols, img.rows);
+
+            // Convert to grayscale
+            cv::Mat gray;
+            if (img.channels() == 3)
+            {
+                cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+            }
+            else
+            {
+                gray = img;
+            }
+
+            // Resize if needed
+            if (resize_long_edge > 0)
+            {
+                int w = gray.cols;
+                int h = gray.rows;
+                int long_edge = std::max(w, h);
+                if (long_edge > resize_long_edge)
+                {
+                    double scale = static_cast<double>(resize_long_edge) / long_edge;
+                    int new_w = static_cast<int>(w * scale);
+                    int new_h = static_cast<int>(h * scale);
+                    cv::resize(gray, gray, cv::Size(new_w, new_h));
+                    logger.debug("Resized image to %dx%d", new_w, new_h);
+                }
+            }
+
+            // Extract ORB features
+            cv::Ptr<cv::ORB> orb = cv::ORB::create(max_keypoints);
+            std::vector<cv::KeyPoint> kps;
+            cv::Mat desc;
+
+            orb->detectAndCompute(gray, cv::noArray(), kps, desc);
+
+            if (kps.empty() || desc.empty())
+            {
+                logger.warning("No features detected in memory image");
+                return false;
+            }
+
+            logger.debug("Extracted %zu keypoints from memory image", kps.size());
+
+            // Serialize features to blob
+            out_blob.clear();
+            std::uint32_t num_kp = static_cast<std::uint32_t>(kps.size());
+            std::uint32_t drows = static_cast<std::uint32_t>(desc.rows);
+            std::uint32_t dcols = static_cast<std::uint32_t>(desc.cols);
+            std::uint32_t dtype = static_cast<std::uint32_t>(desc.type());
+            appendU32(out_blob, num_kp);
+            appendU32(out_blob, drows);
+            appendU32(out_blob, dcols);
+            appendU32(out_blob, dtype);
+
+            for (const auto &kp : kps)
+            {
+                float vals[6] = {kp.pt.x, kp.pt.y, kp.size, kp.angle, kp.response, static_cast<float>(kp.octave)};
+                appendBytes(out_blob, vals, sizeof(vals));
+                std::int32_t cls = kp.class_id;
+                appendBytes(out_blob, &cls, sizeof(cls));
+            }
+
+            size_t bytes = desc.total() * desc.elemSize();
+            appendBytes(out_blob, desc.data, bytes);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FeaturesAdapter").error("OpenCV exception in memory processing: %s", std::string(e.what()));
+            return false;
+        }
+#else
+        (void)image_data;
+        (void)resize_long_edge;
+        (void)max_keypoints;
+        (void)out_blob;
+        return false;
+#endif
+    }
 }
-
-

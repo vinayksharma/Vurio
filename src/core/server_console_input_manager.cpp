@@ -25,6 +25,42 @@ namespace MediaDedupServer
             return instance;
         }
 
+        // Static cleanup function to be called during shutdown
+        void ConsoleInputManager::cleanupStaticInstance()
+        {
+            if (instance_)
+            {
+                try
+                {
+                    instance_->shutdown();
+                }
+                catch (...)
+                {
+                    // Ignore exceptions during static cleanup
+                }
+                instance_ = nullptr;
+            }
+        }
+
+        // Safe destructor that handles static destruction gracefully
+        ConsoleInputManager::~ConsoleInputManager()
+        {
+            try
+            {
+                // Only attempt cleanup if we're not in the middle of static destruction
+                if (instance_ == this)
+                {
+                    // We're being destroyed as part of static cleanup, don't try to log
+                    stop();
+                    restoreSignalHandlers();
+                }
+            }
+            catch (...)
+            {
+                // Ignore all exceptions during destructor
+            }
+        }
+
         bool ConsoleInputManager::initialize()
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -263,41 +299,54 @@ namespace MediaDedupServer
 
         void ConsoleInputManager::signalHandler(int signal)
         {
-            if (!instance_)
+            try
             {
-                return;
-            }
+                if (!instance_)
+                {
+                    return;
+                }
 
-            // Map Ctrl+C (SIGINT) to behave exactly like typing 'exit' without doing heavy work in the handler
-            if (signal == SIGINT)
+                // Map Ctrl+C (SIGINT) to behave exactly like typing 'exit' without doing heavy work in the handler
+                if (signal == SIGINT)
+                {
+                    Poco::Logger::get("ConsoleInputManager").information("Received Ctrl+C (SIGINT); mapping to 'exit' command");
+                    // Set a flag for the console thread to emit the exit event and shutdown
+                    instance_->exit_requested_by_signal_.store(true);
+                    return;
+                }
+
+                ConsoleEventType eventType;
+                std::string signalName;
+
+                switch (signal)
+                {
+                case SIGTERM:
+                    eventType = ConsoleEventType::SIGNAL_TERMINATE;
+                    signalName = "SIGTERM";
+                    break;
+                case SIGQUIT:
+                    eventType = ConsoleEventType::SIGNAL_QUIT;
+                    signalName = "SIGQUIT";
+                    break;
+                default:
+                    return;
+                }
+
+                Poco::Logger::get("ConsoleInputManager").information("Received signal: " + signalName);
+
+                ConsoleEvent event(eventType, signalName);
+                instance_->notifySubscribers(event);
+            }
+            catch (const std::exception &e)
             {
-                Poco::Logger::get("ConsoleInputManager").information("Received Ctrl+C (SIGINT); mapping to 'exit' command");
-                // Set a flag for the console thread to emit the exit event and shutdown
-                instance_->exit_requested_by_signal_.store(true);
-                return;
+                // Signal handlers should not throw exceptions, so we log and continue
+                Poco::Logger::get("ConsoleInputManager").error("Exception in signal handler: %s", e.what());
             }
-
-            ConsoleEventType eventType;
-            std::string signalName;
-
-            switch (signal)
+            catch (...)
             {
-            case SIGTERM:
-                eventType = ConsoleEventType::SIGNAL_TERMINATE;
-                signalName = "SIGTERM";
-                break;
-            case SIGQUIT:
-                eventType = ConsoleEventType::SIGNAL_QUIT;
-                signalName = "SIGQUIT";
-                break;
-            default:
-                return;
+                // Signal handlers should not throw exceptions, so we log and continue
+                Poco::Logger::get("ConsoleInputManager").error("Unknown exception in signal handler");
             }
-
-            Poco::Logger::get("ConsoleInputManager").information("Received signal: " + signalName);
-
-            ConsoleEvent event(eventType, signalName);
-            instance_->notifySubscribers(event);
         }
 
         ConsoleEvent ConsoleInputManager::parseCommand(const std::string &command)
