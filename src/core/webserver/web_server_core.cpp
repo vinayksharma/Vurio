@@ -11,6 +11,7 @@
 #include "core/web/web_handlers_server_status.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
+#include "orchestration/scheduler_service.hpp"
 #include "database/user_settings_service.hpp"
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -23,6 +24,41 @@
 namespace MediaDedup
 {
 
+    // Scheduler Job Trigger Handler
+    class TriggerJobHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        TriggerJobHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                         std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+                         const std::string &jobId)
+            : config_manager_(std::move(config_manager)),
+              scheduler_service_(std::move(scheduler_service)),
+              job_id_(jobId) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+        std::string job_id_;
+    };
+
+    // Scheduler Status Handler
+    class SchedulerStatusHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        SchedulerStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                              std::shared_ptr<Orchestration::SchedulerService> scheduler_service)
+            : config_manager_(std::move(config_manager)),
+              scheduler_service_(std::move(scheduler_service)) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+    };
+
     // Factory
     ConfigRequestHandlerFactory::ConfigRequestHandlerFactory(
         std::shared_ptr<UnifiedObservableConfigManager> config_manager,
@@ -31,6 +67,7 @@ namespace MediaDedup
         std::shared_ptr<FilesService> files_service,
         std::shared_ptr<ScannedFilesService> scanned_files_service,
         std::shared_ptr<ThreadPoolManager> tpm,
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
         const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
@@ -38,6 +75,7 @@ namespace MediaDedup
           files_service_(std::move(files_service)),
           scanned_files_service_(std::move(scanned_files_service)),
           tpm_(std::move(tpm)),
+          scheduler_service_(std::move(scheduler_service)),
           web_root_path_(web_root_path) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
@@ -102,6 +140,15 @@ namespace MediaDedup
         if (uri == "/api/v1/media-locations/deregister" && method == "POST")
             return new DeregisterMediaLocationHandler(config_manager_, files_service_);
 
+        // Scheduler management endpoints
+        if (uri.find("/api/v1/scheduler/trigger/") == 0 && method == "POST")
+        {
+            std::string jobId = uri.substr(25); // Remove "/api/v1/scheduler/trigger/"
+            return new TriggerJobHandler(config_manager_, scheduler_service_, jobId);
+        }
+        if (uri == "/api/v1/scheduler/status" && method == "GET")
+            return new SchedulerStatusHandler(config_manager_, scheduler_service_);
+
         // Static API responses served as files
         if (uri == "/api/openapi.json" && method == "GET")
             return new StaticFileHandler(web_root_path_);
@@ -113,8 +160,10 @@ namespace MediaDedup
 
     // WebServer
     WebServer::WebServer(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                         const std::string &host, uint16_t port)
-        : config_manager_(std::move(config_manager)), host_(host), port_(port), running_(false)
+                         const std::string &host, uint16_t port,
+                         std::shared_ptr<Orchestration::SchedulerService> scheduler_service)
+        : config_manager_(std::move(config_manager)), host_(host), port_(port), running_(false),
+          scheduler_service_(std::move(scheduler_service))
     {
     }
 
@@ -160,6 +209,7 @@ namespace MediaDedup
                                                                      files_service_,
                                                                      scanned_files_service_,
                                                                      tpm_,
+                                                                     scheduler_service_,
                                                                      "src/core/webserver/static/");
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
@@ -275,6 +325,101 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error");
+            response.send();
+        }
+    }
+
+    // TriggerJobHandler implementation
+    void TriggerJobHandler::handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger &logger = Poco::Logger::get("TriggerJobHandler");
+        
+        try
+        {
+            if (!scheduler_service_)
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE, "Scheduler service not available");
+                response.send();
+                return;
+            }
+
+            bool success = scheduler_service_->triggerJob(job_id_);
+            bool isRunning = scheduler_service_->isJobRunning(job_id_);
+            
+            response.setContentType("application/json");
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK, "OK");
+            
+            std::string status_str = success ? "success" : (isRunning ? "skipped" : "error");
+            std::string state_str = isRunning ? "RUNNING" : "IDLE";
+            std::string message_str = success ? "Job triggered successfully" : (isRunning ? "Job already running" : "Job not found");
+            
+            std::string json = "{"
+                "\"status\":\"" + status_str + "\","
+                "\"job_id\":\"" + job_id_ + "\","
+                "\"job_state\":\"" + state_str + "\","
+                "\"message\":\"" + message_str + "\""
+                "}";
+            
+            response.sendBuffer(json.data(), json.size());
+            logger.debug("Job trigger request for %s: %s", job_id_, success ? "success" : "skipped");
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Error triggering job %s: %s", job_id_, std::string(e.what()));
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error");
+            response.send();
+        }
+    }
+
+    // SchedulerStatusHandler implementation
+    void SchedulerStatusHandler::handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerStatusHandler");
+        
+        try
+        {
+            if (!scheduler_service_)
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE, "Scheduler service not available");
+                response.send();
+                return;
+            }
+
+            auto statuses = scheduler_service_->getJobStatuses();
+            
+            response.setContentType("application/json");
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK, "OK");
+            
+            std::string json = "{\"jobs\":[";
+            for (size_t i = 0; i < statuses.size(); ++i)
+            {
+                if (i > 0) json += ",";
+                
+                const auto& status = statuses[i];
+                auto lastRunTime = std::chrono::duration_cast<std::chrono::seconds>(
+                    status.lastRun.time_since_epoch()).count();
+                auto nextRunTime = std::chrono::duration_cast<std::chrono::seconds>(
+                    status.nextRun.time_since_epoch()).count();
+                
+                json += "{"
+                    "\"job_id\":\"" + status.jobId + "\","
+                    "\"state\":\"" + (status.state == Orchestration::JobState::RUNNING ? "RUNNING" : "IDLE") + "\","
+                    "\"interval_ms\":" + std::to_string(status.interval.count()) + ","
+                    "\"last_run\":" + std::to_string(lastRunTime) + ","
+                    "\"next_run\":" + std::to_string(nextRunTime) + ","
+                    "\"consecutive_failures\":" + std::to_string(status.consecutiveFailures) + ","
+                    "\"total_failures\":" + std::to_string(status.totalFailures) +
+                    "}";
+            }
+            json += "]}";
+            
+            response.sendBuffer(json.data(), json.size());
+            logger.debug("Scheduler status request completed");
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Error getting scheduler status: %s", std::string(e.what()));
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error");
             response.send();
         }

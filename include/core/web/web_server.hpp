@@ -21,6 +21,7 @@ namespace MediaDedup
     class UnifiedObservableConfigManager;
     class WebServer;
     class ThreadPoolManager;
+    namespace Orchestration { class SchedulerService; }
 
     /**
      * @brief Request handler factory for routing HTTP requests
@@ -34,6 +35,7 @@ namespace MediaDedup
                                     std::shared_ptr<class FilesService> files_service = nullptr,
                                     std::shared_ptr<class ScannedFilesService> scanned_files_service = nullptr,
                                     std::shared_ptr<class ThreadPoolManager> tpm = nullptr,
+                                    std::shared_ptr<Orchestration::SchedulerService> scheduler_service = nullptr,
                                     const std::string &web_root_path = "src/core/webserver/static/");
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
@@ -47,6 +49,7 @@ namespace MediaDedup
         std::shared_ptr<class FilesService> files_service_;
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::string web_root_path_;
     };
 
@@ -68,7 +71,8 @@ namespace MediaDedup
 
         WebServer(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                   const std::string &host = "0.0.0.0",
-                  uint16_t port = 8080);
+                  uint16_t port = 8080,
+                  std::shared_ptr<Orchestration::SchedulerService> scheduler_service = nullptr);
 
         ~WebServer();
 
@@ -115,6 +119,7 @@ namespace MediaDedup
         std::shared_ptr<class FilesService> files_service_;
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
 
         // Private methods
         void initializeServer();

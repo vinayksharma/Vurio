@@ -47,6 +47,16 @@ scheduler.backoff.multiplier: 2
 scheduler.backoff.maxMs: 30000
 scheduler.backoff.jitterPercent: 10
 
+# Scheduler Failure Handling
+scheduler.maxConsecutiveFailures: 5
+
+# Per-job failure limits (override global setting)
+scheduler.jobs:
+  fileScan:
+    maxConsecutiveFailures: 3
+  mediaProcessor:
+    maxConsecutiveFailures: 10
+
 # -----------------------------------------------------------------------------
 # Thread Pool Manager (TPM) Configuration
 # -----------------------------------------------------------------------------

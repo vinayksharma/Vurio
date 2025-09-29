@@ -97,8 +97,8 @@ namespace MediaDedup
             int port_int = config_manager_->getPropertyValue<int>("server.port", 8080);
             uint16_t port = static_cast<uint16_t>(port_int);
 
-            // Create web server
-            web_server_ = std::make_unique<WebServer>(config_manager_, host, port);
+            // Create web server with scheduler service
+            web_server_ = std::make_unique<WebServer>(config_manager_, host, port, scheduler_service_);
 
             // Set up services
             if (user_settings_service_)

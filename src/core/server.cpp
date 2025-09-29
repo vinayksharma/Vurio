@@ -208,6 +208,15 @@ namespace MediaDedup
             scheduler_service_ = initializer.getSchedulerService();
             files_manager_ = initializer.getFilesManager();
 
+            // Set shutdown callback for scheduler service
+            if (scheduler_service_) {
+                scheduler_service_->setShutdownCallback([this]() {
+                    Poco::Logger &logger = Poco::Logger::get("MediaDedupServer");
+                    logger.error("Scheduler service triggered server shutdown due to job failures");
+                    console_input_manager_.stop();
+                });
+            }
+
             // Initialize server variables for logging
             server_host_ = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
             server_port_ = static_cast<uint16_t>(config_manager_->getPropertyValue<int>("server.port", 8080));

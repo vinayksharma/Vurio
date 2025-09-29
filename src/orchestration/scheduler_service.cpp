@@ -70,6 +70,11 @@ namespace MediaDedup::Orchestration
         job->interval = interval;
         job->backoff = milliseconds(0);
 
+        // Load per-job failure limit at registration time
+        std::string configKey = "scheduler.jobs." + jobId + ".maxConsecutiveFailures";
+        job->maxConsecutiveFailures = cfg_->getPropertyValue<int>(configKey, 5);
+        logger.debug("Job %s max consecutive failures: %d", jobId, job->maxConsecutiveFailures);
+
         {
             std::lock_guard<std::mutex> lock(jobsMutex_);
             jobs_[jobId] = std::move(job);
@@ -100,7 +105,7 @@ namespace MediaDedup::Orchestration
                                              }
                                              if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
 
-                                             // submit job
+                                             // submit job using new executeJob method
                                             try
                                             {
                                                 // Info log that a new job dispatch is starting
@@ -111,7 +116,7 @@ namespace MediaDedup::Orchestration
                                                                        ", intervalMs=" + std::to_string(ref.interval.count()));
                                                     logger.trace("Submitting job '" + ref.jobId + "' to ThreadPoolManager for execution");
                                                 }
-                                                tpm_->submit(ref.typeKey, [cb = ref.callback]() { cb(); });
+                                                executeJob(ref, "scheduled");
                                                 // reset backoff on success path (submission OK)
                                                 ref.backoff = milliseconds(0);
                                             }
@@ -214,5 +219,134 @@ namespace MediaDedup::Orchestration
         // we rely on fixedDelay semantics; anchored mode to be handled by an anchor schedule in future revisions
 
         return interval;
+    }
+
+    // On-demand job execution
+    bool SchedulerService::triggerJob(const std::string &jobId)
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+
+        auto it = jobs_.find(jobId);
+        if (it == jobs_.end())
+        {
+            logger.error("Job not found: %s", jobId);
+            return false;
+        }
+
+        Job &job = *it->second;
+
+        // Skip if already running (log at debug level)
+        if (job.state.load() == JobState::RUNNING)
+        {
+            logger.debug("Job %s is already running, skipping on-demand trigger", jobId);
+            return false; // Not an error, just skipped
+        }
+
+        // Execute job (same logic for scheduled and on-demand)
+        executeJob(job, "on-demand");
+        logger.debug("Job %s triggered on-demand", jobId);
+        return true;
+    }
+
+    bool SchedulerService::isJobRunning(const std::string &jobId)
+    {
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+        auto it = jobs_.find(jobId);
+        if (it == jobs_.end())
+        {
+            return false;
+        }
+        return it->second->state.load() == JobState::RUNNING;
+    }
+
+    std::vector<std::string> SchedulerService::listJobs()
+    {
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+        std::vector<std::string> jobIds;
+        for (const auto &kv : jobs_)
+        {
+            jobIds.push_back(kv.first);
+        }
+        return jobIds;
+    }
+
+    std::vector<SchedulerService::JobStatus> SchedulerService::getJobStatuses()
+    {
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+        std::vector<JobStatus> statuses;
+
+        for (const auto &kv : jobs_)
+        {
+            const Job &job = *kv.second;
+            JobStatus status;
+            status.jobId = job.jobId;
+            status.state = job.state.load();
+            status.interval = job.interval;
+            status.lastRun = job.lastRun;
+            status.nextRun = job.nextRun;
+            status.consecutiveFailures = job.consecutiveFailures.load();
+            status.totalFailures = job.totalFailures.load();
+            statuses.push_back(status);
+        }
+
+        return statuses;
+    }
+
+    void SchedulerService::setShutdownCallback(std::function<void()> callback)
+    {
+        shutdownCallback_ = std::move(callback);
+    }
+
+    void SchedulerService::executeJob(Job &job, const std::string &triggerType)
+    {
+        job.state.store(JobState::RUNNING);
+
+        tpm_->submit(job.typeKey, [this, &job, triggerType]()
+                     {
+            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+            try {
+                logger.debug("Executing job: %s (%s)", job.jobId, triggerType);
+                job.callback();
+                
+                // Success - reset failure counter
+                job.state.store(JobState::IDLE);
+                job.consecutiveFailures.store(0);
+                job.lastRun = std::chrono::steady_clock::now();
+                logger.debug("Job %s completed successfully", job.jobId);
+                
+            } catch (const std::exception& e) {
+                handleJobFailure(job, e.what());
+            } catch (...) {
+                handleJobFailure(job, "Unknown exception");
+            } });
+    }
+
+    void SchedulerService::handleJobFailure(Job &job, const std::string &error)
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        job.state.store(JobState::IDLE); // Always reset to IDLE
+        job.consecutiveFailures.fetch_add(1);
+        job.totalFailures.fetch_add(1);
+
+        // Log every failure individually
+        logger.error("Job %s failed: %s (consecutive failures: %d, total failures: %d)",
+                     job.jobId, error, job.consecutiveFailures.load(), job.totalFailures.load());
+
+        // Check if we should shutdown the server
+        if (job.consecutiveFailures.load() >= job.maxConsecutiveFailures)
+        {
+            logger.error("Job %s has failed %d times consecutively, shutting down server",
+                         job.jobId, job.consecutiveFailures.load());
+
+            if (shutdownCallback_)
+            {
+                shutdownCallback_();
+            }
+            else
+            {
+                logger.error("No shutdown callback set, cannot shutdown server");
+            }
+        }
     }
 }
