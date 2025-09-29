@@ -21,6 +21,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 
 namespace MediaDedup
 {
@@ -40,7 +41,7 @@ namespace MediaDedup
 
     void MediaDedupServer::uninitialize()
     {
-        logger_.information("Uninitializing Media Deduplication Server");
+        // Avoid logging here to prevent races with logging subsystem teardown
     }
 
     void MediaDedupServer::defineOptions(Poco::Util::OptionSet &options)
@@ -277,7 +278,15 @@ namespace MediaDedup
                 logger_.error("Unknown exception during graceful shutdown");
             }
 
-            return Application::EXIT_OK;
+            // Ensure services are destroyed before application uninitialization / static teardown
+            scheduler_service_.reset();
+            files_manager_.reset();
+            tpm_.reset();
+            web_server_.reset();
+            database_manager_.reset();
+
+            // Hard-exit to bypass global/static destructors in third-party libs that may abort
+            std::_Exit(Application::EXIT_OK);
         }
         catch (const std::exception &e)
         {

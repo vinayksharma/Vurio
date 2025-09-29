@@ -23,21 +23,12 @@ namespace MediaDedup
         {
             log.information("image_task start file=%s mode=%s attempt=%d", file_path, mode_label, attempt);
 
-            std::packaged_task<bool()> task([&]()
-                                            { return work(); });
-            std::future<bool> fut = task.get_future();
-            std::thread(std::move(task)).detach();
-
-            if (fut.wait_for(std::chrono::milliseconds(cfg.timeout_ms)) == std::future_status::timeout)
-            {
-                log.warning("image_task timeout file=%s mode=%s attempt=%d timeoutMs=%d", file_path, mode_label, attempt, cfg.timeout_ms);
-                return ImageTaskResult::Timeout; // no retries on hard timeout to avoid duplication
-            }
-
             bool ok = false;
             try
             {
-                ok = fut.get();
+                // Execute work synchronously within the calling thread (TPM worker)
+                // to avoid orphaned detached threads during shutdown.
+                ok = work();
             }
             catch (const std::exception &e)
             {
@@ -69,5 +60,3 @@ namespace MediaDedup
         return ImageTaskResult::PermanentFailure;
     }
 }
-
-
