@@ -106,9 +106,12 @@ namespace MediaDedupServer
 
             initialized_.store(false);
             // Don't log during static destruction as Poco::Logger might be destroyed
-            try {
+            try
+            {
                 Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager shutdown completed");
-            } catch (...) {
+            }
+            catch (...)
+            {
                 // Ignore logging exceptions during static destruction
             }
         }
@@ -178,9 +181,12 @@ namespace MediaDedupServer
                 // If called from the console thread, let the caller or waitForShutdown() join later
             }
             // Don't log during static destruction as Poco::Logger might be destroyed
-            try {
+            try
+            {
                 Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager stopped");
-            } catch (...) {
+            }
+            catch (...)
+            {
                 // Ignore logging exceptions during static destruction
             }
         }
