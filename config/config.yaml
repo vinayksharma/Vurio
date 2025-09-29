@@ -73,6 +73,10 @@ tpm.types.fileScan.share: 1
 files.manager.enabled: true
 files.manager.scan.intervalMs: 10000
 
+# Files Service Configuration
+files.service.immediateJobTrigger.enabled: true
+files.service.immediateJobTrigger.timeoutMs: 30000
+
 # -----------------------------------------------------------------------------
 # Media Processor Configuration
 # -----------------------------------------------------------------------------

@@ -48,7 +48,7 @@ namespace MediaDedup
             ASSERT_TRUE(dbm.initialize());
             UserSettingsService settingsSvc(dbm);
             ASSERT_TRUE(settingsSvc.initialize());
-            FilesService filesSvc(dbm);
+            FilesService filesSvc(dbm, nullptr);
 
             EXPECT_TRUE(filesSvc.registerMediaLocation("/media/A"));
             EXPECT_TRUE(filesSvc.registerMediaLocation("/media/B"));
@@ -69,7 +69,7 @@ namespace MediaDedup
             ASSERT_TRUE(dbm.initialize());
             UserSettingsService settingsSvc(dbm);
             ASSERT_TRUE(settingsSvc.initialize());
-            FilesService filesSvc(dbm);
+            FilesService filesSvc(dbm, nullptr);
 
             EXPECT_TRUE(filesSvc.registerMediaLocation("/Media/Lib"));
             EXPECT_TRUE(filesSvc.registerMediaLocation("/media/lib"));
@@ -88,7 +88,7 @@ namespace MediaDedup
             ASSERT_TRUE(dbm.initialize());
             UserSettingsService settingsSvc(dbm);
             ASSERT_TRUE(settingsSvc.initialize());
-            FilesService filesSvc(dbm);
+            FilesService filesSvc(dbm, nullptr);
 
             EXPECT_TRUE(filesSvc.registerMediaLocation("/mnt/data"));
             auto listed1 = filesSvc.listMediaLocations();

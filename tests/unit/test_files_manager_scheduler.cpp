@@ -23,8 +23,8 @@ TEST(FilesManagerTest, NonOverlapRunOnce)
     auto db = std::make_shared<DatabaseManager>(dbPath);
     ASSERT_TRUE(db->initialize());
 
-    FilesService filesService(*db);
-    auto filesServicePtr = std::make_shared<FilesService>(*db);
+    FilesService filesService(*db, nullptr);
+    auto filesServicePtr = std::make_shared<FilesService>(*db, nullptr);
 
     // Create ThreadPoolManager for MediaProcessor
     auto tpm = std::make_shared<ThreadPoolManager>(cfg);

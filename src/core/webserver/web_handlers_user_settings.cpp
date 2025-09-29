@@ -220,6 +220,7 @@ namespace MediaDedup
         Poco::JSON::Object obj;
         obj.set("status", "ok");
         obj.set("directory", dir);
+        obj.set("immediate_scan_triggered", service_->isImmediateJobTriggerEnabled());
         std::ostringstream oss;
         obj.stringify(oss);
         sendJsonResponse(response, oss.str());

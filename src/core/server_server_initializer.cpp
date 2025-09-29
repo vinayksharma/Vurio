@@ -13,6 +13,8 @@
 #include "media_processors/media_processor.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
+#include <thread>
+#include <chrono>
 
 namespace MediaDedup
 {
@@ -194,7 +196,7 @@ namespace MediaDedup
             media_processor_->initialize();
 
             // Initialize FilesManager with MediaProcessor
-            files_service_ = std::make_shared<FilesService>(*db_shared);
+            files_service_ = std::make_shared<FilesService>(*db_shared, config_manager_);
             scanned_files_service_ = std::make_shared<ScannedFilesService>(*db_shared);
             files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_, media_processor_);
             files_manager_->initialize();
@@ -228,6 +230,40 @@ namespace MediaDedup
             scheduler_service_->registerJob("mediaProcessor", std::chrono::milliseconds(mediaIntervalMs), "fileScan",
                                             [mp = media_processor_]()
                                             { mp->ProcessMedia(); });
+
+            // Set up immediate job triggering callback for FilesService
+            files_service_->setPathRegisteredCallback([this](const std::string &directory_path)
+                                                      {
+                Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
+                logger.debug("Path registered, triggering immediate scan and process: %s", directory_path);
+                
+                // Step 1: Trigger fileScan
+                bool scanTriggered = scheduler_service_->triggerJob("fileScan");
+                if (!scanTriggered) {
+                    logger.debug("fileScan job was already running or not found, skipping immediate scan");
+                    return;
+                }
+                
+                // Step 2: Wait for fileScan to complete (with timeout)
+                auto start = std::chrono::steady_clock::now();
+                int timeoutMs = config_manager_->getPropertyValue<int>("files.service.immediateJobTrigger.timeoutMs", 30000);
+                auto timeout = std::chrono::milliseconds(timeoutMs);
+                
+                while (scheduler_service_->isJobRunning("fileScan")) {
+                    if (std::chrono::steady_clock::now() - start > timeout) {
+                        logger.warning("fileScan job did not complete within timeout, skipping immediate processing");
+                        return;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Poll every 100ms
+                }
+                
+                // Step 3: Trigger mediaProcessor
+                bool processTriggered = scheduler_service_->triggerJob("mediaProcessor");
+                if (processTriggered) {
+                    logger.debug("mediaProcessor job triggered successfully");
+                } else {
+                    logger.debug("mediaProcessor job was already running or not found");
+                } });
 
             logger.information("Scheduler and Files Manager initialized successfully");
             return true;

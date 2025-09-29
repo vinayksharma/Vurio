@@ -46,6 +46,8 @@ set(UNIT_TEST_SOURCES
     unit/test_file_scanner.cpp
     unit/test_scheduler_service.cpp
     unit/test_files_manager_scheduler.cpp
+    unit/test_files_service_immediate_scan.cpp
+    unit/test_scheduled_jobs_independence.cpp
     unit/test_property_manager.cpp
     unit/test_swagger_ui_handler.cpp
     unit/test_media_processor.cpp
@@ -96,6 +98,20 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_scheduler_concurrency")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SchedulerConcurrencyTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_files_service_immediate_scan")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="FilesServiceImmediateScanTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_scheduled_jobs_independence")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ScheduledJobsIndependenceTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -340,7 +356,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
-       NOT ${test_name} STREQUAL "test_scheduler_concurrency")
+       NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
+       NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
+       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
@@ -350,7 +368,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
     if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
-       NOT ${test_name} STREQUAL "test_transcoding_pipeline")
+       NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
+       NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
+       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"
             ENVIRONMENT "TEST_TYPE=unit"
