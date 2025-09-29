@@ -10,7 +10,8 @@ namespace MediaDedup
 {
     bool BalancedPipeline::Run(const std::string &file_path,
                                const BalancedPipelineConfig &cfg,
-                               DatabaseManager &db)
+                               DatabaseManager &db,
+                               std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
@@ -22,13 +23,13 @@ namespace MediaDedup
                 logger.information("Raw file detected, transcoding before processing: %s", file_path);
 
                 std::vector<std::uint8_t> tiff_data;
-                // TODO: Pass configuration manager to pipelines for dynamic config loading
-                TranscodingConfig transcode_config = TranscodingPipeline::GetDefaultConfig();
+                // Use observable configuration for dynamic config loading
+                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
 
                 if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
                 {
                     logger.information("Successfully transcoded raw file, processing from memory: %s", file_path);
-                    return Run(tiff_data, file_path, cfg, db);
+                    return Run(tiff_data, file_path, cfg, db, config_manager);
                 }
                 else
                 {
@@ -79,7 +80,8 @@ namespace MediaDedup
     bool BalancedPipeline::Run(const std::vector<std::uint8_t> &image_data,
                                const std::string &original_file_path,
                                const BalancedPipelineConfig &cfg,
-                               DatabaseManager &db)
+                               DatabaseManager &db,
+                               std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {

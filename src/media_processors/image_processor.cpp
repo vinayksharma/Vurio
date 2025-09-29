@@ -3,11 +3,12 @@
 #include "media_processors/image/pipelines/balanced_pipeline.hpp"
 #include "media_processors/image/pipelines/quality_pipeline.hpp"
 #include "database/database_manager.hpp"
+#include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
 
 namespace MediaDedup
 {
-    bool ImageProcessor::ProcessFast(const std::string &file_path, DatabaseManager &db)
+    bool ImageProcessor::ProcessFast(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
@@ -16,7 +17,7 @@ namespace MediaDedup
             FastPipelineConfig config;
             config.thumb_size = DEFAULT_THUMB_SIZE;
 
-            return FastPipeline::Run(file_path, config, db);
+            return FastPipeline::Run(file_path, config, db, config_manager);
         }
         catch (const std::exception &e)
         {
@@ -25,7 +26,7 @@ namespace MediaDedup
         }
     }
 
-    bool ImageProcessor::ProcessBalanced(const std::string &file_path, DatabaseManager &db)
+    bool ImageProcessor::ProcessBalanced(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
@@ -35,7 +36,7 @@ namespace MediaDedup
             config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
             config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
 
-            return BalancedPipeline::Run(file_path, config, db);
+            return BalancedPipeline::Run(file_path, config, db, config_manager);
         }
         catch (const std::exception &e)
         {
@@ -44,7 +45,7 @@ namespace MediaDedup
         }
     }
 
-    bool ImageProcessor::ProcessQuality(const std::string &file_path, DatabaseManager &db)
+    bool ImageProcessor::ProcessQuality(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
@@ -55,7 +56,7 @@ namespace MediaDedup
             config.embedding_dim = DEFAULT_EMBEDDING_DIM;
             config.model = "CLIP-RN50";
 
-            return QualityPipeline::Run(file_path, config, db);
+            return QualityPipeline::Run(file_path, config, db, config_manager);
         }
         catch (const std::exception &e)
         {

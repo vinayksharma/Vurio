@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 namespace MediaDedup
 {
     class DatabaseManager;
+    class UnifiedObservableConfigManager;
 
     /**
      * @brief Image processor that handles different processing modes for image files
@@ -34,9 +36,10 @@ namespace MediaDedup
          *
          * @param file_path Fully qualified path to the image file
          * @param db Database manager for storing image artifacts
+         * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessFast(const std::string &file_path, DatabaseManager &db);
+        bool ProcessFast(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
         /**
          * @brief Process an image file using balanced processing mode
@@ -45,9 +48,10 @@ namespace MediaDedup
          *
          * @param file_path Fully qualified path to the image file
          * @param db Database manager for storing image artifacts
+         * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessBalanced(const std::string &file_path, DatabaseManager &db);
+        bool ProcessBalanced(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
         /**
          * @brief Process an image file using quality processing mode
@@ -56,9 +60,10 @@ namespace MediaDedup
          *
          * @param file_path Fully qualified path to the image file
          * @param db Database manager for storing image artifacts
+         * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessQuality(const std::string &file_path, DatabaseManager &db);
+        bool ProcessQuality(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
     private:
         // Configuration for different processing modes

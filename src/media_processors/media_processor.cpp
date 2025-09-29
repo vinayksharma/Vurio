@@ -118,8 +118,9 @@ namespace MediaDedup
                 std::string file_path_copy = file_path;
                 ServerMode server_mode_copy = server_mode;
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
+                std::shared_ptr<UnifiedObservableConfigManager> config_manager = config_manager_;
 
-                thread_pool_manager_->submit("image_processor", [file_path_copy, server_mode_copy, db_manager]()
+                thread_pool_manager_->submit("image_processor", [file_path_copy, server_mode_copy, db_manager, config_manager]()
                                              {
                     try
                     {
@@ -132,16 +133,16 @@ namespace MediaDedup
                         switch (server_mode_copy)
                         {
                         case ServerMode::FAST:
-                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager);
+                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager, config_manager);
                             break;
                         case ServerMode::BALANCED:
-                            processing_success = image_processor.ProcessBalanced(file_path_copy, *db_manager);
+                            processing_success = image_processor.ProcessBalanced(file_path_copy, *db_manager, config_manager);
                             break;
                         case ServerMode::QUALITY:
-                            processing_success = image_processor.ProcessQuality(file_path_copy, *db_manager);
+                            processing_success = image_processor.ProcessQuality(file_path_copy, *db_manager, config_manager);
                             break;
                         default:
-                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager);
+                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager, config_manager);
                             break;
                         }
 
@@ -505,6 +506,46 @@ namespace MediaDedup
                 thread_pool_manager_->setShare("video_processor", new_share);
                 Poco::Logger::get("MediaProcessor").information("Updated thread pool share for video_processor: " + std::to_string(new_share));
             }
+            return;
+        }
+
+        // React to transcoding configuration changes
+        if (event.key == "media.image.transcoding.enabled" ||
+            event.key == "media.image.transcoding.timeoutMs" ||
+            event.key == "media.image.transcoding.quality" ||
+            event.key == "media.image.transcoding.preserveMetadata")
+        {
+            Poco::Logger::get("MediaProcessor").information("Transcoding configuration changed: %s", event.key);
+
+            // Log the change details for debugging
+            try
+            {
+                if (event.key == "media.image.transcoding.enabled")
+                {
+                    bool new_value = config_manager_->getPropertyValue<bool>(event.key, true);
+                    Poco::Logger::get("MediaProcessor").information("Transcoding enabled: %s", new_value ? "true" : "false");
+                }
+                else if (event.key == "media.image.transcoding.timeoutMs")
+                {
+                    int new_value = config_manager_->getPropertyValue<int>(event.key, 60000);
+                    Poco::Logger::get("MediaProcessor").information("Transcoding timeout: %d ms", new_value);
+                }
+                else if (event.key == "media.image.transcoding.quality")
+                {
+                    std::string new_value = config_manager_->getPropertyValue<std::string>(event.key, "high");
+                    Poco::Logger::get("MediaProcessor").information("Transcoding quality: %s", new_value);
+                }
+                else if (event.key == "media.image.transcoding.preserveMetadata")
+                {
+                    bool new_value = config_manager_->getPropertyValue<bool>(event.key, true);
+                    Poco::Logger::get("MediaProcessor").information("Transcoding preserve metadata: %s", new_value ? "true" : "false");
+                }
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("MediaProcessor").warning("Failed to log transcoding config change for %s: %s", event.key, e.what());
+            }
+
             return;
         }
 
