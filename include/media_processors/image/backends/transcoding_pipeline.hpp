@@ -63,12 +63,5 @@ namespace MediaDedup
          */
         static TranscodingConfig GetConfigFromManager(std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
-    private:
-        /**
-         * @brief Apply quality settings to transcoding configuration
-         *
-         * @param config Configuration to modify based on quality setting
-         */
-        static void ApplyQualitySettings(TranscodingConfig &config);
     };
 }

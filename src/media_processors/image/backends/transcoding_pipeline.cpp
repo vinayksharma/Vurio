@@ -71,7 +71,6 @@ namespace MediaDedup
         config.quality = "high";
         config.preserve_metadata = true;
 
-        ApplyQualitySettings(config);
         return config;
     }
 
@@ -93,8 +92,6 @@ namespace MediaDedup
             config.quality = config_manager->getPropertyValue<std::string>("media.image.transcoding.quality", config.quality);
             config.preserve_metadata = config_manager->getPropertyValue<bool>("media.image.transcoding.preserveMetadata", config.preserve_metadata);
 
-            ApplyQualitySettings(config);
-
             Poco::Logger::get("TranscodingPipeline").debug("Loaded transcoding config: enabled=%s, timeout=%dms, quality=%s, preserve_metadata=%s", config.enabled ? "true" : "false", config.timeout_ms, config.quality, config.preserve_metadata ? "true" : "false");
         }
         catch (const std::exception &e)
@@ -105,22 +102,4 @@ namespace MediaDedup
         return config;
     }
 
-    void TranscodingPipeline::ApplyQualitySettings(TranscodingConfig &config)
-    {
-        // Quality settings can be applied here if needed
-        // For now, we use the default ImageMagickAdapter settings
-        // Future enhancement could adjust compression, bit depth, etc.
-        if (config.quality == "low")
-        {
-            // Could reduce quality for faster processing
-        }
-        else if (config.quality == "medium")
-        {
-            // Balanced quality/speed settings
-        }
-        else // "high"
-        {
-            // Maximum quality settings (default)
-        }
-    }
 }
