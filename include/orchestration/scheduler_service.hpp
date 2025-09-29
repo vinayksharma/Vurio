@@ -20,9 +20,10 @@ namespace MediaDedup
         // Forward declaration for shutdown callback
         class ConsoleInputManager;
 
-        enum class JobState {
-            IDLE,           // Not currently running
-            RUNNING         // Currently executing
+        enum class JobState
+        {
+            IDLE,   // Not currently running
+            RUNNING // Currently executing
             // No FAILED state - jobs don't remember failures
         };
 
@@ -49,7 +50,8 @@ namespace MediaDedup
             std::vector<std::string> listJobs();
 
             // Job status for monitoring
-            struct JobStatus {
+            struct JobStatus
+            {
                 std::string jobId;
                 JobState state;
                 std::chrono::milliseconds interval;
@@ -89,10 +91,10 @@ namespace MediaDedup
             // configuration helpers (global defaults with per-job overrides)
             void refreshJobConfig(Job &job);
             std::chrono::milliseconds computeNextDelay(const Job &job, std::chrono::milliseconds baseInterval);
-            
+
             // Job execution and failure handling
-            void executeJob(Job& job, const std::string& triggerType);
-            void handleJobFailure(Job& job, const std::string& error);
+            void executeJob(Job &job, const std::string &triggerType);
+            void handleJobFailure(Job &job, const std::string &error);
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<ThreadPoolManager> tpm_;

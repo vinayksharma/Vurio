@@ -302,23 +302,50 @@ namespace MediaDedup::Orchestration
     {
         job.state.store(JobState::RUNNING);
 
-        tpm_->submit(job.typeKey, [this, &job, triggerType]()
+        // Capture job ID and callback by value to avoid reference issues
+        std::string jobId = job.jobId;
+        auto callback = job.callback;
+
+        tpm_->submit(job.typeKey, [this, jobId, callback, triggerType]()
                      {
             Poco::Logger &logger = Poco::Logger::get("SchedulerService");
             try {
-                logger.debug("Executing job: %s (%s)", job.jobId, triggerType);
-                job.callback();
+                logger.debug("Executing job: %s (%s)", jobId, triggerType);
+                callback();
                 
-                // Success - reset failure counter
-                job.state.store(JobState::IDLE);
-                job.consecutiveFailures.store(0);
-                job.lastRun = std::chrono::steady_clock::now();
-                logger.debug("Job %s completed successfully", job.jobId);
+                // Update job state after successful execution
+                {
+                    std::lock_guard<std::mutex> lock(jobsMutex_);
+                    auto it = jobs_.find(jobId);
+                    if (it != jobs_.end()) {
+                        Job& job = *it->second;
+                        job.state.store(JobState::IDLE);
+                        job.consecutiveFailures.store(0);
+                        job.lastRun = std::chrono::steady_clock::now();
+                        logger.debug("Job %s completed successfully", jobId);
+                    }
+                }
                 
             } catch (const std::exception& e) {
-                handleJobFailure(job, e.what());
+                // Update job state after failure
+                {
+                    std::lock_guard<std::mutex> lock(jobsMutex_);
+                    auto it = jobs_.find(jobId);
+                    if (it != jobs_.end()) {
+                        Job& job = *it->second;
+                        handleJobFailure(job, e.what());
+                    }
+                }
             } catch (...) {
-                handleJobFailure(job, "Unknown exception");
+                // Update job state after unknown exception
+                {
+                    std::lock_guard<std::mutex> lock(jobsMutex_);
+                    auto it = jobs_.find(jobId);
+                    if (it != jobs_.end()) {
+                        Job& job = *it->second;
+                        handleJobFailure(job, "Unknown exception");
+                    }
+                }
             } });
     }
 
