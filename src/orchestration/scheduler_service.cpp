@@ -260,6 +260,11 @@ namespace MediaDedup::Orchestration
         return it->second->state.load() == JobState::RUNNING;
     }
 
+    bool SchedulerService::isRunning() const
+    {
+        return running_.load(std::memory_order_relaxed);
+    }
+
     std::vector<std::string> SchedulerService::listJobs()
     {
         std::lock_guard<std::mutex> lock(jobsMutex_);

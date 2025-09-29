@@ -237,6 +237,12 @@ namespace MediaDedup
                 Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
                 logger.debug("Path registered, triggering immediate scan and process: %s", directory_path);
                 
+                // Check if scheduler is still running before attempting to trigger jobs
+                if (!scheduler_service_->isRunning()) {
+                    logger.debug("Scheduler is not running, skipping immediate scan and process");
+                    return;
+                }
+                
                 // Step 1: Trigger fileScan
                 bool scanTriggered = scheduler_service_->triggerJob("fileScan");
                 if (!scanTriggered) {
@@ -249,12 +255,18 @@ namespace MediaDedup
                 int timeoutMs = config_manager_->getPropertyValue<int>("files.service.immediateJobTrigger.timeoutMs", 30000);
                 auto timeout = std::chrono::milliseconds(timeoutMs);
                 
-                while (scheduler_service_->isJobRunning("fileScan")) {
+                while (scheduler_service_->isJobRunning("fileScan") && scheduler_service_->isRunning()) {
                     if (std::chrono::steady_clock::now() - start > timeout) {
                         logger.warning("fileScan job did not complete within timeout, skipping immediate processing");
                         return;
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Poll every 100ms
+                }
+                
+                // Check if scheduler is still running before triggering mediaProcessor
+                if (!scheduler_service_->isRunning()) {
+                    logger.debug("Scheduler stopped during fileScan wait, skipping immediate processing");
+                    return;
                 }
                 
                 // Step 3: Trigger mediaProcessor

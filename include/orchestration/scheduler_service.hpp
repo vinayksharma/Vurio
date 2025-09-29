@@ -47,6 +47,7 @@ namespace MediaDedup
             // On-demand job execution
             bool triggerJob(const std::string &jobId);
             bool isJobRunning(const std::string &jobId);
+            bool isRunning() const;
             std::vector<std::string> listJobs();
 
             // Job status for monitoring
