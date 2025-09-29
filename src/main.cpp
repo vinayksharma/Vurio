@@ -1,6 +1,8 @@
 #include "core/server.hpp"
 #include <Poco/Exception.h>
 #include <iostream>
+#include <csignal>
+#include <cstdlib>
 
 /**
  * @brief Main entry point for the Media Deduplication Server

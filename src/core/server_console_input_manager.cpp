@@ -51,8 +51,12 @@ namespace MediaDedupServer
                 if (instance_ == this)
                 {
                     // We're being destroyed as part of static cleanup, don't try to log
-                    stop();
-                    restoreSignalHandlers();
+                    // Just do minimal cleanup without logging
+                    if (running_.load())
+                    {
+                        running_.store(false);
+                    }
+                    // Don't call stop() or restoreSignalHandlers() as they might use Poco::Logger
                 }
             }
             catch (...)
@@ -101,7 +105,12 @@ namespace MediaDedupServer
             }
 
             initialized_.store(false);
-            Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager shutdown completed");
+            // Don't log during static destruction as Poco::Logger might be destroyed
+            try {
+                Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager shutdown completed");
+            } catch (...) {
+                // Ignore logging exceptions during static destruction
+            }
         }
 
         size_t ConsoleInputManager::subscribeToConsoleEvents(ConsoleEventCallback callback)
@@ -168,7 +177,12 @@ namespace MediaDedupServer
                 }
                 // If called from the console thread, let the caller or waitForShutdown() join later
             }
-            Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager stopped");
+            // Don't log during static destruction as Poco::Logger might be destroyed
+            try {
+                Poco::Logger::get("ConsoleInputManager").information("ConsoleInputManager stopped");
+            } catch (...) {
+                // Ignore logging exceptions during static destruction
+            }
         }
 
         void ConsoleInputManager::waitForShutdown()

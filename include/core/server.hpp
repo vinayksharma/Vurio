@@ -52,7 +52,7 @@ namespace MediaDedup
         /**
          * @brief Destructor
          */
-        ~MediaDedupServer() override = default;
+        ~MediaDedupServer() override;
 
     protected:
         /**

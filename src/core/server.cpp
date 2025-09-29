@@ -408,4 +408,9 @@ namespace MediaDedup
         logger_.information("Server has been stopped gracefully");
     }
 
+    MediaDedupServer::~MediaDedupServer()
+    {
+        // Destructor implementation - can be extended if needed
+    }
+
 } // namespace MediaDedup
