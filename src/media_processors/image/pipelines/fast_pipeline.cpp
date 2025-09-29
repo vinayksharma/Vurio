@@ -2,41 +2,17 @@
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
 #include "media_processors/image/backends/opencv_adapter.hpp"
-#include "media_processors/image/backends/transcoding_pipeline.hpp"
-#include "media_processors/image/backends/raw_file_detector.hpp"
 #include <Poco/Logger.h>
 
 namespace MediaDedup
 {
     bool FastPipeline::Run(const std::string &file_path,
                            const FastPipelineConfig &cfg,
-                           DatabaseManager &db,
-                           std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+                           DatabaseManager &db)
     {
         try
         {
             Poco::Logger &logger = Poco::Logger::get("FastPipeline");
-
-            // Check if this is a raw file that needs transcoding
-            if (RawFileDetector::IsRawFile(file_path))
-            {
-                logger.information("Raw file detected, transcoding before processing: %s", file_path);
-
-                std::vector<std::uint8_t> tiff_data;
-                // Use observable configuration for dynamic config loading
-                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
-
-                if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
-                {
-                    logger.information("Successfully transcoded raw file, processing from memory: %s", file_path);
-                    return Run(tiff_data, file_path, cfg, db, config_manager);
-                }
-                else
-                {
-                    logger.error("Failed to transcode raw file, falling back to stub: %s", file_path);
-                    // Fall through to stub processing
-                }
-            }
 
             OpenCvHashResult hres;
             bool ok = OpenCvAdapter::ComputePhash(file_path, cfg.thumb_size, hres);
@@ -90,8 +66,7 @@ namespace MediaDedup
     bool FastPipeline::Run(const std::vector<std::uint8_t> &image_data,
                            const std::string &original_file_path,
                            const FastPipelineConfig &cfg,
-                           DatabaseManager &db,
-                           std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+                           DatabaseManager &db)
     {
         try
         {
