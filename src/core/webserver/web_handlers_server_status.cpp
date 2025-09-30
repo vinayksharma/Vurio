@@ -54,30 +54,40 @@ namespace MediaDedup
             status_obj.set("server_name", "Media Deduplication Server");
             status_obj.set("status", "running");
 
+            Poco::Logger::get("ServerStatusHandler").debug("Basic info set successfully");
+
             // Configuration status
             if (config_manager_)
             {
+                Poco::Logger::get("ServerStatusHandler").debug("Starting config status section");
                 Poco::JSON::Object config_status;
                 config_status.set("valid", config_manager_->isValid());
                 config_status.set("config_file", config_manager_->getConfigFilePath());
                 config_status.set("property_count", static_cast<int>(config_manager_->getAllPropertyKeys().size()));
 
                 auto errors = config_manager_->getValidationErrors();
+                Poco::Logger::get("ServerStatusHandler").debug("Found %d validation errors", static_cast<int>(errors.size()));
                 Poco::JSON::Array errors_array;
                 for (const auto &error : errors)
-                    errors_array.add(error);
+                {
+                    Poco::Logger::get("ServerStatusHandler").debug("Adding validation error: %s", error.message);
+                    errors_array.add(error.message); // Use the message string from ValidationError
+                }
                 config_status.set("validation_errors", errors_array);
 
                 status_obj.set("configuration", config_status);
+                Poco::Logger::get("ServerStatusHandler").debug("Configuration status set successfully");
 
                 // Server mode
                 auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
                 status_obj.set("server_mode", toString(server_mode));
+                Poco::Logger::get("ServerStatusHandler").debug("Server mode set successfully");
             }
 
             // Scanned files count
             if (scanned_files_service_)
             {
+                Poco::Logger::get("ServerStatusHandler").debug("Starting scanned files section");
                 int scanned_count = scanned_files_service_->count();
                 status_obj.set("scanned_files_count", scanned_count);
 
@@ -114,33 +124,103 @@ namespace MediaDedup
             // Thread pool manager status
             if (tpm_)
             {
+                Poco::Logger::get("ServerStatusHandler").debug("Starting thread pool section");
                 auto tpm_status = tpm_->getStatus();
                 Poco::JSON::Object tpm_obj;
                 tpm_obj.set("effective_max_threads", static_cast<int>(tpm_status.effectiveMax));
                 tpm_obj.set("running_total", static_cast<int>(tpm_status.runningTotal));
 
                 Poco::JSON::Object::Ptr per_type_obj = new Poco::JSON::Object();
+                Poco::Logger::get("ServerStatusHandler").debug("Processing %d thread pool types", static_cast<int>(tpm_status.perType.size()));
                 for (const auto &kv : tpm_status.perType)
                 {
+                    Poco::Logger::get("ServerStatusHandler").debug("Processing thread pool type: %s", kv.first);
                     Poco::JSON::Object::Ptr type_obj = new Poco::JSON::Object();
                     type_obj->set("share", static_cast<double>(kv.second.share));
                     type_obj->set("running", static_cast<int>(kv.second.running));
                     type_obj->set("queued", static_cast<int>(kv.second.queued));
                     per_type_obj->set(kv.first, type_obj);
+                    Poco::Logger::get("ServerStatusHandler").debug("Thread pool type %s processed successfully", kv.first);
                 }
                 tpm_obj.set("per_type", per_type_obj);
+                Poco::Logger::get("ServerStatusHandler").debug("Thread pool per_type set successfully");
 
                 status_obj.set("thread_pool", tpm_obj);
+                Poco::Logger::get("ServerStatusHandler").debug("Thread pool status set successfully");
             }
 
             // Timestamp
             auto now = std::chrono::system_clock::now();
             auto time_t = std::chrono::system_clock::to_time_t(now);
             status_obj.set("timestamp", static_cast<long>(time_t));
+            Poco::Logger::get("ServerStatusHandler").debug("Timestamp set successfully");
 
+            // Try to isolate the problematic field by testing individual components
+            Poco::Logger::get("ServerStatusHandler").debug("About to stringify JSON object");
+
+            // Test basic fields first
+            Poco::JSON::Object test_obj;
+            test_obj.set("server_name", "Media Deduplication Server");
+            test_obj.set("status", "running");
+
+            std::stringstream test_ss;
+            test_obj.stringify(test_ss);
+            Poco::Logger::get("ServerStatusHandler").debug("Basic JSON stringification works");
+
+            // Test each complex field individually to isolate the issue
+            Poco::Logger::get("ServerStatusHandler").debug("Testing configuration field");
+            if (status_obj.has("configuration"))
+            {
+                try
+                {
+                    Poco::JSON::Object config_test;
+                    config_test.set("test", "value");
+                    config_test.set("configuration", status_obj.get("configuration"));
+                    std::stringstream config_ss;
+                    config_test.stringify(config_ss);
+                    Poco::Logger::get("ServerStatusHandler").debug("Configuration field works");
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("ServerStatusHandler").debug("Configuration field failed: %s", e.what());
+                }
+            }
+
+            Poco::Logger::get("ServerStatusHandler").debug("Testing thread_pool field");
+            if (status_obj.has("thread_pool"))
+            {
+                try
+                {
+                    Poco::JSON::Object tpm_test;
+                    tpm_test.set("test", "value");
+                    tpm_test.set("thread_pool", status_obj.get("thread_pool"));
+                    std::stringstream tpm_ss;
+                    tpm_test.stringify(tpm_ss);
+                    Poco::Logger::get("ServerStatusHandler").debug("Thread pool field works");
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("ServerStatusHandler").debug("Thread pool field failed: %s", e.what());
+                }
+            }
+
+            // Now try the full object
             std::stringstream ss;
-            status_obj.stringify(ss);
-            sendJsonResponse(response, ss.str());
+            try
+            {
+                status_obj.stringify(ss);
+                Poco::Logger::get("ServerStatusHandler").debug("JSON stringification completed successfully");
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("ServerStatusHandler").debug("JSON stringification failed: %s", e.what());
+                throw;
+            }
+
+            std::string json_str = ss.str();
+            Poco::Logger::get("ServerStatusHandler").debug("JSON string length: %d", static_cast<int>(json_str.length()));
+            Poco::Logger::get("ServerStatusHandler").debug("About to send JSON response");
+            sendJsonResponse(response, json_str);
         }
         catch (const std::exception &e)
         {
