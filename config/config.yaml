@@ -72,7 +72,7 @@ files.manager.useInMemoryIndex: false  # false = database queries (lower memory)
 # -----------------------------------------------------------------------------
 # Thread Pool Manager (TPM) Configuration
 # -----------------------------------------------------------------------------
-tpm.pool.max: 5  # Reduced from auto (15) to 5 threads for memory optimization
+tpm.pool.max: 5  # Fixed value to avoid observable config issues
 tpm.killTimeoutMs: 10000
 tpm.thread.idleTimeoutSeconds: 120
 
@@ -112,7 +112,7 @@ media.processor.intervalMs: 30000
 media.processor.threadPool.share.media_processor: 1.0
 
 # Unified processing queue size limit to prevent memory buildup
-media.processor.maxQueueSize: 10 # Maximum number of media processing tasks to queue (reduced for memory)
+media.processor.maxQueueSize: 100 # Maximum number of media processing tasks to queue (reduced for memory)
 
 # -----------------------------------------------------------------------------
 # Image Pipelines (SAFE TREO)
