@@ -66,6 +66,13 @@ namespace MediaDedup
         bool ProcessQuality(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
     private:
+        /**
+         * @brief Create a stub hash for raw files that fail transcoding
+         * @param file_path Path to the raw file
+         * @param db Database manager for storing the stub hash
+         * @return true if stub hash was created successfully
+         */
+        bool createStubHashForRawFile(const std::string &file_path, DatabaseManager &db);
         // Configuration for different processing modes
         static constexpr int DEFAULT_THUMB_SIZE = 256;
         static constexpr int DEFAULT_RESIZE_LONG_EDGE = 1024;

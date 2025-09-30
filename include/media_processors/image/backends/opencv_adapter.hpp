@@ -19,5 +19,10 @@ namespace MediaDedup
         static bool ComputePhash(const std::string &file_path,
                                  int thumb_size,
                                  OpenCvHashResult &out);
+
+        // Memory-based version for processing image data directly from memory
+        static bool ComputePhash(const std::vector<std::uint8_t> &image_data,
+                                 int thumb_size,
+                                 OpenCvHashResult &out);
     };
 }
