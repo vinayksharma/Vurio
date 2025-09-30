@@ -144,11 +144,7 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
 
-                        QualityPipelineConfig config;
-                        config.input_size = DEFAULT_INPUT_SIZE;
-                        config.embedding_dim = DEFAULT_EMBEDDING_DIM;
-                        config.model = "CLIP-RN50";
-
+                        QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
                         return QualityPipeline::Run(tiff_data, file_path, config, db);
                     }
                     else
@@ -170,11 +166,7 @@ namespace MediaDedup
             }
 
             // Process regular file
-            QualityPipelineConfig config;
-            config.input_size = DEFAULT_INPUT_SIZE;
-            config.embedding_dim = DEFAULT_EMBEDDING_DIM;
-            config.model = "CLIP-RN50";
-
+            QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
             return QualityPipeline::Run(file_path, config, db);
         }
         catch (const std::exception &e)

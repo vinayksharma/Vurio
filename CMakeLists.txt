@@ -119,9 +119,7 @@ if(ONNXRUNTIME_LIBRARY AND NOT ONNXRUNTIME_INCLUDE_DIR)
         set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_SOURCE_DIR}/include")
     endif()
 endif()
-# Temporarily disable ONNX Runtime due to library dependency issues
-set(ONNXRUNTIME_INCLUDE_DIR "")
-set(ONNXRUNTIME_LIBRARY "")
+# ONNX Runtime is now enabled - remove the temporary disable
 
 if(ONNXRUNTIME_LIBRARY AND ONNXRUNTIME_INCLUDE_DIR)
     if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime/core/session/onnxruntime_cxx_api.h")
@@ -247,7 +245,8 @@ add_executable(media_dedup_server
 
 # Add model download dependency if ONNX Runtime is available
 if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
-    add_dependencies(media_dedup_server download_models)
+    # Real model already downloaded - no need for placeholder models
+    # add_dependencies(media_dedup_server download_models)
 endif()
 
 # Link libraries
@@ -262,7 +261,7 @@ target_link_libraries(media_dedup_server
     unified_config_lib
     yaml-cpp::yaml-cpp
     ${OpenCV_LIBS}
-    # ${ONNXRUNTIME_LIBRARY}  # Temporarily disabled due to library dependency issues
+    ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
 )
 

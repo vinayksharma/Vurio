@@ -18,6 +18,11 @@ namespace MediaDedup
     class QualityPipeline
     {
     public:
+        // Load config from unified config manager
+        // Falls back to provided defaults when properties are missing
+        static QualityPipelineConfig GetConfigFromManager(std::shared_ptr<class UnifiedObservableConfigManager> config_manager,
+                                                          const QualityPipelineConfig &defaults = {});
+
         static bool Run(const std::string &file_path,
                         const QualityPipelineConfig &cfg,
                         DatabaseManager &db);

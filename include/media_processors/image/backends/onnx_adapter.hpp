@@ -15,8 +15,12 @@ namespace MediaDedup
                                      const std::string &model_path,
                                      int embedding_dim,
                                      std::vector<std::uint8_t> &out_blob);
+
+        // Memory-based version for processing image data directly from memory
+        static bool ComputeEmbedding(const std::vector<std::uint8_t> &image_data,
+                                     int input_size,
+                                     const std::string &model_path,
+                                     int embedding_dim,
+                                     std::vector<std::uint8_t> &out_blob);
     };
 }
-
-
-

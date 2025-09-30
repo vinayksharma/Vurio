@@ -55,6 +55,7 @@ set(UNIT_TEST_SOURCES
     unit/test_raw_file_detector.cpp
     unit/test_transcoding_pipeline.cpp
     unit/test_scheduler_concurrency.cpp
+    unit/test_quality_pipeline_memory.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -98,6 +99,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_scheduler_concurrency")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SchedulerConcurrencyTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_quality_pipeline_memory")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="QualityPipelineMemoryTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -247,6 +255,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         unified_config_lib
         test_utils
         ${OpenCV_LIBS}
+        ${ONNXRUNTIME_LIBRARY}
         ${ImageMagick++_LIBRARIES}
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
@@ -302,6 +311,7 @@ target_link_libraries(all_unit_tests
     yaml-cpp::yaml-cpp
     test_utils
     ${OpenCV_LIBS}
+    ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
 )
 add_test(NAME all_unit_tests COMMAND all_unit_tests)
@@ -358,7 +368,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
-       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence")
+       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
+       NOT ${test_name} STREQUAL "test_quality_pipeline_memory")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
@@ -370,7 +381,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
-       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence")
+       NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
+       NOT ${test_name} STREQUAL "test_quality_pipeline_memory")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"
             ENVIRONMENT "TEST_TYPE=unit"
