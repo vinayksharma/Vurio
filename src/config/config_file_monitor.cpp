@@ -83,10 +83,13 @@ namespace MediaDedup
 
     void ConfigFileMonitor::monitoringLoop()
     {
+        std::cout << "[ConfigFileMonitor] Starting file monitoring for: " << file_path_ << " (interval: " << check_interval_.count() << "ms)" << std::endl;
+        
         while (running_)
         {
             if (hasFileChanged())
             {
+                std::cout << "[ConfigFileMonitor] File changed detected: " << file_path_ << std::endl;
                 notifyFileChange(file_path_);
                 // Update the last modification time after detecting change
                 try
@@ -107,6 +110,8 @@ namespace MediaDedup
             }
             std::this_thread::sleep_for(check_interval_);
         }
+        
+        std::cout << "[ConfigFileMonitor] File monitoring stopped for: " << file_path_ << std::endl;
     }
 
     bool ConfigFileMonitor::hasFileChanged() const

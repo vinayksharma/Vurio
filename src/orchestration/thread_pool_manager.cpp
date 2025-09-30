@@ -432,9 +432,9 @@ namespace MediaDedup
                 std::lock_guard<std::mutex> lock(mutex_);
                 int cur = pool_->capacity();
                 effective_max_ = newMax;
-                
+
                 Poco::Logger::get("ThreadPoolManager").information("Thread pool max changed from %d to %u (current capacity: %d)", cur, static_cast<unsigned int>(newMax), cur);
-                
+
                 if (static_cast<size_t>(cur) < effective_max_)
                 {
                     int add_capacity = static_cast<int>(effective_max_ - static_cast<size_t>(cur));

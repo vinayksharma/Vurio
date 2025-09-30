@@ -112,6 +112,7 @@ namespace MediaDedup
             // Set up file monitor callback
             file_monitor_->setFileChangeCallback([this](const std::string &file_path)
                                                  {
+                std::cout << "[UnifiedObservableConfigManager] File change callback triggered for: " << file_path << std::endl;
                 reloadConfiguration();
                 notifyFileChange(file_path); });
 
