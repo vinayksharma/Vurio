@@ -72,7 +72,7 @@ files.manager.useInMemoryIndex: false  # false = database queries (lower memory)
 # -----------------------------------------------------------------------------
 # Thread Pool Manager (TPM) Configuration
 # -----------------------------------------------------------------------------
-tpm.pool.max: auto
+tpm.pool.max: 10
 tpm.killTimeoutMs: 10000
 tpm.thread.idleTimeoutSeconds: 120
 
