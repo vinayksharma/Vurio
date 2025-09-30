@@ -37,6 +37,10 @@ namespace MediaDedup
                 return false;
             }
 
+            // Note: Thread stack size optimization is configured in ThreadPoolManager
+            // HTTP server threads will use system default (8MB) - this is acceptable for HTTP processing
+            // TPM threads will use optimized stack size (1MB) via tpm.thread.stackSizeKB setting
+
             logger.information("Configuration initialized successfully");
             return true;
         }

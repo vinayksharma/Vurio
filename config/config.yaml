@@ -72,6 +72,12 @@ tpm.pool.max: auto
 tpm.killTimeoutMs: 10000
 tpm.thread.idleTimeoutSeconds: 120
 
+# Thread Stack Size Optimization (Memory Savings) - REACTIVE CONFIG
+# Reduces stack size from 8MB (macOS default) to 1MB per thread
+# Memory savings: 7MB × 15 TPM threads = ~105MB additional reduction
+# Changes take effect immediately (thread pool recreated on config change)
+tpm.thread.stackSizeKB: 1024  # 1MB stack size (1024KB) instead of 8MB default
+
 # TPM Type Shares
 tpm.types.fileScan.share: 1
 
@@ -101,11 +107,6 @@ media.processor.intervalMs: 30000
 # Unified media processor thread pool share
 media.processor.threadPool.share.media_processor: 1.0
 
-# DEPRECATED: Individual processor shares (kept for backward compatibility)
-# media.processor.threadPool.share.image_processor: 1.0
-# media.processor.threadPool.share.audio_processor: 1.0
-# media.processor.threadPool.share.video_processor: 1.0
-
 # Unified processing queue size limit to prevent memory buildup
 media.processor.maxQueueSize: 100 # Maximum number of media processing tasks to queue
 
@@ -116,7 +117,6 @@ media.image.timeoutMs: 30000
 media.image.retry.enabled: true
 media.image.retry.maxAttempts: 2
 media.image.retry.baseDelayMs: 500
-# media.image.maxQueueSize: 5000 # DEPRECATED: Use media.processor.maxQueueSize instead
 
 media.image.fast.thumbSize: 256
 media.image.balanced.resizeLongEdge: 1024
@@ -135,7 +135,6 @@ media.image.quality.onnx.sessionCache.maxSessions: 4  # Max cached sessions per 
 # Image Transcoding Configuration
 media.image.transcoding.enabled: true
 media.image.transcoding.timeoutMs: 60000
-media.image.transcoding.quality: "high"  # high, medium, low
 media.image.transcoding.preserveMetadata: true
 
 # -----------------------------------------------------------------------------

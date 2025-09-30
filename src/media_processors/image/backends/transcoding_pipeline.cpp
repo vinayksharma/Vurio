@@ -91,7 +91,6 @@ namespace MediaDedup
         TranscodingConfig config;
         config.enabled = true;
         config.timeout_ms = 60000;
-        config.quality = "high";
         config.preserve_metadata = true;
 
         return config;
@@ -112,10 +111,9 @@ namespace MediaDedup
             // Load configuration values from config manager
             config.enabled = config_manager->getPropertyValue<bool>("media.image.transcoding.enabled", config.enabled);
             config.timeout_ms = config_manager->getPropertyValue<int>("media.image.transcoding.timeoutMs", config.timeout_ms);
-            config.quality = config_manager->getPropertyValue<std::string>("media.image.transcoding.quality", config.quality);
             config.preserve_metadata = config_manager->getPropertyValue<bool>("media.image.transcoding.preserveMetadata", config.preserve_metadata);
 
-            Poco::Logger::get("TranscodingPipeline").debug("Loaded transcoding config: enabled=%s, timeout=%dms, quality=%s, preserve_metadata=%s", config.enabled ? "true" : "false", config.timeout_ms, config.quality, config.preserve_metadata ? "true" : "false");
+            Poco::Logger::get("TranscodingPipeline").debug("Loaded transcoding config: enabled=%s, timeout=%dms, preserve_metadata=%s", config.enabled ? "true" : "false", config.timeout_ms, config.preserve_metadata ? "true" : "false");
         }
         catch (const std::exception &e)
         {

@@ -79,10 +79,22 @@ namespace MediaDedup
         idle_timeout_seconds_ = idleSeconds;
         logger.debug("Thread idle timeout set to: %d seconds", idleSeconds);
 
+        // Read stack size configuration (memory optimization)
+        std::string stackSizeKey = "tpm.thread.stackSizeKB";
+        int stackSizeKB = cfg_->getPropertyValue<int>(stackSizeKey, 1024); // Default 1MB (1024KB)
+        if (stackSizeKB <= 0)
+            stackSizeKB = 1024;
+        int stackSizeBytes = stackSizeKB * 1024;
+        logger.debug("Thread stack size set to: %d KB (%d bytes)", stackSizeKB, stackSizeBytes);
+
         // Recreate pool with configured idle timeout and desired capacity
         pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
-        logger.information("Thread pool initialized with capacity: %u, idle timeout: %d seconds",
-                           static_cast<unsigned int>(effective_max_), idle_timeout_seconds_);
+
+        // Set optimized stack size to reduce memory usage (8MB default → 1MB configured)
+        pool_->setStackSize(stackSizeBytes);
+
+        logger.information("Thread pool initialized with capacity: %u, idle timeout: %d seconds, stack size: %d KB",
+                           static_cast<unsigned int>(effective_max_), idle_timeout_seconds_, stackSizeKB);
 
         // Subscribe to config changes
         cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
@@ -376,8 +388,16 @@ namespace MediaDedup
         // Recreate the thread pool with new idle timeout
         pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
 
-        logger.information("Thread pool recreated successfully with capacity: %d, idle timeout: %d seconds",
-                           static_cast<int>(effective_max_), idle_timeout_seconds_);
+        // Apply configured stack size to recreated pool
+        std::string stackSizeKey = "tpm.thread.stackSizeKB";
+        int stackSizeKB = cfg_->getPropertyValue<int>(stackSizeKey, 1024); // Default 1MB (1024KB)
+        if (stackSizeKB <= 0)
+            stackSizeKB = 1024;
+        int stackSizeBytes = stackSizeKB * 1024;
+        pool_->setStackSize(stackSizeBytes);
+
+        logger.information("Thread pool recreated successfully with capacity: %d, idle timeout: %d seconds, stack size: %d KB",
+                           static_cast<int>(effective_max_), idle_timeout_seconds_, stackSizeKB);
     }
 
     void ThreadPoolManager::onConfigChange(const ConfigChangeEvent &event)
@@ -454,6 +474,31 @@ namespace MediaDedup
             catch (...)
             {
                 Poco::Logger::get("ThreadPoolManager").warning("Invalid thread idle timeout value, keeping current: %d seconds", idle_timeout_seconds_);
+            }
+        }
+        else if (event.key == "tpm.thread.stackSizeKB")
+        {
+            try
+            {
+                int newStackSizeKB = 1024; // Default 1MB
+                if (event.new_value.type() == typeid(int))
+                    newStackSizeKB = std::any_cast<int>(event.new_value);
+                else if (event.new_value.type() == typeid(std::string))
+                    newStackSizeKB = std::stoi(std::any_cast<std::string>(event.new_value));
+
+                if (newStackSizeKB > 0)
+                {
+                    Poco::Logger::get("ThreadPoolManager").information("Thread stack size changed to: %d KB, recreating thread pool", newStackSizeKB);
+                    recreateThreadPool();
+                }
+                else
+                {
+                    Poco::Logger::get("ThreadPoolManager").warning("Invalid stack size value: %d KB, keeping current configuration", newStackSizeKB);
+                }
+            }
+            catch (...)
+            {
+                Poco::Logger::get("ThreadPoolManager").warning("Invalid stack size value, keeping current configuration");
             }
         }
         else if (event.key.rfind("tpm.types.", 0) == 0 && event.key.rfind(".share") != std::string::npos)

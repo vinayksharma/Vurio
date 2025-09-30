@@ -15,7 +15,6 @@ namespace MediaDedup
     {
         bool enabled = true;
         int timeout_ms = 60000;
-        std::string quality = "high"; // high, medium, low
         bool preserve_metadata = true;
     };
 
@@ -62,6 +61,5 @@ namespace MediaDedup
          * @return Configuration loaded from config manager with defaults as fallback
          */
         static TranscodingConfig GetConfigFromManager(std::shared_ptr<UnifiedObservableConfigManager> config_manager);
-
     };
 }

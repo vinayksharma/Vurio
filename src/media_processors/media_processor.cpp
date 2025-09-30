@@ -594,7 +594,6 @@ namespace MediaDedup
         // React to transcoding configuration changes
         if (event.key == "media.image.transcoding.enabled" ||
             event.key == "media.image.transcoding.timeoutMs" ||
-            event.key == "media.image.transcoding.quality" ||
             event.key == "media.image.transcoding.preserveMetadata")
         {
             Poco::Logger::get("MediaProcessor").information("Transcoding configuration changed: %s", event.key);
@@ -611,11 +610,6 @@ namespace MediaDedup
                 {
                     int new_value = config_manager_->getPropertyValue<int>(event.key, 60000);
                     Poco::Logger::get("MediaProcessor").information("Transcoding timeout: %d ms", new_value);
-                }
-                else if (event.key == "media.image.transcoding.quality")
-                {
-                    std::string new_value = config_manager_->getPropertyValue<std::string>(event.key, "high");
-                    Poco::Logger::get("MediaProcessor").information("Transcoding quality: %s", new_value);
                 }
                 else if (event.key == "media.image.transcoding.preserveMetadata")
                 {

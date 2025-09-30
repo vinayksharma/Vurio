@@ -65,7 +65,6 @@ TEST_F(TranscodingPipelineTest, GetDefaultConfig_ReturnsValidConfig)
 
     EXPECT_TRUE(config.enabled);
     EXPECT_EQ(config.timeout_ms, 60000);
-    EXPECT_EQ(config.quality, "high");
     EXPECT_TRUE(config.preserve_metadata);
 }
 
@@ -152,33 +151,29 @@ TEST_F(TranscodingPipelineTest, TranscodeToMemory_WithValidRawFile_ReturnsTrue)
     }
 }
 
-TEST_F(TranscodingPipelineTest, TranscodeToMemory_WithDifferentQualitySettings_Works)
+TEST_F(TranscodingPipelineTest, TranscodeToMemory_WithValidConfig_Works)
 {
     // Create a dummy raw file for testing
     std::filesystem::path raw_file = test_set_path_ / "test.cr2";
     TestUtils::createTempFile("dummy CR2 content", raw_file.string());
 
-    std::vector<std::string> qualities = {"low", "medium", "high"};
+    TranscodingConfig config;
+    config.enabled = true;
+    config.timeout_ms = 60000;
+    config.preserve_metadata = true;
 
-    for (const auto &quality : qualities)
+    std::vector<std::uint8_t> tiff_data;
+    bool result = TranscodingPipeline::TranscodeToMemory(raw_file.string(), tiff_data, config);
+
+    // The result may be true or false depending on ImageMagick's ability to process dummy content
+    // The important thing is that it doesn't crash with valid config
+    if (result)
     {
-        TranscodingConfig config;
-        config.enabled = true;
-        config.quality = quality;
-
-        std::vector<std::uint8_t> tiff_data;
-        bool result = TranscodingPipeline::TranscodeToMemory(raw_file.string(), tiff_data, config);
-
-        // The result may be true or false depending on ImageMagick's ability to process dummy content
-        // The important thing is that it doesn't crash with different quality settings
-        if (result)
-        {
-            EXPECT_FALSE(tiff_data.empty());
-        }
-        else
-        {
-            EXPECT_TRUE(tiff_data.empty());
-        }
+        EXPECT_FALSE(tiff_data.empty());
+    }
+    else
+    {
+        EXPECT_TRUE(tiff_data.empty());
     }
 }
 
@@ -190,7 +185,6 @@ TEST_F(TranscodingPipelineTest, GetConfigFromManager_WithNullManager_ReturnsDefa
     // Should return default config
     EXPECT_TRUE(config.enabled);
     EXPECT_EQ(config.timeout_ms, 60000);
-    EXPECT_EQ(config.quality, "high");
     EXPECT_TRUE(config.preserve_metadata);
 }
 
@@ -219,6 +213,5 @@ TEST_F(TranscodingPipelineTest, GetConfigFromManager_WithValidManager_ReturnsLoa
     // The configuration loading from file may need more investigation
     EXPECT_TRUE(config.enabled || !config.enabled);                     // Any boolean value is valid
     EXPECT_GT(config.timeout_ms, 0);                                    // Should be positive
-    EXPECT_FALSE(config.quality.empty());                               // Should not be empty
     EXPECT_TRUE(config.preserve_metadata || !config.preserve_metadata); // Any boolean value is valid
 }

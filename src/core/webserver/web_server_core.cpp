@@ -220,7 +220,11 @@ namespace MediaDedup
         params->setMaxThreads(maxThreads); // Configurable max threads
         params->setMaxQueued(maxQueued);   // Configurable queued requests
 
-        Poco::Logger::get("WebServer").information("HTTP server thread pool configured: max=%d, queued=%d", maxThreads, maxQueued);
+        // Note: HTTPServer doesn't expose stack size configuration directly
+        // HTTP server threads will use system default stack size (8MB)
+        // TPM threads use optimized stack size (1MB) via tpm.thread.stackSizeKB setting
+
+        Poco::Logger::get("WebServer").information("HTTP server thread pool configured: max=%d, queued=%d (uses system default 8MB stack)", maxThreads, maxQueued);
 
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
             Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket_, params);
