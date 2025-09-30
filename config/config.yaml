@@ -99,7 +99,7 @@ media.processor.threadPool.share.media_processor: 1.0
 # media.processor.threadPool.share.video_processor: 1.0
 
 # Unified processing queue size limit to prevent memory buildup
-media.processor.maxQueueSize: 10000 # Maximum number of media processing tasks to queue
+media.processor.maxQueueSize: 100 # Maximum number of media processing tasks to queue
 
 # -----------------------------------------------------------------------------
 # Image Pipelines (SAFE TREO)

@@ -117,7 +117,7 @@ namespace MediaDedup
                 // Check queue capacity before submitting to prevent memory buildup
                 if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
                 {
-                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping image file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    Poco::Logger::get("MediaProcessor").trace("Media processor queue at capacity (%u), skipping image file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
                     // Mark file as skipped in database to avoid reprocessing
                     try
                     {
@@ -218,7 +218,7 @@ namespace MediaDedup
                 // Check queue capacity before submitting to prevent memory buildup
                 if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
                 {
-                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping video file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    Poco::Logger::get("MediaProcessor").trace("Media processor queue at capacity (%u), skipping video file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
                     // Mark file as skipped in database to avoid reprocessing
                     try
                     {
@@ -318,7 +318,7 @@ namespace MediaDedup
                 // Check queue capacity before submitting to prevent memory buildup
                 if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
                 {
-                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping audio file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    Poco::Logger::get("MediaProcessor").trace("Media processor queue at capacity (%u), skipping audio file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
                     // Mark file as skipped in database to avoid reprocessing
                     try
                     {
