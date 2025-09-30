@@ -29,8 +29,8 @@ namespace MediaDedup
     {
     public:
         TriggerJobHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                         std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
-                         const std::string &jobId)
+                          std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+                          const std::string &jobId)
             : config_manager_(std::move(config_manager)),
               scheduler_service_(std::move(scheduler_service)),
               job_id_(jobId) {}
@@ -48,7 +48,7 @@ namespace MediaDedup
     {
     public:
         SchedulerStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                              std::shared_ptr<Orchestration::SchedulerService> scheduler_service)
+                               std::shared_ptr<Orchestration::SchedulerService> scheduler_service)
             : config_manager_(std::move(config_manager)),
               scheduler_service_(std::move(scheduler_service)) {}
 
@@ -212,8 +212,18 @@ namespace MediaDedup
                                                                      scheduler_service_,
                                                                      "src/core/webserver/static/");
 
+        // Configure HTTP server thread pool for single client + dedicated UI (reactive config)
+        auto params = new Poco::Net::HTTPServerParams();
+        int maxThreads = config_manager_->getPropertyValue<int>("server.http.threadPool.maxThreads", 2);
+        int maxQueued = config_manager_->getPropertyValue<int>("server.http.threadPool.maxQueued", 10);
+
+        params->setMaxThreads(maxThreads); // Configurable max threads
+        params->setMaxQueued(maxQueued);   // Configurable queued requests
+
+        Poco::Logger::get("WebServer").information("HTTP server thread pool configured: max=%d, queued=%d", maxThreads, maxQueued);
+
         http_server_ = std::make_unique<Poco::Net::HTTPServer>(
-            Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket_, new Poco::Net::HTTPServerParams);
+            Poco::Net::HTTPRequestHandlerFactory::Ptr(factory.release()), *server_socket_, params);
 
         server_thread_ = std::thread([this]()
                                      {
@@ -334,7 +344,7 @@ namespace MediaDedup
     void TriggerJobHandler::handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response)
     {
         Poco::Logger &logger = Poco::Logger::get("TriggerJobHandler");
-        
+
         try
         {
             if (!scheduler_service_)
@@ -346,21 +356,25 @@ namespace MediaDedup
 
             bool success = scheduler_service_->triggerJob(job_id_);
             bool isRunning = scheduler_service_->isJobRunning(job_id_);
-            
+
             response.setContentType("application/json");
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK, "OK");
-            
+
             std::string status_str = success ? "success" : (isRunning ? "skipped" : "error");
             std::string state_str = isRunning ? "RUNNING" : "IDLE";
             std::string message_str = success ? "Job triggered successfully" : (isRunning ? "Job already running" : "Job not found");
-            
+
             std::string json = "{"
-                "\"status\":\"" + status_str + "\","
-                "\"job_id\":\"" + job_id_ + "\","
-                "\"job_state\":\"" + state_str + "\","
-                "\"message\":\"" + message_str + "\""
-                "}";
-            
+                               "\"status\":\"" +
+                               status_str + "\","
+                                            "\"job_id\":\"" +
+                               job_id_ + "\","
+                                         "\"job_state\":\"" +
+                               state_str + "\","
+                                           "\"message\":\"" +
+                               message_str + "\""
+                                             "}";
+
             response.sendBuffer(json.data(), json.size());
             logger.debug("Job trigger request for %s: %s", job_id_, success ? "success" : "skipped");
         }
@@ -376,7 +390,7 @@ namespace MediaDedup
     void SchedulerStatusHandler::handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response)
     {
         Poco::Logger &logger = Poco::Logger::get("SchedulerStatusHandler");
-        
+
         try
         {
             if (!scheduler_service_)
@@ -387,33 +401,43 @@ namespace MediaDedup
             }
 
             auto statuses = scheduler_service_->getJobStatuses();
-            
+
             response.setContentType("application/json");
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK, "OK");
-            
+
             std::string json = "{\"jobs\":[";
             for (size_t i = 0; i < statuses.size(); ++i)
             {
-                if (i > 0) json += ",";
-                
-                const auto& status = statuses[i];
+                if (i > 0)
+                    json += ",";
+
+                const auto &status = statuses[i];
                 auto lastRunTime = std::chrono::duration_cast<std::chrono::seconds>(
-                    status.lastRun.time_since_epoch()).count();
+                                       status.lastRun.time_since_epoch())
+                                       .count();
                 auto nextRunTime = std::chrono::duration_cast<std::chrono::seconds>(
-                    status.nextRun.time_since_epoch()).count();
-                
+                                       status.nextRun.time_since_epoch())
+                                       .count();
+
                 json += "{"
-                    "\"job_id\":\"" + status.jobId + "\","
-                    "\"state\":\"" + (status.state == Orchestration::JobState::RUNNING ? "RUNNING" : "IDLE") + "\","
-                    "\"interval_ms\":" + std::to_string(status.interval.count()) + ","
-                    "\"last_run\":" + std::to_string(lastRunTime) + ","
-                    "\"next_run\":" + std::to_string(nextRunTime) + ","
-                    "\"consecutive_failures\":" + std::to_string(status.consecutiveFailures) + ","
-                    "\"total_failures\":" + std::to_string(status.totalFailures) +
-                    "}";
+                        "\"job_id\":\"" +
+                        status.jobId + "\","
+                                       "\"state\":\"" +
+                        (status.state == Orchestration::JobState::RUNNING ? "RUNNING" : "IDLE") + "\","
+                                                                                                  "\"interval_ms\":" +
+                        std::to_string(status.interval.count()) + ","
+                                                                  "\"last_run\":" +
+                        std::to_string(lastRunTime) + ","
+                                                      "\"next_run\":" +
+                        std::to_string(nextRunTime) + ","
+                                                      "\"consecutive_failures\":" +
+                        std::to_string(status.consecutiveFailures) + ","
+                                                                     "\"total_failures\":" +
+                        std::to_string(status.totalFailures) +
+                        "}";
             }
             json += "]}";
-            
+
             response.sendBuffer(json.data(), json.size());
             logger.debug("Scheduler status request completed");
         }

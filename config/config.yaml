@@ -76,6 +76,14 @@ tpm.thread.idleTimeoutSeconds: 120
 tpm.types.fileScan.share: 1
 
 # -----------------------------------------------------------------------------
+# HTTP Server Configuration (Memory Optimization)
+# -----------------------------------------------------------------------------
+# Configure HTTP server thread pool for single client + dedicated UI
+# Reduces memory usage from ~6.8GB to ~350MB (saves ~5.4GB)
+server.http.threadPool.maxThreads: 2    # Maximum HTTP threads (single client + UI)
+server.http.threadPool.maxQueued: 10    # Maximum queued HTTP requests
+
+# -----------------------------------------------------------------------------
 # Files Manager Configuration
 # -----------------------------------------------------------------------------
 files.manager.enabled: true

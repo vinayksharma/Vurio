@@ -468,10 +468,10 @@ namespace MediaDedup
 
         try
         {
-            // Query ALL unprocessed files for current server mode (no batch limit)
-            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode);
+            // Query unprocessed files limited to current processing queue size to prevent memory buildup
+            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode, static_cast<int>(max_processing_queue_size_));
 
-            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode");
+            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode (limited to " + std::to_string(max_processing_queue_size_) + " by queue size)");
 
             if (unprocessed_files.empty())
             {
