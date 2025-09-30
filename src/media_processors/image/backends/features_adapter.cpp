@@ -53,11 +53,17 @@ namespace MediaDedup
             cv::Mat resized;
             cv::resize(img, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_AREA);
 
+            // Release original image memory immediately (can be 30MB+ for large grayscale images)
+            img.release();
+
             // ORB for speed and availability (no nonfree modules)
             auto detector = cv::ORB::create(max_keypoints);
             std::vector<cv::KeyPoint> kps;
             cv::Mat desc;
             detector->detectAndCompute(resized, cv::noArray(), kps, desc);
+
+            // Release resized image memory immediately after feature extraction
+            resized.release();
 
             if (kps.empty() || desc.empty())
             {
@@ -96,6 +102,10 @@ namespace MediaDedup
 
             size_t bytes = desc.total() * desc.elemSize();
             appendBytes(out_blob, desc.data, bytes);
+            
+            // Release descriptor matrix memory
+            desc.release();
+            
             return true;
         }
         catch (const std::exception &e)
@@ -138,6 +148,8 @@ namespace MediaDedup
             if (img.channels() == 3)
             {
                 cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+                // Release color image memory immediately
+                img.release();
             }
             else
             {
@@ -166,6 +178,9 @@ namespace MediaDedup
             cv::Mat desc;
 
             orb->detectAndCompute(gray, cv::noArray(), kps, desc);
+
+            // Release grayscale image memory immediately after feature extraction
+            gray.release();
 
             if (kps.empty() || desc.empty())
             {
@@ -196,6 +211,10 @@ namespace MediaDedup
 
             size_t bytes = desc.total() * desc.elemSize();
             appendBytes(out_blob, desc.data, bytes);
+            
+            // Release descriptor matrix memory
+            desc.release();
+            
             return true;
         }
         catch (const std::exception &e)

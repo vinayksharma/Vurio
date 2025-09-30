@@ -34,7 +34,13 @@ namespace MediaDedup
                         FastPipelineConfig config;
                         config.thumb_size = DEFAULT_THUMB_SIZE;
 
-                        return FastPipeline::Run(tiff_data, file_path, config, db);
+                        bool result = FastPipeline::Run(tiff_data, file_path, config, db);
+                        
+                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
+                        tiff_data.clear();
+                        tiff_data.shrink_to_fit();
+                        
+                        return result;
                     }
                     else
                     {
@@ -126,7 +132,13 @@ namespace MediaDedup
                         config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
                         config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
 
-                        return BalancedPipeline::Run(tiff_data, file_path, config, db);
+                        bool result = BalancedPipeline::Run(tiff_data, file_path, config, db);
+                        
+                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
+                        tiff_data.clear();
+                        tiff_data.shrink_to_fit();
+                        
+                        return result;
                     }
                     else
                     {
@@ -184,7 +196,13 @@ namespace MediaDedup
                         Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
 
                         QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
-                        return QualityPipeline::Run(tiff_data, file_path, config, db);
+                        bool result = QualityPipeline::Run(tiff_data, file_path, config, db);
+                        
+                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
+                        tiff_data.clear();
+                        tiff_data.shrink_to_fit();
+                        
+                        return result;
                     }
                     else
                     {
