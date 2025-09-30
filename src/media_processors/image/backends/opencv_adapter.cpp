@@ -45,17 +45,17 @@ namespace MediaDedup
                 new_h = 1;
             cv::Mat resized;
             cv::resize(img, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_AREA);
-            
+
             // Release original image memory immediately (can be 70MB+ for large images)
             img.release();
-            
+
             // Compute perceptual hash (pHash)
             cv::Mat hash;
             cv::img_hash::pHash(resized, hash);
-            
+
             // Release resized image memory immediately
             resized.release();
-            
+
             // Reduce to 64-bit equivalent by hashing the cv::Mat bytes (simple approach)
             std::uint64_t acc = 1469598103934665603ULL; // FNV offset basis
             for (int r = 0; r < hash.rows; ++r)
@@ -67,10 +67,10 @@ namespace MediaDedup
                     acc *= 1099511628211ULL; // FNV prime
                 }
             }
-            
+
             // Release hash matrix memory
             hash.release();
-            
+
             out.phash64.resize(8);
             for (int i = 0; i < 8; ++i)
                 out.phash64[i] = static_cast<std::uint8_t>((acc >> (i * 8)) & 0xFF);

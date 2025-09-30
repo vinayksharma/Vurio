@@ -173,6 +173,14 @@ namespace MediaDedup::Orchestration
             Poco::Logger &logger = Poco::Logger::get("SchedulerService");
             logger.debug("fileScan job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
+        // Special case for mediaProcessor job: also check media.processor.intervalMs
+        else if (job.jobId == "mediaProcessor")
+        {
+            int originalInterval = intervalMs;
+            intervalMs = cfg_->getPropertyValue<int>("media.processor.intervalMs", intervalMs);
+            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+            logger.debug("mediaProcessor job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
+        }
 
         if (intervalMs != static_cast<int>(job.interval.count()))
         {

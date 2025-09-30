@@ -35,11 +35,11 @@ namespace MediaDedup
                         config.thumb_size = DEFAULT_THUMB_SIZE;
 
                         bool result = FastPipeline::Run(tiff_data, file_path, config, db);
-                        
+
                         // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
                         tiff_data.clear();
                         tiff_data.shrink_to_fit();
-                        
+
                         return result;
                     }
                     else
@@ -133,11 +133,11 @@ namespace MediaDedup
                         config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
 
                         bool result = BalancedPipeline::Run(tiff_data, file_path, config, db);
-                        
+
                         // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
                         tiff_data.clear();
                         tiff_data.shrink_to_fit();
-                        
+
                         return result;
                     }
                     else
@@ -197,11 +197,11 @@ namespace MediaDedup
 
                         QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
                         bool result = QualityPipeline::Run(tiff_data, file_path, config, db);
-                        
+
                         // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
                         tiff_data.clear();
                         tiff_data.shrink_to_fit();
-                        
+
                         return result;
                     }
                     else

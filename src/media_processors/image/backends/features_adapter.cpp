@@ -102,10 +102,10 @@ namespace MediaDedup
 
             size_t bytes = desc.total() * desc.elemSize();
             appendBytes(out_blob, desc.data, bytes);
-            
+
             // Release descriptor matrix memory
             desc.release();
-            
+
             return true;
         }
         catch (const std::exception &e)
@@ -211,10 +211,10 @@ namespace MediaDedup
 
             size_t bytes = desc.total() * desc.elemSize();
             appendBytes(out_blob, desc.data, bytes);
-            
+
             // Release descriptor matrix memory
             desc.release();
-            
+
             return true;
         }
         catch (const std::exception &e)

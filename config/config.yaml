@@ -89,7 +89,7 @@ files.service.immediateJobTrigger.timeoutMs: 30000
 # Media Processor Configuration
 # -----------------------------------------------------------------------------
 media.processor.enabled: true
-media.processor.intervalMs: 30000
+media.processor.intervalMs: 300000
 # Unified media processor thread pool share
 media.processor.threadPool.share.media_processor: 1.0
 

@@ -63,26 +63,26 @@ namespace MediaDedup
             }
             cv::Mat rgb;
             cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
-            
+
             // Release BGR image memory immediately (can be 70MB+ for large images)
             bgr.release();
-            
+
             cv::Mat resized;
             cv::resize(rgb, resized, cv::Size(input_size, input_size), 0, 0, cv::INTER_AREA);
-            
+
             // Release RGB image memory immediately
             rgb.release();
-            
+
             resized.convertTo(resized, CV_32F, 1.0f / 255.0f);
 
             const cv::Scalar mean(0.48145466f, 0.4578275f, 0.40821073f);
             const cv::Scalar std(0.26862954f, 0.26130258f, 0.27577711f);
             cv::Mat chw[3];
             cv::split(resized, chw);
-            
+
             // Release resized image memory immediately after split
             resized.release();
-            
+
             for (int c = 0; c < 3; ++c)
             {
                 chw[c] = (chw[c] - mean[c]) / std[c];
@@ -93,7 +93,7 @@ namespace MediaDedup
             {
                 input_vals.insert(input_vals.end(), (float *)chw[c].datastart, (float *)chw[c].dataend);
             }
-            
+
             // Release channel matrices memory
             for (int c = 0; c < 3; ++c)
             {
@@ -226,17 +226,17 @@ namespace MediaDedup
             // Convert BGR to RGB
             cv::Mat rgb;
             cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
-            
+
             // Release BGR memory immediately (can be 70MB+ for large images)
             bgr.release();
 
             // Resize to required input size
             cv::Mat resized;
             cv::resize(rgb, resized, cv::Size(input_size, input_size), 0, 0, cv::INTER_AREA);
-            
+
             // Release RGB memory immediately
             rgb.release();
-            
+
             resized.convertTo(resized, CV_32F, 1.0f / 255.0f);
 
             // Normalize with CLIP model statistics
@@ -244,10 +244,10 @@ namespace MediaDedup
             const cv::Scalar std(0.26862954f, 0.26130258f, 0.27577711f);
             cv::Mat chw[3];
             cv::split(resized, chw);
-            
+
             // Release resized memory immediately after split
             resized.release();
-            
+
             for (int c = 0; c < 3; ++c)
             {
                 chw[c] = (chw[c] - mean[c]) / std[c];
@@ -260,7 +260,7 @@ namespace MediaDedup
             {
                 input_vals.insert(input_vals.end(), (float *)chw[c].datastart, (float *)chw[c].dataend);
             }
-            
+
             // Release channel matrices memory
             for (int c = 0; c < 3; ++c)
             {
