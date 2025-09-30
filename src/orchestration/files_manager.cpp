@@ -32,8 +32,7 @@ namespace MediaDedup::Orchestration
     }
 
     void FilesManager::onFileEmitted(const std::string &root,
-                                     const FileRecord &rec,
-                                     std::unordered_map<std::string, MediaDedup::ScannedFileRow> &index)
+                                     const FileRecord &rec)
     {
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
 
@@ -72,14 +71,15 @@ namespace MediaDedup::Orchestration
                            ", Errno: " + errnoStr +
                            ", Message: " + errorMsg + "]");
             // Persist brief error info if row exists; otherwise skip creating new rows for errors only
-            auto it = index.find(rec.fullPath);
-            if (it != index.end())
+            // Use database query instead of in-memory index lookup
+            auto existing = ScannedFilesOps::getByPath(*db_, rec.fullPath);
+            if (existing)
             {
                 // store error info in metadata JSON (append fields) — simple approach
                 json meta;
                 try
                 {
-                    meta = json::parse(it->second.file_metadata);
+                    meta = json::parse(existing->file_metadata);
                 }
                 catch (...)
                 {
@@ -123,8 +123,9 @@ namespace MediaDedup::Orchestration
         row.file_metadata = meta.dump();
         row.is_network_file = rec.isShareMapped; // best-effort
 
-        auto found = index.find(rec.fullPath);
-        const bool exists = (found != index.end());
+        // Use database query instead of in-memory index lookup
+        auto found = ScannedFilesOps::getByPath(*db_, rec.fullPath);
+        const bool exists = found.has_value();
         bool significant_change = false;
 
         if (exists)
@@ -132,7 +133,7 @@ namespace MediaDedup::Orchestration
             // Parse existing metadata to compare only relevant fields: size, creation date, modification date
             try
             {
-                json existing_meta = json::parse(found->second.file_metadata);
+                json existing_meta = json::parse(found->file_metadata);
                 json new_meta = json::parse(row.file_metadata);
 
                 // Only consider it a significant change if any of these three fields changed:
@@ -175,7 +176,7 @@ namespace MediaDedup::Orchestration
             catch (...)
             {
                 // If JSON parsing fails, fall back to string comparison but preserve processing status
-                significant_change = (found->second.file_metadata != row.file_metadata);
+                significant_change = (found->file_metadata != row.file_metadata);
             }
         }
 
@@ -205,7 +206,6 @@ namespace MediaDedup::Orchestration
 
             // Perform upsert for new or significantly changed files
             ScannedFilesOps::upsert(*db_, row);
-            index[row.file_path] = row;
         }
         else
         {
@@ -233,16 +233,9 @@ namespace MediaDedup::Orchestration
 
         try
         {
-            // Build in-memory index
-            logger.information("Building in-memory index from scanned_files");
-            logger.trace("Accessing database to retrieve scanned_files table data");
-            std::unordered_map<std::string, ScannedFileRow> index;
-            for (auto &r : ScannedFilesOps::listAll(*db_))
-            {
-                index.emplace(r.file_path, r);
-            }
-            logger.information(std::string("Loaded rows into index: ") + std::to_string(index.size()));
-
+            // Use database queries instead of in-memory index for better memory efficiency
+            logger.information("Using database-backed file tracking (optimized for low memory usage)");
+            
             logger.trace("Accessing database to retrieve media locations for monitoring");
             auto locations = filesService_->listMediaLocations();
             logger.information(std::string("Media locations to scan: ") + std::to_string(locations.size()));
@@ -269,8 +262,8 @@ namespace MediaDedup::Orchestration
                                        ", recursive=" + (opt.recursive ? "true" : "false") +
                                        ", followSymlinks=" + (opt.followSymlinks ? "true" : "false") +
                                        ", includeHidden=" + (opt.includeHidden ? "true" : "false"));
-                    scan(root, opt, [this, root, &index](const FileRecord &rec)
-                         { onFileEmitted(root, rec, index); });
+                    scan(root, opt, [this, root](const FileRecord &rec)
+                         { onFileEmitted(root, rec); });
                     logger.information(std::string("Completed scanning root: ") + root);
                 }
                 catch (const std::exception &e)

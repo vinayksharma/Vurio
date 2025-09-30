@@ -50,6 +50,10 @@ namespace MediaDedup
             "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
             ");";
 
+        // Index for efficient file_path lookups during scan operations
+        inline constexpr std::string_view kCreateScannedFilesIndexFilePath =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_file_path ON scanned_files(file_path);";
+
         // Image artifacts (metadata produced by image pipelines)
         inline constexpr std::string_view kCreateImageArtifactsTable =
             "CREATE TABLE IF NOT EXISTS image_artifacts (\n"
@@ -169,6 +173,10 @@ namespace MediaDedup
             "SELECT links_balanced FROM scanned_files WHERE file_path=?";
         inline constexpr std::string_view kSelectLinksQuality =
             "SELECT links_quality FROM scanned_files WHERE file_path=?";
+
+        // Efficient existence check query (returns 1 if exists, 0 if not)
+        inline constexpr std::string_view kFileExists =
+            "SELECT EXISTS(SELECT 1 FROM scanned_files WHERE file_path=? LIMIT 1)";
 
         inline constexpr std::string_view kListUnprocessedFast =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"

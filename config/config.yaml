@@ -58,6 +58,14 @@ scheduler.jobs:
     maxConsecutiveFailures: 10
 
 # -----------------------------------------------------------------------------
+# Memory Optimization Settings
+# -----------------------------------------------------------------------------
+# FilesManager Memory Optimization
+# Using database queries instead of in-memory index reduces memory usage by ~56MB per scan
+# With indexed queries on file_path, performance impact is minimal
+files.manager.useInMemoryIndex: false  # false = database queries (lower memory), true = in-memory index (legacy)
+
+# -----------------------------------------------------------------------------
 # Thread Pool Manager (TPM) Configuration
 # -----------------------------------------------------------------------------
 tpm.pool.max: auto

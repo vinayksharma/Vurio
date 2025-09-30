@@ -61,5 +61,9 @@ namespace MediaDedup
 
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);
+
+        // Efficient file existence check (optimized for FilesManager scans)
+        // Returns true if file_path exists in scanned_files table
+        static bool fileExists(DatabaseManager &db, const std::string &file_path);
     };
 }

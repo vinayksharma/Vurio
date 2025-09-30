@@ -44,8 +44,7 @@ namespace MediaDedup
             bool running_ = false;
 
             void onFileEmitted(const std::string &root,
-                               const MediaDedup::Files::FileRecord &rec,
-                               std::unordered_map<std::string, MediaDedup::ScannedFileRow> &index);
+                               const MediaDedup::Files::FileRecord &rec);
         };
     } // namespace Orchestration
 } // namespace MediaDedup

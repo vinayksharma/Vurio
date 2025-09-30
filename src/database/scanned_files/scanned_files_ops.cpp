@@ -12,7 +12,29 @@ namespace MediaDedup
 
     bool ScannedFilesOps::ensureTable(DatabaseManager &db)
     {
-        return db.ensureTableExists("scanned_files", SQL::kCreateScannedFilesTable);
+        // Create table first
+        if (!db.ensureTableExists("scanned_files", SQL::kCreateScannedFilesTable))
+        {
+            return false;
+        }
+        
+        // Create index for efficient file_path lookups (critical for FilesManager performance)
+        // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << std::string(SQL::kCreateScannedFilesIndexFilePath), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created index on scanned_files.file_path");
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").warning("Failed to create index on file_path (may already exist): " + std::string(e.what()));
+            // Don't fail - table exists, index is just an optimization (UNIQUE already creates implicit index)
+        }
+        
+        return true;
     }
 
     static void bindUpsertParams(Statement &stmt, const ScannedFileRow &r)
@@ -510,6 +532,31 @@ namespace MediaDedup
         {
             Poco::Logger::get("ScannedFilesOps").error("Failed to clear processing flags: " + std::string(e.what()));
             return -1; // Return -1 to indicate error
+        }
+    }
+
+    bool ScannedFilesOps::fileExists(DatabaseManager &db, const std::string &file_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            
+            int exists = 0;
+            std::string file_path_copy = file_path;
+            
+            Statement stmt(sess);
+            stmt << std::string(SQL::kFileExists),
+                Keywords::use(file_path_copy),
+                Keywords::into(exists),
+                Keywords::now;
+            
+            return exists == 1;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Failed to check file existence for " + file_path + ": " + std::string(e.what()));
+            return false;
         }
     }
 }
