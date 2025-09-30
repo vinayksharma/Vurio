@@ -80,20 +80,6 @@ namespace MediaDedup
             // Read the raw image file with error handling
             try
             {
-                // Add additional validation for problematic file extensions
-                std::filesystem::path path_obj(file_path);
-                std::string filename = path_obj.filename().string();
-                std::string lower_filename = filename;
-                std::transform(lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
-
-                // Check for double extensions that might confuse ImageMagick
-                if (lower_filename.find(".tif.cr2") != std::string::npos ||
-                    lower_filename.find(".jpg.raw") != std::string::npos ||
-                    lower_filename.find(".tiff.cr2") != std::string::npos)
-                {
-                    log.warning("File with double extension detected, attempting to read as raw: %s", file_path);
-                }
-
                 image.read(file_path);
                 log.debug("Successfully read image file: %s", file_path);
             }
