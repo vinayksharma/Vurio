@@ -235,7 +235,7 @@ namespace MediaDedup::Orchestration
         {
             // Use database queries instead of in-memory index for better memory efficiency
             logger.information("Using database-backed file tracking (optimized for low memory usage)");
-            
+
             logger.trace("Accessing database to retrieve media locations for monitoring");
             auto locations = filesService_->listMediaLocations();
             logger.information(std::string("Media locations to scan: ") + std::to_string(locations.size()));

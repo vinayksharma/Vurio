@@ -238,6 +238,7 @@ add_executable(media_dedup_server
     src/media_processors/image/pipelines/quality_pipeline.cpp
     src/media_processors/image/backends/features_adapter.cpp
     src/media_processors/image/backends/onnx_adapter.cpp
+    src/media_processors/image/backends/onnx_session_manager.cpp
     src/database/image_artifacts_ops.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp

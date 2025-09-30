@@ -56,6 +56,7 @@ set(UNIT_TEST_SOURCES
     unit/test_transcoding_pipeline.cpp
     unit/test_scheduler_concurrency.cpp
     unit/test_quality_pipeline_memory.cpp
+    unit/test_onnx_session_manager.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -106,6 +107,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_quality_pipeline_memory")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="QualityPipelineMemoryTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_onnx_session_manager")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="OnnxSessionManagerTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -210,6 +218,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
@@ -234,6 +243,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
@@ -292,6 +302,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
@@ -369,7 +380,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
-       NOT ${test_name} STREQUAL "test_quality_pipeline_memory")
+       NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
+       NOT ${test_name} STREQUAL "test_onnx_session_manager")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
@@ -382,7 +394,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
-       NOT ${test_name} STREQUAL "test_quality_pipeline_memory")
+       NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
+       NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"
             ENVIRONMENT "TEST_TYPE=unit"

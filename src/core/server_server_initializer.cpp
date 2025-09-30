@@ -11,6 +11,7 @@
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
 #include "media_processors/media_processor.hpp"
+#include "media_processors/image/backends/onnx_adapter.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <thread>
@@ -190,6 +191,10 @@ namespace MediaDedup
             scheduler_service_ = std::make_shared<Orchestration::SchedulerService>(config_manager_, tpm_);
             scheduler_service_->start();
 
+            // Initialize ONNX Session Manager (for QUALITY mode memory optimization)
+            // Must be initialized before MediaProcessor for session reuse
+            OnnxAdapter::initializeSessionManager(config_manager_);
+            
             // Initialize MediaProcessor first (needed by FilesManager)
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
             media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_);

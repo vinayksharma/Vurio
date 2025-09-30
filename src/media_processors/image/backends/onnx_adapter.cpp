@@ -1,4 +1,6 @@
 #include "media_processors/image/backends/onnx_adapter.hpp"
+#include "media_processors/image/backends/onnx_session_manager.hpp"
+#include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
 #include <iostream>
 #if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
@@ -8,6 +10,32 @@
 
 namespace MediaDedup
 {
+    // Static session manager instance
+    std::shared_ptr<OnnxSessionManager> OnnxAdapter::session_manager_ = nullptr;
+
+    void OnnxAdapter::initializeSessionManager(std::shared_ptr<UnifiedObservableConfigManager> config)
+    {
+#if defined(HAVE_ONNXRUNTIME)
+        if (!session_manager_)
+        {
+            session_manager_ = std::make_shared<OnnxSessionManager>(config);
+            Poco::Logger::get("OnnxAdapter").information("ONNX Session Manager initialized");
+        }
+#else
+        (void)config;  // Suppress unused parameter warning
+#endif
+    }
+
+    void OnnxAdapter::shutdownSessionManager()
+    {
+#if defined(HAVE_ONNXRUNTIME)
+        if (session_manager_)
+        {
+            Poco::Logger::get("OnnxAdapter").information("Shutting down ONNX Session Manager");
+            session_manager_.reset();
+        }
+#endif
+    }
     bool OnnxAdapter::ComputeEmbedding(const std::string &file_path,
                                        int input_size,
                                        const std::string &model_path,
@@ -54,21 +82,33 @@ namespace MediaDedup
                 input_vals.insert(input_vals.end(), (float *)chw[c].datastart, (float *)chw[c].dataend);
             }
 
-            Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "MediaDedup");
-            Ort::SessionOptions so;
-            so.SetIntraOpNumThreads(1);
-            so.SetInterOpNumThreads(1);
-            so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
-            std::cerr << "[OnnxAdapter] Creating session with model: " << model_path << std::endl;
-            Ort::Session session(env, model_path.c_str(), so);
+            // Use session manager for cached session reuse (massive memory savings)
+            if (!session_manager_)
+            {
+                Poco::Logger::get("OnnxAdapter").error("ONNX Session Manager not initialized");
+                std::cerr << "[OnnxAdapter] Session manager not initialized" << std::endl;
+                return false;
+            }
+            
+            std::cerr << "[OnnxAdapter] Borrowing cached session for model: " << model_path << std::endl;
+            auto session_lease = session_manager_->borrowSession(model_path);
+            Ort::Session* session = session_lease.getSession();
+            
+            if (!session)
+            {
+                Poco::Logger::get("OnnxAdapter").error("Failed to borrow ONNX session");
+                std::cerr << "[OnnxAdapter] Failed to borrow session" << std::endl;
+                return false;
+            }
+            
             Ort::AllocatorWithDefaultOptions allocator;
 
-            auto in_name = session.GetInputNameAllocated(0, allocator);
+            auto in_name = session->GetInputNameAllocated(0, allocator);
             std::vector<int64_t> in_shape = {1, 3, (int64_t)input_size, (int64_t)input_size};
             Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 
             // Check the expected input type
-            auto input_type_info = session.GetInputTypeInfo(0);
+            auto input_type_info = session->GetInputTypeInfo(0);
             auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
             ONNXTensorElementDataType input_type = tensor_info.GetElementType();
 
@@ -90,11 +130,11 @@ namespace MediaDedup
                 in_tensor = Ort::Value::CreateTensor<float>(mem, input_vals.data(), input_vals.size(), in_shape.data(), in_shape.size());
             }
 
-            auto out_name = session.GetOutputNameAllocated(0, allocator);
+            auto out_name = session->GetOutputNameAllocated(0, allocator);
             const char *in_names[] = {in_name.get()};
             const char *out_names[] = {out_name.get()};
-            std::cerr << "[OnnxAdapter] Running inference..." << std::endl;
-            auto results = session.Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
+            std::cerr << "[OnnxAdapter] Running inference with cached session..." << std::endl;
+            auto results = session->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
             if (results.empty() || !results[0].IsTensor())
             {
                 std::cerr << "[OnnxAdapter] Inference returned empty or non-tensor output" << std::endl;
@@ -192,23 +232,34 @@ namespace MediaDedup
                 input_vals.insert(input_vals.end(), (float *)chw[c].datastart, (float *)chw[c].dataend);
             }
 
-            // Initialize ONNX Runtime
-            Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "MediaDedup");
-            Ort::SessionOptions so;
-            so.SetIntraOpNumThreads(1);
-            so.SetInterOpNumThreads(1);
-            so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
-            std::cerr << "[OnnxAdapter] Creating session with model: " << model_path << std::endl;
-            Ort::Session session(env, model_path.c_str(), so);
+            // Use session manager for cached session reuse (massive memory savings)
+            if (!session_manager_)
+            {
+                Poco::Logger::get("OnnxAdapter").error("ONNX Session Manager not initialized for memory-based processing");
+                std::cerr << "[OnnxAdapter] Session manager not initialized" << std::endl;
+                return false;
+            }
+            
+            std::cerr << "[OnnxAdapter] Borrowing cached session for model: " << model_path << std::endl;
+            auto session_lease = session_manager_->borrowSession(model_path);
+            Ort::Session* session = session_lease.getSession();
+            
+            if (!session)
+            {
+                Poco::Logger::get("OnnxAdapter").error("Failed to borrow ONNX session for memory-based processing");
+                std::cerr << "[OnnxAdapter] Failed to borrow session" << std::endl;
+                return false;
+            }
+            
             Ort::AllocatorWithDefaultOptions allocator;
 
             // Prepare input tensor
-            auto in_name = session.GetInputNameAllocated(0, allocator);
+            auto in_name = session->GetInputNameAllocated(0, allocator);
             std::vector<int64_t> in_shape = {1, 3, (int64_t)input_size, (int64_t)input_size};
             Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 
             // Check the expected input type
-            auto input_type_info = session.GetInputTypeInfo(0);
+            auto input_type_info = session->GetInputTypeInfo(0);
             auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
             ONNXTensorElementDataType input_type = tensor_info.GetElementType();
 
@@ -231,11 +282,11 @@ namespace MediaDedup
             }
 
             // Run inference
-            auto out_name = session.GetOutputNameAllocated(0, allocator);
+            auto out_name = session->GetOutputNameAllocated(0, allocator);
             const char *in_names[] = {in_name.get()};
             const char *out_names[] = {out_name.get()};
-            std::cerr << "[OnnxAdapter] Running inference on memory data..." << std::endl;
-            auto results = session.Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
+            std::cerr << "[OnnxAdapter] Running inference on memory data with cached session..." << std::endl;
+            auto results = session->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
 
             if (results.empty() || !results[0].IsTensor())
             {

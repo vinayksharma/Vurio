@@ -118,6 +118,12 @@ media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
 media.image.quality.onnx.inputSize: 224
 media.image.quality.embeddingDim: 512
 
+# ONNX Session Caching (CRITICAL for memory optimization in QUALITY mode)
+# Reuses ONNX Runtime sessions instead of creating new ones for each image
+# Memory savings: 100-500MB per session × max sessions = 400MB-2GB total
+media.image.quality.onnx.sessionCache.enabled: true
+media.image.quality.onnx.sessionCache.maxSessions: 4  # Max cached sessions per model (typically 2-4 for thread pool)
+
 # Image Transcoding Configuration
 media.image.transcoding.enabled: true
 media.image.transcoding.timeoutMs: 60000
