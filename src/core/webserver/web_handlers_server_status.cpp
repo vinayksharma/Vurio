@@ -119,14 +119,14 @@ namespace MediaDedup
                 tpm_obj.set("effective_max_threads", static_cast<int>(tpm_status.effectiveMax));
                 tpm_obj.set("running_total", static_cast<int>(tpm_status.runningTotal));
 
-                Poco::JSON::Object per_type_obj;
+                Poco::JSON::Object::Ptr per_type_obj = new Poco::JSON::Object();
                 for (const auto &kv : tpm_status.perType)
                 {
-                    Poco::JSON::Object type_obj;
-                    type_obj.set("share", kv.second.share);
-                    type_obj.set("running", static_cast<int>(kv.second.running));
-                    type_obj.set("queued", static_cast<int>(kv.second.queued));
-                    per_type_obj.set(kv.first, type_obj);
+                    Poco::JSON::Object::Ptr type_obj = new Poco::JSON::Object();
+                    type_obj->set("share", kv.second.share);
+                    type_obj->set("running", static_cast<int>(kv.second.running));
+                    type_obj->set("queued", static_cast<int>(kv.second.queued));
+                    per_type_obj->set(kv.first, type_obj);
                 }
                 tpm_obj.set("per_type", per_type_obj);
 
