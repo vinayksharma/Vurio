@@ -71,7 +71,7 @@ tpm.types.fileScan.share: 1
 # Files Manager Configuration
 # -----------------------------------------------------------------------------
 files.manager.enabled: true
-files.manager.scan.intervalMs: 10000
+files.manager.scan.intervalMs: 900000 # 15 minutes
 
 # Files Service Configuration
 files.service.immediateJobTrigger.enabled: true
@@ -82,9 +82,16 @@ files.service.immediateJobTrigger.timeoutMs: 30000
 # -----------------------------------------------------------------------------
 media.processor.enabled: true
 media.processor.intervalMs: 30000
-media.processor.threadPool.share.image_processor: 1.0
-media.processor.threadPool.share.audio_processor: 1.0
-media.processor.threadPool.share.video_processor: 1.0
+# Unified media processor thread pool share
+media.processor.threadPool.share.media_processor: 1.0
+
+# DEPRECATED: Individual processor shares (kept for backward compatibility)
+# media.processor.threadPool.share.image_processor: 1.0
+# media.processor.threadPool.share.audio_processor: 1.0
+# media.processor.threadPool.share.video_processor: 1.0
+
+# Unified processing queue size limit to prevent memory buildup
+media.processor.maxQueueSize: 10000 # Maximum number of media processing tasks to queue
 
 # -----------------------------------------------------------------------------
 # Image Pipelines (SAFE TREO)
@@ -93,6 +100,7 @@ media.image.timeoutMs: 30000
 media.image.retry.enabled: true
 media.image.retry.maxAttempts: 2
 media.image.retry.baseDelayMs: 500
+# media.image.maxQueueSize: 5000 # DEPRECATED: Use media.processor.maxQueueSize instead
 
 media.image.fast.thumbSize: 256
 media.image.balanced.resizeLongEdge: 1024

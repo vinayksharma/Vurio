@@ -188,6 +188,99 @@ TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_InvalidValue_KeepsCurrentVa
     tpm.shutdownAndDrain(std::chrono::milliseconds(100));
 }
 
+TEST(ThreadPoolManagerTest, GetQueueDepth)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // Test queue depth for non-existent type
+    EXPECT_EQ(tpm.getQueueDepth("non_existent"), 0u);
+
+    // Submit some tasks to unified queue
+    std::atomic<bool> task1Completed{false};
+    std::atomic<bool> task2Completed{false};
+    std::atomic<bool> task3Completed{false};
+
+    tpm.submit("media_processor", [&task1Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(100)); task1Completed = true; });
+    tpm.submit("media_processor", [&task2Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(100)); task2Completed = true; });
+    tpm.submit("media_processor", [&task3Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(100)); task3Completed = true; });
+
+    // Check unified queue depth
+    size_t queue_depth = tpm.getQueueDepth("media_processor");
+    EXPECT_GE(queue_depth, 1u); // At least one task should be queued
+
+    // Wait for tasks to complete
+    TestUtils::waitForCondition([&task1Completed]()
+                                { return task1Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+    TestUtils::waitForCondition([&task2Completed]()
+                                { return task2Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+    TestUtils::waitForCondition([&task3Completed]()
+                                { return task3Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(200));
+}
+
+TEST(ThreadPoolManagerTest, GetAllQueueDepths)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // Initially should be empty
+    auto queue_depths = tpm.getAllQueueDepths();
+    EXPECT_TRUE(queue_depths.empty());
+
+    // Submit tasks to unified media processor queue
+    std::atomic<bool> task1Completed{false};
+    std::atomic<bool> task2Completed{false};
+    std::atomic<bool> task3Completed{false};
+
+    tpm.submit("media_processor", [&task1Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(200)); task1Completed = true; });
+    tpm.submit("media_processor", [&task2Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(200)); task2Completed = true; });
+    tpm.submit("media_processor", [&task3Completed]()
+               { std::this_thread::sleep_for(std::chrono::milliseconds(200)); task3Completed = true; });
+
+    // Give a moment for tasks to be queued
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    // Check all queue depths
+    queue_depths = tpm.getAllQueueDepths();
+    EXPECT_GE(queue_depths.size(), 1u); // Should have at least 1 type
+
+    // Check unified queue depth - should have at least one task queued
+    EXPECT_GE(queue_depths["media_processor"], 1u); // At least one task should be queued
+
+    // Wait for tasks to complete
+    TestUtils::waitForCondition([&task1Completed]()
+                                { return task1Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+    TestUtils::waitForCondition([&task2Completed]()
+                                { return task2Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+    TestUtils::waitForCondition([&task3Completed]()
+                                { return task3Completed.load(); },
+                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(200));
+}
+
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)
 {

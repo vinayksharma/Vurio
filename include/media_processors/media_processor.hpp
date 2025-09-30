@@ -126,6 +126,9 @@ namespace MediaDedup
         // File type mapping
         std::unordered_map<std::string, std::string> extension_to_config_key_;
 
+        // Unified processing queue size limit (observable configuration)
+        size_t max_processing_queue_size_;
+
         // Configuration change callback
         void onConfigChange(const ConfigChangeEvent &event);
 

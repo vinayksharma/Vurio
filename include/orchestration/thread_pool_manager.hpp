@@ -47,8 +47,22 @@ namespace MediaDedup
         void setShare(const std::string &type, double share);
 
         void submit(const std::string &type, std::function<void()> fn);
+        bool canSubmit(const std::string &type, size_t max_queue_size = 10000) const;
 
         Status getStatus() const;
+
+        /**
+         * @brief Get current queue depth for a specific task type
+         * @param type Task type (e.g., "image_processor", "video_processor", "audio_processor")
+         * @return Current number of queued tasks for the specified type
+         */
+        size_t getQueueDepth(const std::string &type) const;
+
+        /**
+         * @brief Get current queue depths for all task types
+         * @return Map of task type to current queue depth
+         */
+        std::unordered_map<std::string, size_t> getAllQueueDepths() const;
 
     private:
         class FunctionRunnable : public Poco::Runnable

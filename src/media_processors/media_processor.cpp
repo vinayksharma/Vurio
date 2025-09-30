@@ -40,15 +40,15 @@ namespace MediaDedup
                 onConfigChange(event);
             });
 
-        // Set up thread pool shares for media processing
-        double image_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.image_processor", 1.0);
-        thread_pool_manager_->setShare("image_processor", image_processor_share);
+        // Set up unified thread pool share for media processing
+        double media_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.media_processor", 1.0);
+        thread_pool_manager_->setShare("media_processor", media_processor_share);
 
-        double audio_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.audio_processor", 1.0);
-        thread_pool_manager_->setShare("audio_processor", audio_processor_share);
+        // Initialize unified queue size limit from configuration
+        // Read as int (like other integer config values) and convert to size_t
+        max_processing_queue_size_ = static_cast<size_t>(config_manager_->getPropertyValue<int>("media.processor.maxQueueSize", 10000));
 
-        double video_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.video_processor", 1.0);
-        thread_pool_manager_->setShare("video_processor", video_processor_share);
+        Poco::Logger::get("MediaProcessor").information("Initialized unified processing queue size limit: %u", static_cast<unsigned int>(max_processing_queue_size_));
 
         return true;
     }
@@ -114,13 +114,29 @@ namespace MediaDedup
             // Submit fire-and-forget lambda to thread pool
             if (thread_pool_manager_)
             {
+                // Check queue capacity before submitting to prevent memory buildup
+                if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
+                {
+                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping image file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    // Mark file as skipped in database to avoid reprocessing
+                    try
+                    {
+                        ScannedFilesOps::markProcessed(*database_manager_, file_path, server_mode, -2); // -2 = skipped due to backpressure
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Failed to mark file as skipped in database: %s", file_path);
+                    }
+                    return false; // Indicate that processing was skipped
+                }
+
                 // Capture by value for thread safety and to avoid dangling references
                 std::string file_path_copy = file_path;
                 ServerMode server_mode_copy = server_mode;
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
                 std::shared_ptr<UnifiedObservableConfigManager> config_manager = config_manager_;
 
-                thread_pool_manager_->submit("image_processor", [file_path_copy, server_mode_copy, db_manager, config_manager]()
+                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager]()
                                              {
                     try
                     {
@@ -199,12 +215,28 @@ namespace MediaDedup
             // Submit fire-and-forget lambda to thread pool
             if (thread_pool_manager_)
             {
+                // Check queue capacity before submitting to prevent memory buildup
+                if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
+                {
+                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping video file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    // Mark file as skipped in database to avoid reprocessing
+                    try
+                    {
+                        ScannedFilesOps::markProcessed(*database_manager_, file_path, server_mode, -2); // -2 = skipped due to backpressure
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Failed to mark file as skipped in database: %s", file_path);
+                    }
+                    return false; // Indicate that processing was skipped
+                }
+
                 // Capture by value for thread safety and to avoid dangling references
                 std::string file_path_copy = file_path;
                 ServerMode server_mode_copy = server_mode;
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
 
-                thread_pool_manager_->submit("video_processor", [file_path_copy, server_mode_copy, db_manager]()
+                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager]()
                                              {
                     try
                     {
@@ -283,12 +315,28 @@ namespace MediaDedup
             // Submit fire-and-forget lambda to thread pool
             if (thread_pool_manager_)
             {
+                // Check queue capacity before submitting to prevent memory buildup
+                if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
+                {
+                    Poco::Logger::get("MediaProcessor").warning("Media processor queue at capacity (%u), skipping audio file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
+                    // Mark file as skipped in database to avoid reprocessing
+                    try
+                    {
+                        ScannedFilesOps::markProcessed(*database_manager_, file_path, server_mode, -2); // -2 = skipped due to backpressure
+                    }
+                    catch (...)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Failed to mark file as skipped in database: %s", file_path);
+                    }
+                    return false; // Indicate that processing was skipped
+                }
+
                 // Capture by value for thread safety and to avoid dangling references
                 std::string file_path_copy = file_path;
                 ServerMode server_mode_copy = server_mode;
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
 
-                thread_pool_manager_->submit("audio_processor", [file_path_copy, server_mode_copy, db_manager]()
+                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager]()
                                              {
                     try
                     {
@@ -451,10 +499,56 @@ namespace MediaDedup
                     }
                     else
                     {
-                        // Mark unsupported files as failed (-1) immediately
-                        ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
-                        error_count++;
-                        Poco::Logger::get("MediaProcessor").warning("Failed to submit file for processing: " + file_row.file_path);
+                        // Check if file was already marked as skipped due to backpressure
+                        // (RouteToProcessorInternal already marked it with status -2)
+                        // Only mark as failed (-1) if it wasn't already processed
+                        try
+                        {
+                            auto existing = ScannedFilesOps::getByPath(*database_manager_, file_row.file_path);
+                            if (existing)
+                            {
+                                // Check the appropriate field based on current mode
+                                int current_status = 0;
+                                switch (current_mode)
+                                {
+                                case ServerMode::FAST:
+                                    current_status = existing->processed_fast;
+                                    break;
+                                case ServerMode::BALANCED:
+                                    current_status = existing->processed_balanced;
+                                    break;
+                                case ServerMode::QUALITY:
+                                    current_status = existing->processed_quality;
+                                    break;
+                                }
+
+                                if (current_status != -2) // Not already marked as skipped
+                                {
+                                    ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
+                                    error_count++;
+                                    Poco::Logger::get("MediaProcessor").warning("Failed to submit file for processing: " + file_row.file_path);
+                                }
+                                else
+                                {
+                                    // File was skipped due to backpressure, don't double-mark as error
+                                    Poco::Logger::get("MediaProcessor").debug("File skipped due to backpressure: " + file_row.file_path);
+                                }
+                            }
+                            else
+                            {
+                                // No existing record, mark as failed
+                                ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
+                                error_count++;
+                                Poco::Logger::get("MediaProcessor").warning("Failed to submit file for processing: " + file_row.file_path);
+                            }
+                        }
+                        catch (...)
+                        {
+                            // Fallback: mark as failed if we can't check status
+                            ScannedFilesOps::markProcessed(*database_manager_, file_row.file_path, current_mode, -1);
+                            error_count++;
+                            Poco::Logger::get("MediaProcessor").warning("Failed to submit file for processing (fallback): " + file_row.file_path);
+                        }
                     }
                 }
                 catch (const std::exception &e)
@@ -477,35 +571,23 @@ namespace MediaDedup
 
     void MediaProcessor::onConfigChange(const ConfigChangeEvent &event)
     {
-        // React to thread pool configuration changes
-        if (event.key == "media.processor.threadPool.share.image_processor")
+        // React to unified thread pool configuration changes
+        if (event.key == "media.processor.threadPool.share.media_processor")
         {
             if (thread_pool_manager_)
             {
                 double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
-                thread_pool_manager_->setShare("image_processor", new_share);
-                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for image_processor: " + std::to_string(new_share));
+                thread_pool_manager_->setShare("media_processor", new_share);
+                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for media_processor: " + std::to_string(new_share));
             }
             return;
         }
-        else if (event.key == "media.processor.threadPool.share.audio_processor")
+
+        // React to unified queue size configuration changes
+        if (event.key == "media.processor.maxQueueSize")
         {
-            if (thread_pool_manager_)
-            {
-                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
-                thread_pool_manager_->setShare("audio_processor", new_share);
-                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for audio_processor: " + std::to_string(new_share));
-            }
-            return;
-        }
-        else if (event.key == "media.processor.threadPool.share.video_processor")
-        {
-            if (thread_pool_manager_)
-            {
-                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
-                thread_pool_manager_->setShare("video_processor", new_share);
-                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for video_processor: " + std::to_string(new_share));
-            }
+            max_processing_queue_size_ = static_cast<size_t>(config_manager_->getPropertyValue<int>(event.key, 10000));
+            Poco::Logger::get("MediaProcessor").information("Updated unified processing queue size limit: %u", static_cast<unsigned int>(max_processing_queue_size_));
             return;
         }
 

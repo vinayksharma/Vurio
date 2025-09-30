@@ -193,7 +193,12 @@ namespace MediaDedup
             // Initialize MediaProcessor first (needed by FilesManager)
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
             media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_);
-            media_processor_->initialize();
+            if (!media_processor_->initialize())
+            {
+                logger.error("Failed to initialize MediaProcessor");
+                return false;
+            }
+            logger.information("MediaProcessor initialized successfully");
 
             // Initialize FilesManager with MediaProcessor
             files_service_ = std::make_shared<FilesService>(*db_shared, config_manager_);

@@ -139,10 +139,24 @@ namespace MediaDedup
                     type_obj->set("share", static_cast<double>(kv.second.share));
                     type_obj->set("running", static_cast<int>(kv.second.running));
                     type_obj->set("queued", static_cast<int>(kv.second.queued));
+
+                    // Add current queue depth for this type
+                    size_t queue_depth = tpm_->getQueueDepth(kv.first);
+                    type_obj->set("queue_depth", static_cast<int>(queue_depth));
+
                     per_type_obj->set(kv.first, type_obj);
                     Poco::Logger::get("ServerStatusHandler").debug("Thread pool type %s processed successfully", kv.first);
                 }
                 tpm_obj.set("per_type", per_type_obj);
+
+                // Add overall queue depth summary
+                auto all_queue_depths = tpm_->getAllQueueDepths();
+                Poco::JSON::Object::Ptr queue_depths_obj = new Poco::JSON::Object();
+                for (const auto &kv : all_queue_depths)
+                {
+                    queue_depths_obj->set(kv.first, static_cast<int>(kv.second));
+                }
+                tpm_obj.set("queue_depths", queue_depths_obj);
                 Poco::Logger::get("ServerStatusHandler").debug("Thread pool per_type set successfully");
 
                 status_obj.set("thread_pool", tpm_obj);

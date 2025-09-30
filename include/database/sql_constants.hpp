@@ -172,13 +172,13 @@ namespace MediaDedup
 
         inline constexpr std::string_view kListUnprocessedFast =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"
-            " FROM scanned_files WHERE processed_fast=0";
+            " FROM scanned_files WHERE processed_fast=0 OR processed_fast=-2";
         inline constexpr std::string_view kListUnprocessedBalanced =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"
-            " FROM scanned_files WHERE processed_balanced=0";
+            " FROM scanned_files WHERE processed_balanced=0 OR processed_balanced=-2";
         inline constexpr std::string_view kListUnprocessedQuality =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"
-            " FROM scanned_files WHERE processed_quality=0";
+            " FROM scanned_files WHERE processed_quality=0 OR processed_quality=-2";
 
     } // namespace SQL
 } // namespace MediaDedup

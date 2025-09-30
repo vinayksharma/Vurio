@@ -3,6 +3,8 @@
 #include <Poco/Exception.h>
 #include <Poco/Logger.h>
 #include <cmath>
+#include <thread>
+#include <sstream>
 
 namespace MediaDedup
 {
@@ -148,8 +150,25 @@ namespace MediaDedup
         }
 
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.debug("Submitted task for type '%s', queue size: %u", type, static_cast<unsigned int>(type_to_queue_[type].size()));
+        std::stringstream thread_id;
+        thread_id << std::this_thread::get_id();
+        logger.debug("Submitted task for type '%s', queue size: %u, calling thread: %s",
+                     type, static_cast<unsigned int>(type_to_queue_[type].size()), thread_id.str());
         schedule();
+    }
+
+    bool ThreadPoolManager::canSubmit(const std::string &type, size_t max_queue_size) const
+    {
+        if (!accepting_.load())
+        {
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = type_to_queue_.find(type);
+        size_t current_queue_size = (it != type_to_queue_.end()) ? it->second.size() : 0;
+
+        return current_queue_size < max_queue_size;
     }
 
     ThreadPoolManager::Status ThreadPoolManager::getStatus() const
@@ -233,7 +252,10 @@ namespace MediaDedup
         if (running_total_ >= effective_max_)
         {
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-            logger.debug("Skipping schedule - at capacity (%u/%u threads)", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_));
+            std::stringstream thread_id;
+            thread_id << std::this_thread::get_id();
+            logger.debug("Skipping schedule - at capacity (%u/%u threads), calling thread: %s",
+                         static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_), thread_id.str());
             return;
         }
 
@@ -459,4 +481,24 @@ namespace MediaDedup
             schedule();
         }
     }
+}
+
+size_t MediaDedup::ThreadPoolManager::getQueueDepth(const std::string &type) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = type_to_queue_.find(type);
+    return (it != type_to_queue_.end()) ? it->second.size() : 0;
+}
+
+std::unordered_map<std::string, size_t> MediaDedup::ThreadPoolManager::getAllQueueDepths() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::unordered_map<std::string, size_t> queue_depths;
+
+    for (const auto &pair : type_to_queue_)
+    {
+        queue_depths[pair.first] = pair.second.size();
+    }
+
+    return queue_depths;
 }
