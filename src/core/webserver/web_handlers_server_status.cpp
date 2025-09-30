@@ -123,7 +123,7 @@ namespace MediaDedup
                 for (const auto &kv : tpm_status.perType)
                 {
                     Poco::JSON::Object::Ptr type_obj = new Poco::JSON::Object();
-                    type_obj->set("share", kv.second.share);
+                    type_obj->set("share", static_cast<double>(kv.second.share));
                     type_obj->set("running", static_cast<int>(kv.second.running));
                     type_obj->set("queued", static_cast<int>(kv.second.queued));
                     per_type_obj->set(kv.first, type_obj);
