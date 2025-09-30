@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <chrono>
+#include <thread>
+#include <sstream>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -218,10 +222,14 @@ namespace MediaDedup::Orchestration
     {
         std::unique_lock<std::mutex> lk(runMutex_, std::try_to_lock);
         if (!lk.owns_lock() || running_)
+        {
+            Poco::Logger &logger = Poco::Logger::get("FilesManager");
+            logger.information("Scan request rejected: scan already in progress or mutex locked");
             return;
+        }
         running_ = true;
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
-        logger.information("FilesManager run started");
+        logger.information("FilesManager scan started");
 
         try
         {
@@ -277,11 +285,11 @@ namespace MediaDedup::Orchestration
                 }
             }
 
-            logger.information("FilesManager run completed");
+            logger.information("FilesManager scan completed");
         }
         catch (const std::exception &e)
         {
-            logger.error(std::string("FilesManager run failed: ") + e.what());
+            logger.error("FilesManager scan failed: %s", e.what());
         }
 
         running_ = false;

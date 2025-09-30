@@ -29,6 +29,11 @@ namespace MediaDedup
             void runOnce();
             void triggerScanNow();
 
+            // Scan status information
+            bool isScanInProgress() const;
+            std::string getCurrentScanThreadId() const;
+            std::chrono::milliseconds getScanDuration() const;
+
         private:
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<DatabaseManager> db_;
