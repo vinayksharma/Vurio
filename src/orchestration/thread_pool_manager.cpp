@@ -427,13 +427,28 @@ namespace MediaDedup
                 newMax = defaultPoolMaxFromPoco();
             }
 
-            // Update effective_max_ and recreate thread pool for immediate effect
+            // Gradual decrease: increase capacity immediately; if decreased, just update effective_max_ and avoid starting new ones until under target
             {
                 std::lock_guard<std::mutex> lock(mutex_);
+                int cur = pool_->capacity();
                 effective_max_ = newMax;
-                Poco::Logger::get("ThreadPoolManager").information("Thread pool max changed to: %u, recreating thread pool", static_cast<unsigned int>(newMax));
-                recreateThreadPool();
+                
+                Poco::Logger::get("ThreadPoolManager").information("Thread pool max changed from %d to %u (current capacity: %d)", cur, static_cast<unsigned int>(newMax), cur);
+                
+                if (static_cast<size_t>(cur) < effective_max_)
+                {
+                    int add_capacity = static_cast<int>(effective_max_ - static_cast<size_t>(cur));
+                    Poco::Logger::get("ThreadPoolManager").information("Increasing thread pool capacity by %d threads", add_capacity);
+                    pool_->addCapacity(add_capacity);
+                }
+                else
+                {
+                    Poco::Logger::get("ThreadPoolManager").information("Keeping current capacity %d (gradual decrease to %u)", cur, static_cast<unsigned int>(effective_max_));
+                }
+                // If current capacity is higher than effective_max_, we keep the pool capacity as-is
+                // and rely on the scheduler to enforce the new lower cap (gradual decrease).
             }
+            schedule();
         }
         else if (event.key == "tpm.killTimeoutMs")
         {
