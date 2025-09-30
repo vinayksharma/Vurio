@@ -22,7 +22,7 @@ namespace MediaDedup
             Poco::Logger::get("OnnxAdapter").information("ONNX Session Manager initialized");
         }
 #else
-        (void)config;  // Suppress unused parameter warning
+        (void)config; // Suppress unused parameter warning
 #endif
     }
 
@@ -89,18 +89,18 @@ namespace MediaDedup
                 std::cerr << "[OnnxAdapter] Session manager not initialized" << std::endl;
                 return false;
             }
-            
+
             std::cerr << "[OnnxAdapter] Borrowing cached session for model: " << model_path << std::endl;
             auto session_lease = session_manager_->borrowSession(model_path);
-            Ort::Session* session = session_lease.getSession();
-            
+            Ort::Session *session = session_lease.getSession();
+
             if (!session)
             {
                 Poco::Logger::get("OnnxAdapter").error("Failed to borrow ONNX session");
                 std::cerr << "[OnnxAdapter] Failed to borrow session" << std::endl;
                 return false;
             }
-            
+
             Ort::AllocatorWithDefaultOptions allocator;
 
             auto in_name = session->GetInputNameAllocated(0, allocator);
@@ -239,18 +239,18 @@ namespace MediaDedup
                 std::cerr << "[OnnxAdapter] Session manager not initialized" << std::endl;
                 return false;
             }
-            
+
             std::cerr << "[OnnxAdapter] Borrowing cached session for model: " << model_path << std::endl;
             auto session_lease = session_manager_->borrowSession(model_path);
-            Ort::Session* session = session_lease.getSession();
-            
+            Ort::Session *session = session_lease.getSession();
+
             if (!session)
             {
                 Poco::Logger::get("OnnxAdapter").error("Failed to borrow ONNX session for memory-based processing");
                 std::cerr << "[OnnxAdapter] Failed to borrow session" << std::endl;
                 return false;
             }
-            
+
             Ort::AllocatorWithDefaultOptions allocator;
 
             // Prepare input tensor

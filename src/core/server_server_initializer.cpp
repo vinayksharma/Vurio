@@ -194,7 +194,7 @@ namespace MediaDedup
             // Initialize ONNX Session Manager (for QUALITY mode memory optimization)
             // Must be initialized before MediaProcessor for session reuse
             OnnxAdapter::initializeSessionManager(config_manager_);
-            
+
             // Initialize MediaProcessor first (needed by FilesManager)
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
             media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_);
