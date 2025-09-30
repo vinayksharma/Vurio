@@ -24,6 +24,10 @@ database.path: data/dedup_server.db
 database.session.acquireTimeoutMs: 3000
 database.session.acquireBackoffMs: 50
 
+# SQLite Memory Optimization
+database.sqlite.cacheSize: 1000  # Reduce cache from 2000 to 1000 pages (8MB → 4MB)
+database.sqlite.tempStore: memory  # Keep temp tables in memory (faster but uses more RAM)
+
 # -----------------------------------------------------------------------------
 # Logging Configuration
 # -----------------------------------------------------------------------------
@@ -68,7 +72,7 @@ files.manager.useInMemoryIndex: false  # false = database queries (lower memory)
 # -----------------------------------------------------------------------------
 # Thread Pool Manager (TPM) Configuration
 # -----------------------------------------------------------------------------
-tpm.pool.max: auto
+tpm.pool.max: 5  # Reduced from auto (15) to 5 threads for memory optimization
 tpm.killTimeoutMs: 10000
 tpm.thread.idleTimeoutSeconds: 120
 
@@ -108,7 +112,7 @@ media.processor.intervalMs: 30000
 media.processor.threadPool.share.media_processor: 1.0
 
 # Unified processing queue size limit to prevent memory buildup
-media.processor.maxQueueSize: 100 # Maximum number of media processing tasks to queue
+media.processor.maxQueueSize: 10 # Maximum number of media processing tasks to queue (reduced for memory)
 
 # -----------------------------------------------------------------------------
 # Image Pipelines (SAFE TREO)
