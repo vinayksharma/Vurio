@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <filesystem>
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
 #include "config/unified_observable_config.hpp"
@@ -36,9 +37,25 @@ protected:
 
         // Create test database
         db_path_ = "../tests/test_data/databases/test_media_processor.sqlite";
-        std::remove(db_path_.c_str());
+
+        // Ensure the directory exists
+        std::filesystem::path db_dir = std::filesystem::path(db_path_).parent_path();
+        if (!std::filesystem::exists(db_dir))
+        {
+            std::filesystem::create_directories(db_dir);
+        }
+
+        // Remove existing database file if it exists
+        if (std::filesystem::exists(db_path_))
+        {
+            std::filesystem::remove(db_path_);
+        }
+
         database_manager_ = std::make_shared<DatabaseManager>(db_path_);
         ASSERT_TRUE(database_manager_->initialize());
+
+        // Ensure required database tables exist
+        ASSERT_TRUE(ScannedFilesOps::ensureTable(*database_manager_));
 
         // Create thread pool manager
         thread_pool_manager_ = std::make_shared<ThreadPoolManager>(config_manager_);
@@ -47,6 +64,17 @@ protected:
         // Create media processor
         media_processor_ = std::make_unique<MediaProcessor>(config_manager_, database_manager_, thread_pool_manager_);
         ASSERT_TRUE(media_processor_->initialize());
+
+        // Ensure test files exist
+        std::filesystem::create_directories("/tmp/test_media_processor_files");
+        if (!std::filesystem::exists("/tmp/test_media_processor_files/image1.jpg"))
+        {
+            std::filesystem::copy_file("../tests/test_data/pictures/testset/test.jpg", "/tmp/test_media_processor_files/image1.jpg");
+        }
+        if (!std::filesystem::exists("/tmp/test_media_processor_files/image2.png"))
+        {
+            std::filesystem::copy_file("../tests/test_data/pictures/testset/test.jpg", "/tmp/test_media_processor_files/image2.png");
+        }
     }
 
     void TearDown() override
@@ -371,7 +399,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
 
     // Add some test files to the database
     ScannedFileRow test_file1;
-    test_file1.file_path = "/path/to/test/image1.jpg";
+    test_file1.file_path = "/tmp/test_media_processor_files/image1.jpg";
     test_file1.file_name = "image1.jpg";
     test_file1.processed_fast = 0; // Unprocessed
     test_file1.processed_balanced = 0;
@@ -379,7 +407,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file1));
 
     ScannedFileRow test_file2;
-    test_file2.file_path = "/path/to/test/image2.png";
+    test_file2.file_path = "/tmp/test_media_processor_files/image2.png";
     test_file2.file_name = "image2.png";
     test_file2.processed_fast = 0; // Unprocessed
     test_file2.processed_balanced = 0;
@@ -389,8 +417,8 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     // ProcessMedia should submit files for processing (fire-and-forget)
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Wait a bit for processing to complete (since it's now asynchronous)
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait longer for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Verify files were marked as completed (2) for FAST mode
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
@@ -409,14 +437,14 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
 
     // Add unprocessed file
     ScannedFileRow unprocessed_file;
-    unprocessed_file.file_path = "/path/to/test/unprocessed.jpg";
-    unprocessed_file.file_name = "unprocessed.jpg";
+    unprocessed_file.file_path = "/tmp/test_media_processor_files/image1.jpg";
+    unprocessed_file.file_name = "image1.jpg";
     unprocessed_file.processed_fast = 0; // Unprocessed
     unprocessed_file.processed_balanced = 0;
     unprocessed_file.processed_quality = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unprocessed_file));
 
-    // Add already picked up for processing file
+    // Add already picked up for processing file (using a non-existent file since it won't be processed)
     ScannedFileRow processed_file;
     processed_file.file_path = "/path/to/test/processed.jpg";
     processed_file.file_name = "processed.jpg";
@@ -428,8 +456,8 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     // ProcessMedia should only process the unprocessed file
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Wait a bit for processing to complete (since it's now asynchronous)
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait longer for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Verify only unprocessed file was completed
     auto unprocessed_result = ScannedFilesOps::getByPath(*database_manager_, unprocessed_file.file_path);
@@ -458,8 +486,8 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     // ProcessMedia should submit files for processing (fire-and-forget)
     EXPECT_NO_THROW(media_processor_->ProcessMedia());
 
-    // Wait a bit for processing to complete (since it's now asynchronous)
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait longer for processing to complete (since it's now asynchronous)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Verify file was marked as error
     auto result = ScannedFilesOps::getByPath(*database_manager_, unsupported_file.file_path);

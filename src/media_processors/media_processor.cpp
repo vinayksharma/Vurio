@@ -10,6 +10,7 @@
 #include <Poco/LogStream.h>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace MediaDedup
 {
@@ -142,10 +143,25 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
+                        // Check if file exists and is accessible (file access error detection)
+                        if (!std::filesystem::exists(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
+                        if (!std::filesystem::is_regular_file(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
                         ImageProcessor image_processor;
                         bool processing_success = false;
 
-                        // Process based on server mode
+                        // Process based on server mode (media loading happens here on-demand)
                         switch (server_mode_copy)
                         {
                         case ServerMode::FAST:
@@ -170,35 +186,46 @@ namespace MediaDedup
                         }
                         else
                         {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                             Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::bad_alloc& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
+                    }
+                    catch (const std::filesystem::filesystem_error& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                    }
+                    catch (const std::runtime_error& e)
+                    {
+                        std::string error_msg = e.what();
+                        // Check for network-related error messages
+                        if (error_msg.find("network") != std::string::npos || 
+                            error_msg.find("connection") != std::string::npos ||
+                            error_msg.find("timeout") != std::string::npos)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
+                        }
+                        else
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in image processing thread for file " + file_path_copy + ": " + e.what());
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in image processing thread for file: " + file_path_copy);
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } });
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
@@ -242,10 +269,25 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
+                        // Check if file exists and is accessible (file access error detection)
+                        if (!std::filesystem::exists(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
+                        if (!std::filesystem::is_regular_file(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
                         VideoProcessor video_processor;
                         bool processing_success = false;
 
-                        // Process based on server mode
+                        // Process based on server mode (media loading happens here on-demand)
                         switch (server_mode_copy)
                         {
                         case ServerMode::FAST:
@@ -270,35 +312,46 @@ namespace MediaDedup
                         }
                         else
                         {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                             Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::bad_alloc& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
+                    }
+                    catch (const std::filesystem::filesystem_error& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                    }
+                    catch (const std::runtime_error& e)
+                    {
+                        std::string error_msg = e.what();
+                        // Check for network-related error messages
+                        if (error_msg.find("network") != std::string::npos || 
+                            error_msg.find("connection") != std::string::npos ||
+                            error_msg.find("timeout") != std::string::npos)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
+                        }
+                        else
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in video processing thread for file " + file_path_copy + ": " + e.what());
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in video processing thread for file: " + file_path_copy);
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } });
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
@@ -342,10 +395,25 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
+                        // Check if file exists and is accessible (file access error detection)
+                        if (!std::filesystem::exists(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
+                        if (!std::filesystem::is_regular_file(file_path_copy))
+                        {
+                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            return;
+                        }
+
                         AudioProcessor audio_processor;
                         bool processing_success = false;
 
-                        // Process based on server mode
+                        // Process based on server mode (media loading happens here on-demand)
                         switch (server_mode_copy)
                         {
                         case ServerMode::FAST:
@@ -370,35 +438,46 @@ namespace MediaDedup
                         }
                         else
                         {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                             Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                        }
+                    }
+                    catch (const std::bad_alloc& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
+                    }
+                    catch (const std::filesystem::filesystem_error& e)
+                    {
+                        Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                    }
+                    catch (const std::runtime_error& e)
+                    {
+                        std::string error_msg = e.what();
+                        // Check for network-related error messages
+                        if (error_msg.find("network") != std::string::npos || 
+                            error_msg.find("connection") != std::string::npos ||
+                            error_msg.find("timeout") != std::string::npos)
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
+                        }
+                        else
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in audio processing thread for file " + file_path_copy + ": " + e.what());
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in audio processing thread for file: " + file_path_copy);
-                        // Mark as error in database
-                        try
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                        }
-                        catch (...)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to mark file as error in database: " + file_path_copy);
-                        }
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } });
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
