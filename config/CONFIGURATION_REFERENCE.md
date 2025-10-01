@@ -20,6 +20,8 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `database.path`                                    | string  | File path; parent dirs will be auto-created                 | `data/dedup_server.db`       | New path is honored on next DB (re)initialization     | SQLite database file path                             |
 | `database.session.acquireTimeoutMs`                | integer | > 0                                                         | `3000`                       | Applied live (DB session acquire timeout)             | Max wait to acquire a DB session (ms)                 |
 | `database.session.acquireBackoffMs`                | integer | > 0                                                         | `50`                         | Applied live (retry backoff while waiting)            | Sleep between retries while acquiring a session (ms)  |
+| `cache.disk.location`                              | string  | File path (relative to working directory root)              | `/cache`                     | Applied live (relocates cache, recalculates size)     | Disk cache directory location                         |
+| `cache.disk.size_limit_mb`                         | integer | > 0                                                         | `1024`                       | Applied live (enforces new limit, evicts old files)   | Maximum cache size in megabytes                       |
 | `logging.level`                                    | string  | Case-insensitive: `trace`, `debug`, `info`, `warn`, `error` | `info`                       | Applied live                                          | Global logging level                                  |
 | `files.manager.enabled`                            | boolean | `true` \| `false`                                           | `true`                       | Applied live                                          | Enable FilesManager scanning                          |
 | `files.manager.scan.intervalMs`                    | integer | > 0                                                         | `500`                        | Applied live                                          | Interval between file scan cycles (ms)                |
@@ -90,6 +92,10 @@ server.timeout: 30.0
 database.path: data/dedup_server.db
 database.session.acquireTimeoutMs: 3000
 database.session.acquireBackoffMs: 50
+
+# Cache configuration
+cache.disk.location: /cache
+cache.disk.size_limit_mb: 1024
 
 # Logging configuration
 logging.level: info # trace | debug | info | warn | error (case-insensitive)

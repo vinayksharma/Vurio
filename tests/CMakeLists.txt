@@ -44,6 +44,7 @@ set(UNIT_TEST_SOURCES
     unit/test_image_artifacts_ops.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
+    unit/test_disk_cache.cpp
     unit/test_scheduler_service.cpp
     unit/test_files_manager_scheduler.cpp
     unit/test_files_service_immediate_scan.cpp
@@ -128,6 +129,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_scheduled_jobs_independence")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ScheduledJobsIndependenceTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_disk_cache")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DiskCacheTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -297,6 +305,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
@@ -381,7 +390,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
        NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
-       NOT ${test_name} STREQUAL "test_onnx_session_manager")
+       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
+       NOT ${test_name} STREQUAL "test_disk_cache")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()

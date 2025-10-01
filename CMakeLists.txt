@@ -223,6 +223,7 @@ add_executable(media_dedup_server
     src/orchestration/files_manager.cpp
     src/filesmanager/file_scanner.cpp
     src/filesmanager/files_service.cpp
+    src/filesmanager/disk_cache.cpp
     include/database/user_settings_service.hpp
     src/core/server_console_input_manager.cpp
     src/database/database_manager.cpp
