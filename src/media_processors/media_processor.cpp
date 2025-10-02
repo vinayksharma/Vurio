@@ -2,6 +2,7 @@
 #include "media_processors/image_processor.hpp"
 #include "media_processors/audio_processor.hpp"
 #include "media_processors/video_processor.hpp"
+#include "filesmanager/disk_cache.hpp"
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
@@ -20,6 +21,8 @@ namespace MediaDedup
         : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager)
     {
         // Extension mapping will be initialized lazily when first needed
+        // Initialize disk cache
+        disk_cache_ = std::make_shared<DiskCache>(config_manager);
     }
 
     MediaProcessor::~MediaProcessor()
@@ -51,11 +54,26 @@ namespace MediaDedup
 
         Poco::Logger::get("MediaProcessor").information("Initialized unified processing queue size limit: %u", static_cast<unsigned int>(max_processing_queue_size_));
 
+        // Initialize disk cache
+        if (!disk_cache_->initialize())
+        {
+            Poco::Logger::get("MediaProcessor").error("Failed to initialize disk cache");
+            return false;
+        }
+
+        Poco::Logger::get("MediaProcessor").information("MediaProcessor initialized with disk cache support");
+
         return true;
     }
 
     void MediaProcessor::shutdown()
     {
+        // Shutdown disk cache
+        if (disk_cache_)
+        {
+            disk_cache_->shutdown();
+        }
+
         // Unsubscribe from configuration changes
         if (config_manager_)
         {
@@ -136,59 +154,71 @@ namespace MediaDedup
                 ServerMode server_mode_copy = server_mode;
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
                 std::shared_ptr<UnifiedObservableConfigManager> config_manager = config_manager_;
+                std::shared_ptr<DiskCache> disk_cache = disk_cache_;
 
-                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager]()
+                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager, disk_cache]()
                                              {
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
-                        // Check if file exists and is accessible (file access error detection)
-                        if (!std::filesystem::exists(file_path_copy))
+                        // Copy file to cache
+                        std::string cached_path;
+                        if (!disk_cache->copyToCache(file_path_copy, cached_path))
                         {
-                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
+                            Poco::Logger::get("MediaProcessor").error("Failed to copy file to cache: " + file_path_copy);
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -6); // Cache operation error
                             return;
                         }
 
-                        if (!std::filesystem::is_regular_file(file_path_copy))
+                        // Mark file as in use
+                        disk_cache->markFileInUse(cached_path);
+
+                        try
                         {
-                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
-                            return;
+                            ImageProcessor image_processor;
+                            bool processing_success = false;
+
+                            // Process based on server mode using cached file
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                processing_success = image_processor.ProcessFast(cached_path, *db_manager, config_manager);
+                                break;
+                            case ServerMode::BALANCED:
+                                processing_success = image_processor.ProcessBalanced(cached_path, *db_manager, config_manager);
+                                break;
+                            case ServerMode::QUALITY:
+                                processing_success = image_processor.ProcessQuality(cached_path, *db_manager, config_manager);
+                                break;
+                            default:
+                                processing_success = image_processor.ProcessFast(cached_path, *db_manager, config_manager);
+                                break;
+                            }
+
+                            // Update database status within the lambda using connection pool
+                            if (processing_success)
+                            {
+                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
+                                Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
+                            }
+                            else
+                            {
+                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
+                                Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
+                            }
+                        }
+                        catch (...)
+                        {
+                            // Mark file as not in use and clean up before re-throwing
+                            disk_cache->markFileNotInUse(cached_path);
+                            disk_cache->deleteFromCacheImmediately(cached_path);
+                            throw;
                         }
 
-                        ImageProcessor image_processor;
-                        bool processing_success = false;
-
-                        // Process based on server mode (media loading happens here on-demand)
-                        switch (server_mode_copy)
-                        {
-                        case ServerMode::FAST:
-                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager, config_manager);
-                            break;
-                        case ServerMode::BALANCED:
-                            processing_success = image_processor.ProcessBalanced(file_path_copy, *db_manager, config_manager);
-                            break;
-                        case ServerMode::QUALITY:
-                            processing_success = image_processor.ProcessQuality(file_path_copy, *db_manager, config_manager);
-                            break;
-                        default:
-                            processing_success = image_processor.ProcessFast(file_path_copy, *db_manager, config_manager);
-                            break;
-                        }
-
-                        // Update database status within the lambda using connection pool
-                        if (processing_success)
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
-                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
-                        }
-                        else
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
-                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
-                        }
+                        // Mark file as not in use and clean up
+                        disk_cache->markFileNotInUse(cached_path);
+                        disk_cache->deleteFromCacheImmediately(cached_path);
                     }
                     catch (const std::bad_alloc& e)
                     {

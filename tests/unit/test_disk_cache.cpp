@@ -95,7 +95,7 @@ TEST_F(DiskCacheTest, InitializeCreatesDirectory)
     EXPECT_TRUE(std::filesystem::is_directory(cache_path));
 }
 
-TEST_F(DiskCacheTest, InitializeCalculatesExistingSize)
+TEST_F(DiskCacheTest, InitializeClearsExistingCache)
 {
     // Create some files in cache directory first
     std::filesystem::path cache_path = std::filesystem::current_path() / test_cache_location_;
@@ -106,7 +106,8 @@ TEST_F(DiskCacheTest, InitializeCalculatesExistingSize)
 
     ASSERT_TRUE(disk_cache_->initialize());
 
-    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 1); // Should be ~1 MB
+    // Cache should be cleared on initialization, so size should be 0
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0);
 }
 
 TEST_F(DiskCacheTest, CopyToCache_Success)
@@ -133,7 +134,7 @@ TEST_F(DiskCacheTest, CopyToCache_NonExistentFile)
     EXPECT_FALSE(disk_cache_->copyToCache("/nonexistent/file.txt", cached_path));
 }
 
-TEST_F(DiskCacheTest, CopyToCache_GeneratesUniqueName)
+TEST_F(DiskCacheTest, CopyToCache_OverwritesSameName)
 {
     ASSERT_TRUE(disk_cache_->initialize());
 
@@ -151,8 +152,8 @@ TEST_F(DiskCacheTest, CopyToCache_GeneratesUniqueName)
     EXPECT_TRUE(disk_cache_->copyToCache(test_file1.string(), cached_path1));
     EXPECT_TRUE(disk_cache_->copyToCache(test_file2.string(), cached_path2));
 
-    // Paths should be different (different hashes)
-    EXPECT_NE(cached_path1, cached_path2);
+    // Paths should be the same since we removed hash naming and files overwrite
+    EXPECT_EQ(cached_path1, cached_path2);
 }
 
 TEST_F(DiskCacheTest, SaveStreamToCache_Success)
@@ -424,7 +425,7 @@ TEST_F(DiskCacheTest, InitializeWithDefaultValues_Works)
     EXPECT_TRUE(std::filesystem::exists(cached_path));
 }
 
-TEST_F(DiskCacheTest, PersistenceAcrossRestarts)
+TEST_F(DiskCacheTest, CacheClearedOnRestart)
 {
     ASSERT_TRUE(disk_cache_->initialize());
 
@@ -442,8 +443,8 @@ TEST_F(DiskCacheTest, PersistenceAcrossRestarts)
     disk_cache_ = std::make_unique<DiskCache>(config_manager_);
     ASSERT_TRUE(disk_cache_->initialize());
 
-    // Cache should have recalculated size from existing files
+    // Cache should be cleared on restart, so size should be 0
     size_t size_after = disk_cache_->getCurrentSizeMB();
-    EXPECT_EQ(size_before, size_after);
-    EXPECT_TRUE(std::filesystem::exists(cached_path));
+    EXPECT_EQ(size_after, 0);
+    EXPECT_FALSE(std::filesystem::exists(cached_path));
 }

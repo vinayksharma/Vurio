@@ -15,6 +15,7 @@ namespace MediaDedup
     // Forward declarations
     class DatabaseManager;
     class ThreadPoolManager;
+    class DiskCache;
     struct ScannedFileRow;
     /**
      * @brief Media processor router that determines processing strategy based on file type and server mode
@@ -119,6 +120,9 @@ namespace MediaDedup
 
         // Thread pool management
         std::shared_ptr<ThreadPoolManager> thread_pool_manager_;
+
+        // Disk cache management
+        std::shared_ptr<DiskCache> disk_cache_;
 
         // Thread safety
         mutable std::mutex route_mutex_;

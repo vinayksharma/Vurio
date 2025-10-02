@@ -97,6 +97,14 @@ protected:
 
     void setupTestConfiguration()
     {
+        // Create cache properties first
+        config_manager_->createProperty("cache.disk.location", std::string("/cache"), "Disk cache location");
+        config_manager_->createProperty("cache.disk.size_limit_mb", 1024, "Disk cache size limit in MB");
+
+        // Set cache properties to test-friendly values
+        config_manager_->setPropertyValue<std::string>("cache.disk.location", "test_cache_media_processor");
+        config_manager_->setPropertyValue<int>("cache.disk.size_limit_mb", 10); // 10 MB for testing
+
         // Enable common image formats for testing
         config_manager_->setPropertyValue<bool>("media.images.jpg", true);
         config_manager_->setPropertyValue<bool>("media.images.png", true);

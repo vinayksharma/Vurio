@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector>
 #include <istream>
+#include <set>
 #include "config/unified_observable_config.hpp"
 
 namespace MediaDedup
@@ -56,6 +57,25 @@ namespace MediaDedup
          * @return true if copy successful, false otherwise
          */
         bool copyToCache(const std::string &source_path, std::string &cached_path);
+
+        /**
+         * @brief Mark a file as in use (prevents deletion)
+         * @param cached_path Path to the cached file
+         */
+        void markFileInUse(const std::string &cached_path);
+
+        /**
+         * @brief Mark a file as no longer in use (allows deletion)
+         * @param cached_path Path to the cached file
+         */
+        void markFileNotInUse(const std::string &cached_path);
+
+        /**
+         * @brief Delete a file from cache immediately after processing
+         * @param cached_path Path to the cached file to delete
+         * @return true if deletion successful, false otherwise
+         */
+        bool deleteFromCacheImmediately(const std::string &cached_path);
 
         /**
          * @brief Save a stream to a file in the cache
@@ -123,9 +143,9 @@ namespace MediaDedup
         std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> getFilesByAge();
 
         /**
-         * @brief Generate a unique cache filename using original name and hash
+         * @brief Generate cache filename using original filename (no hash)
          * @param original_path Original file path
-         * @return Unique cache filename in format: filename__hash
+         * @return Cache filename (same as original filename)
          */
         std::string generateCacheFilename(const std::string &original_path);
 
@@ -148,12 +168,15 @@ namespace MediaDedup
         size_t current_size_bytes_;
         bool initialized_;
 
+        // File-in-use tracking
+        std::set<std::string> files_in_use_;
+
         // Configuration property keys
         static constexpr const char *CONFIG_CACHE_LOCATION = "cache.disk.location";
         static constexpr const char *CONFIG_CACHE_SIZE_LIMIT_MB = "cache.disk.size_limit_mb";
 
         // Default values
-        static constexpr const char *DEFAULT_CACHE_LOCATION = "/cache";
+        static constexpr const char *DEFAULT_CACHE_LOCATION = "cache";
         static constexpr int DEFAULT_CACHE_SIZE_LIMIT_MB = 1024; // 1GB
     };
 
