@@ -95,6 +95,9 @@ test_data/
 test_files/
 *.test
 
+# Cache directories
+cache/
+
 # Coverage reports
 coverage/
 *.gcov
