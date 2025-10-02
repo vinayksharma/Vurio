@@ -554,6 +554,13 @@ namespace MediaDedup
         {
             std::filesystem::path file_path(cached_path);
 
+            // Check if file exists first
+            if (!std::filesystem::exists(file_path))
+            {
+                Poco::Logger::get("DiskCache").debug("File not found in cache (already deleted): " + cached_path);
+                return true; // Consider it successfully deleted
+            }
+
             // Verify file is within cache directory for security
             std::filesystem::path canonical_file_path = std::filesystem::canonical(file_path);
             std::filesystem::path canonical_cache_path = std::filesystem::canonical(cache_location_);
@@ -564,29 +571,21 @@ namespace MediaDedup
                 return false;
             }
 
-            if (std::filesystem::exists(file_path))
+            auto file_size = std::filesystem::file_size(file_path);
+            std::filesystem::remove(file_path);
+
+            // Update current size
+            if (current_size_bytes_ >= file_size)
             {
-                auto file_size = std::filesystem::file_size(file_path);
-                std::filesystem::remove(file_path);
-
-                // Update current size
-                if (current_size_bytes_ >= file_size)
-                {
-                    current_size_bytes_ -= file_size;
-                }
-                else
-                {
-                    current_size_bytes_ = 0; // Should not happen, but be safe
-                }
-
-                Poco::Logger::get("DiskCache").debug("Deleted file from cache: " + cached_path + " (freed " + std::to_string(file_size / (1024 * 1024)) + " MB)");
-                return true;
+                current_size_bytes_ -= file_size;
             }
             else
             {
-                Poco::Logger::get("DiskCache").warning("File not found in cache: " + cached_path);
-                return false;
+                current_size_bytes_ = 0; // Should not happen, but be safe
             }
+
+            Poco::Logger::get("DiskCache").debug("Deleted file from cache: " + cached_path + " (freed " + std::to_string(file_size / (1024 * 1024)) + " MB)");
+            return true;
         }
         catch (const std::exception &e)
         {

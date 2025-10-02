@@ -174,6 +174,17 @@ namespace MediaDedup
                         // Mark file as in use
                         disk_cache->markFileInUse(cached_path);
 
+                        // Use RAII pattern for cleanup
+                        struct CacheCleanup {
+                            std::shared_ptr<DiskCache> cache;
+                            std::string path;
+                            CacheCleanup(std::shared_ptr<DiskCache> c, const std::string& p) : cache(c), path(p) {}
+                            ~CacheCleanup() {
+                                cache->markFileNotInUse(path);
+                                cache->deleteFromCacheImmediately(path);
+                            }
+                        } cleanup(disk_cache, cached_path);
+
                         try
                         {
                             ImageProcessor image_processor;
@@ -210,15 +221,9 @@ namespace MediaDedup
                         }
                         catch (...)
                         {
-                            // Mark file as not in use and clean up before re-throwing
-                            disk_cache->markFileNotInUse(cached_path);
-                            disk_cache->deleteFromCacheImmediately(cached_path);
+                            // Cleanup will happen automatically via RAII destructor
                             throw;
                         }
-
-                        // Mark file as not in use and clean up
-                        disk_cache->markFileNotInUse(cached_path);
-                        disk_cache->deleteFromCacheImmediately(cached_path);
                     }
                     catch (const std::bad_alloc& e)
                     {
