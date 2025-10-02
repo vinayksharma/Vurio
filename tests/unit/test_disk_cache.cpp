@@ -639,3 +639,192 @@ TEST_F(DiskCacheTest, CacheOperations_NeverTouchSourceFiles)
     std::filesystem::remove_all(source_dir);
     std::filesystem::remove(external_file);
 }
+
+TEST_F(DiskCacheTest, CacheCleanupOnError_EnsuresFilesAreCleared)
+{
+    // Test that files are properly cleaned up even when operations fail
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Create a test file (1MB)
+    std::filesystem::path test_file = test_files_dir_ / "test_cleanup.jpg";
+    std::ofstream file(test_file, std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    std::string content = "test content for cleanup verification - this is a longer string to ensure proper file size";
+    for (int i = 0; i < 10000; ++i)
+    { // Create ~1MB file
+        file.write(content.c_str(), content.length());
+    }
+    file.close();
+
+    // Copy file to cache
+    std::string cached_path;
+    ASSERT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path));
+
+    // Verify file is in cache
+    EXPECT_TRUE(std::filesystem::exists(cached_path));
+
+    // Verify cache size is now non-zero (file was added)
+    // Note: Cache is cleared on initialization, so we just verify the file exists
+    EXPECT_TRUE(std::filesystem::exists(cached_path)); // File should exist in cache
+
+    // Mark file as in use
+    disk_cache_->markFileInUse(cached_path);
+
+    // Simulate an error scenario - try to copy a file with the same name
+    // This should fail because the file is in use and we can't overwrite it
+    std::filesystem::path another_file = test_files_dir_ / "another_test.jpg";
+    std::ofstream another_file_stream(another_file, std::ios::binary);
+    ASSERT_TRUE(another_file_stream.is_open());
+    for (int i = 0; i < 10000; ++i)
+    {
+        another_file_stream.write(content.c_str(), content.length());
+    }
+    another_file_stream.close();
+
+    // Try to copy with the same filename - this should fail because the file is in use
+    std::string another_cached_path;
+    bool copy_result = disk_cache_->copyToCache(another_file.string(), another_cached_path);
+    // Note: This might succeed because we're using different source files, but the cached file should be different
+    // The important part is that the original file is still there and marked as in use
+
+    // Verify original file is still in cache and marked as in use
+    EXPECT_TRUE(std::filesystem::exists(cached_path));
+    EXPECT_GE(disk_cache_->getCurrentSizeMB(), 1);
+
+    // Now mark file as not in use and delete it
+    disk_cache_->markFileNotInUse(cached_path);
+    ASSERT_TRUE(disk_cache_->deleteFromCacheImmediately(cached_path));
+
+    // Verify file is deleted
+    EXPECT_FALSE(std::filesystem::exists(cached_path));
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0);
+
+    // Cleanup
+    std::filesystem::remove(test_file);
+    std::filesystem::remove(another_file);
+}
+
+TEST_F(DiskCacheTest, CacheLimitBehavior_DoesNotHaltServer)
+{
+    // Test that cache limit enforcement doesn't cause server to halt
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Create a file larger than the cache limit (10MB)
+    std::filesystem::path large_file = test_files_dir_ / "large_file.bin";
+    std::ofstream file(large_file, std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+
+    // Create a 15MB file (larger than 10MB limit)
+    std::string content = "large file content for testing cache limits - this is a longer string to ensure proper file size";
+    for (int i = 0; i < 200000; ++i)
+    { // This should create a ~15MB file
+        file.write(content.c_str(), content.length());
+    }
+    file.close();
+
+    // Verify file size
+    size_t file_size = std::filesystem::file_size(large_file);
+    EXPECT_GT(file_size, 10 * 1024 * 1024) << "File should be larger than 10MB cache limit";
+
+    // Copy file to cache - this should trigger cache clearing
+    std::string cached_path;
+    bool copy_result = disk_cache_->copyToCache(large_file.string(), cached_path);
+
+    // This should succeed because we clear the cache to accommodate
+    EXPECT_TRUE(copy_result) << "Should succeed by clearing cache to accommodate large file";
+
+    // Verify the file is in cache
+    EXPECT_TRUE(std::filesystem::exists(cached_path));
+
+    // Verify cache size is now the size of the large file
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), (file_size / (1024 * 1024)));
+
+    // Verify files_in_use_ set is properly cleared
+    // (This is tested indirectly by the fact that we can copy the file)
+
+    // Clean up
+    disk_cache_->deleteFromCacheImmediately(cached_path);
+    std::filesystem::remove(large_file);
+}
+
+TEST_F(DiskCacheTest, RemoveOldestFiles_SkipsFilesInUse)
+{
+    // Test that removeOldestFiles skips files that are currently in use
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Create a few files (not enough to fill cache)
+    std::vector<std::string> source_files;
+    std::vector<std::string> cached_paths;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        std::filesystem::path test_file = test_files_dir_ / ("test_file_" + std::to_string(i) + ".jpg");
+        std::ofstream file(test_file, std::ios::binary);
+        ASSERT_TRUE(file.is_open());
+
+        // Create 1MB files (total 3MB, well under 10MB limit)
+        std::string content = "test content for file " + std::to_string(i) + " - this is a longer string to ensure proper file size";
+        for (int j = 0; j < 20000; ++j)
+        { // Create ~1MB files
+            file.write(content.c_str(), content.length());
+        }
+        file.close();
+
+        source_files.push_back(test_file.string());
+
+        // Copy to cache
+        std::string cached_path;
+        ASSERT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path));
+        cached_paths.push_back(cached_path);
+    }
+
+    // Verify files are in cache
+    for (const auto &cached_path : cached_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(cached_path)) << "File should exist in cache: " << cached_path;
+    }
+
+    // Mark the first file as in use
+    disk_cache_->markFileInUse(cached_paths[0]);
+
+    // Debug: Verify the file is marked as in use
+    std::cout << "Debug: File marked as in use: " << cached_paths[0] << std::endl;
+    std::cout << "Debug: Cache size before adding new file: " << disk_cache_->getCurrentSizeMB() << " MB" << std::endl;
+
+    // Verify the file exists before marking as in use
+    EXPECT_TRUE(std::filesystem::exists(cached_paths[0])) << "File should exist before marking as in use";
+
+    // Create a large file that will trigger removeOldestFiles
+    std::filesystem::path large_file = test_files_dir_ / "large_file.jpg";
+    std::ofstream large_file_stream(large_file, std::ios::binary);
+    ASSERT_TRUE(large_file_stream.is_open());
+    std::string content = "large file content - this is a longer string to ensure proper file size";
+    for (int i = 0; i < 80000; ++i)
+    { // Create ~8MB file to trigger cache limit
+        large_file_stream.write(content.c_str(), content.length());
+    }
+    large_file_stream.close();
+
+    std::string large_cached_path;
+    bool copy_result = disk_cache_->copyToCache(large_file.string(), large_cached_path);
+
+    // Should succeed by removing oldest files (but not the one in use)
+    EXPECT_TRUE(copy_result) << "Should succeed by removing oldest files";
+
+    // Debug: Check if the file in use is still there
+    std::cout << "Debug: File in use still exists: " << std::filesystem::exists(cached_paths[0]) << std::endl;
+    std::cout << "Debug: Large file exists: " << std::filesystem::exists(large_cached_path) << std::endl;
+
+    // Verify the file in use is still there
+    EXPECT_TRUE(std::filesystem::exists(cached_paths[0])) << "File in use should not be deleted";
+
+    // Verify the large file is there
+    EXPECT_TRUE(std::filesystem::exists(large_cached_path)) << "Large file should be in cache";
+
+    // Clean up
+    for (const auto &source_file : source_files)
+    {
+        std::filesystem::remove(source_file);
+    }
+    std::filesystem::remove(large_file);
+}

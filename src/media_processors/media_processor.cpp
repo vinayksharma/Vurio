@@ -210,6 +210,8 @@ namespace MediaDedup
                                     std::filesystem::remove(transcoded_filename);
                                     // Mark as processing error since we can't process the transcoded file
                                     ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                    // Clean up the original cached file
+                                    disk_cache->deleteFromCacheImmediately(cached_path);
                                     return;
                                 }
                             }
@@ -218,6 +220,8 @@ namespace MediaDedup
                                 Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", cached_path);
                                 // Mark as processing error since RAW files cannot be processed without transcoding
                                 ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                // Clean up the original cached file
+                                disk_cache->deleteFromCacheImmediately(cached_path);
                                 return;
                             }
                         }
@@ -225,7 +229,7 @@ namespace MediaDedup
                         // Mark file as in use
                         disk_cache->markFileInUse(processing_file_path);
 
-                        // Use RAII pattern for cleanup
+                        // Use RAII pattern for cleanup - created early to ensure cleanup happens
                         struct CacheCleanup {
                             std::shared_ptr<DiskCache> cache;
                             std::string path;

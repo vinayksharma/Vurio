@@ -363,9 +363,9 @@ namespace MediaDedup
         // If file is larger than limit, clear cache and log warning
         if (required_space_bytes > size_limit_bytes_)
         {
-            Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(required_space_bytes / (1024 * 1024)) + " MB) exceeds cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Clearing cache to accommodate.");
+            Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(required_space_bytes / (1024 * 1024)) + " MB) exceeds cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Removing all cached files to accommodate.");
 
-            // Clear entire cache
+            // Remove all cached files (but keep the cache directory)
             for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
             {
                 if (entry.is_regular_file())
@@ -374,6 +374,11 @@ namespace MediaDedup
                 }
             }
             current_size_bytes_ = 0;
+
+            // Clear the files_in_use_ set since all files have been deleted
+            files_in_use_.clear();
+
+            Poco::Logger::get("DiskCache").information("All cached files removed due to file size exceeding limit (cache directory preserved)");
             return;
         }
 
@@ -393,6 +398,13 @@ namespace MediaDedup
     {
         auto files_by_age = getFilesByAge();
 
+        // Debug: Log files in use
+        Poco::Logger::get("DiskCache").debug("Files in use set contains:");
+        for (const auto &file : files_in_use_)
+        {
+            Poco::Logger::get("DiskCache").debug("  - " + file);
+        }
+
         size_t bytes_freed = 0;
         size_t files_removed = 0;
 
@@ -403,6 +415,16 @@ namespace MediaDedup
                 break;
             }
 
+            // Skip files that are currently in use
+            if (files_in_use_.find(path.string()) != files_in_use_.end())
+            {
+                Poco::Logger::get("DiskCache").debug("Skipping file currently in use: " + path.string());
+                continue;
+            }
+
+            // Debug: Log all files being considered for deletion
+            Poco::Logger::get("DiskCache").debug("Considering file for deletion: " + path.string());
+
             try
             {
                 size_t file_size = std::filesystem::file_size(path);
@@ -410,6 +432,7 @@ namespace MediaDedup
                 bytes_freed += file_size;
                 current_size_bytes_ -= file_size;
                 files_removed++;
+                Poco::Logger::get("DiskCache").debug("Deleted file: " + path.string());
             }
             catch (const std::exception &e)
             {
