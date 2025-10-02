@@ -215,3 +215,89 @@ TEST_F(TranscodingPipelineTest, GetConfigFromManager_WithValidManager_ReturnsLoa
     EXPECT_GT(config.timeout_ms, 0);                                    // Should be positive
     EXPECT_TRUE(config.preserve_metadata || !config.preserve_metadata); // Any boolean value is valid
 }
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithDisabledConfig_ReturnsFalse)
+{
+    TranscodingConfig config;
+    config.enabled = false;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile("test.raw", transcoded_path, config);
+
+    EXPECT_FALSE(result);
+    EXPECT_TRUE(transcoded_path.empty());
+}
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithNonRawFile_ReturnsFalse)
+{
+    TranscodingConfig config;
+    config.enabled = true;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile("test.jpg", transcoded_path, config);
+
+    EXPECT_FALSE(result);
+    EXPECT_TRUE(transcoded_path.empty());
+}
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithNonExistentFile_ReturnsFalse)
+{
+    TranscodingConfig config;
+    config.enabled = true;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile("nonexistent.raw", transcoded_path, config);
+
+    EXPECT_FALSE(result);
+    EXPECT_TRUE(transcoded_path.empty());
+}
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithEmptyPath_ReturnsFalse)
+{
+    TranscodingConfig config;
+    config.enabled = true;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile("", transcoded_path, config);
+
+    EXPECT_FALSE(result);
+    EXPECT_TRUE(transcoded_path.empty());
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithValidPath_ReturnsUniqueName)
+{
+    std::string result1 = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff");
+    std::string result2 = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff");
+    std::string result3 = TranscodingPipeline::GenerateUniqueFilename("another.raw", ".tiff");
+
+    // Should not be empty
+    EXPECT_FALSE(result1.empty());
+    EXPECT_FALSE(result2.empty());
+    EXPECT_FALSE(result3.empty());
+
+    // Should contain the base name and extension
+    EXPECT_TRUE(result1.find("test") != std::string::npos);
+    EXPECT_TRUE(result1.find(".tiff") != std::string::npos);
+    EXPECT_TRUE(result3.find("another") != std::string::npos);
+
+    // Should be different (due to UUID)
+    EXPECT_NE(result1, result2);
+
+    // Should have different base names for different input files
+    EXPECT_NE(result1, result3);
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithEmptyPath_ReturnsEmpty)
+{
+    std::string result = TranscodingPipeline::GenerateUniqueFilename("", ".tiff");
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithNoExtension_Works)
+{
+    std::string result = TranscodingPipeline::GenerateUniqueFilename("test", ".tiff");
+
+    EXPECT_FALSE(result.empty());
+    EXPECT_TRUE(result.find("test") != std::string::npos);
+    EXPECT_TRUE(result.find(".tiff") != std::string::npos);
+}

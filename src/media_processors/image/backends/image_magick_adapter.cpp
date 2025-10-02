@@ -1,6 +1,7 @@
 #include "media_processors/image/backends/image_magick_adapter.hpp"
 #include <Poco/Logger.h>
 #include <Magick++.h>
+#include <MagickCore/MagickCore.h>
 #include <sstream>
 #include <filesystem>
 #include <mutex>
@@ -80,12 +81,29 @@ namespace MediaDedup
             // Read the raw image file with error handling
             try
             {
+                // Set resource limits to reasonable values to prevent assertion failures
+                // 0 means unlimited, but we set reasonable limits
+                MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 1024 * 1024 * 1024); // 1GB
+                MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);   // 1GB
+
                 image.read(file_path);
                 log.debug("Successfully read image file: %s", file_path);
             }
             catch (const Magick::Exception &e)
             {
                 log.error("Failed to read image file %s: %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (const std::exception &e)
+            {
+                log.error("Failed to read image file %s (std exception): %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (...)
+            {
+                log.error("Failed to read image file %s (unknown exception)", file_path);
                 tiff_data.clear();
                 return false;
             }
@@ -123,6 +141,18 @@ namespace MediaDedup
                 tiff_data.clear();
                 return false;
             }
+            catch (const std::exception &e)
+            {
+                log.error("Failed to convert image properties for %s (std exception): %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (...)
+            {
+                log.error("Failed to convert image properties for %s (unknown exception)", file_path);
+                tiff_data.clear();
+                return false;
+            }
 
             // Set TIFF format and compression
             try
@@ -134,6 +164,18 @@ namespace MediaDedup
             catch (const Magick::Exception &e)
             {
                 log.error("Failed to set image format for %s: %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (const std::exception &e)
+            {
+                log.error("Failed to set image format for %s (std exception): %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (...)
+            {
+                log.error("Failed to set image format for %s (unknown exception)", file_path);
                 tiff_data.clear();
                 return false;
             }
@@ -164,6 +206,18 @@ namespace MediaDedup
             catch (const Magick::Exception &e)
             {
                 log.error("Failed to write image to memory for %s: %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (const std::exception &e)
+            {
+                log.error("Failed to write image to memory for %s (std exception): %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (...)
+            {
+                log.error("Failed to write image to memory for %s (unknown exception)", file_path);
                 tiff_data.clear();
                 return false;
             }

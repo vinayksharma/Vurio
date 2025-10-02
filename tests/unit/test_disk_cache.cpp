@@ -448,3 +448,194 @@ TEST_F(DiskCacheTest, CacheClearedOnRestart)
     EXPECT_EQ(size_after, 0);
     EXPECT_FALSE(std::filesystem::exists(cached_path));
 }
+
+TEST_F(DiskCacheTest, CacheOperations_NeverTouchSourceFiles)
+{
+    // Create a temporary directory for source files
+    std::filesystem::path source_dir = test_files_dir_ / "source_files";
+    std::filesystem::create_directories(source_dir);
+
+    // Create test source files with different extensions
+    std::vector<std::string> source_files = {
+        "test_image.jpg",
+        "test_raw.cr2",
+        "test_video.mp4",
+        "test_audio.mp3",
+        "test_document.pdf"};
+
+    std::vector<std::string> source_paths;
+    for (const auto &filename : source_files)
+    {
+        std::filesystem::path source_path = source_dir / filename;
+        source_paths.push_back(source_path.string());
+
+        // Create a test file with some content (make it larger to avoid size issues)
+        std::ofstream file(source_path, std::ios::binary);
+        ASSERT_TRUE(file.is_open()) << "Failed to create source file: " << source_path.string();
+        std::string content = "test content for " + filename + " - this is a longer test file to ensure proper size";
+        // Write the content multiple times to make it larger
+        for (int i = 0; i < 10; ++i)
+        {
+            file.write(content.c_str(), content.length());
+        }
+        file.close();
+
+        // Verify source file exists
+        ASSERT_TRUE(std::filesystem::exists(source_path)) << "Source file should exist: " << source_path.string();
+    }
+
+    // Debug: List all created files
+    std::cout << "Created source files:" << std::endl;
+    for (const auto &source_path : source_paths)
+    {
+        std::cout << "  " << source_path << " (exists: " << std::filesystem::exists(source_path) << ")" << std::endl;
+    }
+
+    // Initialize cache
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Copy all source files to cache
+    std::vector<std::string> cached_paths;
+    for (const auto &source_path : source_paths)
+    {
+        std::string cached_path;
+
+        // Debug: Check if source file exists before copying
+        if (!std::filesystem::exists(source_path))
+        {
+            FAIL() << "Source file does not exist before copy: " << source_path;
+        }
+
+        std::cout << "Attempting to copy: " << source_path << std::endl;
+        bool copy_result = disk_cache_->copyToCache(source_path, cached_path);
+        std::cout << "Copy result: " << copy_result << ", cached_path: " << cached_path << std::endl;
+        if (!copy_result)
+        {
+            FAIL() << "Failed to copy to cache: " << source_path
+                   << " (file exists: " << std::filesystem::exists(source_path) << ")";
+        }
+        cached_paths.push_back(cached_path);
+
+        // Verify source file still exists after copying
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should still exist after copy: " << source_path;
+    }
+
+    // Mark all cached files as in use
+    for (const auto &cached_path : cached_paths)
+    {
+        disk_cache_->markFileInUse(cached_path);
+    }
+
+    // Test 1: Clear cache should not affect source files
+    disk_cache_->clearCache();
+
+    for (const auto &source_path : source_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should exist after clearCache: " << source_path;
+    }
+
+    // Re-copy files to cache for more tests
+    cached_paths.clear();
+    for (const auto &source_path : source_paths)
+    {
+        std::string cached_path;
+        ASSERT_TRUE(disk_cache_->copyToCache(source_path, cached_path)) << "Failed to re-copy to cache: " << source_path;
+        cached_paths.push_back(cached_path);
+    }
+
+    // Test 2: Delete individual cached files should not affect source files
+    for (const auto &cached_path : cached_paths)
+    {
+        ASSERT_TRUE(disk_cache_->deleteFromCache(cached_path))
+            << "Failed to delete from cache: " << cached_path;
+    }
+
+    for (const auto &source_path : source_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should exist after individual deletions: " << source_path;
+    }
+
+    // Re-copy files to cache for more tests
+    cached_paths.clear();
+    for (const auto &source_path : source_paths)
+    {
+        std::string cached_path;
+        ASSERT_TRUE(disk_cache_->copyToCache(source_path, cached_path));
+        cached_paths.push_back(cached_path);
+    }
+
+    // Test 3: Immediate deletion should not affect source files
+    for (const auto &cached_path : cached_paths)
+    {
+        ASSERT_TRUE(disk_cache_->deleteFromCacheImmediately(cached_path))
+            << "Failed to delete immediately from cache: " << cached_path;
+    }
+
+    for (const auto &source_path : source_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should exist after immediate deletions: " << source_path;
+    }
+
+    // Test 4: Cache shutdown should not affect source files
+    disk_cache_->shutdown();
+
+    for (const auto &source_path : source_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should exist after cache shutdown: " << source_path;
+    }
+
+    // Test 5: Reinitialize and clear should not affect source files
+    ASSERT_TRUE(disk_cache_->initialize());
+    disk_cache_->clearCache();
+
+    for (const auto &source_path : source_paths)
+    {
+        EXPECT_TRUE(std::filesystem::exists(source_path))
+            << "Source file should exist after reinitialize and clear: " << source_path;
+    }
+
+    // Test 6: Verify source file contents are unchanged
+    for (size_t i = 0; i < source_files.size(); ++i)
+    {
+        const auto &source_path = source_paths[i];
+        const auto &filename = source_files[i];
+
+        std::ifstream file(source_path, std::ios::binary);
+        ASSERT_TRUE(file.is_open()) << "Failed to read source file: " << source_path;
+
+        std::string content((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+        file.close();
+
+        // Expected content is the single line repeated 10 times
+        std::string expected_content;
+        for (int i = 0; i < 10; ++i)
+        {
+            expected_content += "test content for " + filename + " - this is a longer test file to ensure proper size";
+        }
+        EXPECT_EQ(content, expected_content)
+            << "Source file content should be unchanged: " << source_path;
+    }
+
+    // Test 7: Test with files outside cache directory (edge case)
+    std::filesystem::path external_file = test_files_dir_ / "external_test.txt";
+    std::ofstream ext_file(external_file, std::ios::binary);
+    ASSERT_TRUE(ext_file.is_open());
+    ext_file.write("external test content", 21);
+    ext_file.close();
+
+    // Try to delete external file (should fail safely)
+    bool delete_result = disk_cache_->deleteFromCacheImmediately(external_file.string());
+    EXPECT_FALSE(delete_result) << "Should not be able to delete external file";
+    EXPECT_TRUE(std::filesystem::exists(external_file))
+        << "External file should still exist after failed deletion attempt";
+
+    // Cleanup
+    std::filesystem::remove_all(source_dir);
+    std::filesystem::remove(external_file);
+}

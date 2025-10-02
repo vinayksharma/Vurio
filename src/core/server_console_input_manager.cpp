@@ -335,6 +335,15 @@ namespace MediaDedupServer
                     return;
                 }
 
+                // Handle SIGABRT (assertion failures) gracefully
+                if (signal == SIGABRT)
+                {
+                    Poco::Logger::get("ConsoleInputManager").error("Received SIGABRT (assertion failure); attempting graceful shutdown");
+                    // Set a flag for the console thread to emit the exit event and shutdown
+                    instance_->exit_requested_by_signal_.store(true);
+                    return;
+                }
+
                 ConsoleEventType eventType;
                 std::string signalName;
 
@@ -471,6 +480,18 @@ namespace MediaDedupServer
                 return false;
             }
 
+            // Setup SIGABRT handler (for assertion failures)
+            struct sigaction sa_abrt;
+            sa_abrt.sa_handler = signalHandler;
+            sigemptyset(&sa_abrt.sa_mask);
+            sa_abrt.sa_flags = 0;
+
+            if (sigaction(SIGABRT, &sa_abrt, &original_sigabrt_) == -1)
+            {
+                Poco::Logger::get("ConsoleInputManager").error("Failed to setup SIGABRT handler");
+                return false;
+            }
+
             signal_handlers_setup_ = true;
             return true;
         }
@@ -485,6 +506,7 @@ namespace MediaDedupServer
             sigaction(SIGINT, &original_sigint_, nullptr);
             sigaction(SIGTERM, &original_sigterm_, nullptr);
             sigaction(SIGQUIT, &original_sigquit_, nullptr);
+            sigaction(SIGABRT, &original_sigabrt_, nullptr);
 
             signal_handlers_setup_ = false;
         }

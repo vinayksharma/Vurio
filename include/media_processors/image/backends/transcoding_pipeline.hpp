@@ -40,6 +40,27 @@ namespace MediaDedup
                                       const TranscodingConfig &config = TranscodingConfig{});
 
         /**
+         * @brief Transcode a raw image file to TIFF format and save to disk
+         *
+         * @param source_file_path The path to the raw image file
+         * @param transcoded_file_path Output path where the transcoded file will be saved
+         * @param config Configuration for transcoding operation
+         * @return true if transcoding was successful, false otherwise
+         */
+        static bool TranscodeToFile(const std::string &source_file_path,
+                                    std::string &transcoded_file_path,
+                                    const TranscodingConfig &config = TranscodingConfig{});
+
+        /**
+         * @brief Generate a unique filename with UUID suffix
+         *
+         * @param original_path The original file path
+         * @param extension The new file extension (e.g., ".tiff")
+         * @return Unique filename with UUID suffix
+         */
+        static std::string GenerateUniqueFilename(const std::string &original_path, const std::string &extension);
+
+        /**
          * @brief Check if a file needs transcoding based on its extension
          *
          * @param file_path The path to the file to check

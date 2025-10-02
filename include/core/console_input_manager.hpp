@@ -200,6 +200,7 @@ namespace MediaDedupServer
             struct sigaction original_sigint_;
             struct sigaction original_sigterm_;
             struct sigaction original_sigquit_;
+            struct sigaction original_sigabrt_;
             bool signal_handlers_setup_{false};
         };
 

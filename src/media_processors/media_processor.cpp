@@ -2,6 +2,8 @@
 #include "media_processors/image_processor.hpp"
 #include "media_processors/audio_processor.hpp"
 #include "media_processors/video_processor.hpp"
+#include "media_processors/image/backends/raw_file_detector.hpp"
+#include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
@@ -12,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 
 namespace MediaDedup
 {
@@ -171,8 +174,56 @@ namespace MediaDedup
                             return;
                         }
 
+                        // Check if file needs transcoding
+                        std::string processing_file_path = cached_path;
+                        bool needs_transcoding = RawFileDetector::IsRawFile(cached_path);
+                        
+                        if (needs_transcoding)
+                        {
+                            Poco::Logger::get("MediaProcessor").information("Raw file detected, transcoding in cache: %s", cached_path);
+                            
+                            // Transcode to a new file in cache
+                            std::string transcoded_filename;
+                            TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
+                            
+                            if (TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config))
+                            {
+                                // Copy transcoded file to cache
+                                std::string transcoded_cached_path;
+                                if (disk_cache->copyToCache(transcoded_filename, transcoded_cached_path))
+                                {
+                                    Poco::Logger::get("MediaProcessor").information("Successfully transcoded and cached file: %s -> %s", cached_path, transcoded_cached_path);
+                                    
+                                    // Delete original RAW file from cache
+                                    disk_cache->deleteFromCacheImmediately(cached_path);
+                                    
+                                    // Clean up temporary transcoded file
+                                    std::filesystem::remove(transcoded_filename);
+                                    
+                                    // Use transcoded file for processing
+                                    processing_file_path = transcoded_cached_path;
+                                }
+                                else
+                                {
+                                    Poco::Logger::get("MediaProcessor").error("Failed to copy transcoded file to cache: %s", transcoded_filename);
+                                    // Clean up temporary file
+                                    std::filesystem::remove(transcoded_filename);
+                                    // Mark as processing error since we can't process the transcoded file
+                                    ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", cached_path);
+                                // Mark as processing error since RAW files cannot be processed without transcoding
+                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                return;
+                            }
+                        }
+
                         // Mark file as in use
-                        disk_cache->markFileInUse(cached_path);
+                        disk_cache->markFileInUse(processing_file_path);
 
                         // Use RAII pattern for cleanup
                         struct CacheCleanup {
@@ -183,7 +234,7 @@ namespace MediaDedup
                                 cache->markFileNotInUse(path);
                                 cache->deleteFromCacheImmediately(path);
                             }
-                        } cleanup(disk_cache, cached_path);
+                        } cleanup(disk_cache, processing_file_path);
 
                         try
                         {
@@ -194,16 +245,16 @@ namespace MediaDedup
                             switch (server_mode_copy)
                             {
                             case ServerMode::FAST:
-                                processing_success = image_processor.ProcessFast(cached_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessFast(processing_file_path, *db_manager, config_manager);
                                 break;
                             case ServerMode::BALANCED:
-                                processing_success = image_processor.ProcessBalanced(cached_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessBalanced(processing_file_path, *db_manager, config_manager);
                                 break;
                             case ServerMode::QUALITY:
-                                processing_success = image_processor.ProcessQuality(cached_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessQuality(processing_file_path, *db_manager, config_manager);
                                 break;
                             default:
-                                processing_success = image_processor.ProcessFast(cached_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessFast(processing_file_path, *db_manager, config_manager);
                                 break;
                             }
 

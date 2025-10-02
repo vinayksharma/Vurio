@@ -17,83 +17,8 @@ namespace MediaDedup
         {
             Poco::Logger::get("ImageProcessor").debug("Processing image in FAST mode: " + file_path);
 
-            // Check if file needs transcoding
-            if (RawFileDetector::IsRawFile(file_path))
-            {
-                Poco::Logger::get("ImageProcessor").information("Raw file detected, transcoding before processing: %s", file_path);
-
-                std::vector<std::uint8_t> tiff_data;
-                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
-
-                try
-                {
-                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
-                    {
-                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
-
-                        FastPipelineConfig config;
-                        config.thumb_size = DEFAULT_THUMB_SIZE;
-
-                        bool result = FastPipeline::Run(tiff_data, file_path, config, db);
-
-                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
-                        tiff_data.clear();
-                        tiff_data.shrink_to_fit();
-
-                        return result;
-                    }
-                    else
-                    {
-                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file, skipping direct processing: %s", file_path);
-                        // For raw files that fail transcoding, we can't process them directly
-                        // Use a stub approach instead
-                        FastPipelineConfig config;
-                        config.thumb_size = DEFAULT_THUMB_SIZE;
-
-                        // Create a stub hash based on file path
-                        std::uint64_t acc = 0;
-                        for (char c : file_path)
-                            acc = (acc * 131) + static_cast<unsigned char>(c);
-
-                        std::vector<std::uint8_t> phash64(8);
-                        for (int i = 0; i < 8; ++i)
-                            phash64[i] = static_cast<std::uint8_t>((acc >> (i * 8)) & 0xFF);
-
-                        ImagePhashRecord rec;
-                        rec.file_path = file_path;
-                        rec.phash = std::move(phash64);
-                        rec.thumb_w = config.thumb_size;
-                        rec.thumb_h = config.thumb_size;
-                        rec.version = 1;
-
-                        if (!ImageArtifactsOps::ensureTable(db))
-                        {
-                            Poco::Logger::get("ImageProcessor").error("Failed to ensure image_artifacts table");
-                            return false;
-                        }
-
-                        if (!ImageArtifactsOps::upsertPhash(db, rec))
-                        {
-                            Poco::Logger::get("ImageProcessor").error("Failed to upsert phash for %s", file_path);
-                            return false;
-                        }
-
-                        return true;
-                    }
-                }
-                catch (const std::exception &e)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-                catch (...)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-            }
+            // Note: Transcoding is now handled at the MediaProcessor level
+            // ImageProcessor receives pre-transcoded files from the cache
 
             // Process regular file or fallback for failed transcoding
             FastPipelineConfig config;
@@ -114,52 +39,8 @@ namespace MediaDedup
         {
             Poco::Logger::get("ImageProcessor").debug("Processing image in BALANCED mode: " + file_path);
 
-            // Check if file needs transcoding
-            if (RawFileDetector::IsRawFile(file_path))
-            {
-                Poco::Logger::get("ImageProcessor").information("Raw file detected, transcoding before processing: %s", file_path);
-
-                std::vector<std::uint8_t> tiff_data;
-                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
-
-                try
-                {
-                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
-                    {
-                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
-
-                        BalancedPipelineConfig config;
-                        config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
-                        config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
-
-                        bool result = BalancedPipeline::Run(tiff_data, file_path, config, db);
-
-                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
-                        tiff_data.clear();
-                        tiff_data.shrink_to_fit();
-
-                        return result;
-                    }
-                    else
-                    {
-                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file, using stub for BALANCED mode: %s", file_path);
-                        // For raw files that fail transcoding, use stub approach
-                        return createStubHashForRawFile(file_path, db);
-                    }
-                }
-                catch (const std::exception &e)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-                catch (...)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-            }
+            // Note: Transcoding is now handled at the MediaProcessor level
+            // ImageProcessor receives pre-transcoded files from the cache
 
             // Process regular file
             BalancedPipelineConfig config;
@@ -181,49 +62,8 @@ namespace MediaDedup
         {
             Poco::Logger::get("ImageProcessor").debug("Processing image in QUALITY mode: " + file_path);
 
-            // Check if file needs transcoding
-            if (RawFileDetector::IsRawFile(file_path))
-            {
-                Poco::Logger::get("ImageProcessor").information("Raw file detected, transcoding before processing: %s", file_path);
-
-                std::vector<std::uint8_t> tiff_data;
-                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
-
-                try
-                {
-                    if (TranscodingPipeline::TranscodeToMemory(file_path, tiff_data, transcode_config))
-                    {
-                        Poco::Logger::get("ImageProcessor").information("Successfully transcoded raw file, processing from memory: %s", file_path);
-
-                        QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
-                        bool result = QualityPipeline::Run(tiff_data, file_path, config, db);
-
-                        // Explicitly clear transcoding buffer (can be 50MB+ for RAW files)
-                        tiff_data.clear();
-                        tiff_data.shrink_to_fit();
-
-                        return result;
-                    }
-                    else
-                    {
-                        Poco::Logger::get("ImageProcessor").error("Failed to transcode raw file, using stub for QUALITY mode: %s", file_path);
-                        // For raw files that fail transcoding, use stub approach
-                        return createStubHashForRawFile(file_path, db);
-                    }
-                }
-                catch (const std::exception &e)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Exception during transcoding of %s: %s", file_path, e.what());
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-                catch (...)
-                {
-                    Poco::Logger::get("ImageProcessor").error("Unknown exception during transcoding of %s", file_path);
-                    // For raw files that fail transcoding, use stub approach
-                    return createStubHashForRawFile(file_path, db);
-                }
-            }
+            // Note: Transcoding is now handled at the MediaProcessor level
+            // ImageProcessor receives pre-transcoded files from the cache
 
             // Process regular file
             QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});

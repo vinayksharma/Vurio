@@ -6,6 +6,10 @@
 #include <sstream>
 #include <iomanip>
 #include <functional>
+#include <iostream>
+#include <filesystem>
+#include <mutex>
+#include <set>
 
 namespace MediaDedup
 {
@@ -144,14 +148,17 @@ namespace MediaDedup
 
             // Get file size
             size_t file_size = std::filesystem::file_size(source_path);
+            Poco::Logger::get("DiskCache").debug("File size: " + std::to_string(file_size) + " bytes, current cache size: " + std::to_string(current_size_bytes_) + " bytes, limit: " + std::to_string(size_limit_bytes_) + " bytes");
 
             // Enforce size limit
             enforceSizeLimit(file_size);
+            Poco::Logger::get("DiskCache").debug("Size limit enforced successfully");
 
             // Generate cache filename
             std::string cache_filename = generateCacheFilename(source_path);
             std::filesystem::path dest_path = cache_location_ / cache_filename;
             std::string dest_path_str = dest_path.string();
+            Poco::Logger::get("DiskCache").debug("Generated cache filename: " + cache_filename + ", dest path: " + dest_path_str);
 
             // Check if file is currently in use
             if (files_in_use_.find(dest_path_str) != files_in_use_.end())
@@ -161,8 +168,10 @@ namespace MediaDedup
             }
 
             // Copy file (overwrite existing)
+            Poco::Logger::get("DiskCache").debug("About to copy file from " + source_path + " to " + dest_path_str);
             std::filesystem::copy_file(source_path, dest_path,
                                        std::filesystem::copy_options::overwrite_existing);
+            Poco::Logger::get("DiskCache").debug("File copy completed successfully");
 
             // Update cache size
             current_size_bytes_ += file_size;
@@ -316,6 +325,9 @@ namespace MediaDedup
             }
 
             current_size_bytes_ = 0;
+
+            // Clear the files_in_use_ set since all files have been deleted
+            files_in_use_.clear();
 
             Poco::Logger::get("DiskCache").information("Cache cleared: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
 
