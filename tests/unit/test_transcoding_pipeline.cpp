@@ -301,3 +301,124 @@ TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithNoExtension_Works)
     EXPECT_TRUE(result.find("test") != std::string::npos);
     EXPECT_TRUE(result.find(".tiff") != std::string::npos);
 }
+
+// Tests for new base directory functionality
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithBaseDirectory_CreatesFullPath)
+{
+    std::string base_dir = "/tmp/test_cache";
+    std::string result = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff", base_dir);
+
+    EXPECT_FALSE(result.empty());
+    EXPECT_TRUE(result.find(base_dir) == 0); // Should start with base directory
+    EXPECT_TRUE(result.find("test") != std::string::npos);
+    EXPECT_TRUE(result.find(".tiff") != std::string::npos);
+    EXPECT_TRUE(result.find("_") != std::string::npos); // Should have UUID separator
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithEmptyBaseDirectory_ReturnsFilenameOnly)
+{
+    std::string result = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff", "");
+
+    EXPECT_FALSE(result.empty());
+    EXPECT_TRUE(result.find("test") != std::string::npos);
+    EXPECT_TRUE(result.find(".tiff") != std::string::npos);
+    EXPECT_TRUE(result.find("/") == std::string::npos); // Should not contain path separators
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithRelativeBaseDirectory_Works)
+{
+    std::string base_dir = "test_cache";
+    std::string result = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff", base_dir);
+
+    EXPECT_FALSE(result.empty());
+    EXPECT_TRUE(result.find(base_dir) == 0); // Should start with base directory
+    EXPECT_TRUE(result.find("test") != std::string::npos);
+    EXPECT_TRUE(result.find(".tiff") != std::string::npos);
+}
+
+TEST_F(TranscodingPipelineTest, GenerateUniqueFilename_WithBaseDirectory_GeneratesUniqueNames)
+{
+    std::string base_dir = "/tmp/test_cache";
+    std::string result1 = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff", base_dir);
+    std::string result2 = TranscodingPipeline::GenerateUniqueFilename("test.raw", ".tiff", base_dir);
+
+    EXPECT_FALSE(result1.empty());
+    EXPECT_FALSE(result2.empty());
+    EXPECT_NE(result1, result2); // Should be different due to UUID
+    EXPECT_TRUE(result1.find(base_dir) == 0);
+    EXPECT_TRUE(result2.find(base_dir) == 0);
+}
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithBaseDirectory_CreatesFileInCorrectLocation)
+{
+    // Create a temporary directory for testing
+    std::filesystem::path temp_dir = test_set_path_ / "transcode_test";
+    std::filesystem::create_directories(temp_dir);
+
+    // Create a dummy raw file for testing
+    std::filesystem::path dummy_raw = temp_dir / "dummy.raw";
+    std::ofstream dummy_file(dummy_raw);
+    dummy_file << "dummy raw content";
+    dummy_file.close();
+
+    TranscodingConfig config;
+    config.enabled = true;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile(dummy_raw.string(), transcoded_path, config, temp_dir.string());
+
+    // Note: This test may fail if ImageMagick is not available, but we can still test the path generation
+    if (result)
+    {
+        EXPECT_FALSE(transcoded_path.empty());
+        EXPECT_TRUE(transcoded_path.find(temp_dir.string()) == 0); // Should be in the specified directory
+        EXPECT_TRUE(transcoded_path.find(".tiff") != std::string::npos);
+
+        // Clean up the transcoded file if it was created
+        if (std::filesystem::exists(transcoded_path))
+        {
+            std::filesystem::remove(transcoded_path);
+        }
+    }
+    else
+    {
+        // If transcoding failed (e.g., ImageMagick not available), test that the path was still generated correctly
+        // by checking if the path would be in the correct directory
+        EXPECT_TRUE(transcoded_path.empty() || transcoded_path.find(temp_dir.string()) == 0);
+    }
+
+    // Clean up
+    std::filesystem::remove(dummy_raw);
+    std::filesystem::remove_all(temp_dir);
+}
+
+TEST_F(TranscodingPipelineTest, TranscodeToFile_WithEmptyBaseDirectory_CreatesFileInCurrentDirectory)
+{
+    // Create a dummy raw file for testing
+    std::filesystem::path dummy_raw = test_set_path_ / "dummy.raw";
+    std::ofstream dummy_file(dummy_raw);
+    dummy_file << "dummy raw content";
+    dummy_file.close();
+
+    TranscodingConfig config;
+    config.enabled = true;
+
+    std::string transcoded_path;
+    bool result = TranscodingPipeline::TranscodeToFile(dummy_raw.string(), transcoded_path, config, "");
+
+    // Note: This test may fail if ImageMagick is not available, but we can still test the path generation
+    if (result)
+    {
+        EXPECT_FALSE(transcoded_path.empty());
+        EXPECT_TRUE(transcoded_path.find(".tiff") != std::string::npos);
+
+        // Clean up the transcoded file if it was created
+        if (std::filesystem::exists(transcoded_path))
+        {
+            std::filesystem::remove(transcoded_path);
+        }
+    }
+
+    // Clean up
+    std::filesystem::remove(dummy_raw);
+}

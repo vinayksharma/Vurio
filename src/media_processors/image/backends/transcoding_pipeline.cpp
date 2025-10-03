@@ -128,7 +128,8 @@ namespace MediaDedup
 
     bool TranscodingPipeline::TranscodeToFile(const std::string &source_file_path,
                                               std::string &transcoded_file_path,
-                                              const TranscodingConfig &config)
+                                              const TranscodingConfig &config,
+                                              const std::string &base_directory)
     {
         Poco::Logger &logger = Poco::Logger::get("TranscodingPipeline");
 
@@ -159,7 +160,7 @@ namespace MediaDedup
             }
 
             // Generate unique filename for transcoded file only after successful transcoding
-            transcoded_file_path = GenerateUniqueFilename(source_file_path, ".tiff");
+            transcoded_file_path = GenerateUniqueFilename(source_file_path, ".tiff", base_directory);
             logger.debug("Generated transcoded file path: %s", transcoded_file_path);
 
             // Write transcoded data to file
@@ -260,7 +261,7 @@ namespace MediaDedup
         }
     }
 
-    std::string TranscodingPipeline::GenerateUniqueFilename(const std::string &original_path, const std::string &extension)
+    std::string TranscodingPipeline::GenerateUniqueFilename(const std::string &original_path, const std::string &extension, const std::string &base_directory)
     {
         // Handle empty path
         if (original_path.empty())
@@ -291,7 +292,18 @@ namespace MediaDedup
         }
 
         // Combine: base_name + "_" + uuid + extension
-        return base_name + "_" + uuid + extension;
+        std::string filename = base_name + "_" + uuid + extension;
+
+        // If base_directory is provided, create full path
+        if (!base_directory.empty())
+        {
+            std::filesystem::path base_path(base_directory);
+            std::filesystem::path full_path = base_path / filename;
+            return full_path.string();
+        }
+
+        // Return just filename if no base directory specified (backward compatibility)
+        return filename;
     }
 
 }

@@ -186,7 +186,9 @@ namespace MediaDedup
                             std::string transcoded_filename;
                             TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
                             
-                            if (TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config))
+                            // Get cache directory from disk_cache for transcoding
+                            std::string cache_directory = disk_cache->getCacheLocation();
+                            if (TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config, cache_directory))
                             {
                                 // Copy transcoded file to cache
                                 std::string transcoded_cached_path;

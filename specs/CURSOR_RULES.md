@@ -89,21 +89,23 @@ Communication
 
 Rules Checklist (run after every task)
 • Plan was proposed and approved before implementation.
-• No commits/pushes were made without explicit user request.
-• Commit messages include comprehensive details (what, why, how, impact, testing).
-• Code subscribes to and reacts to config changes for any used property.
-• Default config generator updated for any new/changed keys.
-• Config reference/docs updated to reflect latest changes.
-• Comprehensive tests added/updated under /tests.
-• all_unit_tests binary updated with new unit tests (for rebuild script).
-• all_tests binary updated to cover all test types.
-• Checked for unit test failures and handled them carefully (fix implementation > update test as last resort, inform user if test changed).
-• Explicit timeouts applied in server tests/connections to prevent blocking calls.
-• Build and tests run after the change; issues resolved before proceeding.
-• Any helper/one-off scripts placed under /scripts.
-• No images, personal information, or large binary files committed to repository.
-• Test data created dynamically rather than stored in repository.
-• Final pass: re-read these rules; if anything missed, fix now.
+
+- Maintain a clear seperation of concerns.
+  • No commits/pushes were made without explicit user request.
+  • Commit messages include comprehensive details (what, why, how, impact, testing).
+  • Code subscribes to and reacts to config changes for any used property.
+  • Default config generator updated for any new/changed keys.
+  • Config reference/docs updated to reflect latest changes.
+  • Comprehensive tests added/updated under /tests.
+  • all_unit_tests binary updated with new unit tests (for rebuild script).
+  • all_tests binary updated to cover all test types.
+  • Checked for unit test failures and handled them carefully (fix implementation > update test as last resort, inform user if test changed).
+  • Explicit timeouts applied in server tests/connections to prevent blocking calls.
+  • Build and tests run after the change; issues resolved before proceeding.
+  • Any helper/one-off scripts placed under /scripts.
+  • No images, personal information, or large binary files committed to repository.
+  • Test data created dynamically rather than stored in repository.
+  • Final pass: re-read these rules; if anything missed, fix now.
 
 ⸻
 
