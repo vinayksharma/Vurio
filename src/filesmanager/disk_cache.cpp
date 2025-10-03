@@ -167,6 +167,21 @@ namespace MediaDedup
                 return false;
             }
 
+            // Remove existing file if it exists to prevent copy_file issues
+            if (std::filesystem::exists(dest_path))
+            {
+                try
+                {
+                    std::filesystem::remove(dest_path);
+                    Poco::Logger::get("DiskCache").debug("Removed existing file before copy: " + dest_path_str);
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("DiskCache").warning("Failed to remove existing file %s: %s", dest_path_str, e.what());
+                    // Continue with copy attempt - copy_file with overwrite_existing should handle this
+                }
+            }
+
             // Copy file (overwrite existing)
             Poco::Logger::get("DiskCache").debug("About to copy file from " + source_path + " to " + dest_path_str);
             std::filesystem::copy_file(source_path, dest_path,

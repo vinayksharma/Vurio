@@ -15,6 +15,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <sys/resource.h>
 
 namespace MediaDedup
 {
@@ -182,6 +183,13 @@ namespace MediaDedup
                         {
                             Poco::Logger::get("MediaProcessor").information("Raw file detected, transcoding in cache: %s", cached_path);
                             
+                            // Log memory usage before transcoding
+                            struct rusage usage;
+                            if (getrusage(RUSAGE_SELF, &usage) == 0)
+                            {
+                                Poco::Logger::get("MediaProcessor").debug("Memory usage before transcoding: %ld KB", usage.ru_maxrss);
+                            }
+                            
                             // Transcode to a new file in cache
                             std::string transcoded_filename;
                             TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
@@ -190,6 +198,34 @@ namespace MediaDedup
                             std::string cache_directory = disk_cache->getCacheLocation();
                             if (TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config, cache_directory))
                             {
+                                // Validate transcoded file exists and has content
+                                if (!std::filesystem::exists(transcoded_filename))
+                                {
+                                    Poco::Logger::get("MediaProcessor").error("Transcoded file was not created: %s", transcoded_filename);
+                                    ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                    disk_cache->deleteFromCacheImmediately(cached_path);
+                                    return;
+                                }
+
+                                auto transcoded_size = std::filesystem::file_size(transcoded_filename);
+                                if (transcoded_size == 0)
+                                {
+                                    Poco::Logger::get("MediaProcessor").error("Transcoded file is empty: %s", transcoded_filename);
+                                    std::filesystem::remove(transcoded_filename);
+                                    ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
+                                    disk_cache->deleteFromCacheImmediately(cached_path);
+                                    return;
+                                }
+
+                                Poco::Logger::get("MediaProcessor").debug("Transcoded file created successfully - size: %zu bytes", transcoded_size);
+
+                                // Log memory usage after transcoding
+                                struct rusage usage_after;
+                                if (getrusage(RUSAGE_SELF, &usage_after) == 0)
+                                {
+                                    Poco::Logger::get("MediaProcessor").debug("Memory usage after transcoding: %ld KB", usage_after.ru_maxrss);
+                                }
+
                                 // Copy transcoded file to cache
                                 std::string transcoded_cached_path;
                                 if (disk_cache->copyToCache(transcoded_filename, transcoded_cached_path))
@@ -207,7 +243,7 @@ namespace MediaDedup
                                 }
                                 else
                                 {
-                                    Poco::Logger::get("MediaProcessor").error("Failed to copy transcoded file to cache: %s", transcoded_filename);
+                                    Poco::Logger::get("MediaProcessor").error("Failed to copy transcoded file to cache: %s (size: %zu bytes)", transcoded_filename, transcoded_size);
                                     // Clean up temporary file
                                     std::filesystem::remove(transcoded_filename);
                                     // Mark as processing error since we can't process the transcoded file
@@ -219,7 +255,7 @@ namespace MediaDedup
                             }
                             else
                             {
-                                Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", cached_path);
+                                Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s (this may be due to unsupported RAW format or corrupted file)", cached_path);
                                 // Mark as processing error since RAW files cannot be processed without transcoding
                                 ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
                                 // Clean up the original cached file

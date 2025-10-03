@@ -81,10 +81,13 @@ namespace MediaDedup
             // Read the raw image file with error handling
             try
             {
-                // Set resource limits to reasonable values to prevent assertion failures
-                // 0 means unlimited, but we set reasonable limits
-                MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 1024 * 1024 * 1024); // 1GB
-                MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);   // 1GB
+                // Set resource limits to prevent memory exhaustion
+                // Use more conservative limits to prevent system memory pressure
+                MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 512 * 1024 * 1024); // 512MB
+                MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);  // 1GB
+                MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 1024 * 1024 * 1024);   // 1GB
+                MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 8192);               // Max width
+                MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 8192);              // Max height
 
                 image.read(file_path);
                 log.debug("Successfully read image file: %s", file_path);
@@ -168,7 +171,13 @@ namespace MediaDedup
                     image.colorSpace(Magick::RGBColorspace);
                     log.debug("Converted colorspace to RGB for OpenCV compatibility");
                 }
-                log.debug("Set image format to TIFF (8-bit, RGB, no compression) for OpenCV compatibility");
+
+                // Additional TIFF options for better OpenCV compatibility
+                image.defineValue("tiff", "endian", "lsb");       // Little-endian byte order
+                image.defineValue("tiff", "planar", "contig");    // Contiguous planar configuration
+                image.defineValue("tiff", "rows-per-strip", "1"); // One row per strip for better compatibility
+
+                log.debug("Set image format to TIFF (8-bit, RGB, no compression, LSB, contiguous) for OpenCV compatibility");
             }
             catch (const Magick::Exception &e)
             {

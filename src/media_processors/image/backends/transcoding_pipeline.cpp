@@ -149,13 +149,41 @@ namespace MediaDedup
 
         try
         {
+            // Validate source file before transcoding
+            if (!std::filesystem::exists(source_file_path))
+            {
+                logger.error("Source file does not exist: %s", source_file_path);
+                return false;
+            }
+
+            auto file_size = std::filesystem::file_size(source_file_path);
+            if (file_size == 0)
+            {
+                logger.error("Source file is empty: %s", source_file_path);
+                return false;
+            }
+
+            logger.debug("Source file validation passed - size: %zu bytes", file_size);
+
             // First transcode to memory
             std::vector<std::uint8_t> tiff_data;
+            tiff_data.reserve(file_size); // Pre-allocate to avoid reallocations
+
             bool success = ImageMagickAdapter::TranscodeToTiff(source_file_path, tiff_data);
 
             if (!success)
             {
-                logger.error("Failed to transcode file to memory: %s", source_file_path);
+                logger.error("Failed to transcode file to memory: %s (file size: %zu bytes)", source_file_path, file_size);
+                tiff_data.clear();         // Ensure cleanup
+                tiff_data.shrink_to_fit(); // Free memory
+                return false;
+            }
+
+            if (tiff_data.empty())
+            {
+                logger.error("Transcoding produced empty data for file: %s", source_file_path);
+                tiff_data.clear();
+                tiff_data.shrink_to_fit();
                 return false;
             }
 
@@ -173,6 +201,10 @@ namespace MediaDedup
 
             out_file.write(reinterpret_cast<const char *>(tiff_data.data()), tiff_data.size());
             out_file.close();
+
+            // Clear memory buffer immediately after writing to file
+            tiff_data.clear();
+            tiff_data.shrink_to_fit();
 
             if (out_file.fail())
             {
