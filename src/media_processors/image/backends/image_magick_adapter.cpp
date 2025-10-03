@@ -154,12 +154,21 @@ namespace MediaDedup
                 return false;
             }
 
-            // Set TIFF format and compression
+            // Set TIFF format and compression for OpenCV compatibility
             try
             {
                 image.magick("TIFF");
-                image.compressType(Magick::LZWCompression);
-                log.debug("Set image format to TIFF with LZW compression");
+                // Use no compression for better OpenCV compatibility
+                image.compressType(Magick::NoCompression);
+                // Ensure 8-bit depth for OpenCV compatibility
+                image.depth(8);
+                // Set colorspace to RGB for better compatibility
+                if (image.colorSpace() != Magick::RGBColorspace)
+                {
+                    image.colorSpace(Magick::RGBColorspace);
+                    log.debug("Converted colorspace to RGB for OpenCV compatibility");
+                }
+                log.debug("Set image format to TIFF (8-bit, RGB, no compression) for OpenCV compatibility");
             }
             catch (const Magick::Exception &e)
             {

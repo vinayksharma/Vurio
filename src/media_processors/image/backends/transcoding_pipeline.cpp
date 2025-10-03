@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <opencv2/opencv.hpp>
 
 namespace MediaDedup
 {
@@ -178,6 +179,14 @@ namespace MediaDedup
                 return false;
             }
 
+            // Validate the transcoded file can be read by OpenCV
+            if (!ValidateTranscodedFile(transcoded_file_path))
+            {
+                logger.error("Transcoded file validation failed - file may not be readable by OpenCV: %s", transcoded_file_path);
+                std::filesystem::remove(transcoded_file_path); // Clean up invalid file
+                return false;
+            }
+
             logger.information("Successfully transcoded file: %s -> %s, size: %zu bytes",
                                source_file_path, transcoded_file_path, tiff_data.size());
             return true;
@@ -190,6 +199,63 @@ namespace MediaDedup
         catch (...)
         {
             logger.error("Unknown exception during file-based transcoding of %s", source_file_path);
+            return false;
+        }
+    }
+
+    bool TranscodingPipeline::ValidateTranscodedFile(const std::string &file_path)
+    {
+        Poco::Logger &logger = Poco::Logger::get("TranscodingPipeline");
+
+        // Check if file exists and has non-zero size
+        if (!std::filesystem::exists(file_path))
+        {
+            logger.error("Transcoded file does not exist: %s", file_path);
+            return false;
+        }
+
+        auto file_size = std::filesystem::file_size(file_path);
+        if (file_size == 0)
+        {
+            logger.error("Transcoded file is empty: %s", file_path);
+            return false;
+        }
+
+        // Try to read the file with OpenCV to validate it's readable
+        try
+        {
+            cv::Mat test_image = cv::imread(file_path, cv::IMREAD_COLOR);
+            if (test_image.empty())
+            {
+                logger.error("OpenCV cannot read transcoded file: %s", file_path);
+                return false;
+            }
+
+            // Additional validation: check image dimensions
+            if (test_image.rows == 0 || test_image.cols == 0)
+            {
+                logger.error("Transcoded file has invalid dimensions (%dx%d): %s", 
+                           test_image.cols, test_image.rows, file_path);
+                return false;
+            }
+
+            logger.debug("Transcoded file validation successful: %s (%dx%d, %zu bytes)", 
+                        file_path, test_image.cols, test_image.rows, file_size);
+            return true;
+        }
+        catch (const cv::Exception &e)
+        {
+            logger.error("OpenCV exception during file validation: %s - %s", file_path, e.what());
+            return false;
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception during file validation: %s - %s", file_path, e.what());
+            return false;
+        }
+        catch (...)
+        {
+            logger.error("Unknown exception during file validation: %s", file_path);
             return false;
         }
     }

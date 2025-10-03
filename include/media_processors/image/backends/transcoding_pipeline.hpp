@@ -69,6 +69,14 @@ namespace MediaDedup
         static bool NeedsTranscoding(const std::string &file_path);
 
         /**
+         * @brief Validate that a transcoded file can be read by OpenCV
+         *
+         * @param file_path The path to the transcoded file to validate
+         * @return true if the file is valid and readable by OpenCV, false otherwise
+         */
+        static bool ValidateTranscodedFile(const std::string &file_path);
+
+        /**
          * @brief Get default transcoding configuration
          *
          * @return Default configuration for transcoding operations

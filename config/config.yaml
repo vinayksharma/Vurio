@@ -38,7 +38,7 @@ cache.disk.size_limit_mb: 1024       # Maximum cache size in megabytes (1GB defa
 # -----------------------------------------------------------------------------
 # Logging Configuration
 # -----------------------------------------------------------------------------
-logging.level: info
+logging.level: error
 
 # -----------------------------------------------------------------------------
 # Scheduler Configuration
