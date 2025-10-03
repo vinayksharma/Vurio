@@ -234,13 +234,13 @@ namespace MediaDedup
             // Additional validation: check image dimensions
             if (test_image.rows == 0 || test_image.cols == 0)
             {
-                logger.error("Transcoded file has invalid dimensions (%dx%d): %s", 
-                           test_image.cols, test_image.rows, file_path);
+                logger.error("Transcoded file has invalid dimensions (%dx%d): %s",
+                             test_image.cols, test_image.rows, file_path);
                 return false;
             }
 
-            logger.debug("Transcoded file validation successful: %s (%dx%d, %zu bytes)", 
-                        file_path, test_image.cols, test_image.rows, file_size);
+            logger.debug("Transcoded file validation successful: %s (%dx%d, %zu bytes)",
+                         file_path, test_image.cols, test_image.rows, file_size);
             return true;
         }
         catch (const cv::Exception &e)

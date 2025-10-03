@@ -54,7 +54,7 @@ namespace MediaDedup
 
             cv::setNumThreads(0);
             std::cerr << "[OnnxAdapter] Loading image: " << file_path << std::endl;
-            
+
             // Enhanced error handling for OpenCV imread
             cv::Mat bgr;
             try
@@ -79,14 +79,14 @@ namespace MediaDedup
                 std::cerr << "[OnnxAdapter] Unknown exception loading image" << std::endl;
                 return false;
             }
-            
+
             if (bgr.empty())
             {
                 Poco::Logger::get("OnnxAdapter").warning("Failed to load image for ONNX (empty result): %s", file_path);
                 std::cerr << "[OnnxAdapter] Failed to load image (empty result)" << std::endl;
                 return false;
             }
-            
+
             // Additional validation for image dimensions
             if (bgr.rows == 0 || bgr.cols == 0)
             {
