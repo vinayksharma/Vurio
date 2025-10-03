@@ -226,32 +226,14 @@ namespace MediaDedup
                                     Poco::Logger::get("MediaProcessor").debug("Memory usage after transcoding: %ld KB", usage_after.ru_maxrss);
                                 }
 
-                                // Copy transcoded file to cache
-                                std::string transcoded_cached_path;
-                                if (disk_cache->copyToCache(transcoded_filename, transcoded_cached_path))
-                                {
-                                    Poco::Logger::get("MediaProcessor").information("Successfully transcoded and cached file: %s -> %s", cached_path, transcoded_cached_path);
-                                    
-                                    // Delete original RAW file from cache
-                                    disk_cache->deleteFromCacheImmediately(cached_path);
-                                    
-                                    // Clean up temporary transcoded file
-                                    std::filesystem::remove(transcoded_filename);
-                                    
-                                    // Use transcoded file for processing
-                                    processing_file_path = transcoded_cached_path;
-                                }
-                                else
-                                {
-                                    Poco::Logger::get("MediaProcessor").error("Failed to copy transcoded file to cache: %s (size: %zu bytes)", transcoded_filename, transcoded_size);
-                                    // Clean up temporary file
-                                    std::filesystem::remove(transcoded_filename);
-                                    // Mark as processing error since we can't process the transcoded file
-                                    ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, -1);
-                                    // Clean up the original cached file
-                                    disk_cache->deleteFromCacheImmediately(cached_path);
-                                    return;
-                                }
+                                // Transcoded file is already in cache directory, no need to copy
+                                Poco::Logger::get("MediaProcessor").information("Successfully transcoded file: %s -> %s", cached_path, transcoded_filename);
+                                
+                                // Delete original RAW file from cache
+                                disk_cache->deleteFromCacheImmediately(cached_path);
+                                
+                                // Use transcoded file for processing (already in cache)
+                                processing_file_path = transcoded_filename;
                             }
                             else
                             {
