@@ -104,6 +104,22 @@ namespace MediaDedup
                     int processed_count = scanned_files_service_->countProcessed();
                     status_obj.set("processed_files_count", processed_count);
                 }
+
+                // Add error count for current server mode only
+                if (config_manager_)
+                {
+                    auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
+                    int error_count = scanned_files_service_->countError(server_mode);
+                    status_obj.set("error_files_count", error_count);
+                    Poco::Logger::get("ServerStatusHandler").debug("Error count for current mode: %d", error_count);
+                }
+                else
+                {
+                    // Fallback to FAST mode if config manager not available
+                    int error_count = scanned_files_service_->countError(ServerMode::FAST);
+                    status_obj.set("error_files_count", error_count);
+                    Poco::Logger::get("ServerStatusHandler").debug("Error count (fallback to FAST mode): %d", error_count);
+                }
             }
 
             // Registered directories

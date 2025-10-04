@@ -21,6 +21,7 @@ namespace MediaDedup
         int count() { return ScannedFilesOps::count(db_); }
         int countProcessed() { return ScannedFilesOps::countProcessed(db_); }
         int countProcessed(ServerMode mode) { return ScannedFilesOps::countProcessed(db_, mode); }
+        int countError(ServerMode mode) { return ScannedFilesOps::countError(db_, mode); }
 
         // Convenience wrappers
         bool markProcessed(const std::string &file_path, ServerMode mode, int state)

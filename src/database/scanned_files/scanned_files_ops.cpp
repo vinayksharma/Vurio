@@ -17,7 +17,7 @@ namespace MediaDedup
         {
             return false;
         }
-        
+
         // Create index for efficient file_path lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try
@@ -33,7 +33,7 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").warning("Failed to create index on file_path (may already exist): " + std::string(e.what()));
             // Don't fail - table exists, index is just an optimization (UNIQUE already creates implicit index)
         }
-        
+
         return true;
     }
 
@@ -235,6 +235,44 @@ namespace MediaDedup
                 break;
             default:
                 query = SQL::kCountProcessedFilesFast;
+                break;
+            }
+
+            stmt << std::string(query), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+        }
+        return 0;
+    }
+
+    int ScannedFilesOps::countError(DatabaseManager &db, ServerMode mode)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string_view query;
+            switch (mode)
+            {
+            case ServerMode::FAST:
+                query = SQL::kCountErrorFilesFast;
+                break;
+            case ServerMode::BALANCED:
+                query = SQL::kCountErrorFilesBalanced;
+                break;
+            case ServerMode::QUALITY:
+                query = SQL::kCountErrorFilesQuality;
+                break;
+            default:
+                query = SQL::kCountErrorFilesFast;
                 break;
             }
 
@@ -541,16 +579,16 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            
+
             int exists = 0;
             std::string file_path_copy = file_path;
-            
+
             Statement stmt(sess);
             stmt << std::string(SQL::kFileExists),
                 Keywords::use(file_path_copy),
                 Keywords::into(exists),
                 Keywords::now;
-            
+
             return exists == 1;
         }
         catch (const std::exception &e)
