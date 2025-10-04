@@ -40,7 +40,7 @@ namespace MediaDedup
         // Create per-thread ImageMagick transcoder instance (RAII)
         // This eliminates the need for mutex locks and enables parallel processing
         ImageMagickTranscoder transcoder;
-        
+
         if (!transcoder.isValid())
         {
             log.error("Failed to create ImageMagick transcoder instance");

@@ -54,8 +54,8 @@ namespace MediaDedup
             });
 
             // Initialize this instance's image object with default properties
+            // Don't set a specific format - let ImageMagick auto-detect when reading
             image_.size("100x100");  // Set a default size
-            image_.magick("RGB");    // Set default format
             
             logger_.debug("ImageMagickTranscoder instance initialized successfully");
             return true;
@@ -96,6 +96,8 @@ namespace MediaDedup
             logger_.error("Source file does not exist: %s", file_path);
             return false;
         }
+
+        logger_.debug("Starting transcoding for file: %s", file_path);
 
         try
         {
