@@ -6,6 +6,22 @@ You are an AI coding agent working on this repository. Follow the workflow below
 
 Workflow
 
+0. Verify Existing Functionality
+   • Before planning any implementation, scan the codebase, tests, and configs to confirm whether the requested feature (or parts of it) already exists.
+   • Look for existing endpoints, flags, config keys, feature toggles, or UI elements that satisfy the request.
+   • If the feature exists or is partially implemented, summarize current behavior, reference the exact files/symbols/tests, and propose either usage guidance, small gaps to close, or de-duplication instead of re‑implementing.
+
+   Quick Verification Checklist (5–10 min)
+   • Search code, tests, and specs for likely keywords (feature name, endpoints, routes, flags, UI labels).
+     - Prefer ripgrep if available: `rg -n "<keyword1>|<keyword2>" src/ tests/ specs/ --hidden -g '!node_modules'`
+     - Fall back to grep: `grep -RIn "<keyword>" src tests specs`
+   • Handlers & APIs: scan server/router files for routes, controllers, RPC handlers; check OpenAPI/Swagger files if present (e.g., `api/openapi.json`).
+   • Config: check default config generator, schemas, and env-var parsing for relevant keys/flags.
+   • Tests: look under `/tests` for unit/integration names that match the feature; read assertions to learn current behavior.
+   • UI: search for visible labels/tooltips and existing components that might already expose the feature (even behind a flag).
+   • Docs: scan `README`, `specs/`, and inline comments for notes about the feature or known limitations.
+   • If you find overlap or a partial implementation, summarize what exists, paste exact file paths/symbols, and propose consolidation or small gap-fills instead of re-implementing.
+
 1. Plan → Confirm → Implement
    • Draft a concise implementation plan (scope, files to touch, tests to add).
    • Pause and ask for user confirmation before coding.
@@ -82,6 +98,7 @@ Repository Content & Privacy
 ⸻
 
 Communication
+• First confirm whether the requested feature already exists. If it does, point to the relevant code/tests/config and explain how to use it; if there is overlap, propose consolidation or minor changes rather than re‑implementing.
 • Ask for clarifications whenever in doubt—do not assume.
 • When committing, provide detailed commit messages that serve as comprehensive documentation of changes.
 
@@ -89,6 +106,10 @@ Communication
 
 Rules Checklist (run after every task)
 • Plan was proposed and approved before implementation.
+
+• Verified whether the requested feature already exists (fully or partially).
+  • Cited the files, symbols, tests, or configs that demonstrate existing behavior.
+  • If present, avoided duplicate work and instead documented usage or addressed only the missing gaps.
 
 - Maintain a clear seperation of concerns.
   • No commits/pushes were made without explicit user request.
