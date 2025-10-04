@@ -24,6 +24,7 @@ namespace MediaDedup
 
             ImageFeaturesRecord rec;
             rec.file_path = file_path;
+            rec.mode = "BALANCED";
             rec.method = "ORB";
             rec.features_blob = std::move(blob);
             rec.version = 1;
@@ -36,6 +37,56 @@ namespace MediaDedup
             if (!ImageArtifactsOps::upsertFeatures(db, rec))
             {
                 Poco::Logger::get("BalancedPipeline").error("Failed to upsert features for %s", file_path);
+                return false;
+            }
+
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("BalancedPipeline").error("Exception: %s", std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("BalancedPipeline").error("Unknown exception");
+            return false;
+        }
+    }
+
+    bool BalancedPipeline::Run(const std::string &processing_file_path,
+                               const std::string &original_file_path,
+                               const BalancedPipelineConfig &cfg,
+                               DatabaseManager &db)
+    {
+        try
+        {
+            Poco::Logger &logger = Poco::Logger::get("BalancedPipeline");
+            logger.debug("Processing image file: %s (original: %s)", processing_file_path, original_file_path);
+
+            // Process regular files directly
+            std::vector<std::uint8_t> blob;
+            if (!FeaturesAdapter::ExtractFeaturesToBlob(processing_file_path, cfg.resize_long_edge, cfg.max_keypoints, blob))
+            {
+                logger.warning("Features extraction failed for %s", processing_file_path);
+                return false;
+            }
+
+            ImageFeaturesRecord rec;
+            rec.file_path = original_file_path; // Store metadata against original file path
+            rec.mode = "BALANCED";
+            rec.method = "ORB";
+            rec.features_blob = std::move(blob);
+            rec.version = 1;
+
+            if (!ImageArtifactsOps::ensureTable(db))
+            {
+                Poco::Logger::get("BalancedPipeline").error("Failed to ensure image_artifacts table");
+                return false;
+            }
+            if (!ImageArtifactsOps::upsertFeatures(db, rec))
+            {
+                Poco::Logger::get("BalancedPipeline").error("Failed to upsert features for %s", original_file_path);
                 return false;
             }
 

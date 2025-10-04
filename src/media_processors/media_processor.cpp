@@ -266,19 +266,20 @@ namespace MediaDedup
                             bool processing_success = false;
 
                             // Process based on server mode using cached file
+                            // Pass both processing file path and original source file path
                             switch (server_mode_copy)
                             {
                             case ServerMode::FAST:
-                                processing_success = image_processor.ProcessFast(processing_file_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessFast(processing_file_path, file_path_copy, *db_manager, config_manager);
                                 break;
                             case ServerMode::BALANCED:
-                                processing_success = image_processor.ProcessBalanced(processing_file_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessBalanced(processing_file_path, file_path_copy, *db_manager, config_manager);
                                 break;
                             case ServerMode::QUALITY:
-                                processing_success = image_processor.ProcessQuality(processing_file_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessQuality(processing_file_path, file_path_copy, *db_manager, config_manager);
                                 break;
                             default:
-                                processing_success = image_processor.ProcessFast(processing_file_path, *db_manager, config_manager);
+                                processing_success = image_processor.ProcessFast(processing_file_path, file_path_copy, *db_manager, config_manager);
                                 break;
                             }
 

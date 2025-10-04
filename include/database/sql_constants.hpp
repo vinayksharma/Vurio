@@ -57,7 +57,8 @@ namespace MediaDedup
         // Image artifacts (metadata produced by image pipelines)
         inline constexpr std::string_view kCreateImageArtifactsTable =
             "CREATE TABLE IF NOT EXISTS image_artifacts (\n"
-            "    file_path TEXT PRIMARY KEY,\n"
+            "    file_path TEXT NOT NULL,\n"
+            "    mode TEXT NOT NULL,\n"
             "    phash BLOB,\n"
             "    thumb_w INTEGER,\n"
             "    thumb_h INTEGER,\n"
@@ -68,14 +69,15 @@ namespace MediaDedup
             "    embedding BLOB,\n"
             "    version INTEGER NOT NULL DEFAULT 1,\n"
             "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
-            "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    PRIMARY KEY (file_path, mode)\n"
             ");";
 
         // Per-artifact upserts to avoid null-binding complexity
         inline constexpr std::string_view kUpsertImagePhash =
-            "INSERT INTO image_artifacts(file_path, phash, thumb_w, thumb_h, version, updated_at)\n"
-            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
-            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "INSERT INTO image_artifacts(file_path, mode, phash, thumb_w, thumb_h, version, updated_at)\n"
+            "VALUES(?, ?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path, mode) DO UPDATE SET\n"
             "  phash=excluded.phash,\n"
             "  thumb_w=excluded.thumb_w,\n"
             "  thumb_h=excluded.thumb_h,\n"
@@ -83,18 +85,18 @@ namespace MediaDedup
             "  updated_at=CURRENT_TIMESTAMP";
 
         inline constexpr std::string_view kUpsertImageFeatures =
-            "INSERT INTO image_artifacts(file_path, features_method, features, version, updated_at)\n"
-            "VALUES(?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
-            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "INSERT INTO image_artifacts(file_path, mode, features_method, features, version, updated_at)\n"
+            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path, mode) DO UPDATE SET\n"
             "  features_method=excluded.features_method,\n"
             "  features=excluded.features,\n"
             "  version=excluded.version,\n"
             "  updated_at=CURRENT_TIMESTAMP";
 
         inline constexpr std::string_view kUpsertImageEmbedding =
-            "INSERT INTO image_artifacts(file_path, embedding_model, embedding_dim, embedding, version, updated_at)\n"
-            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
-            "ON CONFLICT(file_path) DO UPDATE SET\n"
+            "INSERT INTO image_artifacts(file_path, mode, embedding_model, embedding_dim, embedding, version, updated_at)\n"
+            "VALUES(?, ?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "ON CONFLICT(file_path, mode) DO UPDATE SET\n"
             "  embedding_model=excluded.embedding_model,\n"
             "  embedding_dim=excluded.embedding_dim,\n"
             "  embedding=excluded.embedding,\n"
@@ -187,6 +189,21 @@ namespace MediaDedup
         inline constexpr std::string_view kListUnprocessedQuality =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed_fast, processed_balanced, processed_quality, links_fast, links_balanced, links_quality, is_network_file, created_at\n"
             " FROM scanned_files WHERE processed_quality=0 OR processed_quality=-2 OR processed_quality=-3 OR processed_quality=-4 OR processed_quality=-5 OR processed_quality=-6";
+
+        // Image artifacts mode-specific queries
+        inline constexpr std::string_view kSelectImageArtifactsByFileAndMode =
+            "SELECT file_path, mode, phash, thumb_w, thumb_h, features_method, features, embedding_model, embedding_dim, embedding, version, created_at, updated_at\n"
+            " FROM image_artifacts WHERE file_path=? AND mode=?";
+
+        inline constexpr std::string_view kSelectImageArtifactsByMode =
+            "SELECT file_path, mode, phash, thumb_w, thumb_h, features_method, features, embedding_model, embedding_dim, embedding, version, created_at, updated_at\n"
+            " FROM image_artifacts WHERE mode=?";
+
+        inline constexpr std::string_view kDeleteImageArtifactsByFileAndMode =
+            "DELETE FROM image_artifacts WHERE file_path=? AND mode=?";
+
+        inline constexpr std::string_view kDeleteImageArtifactsByFile =
+            "DELETE FROM image_artifacts WHERE file_path=?";
 
     } // namespace SQL
 } // namespace MediaDedup

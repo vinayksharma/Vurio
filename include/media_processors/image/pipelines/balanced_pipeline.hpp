@@ -21,6 +21,11 @@ namespace MediaDedup
                         const BalancedPipelineConfig &cfg,
                         DatabaseManager &db);
 
+        static bool Run(const std::string &processing_file_path,
+                        const std::string &original_file_path,
+                        const BalancedPipelineConfig &cfg,
+                        DatabaseManager &db);
+
         static bool Run(const std::vector<std::uint8_t> &image_data,
                         const std::string &original_file_path,
                         const BalancedPipelineConfig &cfg,

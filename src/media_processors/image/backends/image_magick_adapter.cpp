@@ -11,6 +11,9 @@ namespace MediaDedup
     // Static initialization flag to ensure ImageMagick++ is initialized only once
     static std::once_flag magick_initialized;
 
+    // Mutex to protect ImageMagick operations (not fully thread-safe)
+    static std::mutex magick_mutex;
+
     bool ImageMagickAdapter::TranscodeToTiff(const std::string &file_path,
                                              std::vector<std::uint8_t> &tiff_data)
     {
@@ -49,6 +52,14 @@ namespace MediaDedup
                                { 
                                    try {
                                        Magick::InitializeMagick(nullptr);
+                                       
+                                       // Set resource limits once during initialization to prevent memory exhaustion
+                                       // Use more conservative limits to prevent system memory pressure
+                                       MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 512 * 1024 * 1024); // 512MB
+                                       MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);  // 1GB
+                                       MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 1024 * 1024 * 1024);   // 1GB
+                                       MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 8192);               // Max width
+                                       MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 8192);              // Max height
                                    } catch (...) {
                                        // Prevent any ImageMagick initialization exceptions from propagating
                                    } });
@@ -75,20 +86,15 @@ namespace MediaDedup
 
             log.information("Transcoding image: %s", file_path);
 
+            // Lock to protect ImageMagick operations (not fully thread-safe)
+            std::lock_guard<std::mutex> lock(magick_mutex);
+
             // Create independent Magick++ image instance
             Magick::Image image;
 
             // Read the raw image file with error handling
             try
             {
-                // Set resource limits to prevent memory exhaustion
-                // Use more conservative limits to prevent system memory pressure
-                MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 512 * 1024 * 1024); // 512MB
-                MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);  // 1GB
-                MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 1024 * 1024 * 1024);   // 1GB
-                MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 8192);               // Max width
-                MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 8192);              // Max height
-
                 image.read(file_path);
                 log.debug("Successfully read image file: %s", file_path);
             }

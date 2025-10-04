@@ -33,12 +33,14 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string file_path = r.file_path;
+            std::string mode = r.mode;
             std::string blob = toBinaryString(r.phash);
             int tw = r.thumb_w;
             int th = r.thumb_h;
             int v = r.version;
             stmt << std::string(SQL::kUpsertImagePhash),
                 Keywords::use(file_path),
+                Keywords::use(mode),
                 Keywords::use(blob),
                 Keywords::use(tw),
                 Keywords::use(th),
@@ -66,11 +68,13 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string file_path = r.file_path;
+            std::string mode = r.mode;
             std::string method = r.method;
             std::string blob = toBinaryString(r.features_blob);
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageFeatures),
                 Keywords::use(file_path),
+                Keywords::use(mode),
                 Keywords::use(method),
                 Keywords::use(blob),
                 Keywords::use(v),
@@ -97,12 +101,14 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string file_path = r.file_path;
+            std::string mode = r.mode;
             std::string model = r.model;
             int dim = r.dim;
             std::string blob = toBinaryString(r.embedding_blob);
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageEmbedding),
                 Keywords::use(file_path),
+                Keywords::use(mode),
                 Keywords::use(model),
                 Keywords::use(dim),
                 Keywords::use(blob),

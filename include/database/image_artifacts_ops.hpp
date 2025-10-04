@@ -11,6 +11,7 @@ namespace MediaDedup
     struct ImagePhashRecord
     {
         std::string file_path;
+        std::string mode;
         std::vector<std::uint8_t> phash; // 8 bytes (64-bit) initially; future-proof as BLOB
         int thumb_w = 0;
         int thumb_h = 0;
@@ -20,6 +21,7 @@ namespace MediaDedup
     struct ImageFeaturesRecord
     {
         std::string file_path;
+        std::string mode;
         std::string method;                      // "SIFT" or "ORB"
         std::vector<std::uint8_t> features_blob; // compact serialized keypoints+descriptors
         int version = 1;
@@ -28,6 +30,7 @@ namespace MediaDedup
     struct ImageEmbeddingRecord
     {
         std::string file_path;
+        std::string mode;
         std::string model; // e.g., "CLIP-RN50"
         int dim = 512;
         std::vector<std::uint8_t> embedding_blob; // float32 bytes
@@ -43,9 +46,3 @@ namespace MediaDedup
         static bool upsertEmbedding(DatabaseManager &db, const ImageEmbeddingRecord &r);
     };
 }
-
-
-
-
-
-

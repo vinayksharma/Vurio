@@ -34,36 +34,39 @@ namespace MediaDedup
          *
          * This method uses OpenCV perceptual hashing for quick processing with minimal quality impact.
          *
-         * @param file_path Fully qualified path to the image file
+         * @param processing_file_path Path to the file to process (may be transcoded file in cache)
+         * @param original_file_path Original source file path for metadata storage
          * @param db Database manager for storing image artifacts
          * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessFast(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+        bool ProcessFast(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
         /**
          * @brief Process an image file using balanced processing mode
          *
          * This method uses feature detection for balanced processing between speed and quality.
          *
-         * @param file_path Fully qualified path to the image file
+         * @param processing_file_path Path to the file to process (may be transcoded file in cache)
+         * @param original_file_path Original source file path for metadata storage
          * @param db Database manager for storing image artifacts
          * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessBalanced(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+        bool ProcessBalanced(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
         /**
          * @brief Process an image file using quality processing mode
          *
          * This method uses ONNX models for high-quality processing with longer processing time.
          *
-         * @param file_path Fully qualified path to the image file
+         * @param processing_file_path Path to the file to process (may be transcoded file in cache)
+         * @param original_file_path Original source file path for metadata storage
          * @param db Database manager for storing image artifacts
          * @param config_manager Configuration manager for dynamic config loading
          * @return true if processing was successful
          */
-        bool ProcessQuality(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+        bool ProcessQuality(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
 
     private:
         /**

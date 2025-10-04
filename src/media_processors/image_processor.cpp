@@ -11,11 +11,11 @@
 
 namespace MediaDedup
 {
-    bool ImageProcessor::ProcessFast(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    bool ImageProcessor::ProcessFast(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
-            Poco::Logger::get("ImageProcessor").debug("Processing image in FAST mode: " + file_path);
+            Poco::Logger::get("ImageProcessor").debug("Processing image in FAST mode: %s (original: %s)", processing_file_path, original_file_path);
 
             // Note: Transcoding is now handled at the MediaProcessor level
             // ImageProcessor receives pre-transcoded files from the cache
@@ -24,20 +24,21 @@ namespace MediaDedup
             FastPipelineConfig config;
             config.thumb_size = DEFAULT_THUMB_SIZE;
 
-            return FastPipeline::Run(file_path, config, db);
+            // Use the processing file path for actual processing, but original file path for metadata storage
+            return FastPipeline::Run(processing_file_path, original_file_path, config, db);
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ImageProcessor").error("Fast processing failed for %s: %s", file_path, e.what());
+            Poco::Logger::get("ImageProcessor").error("Fast processing failed for %s: %s", processing_file_path, e.what());
             return false;
         }
     }
 
-    bool ImageProcessor::ProcessBalanced(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    bool ImageProcessor::ProcessBalanced(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
-            Poco::Logger::get("ImageProcessor").debug("Processing image in BALANCED mode: " + file_path);
+            Poco::Logger::get("ImageProcessor").debug("Processing image in BALANCED mode: %s (original: %s)", processing_file_path, original_file_path);
 
             // Note: Transcoding is now handled at the MediaProcessor level
             // ImageProcessor receives pre-transcoded files from the cache
@@ -47,31 +48,33 @@ namespace MediaDedup
             config.resize_long_edge = DEFAULT_RESIZE_LONG_EDGE;
             config.max_keypoints = DEFAULT_MAX_KEYPOINTS;
 
-            return BalancedPipeline::Run(file_path, config, db);
+            // Use the processing file path for actual processing, but original file path for metadata storage
+            return BalancedPipeline::Run(processing_file_path, original_file_path, config, db);
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ImageProcessor").error("Balanced processing failed for %s: %s", file_path, e.what());
+            Poco::Logger::get("ImageProcessor").error("Balanced processing failed for %s: %s", processing_file_path, e.what());
             return false;
         }
     }
 
-    bool ImageProcessor::ProcessQuality(const std::string &file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    bool ImageProcessor::ProcessQuality(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         try
         {
-            Poco::Logger::get("ImageProcessor").debug("Processing image in QUALITY mode: " + file_path);
+            Poco::Logger::get("ImageProcessor").debug("Processing image in QUALITY mode: %s (original: %s)", processing_file_path, original_file_path);
 
             // Note: Transcoding is now handled at the MediaProcessor level
             // ImageProcessor receives pre-transcoded files from the cache
 
             // Process regular file
             QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
-            return QualityPipeline::Run(file_path, config, db);
+            // Use the processing file path for actual processing, but original file path for metadata storage
+            return QualityPipeline::Run(processing_file_path, original_file_path, config, db);
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ImageProcessor").error("Quality processing failed for %s: %s", file_path, e.what());
+            Poco::Logger::get("ImageProcessor").error("Quality processing failed for %s: %s", processing_file_path, e.what());
             return false;
         }
     }

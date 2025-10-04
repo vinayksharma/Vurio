@@ -47,6 +47,7 @@ namespace MediaDedup
 
             ImageEmbeddingRecord rec;
             rec.file_path = file_path;
+            rec.mode = "QUALITY";
             rec.model = cfg.model;
             rec.dim = cfg.embedding_dim;
             rec.embedding_blob = std::move(blob);
@@ -60,6 +61,56 @@ namespace MediaDedup
             if (!ImageArtifactsOps::upsertEmbedding(db, rec))
             {
                 Poco::Logger::get("QualityPipeline").error("Failed to upsert embedding for %s", file_path);
+                return false;
+            }
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("QualityPipeline").error("Exception: %s", std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("QualityPipeline").error("Unknown exception");
+            return false;
+        }
+    }
+
+    bool QualityPipeline::Run(const std::string &processing_file_path,
+                              const std::string &original_file_path,
+                              const QualityPipelineConfig &cfg,
+                              DatabaseManager &db)
+    {
+        try
+        {
+            Poco::Logger &logger = Poco::Logger::get("QualityPipeline");
+            logger.debug("Processing image file: %s (original: %s)", processing_file_path, original_file_path);
+
+            // Try ONNX embedding (will fail if runtime/model not available as per policy)
+            std::vector<std::uint8_t> blob;
+            if (!OnnxAdapter::ComputeEmbedding(processing_file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob))
+            {
+                logger.warning("ONNX embedding failed for %s", processing_file_path);
+                return false;
+            }
+
+            ImageEmbeddingRecord rec;
+            rec.file_path = original_file_path; // Store metadata against original file path
+            rec.mode = "QUALITY";
+            rec.model = cfg.model;
+            rec.dim = cfg.embedding_dim;
+            rec.embedding_blob = std::move(blob);
+            rec.version = 1;
+
+            if (!ImageArtifactsOps::ensureTable(db))
+            {
+                Poco::Logger::get("QualityPipeline").error("Failed to ensure image_artifacts table");
+                return false;
+            }
+            if (!ImageArtifactsOps::upsertEmbedding(db, rec))
+            {
+                Poco::Logger::get("QualityPipeline").error("Failed to upsert embedding for %s", original_file_path);
                 return false;
             }
             return true;
