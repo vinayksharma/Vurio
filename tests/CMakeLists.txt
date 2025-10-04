@@ -228,6 +228,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
@@ -254,6 +255,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
@@ -319,6 +321,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
