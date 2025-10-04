@@ -22,6 +22,7 @@ namespace MediaDedup
         std::shared_ptr<ThreadPoolManager> &tpm,
         std::shared_ptr<Orchestration::SchedulerService> &scheduler_service,
         std::shared_ptr<Orchestration::FilesManager> &files_manager,
+        std::shared_ptr<MediaProcessor> &media_processor,
         ::MediaDedupServer::Core::ConsoleInputManager &console_input_manager,
         size_t console_subscription_id)
     {
@@ -71,6 +72,29 @@ namespace MediaDedup
         catch (...)
         {
             logger.error("Unknown exception during scheduler service shutdown");
+        }
+
+        // Stop MediaProcessor
+        try
+        {
+            if (media_processor)
+            {
+                logger.debug("Shutting down media processor...");
+                media_processor->shutdown();
+                logger.debug("Media processor shutdown complete");
+            }
+            else
+            {
+                logger.debug("Media processor is null, skipping");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception during media processor shutdown: %s", e.what());
+        }
+        catch (...)
+        {
+            logger.error("Unknown exception during media processor shutdown");
         }
 
         // Stop TPM

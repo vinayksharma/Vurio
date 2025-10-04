@@ -208,6 +208,7 @@ namespace MediaDedup
             tpm_ = initializer.getTPM();
             scheduler_service_ = initializer.getSchedulerService();
             files_manager_ = initializer.getFilesManager();
+            media_processor_ = initializer.getMediaProcessor();
 
             // Set shutdown callback for scheduler service
             if (scheduler_service_)
@@ -265,6 +266,7 @@ namespace MediaDedup
                     tpm_,
                     scheduler_service_,
                     files_manager_,
+                    media_processor_,
                     console_input_manager_,
                     console_subscription_id_);
                 logger_.debug("Graceful shutdown completed successfully");
@@ -281,6 +283,7 @@ namespace MediaDedup
             // Ensure services are destroyed before application uninitialization / static teardown
             scheduler_service_.reset();
             files_manager_.reset();
+            media_processor_.reset();
             tpm_.reset();
             web_server_.reset();
             database_manager_.reset();

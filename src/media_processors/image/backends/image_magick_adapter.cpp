@@ -43,12 +43,17 @@ namespace MediaDedup
 
         if (!transcoder.isValid())
         {
-            log.error("Failed to create ImageMagick transcoder instance");
+            log.error("Failed to create ImageMagick transcoder instance for file: %s", file_path);
             tiff_data.clear();
             return false;
         }
 
         // Use the RAII transcoder for thread-safe parallel processing
-        return transcoder.transcodeToTiff(file_path, tiff_data);
+        bool result = transcoder.transcodeToTiff(file_path, tiff_data);
+        if (!result)
+        {
+            log.warning("TranscodeToTiff failed for file: %s", file_path);
+        }
+        return result;
     }
 }

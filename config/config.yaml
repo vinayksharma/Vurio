@@ -9,7 +9,7 @@ server.name: Media Deduplication Server
 server.processName: media_dedup_server
 server.host: localhost
 server.port: 8080
-server.mode: FAST
+server.mode: QUALITY
 
 # Server Instance Check
 server.instanceCheck.enabled: true
@@ -119,7 +119,7 @@ media.processor.intervalMs: 30000
 media.processor.threadPool.share.media_processor: 1.0
 
 # Unified processing queue size limit to prevent memory buildup
-media.processor.maxQueueSize: 500 
+media.processor.maxQueueSize: 10000 
 
 # -----------------------------------------------------------------------------
 # Image Pipelines (SAFE TREO)

@@ -3,8 +3,8 @@
   "failures": 1,
   "disabled": 0,
   "errors": 0,
-  "timestamp": "2025-10-03T21:59:53Z",
-  "time": "0.024s",
+  "timestamp": "2025-10-03T23:57:23Z",
+  "time": "1.182s",
   "name": "AllTests",
   "testsuites": [
     {
@@ -13,33 +13,21 @@
       "failures": 1,
       "disabled": 0,
       "errors": 0,
-      "timestamp": "2025-10-03T21:59:53Z",
-      "time": "0.024s",
+      "timestamp": "2025-10-03T23:57:23Z",
+      "time": "1.182s",
       "testsuite": [
         {
-          "name": "TranscodeToTiff_WithValidRawFiles_ReturnsTrue",
+          "name": "TranscodeToTiff_ThreadSafety_ConcurrentCalls",
           "file": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp",
-          "line": 37,
+          "line": 111,
           "status": "RUN",
           "result": "COMPLETED",
-          "timestamp": "2025-10-03T21:59:53Z",
-          "time": "0.024s",
+          "timestamp": "2025-10-03T23:57:23Z",
+          "time": "1.182s",
           "classname": "ImageMagickAdapterTest",
           "failures": [
             {
-              "failure": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp:53\nValue of: result\n  Actual: false\nExpected: true\nFailed to transcode: sample.arw\n",
-              "type": ""
-            },
-            {
-              "failure": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp:54\nValue of: tiff_data.empty()\n  Actual: true\nExpected: false\nTIFF data should not be empty for: sample.arw\n",
-              "type": ""
-            },
-            {
-              "failure": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp:53\nValue of: result\n  Actual: false\nExpected: true\nFailed to transcode: sample.cr2\n",
-              "type": ""
-            },
-            {
-              "failure": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp:54\nValue of: tiff_data.empty()\n  Actual: true\nExpected: false\nTIFF data should not be empty for: sample.cr2\n",
+              "failure": "\/Users\/vinaysharma\/developer\/dedup_server\/tests\/unit\/test_image_magick_adapter.cpp:150\nValue of: result\n  Actual: false\nExpected: true\n",
               "type": ""
             }
           ]

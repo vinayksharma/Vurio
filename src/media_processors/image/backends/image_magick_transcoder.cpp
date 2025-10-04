@@ -5,8 +5,8 @@
 
 namespace MediaDedup
 {
-    // Global initialization flag for ImageMagick
-    static std::once_flag magick_global_initialized;
+    // Global initialization flag for ImageMagick (defined here, declared in header)
+    std::once_flag magick_global_initialized;
 
     ImageMagickTranscoder::ImageMagickTranscoder()
         : valid_(false), logger_(Poco::Logger::get("ImageMagickTranscoder"))
@@ -35,7 +35,7 @@ namespace MediaDedup
         {
             // Initialize ImageMagick globally (thread-safe, only called once)
             std::call_once(magick_global_initialized, []()
-            {
+                           {
                 try
                 {
                     Magick::InitializeMagick(nullptr);
@@ -50,13 +50,12 @@ namespace MediaDedup
                 catch (...)
                 {
                     // Prevent any ImageMagick initialization exceptions from propagating
-                }
-            });
+                } });
 
             // Initialize this instance's image object with default properties
             // Don't set a specific format - let ImageMagick auto-detect when reading
-            image_.size("100x100");  // Set a default size
-            
+            // Note: image_ is already initialized by the constructor, no need to call size()
+
             logger_.debug("ImageMagickTranscoder instance initialized successfully");
             return true;
         }
@@ -104,8 +103,29 @@ namespace MediaDedup
             logger_.information("Transcoding image: %s", file_path);
 
             // Read the new file (ImageMagick will automatically clear previous data)
-            image_.read(file_path);
-            logger_.debug("Successfully read image file: %s", file_path);
+            try
+            {
+                image_.read(file_path);
+                logger_.debug("Successfully read image file: %s", file_path);
+            }
+            catch (const Magick::Exception &e)
+            {
+                logger_.error("Failed to read image file %s: %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (const std::exception &e)
+            {
+                logger_.error("Failed to read image file %s (std exception): %s", file_path, e.what());
+                tiff_data.clear();
+                return false;
+            }
+            catch (...)
+            {
+                logger_.error("Failed to read image file %s (unknown exception)", file_path);
+                tiff_data.clear();
+                return false;
+            }
 
             // Validate image properties
             if (image_.columns() == 0 || image_.rows() == 0)
@@ -115,7 +135,7 @@ namespace MediaDedup
             }
 
             logger_.debug("Image properties - size: %zux%zu, depth: %zu, colorspace: %d",
-                         image_.columns(), image_.rows(), image_.depth(), image_.colorSpace());
+                          image_.columns(), image_.rows(), image_.depth(), image_.colorSpace());
 
             // Configure image properties for optimal transcoding
             configureImageProperties(image_);
@@ -162,7 +182,7 @@ namespace MediaDedup
         }
     }
 
-    void ImageMagickTranscoder::configureImageProperties(Magick::Image& image)
+    void ImageMagickTranscoder::configureImageProperties(Magick::Image &image)
     {
         try
         {
@@ -197,7 +217,7 @@ namespace MediaDedup
         }
     }
 
-    void ImageMagickTranscoder::setTiffFormatOptions(Magick::Image& image)
+    void ImageMagickTranscoder::setTiffFormatOptions(Magick::Image &image)
     {
         try
         {

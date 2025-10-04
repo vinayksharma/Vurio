@@ -11,6 +11,7 @@ namespace MediaDedup
     class WebServer;
     class ThreadPoolManager;
     class ConsoleInputManager;
+    class MediaProcessor;
 
     namespace Orchestration
     {
@@ -78,6 +79,7 @@ namespace MediaDedup
         std::shared_ptr<ThreadPoolManager> &getTPM() { return tpm_; }
         std::shared_ptr<Orchestration::SchedulerService> &getSchedulerService() { return scheduler_service_; }
         std::shared_ptr<Orchestration::FilesManager> &getFilesManager() { return files_manager_; }
+        std::shared_ptr<MediaProcessor> &getMediaProcessor() { return media_processor_; }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;

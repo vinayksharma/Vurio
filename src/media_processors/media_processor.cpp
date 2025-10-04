@@ -72,20 +72,46 @@ namespace MediaDedup
 
     void MediaProcessor::shutdown()
     {
-        // Shutdown disk cache
-        if (disk_cache_)
-        {
-            disk_cache_->shutdown();
-        }
+        Poco::Logger &logger = Poco::Logger::get("MediaProcessor");
+        logger.information("Shutting down MediaProcessor...");
 
-        // Unsubscribe from configuration changes
-        if (config_manager_)
+        try
         {
-            config_manager_->unsubscribeFromConfigChanges(
-                [this](const ConfigChangeEvent &event)
-                {
-                    onConfigChange(event);
-                });
+            // Clear processing flags to reset any files that were in processing state
+            int cleared_count = clearProcessingFlags();
+            if (cleared_count > 0)
+            {
+                logger.information("Cleared processing flags for %d files during shutdown", cleared_count);
+            }
+
+            // Clear the disk cache
+            if (disk_cache_)
+            {
+                logger.debug("Clearing disk cache during shutdown...");
+                disk_cache_->clearCache();
+                logger.debug("Disk cache cleared successfully");
+            }
+
+            // Unsubscribe from configuration changes
+            if (config_manager_)
+            {
+                config_manager_->unsubscribeFromConfigChanges(
+                    [this](const ConfigChangeEvent &event)
+                    {
+                        onConfigChange(event);
+                    });
+                logger.debug("Unsubscribed from configuration changes");
+            }
+
+            logger.information("MediaProcessor shutdown complete");
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception during MediaProcessor shutdown: %s", e.what());
+        }
+        catch (...)
+        {
+            logger.error("Unknown exception during MediaProcessor shutdown");
         }
     }
 
@@ -249,17 +275,6 @@ namespace MediaDedup
                         // Mark file as in use
                         disk_cache->markFileInUse(processing_file_path);
 
-                        // Use RAII pattern for cleanup - created early to ensure cleanup happens
-                        struct CacheCleanup {
-                            std::shared_ptr<DiskCache> cache;
-                            std::string path;
-                            CacheCleanup(std::shared_ptr<DiskCache> c, const std::string& p) : cache(c), path(p) {}
-                            ~CacheCleanup() {
-                                cache->markFileNotInUse(path);
-                                cache->deleteFromCacheImmediately(path);
-                            }
-                        } cleanup(disk_cache, processing_file_path);
-
                         try
                         {
                             ImageProcessor image_processor;
@@ -297,9 +312,22 @@ namespace MediaDedup
                         }
                         catch (...)
                         {
-                            // Cleanup will happen automatically via RAII destructor
+                            // Clean up cache file before re-throwing
+                            disk_cache->markFileNotInUse(processing_file_path);
+                            disk_cache->deleteFromCacheImmediately(processing_file_path);
                             throw;
                         }
+
+                        // Use RAII pattern for cleanup - runs after all processing is complete
+                        struct CacheCleanup {
+                            std::shared_ptr<DiskCache> cache;
+                            std::string path;
+                            CacheCleanup(std::shared_ptr<DiskCache> c, const std::string& p) : cache(c), path(p) {}
+                            ~CacheCleanup() {
+                                cache->markFileNotInUse(path);
+                                cache->deleteFromCacheImmediately(path);
+                            }
+                        } cleanup(disk_cache, processing_file_path);
                     }
                     catch (const std::bad_alloc& e)
                     {
@@ -1123,4 +1151,5 @@ namespace MediaDedup
             return -1;
         }
     }
+
 }

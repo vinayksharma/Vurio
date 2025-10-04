@@ -5,6 +5,7 @@
 #include <string>
 #include <filesystem>
 #include <thread>
+#include <unistd.h>
 
 using namespace MediaDedup;
 
@@ -15,6 +16,24 @@ protected:
     {
         // Test files from the testset directory
         test_files_dir_ = "/Users/vinaysharma/pictures/testset/";
+
+        // Debug: Check if the test file exists
+        std::string test_file = test_files_dir_ + "sample.jpg";
+        if (!std::filesystem::exists(test_file))
+        {
+            std::cout << "WARNING: Test file does not exist: " << test_file << std::endl;
+        }
+        else
+        {
+            std::cout << "Test file exists: " << test_file << std::endl;
+        }
+
+        // Debug: Check current working directory
+        char cwd[1024];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr)
+        {
+            std::cout << "Current working directory: " << cwd << std::endl;
+        }
 
         // Raw image files to test
         raw_files_ = {

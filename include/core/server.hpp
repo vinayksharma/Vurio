@@ -21,6 +21,7 @@
 // Files orchestration
 #include "orchestration/files_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
+#include "media_processors/media_processor.hpp"
 
 // Orchestration
 namespace MediaDedup
@@ -100,6 +101,7 @@ namespace MediaDedup
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::shared_ptr<Orchestration::FilesManager> files_manager_;
+        std::shared_ptr<MediaProcessor> media_processor_;
 
         // Console input management
         ::MediaDedupServer::Core::ConsoleInputManager &console_input_manager_;
