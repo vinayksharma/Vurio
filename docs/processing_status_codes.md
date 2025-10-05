@@ -4,19 +4,19 @@ This document defines the status codes used in the `scanned_files` table to trac
 
 ## Status Code Reference
 
-| Code | Description                     | Usage                                                                                                       |
-| ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `0`  | **Unprocessed**                 | File has been scanned but not yet processed                                                                 |
-| `1`  | **Currently Processing**        | File is currently being processed by a worker thread                                                       |
-| `2`  | **Processing Complete**         | File has been successfully processed                                                                        |
-| `>2` | **Processing Complete**         | File has been successfully processed (value indicates processing timestamp or version)                      |
-| `-99`| **Queued for Processing**       | File has been submitted to the processing queue but not yet picked up by a worker thread                   |
-| `-2` | **Skipped Due to Backpressure** | File was skipped because processing queue was at capacity                                                   |
-| `-1` | **General Error**               | File processing failed due to corruption, format issues, or other general errors                            |
-| `-3` | **File Access Error**           | File processing failed due to file access issues (permission denied, file not found, file locked)           |
-| `-4` | **Memory Allocation Error**     | File processing failed due to memory allocation issues (out of memory, allocation failure)                  |
-| `-5` | **Network-Related Error**       | File processing failed due to network issues (network files, connection timeouts)                           |
-| `-6` | **Cache Operation Error**       | File processing failed due to disk cache issues (cache copy failed, cache save failed, cache delete failed) |
+| Code  | Description                     | Usage                                                                                                       |
+| ----- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `0`   | **Unprocessed**                 | File has been scanned but not yet processed                                                                 |
+| `1`   | **Currently Processing**        | File is currently being processed by a worker thread                                                        |
+| `2`   | **Processing Complete**         | File has been successfully processed                                                                        |
+| `>2`  | **Processing Complete**         | File has been successfully processed (value indicates processing timestamp or version)                      |
+| `-99` | **Queued for Processing**       | File has been submitted to the processing queue but not yet picked up by a worker thread                    |
+| `-2`  | **Skipped Due to Backpressure** | File was skipped because processing queue was at capacity                                                   |
+| `-1`  | **General Error**               | File processing failed due to corruption, format issues, or other general errors                            |
+| `-3`  | **File Access Error**           | File processing failed due to file access issues (permission denied, file not found, file locked)           |
+| `-4`  | **Memory Allocation Error**     | File processing failed due to memory allocation issues (out of memory, allocation failure)                  |
+| `-5`  | **Network-Related Error**       | File processing failed due to network issues (network files, connection timeouts)                           |
+| `-6`  | **Cache Operation Error**       | File processing failed due to disk cache issues (cache copy failed, cache save failed, cache delete failed) |
 
 ## Implementation Notes
 
