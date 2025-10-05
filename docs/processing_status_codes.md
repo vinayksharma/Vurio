@@ -11,7 +11,7 @@ This document defines the status codes used in the `scanned_files` table to trac
 | `2`   | **Processing Complete**         | File has been successfully processed                                                                        |
 | `>2`  | **Processing Complete**         | File has been successfully processed (value indicates processing timestamp or version)                      |
 | `-99` | **Queued for Processing**       | File has been submitted to the processing queue but not yet picked up by a worker thread                    |
-| `-2`  | **Skipped Due to Backpressure** | File was skipped because processing queue was at capacity (retryable)                                      |
+| `-2`  | **Skipped Due to Backpressure** | File was skipped because processing queue was at capacity (retryable)                                       |
 | `-1`  | **General Error**               | File processing failed due to corruption, format issues, or other general errors                            |
 | `-3`  | **File Access Error**           | File processing failed due to file access issues (permission denied, file not found, file locked)           |
 | `-4`  | **Memory Allocation Error**     | File processing failed due to memory allocation issues (out of memory, allocation failure)                  |
