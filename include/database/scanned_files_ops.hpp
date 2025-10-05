@@ -42,6 +42,7 @@ namespace MediaDedup
         static int countProcessed(DatabaseManager &db);
         static int countProcessed(DatabaseManager &db, ServerMode mode);
         static int countError(DatabaseManager &db, ServerMode mode);
+        static int countQueued(DatabaseManager &db, ServerMode mode);
 
         // Adjusted APIs based on stored data
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);

@@ -140,7 +140,7 @@ namespace MediaDedup
         type_to_share_[type] = share;
     }
 
-    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn)
+    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn, const std::string &file_path)
     {
         if (!accepting_.load())
         {
@@ -151,7 +151,7 @@ namespace MediaDedup
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            type_to_queue_[type].emplace_back(std::move(fn));
+            type_to_queue_[type].emplace_back(std::move(fn), file_path);
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
             {
@@ -164,8 +164,9 @@ namespace MediaDedup
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
         std::stringstream thread_id;
         thread_id << std::this_thread::get_id();
-        logger.debug("Submitted task for type '%s', queue size: %u, calling thread: %s",
-                     type, static_cast<unsigned int>(type_to_queue_[type].size()), thread_id.str());
+        logger.debug("Submitted task for type '%s', queue size: %u, file: %s, calling thread: %s",
+                     type, static_cast<unsigned int>(type_to_queue_[type].size()), 
+                     file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id.str());
         schedule();
     }
 
@@ -315,7 +316,7 @@ namespace MediaDedup
 
             auto task = queue.front();
             queue.pop_front();
-            auto fn = std::move(task);
+            auto fn = std::move(task.fn);
 
             // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
@@ -555,4 +556,48 @@ std::unordered_map<std::string, size_t> MediaDedup::ThreadPoolManager::getAllQue
     }
 
     return queue_depths;
+}
+
+std::vector<std::string> MediaDedup::ThreadPoolManager::getPendingFilePaths(const std::string &type) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> file_paths;
+    
+    auto it = type_to_queue_.find(type);
+    if (it != type_to_queue_.end())
+    {
+        for (const auto &task : it->second)
+        {
+            if (!task.file_path.empty())
+            {
+                file_paths.push_back(task.file_path);
+            }
+        }
+    }
+    
+    return file_paths;
+}
+
+std::unordered_map<std::string, std::vector<std::string>> MediaDedup::ThreadPoolManager::getAllPendingFilePaths() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::unordered_map<std::string, std::vector<std::string>> all_pending;
+    
+    for (const auto &pair : type_to_queue_)
+    {
+        std::vector<std::string> file_paths;
+        for (const auto &task : pair.second)
+        {
+            if (!task.file_path.empty())
+            {
+                file_paths.push_back(task.file_path);
+            }
+        }
+        if (!file_paths.empty())
+        {
+            all_pending[pair.first] = std::move(file_paths);
+        }
+    }
+    
+    return all_pending;
 }

@@ -179,6 +179,16 @@ namespace MediaDedup
                     return false; // Indicate that processing was skipped
                 }
 
+                // Mark file as queued for processing
+                try
+                {
+                    ScannedFilesOps::markProcessed(*database_manager_, file_path, server_mode, -99); // -99 = queued
+                }
+                catch (...)
+                {
+                    Poco::Logger::get("MediaProcessor").error("Failed to mark file as queued in database: %s", file_path);
+                }
+
                 // Capture by value for thread safety and to avoid dangling references
                 std::string file_path_copy = file_path;
                 ServerMode server_mode_copy = server_mode;
@@ -187,10 +197,13 @@ namespace MediaDedup
                 std::shared_ptr<DiskCache> disk_cache = disk_cache_;
 
                 thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager, disk_cache]()
-                                             {
+                {
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        // Mark file as in progress
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
 
                         // Copy file to cache
                         std::string cached_path;
@@ -365,7 +378,7 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in image processing thread for file: " + file_path_copy);
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
-                    } });
+                    } }, file_path_copy);
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
                 return true; // Successfully submitted to thread pool
@@ -407,6 +420,9 @@ namespace MediaDedup
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        // Mark file as in progress
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
 
                         // Check if file exists and is accessible (file access error detection)
                         if (!std::filesystem::exists(file_path_copy))
@@ -491,7 +507,7 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in video processing thread for file: " + file_path_copy);
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
-                    } });
+                    } }, file_path_copy);
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
                 return true; // Successfully submitted to thread pool
@@ -533,6 +549,9 @@ namespace MediaDedup
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        // Mark file as in progress
+                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
 
                         // Check if file exists and is accessible (file access error detection)
                         if (!std::filesystem::exists(file_path_copy))
@@ -617,7 +636,7 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in audio processing thread for file: " + file_path_copy);
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
-                    } });
+                    } }, file_path_copy);
 
                 Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
                 return true; // Successfully submitted to thread pool

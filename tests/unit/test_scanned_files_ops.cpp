@@ -292,6 +292,42 @@ namespace MediaDedup
     }
 }
 
+TEST(ScannedFilesOpsTest, QueuedStatusCount)
+{
+    std::string db_path = "../tests/test_data/databases/test_queued_status_count.sqlite";
+    std::remove(db_path.c_str());
+
+    MediaDedup::DatabaseManager dbm(db_path);
+    ASSERT_TRUE(dbm.initialize());
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
+
+    // Create test files with different statuses
+    auto file1 = MediaDedup::Test::makeRow("/test/queued_file1.jpg");
+    auto file2 = MediaDedup::Test::makeRow("/test/queued_file2.jpg");
+    auto file3 = MediaDedup::Test::makeRow("/test/processed_file.jpg");
+    auto file4 = MediaDedup::Test::makeRow("/test/error_file.jpg");
+
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file1));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file2));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file3));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file4));
+
+    // Set different statuses
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file1.file_path, MediaDedup::ServerMode::FAST, -99)); // Queued
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file2.file_path, MediaDedup::ServerMode::FAST, -99)); // Queued
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file3.file_path, MediaDedup::ServerMode::FAST, 2));   // Processed
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file4.file_path, MediaDedup::ServerMode::FAST, -1));  // Error
+
+    // Test queued count
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::FAST), 2);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::BALANCED), 0);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::QUALITY), 0);
+
+    // Test that queued files are included in unprocessed list
+    auto unprocessed = MediaDedup::ScannedFilesOps::listUnprocessed(dbm, MediaDedup::ServerMode::FAST);
+    EXPECT_EQ(unprocessed.size(), 3); // 2 queued + 1 error file
+}
+
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)
 {

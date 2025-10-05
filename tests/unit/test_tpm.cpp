@@ -5,6 +5,7 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <set>
 
 using namespace MediaDedup;
 using namespace MediaDedup::Test;
@@ -279,6 +280,79 @@ TEST(ThreadPoolManagerTest, GetAllQueueDepths)
                                 std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
 
     tpm.shutdownAndDrain(std::chrono::milliseconds(200));
+}
+
+TEST(ThreadPoolManagerTest, FilePathTracking)
+{
+    // Minimal config with very small thread pool to force queuing
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("1")); // Only 1 thread
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+    tpm.setShare("media_processor", 1.0);
+
+    // Submit tasks with file paths - use blocking tasks to prevent immediate execution
+    std::atomic<bool> task1_done{false};
+    std::atomic<bool> task2_done{false};
+    std::atomic<bool> task3_done{false};
+    std::atomic<bool> task4_done{false};
+
+    tpm.submit("media_processor", [&task1_done](){
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        task1_done = true;
+    }, "/path/to/file1.jpg");
+    
+    tpm.submit("media_processor", [&task2_done](){
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        task2_done = true;
+    }, "/path/to/file2.jpg");
+    
+    tpm.submit("media_processor", [&task3_done](){
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        task3_done = true;
+    }, "/path/to/file3.jpg");
+    
+    // Submit task without file path
+    tpm.submit("media_processor", [&task4_done](){
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        task4_done = true;
+    });
+
+    // Give a moment for first task to start but others to remain queued
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    // Check pending file paths - should have 3 remaining (4 total - 1 running)
+    auto pending_paths = tpm.getPendingFilePaths("media_processor");
+    EXPECT_GE(pending_paths.size(), 2); // At least 2 should be queued (3 with paths + 1 without - 1 running)
+    
+    // Check specific file paths are tracked
+    std::set<std::string> expected_paths = {
+        "/path/to/file1.jpg",
+        "/path/to/file2.jpg", 
+        "/path/to/file3.jpg"
+    };
+    
+    std::set<std::string> actual_paths(pending_paths.begin(), pending_paths.end());
+    // At least one of the expected paths should be found
+    bool found_expected = false;
+    for (const auto& expected : expected_paths) {
+        if (actual_paths.count(expected)) {
+            found_expected = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_expected) << "None of the expected file paths were found in pending queue";
+
+    // Check all pending file paths
+    auto all_pending = tpm.getAllPendingFilePaths();
+    EXPECT_EQ(all_pending.size(), 1); // Only "media_processor" type
+    EXPECT_GE(all_pending["media_processor"].size(), 2); // At least 2 should be pending
+
+    // Wait for all tasks to complete
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
 }
 
 #if !defined(ALL_UNIT_TESTS)

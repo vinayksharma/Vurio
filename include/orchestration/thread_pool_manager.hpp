@@ -46,7 +46,7 @@ namespace MediaDedup
 
         void setShare(const std::string &type, double share);
 
-        void submit(const std::string &type, std::function<void()> fn);
+        void submit(const std::string &type, std::function<void()> fn, const std::string &file_path = "");
         bool canSubmit(const std::string &type, size_t max_queue_size = 10000) const;
 
         Status getStatus() const;
@@ -64,7 +64,29 @@ namespace MediaDedup
          */
         std::unordered_map<std::string, size_t> getAllQueueDepths() const;
 
+        /**
+         * @brief Get pending file paths for a specific task type
+         * @param type Task type (e.g., "media_processor")
+         * @return Vector of file paths currently queued for the specified type
+         */
+        std::vector<std::string> getPendingFilePaths(const std::string &type) const;
+
+        /**
+         * @brief Get pending file paths for all task types
+         * @return Map of task type to vector of pending file paths
+         */
+        std::unordered_map<std::string, std::vector<std::string>> getAllPendingFilePaths() const;
+
     private:
+        struct QueuedTask
+        {
+            std::function<void()> fn;
+            std::string file_path;
+            
+            QueuedTask(std::function<void()> f, const std::string& path = "")
+                : fn(std::move(f)), file_path(path) {}
+        };
+
         class FunctionRunnable : public Poco::Runnable
         {
         public:
@@ -109,7 +131,7 @@ namespace MediaDedup
 
         std::unordered_map<std::string, double> type_to_share_;
         std::unordered_map<std::string, size_t> type_to_running_;
-        std::unordered_map<std::string, std::deque<std::function<void()>>> type_to_queue_;
+        std::unordered_map<std::string, std::deque<QueuedTask>> type_to_queue_;
         std::vector<std::string> round_robin_types_;
         size_t rr_index_ = 0;
         size_t running_total_ = 0;
