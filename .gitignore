@@ -131,3 +131,4 @@ env.bak/
 venv.bak/
 dedup_server.pid
 models/
+data/
