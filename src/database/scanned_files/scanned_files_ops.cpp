@@ -694,4 +694,50 @@ namespace MediaDedup
             return false;
         }
     }
+
+    int ScannedFilesOps::resetAllErrors(DatabaseManager &db, ServerMode mode)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            // First count the error files for this mode
+            int count = countError(db, mode);
+            if (count == 0)
+            {
+                Poco::Logger::get("ScannedFilesOps").information("No error files to reset for mode " + std::to_string(static_cast<int>(mode)));
+                return 0;
+            }
+
+            // Now reset the errors
+            Statement stmt(sess);
+            std::string_view query;
+            switch (mode)
+            {
+            case ServerMode::FAST:
+                query = SQL::kResetAllErrorsFast;
+                break;
+            case ServerMode::BALANCED:
+                query = SQL::kResetAllErrorsBalanced;
+                break;
+            case ServerMode::QUALITY:
+                query = SQL::kResetAllErrorsQuality;
+                break;
+            default:
+                query = SQL::kResetAllErrorsFast;
+                break;
+            }
+
+            stmt << std::string(query), Keywords::now;
+            
+            Poco::Logger::get("ScannedFilesOps").information("Reset " + std::to_string(count) + " error files to unprocessed for mode " + std::to_string(static_cast<int>(mode)));
+            return count;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Failed to reset all errors for mode " + std::to_string(static_cast<int>(mode)) + ": " + std::string(e.what()));
+            return -1;
+        }
+    }
 }

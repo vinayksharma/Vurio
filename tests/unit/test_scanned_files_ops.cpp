@@ -328,6 +328,93 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
     EXPECT_EQ(unprocessed.size(), 3); // 2 queued + 1 error file
 }
 
+// TEST(ScannedFilesOpsTest, ResetAllErrors)
+// {
+//     std::string db_path = "../tests/test_data/databases/test_reset_errors.sqlite";
+//     std::remove(db_path.c_str());
+
+//     MediaDedup::DatabaseManager dbm(db_path);
+//     ASSERT_TRUE(dbm.initialize());
+//     ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
+
+//     // Create test files with various error statuses
+//     auto file1 = MediaDedup::Test::makeRow("/tmp/error1.jpg");
+//     file1.processed_fast = -1;    // General error
+//     file1.processed_balanced = -3; // File access error
+//     file1.processed_quality = -101; // Escalated error
+//     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file1));
+
+//     auto file2 = MediaDedup::Test::makeRow("/tmp/error2.jpg");
+//     file2.processed_fast = -6;    // Cache error
+//     file2.processed_balanced = 2;  // Successfully processed
+//     file2.processed_quality = -2;  // Backpressure (should not be reset)
+//     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file2));
+
+//     auto file3 = MediaDedup::Test::makeRow("/tmp/error3.jpg");
+//     file3.processed_fast = 0;     // Unprocessed
+//     file3.processed_balanced = -99; // Queued
+//     file3.processed_quality = -106; // Escalated cache error
+//     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file3));
+
+//     // Verify initial error counts
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 2);     // -1, -6
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 1); // -3
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 2);  // -101, -106
+
+//     // Reset errors for FAST mode
+//     int reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::FAST);
+//     EXPECT_EQ(reset_count, 2); // Should reset 2 files with errors in FAST mode
+
+//     // Verify FAST mode errors were reset
+//     auto fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
+//     ASSERT_TRUE(fetched1.has_value());
+//     EXPECT_EQ(fetched1->processed_fast, 0);     // Reset from -1 to 0
+//     EXPECT_EQ(fetched1->processed_balanced, -3); // Unchanged
+//     EXPECT_EQ(fetched1->processed_quality, -101); // Unchanged
+
+//     auto fetched2 = MediaDedup::ScannedFilesOps::getByPath(dbm, file2.file_path);
+//     ASSERT_TRUE(fetched2.has_value());
+//     EXPECT_EQ(fetched2->processed_fast, 0);     // Reset from -6 to 0
+//     EXPECT_EQ(fetched2->processed_balanced, 2);  // Unchanged
+//     EXPECT_EQ(fetched2->processed_quality, -2);  // Unchanged
+
+//     // Verify error counts after reset
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 0);     // All reset
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 1); // Unchanged
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 2);  // Unchanged
+
+//     // Reset errors for BALANCED mode
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::BALANCED);
+//     EXPECT_EQ(reset_count, 1); // Should reset 1 file with error in BALANCED mode
+
+//     // Verify BALANCED mode error was reset
+//     fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
+//     ASSERT_TRUE(fetched1.has_value());
+//     EXPECT_EQ(fetched1->processed_balanced, 0); // Reset from -3 to 0
+
+//     // Reset errors for QUALITY mode
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::QUALITY);
+//     EXPECT_EQ(reset_count, 2); // Should reset 2 files with errors in QUALITY mode
+
+//     // Verify QUALITY mode errors were reset
+//     fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
+//     ASSERT_TRUE(fetched1.has_value());
+//     EXPECT_EQ(fetched1->processed_quality, 0); // Reset from -101 to 0
+
+//     auto fetched3 = MediaDedup::ScannedFilesOps::getByPath(dbm, file3.file_path);
+//     ASSERT_TRUE(fetched3.has_value());
+//     EXPECT_EQ(fetched3->processed_quality, 0); // Reset from -106 to 0
+
+//     // Verify all error counts are now 0
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 0);
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 0);
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 0);
+
+//     // Test reset with no errors (should return 0)
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::FAST);
+//     EXPECT_EQ(reset_count, 0);
+// }
+
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)
 {

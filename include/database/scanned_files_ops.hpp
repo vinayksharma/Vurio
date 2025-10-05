@@ -65,6 +65,9 @@ namespace MediaDedup
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);
 
+        // Reset all errors to unprocessed (0) for the specified mode
+        static int resetAllErrors(DatabaseManager &db, ServerMode mode);
+
         // Efficient file existence check (optimized for FilesManager scans)
         // Returns true if file_path exists in scanned_files table
         static bool fileExists(DatabaseManager &db, const std::string &file_path);

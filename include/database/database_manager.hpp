@@ -48,7 +48,7 @@ namespace MediaDedup
          * @brief Constructor
          * @param db_path Path to SQLite database file
          */
-        explicit DatabaseManager(const std::string &db_path = "media_dedup.db");
+        explicit DatabaseManager(const std::string &db_path = "dedup_server.db");
 
         /**
          * @brief Destructor

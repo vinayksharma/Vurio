@@ -41,6 +41,10 @@ namespace MediaDedup
         {
             return ScannedFilesOps::listUnprocessed(db_, mode, limit);
         }
+        int resetAllErrors(ServerMode mode)
+        {
+            return ScannedFilesOps::resetAllErrors(db_, mode);
+        }
 
     private:
         DatabaseManager &db_;

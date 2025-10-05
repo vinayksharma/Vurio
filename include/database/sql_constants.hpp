@@ -174,6 +174,14 @@ namespace MediaDedup
         inline constexpr std::string_view kClearProcessingFlags =
             "UPDATE scanned_files SET processed_fast=CASE WHEN processed_fast=1 THEN 0 ELSE processed_fast END, processed_balanced=CASE WHEN processed_balanced=1 THEN 0 ELSE processed_balanced END, processed_quality=CASE WHEN processed_quality=1 THEN 0 ELSE processed_quality END WHERE processed_fast=1 OR processed_balanced=1 OR processed_quality=1";
 
+        // Bulk error reset operations - reset all errors (< 0) to 0 (unprocessed) for current mode
+        inline constexpr std::string_view kResetAllErrorsFast =
+            "UPDATE scanned_files SET processed_fast=0 WHERE processed_fast < 0";
+        inline constexpr std::string_view kResetAllErrorsBalanced =
+            "UPDATE scanned_files SET processed_balanced=0 WHERE processed_balanced < 0";
+        inline constexpr std::string_view kResetAllErrorsQuality =
+            "UPDATE scanned_files SET processed_quality=0 WHERE processed_quality < 0";
+
         inline constexpr std::string_view kUpdateLinksFast =
             "UPDATE scanned_files SET links_fast=? WHERE file_path=?";
         inline constexpr std::string_view kUpdateLinksBalanced =

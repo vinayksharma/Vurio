@@ -9,6 +9,7 @@
 #include "core/web/web_server.hpp"
 #include "core/web/static_file_handler.hpp"
 #include "core/web/web_handlers_server_status.hpp"
+#include "core/web/web_handlers_reset_errors.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
@@ -112,6 +113,8 @@ namespace MediaDedup
             return new ReloadConfigHandler(config_manager_);
         if (uri == "/api/v1/server/status" && method == "GET")
             return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_);
+        // if (uri == "/api/v1/files/reset-errors" && method == "POST")
+        //     return new ResetErrorsHandler(config_manager_, scanned_files_service_);
         if (uri == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 
