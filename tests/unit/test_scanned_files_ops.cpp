@@ -257,7 +257,7 @@ namespace MediaDedup
             EXPECT_FALSE(unprocessed_paths.count("/test/escalated106.jpg")) << "Escalated error -106 should not be included";
         }
 
-        TEST(ScannedFilesOpsTest, BackpressureNotEscalated)
+        TEST(ScannedFilesOpsTest, BackpressureIncludedInRetry)
         {
             std::string db_path = "../tests/test_data/databases/test_backpressure.sqlite";
             std::remove(db_path.c_str());
@@ -276,7 +276,7 @@ namespace MediaDedup
             ASSERT_TRUE(fetched.has_value());
             EXPECT_EQ(fetched->processed_fast, -2); // Should remain -2
 
-            // Test that backpressure files are not included in retry logic
+            // Test that backpressure files are now included in retry logic
             auto unprocessed = ScannedFilesOps::listUnprocessed(dbm, ServerMode::FAST);
             bool found_backpressure = false;
             for (const auto &file : unprocessed)
@@ -287,7 +287,7 @@ namespace MediaDedup
                     break;
                 }
             }
-            EXPECT_FALSE(found_backpressure) << "Backpressure files should not be included in retry logic";
+            EXPECT_TRUE(found_backpressure) << "Backpressure files should now be included in retry logic";
         }
     }
 }
