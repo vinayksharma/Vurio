@@ -202,6 +202,37 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
+                        // Check if file is already processed or currently being processed
+                        auto current_file = ScannedFilesOps::getByPath(*db_manager, file_path_copy);
+                        if (current_file.has_value())
+                        {
+                            int current_status = 0;
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                current_status = current_file->processed_fast;
+                                break;
+                            case ServerMode::BALANCED:
+                                current_status = current_file->processed_balanced;
+                                break;
+                            case ServerMode::QUALITY:
+                                current_status = current_file->processed_quality;
+                                break;
+                            }
+
+                            // Skip if already processed (status >= 2) or currently in progress (status = 1)
+                            if (current_status >= 2)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping already processed file: %s (status: %d)", file_path_copy, current_status);
+                                return;
+                            }
+                            else if (current_status == 1)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
+                                return;
+                            }
+                        }
+
                         // Mark file as in progress
                         ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
 
@@ -421,6 +452,37 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
 
+                        // Check if file is already processed or currently being processed
+                        auto current_file = ScannedFilesOps::getByPath(*db_manager, file_path_copy);
+                        if (current_file.has_value())
+                        {
+                            int current_status = 0;
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                current_status = current_file->processed_fast;
+                                break;
+                            case ServerMode::BALANCED:
+                                current_status = current_file->processed_balanced;
+                                break;
+                            case ServerMode::QUALITY:
+                                current_status = current_file->processed_quality;
+                                break;
+                            }
+
+                            // Skip if already processed (status >= 2) or currently in progress (status = 1)
+                            if (current_status >= 2)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping already processed file: %s (status: %d)", file_path_copy, current_status);
+                                return;
+                            }
+                            else if (current_status == 1)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
+                                return;
+                            }
+                        }
+
                         // Mark file as in progress
                         ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
 
@@ -549,6 +611,37 @@ namespace MediaDedup
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
+
+                        // Check if file is already processed or currently being processed
+                        auto current_file = ScannedFilesOps::getByPath(*db_manager, file_path_copy);
+                        if (current_file.has_value())
+                        {
+                            int current_status = 0;
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                current_status = current_file->processed_fast;
+                                break;
+                            case ServerMode::BALANCED:
+                                current_status = current_file->processed_balanced;
+                                break;
+                            case ServerMode::QUALITY:
+                                current_status = current_file->processed_quality;
+                                break;
+                            }
+
+                            // Skip if already processed (status >= 2) or currently in progress (status = 1)
+                            if (current_status >= 2)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping already processed file: %s (status: %d)", file_path_copy, current_status);
+                                return;
+                            }
+                            else if (current_status == 1)
+                            {
+                                Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
+                                return;
+                            }
+                        }
 
                         // Mark file as in progress
                         ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
