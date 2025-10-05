@@ -230,13 +230,35 @@ namespace MediaDedup
                             {
                                 Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
                                 return;
-                            }
                         }
+                    }
 
-                        // Mark file as in progress
-                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                    // Mark file as in progress (only if not already in an error state)
+                    // If file is in an error state, keep it so escalation logic can work properly
+                    if (current_file.has_value())
+                    {
+                        int current_status = 0;
+                        switch (server_mode_copy)
+                        {
+                        case ServerMode::FAST:
+                            current_status = current_file->processed_fast;
+                            break;
+                        case ServerMode::BALANCED:
+                            current_status = current_file->processed_balanced;
+                            break;
+                        case ServerMode::QUALITY:
+                            current_status = current_file->processed_quality;
+                            break;
+                        }
+                        
+                        // Only mark as "in progress" if not already in an error state
+                        if (current_status >= 0)
+                        {
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                        }
+                    }
 
-                        // Copy file to cache
+                    // Copy file to cache
                         std::string cached_path;
                         if (!disk_cache->copyToCache(file_path_copy, cached_path))
                         {
@@ -483,8 +505,30 @@ namespace MediaDedup
                             }
                         }
 
-                        // Mark file as in progress
-                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                        // Mark file as in progress (only if not already in an error state)
+                        // If file is in an error state, keep it so escalation logic can work properly
+                        if (current_file.has_value())
+                        {
+                            int current_status_check = 0;
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                current_status_check = current_file->processed_fast;
+                                break;
+                            case ServerMode::BALANCED:
+                                current_status_check = current_file->processed_balanced;
+                                break;
+                            case ServerMode::QUALITY:
+                                current_status_check = current_file->processed_quality;
+                                break;
+                            }
+                            
+                            // Only mark as "in progress" if not already in an error state
+                            if (current_status_check >= 0)
+                            {
+                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                            }
+                        }
 
                         // Check if file exists and is accessible (file access error detection)
                         if (!std::filesystem::exists(file_path_copy))
@@ -643,8 +687,30 @@ namespace MediaDedup
                             }
                         }
 
-                        // Mark file as in progress
-                        ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                        // Mark file as in progress (only if not already in an error state)
+                        // If file is in an error state, keep it so escalation logic can work properly
+                        if (current_file.has_value())
+                        {
+                            int current_status_check = 0;
+                            switch (server_mode_copy)
+                            {
+                            case ServerMode::FAST:
+                                current_status_check = current_file->processed_fast;
+                                break;
+                            case ServerMode::BALANCED:
+                                current_status_check = current_file->processed_balanced;
+                                break;
+                            case ServerMode::QUALITY:
+                                current_status_check = current_file->processed_quality;
+                                break;
+                            }
+                            
+                            // Only mark as "in progress" if not already in an error state
+                            if (current_status_check >= 0)
+                            {
+                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 1); // 1 = in progress
+                            }
+                        }
 
                         // Check if file exists and is accessible (file access error detection)
                         if (!std::filesystem::exists(file_path_copy))
