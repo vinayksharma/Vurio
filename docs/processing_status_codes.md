@@ -23,12 +23,39 @@ This document defines the status codes used in the `scanned_files` table to trac
 
 ## Error Code Rationale
 
-The negative error codes are designed to support future retry logic implementation:
+The negative error codes support retry logic with escalation:
 
-- **-3**: File access errors may be temporary (file locked by another process)
-- **-4**: Memory errors may be temporary (system under load)
-- **-5**: Network errors are often temporary (network connectivity issues)
-- **-6**: Cache errors may be temporary (disk space issues, file system errors)
+- **-1**: General errors (corruption, format issues) - retryable once
+- **-2**: Backpressure errors (queue at capacity) - not retryable, not escalated
+- **-3**: File access errors may be temporary (file locked by another process) - retryable once
+- **-4**: Memory errors may be temporary (system under load) - retryable once
+- **-5**: Network errors are often temporary (network connectivity issues) - retryable once
+- **-6**: Cache errors may be temporary (disk space issues, file system errors) - retryable once
+
+## Retry Logic and Error Escalation
+
+The system implements a **single retry with escalation** policy:
+
+1. **Initial Error**: Files that fail processing are marked with standard error codes (-1, -3, -4, -5, -6)
+2. **Retry Attempt**: Files with error codes >= -100 are eligible for retry
+3. **Escalation**: If a file fails again after retry, the error code is escalated by subtracting 100:
+   - -1 (General Error) → -101 (Escalated General Error)
+   - -3 (File Access Error) → -103 (Escalated File Access Error)
+   - -4 (Memory Error) → -104 (Escalated Memory Error)
+   - -5 (Network Error) → -105 (Escalated Network Error)
+   - -6 (Cache Error) → -106 (Escalated Cache Error)
+4. **No Further Retries**: Files with error codes < -100 are never retried again
+
+### Escalated Error Codes
+
+| Code   | Description                      | Retry Status                          |
+| ------ | -------------------------------- | ------------------------------------- |
+| `-101` | **Escalated General Error**      | No further retries                    |
+| `-102` | **Escalated Backpressure Error** | No further retries (should not occur) |
+| `-103` | **Escalated File Access Error**  | No further retries                    |
+| `-104` | **Escalated Memory Error**       | No further retries                    |
+| `-105` | **Escalated Network Error**      | No further retries                    |
+| `-106` | **Escalated Cache Error**        | No further retries                    |
 
 ## Database Schema
 
@@ -43,15 +70,25 @@ CREATE TABLE scanned_files (
 );
 ```
 
-## Query Examples    
+## Query Examples
 
 ```sql
--- List all unprocessed files
-SELECT file_path FROM scanned_files WHERE status = 0;
+-- List all unprocessed files (including retryable errors, excluding backpressure)
+SELECT file_path FROM scanned_files WHERE processed_fast = 0 OR (processed_fast >= -100 AND processed_fast < 0 AND processed_fast != -2);
 
 -- List files that failed due to file access issues
-SELECT file_path FROM scanned_files WHERE status = -3;
+SELECT file_path FROM scanned_files WHERE processed_fast = -3;
 
--- List files that need retry (network, memory, or cache errors)
-SELECT file_path FROM scanned_files WHERE status IN (-4, -5, -6);
+-- List files that need retry (all retryable errors >= -100, excluding backpressure)
+SELECT file_path FROM scanned_files WHERE processed_fast >= -100 AND processed_fast < 0 AND processed_fast != -2;
+
+-- List files that will never be retried (escalated errors < -100)
+SELECT file_path FROM scanned_files WHERE processed_fast < -100;
+
+-- List backpressure files (not retryable)
+SELECT file_path FROM scanned_files WHERE processed_fast = -2;
+
+-- List files with specific escalated errors
+SELECT file_path FROM scanned_files WHERE processed_fast = -101; -- Escalated general error
+SELECT file_path FROM scanned_files WHERE processed_fast = -103; -- Escalated file access error
 ```

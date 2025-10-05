@@ -341,6 +341,65 @@ namespace MediaDedup
         }
     }
 
+    bool ScannedFilesOps::markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state)
+    {
+        try
+        {
+            // Get current status of the file
+            auto current_file = getByPath(db, file_path);
+            if (!current_file.has_value())
+            {
+                Poco::Logger::get("ScannedFilesOps").error("File not found in database for escalation: " + file_path);
+                return false;
+            }
+
+            // Get current status for the specific mode
+            int current_status = 0;
+            switch (mode)
+            {
+            case ServerMode::FAST:
+                current_status = current_file->processed_fast;
+                break;
+            case ServerMode::BALANCED:
+                current_status = current_file->processed_balanced;
+                break;
+            case ServerMode::QUALITY:
+                current_status = current_file->processed_quality;
+                break;
+            }
+
+            // Determine final status based on escalation logic
+            int final_status = state;
+
+            // If current status is already an error (< 0) and we're setting another error, escalate
+            if (current_status < 0 && state < 0)
+            {
+                // Escalate by subtracting 100 (e.g., -1 becomes -101, -6 becomes -106)
+                final_status = state - 100;
+                Poco::Logger::get("ScannedFilesOps").information("Escalating error for file " + file_path + " from " + std::to_string(current_status) + " to " + std::to_string(final_status) + " (original error: " + std::to_string(state) + ")");
+            }
+            else if (current_status < 0)
+            {
+                // If current status is error but new state is success, use success state
+                final_status = state;
+                Poco::Logger::get("ScannedFilesOps").information("File " + file_path + " recovered from error " + std::to_string(current_status) + " to success state " + std::to_string(state));
+            }
+
+            // Use the existing markProcessed method with the final status
+            return markProcessed(db, file_path, mode, final_status);
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file with escalation " + file_path + " with state " + std::to_string(state) + ": " + e.what());
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file with escalation " + file_path + " with state " + std::to_string(state) + ": unknown error");
+            return false;
+        }
+    }
+
     static std::string joinIds(const std::vector<int> &ids)
     {
         std::string s;

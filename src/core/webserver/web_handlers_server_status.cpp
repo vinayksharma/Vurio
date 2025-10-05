@@ -123,7 +123,7 @@ namespace MediaDedup
             }
 
             // Registered directories
-            if (files_service_)
+            if (files_service_) // TODO: this is not used anywhere
             {
                 auto locations = files_service_->listMediaLocations();
                 Poco::JSON::Array directories_array;

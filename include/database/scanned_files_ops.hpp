@@ -45,6 +45,7 @@ namespace MediaDedup
 
         // Adjusted APIs based on stored data
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);
+        static bool markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);
         static bool setLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode, const std::vector<int> &link_ids);
         static std::vector<int> getLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode);
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, ServerMode mode, int limit = -1);
