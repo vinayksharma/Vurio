@@ -164,6 +164,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
         )
     endif()
     if(${test_name} STREQUAL "test_image_artifacts_ops")

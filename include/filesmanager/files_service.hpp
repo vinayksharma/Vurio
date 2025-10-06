@@ -33,13 +33,14 @@ namespace MediaDedup
         void setPathRegisteredCallback(std::function<void(const std::string &)> callback);
         bool isImmediateJobTriggerEnabled() const;
 
+        // Utility method for creating location keys
+        static std::string makeMediaLocationKey(const std::string &directory_path);
+
     private:
         DatabaseManager &db_manager_;
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         Poco::Logger &logger_;
         std::function<void(const std::string &)> path_registered_callback_;
-
-        static std::string makeMediaLocationKey(const std::string &directory_path);
     };
 
 } // namespace MediaDedup

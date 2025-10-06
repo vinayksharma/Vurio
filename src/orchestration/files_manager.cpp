@@ -122,6 +122,7 @@ namespace MediaDedup::Orchestration
         row.file_name = rec.fileName;
         row.file_metadata = meta.dump();
         row.is_network_file = rec.isShareMapped; // best-effort
+        row.location_key = filesService_->makeMediaLocationKey(root); // Full user_settings.key format
 
         // Use database query instead of in-memory index lookup
         auto found = ScannedFilesOps::getByPath(*db_, rec.fullPath);

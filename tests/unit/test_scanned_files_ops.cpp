@@ -2,6 +2,7 @@
 #include <set>
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "database/user_settings_ops.hpp"
 
 namespace MediaDedup
 {
@@ -22,6 +23,7 @@ namespace MediaDedup
             r.links_balanced = "";
             r.links_quality = "";
             r.is_network_file = false;
+            r.location_key = "mediaLocation:test123"; // Test location key
             return r;
         }
 
@@ -64,21 +66,21 @@ namespace MediaDedup
                     found = true;
             EXPECT_TRUE(found);
 
-            // Test count functionality
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 1);
+            // Test count functionality (using unfiltered count for backward compatibility)
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 1);
 
             // Add another file
             auto row2 = makeRow("/tmp/b.jpg");
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row2));
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 2);
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 2);
 
             // Remove one file
             EXPECT_TRUE(ScannedFilesOps::removeByPath(dbm, row.file_path));
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 1);
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 1);
 
             // Remove the other file
             EXPECT_TRUE(ScannedFilesOps::removeByPath(dbm, row2.file_path));
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 0);
         }
 
         TEST(ScannedFilesOpsTest, CountMethodVerification)
@@ -91,7 +93,7 @@ namespace MediaDedup
             ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
 
             // Test empty table
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 0);
 
             // Add files and verify count increments
             std::vector<ScannedFileRow> testFiles;
@@ -100,22 +102,22 @@ namespace MediaDedup
                 ScannedFileRow row = makeRow("/test/file" + std::to_string(i) + ".jpg");
                 testFiles.push_back(row);
                 ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
-                EXPECT_EQ(ScannedFilesOps::count(dbm), i + 1);
+                EXPECT_EQ(ScannedFilesOps::countAll(dbm), i + 1);
             }
 
             // Verify count matches listAll size
             auto allFiles = ScannedFilesOps::listAll(dbm);
-            EXPECT_EQ(ScannedFilesOps::count(dbm), static_cast<int>(allFiles.size()));
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), static_cast<int>(allFiles.size()));
 
             // Remove files and verify count decrements
             for (int i = 0; i < 5; ++i)
             {
                 ASSERT_TRUE(ScannedFilesOps::removeByPath(dbm, testFiles[i].file_path));
-                EXPECT_EQ(ScannedFilesOps::count(dbm), 4 - i);
+                EXPECT_EQ(ScannedFilesOps::countAll(dbm), 4 - i);
             }
 
             // Verify empty table again
-            EXPECT_EQ(ScannedFilesOps::count(dbm), 0);
+            EXPECT_EQ(ScannedFilesOps::countAll(dbm), 0);
         }
 
         TEST(ScannedFilesOpsTest, ErrorEscalationLogic)
@@ -319,9 +321,9 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
     EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file4.file_path, MediaDedup::ServerMode::FAST, -1));  // Error
 
     // Test queued count
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::FAST), 2);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::BALANCED), 0);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueued(dbm, MediaDedup::ServerMode::QUALITY), 0);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::FAST), 2);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::BALANCED), 0);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::QUALITY), 0);
 
     // Test that queued files are included in unprocessed list
     auto unprocessed = MediaDedup::ScannedFilesOps::listUnprocessed(dbm, MediaDedup::ServerMode::FAST);
@@ -414,6 +416,71 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 //     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::FAST);
 //     EXPECT_EQ(reset_count, 0);
 // }
+
+    TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
+    {
+        std::string db_path = "../tests/test_data/databases/test_filtered_counts.sqlite";
+        std::remove(db_path.c_str());
+
+        MediaDedup::DatabaseManager dbm(db_path);
+        ASSERT_TRUE(dbm.initialize());
+
+        // Ensure tables exist
+        ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
+        
+        // Create test data with different location keys
+        auto row1 = MediaDedup::Test::makeRow("/tmp/test1.jpg");
+        row1.location_key = "mediaLocation:abc123";
+        row1.processed_fast = 2; // processed
+        
+        auto row2 = MediaDedup::Test::makeRow("/tmp/test2.jpg");
+        row2.location_key = "mediaLocation:abc123";
+        row2.processed_fast = -1; // error
+        
+        auto row3 = MediaDedup::Test::makeRow("/tmp/test3.jpg");
+        row3.location_key = "mediaLocation:def456";
+        row3.processed_fast = 0; // unprocessed
+        
+        auto row4 = MediaDedup::Test::makeRow("/tmp/test4.jpg");
+        row4.location_key = "mediaLocation:xyz789"; // This location will not be registered
+        row4.processed_fast = 2; // processed
+        
+        // Insert test data
+        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row1));
+        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row2));
+        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row3));
+        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row4));
+        
+        // Ensure user_settings table exists and register only two locations
+        ASSERT_TRUE(MediaDedup::UserSettingsOps::ensureTable(dbm));
+        bool upsert1 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:abc123", "/tmp/location1");
+        bool upsert2 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:def456", "/tmp/location2");
+        ASSERT_TRUE(upsert1);
+        ASSERT_TRUE(upsert2);
+        
+        // Test filtered counts - should only count files from registered locations
+        int total_count = MediaDedup::ScannedFilesOps::count(dbm);
+        EXPECT_EQ(total_count, 3); // Only files from registered locations
+        
+        int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm, MediaDedup::ServerMode::FAST);
+        EXPECT_EQ(processed_count, 1); // Only row1 is processed and from registered location
+        
+        int error_count = MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST);
+        EXPECT_EQ(error_count, 1); // Only row2 has error and is from registered location
+        
+        // Test getRegisteredLocationKeys
+        auto registered_keys = MediaDedup::ScannedFilesOps::getRegisteredLocationKeys(dbm);
+        EXPECT_EQ(registered_keys.size(), 2);
+        EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:abc123") != registered_keys.end());
+        EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:def456") != registered_keys.end());
+        
+        // Test getLocationKey
+        std::string location_key = MediaDedup::ScannedFilesOps::getLocationKey(dbm, "/tmp/test1.jpg");
+        EXPECT_EQ(location_key, "mediaLocation:abc123");
+        
+        // Clean up
+        std::remove(db_path.c_str());
+}
 
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)

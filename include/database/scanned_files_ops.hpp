@@ -25,6 +25,7 @@ namespace MediaDedup
         std::string links_balanced;
         std::string links_quality;
         bool is_network_file = false;
+        std::string location_key; // Full user_settings.key format (e.g., "mediaLocation:abc123")
         std::string created_at;
     };
 
@@ -43,13 +44,38 @@ namespace MediaDedup
         static int countProcessed(DatabaseManager &db, ServerMode mode);
         static int countError(DatabaseManager &db, ServerMode mode);
         static int countQueued(DatabaseManager &db, ServerMode mode);
-
+        
+        // Unfiltered count methods (for backward compatibility and testing)
+        static int countAll(DatabaseManager &db);
+        static int countProcessedAll(DatabaseManager &db);
+        static int countProcessedAll(DatabaseManager &db, ServerMode mode);
+        static int countErrorAll(DatabaseManager &db, ServerMode mode);
+        static int countQueuedAll(DatabaseManager &db, ServerMode mode);
+        
+        // Helper methods for location_key filtering
+        static std::vector<std::string> getRegisteredLocationKeys(DatabaseManager &db);
+        static std::string getLocationKey(DatabaseManager &db, const std::string &file_path);
+        
         // Adjusted APIs based on stored data
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);
         static bool markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state);
         static bool setLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode, const std::vector<int> &link_ids);
         static std::vector<int> getLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode);
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, ServerMode mode, int limit = -1);
+        static std::vector<ScannedFileRow> listUnprocessedAll(DatabaseManager &db, ServerMode mode, int limit = -1);
+        
+        // Reset all errors to unprocessed (0) for the specified mode
+        static int resetAllErrors(DatabaseManager &db, ServerMode mode);
+        
+        // Update metadata for a file
+        static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
+
+        // Clear processing flags
+        static int clearProcessingFlags(DatabaseManager &db);
+        
+    private:
+        // Helper function to execute filtered count queries
+        static int executeFilteredCount(DatabaseManager &db, const std::string &base_query);
 
         // Overloads that infer ServerMode from configuration
         static bool markProcessed(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
@@ -60,13 +86,6 @@ namespace MediaDedup
                                          const std::string &file_path);
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
                                                            int limit = -1);
-        static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
-
-        // Clear processing flags
-        static int clearProcessingFlags(DatabaseManager &db);
-
-        // Reset all errors to unprocessed (0) for the specified mode
-        static int resetAllErrors(DatabaseManager &db, ServerMode mode);
 
         // Efficient file existence check (optimized for FilesManager scans)
         // Returns true if file_path exists in scanned_files table

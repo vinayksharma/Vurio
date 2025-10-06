@@ -18,20 +18,28 @@ namespace MediaDedup
             return false;
         }
 
-        // Create index for efficient file_path lookups (critical for FilesManager performance)
+        // Create indexes for efficient lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try
         {
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
+            
+            // Create file_path index
             stmt << std::string(SQL::kCreateScannedFilesIndexFilePath), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created index on scanned_files.file_path");
+            
+            // Create composite indexes for filtered queries
+            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedFast), Poco::Data::Keywords::now;
+            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedBalanced), Poco::Data::Keywords::now;
+            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedQuality), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created composite indexes for location_key filtering");
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ScannedFilesOps").warning("Failed to create index on file_path (may already exist): " + std::string(e.what()));
-            // Don't fail - table exists, index is just an optimization (UNIQUE already creates implicit index)
+            Poco::Logger::get("ScannedFilesOps").warning("Failed to create indexes (may already exist): " + std::string(e.what()));
+            // Don't fail - table exists, indexes are just optimizations
         }
 
         return true;
@@ -51,6 +59,7 @@ namespace MediaDedup
         std::string lb = r.links_balanced;
         std::string lq = r.links_quality;
         int inf = r.is_network_file ? 1 : 0;
+        std::string location_key = r.location_key;
         stmt << std::string(SQL::kUpsertScannedFile),
             Keywords::use(file_path),
             Keywords::use(relative_path),
@@ -64,6 +73,7 @@ namespace MediaDedup
             Keywords::use(lb),
             Keywords::use(lq),
             Keywords::use(inf),
+            Keywords::use(location_key),
             Keywords::now;
     }
 
@@ -126,7 +136,8 @@ namespace MediaDedup
             r.links_balanced = rs[10].convert<std::string>();
             r.links_quality = rs[11].convert<std::string>();
             r.is_network_file = rs[12].convert<int>() != 0;
-            r.created_at = rs[13].convert<std::string>();
+            r.location_key = rs[13].convert<std::string>();
+            r.created_at = rs[14].convert<std::string>();
             return r;
         }
         catch (...)
@@ -162,7 +173,8 @@ namespace MediaDedup
                 r.links_balanced = rs[10].convert<std::string>();
                 r.links_quality = rs[11].convert<std::string>();
                 r.is_network_file = rs[12].convert<int>() != 0;
-                r.created_at = rs[13].convert<std::string>();
+                r.location_key = rs[13].convert<std::string>();
+                r.created_at = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -174,6 +186,11 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::count(DatabaseManager &db)
+    {
+        return executeFilteredCount(db, std::string(SQL::kCountScannedFilesFiltered));
+    }
+
+    int ScannedFilesOps::countAll(DatabaseManager &db)
     {
         try
         {
@@ -189,11 +206,17 @@ namespace MediaDedup
         }
         catch (...)
         {
+            // Return 0 on error
         }
         return 0;
     }
 
     int ScannedFilesOps::countProcessed(DatabaseManager &db)
+    {
+        return executeFilteredCount(db, std::string(SQL::kCountProcessedFilesFiltered));
+    }
+
+    int ScannedFilesOps::countProcessedAll(DatabaseManager &db)
     {
         try
         {
@@ -209,111 +232,97 @@ namespace MediaDedup
         }
         catch (...)
         {
+            // Return 0 on error
         }
         return 0;
     }
 
     int ScannedFilesOps::countProcessed(DatabaseManager &db, ServerMode mode)
     {
-        try
+        std::string_view query;
+        switch (mode)
         {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-
-            std::string_view query;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                query = SQL::kCountProcessedFilesFast;
-                break;
-            case ServerMode::BALANCED:
-                query = SQL::kCountProcessedFilesBalanced;
-                break;
-            case ServerMode::QUALITY:
-                query = SQL::kCountProcessedFilesQuality;
-                break;
-            default:
-                query = SQL::kCountProcessedFilesFast;
-                break;
-            }
-
-            stmt << std::string(query), Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
+        case ServerMode::FAST:
+            query = SQL::kCountProcessedFilesFastFiltered;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountProcessedFilesBalancedFiltered;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountProcessedFilesQualityFiltered;
+            break;
+        default:
+            query = SQL::kCountProcessedFilesFastFiltered;
+            break;
         }
-        catch (...)
-        {
-        }
-        return 0;
+        return executeFilteredCount(db, std::string(query));
     }
 
     int ScannedFilesOps::countError(DatabaseManager &db, ServerMode mode)
     {
-        try
+        std::string_view query;
+        switch (mode)
         {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-
-            std::string_view query;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                query = SQL::kCountErrorFilesFast;
-                break;
-            case ServerMode::BALANCED:
-                query = SQL::kCountErrorFilesBalanced;
-                break;
-            case ServerMode::QUALITY:
-                query = SQL::kCountErrorFilesQuality;
-                break;
-            default:
-                query = SQL::kCountErrorFilesFast;
-                break;
-            }
-
-            stmt << std::string(query), Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
+        case ServerMode::FAST:
+            query = SQL::kCountErrorFilesFastFiltered;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountErrorFilesBalancedFiltered;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountErrorFilesQualityFiltered;
+            break;
+        default:
+            query = SQL::kCountErrorFilesFastFiltered;
+            break;
         }
-        catch (...)
-        {
-        }
-        return 0;
+        return executeFilteredCount(db, std::string(query));
     }
 
     int ScannedFilesOps::countQueued(DatabaseManager &db, ServerMode mode)
     {
+        std::string_view query;
+        switch (mode)
+        {
+        case ServerMode::FAST:
+            query = SQL::kCountQueuedFilesFastFiltered;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountQueuedFilesBalancedFiltered;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountQueuedFilesQualityFiltered;
+            break;
+        default:
+            query = SQL::kCountQueuedFilesFastFiltered;
+            break;
+        }
+        return executeFilteredCount(db, std::string(query));
+    }
+
+    int ScannedFilesOps::countProcessedAll(DatabaseManager &db, ServerMode mode)
+    {
+        std::string_view query;
+        switch (mode)
+        {
+        case ServerMode::FAST:
+            query = SQL::kCountProcessedFilesFast;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountProcessedFilesBalanced;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountProcessedFilesQuality;
+            break;
+        default:
+            query = SQL::kCountProcessedFilesFast;
+            break;
+        }
         try
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-
-            std::string_view query;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                query = SQL::kCountQueuedFilesFast;
-                break;
-            case ServerMode::BALANCED:
-                query = SQL::kCountQueuedFilesBalanced;
-                break;
-            case ServerMode::QUALITY:
-                query = SQL::kCountQueuedFilesQuality;
-                break;
-            default:
-                query = SQL::kCountQueuedFilesFast;
-                break;
-            }
-
             stmt << std::string(query), Keywords::now;
             RecordSet rs(stmt);
             if (rs.moveFirst())
@@ -323,6 +332,81 @@ namespace MediaDedup
         }
         catch (...)
         {
+            // Return 0 on error
+        }
+        return 0;
+    }
+
+    int ScannedFilesOps::countErrorAll(DatabaseManager &db, ServerMode mode)
+    {
+        std::string_view query;
+        switch (mode)
+        {
+        case ServerMode::FAST:
+            query = SQL::kCountErrorFilesFast;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountErrorFilesBalanced;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountErrorFilesQuality;
+            break;
+        default:
+            query = SQL::kCountErrorFilesFast;
+            break;
+        }
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(query), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+            // Return 0 on error
+        }
+        return 0;
+    }
+
+    int ScannedFilesOps::countQueuedAll(DatabaseManager &db, ServerMode mode)
+    {
+        std::string_view query;
+        switch (mode)
+        {
+        case ServerMode::FAST:
+            query = SQL::kCountQueuedFilesFast;
+            break;
+        case ServerMode::BALANCED:
+            query = SQL::kCountQueuedFilesBalanced;
+            break;
+        case ServerMode::QUALITY:
+            query = SQL::kCountQueuedFilesQuality;
+            break;
+        default:
+            query = SQL::kCountQueuedFilesFast;
+            break;
+        }
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(query), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+            // Return 0 on error
         }
         return 0;
     }
@@ -608,7 +692,8 @@ namespace MediaDedup
                 r.links_balanced = rs[10].convert<std::string>();
                 r.links_quality = rs[11].convert<std::string>();
                 r.is_network_file = rs[12].convert<int>() != 0;
-                r.created_at = rs[13].convert<std::string>();
+                r.location_key = rs[13].convert<std::string>();
+                r.created_at = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -739,5 +824,94 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").error("Failed to reset all errors for mode " + std::to_string(static_cast<int>(mode)) + ": " + std::string(e.what()));
             return -1;
         }
+    }
+
+    std::vector<std::string> ScannedFilesOps::getRegisteredLocationKeys(DatabaseManager &db)
+    {
+        std::vector<std::string> result;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string query = std::string(SQL::kGetRegisteredLocationKeys);
+            Poco::Logger::get("ScannedFilesOps").information("Executing query: " + query);
+            stmt << query, Keywords::now;
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                std::string key = rs[0].convert<std::string>();
+                Poco::Logger::get("ScannedFilesOps").information("Found key: " + key);
+                result.emplace_back(std::move(key));
+                more = rs.moveNext();
+            }
+            Poco::Logger::get("ScannedFilesOps").information("Total keys found: " + std::to_string(result.size()));
+        }
+        catch (const std::exception& e)
+        {
+            // Log the error for debugging
+            Poco::Logger::get("ScannedFilesOps").error("Error in getRegisteredLocationKeys: " + std::string(e.what()));
+        }
+        catch (...)
+        {
+            // Return empty vector on error
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error in getRegisteredLocationKeys");
+        }
+        return result;
+    }
+
+    std::string ScannedFilesOps::getLocationKey(DatabaseManager &db, const std::string &file_path)
+    {
+        auto file_record = getByPath(db, file_path);
+        if (file_record.has_value())
+        {
+            return file_record->location_key;
+        }
+        return "";
+    }
+
+    int ScannedFilesOps::executeFilteredCount(DatabaseManager &db, const std::string &base_query)
+    {
+        try
+        {
+            auto registered_keys = ScannedFilesOps::getRegisteredLocationKeys(db);
+            Poco::Logger::get("ScannedFilesOps").information("executeFilteredCount: found " + std::to_string(registered_keys.size()) + " registered keys");
+            if (registered_keys.empty())
+            {
+                return 0; // No registered locations = no files to count
+            }
+            
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            
+            // Build IN clause for location_key filtering
+            std::string in_clause = "";
+            for (size_t i = 0; i < registered_keys.size(); ++i)
+            {
+                if (i > 0) in_clause += ",";
+                in_clause += "'" + registered_keys[i] + "'";
+            }
+            
+            std::string query = base_query;
+            // Replace ? with the IN clause
+            size_t pos = query.find("?");
+            if (pos != std::string::npos)
+            {
+                query.replace(pos, 1, in_clause);
+            }
+            
+            stmt << query, Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...)
+        {
+        }
+        return 0;
     }
 }

@@ -1,224 +1,120 @@
-# =============================================================================
-# Media Deduplication Server Configuration
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Server Configuration
-# -----------------------------------------------------------------------------
-server.name: Media Deduplication Server
-server.processName: media_dedup_server
-server.host: localhost
-server.port: 8080
-server.mode: FAST
-
-# Server Instance Check
-server.instanceCheck.enabled: true
-server.instanceCheck.bufferSize: 128
-
-# -----------------------------------------------------------------------------
-# Database Configuration
-# -----------------------------------------------------------------------------
-database.path: data/dedup_server.db
-
-# Database Session Management
-database.session.acquireTimeoutMs: 3000
-database.session.acquireBackoffMs: 50
-
-# SQLite Memory Optimization
-database.sqlite.cacheSize: 1000  # Reduce cache from 2000 to 1000 pages (8MB → 4MB)
-database.sqlite.tempStore: memory  # Keep temp tables in memory (faster but uses more RAM)
-
-# -----------------------------------------------------------------------------
-# Cache Configuration
-# -----------------------------------------------------------------------------
-# Disk cache for temporary media processing files
-cache.disk.location: cache            # Path to cache directory (relative to working directory root)
-cache.disk.size_limit_mb: 1024       # Maximum cache size in megabytes (1GB default)
-
-# -----------------------------------------------------------------------------
-# Logging Configuration
-# -----------------------------------------------------------------------------
-logging.level: error
-
-# -----------------------------------------------------------------------------
-# Scheduler Configuration
-# -----------------------------------------------------------------------------
-# Scheduler Jitter
-scheduler.jitter.enabled: false
-scheduler.jitter.percent: 0
-
-# Scheduler Drift
-scheduler.drift.mode: anchored
-scheduler.drift.maxDriftMs: 60000
-
-# Scheduler Backoff
-scheduler.backoff.enabled: true
-scheduler.backoff.initialMs: 1000
-scheduler.backoff.multiplier: 2
-scheduler.backoff.maxMs: 30000
-scheduler.backoff.jitterPercent: 10
-
-# Scheduler Failure Handling
-scheduler.maxConsecutiveFailures: 5
-
-# Per-job failure limits (override global setting)
-scheduler.jobs:
-  fileScan:
-    maxConsecutiveFailures: 3
-  mediaProcessor:
-    maxConsecutiveFailures: 10
-
-# -----------------------------------------------------------------------------
-# Memory Optimization Settings
-# -----------------------------------------------------------------------------
-# FilesManager Memory Optimization
-# Using database queries instead of in-memory index reduces memory usage by ~56MB per scan
-# With indexed queries on file_path, performance impact is minimal
-files.manager.useInMemoryIndex: false  # false = database queries (lower memory), true = in-memory index (legacy)
-
-# -----------------------------------------------------------------------------
-# Thread Pool Manager (TPM) Configuration
-# -----------------------------------------------------------------------------
-tpm.pool.max: 15
-tpm.killTimeoutMs: 10000
-tpm.thread.idleTimeoutSeconds: 120
-
-# Thread Stack Size Optimization (Memory Savings) - REACTIVE CONFIG
-# Reduces stack size from 8MB (macOS default) to 1MB per thread
-# Memory savings: 7MB × 15 TPM threads = ~105MB additional reduction
-# Changes take effect immediately (thread pool recreated on config change)
-tpm.thread.stackSizeKB: 1024  # 1MB stack size (1024KB) instead of 8MB default
-
-# TPM Type Shares
-tpm.types.fileScan.share: 1
-
-# -----------------------------------------------------------------------------
-# HTTP Server Configuration (Memory Optimization)
-# -----------------------------------------------------------------------------
-# Configure HTTP server thread pool for single client + dedicated UI
-# Reduces memory usage from ~6.8GB to ~350MB (saves ~5.4GB)
-server.http.threadPool.maxThreads: 2    # Maximum HTTP threads (single client + UI)
-server.http.threadPool.maxQueued: 10    # Maximum queued HTTP requests
-
-# -----------------------------------------------------------------------------
-# Files Manager Configuration
-# -----------------------------------------------------------------------------
-files.manager.enabled: true
-files.manager.scan.intervalMs: 900000 # 15 minutes
-
-# Files Service Configuration
-files.service.immediateJobTrigger.enabled: true
-files.service.immediateJobTrigger.timeoutMs: 30000
-
-# -----------------------------------------------------------------------------
-# Media Processor Configuration
-# -----------------------------------------------------------------------------
-media.processor.enabled: true
-media.processor.intervalMs: 30000
-# Unified media processor thread pool share
-media.processor.threadPool.share.media_processor: 1.0
-
-# Unified processing queue size limit to prevent memory buildup
-media.processor.maxQueueSize: 10000 
-
-# -----------------------------------------------------------------------------
-# Image Pipelines (SAFE TREO)
-# -----------------------------------------------------------------------------
-media.image.timeoutMs: 30000
-media.image.retry.enabled: true
-media.image.retry.maxAttempts: 2
-media.image.retry.baseDelayMs: 500
-
-media.image.fast.thumbSize: 256
-media.image.balanced.resizeLongEdge: 1024
-media.image.balanced.maxKeypoints: 1000
-
-media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
-media.image.quality.onnx.inputSize: 224
-media.image.quality.embeddingDim: 512
-
-# ONNX Session Caching (CRITICAL for memory optimization in QUALITY mode)
-# Reuses ONNX Runtime sessions instead of creating new ones for each image
-# Memory savings: 100-500MB per session × max sessions = 400MB-2GB total
-media.image.quality.onnx.sessionCache.enabled: true
-media.image.quality.onnx.sessionCache.maxSessions: 4  # Max cached sessions per model (typically 2-4 for thread pool)
-
-# Image Transcoding Configuration
-media.image.transcoding.enabled: true
-media.image.transcoding.timeoutMs: 60000
-media.image.transcoding.preserveMetadata: true
-
-# -----------------------------------------------------------------------------
-# Media Type Configuration
-# -----------------------------------------------------------------------------
-
-# Image Formats
-media.images.bmp: true
-media.images.exr: true
-media.images.gif: true
-media.images.hdr: true
-media.images.jpg: true
-media.images.jpeg: true
-media.images.jp2: true
-media.images.png: true
 media.images.pbm: true
-media.images.pgm: true
-media.images.pnm: true
-media.images.ppm: true
-media.images.tiff: true
-media.images.tif: true
-media.images.webp: true
-
-# Raw Image Formats
-media.images.raw.3fr: true
-media.images.raw.arw: true
-media.images.raw.bay: true
-media.images.raw.cr2: true
-media.images.raw.dcr: true
-media.images.raw.dng: true
-media.images.raw.fff: true
-media.images.raw.iiq: true
-media.images.raw.kdc: true
-media.images.raw.mef: true
-media.images.raw.mos: true
-media.images.raw.mrw: true
-media.images.raw.nef: true
-media.images.raw.nrw: true
-media.images.raw.orf: true
-media.images.raw.pef: true
-media.images.raw.raf: true
-media.images.raw.raw: true
-media.images.raw.rw2: true
-media.images.raw.rwl: true
-media.images.raw.rwz: true
-media.images.raw.srw: true
-
-# Video Formats
-media.video.avi: true
-media.video.flv: true
-media.video.m2ts: true
-media.video.m4v: true
-media.video.mkv: true
-media.video.mov: true
-media.video.mpg: true
-media.video.mpeg: true
-media.video.mp4: true
-media.video.mts: true
-media.video.ogv: true
-media.video.ts: true
-media.video.webm: true
-media.video.wmv: true
-
-# Audio Formats
-media.audio.aac: true
-media.audio.aiff: true
-media.audio.alac: true
 media.audio.amr: true
-media.audio.au: true
-media.audio.flac: true
-media.audio.m4a: true
-media.audio.mp3: true
-media.audio.ogg: true
+media.video.avi: true
 media.audio.opus: true
-media.audio.wav: true
+media.image.transcoding.timeoutMs: 60000
+media.images.pnm: true
+media.video.mov: true
+media.audio.m4a: true
+media.video.mkv: true
+media.video.ogv: true
+media.audio.aiff: true
+media.video.m4v: true
+media.audio.au: true
+media.images.raw.orf: true
+media.video.mpeg: true
+media.video.ts: true
+media.images.raw.iiq: true
+media.images.raw.srw: true
+media.images.raw.rwl: true
+media.video.mpg: true
+media.images.raw.rw2: true
+media.audio.flac: true
+media.images.raw.raf: true
+media.video.webm: true
+server.port: 8080
+media.images.raw.fff: true
+media.images.raw.nrw: true
+media.images.raw.dng: true
+media.images.raw.bay: true
+media.images.raw.arw: true
+media.audio.alac: true
+media.image.retry.maxAttempts: 2
+media.images.raw.3fr: true
+media.video.m2ts: true
+media.image.quality.onnx.sessionCache.enabled: true
+media.video.mp4: true
+media.audio.ogg: true
+media.images.webp: true
+media.images.raw.pef: true
+media.images.png: true
+media.images.raw.cr2: true
+server.name: Media Deduplication Server
+media.images.raw.kdc: true
+media.audio.mp3: true
+media.images.raw.mef: true
+media.images.tiff: true
+media.images.jp2: true
+media.audio.aac: true
+files.manager.scan.intervalMs: 900000
+media.images.jpeg: true
+media.images.jpg: true
+media.images.hdr: true
+media.images.exr: true
+scheduler.maxConsecutiveFailures: 5
+media.video.flv: true
+scheduler.backoff.maxMs: 30000
+media.images.tif: true
+tpm.killTimeoutMs: 10000
+media.image.fast.thumbSize: 256
+media.image.quality.embeddingDim: 512
+media.image.balanced.resizeLongEdge: 1024
+files.service.immediateJobTrigger.enabled: true
+media.images.raw.nef: true
+server.host: localhost
+scheduler.backoff.initialMs: 1000
+media.image.retry.baseDelayMs: 500
+media.images.raw.mrw: true
+tpm.thread.stackSizeKB: 1024
+media.image.transcoding.preserveMetadata: true
+media.image.timeoutMs: 30000
 media.audio.wma: true
+media.processor.enabled: true
+tpm.thread.idleTimeoutSeconds: 120
+tpm.pool.max: 15
+database.sqlite.tempStore: memory
+files.manager.enabled: true
+media.image.retry.enabled: true
+media.audio.wav: true
+scheduler.backoff.enabled: true
+media.images.ppm: true
+media.images.raw.raw: true
+scheduler.backoff.jitterPercent: 10
+files.service.immediateJobTrigger.timeoutMs: 30000
+logging.level: error
+files.manager.useInMemoryIndex: false
+media.processor.threadPool.share.media_processor: 1
+media.video.mts: true
+media.video.wmv: true
+scheduler.jobs: ""
+database.session.acquireBackoffMs: 50
+scheduler.drift.mode: anchored
+media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
+media.images.bmp: true
+media.images.raw.dcr: true
+media.image.quality.onnx.sessionCache.maxSessions: 4
+cache.disk.location: cache
+media.image.quality.onnx.inputSize: 224
+media.processor.maxQueueSize: 10000
+database.sqlite.cacheSize: 1000
+media.processor.intervalMs: 30000
+server.mode: FAST
+media.image.balanced.maxKeypoints: 1000
+scheduler.jitter.percent: 0
+server.http.threadPool.maxQueued: 10
+server.processName: media_dedup_server
+media.images.pgm: true
+media.images.gif: true
+media.image.transcoding.enabled: true
+database.path: data/dedup_server.db
+media.images.raw.mos: true
+cache.disk.size_limit_mb: 1024
+tpm.types.fileScan.share: 1
+server.instanceCheck.bufferSize: 128
+scheduler.drift.maxDriftMs: 60000
+server.http.threadPool.maxThreads: 2
+media.images.raw.rwz: true
+server.instanceCheck.enabled: true
+scheduler.backoff.multiplier: 2
+scheduler.jitter.enabled: false
+database.session.acquireTimeoutMs: 3000
