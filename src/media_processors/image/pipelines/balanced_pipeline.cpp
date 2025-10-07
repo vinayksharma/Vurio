@@ -1,7 +1,6 @@
 #include "media_processors/image/pipelines/balanced_pipeline.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
-#include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/features_adapter.hpp"
 #include <Poco/Logger.h>
 
@@ -26,7 +25,6 @@ namespace MediaDedup
             ImageFeaturesRecord rec;
             rec.file_path = file_path;
             rec.mode = "BALANCED";
-            rec.location_key = ScannedFilesOps::getLocationKey(db, file_path);
             rec.method = "ORB";
             rec.features_blob = std::move(blob);
             rec.version = 1;

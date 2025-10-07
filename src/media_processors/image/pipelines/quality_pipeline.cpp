@@ -1,7 +1,6 @@
 #include "media_processors/image/pipelines/quality_pipeline.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
-#include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
 #include <Poco/Logger.h>
 #include "config/unified_observable_config.hpp"
@@ -49,7 +48,6 @@ namespace MediaDedup
             ImageEmbeddingRecord rec;
             rec.file_path = file_path;
             rec.mode = "QUALITY";
-            rec.location_key = ScannedFilesOps::getLocationKey(db, file_path);
             rec.model = cfg.model;
             rec.dim = cfg.embedding_dim;
             rec.embedding_blob = std::move(blob);

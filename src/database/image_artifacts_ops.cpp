@@ -17,20 +17,6 @@ namespace MediaDedup
             return false;
         }
 
-        // Create composite index for filtered queries
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            stmt << std::string(SQL::kCreateImageArtifactsIndexLocationMode), Keywords::now;
-            Poco::Logger::get("ImageArtifactsOps").debug("Created composite index for image_artifacts location_key filtering");
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ImageArtifactsOps").warning("Failed to create composite index (may already exist): " + std::string(e.what()));
-            // Don't fail - table exists, index is just an optimization
-        }
 
         return true;
     }
@@ -54,7 +40,6 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string file_path = r.file_path;
             std::string mode = r.mode;
-            std::string location_key = r.location_key;
             std::string blob = toBinaryString(r.phash);
             int tw = r.thumb_w;
             int th = r.thumb_h;
@@ -62,7 +47,6 @@ namespace MediaDedup
             stmt << std::string(SQL::kUpsertImagePhash),
                 Keywords::use(file_path),
                 Keywords::use(mode),
-                Keywords::use(location_key),
                 Keywords::use(blob),
                 Keywords::use(tw),
                 Keywords::use(th),
@@ -91,14 +75,12 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string file_path = r.file_path;
             std::string mode = r.mode;
-            std::string location_key = r.location_key;
             std::string method = r.method;
             std::string blob = toBinaryString(r.features_blob);
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageFeatures),
                 Keywords::use(file_path),
                 Keywords::use(mode),
-                Keywords::use(location_key),
                 Keywords::use(method),
                 Keywords::use(blob),
                 Keywords::use(v),
@@ -126,7 +108,6 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string file_path = r.file_path;
             std::string mode = r.mode;
-            std::string location_key = r.location_key;
             std::string model = r.model;
             int dim = r.dim;
             std::string blob = toBinaryString(r.embedding_blob);
@@ -134,7 +115,6 @@ namespace MediaDedup
             stmt << std::string(SQL::kUpsertImageEmbedding),
                 Keywords::use(file_path),
                 Keywords::use(mode),
-                Keywords::use(location_key),
                 Keywords::use(model),
                 Keywords::use(dim),
                 Keywords::use(blob),

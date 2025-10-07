@@ -1,7 +1,6 @@
 #include "media_processors/image/pipelines/fast_pipeline.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
-#include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/opencv_adapter.hpp"
 #include <Poco/Logger.h>
 
@@ -35,7 +34,6 @@ namespace MediaDedup
             ImagePhashRecord rec;
             rec.file_path = file_path;
             rec.mode = "FAST";
-            rec.location_key = ScannedFilesOps::getLocationKey(db, file_path);
             rec.phash = std::move(hres.phash64);
             rec.thumb_w = hres.thumb_w;
             rec.thumb_h = hres.thumb_h;
