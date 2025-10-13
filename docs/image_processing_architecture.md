@@ -75,7 +75,8 @@ Relevant keys (subset):
 - Thread pool:
 
   - `tpm.thread.idleTimeoutSeconds`: idle timeout; triggers pool recreation on change
-  - `media.processor.threadPool.share.image_processor`: share for image processing tasks
+  - `tpm.types.media_processor.share`: share for media processing tasks (consolidated naming)
+  - `tpm.types.image_processor.share`: reserved for future dedicated image processor
 
 - Scheduler:
 

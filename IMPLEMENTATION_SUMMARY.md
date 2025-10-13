@@ -245,6 +245,10 @@ The server automatically manages these configuration properties:
 | `tpm.pool.max`                      | string   | "auto"                       | Thread pool max threads         |
 | `tpm.killTimeoutMs`                 | integer  | 10000                        | Thread pool shutdown timeout    |
 | `tpm.types.fileScan.share`          | number   | 1.0                          | File scan thread share          |
+| `tpm.types.media_processor.share`   | number   | 1.0                          | Media processor thread share    |
+| `tpm.types.image_processor.share`   | number   | 1.0                          | Reserved: Image processor share |
+| `tpm.types.audio_processor.share`   | number   | 1.0                          | Reserved: Audio processor share |
+| `tpm.types.video_processor.share`   | number   | 1.0                          | Reserved: Video processor share |
 
 ## 🚦 **Error Handling**
 

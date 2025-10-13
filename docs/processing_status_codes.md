@@ -85,6 +85,45 @@ The server status endpoint (`/api/v1/server/status`) reports `error_files_count`
 
 This distinction ensures that the error count reflects actual processing failures rather than temporary operational states. Backpressure files are automatically retried when queue capacity becomes available, and queued files are actively waiting to be processed.
 
+## Reset Errors Operation
+
+The "Reset All Errors" operation (`POST /api/v1/files/reset-errors`) resets error files to unprocessed status, allowing them to be retried. The operation uses the same filtering logic as error count reporting.
+
+**Files that ARE reset (actual errors):**
+
+- ✅ `-1` (General Error) → `0` (Unprocessed)
+- ✅ `-3` (File Access Error) → `0` (Unprocessed)
+- ✅ `-4` (Memory Error) → `0` (Unprocessed)
+- ✅ `-5` (Network Error) → `0` (Unprocessed)
+- ✅ `-6` (Cache Error) → `0` (Unprocessed)
+- ✅ All escalated errors (`< -100`) → `0` (Unprocessed)
+
+**Files that are NOT reset (temporary states):**
+
+- ❌ `-2` (Backpressure): Temporary queue full state, will retry automatically
+- ❌ `-99` (Queued): Already in processing queue
+- ❌ `0` (Unprocessed): Already in correct state
+- ❌ `1` (Processing): Currently being processed
+- ❌ `2` (Complete): Successfully processed
+
+**SQL Implementation:**
+
+```sql
+-- FAST mode reset
+UPDATE scanned_files SET processed_fast=0
+WHERE processed_fast < 0 AND processed_fast != -2 AND processed_fast != -99;
+
+-- BALANCED mode reset
+UPDATE scanned_files SET processed_balanced=0
+WHERE processed_balanced < 0 AND processed_balanced != -2 AND processed_balanced != -99;
+
+-- QUALITY mode reset
+UPDATE scanned_files SET processed_quality=0
+WHERE processed_quality < 0 AND processed_quality != -2 AND processed_quality != -99;
+```
+
+This ensures consistency with error count reporting and preserves operational states that are not actual errors.
+
 ## Database Schema
 
 The `scanned_files` table uses the `status` column to store these codes:

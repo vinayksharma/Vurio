@@ -339,9 +339,12 @@ namespace MediaDedup
         // Create default media processor properties
         manager->createProperty<bool>("media.processor.enabled", true, "Enable media processor");
         manager->createProperty<int>("media.processor.intervalMs", 30000, "Media processor interval in milliseconds");
-        manager->createProperty<double>("media.processor.threadPool.share.image_processor", 1.0, "Thread pool share for image processing");
-        manager->createProperty<double>("media.processor.threadPool.share.audio_processor", 1.0, "Thread pool share for audio processing");
-        manager->createProperty<double>("media.processor.threadPool.share.video_processor", 1.0, "Thread pool share for video processing");
+
+        // TPM thread type shares for media processing (consolidated naming: tpm.types.<type>.share)
+        manager->createProperty<double>("tpm.types.media_processor.share", 1.0, "Thread pool share for media processor tasks");
+        manager->createProperty<double>("tpm.types.image_processor.share", 1.0, "Reserved: Thread pool share for image processor");
+        manager->createProperty<double>("tpm.types.audio_processor.share", 1.0, "Reserved: Thread pool share for audio processor");
+        manager->createProperty<double>("tpm.types.video_processor.share", 1.0, "Reserved: Thread pool share for video processor");
 
         // Image pipelines SAFE TREO configuration
         manager->createProperty<int>("media.image.timeoutMs", 30000, "Per-image processing timeout in milliseconds");
@@ -487,14 +490,19 @@ namespace MediaDedup
                 return false;
             } });
 
-        // Add custom validation for logging.level
+        // Add custom validation for logging.level (case-insensitive)
         manager->registerValidationCallback("logging.level", [](const std::string &key, const std::any &value) -> bool
                                             {
             try
             {
                 std::string level = std::any_cast<std::string>(value);
-                std::vector<std::string> valid_levels = {"trace", "debug", "info", "warn", "error"};
-                return std::find(valid_levels.begin(), valid_levels.end(), level) != valid_levels.end();
+                // Convert to lowercase for case-insensitive comparison
+                std::string level_lower = level;
+                for (char &c : level_lower) {
+                    c = static_cast<char>(::tolower(c));
+                }
+                std::vector<std::string> valid_levels = {"trace", "debug", "info", "warn", "error", "information", "warning"};
+                return std::find(valid_levels.begin(), valid_levels.end(), level_lower) != valid_levels.end();
             }
             catch (const std::bad_any_cast&)
             {

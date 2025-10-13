@@ -196,17 +196,23 @@ namespace MediaDedup
             }
         }
 
-        // Validate logging.level
+        // Validate logging.level (case-insensitive)
         if (key == "logging.level")
         {
             try
             {
                 std::string level = std::any_cast<std::string>(value);
-                std::vector<std::string> valid_levels = {"trace", "debug", "info", "warn", "error"};
-                if (std::find(valid_levels.begin(), valid_levels.end(), level) == valid_levels.end())
+                // Convert to lowercase for case-insensitive comparison
+                std::string level_lower = level;
+                for (char &c : level_lower)
                 {
-                    addValidationError(key, "Invalid log level",
-                                       "trace|debug|info|warn|error", level);
+                    c = static_cast<char>(::tolower(c));
+                }
+                std::vector<std::string> valid_levels = {"trace", "debug", "info", "warn", "error", "information", "warning"};
+                if (std::find(valid_levels.begin(), valid_levels.end(), level_lower) == valid_levels.end())
+                {
+                    addValidationError(key, "Invalid log level (case-insensitive)",
+                                       "trace|debug|info|information|warn|warning|error", level);
                     return false;
                 }
             }

@@ -50,9 +50,19 @@ namespace MediaDedup
                 onConfigChange(event);
             });
 
-        // Set up unified thread pool share for media processing
-        double media_processor_share = config_manager_->getPropertyValue<double>("media.processor.threadPool.share.media_processor", 1.0);
+        // Set up unified thread pool shares for media processing (consolidated naming: tpm.types.<type>.share)
+        double media_processor_share = config_manager_->getPropertyValue<double>("tpm.types.media_processor.share", 1.0);
         thread_pool_manager_->setShare("media_processor", media_processor_share);
+
+        // Initialize reserved thread type shares (for future audio/video/image processors)
+        double image_processor_share = config_manager_->getPropertyValue<double>("tpm.types.image_processor.share", 1.0);
+        thread_pool_manager_->setShare("image_processor", image_processor_share);
+
+        double audio_processor_share = config_manager_->getPropertyValue<double>("tpm.types.audio_processor.share", 1.0);
+        thread_pool_manager_->setShare("audio_processor", audio_processor_share);
+
+        double video_processor_share = config_manager_->getPropertyValue<double>("tpm.types.video_processor.share", 1.0);
+        thread_pool_manager_->setShare("video_processor", video_processor_share);
 
         // Initialize unified queue size limit from configuration
         // Read as int (like other integer config values) and convert to size_t
@@ -1007,14 +1017,32 @@ namespace MediaDedup
 
     void MediaProcessor::onConfigChange(const ConfigChangeEvent &event)
     {
-        // React to unified thread pool configuration changes
-        if (event.key == "media.processor.threadPool.share.media_processor")
+        // React to unified thread pool configuration changes (consolidated naming: tpm.types.<type>.share)
+        if (event.key == "tpm.types.media_processor.share")
         {
             if (thread_pool_manager_)
             {
                 double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
                 thread_pool_manager_->setShare("media_processor", new_share);
                 Poco::Logger::get("MediaProcessor").information("Updated thread pool share for media_processor: " + std::to_string(new_share));
+            }
+            return;
+        }
+
+        // React to reserved thread type share changes (for future use)
+        if (event.key == "tpm.types.image_processor.share" ||
+            event.key == "tpm.types.audio_processor.share" ||
+            event.key == "tpm.types.video_processor.share")
+        {
+            if (thread_pool_manager_)
+            {
+                // Extract type name from key (e.g., "tpm.types.image_processor.share" -> "image_processor")
+                std::string type_name = event.key.substr(10); // skip "tpm.types."
+                type_name = type_name.substr(0, type_name.find(".share"));
+
+                double new_share = config_manager_->getPropertyValue<double>(event.key, 1.0);
+                thread_pool_manager_->setShare(type_name, new_share);
+                Poco::Logger::get("MediaProcessor").information("Updated thread pool share for %s (reserved): %f", type_name, new_share);
             }
             return;
         }
