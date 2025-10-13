@@ -1,8 +1,10 @@
 #include "media_processors/image/pipelines/fast_pipeline.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/opencv_adapter.hpp"
 #include <Poco/Logger.h>
+#include "config/config_enums.hpp"
 
 namespace MediaDedup
 {
@@ -42,12 +44,14 @@ namespace MediaDedup
             if (!ImageArtifactsOps::ensureTable(db))
             {
                 Poco::Logger::get("FastPipeline").error("Failed to ensure image_artifacts table");
+                ProcessingErrorsOps::insertError(db, file_path, ServerMode::FAST, -1, "Failed to ensure image_artifacts table", "Database");
                 return false;
             }
 
             if (!ImageArtifactsOps::upsertPhash(db, rec))
             {
                 Poco::Logger::get("FastPipeline").error("Failed to upsert phash for %s", file_path);
+                ProcessingErrorsOps::insertError(db, file_path, ServerMode::FAST, -1, "Failed to upsert phash to database", "Database");
                 return false;
             }
 
@@ -56,11 +60,13 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("FastPipeline").error("Exception: %s", std::string(e.what()));
+            ProcessingErrorsOps::insertError(db, file_path, ServerMode::FAST, -1, "Fast pipeline exception: " + std::string(e.what()), "Pipeline");
             return false;
         }
         catch (...)
         {
             Poco::Logger::get("FastPipeline").error("Unknown exception");
+            ProcessingErrorsOps::insertError(db, file_path, ServerMode::FAST, -1, "Fast pipeline unknown exception", "Pipeline");
             return false;
         }
     }
@@ -102,12 +108,14 @@ namespace MediaDedup
             if (!ImageArtifactsOps::ensureTable(db))
             {
                 Poco::Logger::get("FastPipeline").error("Failed to ensure image_artifacts table");
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::FAST, -1, "Failed to ensure image_artifacts table", "Database");
                 return false;
             }
 
             if (!ImageArtifactsOps::upsertPhash(db, rec))
             {
                 Poco::Logger::get("FastPipeline").error("Failed to upsert phash for %s", original_file_path);
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::FAST, -1, "Failed to upsert phash to database", "Database");
                 return false;
             }
 
@@ -116,11 +124,13 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("FastPipeline").error("Exception: %s", std::string(e.what()));
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::FAST, -1, "Fast pipeline exception: " + std::string(e.what()), "Pipeline");
             return false;
         }
         catch (...)
         {
             Poco::Logger::get("FastPipeline").error("Unknown exception");
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::FAST, -1, "Fast pipeline unknown exception", "Pipeline");
             return false;
         }
     }

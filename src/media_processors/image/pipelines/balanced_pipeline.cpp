@@ -1,8 +1,10 @@
 #include "media_processors/image/pipelines/balanced_pipeline.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/features_adapter.hpp"
 #include <Poco/Logger.h>
+#include "config/config_enums.hpp"
 
 namespace MediaDedup
 {
@@ -69,6 +71,7 @@ namespace MediaDedup
             if (!FeaturesAdapter::ExtractFeaturesToBlob(processing_file_path, cfg.resize_long_edge, cfg.max_keypoints, blob))
             {
                 logger.warning("Features extraction failed for %s", processing_file_path);
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "ORB feature extraction failed", "OpenCV");
                 return false;
             }
 
@@ -82,11 +85,13 @@ namespace MediaDedup
             if (!ImageArtifactsOps::ensureTable(db))
             {
                 Poco::Logger::get("BalancedPipeline").error("Failed to ensure image_artifacts table");
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "Failed to ensure image_artifacts table", "Database");
                 return false;
             }
             if (!ImageArtifactsOps::upsertFeatures(db, rec))
             {
                 Poco::Logger::get("BalancedPipeline").error("Failed to upsert features for %s", original_file_path);
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "Failed to upsert features to database", "Database");
                 return false;
             }
 
@@ -95,11 +100,13 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("BalancedPipeline").error("Exception: %s", std::string(e.what()));
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "Balanced pipeline exception: " + std::string(e.what()), "Pipeline");
             return false;
         }
         catch (...)
         {
             Poco::Logger::get("BalancedPipeline").error("Unknown exception");
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "Balanced pipeline unknown exception", "Pipeline");
             return false;
         }
     }

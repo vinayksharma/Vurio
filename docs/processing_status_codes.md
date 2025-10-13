@@ -123,3 +123,90 @@ SELECT file_path FROM scanned_files WHERE processed_fast = -2;
 SELECT file_path FROM scanned_files WHERE processed_fast = -101; -- Escalated general error
 SELECT file_path FROM scanned_files WHERE processed_fast = -103; -- Escalated file access error
 ```
+
+---
+
+## Error Message Persistence
+
+### Processing Errors Table
+
+The system maintains a separate `processing_errors` table to record detailed error information when files fail processing. This provides historical context and debugging information beyond the status codes stored in `scanned_files`.
+
+#### Table Schema
+
+```sql
+CREATE TABLE processing_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,
+    server_mode TEXT NOT NULL,  -- 'FAST', 'BALANCED', 'QUALITY'
+    error_code INTEGER NOT NULL,
+    error_message TEXT NOT NULL,
+    error_source TEXT,  -- 'ImageMagick', 'OpenCV', 'ONNX', 'Memory', 'FileSystem', 'Network', 'General'
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for efficient queries
+CREATE INDEX idx_processing_errors_file_path ON processing_errors(file_path);
+CREATE INDEX idx_processing_errors_timestamp ON processing_errors(timestamp DESC);
+```
+
+#### Error Sources
+
+| Source        | Description                     |
+| ------------- | ------------------------------- |
+| `ImageMagick` | RAW file transcoding errors     |
+| `OpenCV`      | Image reading/processing errors |
+| `ONNX`        | Neural network inference errors |
+| `Memory`      | Memory allocation failures      |
+| `FileSystem`  | File access/permission errors   |
+| `Network`     | Network-related errors          |
+| `General`     | Other unclassified errors       |
+
+#### Usage
+
+Errors are automatically logged when files fail processing. Multiple error records can exist for the same file across different processing attempts and modes.
+
+#### Query Examples
+
+```sql
+-- Get all error details for a specific file
+SELECT * FROM processing_errors
+WHERE file_path = '/path/to/file.jpg'
+ORDER BY timestamp DESC;
+
+-- Find files with OpenCV errors in QUALITY mode
+SELECT DISTINCT file_path, error_message
+FROM processing_errors
+WHERE error_source = 'OpenCV' AND server_mode = 'QUALITY'
+ORDER BY timestamp DESC LIMIT 100;
+
+-- Count errors by source in the last 24 hours
+SELECT error_source, COUNT(*) as error_count
+FROM processing_errors
+WHERE timestamp > datetime('now', '-24 hours')
+GROUP BY error_source
+ORDER BY error_count DESC;
+
+-- Get detailed error information for escalated errors (-101)
+SELECT sf.file_path, sf.processed_quality, pe.error_message, pe.error_source, pe.timestamp
+FROM scanned_files sf
+JOIN processing_errors pe ON sf.file_path = pe.file_path
+WHERE sf.processed_quality = -101 AND pe.server_mode = 'QUALITY'
+ORDER BY pe.timestamp DESC;
+
+-- Find most common error messages
+SELECT error_message, COUNT(*) as occurrences
+FROM processing_errors
+WHERE timestamp > datetime('now', '-7 days')
+GROUP BY error_message
+ORDER BY occurrences DESC
+LIMIT 20;
+```
+
+#### Design Rationale
+
+- **Separation of Concerns**: Error details are kept separate from operational state (`scanned_files`)
+- **Historical Record**: All error attempts are preserved, not just the latest
+- **Write-Optimized**: Insert-only operations, no foreign key constraints for maximum performance
+- **Debugging**: Detailed error messages from exceptions captured for post-event analysis
+- **No Impact on Processing**: Error logging failures don't block file processing

@@ -63,6 +63,28 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateScannedFilesIndexLocationProcessedQuality =
             "CREATE INDEX IF NOT EXISTS idx_scanned_files_location_processed_quality ON scanned_files(location_key, processed_quality);";
 
+        // Processing Errors (error logs for failed file processing)
+        inline constexpr std::string_view kCreateProcessingErrorsTable =
+            "CREATE TABLE IF NOT EXISTS processing_errors (\n"
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+            "    file_path TEXT NOT NULL,\n"
+            "    server_mode TEXT NOT NULL,\n"
+            "    error_code INTEGER NOT NULL,\n"
+            "    error_message TEXT NOT NULL,\n"
+            "    error_source TEXT,\n"
+            "    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            ");";
+
+        inline constexpr std::string_view kCreateProcessingErrorsIndexFilePath =
+            "CREATE INDEX IF NOT EXISTS idx_processing_errors_file_path ON processing_errors(file_path);";
+
+        inline constexpr std::string_view kCreateProcessingErrorsIndexTimestamp =
+            "CREATE INDEX IF NOT EXISTS idx_processing_errors_timestamp ON processing_errors(timestamp DESC);";
+
+        inline constexpr std::string_view kInsertProcessingError =
+            "INSERT INTO processing_errors(file_path, server_mode, error_code, error_message, error_source) "
+            "VALUES(?, ?, ?, ?, ?)";
+
         // Image artifacts (metadata produced by image pipelines)
         inline constexpr std::string_view kCreateImageArtifactsTable =
             "CREATE TABLE IF NOT EXISTS image_artifacts (\n"

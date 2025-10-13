@@ -8,6 +8,7 @@
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "database/processing_errors_ops.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
@@ -197,7 +198,7 @@ namespace MediaDedup
                 std::shared_ptr<DiskCache> disk_cache = disk_cache_;
 
                 thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager, disk_cache]()
-                {
+                                             {
                     try
                     {
                         Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
@@ -294,6 +295,7 @@ namespace MediaDedup
                                 if (!std::filesystem::exists(transcoded_filename))
                                 {
                                     Poco::Logger::get("MediaProcessor").error("Transcoded file was not created: %s", transcoded_filename);
+                                    ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Transcoded file was not created: " + transcoded_filename, "ImageMagick");
                                     ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1);
                                     disk_cache->deleteFromCacheImmediately(cached_path);
                                     return;
@@ -303,6 +305,7 @@ namespace MediaDedup
                                 if (transcoded_size == 0)
                                 {
                                     Poco::Logger::get("MediaProcessor").error("Transcoded file is empty: %s", transcoded_filename);
+                                    ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Transcoded file is empty: " + transcoded_filename, "ImageMagick");
                                     std::filesystem::remove(transcoded_filename);
                                     ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1);
                                     disk_cache->deleteFromCacheImmediately(cached_path);
@@ -330,6 +333,8 @@ namespace MediaDedup
                             else
                             {
                                 Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s (this may be due to unsupported RAW format or corrupted file)", cached_path);
+                                // Log error to processing_errors table
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Failed to transcode raw file (unsupported RAW format or corrupted file)", "ImageMagick");
                                 // Mark as processing error since RAW files cannot be processed without transcoding
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1);
                                 // Clean up the original cached file
@@ -372,6 +377,7 @@ namespace MediaDedup
                             }
                             else
                             {
+                                // Pipeline already logged specific error, just mark as failed
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                                 Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
                             }
@@ -398,11 +404,13 @@ namespace MediaDedup
                     catch (const std::bad_alloc& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -4, e.what(), "Memory");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
                     }
                     catch (const std::filesystem::filesystem_error& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -3, e.what(), "FileSystem");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
                     }
                     catch (const std::runtime_error& e)
@@ -414,22 +422,26 @@ namespace MediaDedup
                             error_msg.find("timeout") != std::string::npos)
                         {
                             Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -5, error_msg, "Network");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
                         }
                         else
                         {
                             Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, error_msg, "General");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in image processing thread for file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, e.what(), "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in image processing thread for file: " + file_path_copy);
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Unknown exception", "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } }, file_path_copy);
 
@@ -573,6 +585,7 @@ namespace MediaDedup
                         }
                         else
                         {
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Video processing failed", "Video");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                             Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
                         }
@@ -580,11 +593,13 @@ namespace MediaDedup
                     catch (const std::bad_alloc& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -4, e.what(), "Memory");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
                     }
                     catch (const std::filesystem::filesystem_error& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -3, e.what(), "FileSystem");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
                     }
                     catch (const std::runtime_error& e)
@@ -596,22 +611,26 @@ namespace MediaDedup
                             error_msg.find("timeout") != std::string::npos)
                         {
                             Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -5, error_msg, "Network");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
                         }
                         else
                         {
                             Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, error_msg, "General");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in video processing thread for file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, e.what(), "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in video processing thread for file: " + file_path_copy);
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Unknown exception", "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } }, file_path_copy);
 
@@ -755,6 +774,7 @@ namespace MediaDedup
                         }
                         else
                         {
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Audio processing failed", "Audio");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General processing error
                             Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
                         }
@@ -762,11 +782,13 @@ namespace MediaDedup
                     catch (const std::bad_alloc& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -4, e.what(), "Memory");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -4); // Memory allocation error
                     }
                     catch (const std::filesystem::filesystem_error& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -3, e.what(), "FileSystem");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -3); // File access error
                     }
                     catch (const std::runtime_error& e)
@@ -778,22 +800,26 @@ namespace MediaDedup
                             error_msg.find("timeout") != std::string::npos)
                         {
                             Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -5, error_msg, "Network");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -5); // Network-related error
                         }
                         else
                         {
                             Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, error_msg, "General");
                             ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                         }
                     }
                     catch (const std::exception& e)
                     {
                         Poco::Logger::get("MediaProcessor").error("Exception in audio processing thread for file " + file_path_copy + ": " + e.what());
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, e.what(), "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     }
                     catch (...)
                     {
                         Poco::Logger::get("MediaProcessor").error("Unknown exception in audio processing thread for file: " + file_path_copy);
+                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Unknown exception", "General");
                         ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1); // General error
                     } }, file_path_copy);
 

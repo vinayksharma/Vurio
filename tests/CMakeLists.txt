@@ -42,6 +42,7 @@ set(UNIT_TEST_SOURCES
     unit/test_user_settings_service.cpp
     unit/test_scanned_files_ops.cpp
     unit/test_image_artifacts_ops.cpp
+    unit/test_processing_errors_ops.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
     unit/test_disk_cache.cpp
@@ -76,7 +77,15 @@ set(MOCK_SOURCES
 # Create test executables
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
-    if(${test_name} STREQUAL "test_image_magick_adapter")
+    if(${test_name} STREQUAL "test_processing_errors_ops")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        # Just add the test to the test list without creating executable
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ProcessingErrorsOpsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_image_magick_adapter")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         # Just add the test to the test list without creating executable
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ImageMagickAdapterTest.*")
@@ -175,6 +184,15 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
         )
     endif()
+    if(${test_name} STREQUAL "test_processing_errors_ops")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+        )
+    endif()
     if(${test_name} STREQUAL "test_tpm")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -203,6 +221,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
         )
         target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_FILESFM=1)
@@ -242,6 +261,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )
@@ -265,6 +285,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )
@@ -305,6 +326,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
@@ -395,9 +417,10 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
-       NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
-       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
-       NOT ${test_name} STREQUAL "test_disk_cache")
+      NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
+      NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
+      NOT ${test_name} STREQUAL "test_disk_cache" AND
+      NOT ${test_name} STREQUAL "test_processing_errors_ops")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()

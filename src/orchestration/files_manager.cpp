@@ -1,4 +1,5 @@
 #include "orchestration/files_manager.hpp"
+#include "database/processing_errors_ops.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -23,6 +24,13 @@ namespace MediaDedup::Orchestration
         if (!ScannedFilesOps::ensureTable(*db_))
         {
             logger.warning("Failed to ensure scanned_files table exists (continuing)");
+        }
+
+        // Ensure processing_errors table exists
+        logger.information("Ensuring processing_errors table exists");
+        if (!ProcessingErrorsOps::ensureTable(*db_))
+        {
+            logger.warning("Failed to ensure processing_errors table exists (continuing)");
         }
     }
 
@@ -121,7 +129,7 @@ namespace MediaDedup::Orchestration
         row.share_name = shareName;
         row.file_name = rec.fileName;
         row.file_metadata = meta.dump();
-        row.is_network_file = rec.isShareMapped; // best-effort
+        row.is_network_file = rec.isShareMapped;                      // best-effort
         row.location_key = filesService_->makeMediaLocationKey(root); // Full user_settings.key format
 
         // Use database query instead of in-memory index lookup
