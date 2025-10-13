@@ -82,7 +82,6 @@ namespace MediaDedup
             "    PRIMARY KEY (file_path, mode)\n"
             ");";
 
-
         // Per-artifact upserts to avoid null-binding complexity
         inline constexpr std::string_view kUpsertImagePhash =
             "INSERT INTO image_artifacts(file_path, mode, phash, thumb_w, thumb_h, version, updated_at)\n"
@@ -96,7 +95,7 @@ namespace MediaDedup
 
         inline constexpr std::string_view kUpsertImageFeatures =
             "INSERT INTO image_artifacts(file_path, mode, features_method, features, version, updated_at)\n"
-            "VALUES(?, ?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "VALUES(?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
             "ON CONFLICT(file_path, mode) DO UPDATE SET\n"
             "  features_method=excluded.features_method,\n"
             "  features=excluded.features,\n"
@@ -105,7 +104,7 @@ namespace MediaDedup
 
         inline constexpr std::string_view kUpsertImageEmbedding =
             "INSERT INTO image_artifacts(file_path, mode, embedding_model, embedding_dim, embedding, version, updated_at)\n"
-            "VALUES(?, ?, ?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
+            "VALUES(?, ?, ?, ?, ?, COALESCE(?, 1), CURRENT_TIMESTAMP)\n"
             "ON CONFLICT(file_path, mode) DO UPDATE SET\n"
             "  embedding_model=excluded.embedding_model,\n"
             "  embedding_dim=excluded.embedding_dim,\n"
