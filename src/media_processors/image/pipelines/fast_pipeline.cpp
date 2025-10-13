@@ -3,6 +3,7 @@
 #include "database/database_manager.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/opencv_adapter.hpp"
+#include "utils/stderr_capture.hpp"
 #include <Poco/Logger.h>
 #include "config/config_enums.hpp"
 

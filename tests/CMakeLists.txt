@@ -43,6 +43,7 @@ set(UNIT_TEST_SOURCES
     unit/test_scanned_files_ops.cpp
     unit/test_image_artifacts_ops.cpp
     unit/test_processing_errors_ops.cpp
+    unit/test_stderr_capture.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
     unit/test_disk_cache.cpp
@@ -327,6 +328,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp

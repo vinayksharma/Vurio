@@ -220,6 +220,7 @@ add_executable(media_dedup_server
     src/database/user_settings/user_settings_ops.cpp
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
+    src/utils/stderr_capture.cpp
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp
     src/orchestration/files_manager.cpp

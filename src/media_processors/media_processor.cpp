@@ -10,6 +10,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "orchestration/thread_pool_manager.hpp"
+#include "utils/stderr_capture.hpp"
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
 #include <algorithm>
@@ -284,12 +285,17 @@ namespace MediaDedup
                             }
                             
                             // Transcode to a new file in cache
+                            // Capture stderr to get detailed ImageMagick error messages
                             std::string transcoded_filename;
                             TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
                             
                             // Get cache directory from disk_cache for transcoding
                             std::string cache_directory = disk_cache->getCacheLocation();
-                            if (TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config, cache_directory))
+                            StderrCapture stderr_capture;
+                            bool transcode_success = TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config, cache_directory);
+                            std::string stderr_output = stderr_capture.getOutput();
+                            
+                            if (transcode_success)
                             {
                                 // Validate transcoded file exists and has content
                                 if (!std::filesystem::exists(transcoded_filename))
@@ -333,8 +339,16 @@ namespace MediaDedup
                             else
                             {
                                 Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s (this may be due to unsupported RAW format or corrupted file)", cached_path);
+                                
+                                // Build detailed error message including ImageMagick output
+                                std::string error_msg = "Failed to transcode raw file (unsupported RAW format or corrupted file)";
+                                if (!stderr_output.empty())
+                                {
+                                    error_msg += ": " + stderr_output;
+                                }
+                                
                                 // Log error to processing_errors table
-                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, "Failed to transcode raw file (unsupported RAW format or corrupted file)", "ImageMagick");
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, server_mode_copy, -1, error_msg, "ImageMagick");
                                 // Mark as processing error since RAW files cannot be processed without transcoding
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, server_mode_copy, -1);
                                 // Clean up the original cached file

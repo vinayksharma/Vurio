@@ -3,6 +3,7 @@
 #include "database/database_manager.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
+#include "utils/stderr_capture.hpp"
 #include <Poco/Logger.h>
 #include "config/unified_observable_config.hpp"
 #include "config/config_enums.hpp"
@@ -90,11 +91,24 @@ namespace MediaDedup
             logger.debug("Processing image file: %s (original: %s)", processing_file_path, original_file_path);
 
             // Try ONNX embedding (will fail if runtime/model not available as per policy)
+            // Capture stderr to get detailed library error messages
             std::vector<std::uint8_t> blob;
-            if (!OnnxAdapter::ComputeEmbedding(processing_file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob))
+            StderrCapture stderr_capture;
+            bool onnx_success = OnnxAdapter::ComputeEmbedding(processing_file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob);
+            std::string stderr_output = stderr_capture.getOutput();
+
+            if (!onnx_success)
             {
                 logger.warning("ONNX embedding failed for %s", processing_file_path);
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "ONNX embedding computation failed", "ONNX");
+
+                // Build detailed error message including library output
+                std::string error_msg = "ONNX embedding computation failed";
+                if (!stderr_output.empty())
+                {
+                    error_msg += ": " + stderr_output;
+                }
+
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, error_msg, "ONNX");
                 return false;
             }
 
