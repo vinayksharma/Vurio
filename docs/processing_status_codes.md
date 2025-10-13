@@ -70,6 +70,7 @@ The system implements a **single retry with escalation** policy:
 The server status endpoint (`/api/v1/server/status`) reports `error_files_count` which reflects **true processing errors only**:
 
 **Counted as Errors:**
+
 - ✅ `-1` (General Error)
 - ✅ `-3` (File Access Error)
 - ✅ `-4` (Memory Error)
@@ -78,6 +79,7 @@ The server status endpoint (`/api/v1/server/status`) reports `error_files_count`
 - ✅ `-101` to `-106` (Escalated Errors)
 
 **NOT Counted as Errors:**
+
 - ❌ `-2` (Backpressure) - Transient queue capacity issue, automatically retried
 - ❌ `-99` (Queued) - Files waiting to be processed, reported separately as `queued_files_count`
 

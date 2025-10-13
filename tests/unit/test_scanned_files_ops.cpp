@@ -343,7 +343,8 @@ namespace MediaDedup
             // Verify location keys are registered
             auto registered_keys = ScannedFilesOps::getRegisteredLocationKeys(dbm);
             EXPECT_EQ(registered_keys.size(), 1) << "Should have 1 registered location";
-            if (!registered_keys.empty()) {
+            if (!registered_keys.empty())
+            {
                 EXPECT_EQ(registered_keys[0], "mediaLocation:test123") << "Registered key should be 'mediaLocation:test123'";
             }
 
@@ -480,69 +481,69 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 //     EXPECT_EQ(reset_count, 0);
 // }
 
-    TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
-    {
-        std::string db_path = "../tests/test_data/databases/test_filtered_counts.sqlite";
-        std::remove(db_path.c_str());
+TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
+{
+    std::string db_path = "../tests/test_data/databases/test_filtered_counts.sqlite";
+    std::remove(db_path.c_str());
 
-        MediaDedup::DatabaseManager dbm(db_path);
-        ASSERT_TRUE(dbm.initialize());
+    MediaDedup::DatabaseManager dbm(db_path);
+    ASSERT_TRUE(dbm.initialize());
 
-        // Ensure tables exist
-        ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
-        
-        // Create test data with different location keys
-        auto row1 = MediaDedup::Test::makeRow("/tmp/test1.jpg");
-        row1.location_key = "mediaLocation:abc123";
-        row1.processed_fast = 2; // processed
-        
-        auto row2 = MediaDedup::Test::makeRow("/tmp/test2.jpg");
-        row2.location_key = "mediaLocation:abc123";
-        row2.processed_fast = -1; // error
-        
-        auto row3 = MediaDedup::Test::makeRow("/tmp/test3.jpg");
-        row3.location_key = "mediaLocation:def456";
-        row3.processed_fast = 0; // unprocessed
-        
-        auto row4 = MediaDedup::Test::makeRow("/tmp/test4.jpg");
-        row4.location_key = "mediaLocation:xyz789"; // This location will not be registered
-        row4.processed_fast = 2; // processed
-        
-        // Insert test data
-        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row1));
-        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row2));
-        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row3));
-        ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row4));
-        
-        // Ensure user_settings table exists and register only two locations
-        ASSERT_TRUE(MediaDedup::UserSettingsOps::ensureTable(dbm));
-        bool upsert1 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:abc123", "/tmp/location1");
-        bool upsert2 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:def456", "/tmp/location2");
-        ASSERT_TRUE(upsert1);
-        ASSERT_TRUE(upsert2);
-        
-        // Test filtered counts - should only count files from registered locations
-        int total_count = MediaDedup::ScannedFilesOps::count(dbm);
-        EXPECT_EQ(total_count, 3); // Only files from registered locations
-        
-        int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm, MediaDedup::ServerMode::FAST);
-        EXPECT_EQ(processed_count, 1); // Only row1 is processed and from registered location
-        
-        int error_count = MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST);
-        EXPECT_EQ(error_count, 1); // Only row2 has error and is from registered location
-        
-        // Test getRegisteredLocationKeys
-        auto registered_keys = MediaDedup::ScannedFilesOps::getRegisteredLocationKeys(dbm);
-        EXPECT_EQ(registered_keys.size(), 2);
-        EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:abc123") != registered_keys.end());
-        EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:def456") != registered_keys.end());
-        
-        // Test getLocationKey
-        std::string location_key = MediaDedup::ScannedFilesOps::getLocationKey(dbm, "/tmp/test1.jpg");
-        EXPECT_EQ(location_key, "mediaLocation:abc123");
-        
-        // Clean up
-        std::remove(db_path.c_str());
+    // Ensure tables exist
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
+
+    // Create test data with different location keys
+    auto row1 = MediaDedup::Test::makeRow("/tmp/test1.jpg");
+    row1.location_key = "mediaLocation:abc123";
+    row1.processed_fast = 2; // processed
+
+    auto row2 = MediaDedup::Test::makeRow("/tmp/test2.jpg");
+    row2.location_key = "mediaLocation:abc123";
+    row2.processed_fast = -1; // error
+
+    auto row3 = MediaDedup::Test::makeRow("/tmp/test3.jpg");
+    row3.location_key = "mediaLocation:def456";
+    row3.processed_fast = 0; // unprocessed
+
+    auto row4 = MediaDedup::Test::makeRow("/tmp/test4.jpg");
+    row4.location_key = "mediaLocation:xyz789"; // This location will not be registered
+    row4.processed_fast = 2;                    // processed
+
+    // Insert test data
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row1));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row2));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row3));
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row4));
+
+    // Ensure user_settings table exists and register only two locations
+    ASSERT_TRUE(MediaDedup::UserSettingsOps::ensureTable(dbm));
+    bool upsert1 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:abc123", "/tmp/location1");
+    bool upsert2 = MediaDedup::UserSettingsOps::upsert(dbm, "mediaLocation:def456", "/tmp/location2");
+    ASSERT_TRUE(upsert1);
+    ASSERT_TRUE(upsert2);
+
+    // Test filtered counts - should only count files from registered locations
+    int total_count = MediaDedup::ScannedFilesOps::count(dbm);
+    EXPECT_EQ(total_count, 3); // Only files from registered locations
+
+    int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm, MediaDedup::ServerMode::FAST);
+    EXPECT_EQ(processed_count, 1); // Only row1 is processed and from registered location
+
+    int error_count = MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST);
+    EXPECT_EQ(error_count, 1); // Only row2 has error and is from registered location
+
+    // Test getRegisteredLocationKeys
+    auto registered_keys = MediaDedup::ScannedFilesOps::getRegisteredLocationKeys(dbm);
+    EXPECT_EQ(registered_keys.size(), 2);
+    EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:abc123") != registered_keys.end());
+    EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:def456") != registered_keys.end());
+
+    // Test getLocationKey
+    std::string location_key = MediaDedup::ScannedFilesOps::getLocationKey(dbm, "/tmp/test1.jpg");
+    EXPECT_EQ(location_key, "mediaLocation:abc123");
+
+    // Clean up
+    std::remove(db_path.c_str());
 }
 
 #if !defined(ALL_UNIT_TESTS)
