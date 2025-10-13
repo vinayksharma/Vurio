@@ -166,13 +166,13 @@ namespace MediaDedup
         inline constexpr std::string_view kCountProcessedFilesQuality =
             "SELECT COUNT(*) FROM scanned_files WHERE processed_quality=2";
 
-        // Error count queries by mode
+        // Error count queries by mode (excludes backpressure -2 and queued -99)
         inline constexpr std::string_view kCountErrorFilesFast =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_fast < 0";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_fast < 0 AND processed_fast != -2 AND processed_fast != -99";
         inline constexpr std::string_view kCountErrorFilesBalanced =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_balanced < 0";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_balanced < 0 AND processed_balanced != -2 AND processed_balanced != -99";
         inline constexpr std::string_view kCountErrorFilesQuality =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_quality < 0";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_quality < 0 AND processed_quality != -2 AND processed_quality != -99";
 
         inline constexpr std::string_view kCountQueuedFilesFast =
             "SELECT COUNT(*) FROM scanned_files WHERE processed_fast = -99";
@@ -193,11 +193,11 @@ namespace MediaDedup
         inline constexpr std::string_view kCountProcessedFilesQualityFiltered =
             "SELECT COUNT(*) FROM scanned_files WHERE processed_quality=2 AND location_key IN (?)";
         inline constexpr std::string_view kCountErrorFilesFastFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_fast < 0 AND location_key IN (?)";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_fast < 0 AND processed_fast != -2 AND processed_fast != -99 AND location_key IN (?)";
         inline constexpr std::string_view kCountErrorFilesBalancedFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_balanced < 0 AND location_key IN (?)";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_balanced < 0 AND processed_balanced != -2 AND processed_balanced != -99 AND location_key IN (?)";
         inline constexpr std::string_view kCountErrorFilesQualityFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed_quality < 0 AND location_key IN (?)";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed_quality < 0 AND processed_quality != -2 AND processed_quality != -99 AND location_key IN (?)";
         inline constexpr std::string_view kCountQueuedFilesFastFiltered =
             "SELECT COUNT(*) FROM scanned_files WHERE processed_fast = -99 AND location_key IN (?)";
         inline constexpr std::string_view kCountQueuedFilesBalancedFiltered =

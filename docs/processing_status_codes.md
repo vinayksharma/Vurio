@@ -65,6 +65,24 @@ The system implements a **single retry with escalation** policy:
 | `-106` | **Escalated Cache Error**        | No further retries                    |
 | `-199` | **Escalated Queued Error**       | No further retries (should not occur) |
 
+## Error Count Reporting
+
+The server status endpoint (`/api/v1/server/status`) reports `error_files_count` which reflects **true processing errors only**:
+
+**Counted as Errors:**
+- ✅ `-1` (General Error)
+- ✅ `-3` (File Access Error)
+- ✅ `-4` (Memory Error)
+- ✅ `-5` (Network Error)
+- ✅ `-6` (Cache Error)
+- ✅ `-101` to `-106` (Escalated Errors)
+
+**NOT Counted as Errors:**
+- ❌ `-2` (Backpressure) - Transient queue capacity issue, automatically retried
+- ❌ `-99` (Queued) - Files waiting to be processed, reported separately as `queued_files_count`
+
+This distinction ensures that the error count reflects actual processing failures rather than temporary operational states. Backpressure files are automatically retried when queue capacity becomes available, and queued files are actively waiting to be processed.
+
 ## Database Schema
 
 The `scanned_files` table uses the `status` column to store these codes:

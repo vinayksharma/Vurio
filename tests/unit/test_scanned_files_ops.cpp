@@ -291,6 +291,69 @@ namespace MediaDedup
             }
             EXPECT_TRUE(found_backpressure) << "Backpressure files should now be included in retry logic";
         }
+
+        TEST(ScannedFilesOpsTest, ErrorCountExcludesBackpressureAndQueued)
+        {
+            std::string db_path = "../tests/test_data/databases/test_error_count_exclusion.sqlite";
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            // Ensure user_settings table for location filtering first
+            // NOTE: location keys must start with "mediaLocation:" to be found by getRegisteredLocationKeys
+            ASSERT_TRUE(UserSettingsOps::ensureTable(dbm));
+            ASSERT_TRUE(UserSettingsOps::upsert(dbm, "mediaLocation:test123", "/test"));
+
+            // Create files with different error statuses and proper location_key
+            auto row_error = makeRow("/test/error.jpg");
+            row_error.processed_fast = -1; // Real error
+            row_error.location_key = "mediaLocation:test123";
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_error));
+
+            auto row_backpressure = makeRow("/test/backpressure.jpg");
+            row_backpressure.processed_fast = -2; // Backpressure (should NOT be counted as error)
+            row_backpressure.location_key = "mediaLocation:test123";
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_backpressure));
+
+            auto row_queued = makeRow("/test/queued.jpg");
+            row_queued.processed_fast = -99; // Queued (should NOT be counted as error)
+            row_queued.location_key = "mediaLocation:test123";
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_queued));
+
+            auto row_escalated = makeRow("/test/escalated.jpg");
+            row_escalated.processed_fast = -101; // Escalated error (SHOULD be counted as error)
+            row_escalated.location_key = "mediaLocation:test123";
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_escalated));
+
+            auto row_file_access = makeRow("/test/file_access.jpg");
+            row_file_access.processed_fast = -3; // File access error (SHOULD be counted as error)
+            row_file_access.location_key = "mediaLocation:test123";
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_file_access));
+
+            // First test the unfiltered version (countErrorAll) to make sure the SQL itself works
+            int error_count_all = ScannedFilesOps::countErrorAll(dbm, ServerMode::FAST);
+            EXPECT_EQ(error_count_all, 3) << "Unfiltered error count should be 3: -1 (general), -3 (file access), -101 (escalated), excluding -2 (backpressure) and -99 (queued)";
+
+            // Test queued count (unfiltered)
+            int queued_count_all = ScannedFilesOps::countQueuedAll(dbm, ServerMode::FAST);
+            EXPECT_EQ(queued_count_all, 1) << "Unfiltered queued count should be 1 for the -99 status file";
+
+            // Verify location keys are registered
+            auto registered_keys = ScannedFilesOps::getRegisteredLocationKeys(dbm);
+            EXPECT_EQ(registered_keys.size(), 1) << "Should have 1 registered location";
+            if (!registered_keys.empty()) {
+                EXPECT_EQ(registered_keys[0], "mediaLocation:test123") << "Registered key should be 'mediaLocation:test123'";
+            }
+
+            // Now test the filtered versions (these use location_key filtering)
+            int error_count = ScannedFilesOps::countError(dbm, ServerMode::FAST);
+            EXPECT_EQ(error_count, 3) << "Filtered error count should be 3 (all files are in registered location)";
+
+            int queued_count = ScannedFilesOps::countQueued(dbm, ServerMode::FAST);
+            EXPECT_EQ(queued_count, 1) << "Filtered queued count should be 1";
+        }
     }
 }
 
