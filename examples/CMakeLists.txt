@@ -63,4 +63,5 @@ target_sources(quality_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
 )

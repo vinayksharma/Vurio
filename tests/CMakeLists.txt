@@ -86,6 +86,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_stderr_capture")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="StderrCaptureTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     elseif(${test_name} STREQUAL "test_image_magick_adapter")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         # Just add the test to the test list without creating executable
@@ -255,6 +262,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
@@ -283,6 +291,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
@@ -422,7 +431,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
       NOT ${test_name} STREQUAL "test_disk_cache" AND
-      NOT ${test_name} STREQUAL "test_processing_errors_ops")
+      NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
+      NOT ${test_name} STREQUAL "test_stderr_capture")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
