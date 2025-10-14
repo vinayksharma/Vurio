@@ -3,7 +3,6 @@
 #include "database/database_manager.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/features_adapter.hpp"
-#include "utils/stderr_capture.hpp"
 #include <Poco/Logger.h>
 #include "config/config_enums.hpp"
 
@@ -68,24 +67,13 @@ namespace MediaDedup
             logger.debug("Processing image file: %s (original: %s)", processing_file_path, original_file_path);
 
             // Process regular files directly
-            // Capture stderr to get detailed OpenCV error messages
             std::vector<std::uint8_t> blob;
-            StderrCapture stderr_capture;
             bool extraction_success = FeaturesAdapter::ExtractFeaturesToBlob(processing_file_path, cfg.resize_long_edge, cfg.max_keypoints, blob);
-            std::string stderr_output = stderr_capture.getOutput();
 
             if (!extraction_success)
             {
                 logger.warning("Features extraction failed for %s", processing_file_path);
-
-                // Build detailed error message including library output
-                std::string error_msg = "ORB feature extraction failed";
-                if (!stderr_output.empty())
-                {
-                    error_msg += ": " + stderr_output;
-                }
-
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, error_msg, "OpenCV");
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::BALANCED, -1, "ORB feature extraction failed", "OpenCV");
                 return false;
             }
 
