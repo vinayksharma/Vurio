@@ -45,6 +45,8 @@ target_link_libraries(quality_smoke
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
+    ${LIBRAW_LIBRARIES}
+    ${LIBTIFF_LIBRARIES}
     Poco::Foundation
     Poco::Data
     Poco::DataSQLite
@@ -62,6 +64,16 @@ target_sources(quality_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
+)
+target_include_directories(quality_smoke PRIVATE
+    ${LIBRAW_INCLUDE_DIRS}
+    ${LIBTIFF_INCLUDE_DIRS}
+)
+target_link_directories(quality_smoke PRIVATE
+    ${LIBRAW_LIBRARY_DIRS}
+    ${LIBTIFF_LIBRARY_DIRS}
 )

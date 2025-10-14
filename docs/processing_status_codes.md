@@ -14,8 +14,8 @@ This document defines the status codes used in the `scanned_files` table to trac
 | `-2`  | **Skipped Due to Backpressure** | File was skipped because processing queue was at capacity (retryable)                                       |
 | `-1`  | **General Error**               | File processing failed due to corruption, format issues, or other general errors                            |
 | `-3`  | **File Access Error**           | File processing failed due to file access issues (permission denied, file not found, file locked)           |
-| `-4`  | **Memory Allocation Error**     | File processing failed due to memory allocation issues (out of memory, allocation failure)                  |
-| `-5`  | **Network-Related Error**       | File processing failed due to network issues (network files, connection timeouts)                           |
+| `-4`  | **RAW Validation Error**        | RAW file failed LibRaw validation (unsupported format, corrupted header, truncated file)                    |
+| `-5`  | **TIFF Validation Error**       | TIFF file failed libtiff validation (corrupted header, invalid IFD, missing required tags)                  |
 | `-6`  | **Cache Operation Error**       | File processing failed due to disk cache issues (cache copy failed, cache save failed, cache delete failed) |
 
 ## Implementation Notes

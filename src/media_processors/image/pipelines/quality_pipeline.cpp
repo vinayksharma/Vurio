@@ -3,6 +3,7 @@
 #include "database/database_manager.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
+#include "media_processors/image/backends/tiff_validator.hpp"
 #include <Poco/Logger.h>
 #include "config/unified_observable_config.hpp"
 #include "config/config_enums.hpp"
@@ -88,6 +89,20 @@ namespace MediaDedup
         {
             Poco::Logger &logger = Poco::Logger::get("QualityPipeline");
             logger.debug("Processing image file: %s (original: %s)", processing_file_path, original_file_path);
+
+            // Validate TIFF files before processing to catch corrupted files early
+            if (TiffValidator::isTiffFile(processing_file_path))
+            {
+                auto validation_result = TiffValidator::validate(processing_file_path);
+                if (!validation_result.is_valid)
+                {
+                    logger.warning("TIFF validation failed for %s: %s", processing_file_path, validation_result.error_message);
+                    ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -5, 
+                        "TIFF validation failed: " + validation_result.error_message, "TiffValidator");
+                    return false;
+                }
+                logger.debug("TIFF validation passed for %s", processing_file_path);
+            }
 
             // Try ONNX embedding (will fail if runtime/model not available as per policy)
             std::vector<std::uint8_t> blob;

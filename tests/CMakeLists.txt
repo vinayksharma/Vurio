@@ -258,6 +258,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
@@ -287,6 +289,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
@@ -301,6 +305,14 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         )
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
+    target_include_directories(${test_name} PRIVATE
+        ${LIBRAW_INCLUDE_DIRS}
+        ${LIBTIFF_INCLUDE_DIRS}
+    )
+    target_link_directories(${test_name} PRIVATE
+        ${LIBRAW_LIBRARY_DIRS}
+        ${LIBTIFF_LIBRARY_DIRS}
+    )
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
         pthread
@@ -311,6 +323,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         ${OpenCV_LIBS}
         ${ONNXRUNTIME_LIBRARY}
         ${ImageMagick++_LIBRARIES}
+        ${LIBRAW_LIBRARIES}
+        ${LIBTIFF_LIBRARIES}
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
@@ -357,9 +371,21 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
+)
+target_include_directories(all_unit_tests PRIVATE
+    ${LIBRAW_INCLUDE_DIRS}
+    ${LIBTIFF_INCLUDE_DIRS}
+)
+target_link_directories(all_unit_tests PRIVATE
+    ${LIBRAW_LIBRARY_DIRS}
+    ${LIBTIFF_LIBRARY_DIRS}
 )
 target_link_libraries(all_unit_tests 
     ${GTEST_LIBRARIES}
@@ -368,6 +394,8 @@ target_link_libraries(all_unit_tests
     sqlite3
     unified_config_lib
     yaml-cpp::yaml-cpp
+    ${LIBRAW_LIBRARIES}
+    ${LIBTIFF_LIBRARIES}
     test_utils
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}

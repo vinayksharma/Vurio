@@ -1,5 +1,6 @@
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
+#include "media_processors/image/backends/raw_validator.hpp"
 #include "media_processors/image/backends/image_magick_adapter.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
@@ -29,6 +30,17 @@ namespace MediaDedup
         }
 
         logger.information("Starting transcoding for raw file: %s", file_path);
+
+        // Validate RAW file before attempting transcoding to catch unsupported/corrupted files early
+        auto validation_result = RawValidator::validate(file_path);
+        if (!validation_result.is_valid)
+        {
+            logger.warning("RAW validation failed for %s: %s (code: %d)", 
+                          file_path, validation_result.error_message, validation_result.error_code);
+            tiff_data.clear();
+            return false;
+        }
+        logger.debug("RAW validation passed for %s (format: %s)", file_path, validation_result.format_name);
 
         // Log file properties for debugging
         try

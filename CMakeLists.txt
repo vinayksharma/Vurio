@@ -45,6 +45,21 @@ pkg_check_modules(ImageMagick++ REQUIRED Magick++)
 add_definitions(-DMAGICKCORE_QUANTUM_DEPTH=16)
 add_definitions(-DMAGICKCORE_HDRI_ENABLE=1)
 
+# Find LibRaw for RAW file validation
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBRAW REQUIRED libraw)
+if(LIBRAW_FOUND)
+    message(STATUS "LibRaw found: ${LIBRAW_VERSION}")
+    message(STATUS "LibRaw libraries: ${LIBRAW_LIBRARIES}")
+    message(STATUS "LibRaw library dirs: ${LIBRAW_LIBRARY_DIRS}")
+endif()
+
+# Find libtiff for TIFF file validation
+pkg_check_modules(LIBTIFF REQUIRED libtiff-4)
+if(LIBTIFF_FOUND)
+    message(STATUS "libtiff found: ${LIBTIFF_VERSION}")
+endif()
+
 find_package(OpenCV QUIET)
 if(OpenCV_FOUND)
     message(STATUS "OpenCV found: ${OpenCV_VERSION}")
@@ -238,6 +253,8 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp
+    src/media_processors/image/backends/raw_validator.cpp
+    src/media_processors/image/backends/tiff_validator.cpp
     src/media_processors/image/backends/transcoding_pipeline.cpp
     src/media_processors/image/pipelines/balanced_pipeline.cpp
     src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -269,6 +286,18 @@ target_link_libraries(media_dedup_server
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
+    ${LIBRAW_LIBRARIES}
+    ${LIBTIFF_LIBRARIES}
+)
+
+# Add include directories and link directories for LibRaw and libtiff
+target_include_directories(media_dedup_server PRIVATE
+    ${LIBRAW_INCLUDE_DIRS}
+    ${LIBTIFF_INCLUDE_DIRS}
+)
+target_link_directories(media_dedup_server PRIVATE
+    ${LIBRAW_LIBRARY_DIRS}
+    ${LIBTIFF_LIBRARY_DIRS}
 )
 
 # Set compile definitions
