@@ -149,6 +149,17 @@ namespace MediaDedup
                 logger.warning("ThreadPoolManager is null - not setting on web server");
             }
 
+            // Set duplicate finder on web server for status endpoint
+            if (duplicate_finder_)
+            {
+                web_server_->setDuplicateFinder(duplicate_finder_);
+                logger.information("DuplicateFinder set on web server");
+            }
+            else
+            {
+                logger.warning("DuplicateFinder is null - not setting on web server");
+            }
+
             // Start the web server
             if (!web_server_->start())
             {
@@ -255,13 +266,6 @@ namespace MediaDedup
                 return false;
             }
             logger.information("DuplicateFinder initialized successfully");
-
-            // Set duplicate finder on web server for status endpoint
-            if (web_server_)
-            {
-                web_server_->setDuplicateFinder(duplicate_finder_);
-                logger.information("DuplicateFinder set on web server");
-            }
 
             int dupIntervalMs = config_manager_->getPropertyValue<int>("duplicates.finder.intervalMs", 3600000);
             logger.information("Loading duplicateFinder interval from config: %d ms (%d hours)",
