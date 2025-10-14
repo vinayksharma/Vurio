@@ -30,6 +30,30 @@ namespace MediaDedup
 
         logger.information("Shutting down server...");
 
+        // Stop config file monitoring FIRST to prevent config reload during shutdown
+        // This prevents deadlock where ConfigFileMonitor holds config mutex while waiting for TPM to drain
+        try
+        {
+            if (config_manager_)
+            {
+                logger.debug("Stopping config file monitoring...");
+                config_manager_->shutdown();
+                logger.debug("Config file monitoring stopped successfully");
+            }
+            else
+            {
+                logger.debug("Config manager is null, skipping");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception during config file monitoring shutdown: %s", e.what());
+        }
+        catch (...)
+        {
+            logger.error("Unknown exception during config file monitoring shutdown");
+        }
+
         // Stop console input processing
         try
         {

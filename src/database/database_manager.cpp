@@ -5,6 +5,7 @@
 #include <Poco/Data/RecordSet.h>
 #include "database/session_manager.hpp"
 #include "database/user_settings_ops.hpp"
+#include "config/unified_observable_config.hpp"
 #include <fstream>
 #include <sstream>
 #include "database/sql_constants.hpp"
@@ -12,8 +13,8 @@
 namespace MediaDedup
 {
 
-    DatabaseManager::DatabaseManager(const std::string &db_path)
-        : db_path_(db_path), connected_(false), logger_(Poco::Logger::get("DatabaseManager")) {}
+    DatabaseManager::DatabaseManager(const std::string &db_path, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+        : db_path_(db_path), connected_(false), logger_(Poco::Logger::get("DatabaseManager")), config_manager_(config_manager) {}
 
     DatabaseManager::~DatabaseManager() = default;
 
@@ -21,12 +22,42 @@ namespace MediaDedup
     {
         try
         {
+            // Get pool sizes from config, with defaults if config_manager is not available
+            int pool_min = 4;
+            int pool_max = 20;
+            
+            if (config_manager_)
+            {
+                pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
+                pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 20);
+                logger_.information("Using database session pool: min=%d, max=%d", pool_min, pool_max);
+            }
+            else
+            {
+                logger_.warning("No config manager provided, using default session pool sizes: min=%d, max=%d", pool_min, pool_max);
+            }
+            
             // Initialize SessionManager and its pool
-            session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 1, 8, 60);
+            session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 
+                                                               static_cast<std::size_t>(pool_min), 
+                                                               static_cast<std::size_t>(pool_max), 
+                                                               60);
             if (session_manager_->initialize())
             {
                 connected_ = true;
                 logger_.information("Database connected successfully: " + db_path_);
+                
+                // Subscribe to config changes for pool sizes
+                if (config_manager_)
+                {
+                    config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
+                                                             {
+                        if (event.key == "database.session.poolMin" || event.key == "database.session.poolMax")
+                        {
+                            logger_.warning("Database session pool size changed ('%s'). Pool size changes require server restart to take effect.", event.key);
+                        } });
+                }
+                
                 return true;
             }
             else
@@ -55,7 +86,20 @@ namespace MediaDedup
         {
             try
             {
-                session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 1, 8, 60);
+                // Get pool sizes from config, with defaults if config_manager is not available
+                int pool_min = 4;
+                int pool_max = 20;
+                
+                if (config_manager_)
+                {
+                    pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
+                    pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 20);
+                }
+                
+                session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 
+                                                                   static_cast<std::size_t>(pool_min), 
+                                                                   static_cast<std::size_t>(pool_max), 
+                                                                   60);
                 if (!session_manager_->initialize())
                     return false;
             }

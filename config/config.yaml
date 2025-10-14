@@ -28,6 +28,8 @@ media.images.jp2: true
 media.processor.intervalMs: 5000
 server.mode: BALANCED
 database.session.acquireBackoffMs: 50
+database.session.poolMin: 4
+database.session.poolMax: 20
 scheduler.drift.mode: anchored
 scheduler.jobs: ""
 media.video.wmv: true

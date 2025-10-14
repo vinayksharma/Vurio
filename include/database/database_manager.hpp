@@ -20,6 +20,9 @@
 
 namespace MediaDedup
 {
+    // Forward declarations
+    class UnifiedObservableConfigManager;
+    class SessionManager;
 
     /**
      * @brief Database manager for the media deduplication server
@@ -31,8 +34,6 @@ namespace MediaDedup
      * - Hash storage and retrieval
      * - Duplicate detection queries
      */
-    class SessionManager; // forward declaration
-
     class DatabaseManager
     {
     public:
@@ -47,8 +48,10 @@ namespace MediaDedup
         /**
          * @brief Constructor
          * @param db_path Path to SQLite database file
+         * @param config_manager Optional config manager for reactive pool sizing
          */
-        explicit DatabaseManager(const std::string &db_path = "dedup_server.db");
+        explicit DatabaseManager(const std::string &db_path = "dedup_server.db", 
+                                std::shared_ptr<UnifiedObservableConfigManager> config_manager = nullptr);
 
         /**
          * @brief Destructor
@@ -161,6 +164,7 @@ namespace MediaDedup
         std::string db_path_;
         bool connected_;
         Poco::Logger &logger_;
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
 
         /**
          * @brief Create media files table

@@ -309,6 +309,8 @@ namespace MediaDedup
         manager->createProperty<std::string>("database.path", "data/dedup_server.db", "Database file path");
         manager->createProperty<int>("database.session.acquireTimeoutMs", 3000, "Database session acquire timeout");
         manager->createProperty<int>("database.session.acquireBackoffMs", 50, "Database session acquire backoff");
+        manager->createProperty<int>("database.session.poolMin", 4, "Minimum database session pool size");
+        manager->createProperty<int>("database.session.poolMax", 20, "Maximum database session pool size");
 
         // Create default logging properties
         manager->createProperty<std::string>("logging.level", config.log_level, "Logging level");
@@ -484,6 +486,39 @@ namespace MediaDedup
             {
                 double timeout = std::any_cast<double>(value);
                 return timeout > 0.0 && timeout <= 3600.0;
+            }
+            catch (const std::bad_any_cast&)
+            {
+                return false;
+            } });
+
+        // Add custom validation for database.session.poolMin
+        manager->registerValidationCallback("database.session.poolMin", [](const std::string &key, const std::any &value) -> bool
+                                            {
+            try
+            {
+                int pool_min = std::any_cast<int>(value);
+                return pool_min >= 1 && pool_min <= 50;
+            }
+            catch (const std::bad_any_cast&)
+            {
+                return false;
+            } });
+
+        // Add custom validation for database.session.poolMax
+        manager->registerValidationCallback("database.session.poolMax", [manager](const std::string &key, const std::any &value) -> bool
+                                            {
+            try
+            {
+                int pool_max = std::any_cast<int>(value);
+                if (pool_max < 1 || pool_max > 100)
+                {
+                    return false;
+                }
+                
+                // Ensure poolMax >= poolMin
+                int pool_min = manager->getPropertyValue<int>("database.session.poolMin", 1);
+                return pool_max >= pool_min;
             }
             catch (const std::bad_any_cast&)
             {

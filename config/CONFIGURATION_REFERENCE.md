@@ -20,6 +20,8 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `database.path`                       | string  | File path; parent dirs will be auto-created                                             | `data/dedup_server.db`       | New path is honored on next DB (re)initialization   | SQLite database file path                              |
 | `database.session.acquireTimeoutMs`   | integer | > 0                                                                                     | `3000`                       | Applied live (DB session acquire timeout)           | Max wait to acquire a DB session (ms)                  |
 | `database.session.acquireBackoffMs`   | integer | > 0                                                                                     | `50`                         | Applied live (retry backoff while waiting)          | Sleep between retries while acquiring a session (ms)   |
+| `database.session.poolMin`            | integer | 1-50                                                                                    | `4`                          | Requires restart (pool size is set at init)         | Minimum database connection pool size                  |
+| `database.session.poolMax`            | integer | 1-100 (must be >= poolMin)                                                              | `20`                         | Requires restart (pool size is set at init)         | Maximum database connection pool size                  |
 | `cache.disk.location`                 | string  | File path (relative to working directory root)                                          | `cache`                      | Applied live (relocates cache, recalculates size)   | Disk cache directory location                          |
 | `cache.disk.size_limit_mb`            | integer | > 0                                                                                     | `1024`                       | Applied live (enforces new limit, evicts old files) | Maximum cache size in megabytes                        |
 | `logging.level`                       | string  | Case-insensitive: `trace`, `debug`, `info` (`information`), `warn` (`warning`), `error` | `info`                       | Applied live                                        | Global logging level (accepts synonyms in parentheses) |
@@ -93,6 +95,8 @@ server.timeout: 30.0
 database.path: data/dedup_server.db
 database.session.acquireTimeoutMs: 3000
 database.session.acquireBackoffMs: 50
+database.session.poolMin: 4
+database.session.poolMax: 20
 
 # Cache configuration
 cache.disk.location: /cache
@@ -228,6 +232,7 @@ media.images.raw.rwl: true
   - QUALITY: most comprehensive metadata and de-duplication passes
 - Changing `server.instanceCheck.enabled` or `server.instanceCheck.bufferSize` applies immediately to instance checking behavior.
 - Changing `database.session.acquireTimeoutMs` or `database.session.acquireBackoffMs` applies immediately to the database session acquisition timing.
+- Changing `database.session.poolMin` or `database.session.poolMax` requires a server restart (session pool is initialized once at startup).
 - Changing `files.manager.enabled` or `files.manager.scan.intervalMs` applies immediately to file scanning behavior.
 - Changing `media.processor.enabled`, `media.processor.intervalMs`, or `tpm.types.*_processor.share` applies immediately to media processing behavior.
 - Changing `scheduler.jitter.enabled`, `scheduler.jitter.percent`, `scheduler.drift.mode`, or `scheduler.drift.maxDriftMs` applies immediately to scheduler behavior.

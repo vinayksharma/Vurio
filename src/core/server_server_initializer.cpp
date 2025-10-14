@@ -67,8 +67,8 @@ namespace MediaDedup
                 std::filesystem::create_directories(db_dir);
             }
 
-            // Initialize database manager
-            database_manager_ = std::make_unique<DatabaseManager>(db_path);
+            // Initialize database manager with config manager for reactive pool sizing
+            database_manager_ = std::make_unique<DatabaseManager>(db_path, config_manager_);
             if (!database_manager_->initialize())
             {
                 logger.error("Failed to initialize database manager");

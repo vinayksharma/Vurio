@@ -55,8 +55,16 @@ namespace MediaDedup
 
     void ConfigEventManager::notifyConfigChange(const ConfigChangeEvent &event)
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        for (const auto &callback : config_change_callbacks_)
+        // Copy callbacks while holding the lock to avoid holding mutex during callback execution
+        // This prevents deadlock if callbacks attempt blocking operations (e.g., TPM thread pool recreation)
+        std::vector<ConfigChangeCallback> callbacks_copy;
+        {
+            std::lock_guard<std::mutex> lock(callbacks_mutex_);
+            callbacks_copy = config_change_callbacks_;
+        }
+        
+        // Call callbacks outside the lock to prevent deadlock
+        for (const auto &callback : callbacks_copy)
         {
             try
             {
