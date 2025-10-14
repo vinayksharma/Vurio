@@ -914,10 +914,24 @@ namespace MediaDedup
 
         try
         {
-            // Query unprocessed files limited to current processing queue size to prevent memory buildup
-            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode, static_cast<int>(max_processing_queue_size_));
+            // Check available queue space before fetching files to prevent scheduler thrashing
+            size_t current_queue_depth = thread_pool_manager_->getQueueDepth("media_processor");
+            size_t available_space = (max_processing_queue_size_ > current_queue_depth)
+                                         ? (max_processing_queue_size_ - current_queue_depth)
+                                         : 0;
 
-            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode (limited to " + std::to_string(max_processing_queue_size_) + " by queue size)");
+            if (available_space == 0)
+            {
+                Poco::Logger::get("MediaProcessor").debug("Media processor queue is full (%zu/%zu), skipping this cycle to avoid thrashing", current_queue_depth, max_processing_queue_size_);
+                return;
+            }
+
+            Poco::Logger::get("MediaProcessor").debug("Media processor queue has %zu available slots (current: %zu, max: %zu)", available_space, current_queue_depth, max_processing_queue_size_);
+
+            // Query unprocessed files limited to available queue space to prevent memory buildup and backpressure thrashing
+            std::vector<ScannedFileRow> unprocessed_files = ScannedFilesOps::listUnprocessed(*database_manager_, current_mode, static_cast<int>(available_space));
+
+            Poco::Logger::get("MediaProcessor").information("Found " + std::to_string(unprocessed_files.size()) + " unprocessed files for current server mode (limited to " + std::to_string(available_space) + " by available queue space)");
 
             if (unprocessed_files.empty())
             {
