@@ -256,6 +256,13 @@ namespace MediaDedup
             }
             logger.information("DuplicateFinder initialized successfully");
 
+            // Set duplicate finder on web server for status endpoint
+            if (web_server_)
+            {
+                web_server_->setDuplicateFinder(duplicate_finder_);
+                logger.information("DuplicateFinder set on web server");
+            }
+
             int dupIntervalMs = config_manager_->getPropertyValue<int>("duplicates.finder.intervalMs", 3600000);
             logger.information("Loading duplicateFinder interval from config: %d ms (%d hours)",
                                dupIntervalMs, dupIntervalMs / 3600000);

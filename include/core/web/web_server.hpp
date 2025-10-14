@@ -21,7 +21,16 @@ namespace MediaDedup
     class UnifiedObservableConfigManager;
     class WebServer;
     class ThreadPoolManager;
-    namespace Orchestration { class SchedulerService; }
+    namespace Orchestration
+    {
+        class SchedulerService;
+    }
+
+    // Forward declarations
+    namespace Orchestration
+    {
+        class DuplicateFinder;
+    }
 
     /**
      * @brief Request handler factory for routing HTTP requests
@@ -36,6 +45,7 @@ namespace MediaDedup
                                     std::shared_ptr<class ScannedFilesService> scanned_files_service = nullptr,
                                     std::shared_ptr<class ThreadPoolManager> tpm = nullptr,
                                     std::shared_ptr<Orchestration::SchedulerService> scheduler_service = nullptr,
+                                    std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder = nullptr,
                                     const std::string &web_root_path = "src/core/webserver/static/");
 
         Poco::Net::HTTPRequestHandler *createRequestHandler(const Poco::Net::HTTPServerRequest &request) override;
@@ -50,6 +60,7 @@ namespace MediaDedup
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+        std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder_;
         std::string web_root_path_;
     };
 
@@ -100,6 +111,7 @@ namespace MediaDedup
         void setFilesService(std::shared_ptr<class FilesService> service) { files_service_ = std::move(service); }
         void setScannedFilesService(std::shared_ptr<class ScannedFilesService> service) { scanned_files_service_ = std::move(service); }
         void setThreadPoolManager(std::shared_ptr<class ThreadPoolManager> tpm) { tpm_ = std::move(tpm); }
+        void setDuplicateFinder(std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder) { duplicate_finder_ = std::move(duplicate_finder); }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
@@ -120,6 +132,7 @@ namespace MediaDedup
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+        std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder_;
 
         // Private methods
         void initializeServer();

@@ -69,6 +69,7 @@ namespace MediaDedup
         std::shared_ptr<ScannedFilesService> scanned_files_service,
         std::shared_ptr<ThreadPoolManager> tpm,
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+        std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder,
         const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
@@ -77,6 +78,7 @@ namespace MediaDedup
           scanned_files_service_(std::move(scanned_files_service)),
           tpm_(std::move(tpm)),
           scheduler_service_(std::move(scheduler_service)),
+          duplicate_finder_(std::move(duplicate_finder)),
           web_root_path_(web_root_path) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
@@ -112,7 +114,7 @@ namespace MediaDedup
         if (uri == "/api/v1/config/reload" && method == "POST")
             return new ReloadConfigHandler(config_manager_);
         if (uri == "/api/v1/server/status" && method == "GET")
-            return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_);
+            return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_, duplicate_finder_);
         if (uri == "/api/v1/files/reset-errors" && method == "POST")
             return new ResetErrorsHandler(config_manager_, scanned_files_service_);
         if (uri == "/api/v1/config/restart-webserver" && method == "POST")
@@ -213,6 +215,7 @@ namespace MediaDedup
                                                                      scanned_files_service_,
                                                                      tpm_,
                                                                      scheduler_service_,
+                                                                     duplicate_finder_,
                                                                      "src/core/webserver/static/");
 
         // Configure HTTP server thread pool for single client + dedicated UI (reactive config)

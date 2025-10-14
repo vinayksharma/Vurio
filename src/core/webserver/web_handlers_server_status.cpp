@@ -29,11 +29,13 @@ namespace MediaDedup
     ServerStatusHandler::ServerStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                              std::shared_ptr<FilesService> files_service,
                                              std::shared_ptr<ScannedFilesService> scanned_files_service,
-                                             std::shared_ptr<ThreadPoolManager> tpm)
+                                             std::shared_ptr<ThreadPoolManager> tpm,
+                                             std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder)
         : config_manager_(std::move(config_manager)),
           files_service_(std::move(files_service)),
           scanned_files_service_(std::move(scanned_files_service)),
-          tpm_(std::move(tpm))
+          tpm_(std::move(tpm)),
+          duplicate_finder_(std::move(duplicate_finder))
     {
     }
 
@@ -129,6 +131,32 @@ namespace MediaDedup
                     status_obj.set("queued_files_count", queued_count);
                     Poco::Logger::get("ServerStatusHandler").debug("Queued count (fallback to FAST mode): %d", queued_count);
                 }
+            }
+
+            // Duplicate statistics
+            if (duplicate_finder_)
+            {
+                try
+                {
+                    auto dup_stats = duplicate_finder_->getStats();
+                    status_obj.set("duplicates_found", dup_stats.total_duplicates);
+                    status_obj.set("duplicate_groups", dup_stats.total_groups);
+                    status_obj.set("files_with_duplicates", dup_stats.files_with_duplicates);
+                    Poco::Logger::get("ServerStatusHandler").debug("Duplicate stats: groups=%d, total=%d, distinct=%d", dup_stats.total_groups, dup_stats.total_duplicates, dup_stats.files_with_duplicates);
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("ServerStatusHandler").warning("Failed to get duplicate stats: %s", std::string(e.what()));
+                    status_obj.set("duplicates_found", 0);
+                    status_obj.set("duplicate_groups", 0);
+                    status_obj.set("files_with_duplicates", 0);
+                }
+            }
+            else
+            {
+                status_obj.set("duplicates_found", 0);
+                status_obj.set("duplicate_groups", 0);
+                status_obj.set("files_with_duplicates", 0);
             }
 
             // Registered directories

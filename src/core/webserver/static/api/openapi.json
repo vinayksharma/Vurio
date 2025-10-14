@@ -131,6 +131,27 @@
                     "scanned_files_count": {
                       "type": "integer"
                     },
+                    "processed_files_count": {
+                      "type": "integer"
+                    },
+                    "error_files_count": {
+                      "type": "integer"
+                    },
+                    "queued_files_count": {
+                      "type": "integer"
+                    },
+                    "duplicates_found": {
+                      "type": "integer",
+                      "description": "Total count of all files across all duplicate groups"
+                    },
+                    "duplicate_groups": {
+                      "type": "integer",
+                      "description": "Number of duplicate groups"
+                    },
+                    "files_with_duplicates": {
+                      "type": "integer",
+                      "description": "Count of distinct files that have duplicates"
+                    },
                     "registered_directories": {
                       "type": "array",
                       "items": {
