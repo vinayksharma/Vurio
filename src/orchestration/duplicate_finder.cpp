@@ -108,6 +108,11 @@ namespace MediaDedup
 
                 logger.information("Duplicate detection run completed: processed %d files in %d batches",
                                    total_processed, batch_count);
+
+                // Log current statistics
+                auto stats = getStats();
+                logger.information("Current stats: %d groups, %d total files in groups, %d distinct duplicates",
+                                   stats.total_groups, stats.total_duplicates, stats.files_with_duplicates);
             }
             catch (const std::exception &e)
             {
@@ -615,6 +620,7 @@ namespace MediaDedup
                 auto dup_stats = DuplicateGroupsOps::getStats(db_, mode);
                 stats.total_groups = dup_stats.total_groups;
                 stats.total_duplicates = dup_stats.total_duplicates;
+                stats.files_with_duplicates = dup_stats.files_with_duplicates;
 
                 auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, mode);
                 if (checkpoint.has_value())

@@ -60,8 +60,9 @@ namespace MediaDedup
              */
             struct Stats
             {
-                int total_groups = 0;
-                int total_duplicates = 0;
+                int total_groups = 0;          // Number of duplicate groups
+                int total_duplicates = 0;      // Total count of all files in all groups
+                int files_with_duplicates = 0; // Count of distinct files that are duplicates
                 int last_run_files_checked = 0;
                 int last_run_duplicates_found = 0;
                 std::string last_run_timestamp;
