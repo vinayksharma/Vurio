@@ -239,6 +239,7 @@ add_executable(media_dedup_server
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp
     src/orchestration/files_manager.cpp
+    src/orchestration/duplicate_finder.cpp
     src/filesmanager/file_scanner.cpp
     src/filesmanager/files_service.cpp
     src/filesmanager/disk_cache.cpp
@@ -262,6 +263,8 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/onnx_adapter.cpp
     src/media_processors/image/backends/onnx_session_manager.cpp
     src/database/image_artifacts_ops.cpp
+    src/database/duplicate_groups_ops.cpp
+    src/media_processors/similarity/similarity_calculator.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp
 )

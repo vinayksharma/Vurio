@@ -42,7 +42,7 @@ media.image.fast.thumbSize: 256
 files.manager.enabled: true
 database.sqlite.tempStore: memory
 files.manager.useInMemoryIndex: false
-logging.level: error
+logging.level: information
 media.images.raw.raw: true
 scheduler.backoff.jitterPercent: 10
 media.images.ppm: true
@@ -107,6 +107,15 @@ media.audio.amr: true
 scheduler.jitter.enabled: false
 media.video.m4v: true
 tpm.types.image_processor.share: 1
+tpm.types.duplicate_finder.share: 1
+duplicates.finder.enabled: true
+duplicates.finder.intervalMs: 5000
+duplicates.finder.batchSize: 1000
+duplicates.finder.maxGroupSize: 100
+duplicates.fast.threshold: 0.90
+duplicates.balanced.threshold: 0.30
+duplicates.quality.threshold: 0.95
+duplicates.representative.strategy: size_then_age
 media.audio.au: true
 media.video.ts: true
 media.video.mpeg: true

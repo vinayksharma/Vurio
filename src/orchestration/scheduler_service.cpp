@@ -155,6 +155,34 @@ namespace MediaDedup::Orchestration
             to_join->worker.join();
     }
 
+    bool SchedulerService::updateJobInterval(const std::string &jobId, std::chrono::milliseconds newInterval)
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+        auto it = jobs_.find(jobId);
+        if (it == jobs_.end())
+        {
+            logger.warning("Cannot update interval for job '%s': job not found", jobId);
+            return false;
+        }
+
+        auto &job = *it->second;
+        std::chrono::milliseconds oldInterval = job.interval;
+
+        if (oldInterval == newInterval)
+        {
+            logger.debug("Job '%s' interval unchanged: %ld ms", jobId, oldInterval.count());
+            return true;
+        }
+
+        job.interval = newInterval;
+        logger.information("Job '%s' interval updated: %ld ms -> %ld ms",
+                           jobId, oldInterval.count(), newInterval.count());
+
+        return true;
+    }
+
     void SchedulerService::refreshJobConfig(Job &job)
     {
         int intervalMs = static_cast<int>(job.interval.count());
@@ -180,6 +208,14 @@ namespace MediaDedup::Orchestration
             intervalMs = cfg_->getPropertyValue<int>("media.processor.intervalMs", intervalMs);
             Poco::Logger &logger = Poco::Logger::get("SchedulerService");
             logger.debug("mediaProcessor job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
+        }
+        // Special case for duplicateFinder job: also check duplicates.finder.intervalMs
+        else if (job.jobId == "duplicateFinder")
+        {
+            int originalInterval = intervalMs;
+            intervalMs = cfg_->getPropertyValue<int>("duplicates.finder.intervalMs", intervalMs);
+            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+            logger.debug("duplicateFinder job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
 
         if (intervalMs != static_cast<int>(job.interval.count()))

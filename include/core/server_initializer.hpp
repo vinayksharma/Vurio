@@ -17,6 +17,7 @@ namespace MediaDedup
     {
         class SchedulerService;
         class FilesManager;
+        class DuplicateFinder;
     }
 
     /**
@@ -80,6 +81,7 @@ namespace MediaDedup
         std::shared_ptr<Orchestration::SchedulerService> &getSchedulerService() { return scheduler_service_; }
         std::shared_ptr<Orchestration::FilesManager> &getFilesManager() { return files_manager_; }
         std::shared_ptr<MediaProcessor> &getMediaProcessor() { return media_processor_; }
+        std::shared_ptr<Orchestration::DuplicateFinder> &getDuplicateFinder() { return duplicate_finder_; }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
@@ -88,6 +90,7 @@ namespace MediaDedup
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::shared_ptr<Orchestration::FilesManager> files_manager_;
+        std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder_;
         std::shared_ptr<class UserSettingsService> user_settings_service_;
         std::shared_ptr<class FilesService> files_service_;
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;

@@ -45,3 +45,6 @@ echo "Set config property media.image.quality.onnx.modelPath to: $DEST_PATH"
 
 
 
+
+
+

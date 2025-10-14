@@ -10,6 +10,7 @@
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
+#include "orchestration/duplicate_finder.hpp"
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
 #include <Poco/Logger.h>
@@ -244,6 +245,43 @@ namespace MediaDedup
             scheduler_service_->registerJob("mediaProcessor", std::chrono::milliseconds(mediaIntervalMs), "fileScan",
                                             [mp = media_processor_]()
                                             { mp->ProcessMedia(); });
+
+            // Initialize and register duplicate finder job
+            duplicate_finder_ = std::shared_ptr<Orchestration::DuplicateFinder>(
+                new Orchestration::DuplicateFinder(config_manager_, *database_manager_));
+            if (!duplicate_finder_->initialize())
+            {
+                logger.error("Failed to initialize DuplicateFinder");
+                return false;
+            }
+            logger.information("DuplicateFinder initialized successfully");
+
+            int dupIntervalMs = config_manager_->getPropertyValue<int>("duplicates.finder.intervalMs", 3600000);
+            logger.information("Loading duplicateFinder interval from config: %d ms (%d hours)",
+                               dupIntervalMs, dupIntervalMs / 3600000);
+            scheduler_service_->registerJob("duplicateFinder", std::chrono::milliseconds(dupIntervalMs), "duplicate_finder",
+                                            [df = duplicate_finder_]()
+                                            { df->findDuplicates(); });
+
+            // Subscribe to duplicate finder interval changes
+            config_manager_->subscribeToConfigChanges([weakScheduler = std::weak_ptr<Orchestration::SchedulerService>(scheduler_service_),
+                                                       cfg = config_manager_](const ConfigChangeEvent &event)
+                                                      {
+                if (event.key == "duplicates.finder.intervalMs")
+                {
+                    auto scheduler = weakScheduler.lock();
+                    if (!scheduler)
+                    {
+                        return;
+                    }
+
+                    int newIntervalMs = cfg->getPropertyValue<int>("duplicates.finder.intervalMs", 3600000);
+                    Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
+                    logger.information("Duplicate finder interval changed to: %d ms (%d hours)",
+                                      newIntervalMs, newIntervalMs / 3600000);
+                    
+                    scheduler->updateJobInterval("duplicateFinder", std::chrono::milliseconds(newIntervalMs));
+                } });
 
             // Set up immediate job triggering callback for FilesService
             files_service_->setPathRegisteredCallback([weakScheduler = std::weak_ptr<Orchestration::SchedulerService>(scheduler_service_),

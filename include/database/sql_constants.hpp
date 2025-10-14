@@ -289,5 +289,126 @@ namespace MediaDedup
         inline constexpr std::string_view kDeleteImageArtifactsByFile =
             "DELETE FROM image_artifacts WHERE file_path=?";
 
+        // Duplicate detection tables
+        inline constexpr std::string_view kCreateDuplicateGroupsTable =
+            "CREATE TABLE IF NOT EXISTS duplicate_groups (\n"
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+            "    mode TEXT NOT NULL,\n"
+            "    representative_file_id INTEGER NOT NULL,\n"
+            "    representative_file_path TEXT NOT NULL,\n"
+            "    representative_file_size INTEGER NOT NULL DEFAULT 0,\n"
+            "    representative_created_date TEXT NOT NULL DEFAULT '',\n"
+            "    similarity_threshold REAL NOT NULL,\n"
+            "    member_count INTEGER NOT NULL DEFAULT 1,\n"
+            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    FOREIGN KEY (representative_file_id) REFERENCES scanned_files(id) ON DELETE CASCADE\n"
+            ");";
+
+        inline constexpr std::string_view kCreateDuplicateMembersTable =
+            "CREATE TABLE IF NOT EXISTS duplicate_members (\n"
+            "    group_id INTEGER NOT NULL,\n"
+            "    file_id INTEGER NOT NULL,\n"
+            "    file_path TEXT NOT NULL,\n"
+            "    similarity_score REAL NOT NULL,\n"
+            "    file_size INTEGER NOT NULL DEFAULT 0,\n"
+            "    created_date TEXT NOT NULL DEFAULT '',\n"
+            "    is_representative BOOLEAN DEFAULT 0,\n"
+            "    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    PRIMARY KEY (group_id, file_id),\n"
+            "    FOREIGN KEY (group_id) REFERENCES duplicate_groups(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (file_id) REFERENCES scanned_files(id) ON DELETE CASCADE\n"
+            ");";
+
+        inline constexpr std::string_view kCreateDuplicateProcessingCheckpointTable =
+            "CREATE TABLE IF NOT EXISTS duplicate_processing_checkpoint (\n"
+            "    mode TEXT PRIMARY KEY,\n"
+            "    last_processed_id INTEGER NOT NULL DEFAULT 0,\n"
+            "    last_run_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    files_checked INTEGER NOT NULL DEFAULT 0,\n"
+            "    duplicates_found INTEGER NOT NULL DEFAULT 0,\n"
+            "    groups_created INTEGER NOT NULL DEFAULT 0,\n"
+            "    groups_updated INTEGER NOT NULL DEFAULT 0\n"
+            ");";
+
+        inline constexpr std::string_view kCreateDuplicateGroupsIndexMode =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_mode ON duplicate_groups(mode);";
+
+        inline constexpr std::string_view kCreateDuplicateMembersIndexFile =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_id ON duplicate_members(file_id);";
+
+        inline constexpr std::string_view kCreateDuplicateMembersIndexFilePath =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_path ON duplicate_members(file_path);";
+
+        // Duplicate groups operations
+        inline constexpr std::string_view kInsertDuplicateGroup =
+            "INSERT INTO duplicate_groups(mode, representative_file_id, representative_file_path, "
+            "representative_file_size, representative_created_date, similarity_threshold, member_count) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)";
+
+        inline constexpr std::string_view kUpdateDuplicateGroupRepresentative =
+            "UPDATE duplicate_groups SET "
+            "representative_file_id=?, representative_file_path=?, representative_file_size=?, "
+            "representative_created_date=?, member_count=?, updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=?";
+
+        inline constexpr std::string_view kInsertDuplicateMember =
+            "INSERT INTO duplicate_members(group_id, file_id, file_path, similarity_score, "
+            "file_size, created_date, is_representative) VALUES(?, ?, ?, ?, ?, ?, ?)";
+
+        inline constexpr std::string_view kUpdateDuplicateMemberRepresentativeFlag =
+            "UPDATE duplicate_members SET is_representative=? WHERE group_id=? AND file_id=?";
+
+        inline constexpr std::string_view kSelectDuplicateGroupById =
+            "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
+            "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
+            "FROM duplicate_groups WHERE id=?";
+
+        inline constexpr std::string_view kSelectDuplicateGroupsByMode =
+            "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
+            "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
+            "FROM duplicate_groups WHERE mode=? ORDER BY updated_at DESC";
+
+        inline constexpr std::string_view kSelectDuplicateMembersByGroup =
+            "SELECT group_id, file_id, file_path, similarity_score, file_size, created_date, "
+            "is_representative, added_at FROM duplicate_members WHERE group_id=? ORDER BY similarity_score DESC";
+
+        inline constexpr std::string_view kSelectDuplicateGroupsForFile =
+            "SELECT dg.id, dg.mode, dg.representative_file_id, dg.representative_file_path, "
+            "dg.representative_file_size, dg.representative_created_date, dg.similarity_threshold, "
+            "dg.member_count, dg.created_at, dg.updated_at "
+            "FROM duplicate_groups dg "
+            "JOIN duplicate_members dm ON dg.id = dm.group_id "
+            "WHERE dm.file_id=? AND dg.mode=?";
+
+        inline constexpr std::string_view kDeleteDuplicateGroup =
+            "DELETE FROM duplicate_groups WHERE id=?";
+
+        inline constexpr std::string_view kDeleteDuplicateMember =
+            "DELETE FROM duplicate_members WHERE group_id=? AND file_id=?";
+
+        inline constexpr std::string_view kCountDuplicateGroupsByMode =
+            "SELECT COUNT(*) FROM duplicate_groups WHERE mode=?";
+
+        inline constexpr std::string_view kCountDuplicateMembersByGroup =
+            "SELECT COUNT(*) FROM duplicate_members WHERE group_id=?";
+
+        // Checkpoint operations
+        inline constexpr std::string_view kUpsertDuplicateCheckpoint =
+            "INSERT INTO duplicate_processing_checkpoint(mode, last_processed_id, files_checked, "
+            "duplicates_found, groups_created, groups_updated, last_run_timestamp) "
+            "VALUES(?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(mode) DO UPDATE SET "
+            "last_processed_id=excluded.last_processed_id, "
+            "files_checked=excluded.files_checked, "
+            "duplicates_found=excluded.duplicates_found, "
+            "groups_created=excluded.groups_created, "
+            "groups_updated=excluded.groups_updated, "
+            "last_run_timestamp=CURRENT_TIMESTAMP";
+
+        inline constexpr std::string_view kSelectDuplicateCheckpoint =
+            "SELECT mode, last_processed_id, last_run_timestamp, files_checked, duplicates_found, "
+            "groups_created, groups_updated FROM duplicate_processing_checkpoint WHERE mode=?";
+
     } // namespace SQL
 } // namespace MediaDedup

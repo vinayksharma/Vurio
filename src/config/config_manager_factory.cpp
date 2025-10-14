@@ -374,6 +374,24 @@ namespace MediaDedup
         manager->createProperty<bool>("validation.enabled", config.enable_validation, "Enable validation");
         manager->createProperty<bool>("validation.strict", config.strict_validation, "Enable strict validation");
 
+        // Create default duplicate finder properties
+        manager->createProperty<bool>("duplicates.finder.enabled", true, "Enable duplicate detection");
+        manager->createProperty<int>("duplicates.finder.intervalMs", 3600000, "Duplicate finder interval (1 hour default)");
+        manager->createProperty<int>("duplicates.finder.batchSize", 1000, "Files to process per batch");
+        manager->createProperty<int>("duplicates.finder.maxGroupSize", 100, "Max duplicates per group");
+
+        // TPM share for duplicate finder
+        manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, "Thread pool share for duplicate finder");
+
+        // Mode-specific thresholds
+        manager->createProperty<double>("duplicates.fast.threshold", 0.90, "pHash similarity threshold (FAST mode)");
+        manager->createProperty<double>("duplicates.balanced.threshold", 0.30, "Feature match ratio (BALANCED mode)");
+        manager->createProperty<double>("duplicates.quality.threshold", 0.95, "Embedding cosine similarity (QUALITY mode)");
+
+        // Representative selection strategy
+        manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",
+                                             "Representative selection: size_then_age | age_then_size");
+
         // Create default media category properties
         // Images
         manager->createProperty<bool>("media.images.jpg", true, "Enable JPEG image processing");

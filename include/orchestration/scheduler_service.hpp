@@ -44,6 +44,9 @@ namespace MediaDedup
 
             void unregisterJob(const std::string &jobId);
 
+            // Update job interval dynamically
+            bool updateJobInterval(const std::string &jobId, std::chrono::milliseconds newInterval);
+
             // On-demand job execution
             bool triggerJob(const std::string &jobId);
             bool isJobRunning(const std::string &jobId);
