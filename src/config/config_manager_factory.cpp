@@ -392,6 +392,19 @@ namespace MediaDedup
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",
                                              "Representative selection: size_then_age | age_then_size");
 
+        // Thumbnail cache configuration
+        manager->createProperty<std::string>("cache.thumbnail.location", "cache/thumbnails", "Thumbnail cache directory");
+        manager->createProperty<int>("cache.thumbnail.size_limit_mb", 512, "Thumbnail cache size limit in MB");
+
+        // Thumbnail generation configuration
+        manager->createProperty<int>("thumbnail.default.size", 256, "Default thumbnail size (128, 256, 512, or 1024)");
+        manager->createProperty<std::string>("thumbnail.allowed.sizes", "128,256,512,1024", "Allowed thumbnail sizes");
+        manager->createProperty<int>("thumbnail.generation.timeoutMs", 5000, "Thumbnail generation timeout in milliseconds");
+        manager->createProperty<int>("thumbnail.jpeg.quality", 85, "JPEG quality for thumbnails (0-100)");
+
+        // TPM share for thumbnail generation
+        manager->createProperty<double>("tpm.types.thumbnail_generator.share", 1.0, "Thread pool share for thumbnail generation");
+
         // Create default media category properties
         // Images
         manager->createProperty<bool>("media.images.jpg", true, "Enable JPEG image processing");

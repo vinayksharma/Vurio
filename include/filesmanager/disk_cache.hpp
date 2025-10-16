@@ -31,8 +31,10 @@ namespace MediaDedup
         /**
          * @brief Construct a new DiskCache object
          * @param config_manager Configuration manager for observable properties
+         * @param config_prefix Configuration key prefix (e.g., "cache.disk" or "cache.thumbnail")
          */
-        explicit DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+        explicit DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                           const std::string &config_prefix = "cache.disk");
 
         /**
          * @brief Destroy the DiskCache object
@@ -167,13 +169,14 @@ namespace MediaDedup
         size_t size_limit_bytes_;
         size_t current_size_bytes_;
         bool initialized_;
+        std::string config_prefix_;
 
         // File-in-use tracking
         std::set<std::string> files_in_use_;
 
-        // Configuration property keys
-        static constexpr const char *CONFIG_CACHE_LOCATION = "cache.disk.location";
-        static constexpr const char *CONFIG_CACHE_SIZE_LIMIT_MB = "cache.disk.size_limit_mb";
+        // Configuration property keys (constructed from prefix)
+        std::string config_key_location_;
+        std::string config_key_size_limit_;
 
         // Default values
         static constexpr const char *DEFAULT_CACHE_LOCATION = "cache";

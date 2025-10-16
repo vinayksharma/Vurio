@@ -10,6 +10,7 @@
 #include "core/web/static_file_handler.hpp"
 #include "core/web/web_handlers_server_status.hpp"
 #include "core/web/web_handlers_reset_errors.hpp"
+#include "core/web/web_handlers_thumbnail.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
@@ -70,6 +71,8 @@ namespace MediaDedup
         std::shared_ptr<ThreadPoolManager> tpm,
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
         std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder,
+        std::shared_ptr<DatabaseManager> database_manager,
+        std::shared_ptr<DiskCache> thumbnail_cache,
         const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
@@ -79,6 +82,8 @@ namespace MediaDedup
           tpm_(std::move(tpm)),
           scheduler_service_(std::move(scheduler_service)),
           duplicate_finder_(std::move(duplicate_finder)),
+          database_manager_(std::move(database_manager)),
+          thumbnail_cache_(std::move(thumbnail_cache)),
           web_root_path_(web_root_path) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
@@ -108,19 +113,27 @@ namespace MediaDedup
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createApiHandler(
         const std::string &uri, const std::string &method)
     {
+        // Extract path without query parameters
+        std::string path = uri;
+        size_t query_pos = uri.find('?');
+        if (query_pos != std::string::npos)
+        {
+            path = uri.substr(0, query_pos);
+        }
+
         // Dynamic API endpoints that require C++ handlers
-        if (uri == "/api/v1/config" && method == "GET")
+        if (path == "/api/v1/config" && method == "GET")
             return new GetAllConfigHandler(config_manager_);
-        if (uri == "/api/v1/config/reload" && method == "POST")
+        if (path == "/api/v1/config/reload" && method == "POST")
             return new ReloadConfigHandler(config_manager_);
-        if (uri == "/api/v1/server/status" && method == "GET")
+        if (path == "/api/v1/server/status" && method == "GET")
             return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_, duplicate_finder_);
-        if (uri == "/api/v1/files/reset-errors" && method == "POST")
+        if (path == "/api/v1/files/reset-errors" && method == "POST")
             return new ResetErrorsHandler(config_manager_, scanned_files_service_);
-        if (uri == "/api/v1/config/restart-webserver" && method == "POST")
+        if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 
-        if (uri.find("/api/v1/config/") == 0)
+        if (path.find("/api/v1/config/") == 0)
         {
             if (method == "GET")
                 return new GetConfigPropertyHandler(config_manager_);
@@ -128,9 +141,9 @@ namespace MediaDedup
                 return new UpdateConfigPropertyHandler(config_manager_);
         }
 
-        if (uri == "/api/v1/user-settings" && method == "GET")
+        if (path == "/api/v1/user-settings" && method == "GET")
             return new ListUserSettingsHandler(config_manager_, user_settings_service_);
-        if (uri.find("/api/v1/user-settings/") == 0)
+        if (path.find("/api/v1/user-settings/") == 0)
         {
             if (method == "GET")
                 return new GetUserSettingHandler(config_manager_, user_settings_service_);
@@ -140,24 +153,30 @@ namespace MediaDedup
                 return new DeleteUserSettingHandler(config_manager_, user_settings_service_);
         }
 
-        if (uri == "/api/v1/media-locations/register" && method == "POST")
+        if (path == "/api/v1/media-locations/register" && method == "POST")
             return new RegisterMediaLocationHandler(config_manager_, files_service_);
-        if (uri == "/api/v1/media-locations/deregister" && method == "POST")
+        if (path == "/api/v1/media-locations/deregister" && method == "POST")
             return new DeregisterMediaLocationHandler(config_manager_, files_service_);
 
         // Scheduler management endpoints
-        if (uri.find("/api/v1/scheduler/trigger/") == 0 && method == "POST")
+        if (path.find("/api/v1/scheduler/trigger/") == 0 && method == "POST")
         {
-            std::string jobId = uri.substr(25); // Remove "/api/v1/scheduler/trigger/"
+            std::string jobId = path.substr(25); // Remove "/api/v1/scheduler/trigger/"
             return new TriggerJobHandler(config_manager_, scheduler_service_, jobId);
         }
-        if (uri == "/api/v1/scheduler/status" && method == "GET")
+        if (path == "/api/v1/scheduler/status" && method == "GET")
             return new SchedulerStatusHandler(config_manager_, scheduler_service_);
 
+        // Thumbnail endpoints
+        if (path == "/api/v1/thumbnails" && method == "GET")
+            return new ThumbnailHandler(config_manager_, database_manager_, thumbnail_cache_);
+        if (path == "/api/v1/thumbnails/cleanup" && method == "DELETE")
+            return new ThumbnailCleanupHandler(config_manager_, database_manager_, thumbnail_cache_);
+
         // Static API responses served as files
-        if (uri == "/api/openapi.json" && method == "GET")
+        if (path == "/api/openapi.json" && method == "GET")
             return new StaticFileHandler(web_root_path_);
-        if (uri == "/api/endpoints" && method == "GET")
+        if (path == "/api/endpoints" && method == "GET")
             return new StaticFileHandler(web_root_path_);
 
         return nullptr;
@@ -216,6 +235,8 @@ namespace MediaDedup
                                                                      tpm_,
                                                                      scheduler_service_,
                                                                      duplicate_finder_,
+                                                                     database_manager_,
+                                                                     thumbnail_cache_,
                                                                      "src/core/webserver/static/");
 
         // Configure HTTP server thread pool for single client + dedicated UI (reactive config)

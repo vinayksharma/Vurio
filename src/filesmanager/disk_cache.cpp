@@ -13,9 +13,17 @@
 
 namespace MediaDedup
 {
-    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager)
-        : config_manager_(config_manager), cache_location_(DEFAULT_CACHE_LOCATION), size_limit_bytes_(DEFAULT_CACHE_SIZE_LIMIT_MB * 1024ULL * 1024ULL), current_size_bytes_(0), initialized_(false)
+    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager, const std::string &config_prefix)
+        : config_manager_(config_manager),
+          cache_location_(DEFAULT_CACHE_LOCATION),
+          size_limit_bytes_(DEFAULT_CACHE_SIZE_LIMIT_MB * 1024ULL * 1024ULL),
+          current_size_bytes_(0),
+          initialized_(false),
+          config_prefix_(config_prefix)
     {
+        // Construct config keys from prefix
+        config_key_location_ = config_prefix_ + ".location";
+        config_key_size_limit_ = config_prefix_ + ".size_limit_mb";
     }
 
     DiskCache::~DiskCache()
@@ -37,14 +45,14 @@ namespace MediaDedup
         {
             // Get cache location from config
             std::string location = config_manager_->getPropertyValue<std::string>(
-                CONFIG_CACHE_LOCATION, DEFAULT_CACHE_LOCATION);
+                config_key_location_, DEFAULT_CACHE_LOCATION);
 
             // Make it relative to working directory root
             cache_location_ = std::filesystem::current_path() / location;
 
             // Get size limit from config
             int size_limit_mb = config_manager_->getPropertyValue<int>(
-                CONFIG_CACHE_SIZE_LIMIT_MB, DEFAULT_CACHE_SIZE_LIMIT_MB);
+                config_key_size_limit_, DEFAULT_CACHE_SIZE_LIMIT_MB);
             size_limit_bytes_ = size_limit_mb * 1024ULL * 1024ULL;
 
             // Create cache directory if it doesn't exist
@@ -89,14 +97,14 @@ namespace MediaDedup
             // Subscribe to configuration changes
             config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                                       {
-                if (event.key == CONFIG_CACHE_LOCATION)
+                if (event.key == this->config_key_location_)
                 {
                     try {
                         std::string new_location = std::any_cast<std::string>(event.new_value);
                         this->onCacheLocationChanged(new_location);
                     } catch (...) {}
                 }
-                else if (event.key == CONFIG_CACHE_SIZE_LIMIT_MB)
+                else if (event.key == this->config_key_size_limit_)
                 {
                     try {
                         int new_limit_mb = std::any_cast<int>(event.new_value);

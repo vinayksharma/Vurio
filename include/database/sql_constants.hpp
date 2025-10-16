@@ -331,6 +331,29 @@ namespace MediaDedup
             "    groups_updated INTEGER NOT NULL DEFAULT 0\n"
             ");";
 
+        // Thumbnail cache table
+        inline constexpr std::string_view kCreateThumbnailCacheTable =
+            "CREATE TABLE IF NOT EXISTS thumbnail_cache (\n"
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+            "    source_path TEXT NOT NULL,\n"
+            "    cached_path TEXT NOT NULL,\n"
+            "    thumbnail_size INTEGER NOT NULL,\n"
+            "    file_size_bytes INTEGER NOT NULL,\n"
+            "    source_modified_at INTEGER NOT NULL,\n"
+            "    created_at INTEGER NOT NULL,\n"
+            "    last_accessed_at INTEGER NOT NULL,\n"
+            "    UNIQUE(source_path, thumbnail_size)\n"
+            ");";
+
+        inline constexpr std::string_view kCreateThumbnailCacheIndexSourcePath =
+            "CREATE INDEX IF NOT EXISTS idx_thumbnail_source_path ON thumbnail_cache(source_path);";
+
+        inline constexpr std::string_view kCreateThumbnailCacheIndexSourceModified =
+            "CREATE INDEX IF NOT EXISTS idx_thumbnail_source_modified ON thumbnail_cache(source_modified_at);";
+
+        inline constexpr std::string_view kCreateThumbnailCacheIndexLastAccessed =
+            "CREATE INDEX IF NOT EXISTS idx_thumbnail_last_accessed ON thumbnail_cache(last_accessed_at);";
+
         inline constexpr std::string_view kCreateDuplicateGroupsIndexMode =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_mode ON duplicate_groups(mode);";
 
@@ -409,6 +432,34 @@ namespace MediaDedup
         inline constexpr std::string_view kSelectDuplicateCheckpoint =
             "SELECT mode, last_processed_id, last_run_timestamp, files_checked, duplicates_found, "
             "groups_created, groups_updated FROM duplicate_processing_checkpoint WHERE mode=?";
+
+        // Thumbnail cache operations
+        inline constexpr std::string_view kUpsertThumbnailCache =
+            "INSERT INTO thumbnail_cache(source_path, cached_path, thumbnail_size, file_size_bytes, "
+            "source_modified_at, created_at, last_accessed_at) VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(source_path, thumbnail_size) DO UPDATE SET "
+            "cached_path=excluded.cached_path, file_size_bytes=excluded.file_size_bytes, "
+            "source_modified_at=excluded.source_modified_at, created_at=excluded.created_at, "
+            "last_accessed_at=excluded.last_accessed_at";
+
+        inline constexpr std::string_view kSelectThumbnailByPath =
+            "SELECT id, source_path, cached_path, thumbnail_size, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=?";
+
+        inline constexpr std::string_view kUpdateThumbnailAccessTime =
+            "UPDATE thumbnail_cache SET last_accessed_at=? WHERE source_path=? AND thumbnail_size=?";
+
+        inline constexpr std::string_view kDeleteThumbnailByPath =
+            "DELETE FROM thumbnail_cache WHERE source_path=?";
+
+        inline constexpr std::string_view kDeleteThumbnailByPathAndSize =
+            "DELETE FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=?";
+
+        inline constexpr std::string_view kSelectStaleThumbnails =
+            "SELECT id, source_path, cached_path, thumbnail_size FROM thumbnail_cache WHERE source_modified_at < ?";
+
+        inline constexpr std::string_view kCountThumbnailCache =
+            "SELECT COUNT(*) FROM thumbnail_cache";
 
     } // namespace SQL
 } // namespace MediaDedup

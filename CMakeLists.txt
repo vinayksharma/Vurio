@@ -228,6 +228,7 @@ add_executable(media_dedup_server
     src/core/webserver/web_handlers_user_settings.cpp
     src/core/webserver/web_handlers_server_status.cpp
     src/core/webserver/web_handlers_reset_errors.cpp
+    src/core/webserver/web_handlers_thumbnail.cpp
     src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
@@ -236,6 +237,7 @@ add_executable(media_dedup_server
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
     src/utils/stderr_capture.cpp
+    src/utils/thumbnail_generator.cpp
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp
     src/orchestration/files_manager.cpp
@@ -264,6 +266,7 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/onnx_session_manager.cpp
     src/database/image_artifacts_ops.cpp
     src/database/duplicate_groups_ops.cpp
+    src/database/thumbnail_cache_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp

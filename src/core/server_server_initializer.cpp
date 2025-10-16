@@ -5,8 +5,10 @@
 #include "database/user_settings_ops.hpp"
 #include "database/user_settings_service.hpp"
 #include "database/scanned_files_service.hpp"
+#include "database/thumbnail_cache_ops.hpp"
 #include "core/web/web_server.hpp"
 #include "filesmanager/files_service.hpp"
+#include "filesmanager/disk_cache.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
@@ -160,6 +162,24 @@ namespace MediaDedup
                 logger.warning("DuplicateFinder is null - not setting on web server");
             }
 
+            // Set database manager and thumbnail cache on web server for thumbnail endpoint
+            auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+            if (db_shared)
+            {
+                web_server_->setDatabaseManager(db_shared);
+                logger.information("DatabaseManager set on web server");
+            }
+
+            if (thumbnail_disk_cache_)
+            {
+                web_server_->setThumbnailCache(thumbnail_disk_cache_);
+                logger.information("ThumbnailCache set on web server");
+            }
+            else
+            {
+                logger.warning("ThumbnailCache is null - not setting on web server");
+            }
+
             // Start the web server
             if (!web_server_->start())
             {
@@ -206,6 +226,23 @@ namespace MediaDedup
             // Initialize SchedulerService
             scheduler_service_ = std::make_shared<Orchestration::SchedulerService>(config_manager_, tpm_);
             scheduler_service_->start();
+
+            // Initialize thumbnail disk cache with separate configuration
+            thumbnail_disk_cache_ = std::make_shared<DiskCache>(config_manager_, "cache.thumbnail");
+            if (!thumbnail_disk_cache_->initialize())
+            {
+                logger.error("Failed to initialize thumbnail disk cache");
+                return false;
+            }
+            logger.information("Thumbnail disk cache initialized successfully");
+
+            // Ensure thumbnail_cache database table exists
+            if (!ThumbnailCacheOps::ensureTable(*database_manager_))
+            {
+                logger.error("Failed to ensure thumbnail_cache table");
+                return false;
+            }
+            logger.information("Thumbnail cache table ensured");
 
             // Initialize ONNX Session Manager (for QUALITY mode memory optimization)
             // Must be initialized before MediaProcessor for session reuse
