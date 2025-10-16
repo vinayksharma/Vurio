@@ -6,7 +6,13 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/Dynamic/Var.h>
 #include <algorithm>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
 
 namespace MediaDedup
 {
@@ -380,8 +386,48 @@ namespace MediaDedup
                 {
                     artifact.file_id = id;
                     artifact.file_path = path;
-                    artifact.file_size = 0;     // TODO: parse from metadata
-                    artifact.created_date = ""; // TODO: parse from metadata
+
+                    // Parse file_metadata JSON to extract size and creation date
+                    try
+                    {
+                        Poco::JSON::Parser parser;
+                        Poco::Dynamic::Var result = parser.parse(metadata);
+                        Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+
+                        // Extract sizeBytes
+                        if (obj->has("sizeBytes"))
+                        {
+                            artifact.file_size = obj->getValue<int64_t>("sizeBytes");
+                        }
+                        else
+                        {
+                            artifact.file_size = 0;
+                        }
+
+                        // Extract createdAt (nanosecond timestamp)
+                        if (obj->has("createdAt"))
+                        {
+                            int64_t created_ns = obj->getValue<int64_t>("createdAt");
+                            // Convert nanoseconds to ISO date string (YYYY-MM-DD format)
+                            int64_t created_s = created_ns / 1000000000LL;
+                            std::time_t created_time = static_cast<std::time_t>(created_s);
+                            std::tm *tm = std::gmtime(&created_time);
+                            std::stringstream ss;
+                            ss << std::put_time(tm, "%Y-%m-%d");
+                            artifact.created_date = ss.str();
+                        }
+                        else
+                        {
+                            artifact.created_date = "";
+                        }
+                    }
+                    catch (const std::exception &e)
+                    {
+                        Poco::Logger::get("DuplicateFinder").warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
+                        artifact.file_size = 0;
+                        artifact.created_date = "";
+                    }
+
                     artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
                     artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
                     artifact.features_method = features_method;
