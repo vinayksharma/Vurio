@@ -109,7 +109,7 @@ namespace MediaDedup
                 logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path);
                 image_.read(file_path);
                 logger_.debug("Successfully read image file: %s (size: %zux%zu, depth: %zu)",
-                             file_path, image_.columns(), image_.rows(), image_.depth());
+                              file_path, image_.columns(), image_.rows(), image_.depth());
             }
             catch (const Magick::Exception &e)
             {

@@ -9,6 +9,7 @@ ARW files from Sony cameras were failing to transcode due to insufficient memory
 ### 1. **Insufficient Memory Limits** (PRIMARY CAUSE)
 
 **Problem:**
+
 - Previous limit: 512MB memory for ImageMagick
 - ARW file characteristics:
   - Input: 20-40MB compressed RAW
@@ -17,6 +18,7 @@ ARW files from Sony cameras were failing to transcode due to insufficient memory
 - **512MB was insufficient** for processing large ARW files (20+ MP sensors)
 
 **Evidence:**
+
 ```bash
 # Manual test successful:
 $ magick "_DSC7267.ARW" test.tiff
@@ -28,6 +30,7 @@ $ magick "_DSC7267.ARW" test.tiff
 ### 2. **Timeout Constraints**
 
 **Problem:**
+
 - Previous timeout: 60 seconds
 - Large ARW files (24MP+): 30-90 seconds to process
 - Some files could exceed timeout before completion
@@ -35,6 +38,7 @@ $ magick "_DSC7267.ARW" test.tiff
 ### 3. **Missing External Delegates** (Minor Issue)
 
 **Status:**
+
 ```bash
 $ which ufraw-batch dcraw darktable-cli
 # All not found
@@ -49,6 +53,7 @@ $ which ufraw-batch dcraw darktable-cli
 **File:** `src/media_processors/image/backends/image_magick_transcoder.cpp`
 
 **Changes:**
+
 ```cpp
 // Before:
 SetMagickResourceLimit(MemoryResource, 512 * 1024 * 1024);   // 512MB
@@ -57,13 +62,14 @@ SetMagickResourceLimit(MapResource, 1024 * 1024 * 1024);     // 1GB
 
 // After:
 SetMagickResourceLimit(MemoryResource, 2048ULL * 1024 * 1024);  // 2GB
-SetMagickResourceLimit(DiskResource, 4096ULL * 1024 * 1024);    // 4GB  
+SetMagickResourceLimit(DiskResource, 4096ULL * 1024 * 1024);    // 4GB
 SetMagickResourceLimit(MapResource, 2048ULL * 1024 * 1024);      // 2GB
 SetMagickResourceLimit(WidthResource, 16384);                    // 8K sensors
 SetMagickResourceLimit(HeightResource, 16384);                   // 8K sensors
 ```
 
 **Rationale:**
+
 - 2GB memory sufficient for even 61MP ARW files (Sony A7R IV)
 - 4GB disk resource for swap space
 - Supports modern high-resolution cameras (24MP-61MP)
@@ -73,6 +79,7 @@ SetMagickResourceLimit(HeightResource, 16384);                   // 8K sensors
 **File:** `config/config.yaml`
 
 **Changes:**
+
 ```yaml
 # Before:
 media.image.transcoding.timeoutMs: 60000  # 60 seconds
@@ -82,6 +89,7 @@ media.image.transcoding.timeoutMs: 120000  # 120 seconds
 ```
 
 **Rationale:**
+
 - Allows processing of large ARW files (40+ MB)
 - Accounts for slower systems or high-load scenarios
 - Prevents premature timeout on complex RAW conversions
@@ -91,6 +99,7 @@ media.image.transcoding.timeoutMs: 120000  # 120 seconds
 **File:** `src/media_processors/image/backends/image_magick_transcoder.cpp`
 
 **Changes:**
+
 - Added detailed dimension and depth logging on successful read
 - Enhanced error messages with possible causes
 - Better diagnostics for future troubleshooting
@@ -125,13 +134,15 @@ ARW  DNG       r--   Sony Alpha Raw Format (0.21.4-Release)
 ## Expected Results After Fix
 
 ### Before Fix
+
 - ❌ ARW files fail to transcode
 - ❌ Memory limit exceeded errors
 - ❌ Timeout on large files
 - ❌ Thumbnails fail for RAW files
 
 ### After Fix
-- ✅ ARW files transcode successfully  
+
+- ✅ ARW files transcode successfully
 - ✅ Sufficient memory for up to 61MP sensors
 - ✅ Extended timeout handles large files
 - ✅ Thumbnail generation works for RAW files
@@ -158,10 +169,10 @@ ImageMagick with LibRaw 0.21.4 supports:
 ### ARW File Processing Times
 
 | Camera Model | Resolution | File Size | Transcode Time | TIFF Size |
-|--------------|-----------|-----------|----------------|-----------|
-| Sony A6000   | 24MP      | 20-25MB   | 15-30 seconds  | 100-120MB |
-| Sony A7 III  | 24MP      | 25-30MB   | 20-40 seconds  | 110-130MB |
-| Sony A7R IV  | 61MP      | 60-80MB   | 60-90 seconds  | 200-250MB |
+| ------------ | ---------- | --------- | -------------- | --------- |
+| Sony A6000   | 24MP       | 20-25MB   | 15-30 seconds  | 100-120MB |
+| Sony A7 III  | 24MP       | 25-30MB   | 20-40 seconds  | 110-130MB |
+| Sony A7R IV  | 61MP       | 60-80MB   | 60-90 seconds  | 200-250MB |
 
 **Note:** Times vary based on system load and CPU performance.
 
@@ -189,24 +200,28 @@ brew install darktable
 ### If ARW files still fail:
 
 1. **Check available memory:**
+
    ```bash
    # Ensure system has > 3GB free RAM
    vm_stat | head -5
    ```
 
 2. **Verify ImageMagick installation:**
+
    ```bash
    magick identify -list format | grep ARW
    # Should show: ARW  DNG  r--  Sony Alpha Raw Format
    ```
 
 3. **Test manually:**
+
    ```bash
    magick "your_file.ARW" test.tiff
    # Should succeed without errors
    ```
 
 4. **Check server logs:**
+
    ```bash
    grep -i "Failed to read image\|MagickException" server*.log
    # Look for specific error messages
@@ -221,11 +236,13 @@ brew install darktable
 ## System Requirements
 
 ### Minimum:
+
 - RAM: 4GB total (3GB free)
 - Disk: 5GB free space for transcoding cache
 - CPU: Any modern 64-bit processor
 
 ### Recommended:
+
 - RAM: 8GB+ total
 - Disk: SSD with 10GB+ free space
 - CPU: Multi-core for concurrent processing
@@ -250,7 +267,6 @@ media.image.transcoding.timeoutMs: 90000   # 90 seconds
 ✅ **Timeout doubled (60s → 120s)**  
 ✅ **Enhanced error logging**  
 ✅ **No external dependencies required**  
-✅ **Supports all Sony cameras (12MP-61MP)**  
+✅ **Supports all Sony cameras (12MP-61MP)**
 
 The fixes are minimal, safe, and address the root cause without requiring external tools or major refactoring.
-
