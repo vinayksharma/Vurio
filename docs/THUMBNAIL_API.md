@@ -12,7 +12,9 @@ The Thumbnail API provides on-demand generation and caching of image thumbnails 
 ✅ **Aspect Ratio Preservation**: Maintains original image proportions  
 ✅ **Automatic Invalidation**: Detects source file changes and regenerates  
 ✅ **Thread-Safe**: Uses TPM for concurrent thumbnail generation  
-✅ **HTTP Caching**: Proper cache headers for browser/CDN caching
+✅ **HTTP Caching**: Proper cache headers for browser/CDN caching  
+✅ **RAW File Support**: Automatically transcodes RAW files (ARW, CR2, NEF, DNG) to TIFF before thumbnail generation  
+✅ **Configuration-Aware**: Respects transcoding configuration (enabled/disabled, timeout, etc.)
 
 ## API Endpoints
 
@@ -105,7 +107,13 @@ curl -X DELETE "http://localhost:8080/api/v1/thumbnails/cleanup?check_source=tru
    → Stream cached thumbnail from disk
 4. If not cached OR source file modified:
    → Acquire generation lock (prevent duplicate work)
-   → Generate thumbnail using OpenCV
+   → Check if file is RAW format (ARW, CR2, NEF, DNG, etc.)
+   → If RAW AND transcoding enabled:
+      • Transcode RAW → TIFF (temporary file in cache/disk/)
+      • Generate thumbnail from TIFF
+      • Clean up temporary TIFF
+   → If not RAW OR transcoding disabled:
+      • Generate thumbnail directly using OpenCV
    → Save JPEG to cache/thumbnails/
    → Update database with metadata
    → Stream thumbnail
@@ -146,6 +154,16 @@ thumbnail.allowed.sizes: "128,256,512,1024" # Comma-separated valid sizes
 thumbnail.generation.timeoutMs: 5000 # Generation timeout
 thumbnail.jpeg.quality: 85 # JPEG quality (0-100)
 ```
+
+### RAW File Transcoding
+
+```yaml
+media.image.transcoding.enabled: true # Enable/disable RAW transcoding
+media.image.transcoding.timeoutMs: 60000 # Transcoding timeout (60 seconds)
+media.image.transcoding.preserveMetadata: true # Preserve EXIF metadata
+```
+
+**Note**: When `media.image.transcoding.enabled` is `false`, requests for RAW file thumbnails will return 500 error.
 
 ### Thread Pool
 
@@ -232,14 +250,26 @@ curl "http://localhost:8080/api/v1/thumbnails?path=/photos/img.jpg&size=300"
 # Test missing file
 curl "http://localhost:8080/api/v1/thumbnails?path=/nonexistent.jpg&size=256"
 # Returns: 404 Not Found
+
+# Test RAW file thumbnail
+curl "http://localhost:8080/api/v1/thumbnails?path=/photos/IMG_1234.arw&size=512" \
+  --output raw_thumbnail.jpg
+# Automatically transcodes ARW → TIFF → thumbnail
+
+# Test with transcoding disabled
+# Set media.image.transcoding.enabled: false in config
+curl "http://localhost:8080/api/v1/thumbnails?path=/photos/IMG_1234.cr2&size=256"
+# Returns: 500 Internal Server Error
 ```
 
 ## Known Limitations
 
-1. **RAW Files**: Cannot generate thumbnails directly from RAW files (.arw, .cr2, .nef, etc.)
-   - Workaround: Use the transcoded TIFF from processing cache
-2. **Supported Formats**: Limited to what OpenCV can read (JPEG, PNG, TIFF, BMP, WebP, etc.)
-3. **Cache Persistence**: Cache survives server restarts but is cleared on initialization
+1. **Supported Formats**: Limited to what ImageMagick and OpenCV can read
+   - RAW files: ARW, CR2, NEF, DNG (transcoded automatically)
+   - Standard formats: JPEG, PNG, TIFF, BMP, WebP, GIF
+2. **Cache Persistence**: Cache survives server restarts
+3. **Transcoding Performance**: RAW file thumbnails take longer (~50-200ms extra for transcoding)
+4. **Disk Usage**: Transcoding temporarily uses `cache.disk` space (cleaned up after thumbnail generation)
 
 ## Future Enhancements
 

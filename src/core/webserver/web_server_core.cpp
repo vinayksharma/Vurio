@@ -73,6 +73,7 @@ namespace MediaDedup
         std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder,
         std::shared_ptr<DatabaseManager> database_manager,
         std::shared_ptr<DiskCache> thumbnail_cache,
+        std::shared_ptr<DiskCache> transcoding_cache,
         const std::string &web_root_path)
         : config_manager_(std::move(config_manager)),
           web_server_(std::move(web_server)),
@@ -84,6 +85,7 @@ namespace MediaDedup
           duplicate_finder_(std::move(duplicate_finder)),
           database_manager_(std::move(database_manager)),
           thumbnail_cache_(std::move(thumbnail_cache)),
+          transcoding_cache_(std::move(transcoding_cache)),
           web_root_path_(web_root_path) {}
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createRequestHandler(
@@ -169,7 +171,7 @@ namespace MediaDedup
 
         // Thumbnail endpoints
         if (path == "/api/v1/thumbnails" && method == "GET")
-            return new ThumbnailHandler(config_manager_, database_manager_, thumbnail_cache_);
+            return new ThumbnailHandler(config_manager_, database_manager_, thumbnail_cache_, transcoding_cache_);
         if (path == "/api/v1/thumbnails/cleanup" && method == "DELETE")
             return new ThumbnailCleanupHandler(config_manager_, database_manager_, thumbnail_cache_);
 
@@ -237,6 +239,7 @@ namespace MediaDedup
                                                                      duplicate_finder_,
                                                                      database_manager_,
                                                                      thumbnail_cache_,
+                                                                     transcoding_cache_,
                                                                      "src/core/webserver/static/");
 
         // Configure HTTP server thread pool for single client + dedicated UI (reactive config)

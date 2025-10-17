@@ -17,6 +17,7 @@ namespace MediaDedup
      * @brief Handler for GET /api/v1/thumbnails
      *
      * Retrieves or generates thumbnails for image files.
+     * Supports RAW files by transcoding them to TIFF before thumbnail generation.
      * Query parameters:
      * - path (required): URL-encoded source file path
      * - size (optional): Thumbnail size (128, 256, 512, 1024), default 256
@@ -33,7 +34,8 @@ namespace MediaDedup
     public:
         ThumbnailHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                          std::shared_ptr<DatabaseManager> database_manager,
-                         std::shared_ptr<DiskCache> thumbnail_cache);
+                         std::shared_ptr<DiskCache> thumbnail_cache,
+                         std::shared_ptr<DiskCache> transcoding_cache);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
@@ -42,6 +44,7 @@ namespace MediaDedup
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<DatabaseManager> database_manager_;
         std::shared_ptr<DiskCache> thumbnail_cache_;
+        std::shared_ptr<DiskCache> transcoding_cache_;
 
         // Per-path generation locks to prevent duplicate work
         static std::map<std::string, std::shared_ptr<std::mutex>> generation_locks_;

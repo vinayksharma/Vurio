@@ -180,6 +180,19 @@ namespace MediaDedup
                 logger.warning("ThumbnailCache is null - not setting on web server");
             }
 
+            // Set transcoding cache on web server for thumbnail API
+            // Reuse the same disk cache as media processor for transcoding
+            auto transcoding_cache = std::make_shared<DiskCache>(config_manager_, "cache.disk");
+            if (transcoding_cache->initialize())
+            {
+                web_server_->setTranscodingCache(transcoding_cache);
+                logger.information("TranscodingCache set on web server for thumbnail API");
+            }
+            else
+            {
+                logger.warning("Failed to initialize transcoding cache for thumbnail API");
+            }
+
             // Start the web server
             if (!web_server_->start())
             {
