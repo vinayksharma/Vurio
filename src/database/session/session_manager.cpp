@@ -3,6 +3,7 @@
 #include <Poco/Data/SessionPool.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/SQLite/Connector.h>
+#include <Poco/Logger.h>
 #include <stdexcept>
 #include <thread>
 
@@ -28,6 +29,32 @@ namespace MediaDedup
             Poco::Data::Session s = pool_->get();
             if (!s.isConnected())
                 return false;
+
+            // Configure SQLite for optimal multi-threaded performance
+            if (connector_ == "SQLite")
+            {
+                try
+                {
+                    // Enable WAL mode for concurrent reads/writes
+                    s << "PRAGMA journal_mode = WAL", Poco::Data::Keywords::now;
+                    
+                    // NORMAL synchronous mode is safe with WAL and much faster
+                    s << "PRAGMA synchronous = NORMAL", Poco::Data::Keywords::now;
+                    
+                    // Increase cache size to 20MB for better performance
+                    s << "PRAGMA cache_size = -20000", Poco::Data::Keywords::now;  // Negative = KB
+                    
+                    // Enable shared cache for better memory usage
+                    s << "PRAGMA cache = shared", Poco::Data::Keywords::now;
+                    
+                    Poco::Logger::get("SessionManager").information("SQLite configured: WAL mode, synchronous=NORMAL, cache=20MB");
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("SessionManager").error("Failed to configure SQLite pragmas: %s", std::string(e.what()));
+                    // Don't fail initialization - database will work with default settings
+                }
+            }
         }
         return true;
     }

@@ -111,7 +111,7 @@ media.video.wmv: true
 scheduler.jobs: ""
 scheduler.drift.mode: anchored
 database.session.acquireBackoffMs: 50
-database.session.poolMin: 4
+database.session.poolMin: 8  # Increased for better concurrency
 server.mode: quality
 media.processor.intervalMs: 5000
 media.images.jp2: true
@@ -119,7 +119,7 @@ media.processor.maxQueueSize: 1000
 tpm.types.audio_processor.share: 1
 tpm.thread.idleTimeoutSeconds: 120
 media.image.balanced.maxKeypoints: 1000
-database.session.poolMax: 20
+database.session.poolMax: 32  # Increased to handle 14 TPM + 8 HTTP threads
 media.images.raw.mos: true
 cache.disk.size_limit_mb: 2048
 tpm.types.fileScan.share: 1
