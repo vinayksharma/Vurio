@@ -104,9 +104,12 @@ TEST_F(DiskCacheTest, InitializeClearsExistingCache)
     createTestFile(cache_path / "existing1.txt", 1024 * 512); // 512 KB
     createTestFile(cache_path / "existing2.txt", 1024 * 512); // 512 KB
 
+    // Set clearOnStartup=true BEFORE initialization (transcoding cache behavior)
+    config_manager_->createProperty("cache.disk.clearOnStartup", true);
+    
     ASSERT_TRUE(disk_cache_->initialize());
 
-    // Cache should be cleared on initialization, so size should be 0
+    // Cache should be cleared on initialization when clearOnStartup=true
     EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0);
 }
 
@@ -427,6 +430,9 @@ TEST_F(DiskCacheTest, InitializeWithDefaultValues_Works)
 
 TEST_F(DiskCacheTest, CacheClearedOnRestart)
 {
+    // Set clearOnStartup=true BEFORE initialization (transcoding cache behavior)
+    config_manager_->createProperty("cache.disk.clearOnStartup", true);
+    
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Create and cache a file
@@ -438,15 +444,44 @@ TEST_F(DiskCacheTest, CacheClearedOnRestart)
 
     size_t size_before = disk_cache_->getCurrentSizeMB();
 
-    // Shutdown and recreate cache
+    // Shutdown and recreate cache with clearOnStartup=true
     disk_cache_->shutdown();
     disk_cache_ = std::make_unique<DiskCache>(config_manager_);
     ASSERT_TRUE(disk_cache_->initialize());
 
-    // Cache should be cleared on restart, so size should be 0
+    // Cache should be cleared on restart when clearOnStartup=true
     size_t size_after = disk_cache_->getCurrentSizeMB();
     EXPECT_EQ(size_after, 0);
     EXPECT_FALSE(std::filesystem::exists(cached_path));
+}
+
+TEST_F(DiskCacheTest, CachePreservedOnRestart)
+{
+    // Set clearOnStartup=false BEFORE initialization (thumbnail cache behavior)
+    config_manager_->createProperty("cache.disk.clearOnStartup", false);
+    
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Create and cache a file (use 2MB to ensure size > 0 in MB)
+    auto test_file = test_files_dir_ / "thumbnail.jpg";
+    createTestFile(test_file, 1024 * 1024 * 2); // 2 MB
+
+    std::string cached_path;
+    ASSERT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path));
+    ASSERT_TRUE(std::filesystem::exists(cached_path));
+
+    size_t size_before = disk_cache_->getCurrentSizeMB();
+    EXPECT_GT(size_before, 0);
+
+    // Shutdown and recreate cache with clearOnStartup=false
+    disk_cache_->shutdown();
+    disk_cache_ = std::make_unique<DiskCache>(config_manager_);
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Cache should be preserved on restart when clearOnStartup=false
+    size_t size_after = disk_cache_->getCurrentSizeMB();
+    EXPECT_EQ(size_after, size_before);
+    EXPECT_TRUE(std::filesystem::exists(cached_path));
 }
 
 TEST_F(DiskCacheTest, CacheOperations_NeverTouchSourceFiles)

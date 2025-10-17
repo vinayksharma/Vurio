@@ -100,8 +100,10 @@ files.manager.useInMemoryIndex: false
 media.image.quality.onnx.inputSize: 224
 media.image.quality.onnx.sessionCache.maxSessions: 4
 cache.disk.location: cache
+cache.disk.clearOnStartup: true  # Clear transcoding cache on startup (temporary files)
 cache.thumbnail.location: cache/thumbnails
 cache.thumbnail.size_limit_mb: 512
+cache.thumbnail.clearOnStartup: false  # Preserve thumbnail cache across restarts
 thumbnail.default.size: 256
 thumbnail.allowed.sizes: 128,256,512,1024
 thumbnail.generation.timeoutMs: 5000

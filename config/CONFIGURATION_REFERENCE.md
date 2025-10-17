@@ -23,7 +23,11 @@ This project uses a YAML configuration file that is auto-loaded and monitored at
 | `database.session.poolMin`            | integer | 1-50                                                                                    | `4`                          | Requires restart (pool size is set at init)         | Minimum database connection pool size                        |
 | `database.session.poolMax`            | integer | 1-100 (must be >= poolMin)                                                              | `20`                         | Requires restart (pool size is set at init)         | Maximum database connection pool size                        |
 | `cache.disk.location`                 | string  | File path (relative to working directory root)                                          | `cache`                      | Applied live (relocates cache, recalculates size)   | Disk cache directory location                                |
-| `cache.disk.size_limit_mb`            | integer | > 0                                                                                     | `1024`                       | Applied live (enforces new limit, evicts old files) | Maximum cache size in megabytes                              |
+| `cache.disk.size_limit_mb`            | integer | > 0                                                                                     | `2048`                       | Applied live (enforces new limit, evicts old files) | Maximum cache size in megabytes                              |
+| `cache.disk.clearOnStartup`           | boolean | `true` \| `false`                                                                       | `true`                       | Applied at initialization                           | Clear transcoding cache on startup (temporary files)         |
+| `cache.thumbnail.location`            | string  | File path (relative to working directory root)                                          | `cache/thumbnails`           | Applied live (relocates cache, recalculates size)   | Thumbnail cache directory location                           |
+| `cache.thumbnail.size_limit_mb`       | integer | > 0                                                                                     | `512`                        | Applied live (enforces new limit, evicts old files) | Maximum thumbnail cache size in megabytes                    |
+| `cache.thumbnail.clearOnStartup`      | boolean | `true` \| `false`                                                                       | `false`                      | Applied at initialization                           | Clear thumbnail cache on startup (set false to persist)      |
 | `logging.level`                       | string  | Case-insensitive: `trace`, `debug`, `info` (`information`), `warn` (`warning`), `error` | `info`                       | Applied live                                        | Global logging level (accepts synonyms in parentheses)       |
 | `files.manager.enabled`               | boolean | `true` \| `false`                                                                       | `true`                       | Applied live                                        | Enable FilesManager scanning                                 |
 | `files.manager.scan.intervalMs`       | integer | > 0                                                                                     | `500`                        | Applied live                                        | Interval between file scan cycles (ms)                       |
@@ -114,8 +118,12 @@ server.http.threadPool.maxThreads: auto # auto or integer
 server.http.threadPool.maxQueued: 50
 
 # Cache configuration
-cache.disk.location: /cache
-cache.disk.size_limit_mb: 1024
+cache.disk.location: cache
+cache.disk.size_limit_mb: 2048
+cache.disk.clearOnStartup: true # Clear transcoding cache (temporary files)
+cache.thumbnail.location: cache/thumbnails
+cache.thumbnail.size_limit_mb: 512
+cache.thumbnail.clearOnStartup: false # Preserve thumbnails across restarts
 
 # Logging configuration
 logging.level: info # trace | debug | info | warn | error (case-insensitive)

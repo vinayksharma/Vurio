@@ -63,33 +63,44 @@ namespace MediaDedup
             }
             else
             {
-                // Clear existing cache on initialization
-                Poco::Logger::get("DiskCache").information("Clearing existing cache directory: " + cache_location_.string());
-                // Clear cache without checking initialized_ flag since we're in the middle of initialization
-                try
-                {
-                    size_t files_deleted = 0;
-                    size_t bytes_freed = 0;
+                // Check if cache should be cleared on startup (configurable per cache type)
+                std::string clear_key = config_prefix_ + ".clearOnStartup";
+                bool clear_on_startup = config_manager_->getPropertyValue<bool>(clear_key, false);
 
-                    for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
+                if (clear_on_startup)
+                {
+                    // Clear existing cache on initialization (for temporary caches like transcoding)
+                    Poco::Logger::get("DiskCache").information("Clearing existing cache directory: " + cache_location_.string());
+                    try
                     {
-                        if (entry.is_regular_file())
-                        {
-                            bytes_freed += entry.file_size();
-                            std::filesystem::remove(entry.path());
-                            files_deleted++;
-                        }
-                    }
+                        size_t files_deleted = 0;
+                        size_t bytes_freed = 0;
 
-                    Poco::Logger::get("DiskCache").information("Cache cleared during initialization: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
+                        for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
+                        {
+                            if (entry.is_regular_file())
+                            {
+                                bytes_freed += entry.file_size();
+                                std::filesystem::remove(entry.path());
+                                files_deleted++;
+                            }
+                        }
+
+                        Poco::Logger::get("DiskCache").information("Cache cleared during initialization: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
+                    }
+                    catch (const std::exception &e)
+                    {
+                        Poco::Logger::get("DiskCache").error("Failed to clear cache during initialization: " + std::string(e.what()));
+                    }
                 }
-                catch (const std::exception &e)
+                else
                 {
-                    Poco::Logger::get("DiskCache").error("Failed to clear cache during initialization: " + std::string(e.what()));
+                    // Cache directory exists - preserve existing cache files (for persistent caches like thumbnails)
+                    Poco::Logger::get("DiskCache").information("Using existing cache directory: " + cache_location_.string());
                 }
             }
 
-            // Calculate current cache size (should be 0 after clear)
+            // Calculate current cache size
             current_size_bytes_ = calculateCacheSize();
 
             Poco::Logger::get("DiskCache").information("DiskCache initialized at: " + cache_location_.string() + " (Size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB / " + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB)");
