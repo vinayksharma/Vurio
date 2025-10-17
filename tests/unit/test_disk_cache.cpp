@@ -106,7 +106,7 @@ TEST_F(DiskCacheTest, InitializeClearsExistingCache)
 
     // Set clearOnStartup=true BEFORE initialization (transcoding cache behavior)
     config_manager_->createProperty("cache.disk.clearOnStartup", true);
-    
+
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Cache should be cleared on initialization when clearOnStartup=true
@@ -432,7 +432,7 @@ TEST_F(DiskCacheTest, CacheClearedOnRestart)
 {
     // Set clearOnStartup=true BEFORE initialization (transcoding cache behavior)
     config_manager_->createProperty("cache.disk.clearOnStartup", true);
-    
+
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Create and cache a file
@@ -459,7 +459,7 @@ TEST_F(DiskCacheTest, CachePreservedOnRestart)
 {
     // Set clearOnStartup=false BEFORE initialization (thumbnail cache behavior)
     config_manager_->createProperty("cache.disk.clearOnStartup", false);
-    
+
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Create and cache a file (use 2MB to ensure size > 0 in MB)
