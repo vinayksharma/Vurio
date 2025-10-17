@@ -27,7 +27,7 @@ media.video.m4v: true
 scheduler.jitter.enabled: false
 media.audio.amr: true
 media.images.pnm: true
-media.image.transcoding.timeoutMs: 60000
+media.image.transcoding.timeoutMs: 120000  # 120 seconds (increased for large RAW files like ARW)
 media.audio.opus: true
 duplicates.finder.maxGroupSize: 100
 media.video.avi: true

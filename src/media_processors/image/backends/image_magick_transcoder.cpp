@@ -40,12 +40,13 @@ namespace MediaDedup
                 {
                     Magick::InitializeMagick(nullptr);
                     
-                    // Set conservative resource limits to prevent memory exhaustion
-                    MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 512 * 1024 * 1024);  // 512MB
-                    MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 1024 * 1024 * 1024);   // 1GB
-                    MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 1024 * 1024 * 1024);     // 1GB
-                    MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 8192);                  // Max width
-                    MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 8192);                // Max height
+                    // Set resource limits for RAW file processing
+                    // ARW files can generate 100-200MB TIFFs, need more memory
+                    MagickCore::SetMagickResourceLimit(MagickCore::MemoryResource, 2048ULL * 1024 * 1024);  // 2GB (increased for RAW)
+                    MagickCore::SetMagickResourceLimit(MagickCore::DiskResource, 4096ULL * 1024 * 1024);    // 4GB
+                    MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 2048ULL * 1024 * 1024);      // 2GB
+                    MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 16384);                 // Max width (8K sensors)
+                    MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 16384);               // Max height
                 }
                 catch (...)
                 {
@@ -105,12 +106,15 @@ namespace MediaDedup
             // Read the new file (ImageMagick will automatically clear previous data)
             try
             {
+                logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path);
                 image_.read(file_path);
-                logger_.debug("Successfully read image file: %s", file_path);
+                logger_.debug("Successfully read image file: %s (size: %zux%zu, depth: %zu)",
+                             file_path, image_.columns(), image_.rows(), image_.depth());
             }
             catch (const Magick::Exception &e)
             {
-                logger_.error("Failed to read image file %s: %s", file_path, e.what());
+                logger_.error("Failed to read image file %s: %s [MagickException]", file_path, e.what());
+                logger_.error("Possible causes: insufficient memory, unsupported RAW format, or corrupted file");
                 tiff_data.clear();
                 return false;
             }
