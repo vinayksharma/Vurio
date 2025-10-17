@@ -186,7 +186,16 @@ namespace MediaDedup
                     {
                         file_ids.push_back(row[0].convert<int>());
                         file_paths.push_back(row[1].convert<std::string>());
-                        metadata_strs.push_back(row[2].convert<std::string>());
+
+                        // Handle NULL file_metadata (column can be NULL in schema)
+                        if (row[2].isEmpty())
+                        {
+                            metadata_strs.push_back("");
+                        }
+                        else
+                        {
+                            metadata_strs.push_back(row[2].convert<std::string>());
+                        }
                     }
 
                     logger.information("Query executed successfully, found %zu files", file_ids.size());
