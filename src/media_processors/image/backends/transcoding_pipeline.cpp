@@ -12,7 +12,7 @@
 namespace MediaDedup
 {
     bool TranscodingPipeline::TranscodeToMemory(const std::string &file_path,
-                                                std::vector<std::uint8_t> &tiff_data,
+                                                std::vector<std::uint8_t> &jpeg_data,
                                                 const TranscodingConfig &config)
     {
         Poco::Logger &logger = Poco::Logger::get("TranscodingPipeline");
@@ -35,9 +35,9 @@ namespace MediaDedup
         auto validation_result = RawValidator::validate(file_path);
         if (!validation_result.is_valid)
         {
-            logger.warning("RAW validation failed for %s: %s (code: %d)", 
-                          file_path, validation_result.error_message, validation_result.error_code);
-            tiff_data.clear();
+            logger.warning("RAW validation failed for %s: %s (code: %d)",
+                           file_path, validation_result.error_message, validation_result.error_code);
+            jpeg_data.clear();
             return false;
         }
         logger.debug("RAW validation passed for %s (format: %s)", file_path, validation_result.format_name);
@@ -54,7 +54,7 @@ namespace MediaDedup
             else
             {
                 logger.error("File does not exist: %s", file_path);
-                tiff_data.clear();
+                jpeg_data.clear();
                 return false;
             }
         }
@@ -66,18 +66,18 @@ namespace MediaDedup
         try
         {
             // Use ImageMagickAdapter for the actual transcoding
-            logger.debug("Calling ImageMagickAdapter::TranscodeToTiff for: %s", file_path);
-            bool success = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
+            logger.debug("Calling ImageMagickAdapter::TranscodeToJpeg for: %s", file_path);
+            bool success = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
 
             if (success)
             {
                 logger.information("Successfully transcoded file: %s, output size: %zu bytes",
-                                   file_path, tiff_data.size());
+                                   file_path, jpeg_data.size());
             }
             else
             {
                 logger.error("ImageMagickAdapter failed to transcode file: %s", file_path);
-                tiff_data.clear();
+                jpeg_data.clear();
             }
 
             return success;
@@ -85,13 +85,13 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             logger.error("Exception during transcoding of %s: %s", file_path, e.what());
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
         catch (...)
         {
             logger.error("Unknown exception during transcoding of %s", file_path);
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
     }
@@ -178,29 +178,29 @@ namespace MediaDedup
             logger.debug("Source file validation passed - size: %zu bytes", file_size);
 
             // First transcode to memory
-            std::vector<std::uint8_t> tiff_data;
-            tiff_data.reserve(file_size); // Pre-allocate to avoid reallocations
+            std::vector<std::uint8_t> jpeg_data;
+            jpeg_data.reserve(file_size / 10); // Pre-allocate (JPEG is ~10x smaller than uncompressed TIFF)
 
-            bool success = ImageMagickAdapter::TranscodeToTiff(source_file_path, tiff_data);
+            bool success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
 
             if (!success)
             {
                 logger.error("Failed to transcode file to memory: %s (file size: %zu bytes)", source_file_path, file_size);
-                tiff_data.clear();         // Ensure cleanup
-                tiff_data.shrink_to_fit(); // Free memory
+                jpeg_data.clear();         // Ensure cleanup
+                jpeg_data.shrink_to_fit(); // Free memory
                 return false;
             }
 
-            if (tiff_data.empty())
+            if (jpeg_data.empty())
             {
                 logger.error("Transcoding produced empty data for file: %s", source_file_path);
-                tiff_data.clear();
-                tiff_data.shrink_to_fit();
+                jpeg_data.clear();
+                jpeg_data.shrink_to_fit();
                 return false;
             }
 
             // Generate unique filename for transcoded file only after successful transcoding
-            transcoded_file_path = GenerateUniqueFilename(source_file_path, ".tiff", base_directory);
+            transcoded_file_path = GenerateUniqueFilename(source_file_path, ".jpg", base_directory);
             logger.debug("Generated transcoded file path: %s", transcoded_file_path);
 
             // Write transcoded data to file
@@ -211,12 +211,13 @@ namespace MediaDedup
                 return false;
             }
 
-            out_file.write(reinterpret_cast<const char *>(tiff_data.data()), tiff_data.size());
+            out_file.write(reinterpret_cast<const char *>(jpeg_data.data()), jpeg_data.size());
+            size_t jpeg_size = jpeg_data.size();
             out_file.close();
 
             // Clear memory buffer immediately after writing to file
-            tiff_data.clear();
-            tiff_data.shrink_to_fit();
+            jpeg_data.clear();
+            jpeg_data.shrink_to_fit();
 
             if (out_file.fail())
             {
@@ -233,7 +234,7 @@ namespace MediaDedup
             }
 
             logger.information("Successfully transcoded file: %s -> %s, size: %zu bytes",
-                               source_file_path, transcoded_file_path, tiff_data.size());
+                               source_file_path, transcoded_file_path, jpeg_size);
             return true;
         }
         catch (const std::exception &e)

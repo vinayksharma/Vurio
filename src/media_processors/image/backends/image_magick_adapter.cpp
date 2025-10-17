@@ -9,8 +9,8 @@
 namespace MediaDedup
 {
 
-    bool ImageMagickAdapter::TranscodeToTiff(const std::string &file_path,
-                                             std::vector<std::uint8_t> &tiff_data)
+    bool ImageMagickAdapter::TranscodeToJpeg(const std::string &file_path,
+                                             std::vector<std::uint8_t> &jpeg_data)
     {
         Poco::Logger &log = Poco::Logger::get("ImageMagickAdapter");
 
@@ -18,7 +18,7 @@ namespace MediaDedup
         if (file_path.empty())
         {
             log.warning("Empty file path provided for transcoding");
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
 
@@ -26,14 +26,14 @@ namespace MediaDedup
         if (!std::filesystem::exists(file_path))
         {
             log.error("File does not exist: %s", file_path);
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
 
         if (!std::filesystem::is_regular_file(file_path))
         {
             log.error("Path is not a regular file: %s", file_path);
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
 
@@ -44,15 +44,15 @@ namespace MediaDedup
         if (!transcoder.isValid())
         {
             log.error("Failed to create ImageMagick transcoder instance for file: %s", file_path);
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
 
         // Use the RAII transcoder for thread-safe parallel processing
-        bool result = transcoder.transcodeToTiff(file_path, tiff_data);
+        bool result = transcoder.transcodeToJpeg(file_path, jpeg_data);
         if (!result)
         {
-            log.warning("TranscodeToTiff failed for file: %s", file_path);
+            log.warning("TranscodeToJpeg failed for file: %s", file_path);
         }
         return result;
     }

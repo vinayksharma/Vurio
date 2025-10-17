@@ -53,7 +53,7 @@ protected:
     std::vector<std::string> non_raw_files_;
 };
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithValidRawFiles_ReturnsTrue)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_WithValidRawFiles_ReturnsTrue)
 {
     for (const auto &filename : raw_files_)
     {
@@ -66,25 +66,24 @@ TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithValidRawFiles_ReturnsTrue)
             continue;
         }
 
-        std::vector<std::uint8_t> tiff_data;
-        bool result = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
+        std::vector<std::uint8_t> jpeg_data;
+        bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
 
         EXPECT_TRUE(result) << "Failed to transcode: " << filename;
-        EXPECT_FALSE(tiff_data.empty()) << "TIFF data should not be empty for: " << filename;
+        EXPECT_FALSE(jpeg_data.empty()) << "JPEG data should not be empty for: " << filename;
 
-        // Verify it's actually TIFF data (starts with TIFF header)
-        if (!tiff_data.empty())
+        // Verify it's actually JPEG data (starts with JPEG header)
+        if (!jpeg_data.empty())
         {
-            EXPECT_TRUE(tiff_data.size() > 8) << "TIFF data too small for: " << filename;
-            // TIFF files start with either "II" (little-endian) or "MM" (big-endian)
-            bool is_tiff = (tiff_data[0] == 'I' && tiff_data[1] == 'I') ||
-                           (tiff_data[0] == 'M' && tiff_data[1] == 'M');
-            EXPECT_TRUE(is_tiff) << "Data doesn't appear to be TIFF format for: " << filename;
+            EXPECT_TRUE(jpeg_data.size() > 2) << "JPEG data too small for: " << filename;
+            // JPEG files start with 0xFF 0xD8 (SOI marker)
+            bool is_jpeg = (jpeg_data[0] == 0xFF && jpeg_data[1] == 0xD8);
+            EXPECT_TRUE(is_jpeg) << "Data doesn't appear to be JPEG format for: " << filename;
         }
     }
 }
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithNonRawFiles_ReturnsTrue)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_WithNonRawFiles_ReturnsTrue)
 {
     for (const auto &filename : non_raw_files_)
     {
@@ -98,36 +97,36 @@ TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithNonRawFiles_ReturnsTrue)
         }
 
         std::vector<std::uint8_t> tiff_data;
-        bool result = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
+        bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, tiff_data);
 
         EXPECT_TRUE(result) << "Failed to transcode: " << filename;
         EXPECT_FALSE(tiff_data.empty()) << "TIFF data should not be empty for: " << filename;
     }
 }
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithNonExistentFile_ReturnsFalse)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_WithNonExistentFile_ReturnsFalse)
 {
     std::string non_existent_file = test_files_dir_ + "non_existent_file.raw";
     std::vector<std::uint8_t> tiff_data;
 
-    bool result = ImageMagickAdapter::TranscodeToTiff(non_existent_file, tiff_data);
+    bool result = ImageMagickAdapter::TranscodeToJpeg(non_existent_file, tiff_data);
 
     EXPECT_FALSE(result);
     EXPECT_TRUE(tiff_data.empty());
 }
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_WithEmptyPath_ReturnsFalse)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_WithEmptyPath_ReturnsFalse)
 {
     std::string empty_path = "";
     std::vector<std::uint8_t> tiff_data;
 
-    bool result = ImageMagickAdapter::TranscodeToTiff(empty_path, tiff_data);
+    bool result = ImageMagickAdapter::TranscodeToJpeg(empty_path, tiff_data);
 
     EXPECT_FALSE(result);
     EXPECT_TRUE(tiff_data.empty());
 }
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_ThreadSafety_ConcurrentCalls)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_ThreadSafety_ConcurrentCalls)
 {
     // Test thread safety with concurrent calls
     const int num_threads = 4;
@@ -150,7 +149,7 @@ TEST_F(ImageMagickAdapterTest, TranscodeToTiff_ThreadSafety_ConcurrentCalls)
                 }
                 
                 std::vector<std::uint8_t> tiff_data;
-                bool result = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
+                bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, tiff_data);
                 
                 int index = t * calls_per_thread + i;
                 results[index] = result && !tiff_data.empty();
@@ -170,7 +169,7 @@ TEST_F(ImageMagickAdapterTest, TranscodeToTiff_ThreadSafety_ConcurrentCalls)
     }
 }
 
-TEST_F(ImageMagickAdapterTest, TranscodeToTiff_OutputDataIntegrity)
+TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_OutputDataIntegrity)
 {
     std::string file_path = test_files_dir_ + "sample.jpg";
 
@@ -180,29 +179,23 @@ TEST_F(ImageMagickAdapterTest, TranscodeToTiff_OutputDataIntegrity)
         GTEST_SKIP() << "Test file not found: " << file_path;
     }
 
-    std::vector<std::uint8_t> tiff_data;
-    bool result = ImageMagickAdapter::TranscodeToTiff(file_path, tiff_data);
+    std::vector<std::uint8_t> jpeg_data;
+    bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
 
     ASSERT_TRUE(result);
-    ASSERT_FALSE(tiff_data.empty());
+    ASSERT_FALSE(jpeg_data.empty());
 
-    // Verify TIFF header
-    EXPECT_TRUE(tiff_data.size() > 8);
+    // Verify JPEG header
+    EXPECT_TRUE(jpeg_data.size() > 10);
 
-    // Check for TIFF magic number
-    bool is_little_endian = (tiff_data[0] == 'I' && tiff_data[1] == 'I');
-    bool is_big_endian = (tiff_data[0] == 'M' && tiff_data[1] == 'M');
-    EXPECT_TRUE(is_little_endian || is_big_endian) << "Invalid TIFF header";
+    // Check for JPEG SOI marker (Start of Image: 0xFF 0xD8)
+    EXPECT_EQ(jpeg_data[0], 0xFF) << "Invalid JPEG header - missing 0xFF";
+    EXPECT_EQ(jpeg_data[1], 0xD8) << "Invalid JPEG header - missing 0xD8 (SOI)";
 
-    // Check for TIFF version number (42)
-    if (is_little_endian)
-    {
-        uint16_t version = tiff_data[2] | (tiff_data[3] << 8);
-        EXPECT_EQ(version, 42) << "Invalid TIFF version";
-    }
-    else if (is_big_endian)
-    {
-        uint16_t version = (tiff_data[2] << 8) | tiff_data[3];
-        EXPECT_EQ(version, 42) << "Invalid TIFF version";
-    }
+    // Check for JPEG JFIF or Exif marker (optional but common)
+    // JFIF: 0xFF 0xE0, Exif: 0xFF 0xE1, or DQT: 0xFF 0xDB
+    bool has_valid_marker = (jpeg_data[2] == 0xFF &&
+                             (jpeg_data[3] == 0xE0 || jpeg_data[3] == 0xE1 ||
+                              jpeg_data[3] == 0xDB || jpeg_data[3] == 0xC0));
+    EXPECT_TRUE(has_valid_marker) << "JPEG should have valid marker after SOI";
 }

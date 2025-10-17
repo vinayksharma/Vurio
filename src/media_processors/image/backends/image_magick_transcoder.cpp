@@ -77,7 +77,7 @@ namespace MediaDedup
         }
     }
 
-    bool ImageMagickTranscoder::transcodeToTiff(const std::string &file_path, std::vector<std::uint8_t> &tiff_data)
+    bool ImageMagickTranscoder::transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data)
     {
         if (!valid_)
         {
@@ -115,19 +115,19 @@ namespace MediaDedup
             {
                 logger_.error("Failed to read image file %s: %s [MagickException]", file_path, e.what());
                 logger_.error("Possible causes: insufficient memory, unsupported RAW format, or corrupted file");
-                tiff_data.clear();
+                jpeg_data.clear();
                 return false;
             }
             catch (const std::exception &e)
             {
                 logger_.error("Failed to read image file %s (std exception): %s", file_path, e.what());
-                tiff_data.clear();
+                jpeg_data.clear();
                 return false;
             }
             catch (...)
             {
                 logger_.error("Failed to read image file %s (unknown exception)", file_path);
-                tiff_data.clear();
+                jpeg_data.clear();
                 return false;
             }
 
@@ -144,8 +144,8 @@ namespace MediaDedup
             // Configure image properties for optimal transcoding
             configureImageProperties(image_);
 
-            // Set TIFF format options for OpenCV compatibility
-            setTiffFormatOptions(image_);
+            // Set JPEG format options for OpenCV compatibility
+            setJpegFormatOptions(image_);
 
             // Write to memory buffer
             Magick::Blob blob;
@@ -161,7 +161,7 @@ namespace MediaDedup
             // Copy data to output vector
             const char *data = static_cast<const char *>(blob.data());
             size_t data_size = blob.length();
-            tiff_data.assign(data, data + data_size);
+            jpeg_data.assign(data, data + data_size);
 
             logger_.information("Successfully transcoded image: %s, size: %zu bytes", file_path, data_size);
             return true;
@@ -169,19 +169,19 @@ namespace MediaDedup
         catch (const Magick::Exception &e)
         {
             logger_.error("Failed to transcode image %s: %s", file_path, e.what());
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
         catch (const std::exception &e)
         {
             logger_.error("Failed to transcode image %s (std exception): %s", file_path, e.what());
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
         catch (...)
         {
             logger_.error("Failed to transcode image %s (unknown exception)", file_path);
-            tiff_data.clear();
+            jpeg_data.clear();
             return false;
         }
     }
@@ -221,13 +221,13 @@ namespace MediaDedup
         }
     }
 
-    void ImageMagickTranscoder::setTiffFormatOptions(Magick::Image &image)
+    void ImageMagickTranscoder::setJpegFormatOptions(Magick::Image &image)
     {
         try
         {
-            image.magick("TIFF");
-            // Use no compression for better OpenCV compatibility
-            image.compressType(Magick::NoCompression);
+            image.magick("JPEG");
+            // Use quality 95 for near-lossless compression with excellent size reduction
+            image.quality(95);
             // Ensure 8-bit depth for OpenCV compatibility
             image.depth(8);
             // Set colorspace to RGB for better compatibility
@@ -237,26 +237,21 @@ namespace MediaDedup
                 logger_.debug("Converted colorspace to RGB for OpenCV compatibility");
             }
 
-            // Additional TIFF options for better OpenCV compatibility
-            image.defineValue("tiff", "endian", "lsb");       // Little-endian byte order
-            image.defineValue("tiff", "planar", "contig");    // Contiguous planar configuration
-            image.defineValue("tiff", "rows-per-strip", "1"); // One row per strip for better compatibility
-
-            logger_.debug("Set image format to TIFF (8-bit, RGB, no compression, LSB, contiguous) for OpenCV compatibility");
+            logger_.debug("Set image format to JPEG (8-bit, RGB, quality 95) for OpenCV compatibility");
         }
         catch (const Magick::Exception &e)
         {
-            logger_.error("Failed to set TIFF format options: %s", e.what());
+            logger_.error("Failed to set JPEG format options: %s", e.what());
             throw;
         }
         catch (const std::exception &e)
         {
-            logger_.error("Failed to set TIFF format options (std exception): %s", e.what());
+            logger_.error("Failed to set JPEG format options (std exception): %s", e.what());
             throw;
         }
         catch (...)
         {
-            logger_.error("Failed to set TIFF format options (unknown exception)");
+            logger_.error("Failed to set JPEG format options (unknown exception)");
             throw;
         }
     }

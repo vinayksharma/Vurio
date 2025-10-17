@@ -37,13 +37,13 @@ namespace MediaDedup
         ~ImageMagickTranscoder();
 
         /**
-         * @brief Transcode a RAW image file to TIFF format
+         * @brief Transcode a RAW image file to JPEG format
          *
          * @param file_path Path to the source RAW image file
-         * @param tiff_data Output vector to store transcoded TIFF data
+         * @param jpeg_data Output vector to store transcoded JPEG data
          * @return true if transcoding succeeded, false otherwise
          */
-        bool transcodeToTiff(const std::string &file_path, std::vector<std::uint8_t> &tiff_data);
+        bool transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data);
 
         /**
          * @brief Check if this transcoder instance is valid
@@ -80,10 +80,10 @@ namespace MediaDedup
         void configureImageProperties(Magick::Image &image);
 
         /**
-         * @brief Set TIFF format options for OpenCV compatibility
+         * @brief Set JPEG format options for OpenCV compatibility
          *
          * @param image Reference to the ImageMagick image to configure
          */
-        void setTiffFormatOptions(Magick::Image &image);
+        void setJpegFormatOptions(Magick::Image &image);
     };
 }
