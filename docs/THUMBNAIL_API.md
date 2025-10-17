@@ -120,12 +120,14 @@ curl -X DELETE "http://localhost:8080/api/v1/thumbnails/cleanup?check_source=tru
 5. Update last_accessed_at timestamp
 ```
 
-### Thread Safety
+### Thread Safety & Concurrency
 
 - **Per-path generation locks**: Prevents duplicate generation when multiple requests for same thumbnail arrive
-- **TPM integration**: Thumbnail generation runs in `thumbnail_generator` task pool
+- **HTTP thread pool**: Thumbnail generation runs synchronously in HTTP server threads (configurable via `server.http.threadPool.maxThreads`)
+- **Synchronous processing**: Each HTTP thread handles one request end-to-end
 - **Database connection pool**: Safe concurrent database access
 - **DiskCache mutex**: Thread-safe file operations
+- **OpenCV threading disabled**: `cv::setNumThreads(0)` prevents internal thread spawning
 
 ### Cache Invalidation
 
@@ -165,11 +167,14 @@ media.image.transcoding.preserveMetadata: true # Preserve EXIF metadata
 
 **Note**: When `media.image.transcoding.enabled` is `false`, requests for RAW file thumbnails will return 500 error.
 
-### Thread Pool
+### HTTP Thread Pool
 
 ```yaml
-tpm.types.thumbnail_generator.share: 1.0 # TPM allocation for thumbnails
+server.http.threadPool.maxThreads: 8   # HTTP server thread pool (default: 2, recommended: 8-16)
+server.http.threadPool.maxQueued: 50   # Request queue depth (default: 10, recommended: 50-100)
 ```
+
+**Note:** Thumbnail generation runs synchronously in HTTP threads. Increase `maxThreads` for better concurrent thumbnail request handling.
 
 ## Database Schema
 
@@ -224,9 +229,16 @@ Each instance reads its own configuration keys based on the prefix:
 
 - **First request**: ~50-200ms (generation + save + stream)
 - **Cached requests**: ~5-20ms (database lookup + file stream)
-- **Parallel requests**: Handled via TPM, configurable concurrency
+- **RAW file first request**: ~200-500ms (includes transcoding)
+- **Concurrent requests**: Limited by HTTP thread pool (default: 8 threads)
 - **Memory usage**: Minimal - images released immediately after processing
 - **Disk usage**: Controlled via `cache.thumbnail.size_limit_mb`
+
+**Concurrency:**
+- Each HTTP thread processes one thumbnail request at a time
+- With 8 threads: Can handle 8 concurrent thumbnail generations
+- Additional requests queue up (max 50 in queue)
+- Cache hits return immediately without blocking threads
 
 ## Testing
 

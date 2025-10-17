@@ -33,7 +33,7 @@ duplicates.finder.maxGroupSize: 100
 media.video.avi: true
 files.service.immediateJobTrigger.timeoutMs: 30000
 media.images.raw.rw2: true
-server.http.threadPool.maxQueued: 10
+server.http.threadPool.maxQueued: 50  # Increased queue depth for burst requests
 media.audio.aiff: true
 media.images.raw.rwl: true
 media.video.mpg: true
@@ -124,7 +124,7 @@ media.images.raw.mos: true
 cache.disk.size_limit_mb: 2048
 tpm.types.fileScan.share: 1
 database.sqlite.cacheSize: 1000
-server.http.threadPool.maxThreads: 2
+server.http.threadPool.maxThreads: 8  # Increased for concurrent thumbnail/API requests
 media.images.raw.rwz: true
 server.instanceCheck.enabled: true
 tpm.types.video_processor.share: 1

@@ -9,19 +9,20 @@ namespace MediaDedup
      * @brief Utility for generating image thumbnails using OpenCV
      *
      * Thread-safe static methods for creating JPEG thumbnails with configurable
-     * size and quality. Designed to be used with ThreadPoolManager.
+     * size and quality. Runs synchronously in caller's thread.
+     * Concurrency controlled by HTTP server thread pool.
      */
     class ThumbnailGenerator
     {
     public:
         /**
-         * @brief Generate a thumbnail for an image file
+         * @brief Generate a thumbnail for an image file (synchronous)
          *
          * @param source_path Path to the source image file
          * @param output_path Path where the thumbnail JPEG will be saved
          * @param size Target size in pixels (longer edge will be this size)
          * @param quality JPEG quality (0-100, default 85)
-         * @param timeout_ms Maximum time to spend generating (default 5000ms)
+         * @param timeout_ms Unused (kept for backward compatibility)
          * @return true if thumbnail generated successfully, false otherwise
          */
         static bool generate(const std::string &source_path,
