@@ -543,6 +543,13 @@ namespace MediaDedup
                 }
             }
 
+            // Update group member count to reflect all added members
+            if (files.size() > 1)
+            {
+                DuplicateGroupsOps::updateGroupRepresentative(db_, group_id, rep.file_id, rep.file_path,
+                                                              rep.file_size, rep.created_date, static_cast<int>(files.size()));
+            }
+
             return group_id;
         }
 
