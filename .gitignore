@@ -132,3 +132,4 @@ venv.bak/
 dedup_server.pid
 models/
 data/
+thumbnails_output/
