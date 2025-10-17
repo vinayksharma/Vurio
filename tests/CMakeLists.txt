@@ -251,6 +251,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
@@ -265,7 +266,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
@@ -282,6 +285,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
@@ -296,7 +300,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
@@ -351,7 +357,9 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
@@ -368,6 +376,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp

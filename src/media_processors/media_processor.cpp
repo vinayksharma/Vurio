@@ -1,5 +1,6 @@
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
+#include "media_processors/image/pipeline_thumbnail_helper.hpp"
 #include "media_processors/audio_processor.hpp"
 #include "media_processors/video_processor.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
@@ -22,8 +23,9 @@ namespace MediaDedup
 {
     MediaProcessor::MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                    std::shared_ptr<DatabaseManager> database_manager,
-                                   std::shared_ptr<ThreadPoolManager> thread_pool_manager)
-        : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager)
+                                   std::shared_ptr<ThreadPoolManager> thread_pool_manager,
+                                   std::shared_ptr<DiskCache> thumbnail_cache)
+        : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager), thumbnail_cache_(thumbnail_cache)
     {
         // Extension mapping will be initialized lazily when first needed
         // Initialize disk cache
@@ -206,8 +208,9 @@ namespace MediaDedup
                 std::shared_ptr<DatabaseManager> db_manager = database_manager_;
                 std::shared_ptr<UnifiedObservableConfigManager> config_manager = config_manager_;
                 std::shared_ptr<DiskCache> disk_cache = disk_cache_;
+                std::shared_ptr<DiskCache> thumbnail_cache = thumbnail_cache_;
 
-                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager, disk_cache]()
+                thread_pool_manager_->submit("media_processor", [file_path_copy, server_mode_copy, db_manager, config_manager, disk_cache, thumbnail_cache]()
                                              {
                     try
                     {
@@ -389,6 +392,19 @@ namespace MediaDedup
                             {
                                 ScannedFilesOps::markProcessed(*db_manager, file_path_copy, server_mode_copy, 2);
                                 Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
+
+                                // Generate thumbnail after successful processing (non-blocking)
+                                // Use original file path for thumbnail generation
+                                if (thumbnail_cache)
+                                {
+                                    bool thumb_success = PipelineThumbnailHelper::generateThumbnail(
+                                        file_path_copy, *db_manager, *thumbnail_cache, *config_manager);
+                                    if (!thumb_success)
+                                    {
+                                        Poco::Logger::get("MediaProcessor").debug(
+                                            "Pipeline thumbnail generation failed (non-critical): " + file_path_copy);
+                                    }
+                                }
                             }
                             else
                             {

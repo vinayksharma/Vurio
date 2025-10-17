@@ -31,10 +31,12 @@ namespace MediaDedup
          * @param config_manager Shared pointer to the unified configuration manager
          * @param database_manager Shared pointer to the database manager
          * @param thread_pool_manager Shared pointer to the thread pool manager
+         * @param thumbnail_cache Shared pointer to the thumbnail disk cache (optional)
          */
         explicit MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                 std::shared_ptr<DatabaseManager> database_manager,
-                                std::shared_ptr<ThreadPoolManager> thread_pool_manager);
+                                std::shared_ptr<ThreadPoolManager> thread_pool_manager,
+                                std::shared_ptr<DiskCache> thumbnail_cache = nullptr);
 
         /**
          * @brief Destructor
@@ -123,6 +125,9 @@ namespace MediaDedup
 
         // Disk cache management
         std::shared_ptr<DiskCache> disk_cache_;
+
+        // Thumbnail cache management (for pipeline thumbnail generation)
+        std::shared_ptr<DiskCache> thumbnail_cache_;
 
         // Thread safety
         mutable std::mutex route_mutex_;

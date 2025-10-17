@@ -252,6 +252,7 @@ add_executable(media_dedup_server
     src/media_processors/image_processor.cpp
     src/media_processors/image/image_task.cpp
     src/media_processors/image/pipelines/fast_pipeline.cpp
+    src/media_processors/image/pipeline_thumbnail_helper.cpp
     src/media_processors/image/backends/opencv_adapter.cpp
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
