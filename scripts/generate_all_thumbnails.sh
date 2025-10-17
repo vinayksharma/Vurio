@@ -41,7 +41,7 @@ fi
 
 # Check if server is running
 echo -e "${BLUE}[1/5]${NC} Checking if server is running..."
-if ! curl -s --max-time 2 "${SERVER_URL}/api/v1/status" > /dev/null 2>&1; then
+if ! curl -s --max-time 2 "${SERVER_URL}/api/v1/server/status" > /dev/null 2>&1; then
     echo -e "${RED}✗ Error: Server is not running at ${SERVER_URL}${NC}"
     echo -e "${YELLOW}Start the server first with: ./start${NC}"
     exit 1
