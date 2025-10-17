@@ -95,7 +95,7 @@ media.images.tif: true
 media.video.flv: true
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
-logging.level: .inf
+logging.level: information
 files.manager.useInMemoryIndex: false
 media.image.quality.onnx.inputSize: 224
 media.image.quality.onnx.sessionCache.maxSessions: 4

@@ -215,6 +215,38 @@ namespace MediaDedupServer
         {
             Poco::Logger::get("ConsoleInputManager").information("Console input thread started");
 
+            // Check if non-interactive mode is enabled via environment variable
+            const char *non_interactive_env = std::getenv("DEDUP_NON_INTERACTIVE");
+            bool non_interactive_mode = (non_interactive_env != nullptr &&
+                                         (std::string(non_interactive_env) == "1" ||
+                                          std::string(non_interactive_env) == "true"));
+
+            if (non_interactive_mode)
+            {
+                Poco::Logger::get("ConsoleInputManager").information("Running in non-interactive mode (stdin ignored, signals only)");
+
+                // Non-interactive mode: just wait for signals, don't read stdin
+                while (running_.load())
+                {
+                    // Check for signal-based exit request
+                    if (exit_requested_by_signal_.load())
+                    {
+                        exit_requested_by_signal_.store(false);
+                        ConsoleEvent event(ConsoleEventType::COMMAND_EXIT, "exit");
+                        notifySubscribers(event);
+                        running_.store(false);
+                        break;
+                    }
+
+                    // Just sleep and check periodically
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+
+                Poco::Logger::get("ConsoleInputManager").information("Console input thread finished (non-interactive mode)");
+                return;
+            }
+
+            // Interactive mode: read from stdin
             std::string input_buffer;
             bool prompt_printed = false;
             const int stdin_fd = fileno(stdin);

@@ -17,7 +17,9 @@ namespace MediaDedup
      * @brief Handler for GET /api/v1/thumbnails
      *
      * Retrieves or generates thumbnails for image files.
-     * Supports RAW files by transcoding them to TIFF before thumbnail generation.
+     * Supports ALL image formats including RAW files (ARW, CR2, NEF, etc.) natively
+     * via ImageMagick - no transcoding required!
+     *
      * Query parameters:
      * - path (required): URL-encoded source file path
      * - size (optional): Thumbnail size (128, 256, 512, 1024), default 256

@@ -5,10 +5,7 @@
 #include <thread>
 #include <future>
 #include <algorithm>
-
-#ifdef HAVE_OPENCV
-#include <opencv2/opencv.hpp>
-#endif
+#include <Magick++.h>
 
 namespace MediaDedup
 {
@@ -18,7 +15,6 @@ namespace MediaDedup
                                       int quality,
                                       int timeout_ms)
     {
-#ifdef HAVE_OPENCV
         try
         {
             Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
@@ -37,81 +33,68 @@ namespace MediaDedup
                 return false;
             }
 
-            // Synchronous generation - concurrency controlled by HTTP server thread pool
-            // Disable OpenCV internal threading to prevent thread explosion
-            cv::setNumThreads(0);
+            // Read image using ImageMagick (supports ALL formats including RAW!)
+            Magick::Image image;
+            image.read(source_path);
 
-            // Load image
-            cv::Mat img = cv::imread(source_path, cv::IMREAD_COLOR);
-            if (img.empty())
-            {
-                logger.warning("Failed to load image: %s", source_path);
-                return false;
-            }
-
-            int orig_w = img.cols;
-            int orig_h = img.rows;
+            size_t orig_w = image.columns();
+            size_t orig_h = image.rows();
 
             if (orig_w == 0 || orig_h == 0)
             {
-                logger.warning("Invalid image dimensions: %dx%d for %s", orig_w, orig_h, source_path);
+                logger.warning("Invalid image dimensions: %zux%zu for %s", orig_w, orig_h, source_path);
                 return false;
             }
 
             // Calculate new dimensions maintaining aspect ratio
-            int new_w, new_h;
+            size_t new_w, new_h;
             if (orig_w > orig_h)
             {
                 new_w = size;
-                new_h = static_cast<int>((static_cast<double>(orig_h) / orig_w) * size);
+                new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
             }
             else
             {
                 new_h = size;
-                new_w = static_cast<int>((static_cast<double>(orig_w) / orig_h) * size);
+                new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
             }
 
             // Ensure minimum dimensions
-            if (new_w <= 0)
+            if (new_w == 0)
                 new_w = 1;
-            if (new_h <= 0)
+            if (new_h == 0)
                 new_h = 1;
 
-            // Resize image
-            cv::Mat thumbnail;
-            cv::resize(img, thumbnail, cv::Size(new_w, new_h), 0, 0, cv::INTER_AREA);
+            // Resize image with high-quality filter
+            // Geometry syntax: "WIDTHxHEIGHT!" where ! means ignore aspect ratio
+            // But we already calculated correct aspect ratio above
+            std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
+            image.resize(Magick::Geometry(geometry));
 
-            // Release original image memory
-            img.release();
+            // Set JPEG quality (0-100)
+            image.quality(quality);
 
-            // Save as JPEG
-            std::vector<int> jpeg_params = {cv::IMWRITE_JPEG_QUALITY, quality};
-            bool success = cv::imwrite(output_path, thumbnail, jpeg_params);
+            // Set output format to JPEG explicitly
+            image.magick("JPEG");
 
-            // Release thumbnail memory
-            thumbnail.release();
+            // Write thumbnail
+            image.write(output_path);
 
-            if (success)
-            {
-                logger.debug("Generated thumbnail: %s (%dx%d) -> %s (%dx%d)",
-                             source_path, orig_w, orig_h, output_path, new_w, new_h);
-            }
-            else
-            {
-                logger.error("Failed to save thumbnail: %s", output_path);
-            }
+            logger.debug("Generated thumbnail: %s (%zux%zu) -> %s (%zux%zu)",
+                         source_path, orig_w, orig_h, output_path, new_w, new_h);
 
-            return success;
+            return true;
+        }
+        catch (const Magick::Exception &e)
+        {
+            Poco::Logger::get("ThumbnailGenerator").error("ImageMagick exception in generate: %s", std::string(e.what()));
+            return false;
         }
         catch (const std::exception &e)
         {
             Poco::Logger::get("ThumbnailGenerator").error("Exception in generate: %s", std::string(e.what()));
             return false;
         }
-#else
-        Poco::Logger::get("ThumbnailGenerator").error("OpenCV not available - cannot generate thumbnails");
-        return false;
-#endif
     }
 
     bool ThumbnailGenerator::isValidSize(int size)

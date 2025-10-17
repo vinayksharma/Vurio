@@ -6,10 +6,11 @@
 namespace MediaDedup
 {
     /**
-     * @brief Utility for generating image thumbnails using OpenCV
+     * @brief Utility for generating image thumbnails using ImageMagick
      *
      * Thread-safe static methods for creating JPEG thumbnails with configurable
-     * size and quality. Runs synchronously in caller's thread.
+     * size and quality. Supports ALL image formats including RAW files (ARW, CR2, NEF, etc.)
+     * directly without transcoding. Runs synchronously in caller's thread.
      * Concurrency controlled by HTTP server thread pool.
      */
     class ThumbnailGenerator

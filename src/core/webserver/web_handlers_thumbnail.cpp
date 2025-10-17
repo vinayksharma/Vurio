@@ -2,8 +2,6 @@
 #include "database/database_manager.hpp"
 #include "database/thumbnail_cache_ops.hpp"
 #include "utils/thumbnail_generator.hpp"
-#include "media_processors/image/backends/transcoding_pipeline.hpp"
-#include "media_processors/image/backends/raw_file_detector.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/URI.h>
 #include <Poco/File.h>
@@ -240,61 +238,12 @@ namespace MediaDedup
             int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
             int timeout_ms = config_manager_->getPropertyValue<int>("thumbnail.generation.timeoutMs", 5000);
 
-            // Check if file needs transcoding (RAW files)
-            std::string processing_file_path = source_path;
-            std::string transcoded_file_path;
-            bool needs_transcoding = RawFileDetector::IsRawFile(source_path);
-            bool transcoding_enabled = config_manager_->getPropertyValue<bool>("media.image.transcoding.enabled", true);
-
-            if (needs_transcoding && transcoding_enabled)
-            {
-                logger.information("RAW file detected for thumbnail, transcoding: %s", source_path);
-
-                // Get transcoding configuration
-                TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager_);
-                std::string cache_directory = transcoding_cache_->getCacheLocation();
-
-                // Transcode to TIFF in transcoding cache
-                if (!TranscodingPipeline::TranscodeToFile(source_path, transcoded_file_path, transcode_config, cache_directory))
-                {
-                    logger.error("Failed to transcode RAW file for thumbnail: %s", source_path);
-                    releaseGenerationLock(lock_key);
-                    return false;
-                }
-
-                // Update processing path to use transcoded TIFF
-                processing_file_path = transcoded_file_path;
-                logger.debug("Transcoded RAW file to: %s", transcoded_file_path);
-            }
-            else if (needs_transcoding && !transcoding_enabled)
-            {
-                logger.warning("RAW file requires transcoding but transcoding is disabled: %s", source_path);
-                releaseGenerationLock(lock_key);
-                return false;
-            }
-
-            // Generate thumbnail from source or transcoded file
+            // Generate thumbnail directly from source file
+            // ImageMagick handles ALL formats including RAW (ARW, CR2, NEF, etc.) natively!
             logger.debug("Generating thumbnail: %s -> %s (size: %d, quality: %d)",
-                         processing_file_path, temp_cached_path, size, quality);
+                         source_path, temp_cached_path, size, quality);
 
-            bool thumbnail_success = ThumbnailGenerator::generate(processing_file_path, temp_cached_path, size, quality, timeout_ms);
-
-            // Clean up transcoded file if it was created
-            if (!transcoded_file_path.empty())
-            {
-                try
-                {
-                    if (std::filesystem::exists(transcoded_file_path))
-                    {
-                        std::filesystem::remove(transcoded_file_path);
-                        logger.debug("Cleaned up transcoded file: %s", transcoded_file_path);
-                    }
-                }
-                catch (const std::exception &e)
-                {
-                    logger.warning("Failed to clean up transcoded file %s: %s", transcoded_file_path, std::string(e.what()));
-                }
-            }
+            bool thumbnail_success = ThumbnailGenerator::generate(source_path, temp_cached_path, size, quality, timeout_ms);
 
             if (!thumbnail_success)
             {
