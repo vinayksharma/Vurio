@@ -133,7 +133,7 @@ tpm.types.video_processor.share: 1
 server.processName: media_dedup_server
 media.images.gif: true
 media.images.pgm: true
-database.session.acquireTimeoutMs: 3000
+database.session.acquireTimeoutMs: 10000  # 10 seconds (increased for heavy load scenarios)
 media.image.transcoding.enabled: true
 database.path: data/dedup_server.db
 tpm.pool.max: auto  # Auto-detects 75% of (CPU cores + 1)

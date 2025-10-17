@@ -112,7 +112,7 @@ while IFS= read -r file_path; do
     START_TIME=$(date +%s%N)
     HTTP_CODE=$(curl -s -w "%{http_code}" -o "$OUTPUT_FILE" \
         "${SERVER_URL}/api/v1/thumbnails?path=${ENCODED_PATH}&size=${SIZE}" \
-        --max-time 10)
+        --max-time 30)
     END_TIME=$(date +%s%N)
     DURATION_MS=$(( (END_TIME - START_TIME) / 1000000 ))
     
@@ -132,6 +132,9 @@ while IFS= read -r file_path; do
         ERROR_COUNT=$((ERROR_COUNT + 1))
         rm -f "$OUTPUT_FILE"
     fi
+    
+    # Rate limiting: small delay between requests to avoid overwhelming server
+    sleep 0.1
     
 done < "$TEMP_FILE"
 
