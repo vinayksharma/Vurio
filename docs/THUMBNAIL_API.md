@@ -170,8 +170,8 @@ media.image.transcoding.preserveMetadata: true # Preserve EXIF metadata
 ### HTTP Thread Pool
 
 ```yaml
-server.http.threadPool.maxThreads: 8   # HTTP server thread pool (default: 2, recommended: 8-16)
-server.http.threadPool.maxQueued: 50   # Request queue depth (default: 10, recommended: 50-100)
+server.http.threadPool.maxThreads: 8 # HTTP server thread pool (default: 2, recommended: 8-16)
+server.http.threadPool.maxQueued: 50 # Request queue depth (default: 10, recommended: 50-100)
 ```
 
 **Note:** Thumbnail generation runs synchronously in HTTP threads. Increase `maxThreads` for better concurrent thumbnail request handling.
@@ -235,6 +235,7 @@ Each instance reads its own configuration keys based on the prefix:
 - **Disk usage**: Controlled via `cache.thumbnail.size_limit_mb`
 
 **Concurrency:**
+
 - Each HTTP thread processes one thumbnail request at a time
 - With 8 threads: Can handle 8 concurrent thumbnail generations
 - Additional requests queue up (max 50 in queue)

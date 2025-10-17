@@ -72,8 +72,10 @@ namespace MediaDedup
             }
 
             // Ensure minimum dimensions
-            if (new_w <= 0) new_w = 1;
-            if (new_h <= 0) new_h = 1;
+            if (new_w <= 0)
+                new_w = 1;
+            if (new_h <= 0)
+                new_h = 1;
 
             // Resize image
             cv::Mat thumbnail;
@@ -92,7 +94,7 @@ namespace MediaDedup
             if (success)
             {
                 logger.debug("Generated thumbnail: %s (%dx%d) -> %s (%dx%d)",
-                           source_path, orig_w, orig_h, output_path, new_w, new_h);
+                             source_path, orig_w, orig_h, output_path, new_w, new_h);
             }
             else
             {
