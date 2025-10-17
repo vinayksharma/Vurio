@@ -26,14 +26,21 @@ namespace MediaDedup
 
     static size_t defaultPoolMaxFromPoco()
     {
-        // Follow user's preference: Poco's default
-        // We'll mimic Poco::ThreadPool default capacity selection using CPU count
+        // Use 75% of hardware threads to avoid oversubscription
+        // Poco suggests (cores + 1), we use 75% of that for headroom
         int procs = Poco::Environment::processorCount();
         if (procs <= 0)
             procs = 1;
-        size_t cap = static_cast<size_t>(procs + 1); // similar to Poco default (n+1)
+
+        // Calculate 75% of Poco's suggested value (cores + 1)
+        size_t poco_suggested = static_cast<size_t>(procs + 1);
+        size_t cap = static_cast<size_t>(poco_suggested * 0.75);
+
+        // Ensure minimum of 4 threads
         if (cap < 4)
             cap = 4;
+
+        Poco::Logger::get("ThreadPoolManager").debug("Auto thread detection: %d cores detected, Poco suggests %zu, using 75%% = %zu threads", procs, poco_suggested, cap);
         return cap;
     }
 
@@ -165,7 +172,7 @@ namespace MediaDedup
         std::stringstream thread_id;
         thread_id << std::this_thread::get_id();
         logger.debug("Submitted task for type '%s', queue size: %u, file: %s, calling thread: %s",
-                     type, static_cast<unsigned int>(type_to_queue_[type].size()), 
+                     type, static_cast<unsigned int>(type_to_queue_[type].size()),
                      file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id.str());
         schedule();
     }
@@ -562,7 +569,7 @@ std::vector<std::string> MediaDedup::ThreadPoolManager::getPendingFilePaths(cons
 {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<std::string> file_paths;
-    
+
     auto it = type_to_queue_.find(type);
     if (it != type_to_queue_.end())
     {
@@ -574,7 +581,7 @@ std::vector<std::string> MediaDedup::ThreadPoolManager::getPendingFilePaths(cons
             }
         }
     }
-    
+
     return file_paths;
 }
 
@@ -582,7 +589,7 @@ std::unordered_map<std::string, std::vector<std::string>> MediaDedup::ThreadPool
 {
     std::lock_guard<std::mutex> lock(mutex_);
     std::unordered_map<std::string, std::vector<std::string>> all_pending;
-    
+
     for (const auto &pair : type_to_queue_)
     {
         std::vector<std::string> file_paths;
@@ -598,6 +605,6 @@ std::unordered_map<std::string, std::vector<std::string>> MediaDedup::ThreadPool
             all_pending[pair.first] = std::move(file_paths);
         }
     }
-    
+
     return all_pending;
 }

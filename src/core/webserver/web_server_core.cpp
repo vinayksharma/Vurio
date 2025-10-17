@@ -16,6 +16,7 @@
 #include "orchestration/scheduler_service.hpp"
 #include "database/user_settings_service.hpp"
 #include <Poco/Net/ServerSocket.h>
+#include <Poco/Environment.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/File.h>
@@ -244,7 +245,36 @@ namespace MediaDedup
 
         // Configure HTTP server thread pool for single client + dedicated UI (reactive config)
         auto params = new Poco::Net::HTTPServerParams();
-        int maxThreads = config_manager_->getPropertyValue<int>("server.http.threadPool.maxThreads", 2);
+
+        // Support "auto" mode for HTTP thread pool (75% of hardware threads)
+        int maxThreads = 2; // Default fallback
+        std::string maxThreadsStr = config_manager_->getPropertyValue<std::string>("server.http.threadPool.maxThreads", "8");
+        if (maxThreadsStr == "auto")
+        {
+            int procs = Poco::Environment::processorCount();
+            if (procs <= 0)
+                procs = 1;
+            size_t poco_suggested = static_cast<size_t>(procs + 1);
+            maxThreads = static_cast<int>(poco_suggested * 0.75);
+            if (maxThreads < 2)
+                maxThreads = 2; // Minimum 2 threads for HTTP
+            Poco::Logger::get("WebServer").information("HTTP thread pool auto-detected: %d cores, using 75%% = %d threads", procs, maxThreads);
+        }
+        else
+        {
+            try
+            {
+                maxThreads = std::stoi(maxThreadsStr);
+                if (maxThreads <= 0)
+                    maxThreads = 2;
+            }
+            catch (...)
+            {
+                maxThreads = 2;
+                Poco::Logger::get("WebServer").warning("Invalid HTTP thread pool config, using default: %d", maxThreads);
+            }
+        }
+
         int maxQueued = config_manager_->getPropertyValue<int>("server.http.threadPool.maxQueued", 10);
 
         params->setMaxThreads(maxThreads); // Configurable max threads

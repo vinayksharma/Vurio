@@ -124,7 +124,7 @@ media.images.raw.mos: true
 cache.disk.size_limit_mb: 2048
 tpm.types.fileScan.share: 1
 database.sqlite.cacheSize: 1000
-server.http.threadPool.maxThreads: 8  # Increased for concurrent thumbnail/API requests
+server.http.threadPool.maxThreads: auto  # Auto-detects 75% of (CPU cores + 1)
 media.images.raw.rwz: true
 server.instanceCheck.enabled: true
 tpm.types.video_processor.share: 1
@@ -134,7 +134,7 @@ media.images.pgm: true
 database.session.acquireTimeoutMs: 3000
 media.image.transcoding.enabled: true
 database.path: data/dedup_server.db
-tpm.pool.max: 15
+tpm.pool.max: auto  # Auto-detects 75% of (CPU cores + 1)
 scheduler.backoff.multiplier: 2
 server.instanceCheck.bufferSize: 128
 scheduler.drift.maxDriftMs: 60000
