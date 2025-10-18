@@ -48,6 +48,16 @@ namespace MediaDedup
                 return false;
             }
 
+            // Skip thumbnail generation for cache files (transcoded intermediates)
+            // These are temporary files and shouldn't have thumbnails generated
+            std::filesystem::path file_path_obj(file_path);
+            std::string parent_dir = file_path_obj.parent_path().filename().string();
+            if (parent_dir == "cache" || file_path.find("/cache/") != std::string::npos)
+            {
+                logger.debug("Skipping thumbnail generation for cache file: %s", file_path);
+                return true; // Not an error, just skip cache files
+            }
+
             // Check if thumbnail already exists (if configured to skip existing)
             if (only_if_missing && thumbnailExists(file_path, size, db))
             {

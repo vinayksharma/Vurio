@@ -2,6 +2,7 @@
 #include <MagickCore/MagickCore.h>
 #include <Poco/Logger.h>
 #include <filesystem>
+#include <cstdlib>
 
 namespace MediaDedup
 {
@@ -38,7 +39,39 @@ namespace MediaDedup
                            {
                 try
                 {
+                    // CRITICAL: Disable ImageMagick assertions at environment level
+                    // This prevents assertion failures in compiled code that can't be caught by handlers
+                    ::setenv("MAGICK_DEBUG", "None", 1);  // Disable debugging assertions
+                    
                     Magick::InitializeMagick(nullptr);
+                    
+                    // CRITICAL: Set error handlers to catch corruption before assertions trigger
+                    // When ImageMagick encounters corrupted files, it can trigger fatal assertions.
+                    // We replace default handlers with non-fatal ones that log but don't abort.
+                    // Note: FatalErrorHandler requires noreturn attribute so we can't override it
+                    // Instead we rely on MAGICK_DEBUG=None to disable assertions at compile/runtime level
+                    
+                    // Set regular error handler
+                    MagickCore::SetErrorHandler([](const MagickCore::ExceptionType severity,
+                                                   const char *reason,
+                                                   const char *description) {
+                        // Log but don't abort - convert to exception instead
+                        Poco::Logger::get("ImageMagick").error("ImageMagick Error [%d]: %s - %s",
+                                                               static_cast<int>(severity),
+                                                               reason ? reason : "unknown",
+                                                               description ? description : "");
+                    });
+                    
+                    // Set warning handler
+                    MagickCore::SetWarningHandler([](const MagickCore::ExceptionType severity,
+                                                     const char *reason,
+                                                     const char *description) {
+                        // Log warnings but continue processing
+                        Poco::Logger::get("ImageMagick").debug("ImageMagick Warning [%d]: %s - %s",
+                                                               static_cast<int>(severity),
+                                                               reason ? reason : "unknown",
+                                                               description ? description : "");
+                    });
                     
                     // Set resource limits for RAW file processing
                     // ARW files can generate 100-200MB TIFFs, need more memory
@@ -47,6 +80,8 @@ namespace MediaDedup
                     MagickCore::SetMagickResourceLimit(MagickCore::MapResource, 2048ULL * 1024 * 1024);      // 2GB
                     MagickCore::SetMagickResourceLimit(MagickCore::WidthResource, 16384);                 // Max width (8K sensors)
                     MagickCore::SetMagickResourceLimit(MagickCore::HeightResource, 16384);               // Max height
+                    
+                    Poco::Logger::get("ImageMagick").information("Initialized with MAGICK_DEBUG=None and custom ERROR/WARNING handlers to prevent crashes");
                 }
                 catch (...)
                 {

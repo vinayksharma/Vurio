@@ -215,6 +215,13 @@ PY
     print_status "Press Ctrl+C or type 'exit' to stop the server"
     echo ""
     
+    # CRITICAL: Set ImageMagick environment variables to prevent assertion crashes
+    # This must be set BEFORE the process starts (setenv() in code is too late)
+    export MAGICK_DEBUG="None"
+    export MAGICK_THREAD_LIMIT="1"  # Also helps with threading assertions
+    print_status "ImageMagick debug mode disabled (MAGICK_DEBUG=None) to prevent crashes on corrupted files"
+    echo ""
+    
     # Start the server
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Starting server in debug mode..."

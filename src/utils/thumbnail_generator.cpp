@@ -1,4 +1,5 @@
 #include "utils/thumbnail_generator.hpp"
+#include "media_processors/image/backends/tiff_validator.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <chrono>
@@ -33,9 +34,43 @@ namespace MediaDedup
                 return false;
             }
 
+            // CRITICAL: Validate TIFF files BEFORE passing to ImageMagick
+            // Corrupted TIFFs cause ImageMagick assertions that kill the process
+            if (TiffValidator::isTiffFile(source_path))
+            {
+                auto result = TiffValidator::validate(source_path);
+                if (!result.is_valid)
+                {
+                    logger.warning("Skipping corrupted TIFF file (pre-validation failed): %s - %s",
+                                   source_path, result.error_message);
+                    return false; // Skip this file - would cause ImageMagick to assert/crash
+                }
+            }
+
             // Read image using ImageMagick (supports ALL formats including RAW!)
+            // Use explicit exception handling to catch corruption early
             Magick::Image image;
-            image.read(source_path);
+
+            try
+            {
+                image.ping(source_path); // Fast metadata-only read first to detect corruption
+                image.read(source_path); // Now read full image data
+            }
+            catch (const Magick::ErrorCorruptImage &e)
+            {
+                logger.warning("Corrupted image file (skipping): %s - %s", source_path, std::string(e.what()));
+                return false;
+            }
+            catch (const Magick::ErrorFileOpen &e)
+            {
+                logger.warning("Cannot open image file: %s - %s", source_path, std::string(e.what()));
+                return false;
+            }
+            catch (const Magick::Error &e)
+            {
+                logger.warning("ImageMagick error reading file: %s - %s", source_path, std::string(e.what()));
+                return false;
+            }
 
             size_t orig_w = image.columns();
             size_t orig_h = image.rows();
