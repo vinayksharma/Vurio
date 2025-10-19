@@ -65,7 +65,17 @@ Configuration Management
 
 Testing & Build
 • Always add comprehensive unit tests for new behavior and regressions.
-• Test location: place all tests under /tests.
+• Test location: ALL test-related files MUST be under /tests directory.
+• This includes:
+  - Unit test files (test_*.cpp)
+  - Integration test files
+  - Test data directories
+  - Test configuration files (test_*.yaml, test_*.json)
+  - Benchmark files
+  - Example/demo programs
+  - Test executables
+  - Test output files
+• Never create test files, test directories, or test data in the project root.
 • Unified test policy:
 • Add all new unit tests to the all_unit_tests binary, which is executed by the rebuild shell script after the server has been successfully built.
 • Keep the all_tests binary updated so that it runs all test types defined in the project (unit, integration, etc.).
