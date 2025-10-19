@@ -189,7 +189,7 @@ link_directories(${ImageMagick++_LIBRARY_DIRS})
 # Add subdirectories
 add_subdirectory(src)
 add_subdirectory(tests)
-add_subdirectory(examples)
+# Note: examples are now in tests/examples and built via tests/CMakeLists.txt
 
 # Create unified config library
 add_library(unified_config_lib STATIC
