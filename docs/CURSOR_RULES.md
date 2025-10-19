@@ -84,16 +84,17 @@ This avoids losing control behind a blocking call and ensures stability in test 
 Scripts & One-offs
 • ALL scripts (.sh files and executables) MUST be placed in /scripts directory.
 • ONLY exceptions allowed in project root:
-  - build.sh - Core build script
-  - start - Server startup script
-• This includes (all go in /scripts):
-  - rebuild - Core rebuild and test script
-  - Helper scripts
-  - Utility scripts
-  - Test scripts
-  - Demo scripts
-  - One-off automation scripts
-• Never create new .sh files in the project root (except build.sh and start).
+
+- build.sh - Core build script
+- start - Server startup script
+  • This includes (all go in /scripts):
+- rebuild - Core rebuild and test script
+- Helper scripts
+- Utility scripts
+- Test scripts
+- Demo scripts
+- One-off automation scripts
+  • Never create new .sh files in the project root (except build.sh and start).
 
 ⸻
 
