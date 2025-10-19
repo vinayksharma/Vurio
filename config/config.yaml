@@ -103,7 +103,7 @@ tpm.types.audio_processor.share: 1
 cache.thumbnail.clearOnStartup: false
 media.image.timeoutMs: 30000
 thumbnail.jpeg.quality: 85
-cache.thumbnail.size_limit_mb: 512
+cache.thumbnail.size_limit_mb: 10240
 thumbnail.allowed.sizes: 128
 thumbnail.pipeline.onlyIfMissing: true
 media.video.mpg: true

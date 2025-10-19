@@ -489,6 +489,143 @@
         }
       }
     },
+    "/api/v1/thumbnails": {
+      "get": {
+        "summary": "Generate or retrieve thumbnail for a source image",
+        "description": "Returns a thumbnail image for the specified source file. Generates on-demand if not cached, returns cached version if available and valid. Supports all image formats including RAW files (ARW, CR2, NEF, etc.).",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Fully qualified path to source image file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "Thumbnail size (width/height of longest edge)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [128, 256, 512, 1024],
+              "default": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image (JPEG)",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string",
+                  "example": "image/jpeg"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (invalid parameters)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error (generation failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/thumbnails/cleanup": {
+      "delete": {
+        "summary": "Clean up orphaned thumbnail cache entries",
+        "description": "Removes cached thumbnails for source files that no longer exist. Useful for reclaiming disk space after deleting source images.",
+        "responses": {
+          "200": {
+            "description": "Cleanup completed (not yet implemented)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/reset-errors": {
       "post": {
         "summary": "Reset all error files to unprocessed",

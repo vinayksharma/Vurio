@@ -63,6 +63,25 @@ Configuration Management
 
 ⸻
 
+API Documentation & OpenAPI Specification
+• ALL exposed HTTP API endpoints MUST be documented in the OpenAPI specification.
+• Location: src/core/webserver/static/api/openapi.json
+• This includes:
+  - Request parameters (path, query, body)
+  - Response schemas and status codes
+  - Error responses
+  - Content types
+  - Descriptions and examples
+• When adding a new API endpoint:
+  1. Implement the handler (src/core/webserver/web_handlers_*.cpp)
+  2. Register the route (src/core/webserver/web_server_core.cpp)
+  3. Add to OpenAPI spec (src/core/webserver/static/api/openapi.json)
+  4. Test via Swagger UI (http://localhost:8080/)
+• Never implement API endpoints without OpenAPI documentation.
+• Keep OpenAPI spec synchronized with actual implementation.
+
+⸻
+
 Testing & Build
 • Always add comprehensive unit tests for new behavior and regressions.
 • Test location: ALL test-related files MUST be under /tests directory.

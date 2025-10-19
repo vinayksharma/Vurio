@@ -69,4 +69,3 @@ Per `CURSOR_RULES.md`:
 ## Total Documentation
 
 **27 files** organized in `/docs` covering architecture, APIs, configuration, troubleshooting, and project guidelines.
-
