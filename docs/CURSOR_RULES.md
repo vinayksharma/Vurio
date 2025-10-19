@@ -67,27 +67,28 @@ Testing & Build
 • Always add comprehensive unit tests for new behavior and regressions.
 • Test location: ALL test-related files MUST be under /tests directory.
 • This includes:
-  - Unit test files (test_*.cpp)
-  - Integration test files
-  - Test data directories
-  - Test configuration files (test_*.yaml, test_*.json)
-  - Benchmark files
-  - Example/demo programs
-  - Test executables
-  - Test output files
-• Never create test files, test directories, or test data in the project root.
-• Unified test policy:
-• Add all new unit tests to the all_unit_tests binary, which is executed by the rebuild shell script after the server has been successfully built.
-• Keep the all_tests binary updated so that it runs all test types defined in the project (unit, integration, etc.).
-• Unit test failures:
-• If unit tests fail because of new changes, carefully check if the issue is in the logic of the implementation or the logic of the test.
-• If pre-existing tests (not directly related to the new changes) start failing, be very careful:
-• Investigate the recent changes.
-• Fix the issue in the implementation whenever possible.
-• Modify the unit test itself only as a last resort, and if you do, explicitly inform the user about the changes.
-• Always use explicit timeouts when testing or connecting to servers.
-This avoids losing control behind a blocking call and ensures stability in test and runtime environments.
-• Build & test after each logical feature addition, then continue.
+
+- Unit test files (test\_\*.cpp)
+- Integration test files
+- Test data directories
+- Test configuration files (test*\*.yaml, test*\*.json)
+- Benchmark files
+- Example/demo programs
+- Test executables
+- Test output files
+  • Never create test files, test directories, or test data in the project root.
+  • Unified test policy:
+  • Add all new unit tests to the all_unit_tests binary, which is executed by the rebuild shell script after the server has been successfully built.
+  • Keep the all_tests binary updated so that it runs all test types defined in the project (unit, integration, etc.).
+  • Unit test failures:
+  • If unit tests fail because of new changes, carefully check if the issue is in the logic of the implementation or the logic of the test.
+  • If pre-existing tests (not directly related to the new changes) start failing, be very careful:
+  • Investigate the recent changes.
+  • Fix the issue in the implementation whenever possible.
+  • Modify the unit test itself only as a last resort, and if you do, explicitly inform the user about the changes.
+  • Always use explicit timeouts when testing or connecting to servers.
+  This avoids losing control behind a blocking call and ensures stability in test and runtime environments.
+  • Build & test after each logical feature addition, then continue.
 
 ⸻
 
