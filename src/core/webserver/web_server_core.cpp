@@ -11,6 +11,7 @@
 #include "core/web/web_handlers_server_status.hpp"
 #include "core/web/web_handlers_reset_errors.hpp"
 #include "core/web/web_handlers_thumbnail.hpp"
+#include "core/web/web_handlers_duplicates.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
@@ -133,6 +134,8 @@ namespace MediaDedup
             return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_, duplicate_finder_);
         if (path == "/api/v1/files/reset-errors" && method == "POST")
             return new ResetErrorsHandler(config_manager_, scanned_files_service_);
+        if (path == "/api/v1/duplicates/groups" && method == "GET")
+            return new MediaDedupServer::Core::DuplicateGroupsHandler(database_manager_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 

@@ -123,7 +123,7 @@ database.session.acquireBackoffMs: 50
 tpm.thread.idleTimeoutSeconds: 120
 media.image.balanced.maxKeypoints: 1000
 media.processor.intervalMs: 5000
-server.mode: balanced
+server.mode: fast
 database.session.poolMax: 32
 media.images.raw.mos: true
 cache.disk.size_limit_mb: 2048

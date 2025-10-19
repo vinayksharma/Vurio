@@ -367,6 +367,128 @@
         }
       }
     },
+    "/api/v1/duplicates/groups": {
+      "get": {
+        "summary": "Get paginated duplicate groups with members",
+        "description": "Returns duplicate groups with representative and candidate files (all as fully qualified paths), sorted by created_at ascending",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "description": "Starting index (0-based offset)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of groups to return (max: 1000)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Duplicate groups retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "description": "Duplicate group ID"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "description": "Detection mode (FAST or QUALITY)"
+                          },
+                          "representative": {
+                            "type": "string",
+                            "description": "Fully qualified path to representative file"
+                          },
+                          "candidates": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Fully qualified paths to duplicate candidate files"
+                          },
+                          "similarity_threshold": {
+                            "type": "number",
+                            "description": "Similarity threshold used for this group"
+                          },
+                          "member_count": {
+                            "type": "integer",
+                            "description": "Total number of members in this group"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "description": "ISO 8601 timestamp when group was created"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "description": "ISO 8601 timestamp when group was last updated"
+                          }
+                        }
+                      }
+                    },
+                    "total_count": {
+                      "type": "integer",
+                      "description": "Total number of duplicate groups in database"
+                    },
+                    "start": {
+                      "type": "integer",
+                      "description": "Starting index of this page"
+                    },
+                    "end": {
+                      "type": "integer",
+                      "description": "Ending index (start + limit)"
+                    },
+                    "returned": {
+                      "type": "integer",
+                      "description": "Actual number of groups returned in this page"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/reset-errors": {
       "post": {
         "summary": "Reset all error files to unprocessed",

@@ -45,6 +45,7 @@ namespace MediaDedup
             Session &sess = lease.get();
 
             sess << std::string(SQL::kCreateDuplicateGroupsIndexMode), now;
+            sess << std::string(SQL::kCreateDuplicateGroupsIndexCreatedAt), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFile), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
 
@@ -655,5 +656,87 @@ namespace MediaDedup
             return std::nullopt;
         }
     }
-}
 
+    DuplicateGroupsPage DuplicateGroupsOps::getGroupsWithMembers(DatabaseManager &db, int start, int limit)
+    {
+        Poco::Logger &logger = Poco::Logger::get("DuplicateGroupsOps");
+        DuplicateGroupsPage page;
+        page.start = start;
+        page.end = start + limit;
+
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            // Get total count
+            Statement count_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsCount), into(page.total_count));
+            count_stmt.execute();
+
+            logger.debug("Total duplicate groups count: %d", page.total_count);
+
+            // Get paginated groups
+            Statement groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPagination),
+                                     use(limit),
+                                     use(start));
+            groups_stmt.execute();
+
+            Poco::Data::RecordSet rs(groups_stmt);
+
+            for (auto &row : rs)
+            {
+                DuplicateGroupWithMembers group_with_members;
+                DuplicateGroupRecord &group = group_with_members.group;
+
+                // Extract group data
+                group.id = row[0].convert<int>();
+                group.mode = row[1].convert<std::string>();
+                group.representative_file_id = row[2].convert<int>();
+                group.representative_file_path = row[3].convert<std::string>();
+                group.representative_file_size = row[4].convert<int64_t>();
+                group.representative_created_date = row[5].convert<std::string>();
+                group.similarity_threshold = row[6].convert<double>();
+                group.member_count = row[7].convert<int>();
+                group.created_at = row[8].convert<std::string>();
+                group.updated_at = row[9].convert<std::string>();
+
+                // Get members for this group
+                Statement members_stmt = (sess << std::string(SQL::kSelectDuplicateMembersByGroupId),
+                                          use(group.id));
+                members_stmt.execute();
+
+                Poco::Data::RecordSet members_rs(members_stmt);
+                for (auto &member_row : members_rs)
+                {
+                    DuplicateMemberRecord member;
+                    member.group_id = group.id;
+                    member.file_id = member_row[0].convert<int>();
+                    member.file_path = member_row[1].convert<std::string>();
+                    member.similarity_score = member_row[2].convert<double>();
+                    member.file_size = member_row[3].convert<int64_t>();
+                    member.created_date = member_row[4].convert<std::string>();
+                    member.is_representative = member_row[5].convert<bool>();
+                    member.added_at = member_row[6].convert<std::string>();
+
+                    // Only add non-representative members to the candidates list
+                    if (!member.is_representative)
+                    {
+                        group_with_members.members.push_back(member);
+                    }
+                }
+
+                page.groups.push_back(group_with_members);
+            }
+
+            page.returned = static_cast<int>(page.groups.size());
+            logger.debug("Retrieved %d groups (start=%d, limit=%d)", page.returned, start, limit);
+
+            return page;
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception in getGroupsWithMembers: %s", std::string(e.what()));
+            return page; // Return empty page on error
+        }
+    }
+}

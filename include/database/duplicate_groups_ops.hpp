@@ -53,6 +53,21 @@ namespace MediaDedup
         int files_with_duplicates = 0;
     };
 
+    struct DuplicateGroupWithMembers
+    {
+        DuplicateGroupRecord group;
+        std::vector<DuplicateMemberRecord> members;
+    };
+
+    struct DuplicateGroupsPage
+    {
+        std::vector<DuplicateGroupWithMembers> groups;
+        int total_count = 0;
+        int start = 0;
+        int end = 0;
+        int returned = 0;
+    };
+
     class DuplicateGroupsOps
     {
     public:
@@ -112,6 +127,9 @@ namespace MediaDedup
 
         static DuplicateStats getStats(DatabaseManager &db, const std::string &mode);
 
+        // Paginated retrieval with members (for API)
+        static DuplicateGroupsPage getGroupsWithMembers(DatabaseManager &db, int start, int limit);
+
         // Checkpoint operations
         static bool upsertCheckpoint(DatabaseManager &db,
                                      const std::string &mode,
@@ -125,4 +143,3 @@ namespace MediaDedup
                                                                       const std::string &mode);
     };
 }
-

@@ -1,6 +1,6 @@
 ### FilesManager Technical Specification
 
-Pre-req: Adhere to Project Operating Rules in `specs/CURSOR_RULES.md`. If this spec and cursor_rules.md ever conflict, cursor_rules.md wins.
+Pre-req: Adhere to Project Operating Rules in `docs/CURSOR_RULES.md`. If this spec and cursor_rules.md ever conflict, cursor_rules.md wins.
 
 ## 1) Goal & Scope
 

@@ -12,15 +12,16 @@ Workflow
    • If the feature exists or is partially implemented, summarize current behavior, reference the exact files/symbols/tests, and propose either usage guidance, small gaps to close, or de-duplication instead of re‑implementing.
 
    Quick Verification Checklist (5–10 min)
-   • Search code, tests, and specs for likely keywords (feature name, endpoints, routes, flags, UI labels).
-     - Prefer ripgrep if available: `rg -n "<keyword1>|<keyword2>" src/ tests/ specs/ --hidden -g '!node_modules'`
-     - Fall back to grep: `grep -RIn "<keyword>" src tests specs`
-   • Handlers & APIs: scan server/router files for routes, controllers, RPC handlers; check OpenAPI/Swagger files if present (e.g., `api/openapi.json`).
-   • Config: check default config generator, schemas, and env-var parsing for relevant keys/flags.
-   • Tests: look under `/tests` for unit/integration names that match the feature; read assertions to learn current behavior.
-   • UI: search for visible labels/tooltips and existing components that might already expose the feature (even behind a flag).
-   • Docs: scan `README`, `specs/`, and inline comments for notes about the feature or known limitations.
-   • If you find overlap or a partial implementation, summarize what exists, paste exact file paths/symbols, and propose consolidation or small gap-fills instead of re-implementing.
+   • Search code, tests, and docs for likely keywords (feature name, endpoints, routes, flags, UI labels).
+
+   - Prefer ripgrep if available: `rg -n "<keyword1>|<keyword2>" src/ tests/ docs/ --hidden -g '!node_modules'`
+   - Fall back to grep: `grep -RIn "<keyword>" src tests docs`
+     • Handlers & APIs: scan server/router files for routes, controllers, RPC handlers; check OpenAPI/Swagger files if present (e.g., `api/openapi.json`).
+     • Config: check default config generator, schemas, and env-var parsing for relevant keys/flags.
+     • Tests: look under `/tests` for unit/integration names that match the feature; read assertions to learn current behavior.
+     • UI: search for visible labels/tooltips and existing components that might already expose the feature (even behind a flag).
+     • Docs: scan `README`, `docs/`, and inline comments for notes about the feature or known limitations.
+     • If you find overlap or a partial implementation, summarize what exists, paste exact file paths/symbols, and propose consolidation or small gap-fills instead of re-implementing.
 
 1. Plan → Confirm → Implement
    • Draft a concise implementation plan (scope, files to touch, tests to add).
@@ -86,6 +87,22 @@ Exceptions are build.sh, rebuild, and start scripts which must stay in the proje
 
 ⸻
 
+Documentation & Markdown Files
+• ALL documentation files (.md) MUST be placed in the /docs directory.
+• The ONLY exception is README.md which must stay in the project root (GitHub standard).
+• This includes:
+
+- Technical analysis documents
+- Implementation summaries
+- Architecture documentation
+- API documentation
+- Feature explanations
+- Troubleshooting guides
+  • Never create .md files in the project root (except README.md).
+  • When creating new documentation, always use /docs as the destination.
+
+⸻
+
 Repository Content & Privacy
 • NEVER commit or check in any image files (jpg, jpeg, png, tiff, tif, arw, cr2, dng, heic, raw, etc.).
 • NEVER commit or check in any personal information, user data, or sensitive content.
@@ -108,8 +125,8 @@ Rules Checklist (run after every task)
 • Plan was proposed and approved before implementation.
 
 • Verified whether the requested feature already exists (fully or partially).
-  • Cited the files, symbols, tests, or configs that demonstrate existing behavior.
-  • If present, avoided duplicate work and instead documented usage or addressed only the missing gaps.
+• Cited the files, symbols, tests, or configs that demonstrate existing behavior.
+• If present, avoided duplicate work and instead documented usage or addressed only the missing gaps.
 
 - Maintain a clear seperation of concerns.
   • No commits/pushes were made without explicit user request.
