@@ -5,6 +5,8 @@ All project documentation is consolidated in this directory for easy navigation 
 ## Project Guidelines
 
 - **[CURSOR_RULES.md](CURSOR_RULES.md)** - Core development workflow and rules for AI agents and developers
+- **[config_rules.md](config_rules.md)** - Configuration management rules and best practices
+- **[CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)** - Complete configuration properties reference
 
 ## Architecture & Design
 
@@ -47,6 +49,12 @@ All project documentation is consolidated in this directory for easy navigation 
 
 - **[REPORT_EXECUTIVE_SUMMARY.md](REPORT_EXECUTIVE_SUMMARY.md)** - High-level executive summary
 
+## Directory-Specific READMEs
+
+- **[config_README.md](config_README.md)** - Configuration directory overview
+- **[tests_README.md](tests_README.md)** - Tests directory overview
+- **[test_scripts_README.md](test_scripts_README.md)** - Test scripts documentation
+
 ---
 
 ## Documentation Standards
@@ -60,5 +68,5 @@ Per `CURSOR_RULES.md`:
 
 ## Total Documentation
 
-**21 files** organized in `/docs` covering architecture, APIs, troubleshooting, and project guidelines.
+**27 files** organized in `/docs` covering architecture, APIs, configuration, troubleshooting, and project guidelines.
 
