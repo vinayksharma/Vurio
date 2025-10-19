@@ -82,8 +82,19 @@ This avoids losing control behind a blocking call and ensures stability in test 
 ⸻
 
 Scripts & One-offs
-• Place all helper scripts and one-offs under /scripts.
-Exceptions are build.sh, rebuild, and start scripts which must stay in the project root.
+• ALL scripts (.sh files and executables) MUST be placed in /scripts directory.
+• ONLY exceptions allowed in project root:
+
+- build.sh - Core build script
+- rebuild - Core rebuild script
+- start - Server startup script
+  • This includes:
+- Helper scripts
+- Utility scripts
+- Test scripts
+- Demo scripts
+- One-off automation scripts
+  • Never create new .sh files in the project root (except the 3 core scripts above).
 
 ⸻
 
