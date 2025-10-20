@@ -743,7 +743,7 @@ namespace MediaDedup
                     const std::string &phash_str = phash_blob.rawContent();
                     const std::string &features_str = features_blob.rawContent();
                     const std::string &embedding_str = embedding_blob.rawContent();
-                    
+
                     artifact.phash = std::vector<std::uint8_t>(phash_str.begin(), phash_str.end());
                     artifact.features = std::vector<std::uint8_t>(features_str.begin(), features_str.end());
                     artifact.features_method = features_method;
