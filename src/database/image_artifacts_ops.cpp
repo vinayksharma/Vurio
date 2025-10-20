@@ -41,7 +41,7 @@ namespace MediaDedup
             std::string file_path = r.file_path;
             std::string mode = r.mode;
             // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.phash.data()), r.phash.size());
+            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.phash.data()), r.phash.size());
             int tw = r.thumb_w;
             int th = r.thumb_h;
             int v = r.version;
@@ -78,7 +78,7 @@ namespace MediaDedup
             std::string mode = r.mode;
             std::string method = r.method;
             // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.features_blob.data()), r.features_blob.size());
+            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.features_blob.data()), r.features_blob.size());
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageFeatures),
                 Keywords::use(file_path),
