@@ -18,7 +18,6 @@ namespace MediaDedup
             return false;
         }
 
-
         return true;
     }
 
@@ -41,7 +40,8 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string file_path = r.file_path;
             std::string mode = r.mode;
-            std::string blob = toBinaryString(r.phash);
+            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
+            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.phash.data()), r.phash.size());
             int tw = r.thumb_w;
             int th = r.thumb_h;
             int v = r.version;
@@ -77,7 +77,8 @@ namespace MediaDedup
             std::string file_path = r.file_path;
             std::string mode = r.mode;
             std::string method = r.method;
-            std::string blob = toBinaryString(r.features_blob);
+            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
+            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.features_blob.data()), r.features_blob.size());
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageFeatures),
                 Keywords::use(file_path),
@@ -113,7 +114,7 @@ namespace MediaDedup
             int dim = r.dim;
             // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
             // std::string would truncate at first NULL byte (0x00) in embedding data
-            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.embedding_blob.data()), r.embedding_blob.size());
+            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.embedding_blob.data()), r.embedding_blob.size());
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageEmbedding),
                 Keywords::use(file_path),
