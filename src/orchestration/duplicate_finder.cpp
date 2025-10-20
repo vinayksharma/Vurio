@@ -58,7 +58,7 @@ namespace MediaDedup
             balanced_min_good_matches_ = cfg_->getPropertyValue<int>("duplicates.balanced.minGoodMatches", 15);
             balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.ratioTestThreshold", 0.75);
             quality_min_confidence_ = cfg_->getPropertyValue<double>("duplicates.quality.minConfidence", 0.90);
-            
+
             // Metadata filtering parameters
             metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>("duplicates.metadata.filtering.enabled", true);
             aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.aspectRatioTolerance", 0.10);
@@ -194,10 +194,10 @@ namespace MediaDedup
             {
                 std::string ext1 = file1.file_path.substr(file1.file_path.find_last_of('.'));
                 std::string ext2 = file2.file_path.substr(file2.file_path.find_last_of('.'));
-                
+
                 std::transform(ext1.begin(), ext1.end(), ext1.begin(), ::tolower);
                 std::transform(ext2.begin(), ext2.end(), ext2.begin(), ::tolower);
-                
+
                 if (ext1 != ext2)
                 {
                     logger.trace("Metadata filter: different formats (%s vs %s)", ext1.c_str(), ext2.c_str());
@@ -208,19 +208,19 @@ namespace MediaDedup
             // Extract dimensions from file_metadata (stored in FileArtifact during loading)
             // For now, we'll use file_size as a proxy since we don't have dimensions in FileArtifact
             // This is still effective for filtering very different images
-            
+
             // Check file size tolerance
             if (file1.file_size > 0 && file2.file_size > 0)
             {
                 double size_ratio = static_cast<double>(std::max(file1.file_size, file2.file_size)) /
-                                   static_cast<double>(std::min(file1.file_size, file2.file_size));
-                
+                                    static_cast<double>(std::min(file1.file_size, file2.file_size));
+
                 double max_ratio = 1.0 + file_size_tolerance_;
-                
+
                 if (size_ratio > max_ratio)
                 {
-                    logger.trace("Metadata filter: file size too different (ratio=%.2f, max=%.2f)", 
-                                size_ratio, max_ratio);
+                    logger.trace("Metadata filter: file size too different (ratio=%.2f, max=%.2f)",
+                                 size_ratio, max_ratio);
                     return false;
                 }
             }
@@ -538,7 +538,7 @@ namespace MediaDedup
                     if (metadata_filtered_count > 0)
                     {
                         logger.trace("Metadata filtering skipped %d/%zu group comparisons for file_id %d",
-                                    metadata_filtered_count, group_representatives.size(), new_file.file_id);
+                                     metadata_filtered_count, group_representatives.size(), new_file.file_id);
                     }
 
                     if (best_group_id > 0)

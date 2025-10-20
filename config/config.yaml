@@ -11,7 +11,7 @@
 server.name: Media Deduplication Server
 server.host: localhost
 server.port: 8080
-server.mode: quality                    # FAST | BALANCED | QUALITY - processing profile
+server.mode: fast                    # FAST | BALANCED | QUALITY - processing profile
 server.processName: media_dedup_server
 server.instanceCheck.enabled: true      # Prevent multiple server instances
 server.instanceCheck.bufferSize: 128

@@ -24,11 +24,11 @@ duplicates.quality.threshold: 0.96 # 96% cosine similarity required
 duplicates.quality.minConfidence: 0.90 # Minimum confidence threshold
 
 # Metadata Pre-Filtering (NEW - reduces false positives significantly!)
-duplicates.metadata.filtering.enabled: true           # Enable metadata filtering
-duplicates.metadata.aspectRatioTolerance: 0.10        # 10% aspect ratio difference allowed
-duplicates.metadata.dimensionTolerance: 0.20          # 20% dimension difference allowed
-duplicates.metadata.fileSizeTolerance: 0.50           # 50% file size difference allowed
-duplicates.metadata.requireSameFormat: false          # Require same file extension
+duplicates.metadata.filtering.enabled: true # Enable metadata filtering
+duplicates.metadata.aspectRatioTolerance: 0.10 # 10% aspect ratio difference allowed
+duplicates.metadata.dimensionTolerance: 0.20 # 20% dimension difference allowed
+duplicates.metadata.fileSizeTolerance: 0.50 # 50% file size difference allowed
+duplicates.metadata.requireSameFormat: false # Require same file extension
 ```
 
 ## Understanding Each Mode

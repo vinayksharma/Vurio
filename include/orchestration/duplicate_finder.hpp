@@ -248,7 +248,7 @@ namespace MediaDedup
             int balanced_min_good_matches_ = 15;
             double balanced_ratio_test_threshold_ = 0.75;
             double quality_min_confidence_ = 0.90;
-            
+
             // Metadata filtering parameters
             bool metadata_filtering_enabled_ = true;
             double aspect_ratio_tolerance_ = 0.10;
