@@ -840,10 +840,26 @@ namespace MediaDedup
                 return -1;
             }
 
+            // Find the representative file artifact to compute actual similarities
+            const FileArtifact* rep_artifact = nullptr;
+            for (const auto &file : files)
+            {
+                if (file.file_id == rep.file_id)
+                {
+                    rep_artifact = &file;
+                    break;
+                }
+            }
+
             // Add all members
             for (const auto &file : files)
             {
-                double sim = (file.file_id == rep.file_id) ? 1.0 : threshold;
+                double sim = 1.0; // Default for representative
+                if (file.file_id != rep.file_id && rep_artifact != nullptr)
+                {
+                    // Compute actual similarity between this file and the representative
+                    sim = computeSimilarity(file, *rep_artifact, mode);
+                }
                 bool is_rep = (file.file_id == rep.file_id);
 
                 if (!DuplicateGroupsOps::addMember(db_, group_id, file.file_id, file.file_path,
