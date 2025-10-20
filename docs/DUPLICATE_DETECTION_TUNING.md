@@ -158,13 +158,23 @@ duplicates.metadata.requireSameFormat: false # Require same file extension
 
 **Parameters:**
 
-1. **threshold** (0.96 recommended):
+1. **threshold.min** and **threshold.max** (0.94-0.98 recommended):
 
-   - Cosine similarity required
-   - 0.98: Very strict - only near-duplicates
-   - 0.96: **Recommended** - catches true duplicates
-   - 0.94: Looser - may group similar but non-duplicate images
-   - 0.90: Too loose - groups semantically similar images
+   - QUALITY mode uses range-based thresholds
+   - **threshold.min**: Minimum similarity required (loosest match)
+   - **threshold.max**: Maximum similarity for reference (future tiered matching)
+   - Files with similarity ≥ threshold.min are considered duplicates
+
+   Range examples:
+
+   - **0.98 min, 0.98 max**: Very strict - only near-identical images
+   - **0.96 min, 0.98 max**: Balanced - catches most true duplicates
+   - **0.94 min, 0.98 max**: **Recommended** - comprehensive duplicate detection
+   - **0.92 min, 0.98 max**: Loose - may include semantically similar images
+
+   **Auto-reprocessing**: When threshold.min decreases (range expands), all QUALITY
+   duplicate groups are automatically deleted and files are reprocessed with the new
+   threshold. This allows catching more duplicates without manual intervention.
 
 2. **minConfidence** (0.90 recommended):
    - Secondary confidence threshold

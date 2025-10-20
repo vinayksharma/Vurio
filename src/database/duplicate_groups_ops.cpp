@@ -186,6 +186,78 @@ namespace MediaDedup
         }
     }
 
+    bool DuplicateGroupsOps::deleteGroupsByMode(DatabaseManager &db, const std::string &mode)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            // First delete all members for groups in this mode
+            Statement delete_members(sess);
+            std::string mode_str = mode;
+            delete_members << "DELETE FROM duplicate_members WHERE group_id IN "
+                              "(SELECT id FROM duplicate_groups WHERE mode = ?)",
+                use(mode_str), now;
+
+            // Then delete the groups themselves
+            Statement delete_groups(sess);
+            delete_groups << "DELETE FROM duplicate_groups WHERE mode = ?",
+                use(mode_str), now;
+
+            Poco::Logger::get("DuplicateGroupsOps").information("Deleted all duplicate groups for mode: %s", mode);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in deleteGroupsByMode: %s", std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in deleteGroupsByMode");
+            return false;
+        }
+    }
+
+    bool DuplicateGroupsOps::resetCheckpoint(DatabaseManager &db, const std::string &mode)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string mode_str = mode;
+            int zero = 0;
+
+            stmt << "INSERT INTO duplicate_processing_checkpoint "
+                    "(mode, last_processed_id, files_checked, duplicates_found, groups_created, groups_updated, last_run_timestamp) "
+                    "VALUES(?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+                    "ON CONFLICT(mode) DO UPDATE SET "
+                    "  last_processed_id = 0, "
+                    "  files_checked = 0, "
+                    "  duplicates_found = 0, "
+                    "  groups_created = 0, "
+                    "  groups_updated = 0, "
+                    "  last_run_timestamp = CURRENT_TIMESTAMP",
+                use(mode_str), use(zero), use(zero), use(zero), use(zero), use(zero), now;
+
+            Poco::Logger::get("DuplicateGroupsOps").information("Reset checkpoint for mode: %s", mode);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in resetCheckpoint: %s", std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in resetCheckpoint");
+            return false;
+        }
+    }
+
     std::optional<DuplicateGroupRecord> DuplicateGroupsOps::getGroupById(DatabaseManager &db, int group_id)
     {
         try

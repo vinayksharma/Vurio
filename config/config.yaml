@@ -159,8 +159,11 @@ duplicates.balanced.threshold: 0.35      # 0.30-0.40 recommended (35% of feature
 duplicates.balanced.minGoodMatches: 15   # Minimum absolute good matches required (0=disabled)
 duplicates.balanced.ratioTestThreshold: 0.75  # Lowe's ratio test (0.60=strict, 0.85=loose)
 
-# QUALITY Mode - Embedding Similarity Thresholds
-duplicates.quality.threshold: 0.96       # 0.94-0.98 recommended (96% cosine similarity required)
+# QUALITY Mode - Embedding Similarity Thresholds (Range-Based)
+duplicates.quality.threshold.min: 0.94   # Minimum threshold (loosest match, 0.94-0.96 recommended)
+duplicates.quality.threshold.max: 0.98   # Maximum threshold (strictest match, 0.96-0.98 recommended)
+# When threshold.min decreases (range expands), all QUALITY groups are deleted and reprocessed
+# This allows catching more duplicates without manual intervention
 duplicates.quality.minConfidence: 0.90   # Secondary confidence threshold (future use)
 
 # Metadata Pre-Filtering (STRICT TO REDUCE FALSE POSITIVES)

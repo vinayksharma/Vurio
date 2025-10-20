@@ -93,6 +93,8 @@ namespace MediaDedup
 
         static bool deleteGroup(DatabaseManager &db, int group_id);
 
+        static bool deleteGroupsByMode(DatabaseManager &db, const std::string &mode);
+
         static std::optional<DuplicateGroupRecord> getGroupById(DatabaseManager &db, int group_id);
 
         static std::vector<DuplicateGroupRecord> getGroupsByMode(DatabaseManager &db, const std::string &mode);
@@ -141,5 +143,7 @@ namespace MediaDedup
 
         static std::optional<DuplicateCheckpointRecord> getCheckpoint(DatabaseManager &db,
                                                                       const std::string &mode);
+
+        static bool resetCheckpoint(DatabaseManager &db, const std::string &mode);
     };
 }

@@ -51,7 +51,11 @@ namespace MediaDedup
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
             fast_threshold_ = cfg_->getPropertyValue<double>("duplicates.fast.threshold", 0.90);
             balanced_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.threshold", 0.30);
-            quality_threshold_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold", 0.95);
+
+            // Range-based threshold for QUALITY mode
+            quality_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.min", 0.94);
+            quality_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.max", 0.98);
+
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
             // Quality parameters
@@ -959,7 +963,8 @@ namespace MediaDedup
             }
             else // QUALITY
             {
-                return quality_threshold_;
+                // Return minimum threshold (loosest match) for range-based matching
+                return quality_threshold_min_;
             }
         }
 
@@ -987,10 +992,38 @@ namespace MediaDedup
                 balanced_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.30);
                 Poco::Logger::get("DuplicateFinder").information("Updated balanced_threshold: %.3f", balanced_threshold_);
             }
-            else if (event.key == "duplicates.quality.threshold")
+            else if (event.key == "duplicates.quality.threshold.min")
             {
-                quality_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.95);
-                Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold: %.3f", quality_threshold_);
+                double new_min = cfg_->getPropertyValue<double>(event.key, 0.94);
+
+                // Detect range expansion (threshold became more permissive)
+                if (new_min < quality_threshold_min_)
+                {
+                    Poco::Logger::get("DuplicateFinder").warning("Quality threshold range expanded: min %.3f -> %.3f (catching more duplicates)", quality_threshold_min_, new_min);
+
+                    // Delete all QUALITY groups and reset checkpoint for full reprocessing
+                    if (DuplicateGroupsOps::deleteGroupsByMode(db_, "QUALITY"))
+                    {
+                        Poco::Logger::get("DuplicateFinder").information("Deleted all QUALITY duplicate groups due to threshold expansion");
+                    }
+
+                    if (DuplicateGroupsOps::resetCheckpoint(db_, "QUALITY"))
+                    {
+                        Poco::Logger::get("DuplicateFinder").information("Reset QUALITY checkpoint to 0 - will reprocess all files with new threshold %.3f", new_min);
+                    }
+                }
+                else if (new_min > quality_threshold_min_)
+                {
+                    Poco::Logger::get("DuplicateFinder").information("Quality threshold became stricter: min %.3f -> %.3f (existing groups unaffected)", quality_threshold_min_, new_min);
+                }
+
+                quality_threshold_min_ = new_min;
+                Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold_min: %.3f", quality_threshold_min_);
+            }
+            else if (event.key == "duplicates.quality.threshold.max")
+            {
+                quality_threshold_max_ = cfg_->getPropertyValue<double>(event.key, 0.98);
+                Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold_max: %.3f", quality_threshold_max_);
             }
             else if (event.key == "duplicates.fast.minHashSize")
             {

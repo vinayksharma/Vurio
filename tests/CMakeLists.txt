@@ -61,6 +61,7 @@ set(UNIT_TEST_SOURCES
     unit/test_quality_pipeline_memory.cpp
     unit/test_onnx_session_manager.cpp
     unit/test_phash_quality.cpp
+    unit/test_duplicate_finder_range.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -140,6 +141,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_phash_quality")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PhashQualityTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_duplicate_finder_range")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DuplicateFinderRangeTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -360,12 +368,15 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+        ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -478,7 +489,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_disk_cache" AND
       NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
       NOT ${test_name} STREQUAL "test_stderr_capture" AND
-      NOT ${test_name} STREQUAL "test_phash_quality")
+      NOT ${test_name} STREQUAL "test_phash_quality" AND
+      NOT ${test_name} STREQUAL "test_duplicate_finder_range")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()

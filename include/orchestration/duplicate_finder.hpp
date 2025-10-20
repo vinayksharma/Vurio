@@ -76,6 +76,16 @@ namespace MediaDedup
              */
             bool isRunning() const { return running_.load(); }
 
+            /**
+             * @brief Get threshold for current mode
+             *
+             * For QUALITY mode, returns the minimum threshold (loosest match) from the range.
+             *
+             * @param mode Server mode (FAST/BALANCED/QUALITY)
+             * @return Similarity threshold
+             */
+            double getThreshold(const std::string &mode);
+
         private:
             struct FileArtifact
             {
@@ -220,14 +230,6 @@ namespace MediaDedup
              */
             void onConfigChange(const ConfigChangeEvent &event);
 
-            /**
-             * @brief Get threshold for current mode
-             *
-             * @param mode Server mode (FAST/BALANCED/QUALITY)
-             * @return Similarity threshold
-             */
-            double getThreshold(const std::string &mode);
-
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             DatabaseManager &db_;
 
@@ -240,7 +242,8 @@ namespace MediaDedup
             int max_group_size_ = 100;
             double fast_threshold_ = 0.90;
             double balanced_threshold_ = 0.30;
-            double quality_threshold_ = 0.95;
+            double quality_threshold_min_ = 0.94;                   // Range-based: minimum (loosest match)
+            double quality_threshold_max_ = 0.98;                   // Range-based: maximum (strictest match)
             std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
 
             // Quality parameters

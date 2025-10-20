@@ -386,7 +386,11 @@ namespace MediaDedup
         // Mode-specific thresholds
         manager->createProperty<double>("duplicates.fast.threshold", 0.90, "pHash similarity threshold (FAST mode)");
         manager->createProperty<double>("duplicates.balanced.threshold", 0.30, "Feature match ratio (BALANCED mode)");
-        manager->createProperty<double>("duplicates.quality.threshold", 0.95, "Embedding cosine similarity (QUALITY mode)");
+
+        // QUALITY mode uses range-based thresholds
+        manager->createProperty<double>("duplicates.quality.threshold.min", 0.94, "Minimum threshold for QUALITY mode (loosest match)");
+        manager->createProperty<double>("duplicates.quality.threshold.max", 0.98, "Maximum threshold for QUALITY mode (strictest match)");
+        manager->createProperty<double>("duplicates.quality.minConfidence", 0.90, "Minimum confidence for QUALITY mode (future use)");
 
         // Representative selection strategy
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",
