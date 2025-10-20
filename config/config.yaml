@@ -151,7 +151,7 @@ duplicates.finder.maxGroupSize: 100      # Max duplicates per group
 duplicates.representative.strategy: size_then_age  # Larger files preferred, then older
 
 # FAST Mode - pHash Similarity Thresholds (STRICT FOR LOW FALSE POSITIVES)
-duplicates.fast.threshold: 0.95          # STRICT: only 3 bits can differ out of 64 (was 0.92)
+duplicates.fast.threshold: 0.97          # STRICT: only 3 bits can differ out of 64 
 duplicates.fast.minHashSize: 64          # pHash size in bits
 
 # BALANCED Mode - Feature Matching Thresholds  
@@ -165,9 +165,9 @@ duplicates.quality.minConfidence: 0.90   # Secondary confidence threshold (futur
 
 # Metadata Pre-Filtering (STRICT TO REDUCE FALSE POSITIVES)
 duplicates.metadata.filtering.enabled: true           # Enable metadata pre-filtering before similarity calculation
-duplicates.metadata.aspectRatioTolerance: 0.05        # STRICT: only 5% aspect ratio difference (was 0.10)
-duplicates.metadata.dimensionTolerance: 0.10          # STRICT: only 10% dimension difference (was 0.20)
-duplicates.metadata.fileSizeTolerance: 0.30           # STRICT: only 30% file size difference (was 0.50)
+duplicates.metadata.aspectRatioTolerance: 0.05        # STRICT: only 5% aspect ratio difference 
+duplicates.metadata.dimensionTolerance: 0.10          # STRICT: only 10% dimension difference 
+duplicates.metadata.fileSizeTolerance: 0.20           # STRICT: only 20% file size difference 
 duplicates.metadata.requireSameFormat: false          # If true, only compare files with same extension
 
 # ============================================================================
