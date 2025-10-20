@@ -841,7 +841,7 @@ namespace MediaDedup
             }
 
             // Find the representative file artifact to compute actual similarities
-            const FileArtifact* rep_artifact = nullptr;
+            const FileArtifact *rep_artifact = nullptr;
             for (const auto &file : files)
             {
                 if (file.file_id == rep.file_id)
