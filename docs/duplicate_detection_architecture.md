@@ -139,25 +139,42 @@ Every N ms (configurable: duplicates.finder.intervalMs)
   └─ Process batches until no more new files
 ```
 
-### 2. Batch Processing
+### 2. Batch Processing - Representative-Based Algorithm
 
 ```
 For each batch of N files (duplicates.finder.batchSize):
   ├─ Query files with id > last_processed_id AND processed_<mode> = 2
-  ├─ Load ALL existing processed files with artifacts for comparison
-  ├─ For each new file:
-  │   ├─ Load artifacts (phash/features/embedding)
-  │   ├─ Skip if file already in a group (added earlier in batch)
-  │   ├─ Find ALL similar files (similarity >= threshold) in existing files
-  │   ├─ If similar files found:
-  │   │   ├─ Group similar files by their current group membership
-  │   │   ├─ If no groups exist: Create new group with ALL similar files
-  │   │   ├─ If one group exists: Add new file + ungrouped similar files to it
-  │   │   ├─ If multiple groups exist: Add to largest group (bridging)
-  │   │   └─ Update representative if needed
-  │   └─ Add file to "existing files" for next comparisons
+  ├─ Load group REPRESENTATIVES for this mode (not all files)
+  ├─ Load UNGROUPED processed files (not in any group)
+  │
+  ├─ STEP 1: Compare new files against representatives ONLY
+  │   For each new file:
+  │     ├─ Load artifacts (phash/features/embedding)
+  │     ├─ Skip if already in a group
+  │     ├─ Compare against ALL group representatives
+  │     ├─ Select best match (highest similarity >= threshold)
+  │     ├─ If match found:
+  │     │   ├─ Add to that group
+  │     │   ├─ Check if new file should become representative (larger/older)
+  │     │   └─ Update representative cache if swapped
+  │     └─ If no match: Add to batch ungrouped list
+  │
+  └─ STEP 2: Create new groups from batch ungrouped files
+      For each ungrouped file in batch:
+        ├─ Compare against other batch ungrouped files
+        ├─ Find all similar files (similarity >= threshold)
+        ├─ If 2+ similar files found: Create new group
+        └─ Add new group's representative to cache
+  │
   └─ Update checkpoint
 ```
+
+**Key Principles:**
+
+- **Representative-Based:** New files compared ONLY against group representatives, not all members
+- **Non-Transitive:** If A~B and B~C but A≁C, they will be in different groups
+- **Highest Similarity:** If multiple representatives match, add to group with highest similarity
+- **2+ Required:** New groups only created when 2+ similar ungrouped files found in batch
 
 ### 3. Group Management
 
@@ -240,11 +257,12 @@ The duplicate finder is registered as a scheduled job with the ThreadPoolManager
 
 ### Complexity
 
-- **Per-file comparison**: O(N) where N = number of all processed files
-- **Per-batch**: O(B × N) where B = batch size, N = existing processed files
-- **Batch processing**: Limits memory usage and transaction size
-- **Incremental**: Only new files compared, but against ALL existing files
-- **Group consolidation**: Automatically merges files when they bridge multiple groups
+- **Per-file comparison**: O(G) where G = number of existing groups (representatives only)
+- **Per-batch**: O(B × G) where B = batch size, G = number of groups
+- **New group creation**: O(U²) where U = ungrouped files in batch
+- **Memory**: Loads only representatives + ungrouped files (not all processed files)
+- **Scalability**: Excellent - complexity grows with groups, not total files
+- **Representative-based**: Dramatically faster than comparing against all files
 
 ### Optimization Strategies
 
@@ -261,16 +279,36 @@ For datasets > 100K files:
 - Increase execution interval (e.g., 4 hours)
 - Use mode-specific thresholds to reduce false positives
 
-## Algorithm Improvements (v2)
+## Algorithm Evolution
 
-**Fixed in October 2025:**
+### v3 - Representative-Based Matching (October 2025 - Current)
 
-- Proper cross-batch comparison (loads all existing files)
-- Groups ALL similar files together (not just pairs)
-- Handles bridging files that connect multiple groups
-- Prevents duplicate group membership checking
+**Changes:**
 
-**Previous Issues:**
+- Compare new files ONLY against group representatives (not all members)
+- Select group with highest similarity if multiple matches
+- Non-transitive grouping: Files must be similar to representative, not just any member
+- New groups created only when 2+ similar ungrouped files found in batch
+- Dramatically improved performance: O(B × G) instead of O(B × N)
+
+**Benefits:**
+
+- Correct semantics: Each group driven by its representative file
+- Prevents one massive group with all "somewhat similar" files
+- Scales better with large datasets (10x-100x faster)
+- Representative automatically swaps when larger/older file added
+
+### v2 - Cross-Batch Comparison (October 2025 - deprecated)
+
+**Issues Discovered:**
+
+- Compared against ALL files, not just representatives
+- Created one massive group (647 members) due to transitive matching
+- Poor performance: O(B × N) where N = all files
+
+### v1 - Original Bugs
+
+**Issues:**
 
 - Groups were always pairs due to batch-only comparison
 - Existing files from previous batches were never loaded

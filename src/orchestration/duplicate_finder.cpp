@@ -248,50 +248,39 @@ namespace MediaDedup
 
                 logger.information("Found %zu new files to process", file_ids.size());
 
-                // Load all previously processed files with artifacts for comparison
-                std::vector<FileArtifact> existing_files;
-                std::string existing_query =
-                    "SELECT sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
-                    "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
-                    "FROM scanned_files sf "
-                    "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
-                    "WHERE sf.id <= ? AND ia.mode = ?";
+                // Load group representatives and ungrouped files for representative-based comparison
+                // Representatives are the "drivers" of each group - we only compare against them
+                std::map<int, FileArtifact> group_representatives; // group_id -> representative artifact
+                std::vector<FileArtifact> ungrouped_files;         // processed files not in any group
 
-                if (mode == "FAST")
-                {
-                    existing_query += " AND sf.processed_fast = 2";
-                }
-                else if (mode == "BALANCED")
-                {
-                    existing_query += " AND sf.processed_balanced = 2";
-                }
-                else
-                {
-                    existing_query += " AND sf.processed_quality = 2";
-                }
+                std::string mode_copy = mode;
+                int existing_last_id = last_processed_id;
 
-                logger.information("Executing query for existing files with artifacts");
-
-                // Load existing files for proper cross-batch duplicate detection
+                // Query 1: Load group representatives for this mode
                 try
                 {
-                    Statement existing_stmt(sess);
-                    int existing_last_id = last_processed_id;
-                    std::string mode_copy = mode;
+                    std::string rep_query =
+                        "SELECT dg.id, sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
+                        "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
+                        "FROM duplicate_groups dg "
+                        "JOIN scanned_files sf ON dg.representative_file_id = sf.id "
+                        "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
+                        "WHERE dg.mode = ? AND ia.mode = ?";
 
-                    existing_stmt << existing_query, use(existing_last_id), use(mode_copy);
-                    existing_stmt.execute();
+                    Statement rep_stmt(sess);
+                    rep_stmt << rep_query, use(mode_copy), use(mode_copy);
+                    rep_stmt.execute();
 
-                    Poco::Data::RecordSet existing_rs(existing_stmt);
-
-                    for (auto &existing_row : existing_rs)
+                    Poco::Data::RecordSet rep_rs(rep_stmt);
+                    for (auto &row : rep_rs)
                     {
+                        int group_id = row[0].convert<int>();
                         FileArtifact artifact;
-                        artifact.file_id = existing_row[0].convert<int>();
-                        artifact.file_path = existing_row[1].convert<std::string>();
+                        artifact.file_id = row[1].convert<int>();
+                        artifact.file_path = row[2].convert<std::string>();
 
-                        // Parse file_metadata JSON to extract size and creation date
-                        std::string metadata_json = existing_row[2].isEmpty() ? "" : existing_row[2].convert<std::string>();
+                        // Parse metadata
+                        std::string metadata_json = row[3].isEmpty() ? "" : row[3].convert<std::string>();
                         if (!metadata_json.empty())
                         {
                             try
@@ -301,9 +290,7 @@ namespace MediaDedup
                                 Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
 
                                 if (obj->has("sizeBytes"))
-                                {
                                     artifact.file_size = obj->getValue<int64_t>("sizeBytes");
-                                }
                                 if (obj->has("createdAt"))
                                 {
                                     int64_t created_ns = obj->getValue<int64_t>("createdAt");
@@ -315,19 +302,18 @@ namespace MediaDedup
                                     artifact.created_date = ss.str();
                                 }
                             }
-                            catch (const std::exception &e)
-                            {
-                                logger.warning("Failed to parse metadata for file_id %d: %s", artifact.file_id, std::string(e.what()));
+                            catch (...)
+                            { /* ignore parse errors */
                             }
                         }
 
                         // Load artifacts
-                        std::string phash_blob = existing_row[3].isEmpty() ? "" : existing_row[3].convert<std::string>();
-                        std::string features_blob = existing_row[4].isEmpty() ? "" : existing_row[4].convert<std::string>();
-                        std::string features_method = existing_row[5].isEmpty() ? "" : existing_row[5].convert<std::string>();
-                        std::string embedding_blob = existing_row[6].isEmpty() ? "" : existing_row[6].convert<std::string>();
-                        std::string embedding_model = existing_row[7].isEmpty() ? "" : existing_row[7].convert<std::string>();
-                        int embedding_dim = existing_row[8].isEmpty() ? 0 : existing_row[8].convert<int>();
+                        std::string phash_blob = row[4].isEmpty() ? "" : row[4].convert<std::string>();
+                        std::string features_blob = row[5].isEmpty() ? "" : row[5].convert<std::string>();
+                        std::string features_method = row[6].isEmpty() ? "" : row[6].convert<std::string>();
+                        std::string embedding_blob = row[7].isEmpty() ? "" : row[7].convert<std::string>();
+                        std::string embedding_model = row[8].isEmpty() ? "" : row[8].convert<std::string>();
+                        int embedding_dim = row[9].isEmpty() ? 0 : row[9].convert<int>();
 
                         artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
                         artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
@@ -336,18 +322,100 @@ namespace MediaDedup
                         artifact.embedding_model = embedding_model;
                         artifact.embedding_dim = embedding_dim;
 
-                        existing_files.push_back(artifact);
+                        group_representatives[group_id] = artifact;
                     }
 
-                    logger.information("Loaded %zu existing files for comparison", existing_files.size());
+                    logger.information("Loaded %zu group representatives", group_representatives.size());
                 }
                 catch (const std::exception &e)
                 {
-                    logger.error("Error loading existing files: %s", std::string(e.what()));
-                    logger.information("Continuing with empty existing files list");
+                    logger.error("Error loading group representatives: %s", std::string(e.what()));
                 }
 
-                logger.debug("Loaded %zu existing files for comparison", existing_files.size());
+                // Query 2: Load ungrouped processed files (not in any duplicate group)
+                try
+                {
+                    std::string ungrouped_query =
+                        "SELECT sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
+                        "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
+                        "FROM scanned_files sf "
+                        "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
+                        "WHERE sf.id <= ? AND ia.mode = ? "
+                        "AND sf.id NOT IN (SELECT file_id FROM duplicate_members) ";
+
+                    if (mode == "FAST")
+                        ungrouped_query += "AND sf.processed_fast = 2";
+                    else if (mode == "BALANCED")
+                        ungrouped_query += "AND sf.processed_balanced = 2";
+                    else
+                        ungrouped_query += "AND sf.processed_quality = 2";
+
+                    Statement ungrouped_stmt(sess);
+                    ungrouped_stmt << ungrouped_query, use(existing_last_id), use(mode_copy);
+                    ungrouped_stmt.execute();
+
+                    Poco::Data::RecordSet ungrouped_rs(ungrouped_stmt);
+                    for (auto &row : ungrouped_rs)
+                    {
+                        FileArtifact artifact;
+                        artifact.file_id = row[0].convert<int>();
+                        artifact.file_path = row[1].convert<std::string>();
+
+                        // Parse metadata
+                        std::string metadata_json = row[2].isEmpty() ? "" : row[2].convert<std::string>();
+                        if (!metadata_json.empty())
+                        {
+                            try
+                            {
+                                Poco::JSON::Parser parser;
+                                Poco::Dynamic::Var result = parser.parse(metadata_json);
+                                Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+
+                                if (obj->has("sizeBytes"))
+                                    artifact.file_size = obj->getValue<int64_t>("sizeBytes");
+                                if (obj->has("createdAt"))
+                                {
+                                    int64_t created_ns = obj->getValue<int64_t>("createdAt");
+                                    int64_t created_s = created_ns / 1000000000LL;
+                                    std::time_t created_time = static_cast<std::time_t>(created_s);
+                                    std::tm *tm = std::gmtime(&created_time);
+                                    std::stringstream ss;
+                                    ss << std::put_time(tm, "%Y-%m-%d");
+                                    artifact.created_date = ss.str();
+                                }
+                            }
+                            catch (...)
+                            { /* ignore parse errors */
+                            }
+                        }
+
+                        // Load artifacts
+                        std::string phash_blob = row[3].isEmpty() ? "" : row[3].convert<std::string>();
+                        std::string features_blob = row[4].isEmpty() ? "" : row[4].convert<std::string>();
+                        std::string features_method = row[5].isEmpty() ? "" : row[5].convert<std::string>();
+                        std::string embedding_blob = row[6].isEmpty() ? "" : row[6].convert<std::string>();
+                        std::string embedding_model = row[7].isEmpty() ? "" : row[7].convert<std::string>();
+                        int embedding_dim = row[8].isEmpty() ? 0 : row[8].convert<int>();
+
+                        artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
+                        artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
+                        artifact.features_method = features_method;
+                        artifact.embedding = std::vector<std::uint8_t>(embedding_blob.begin(), embedding_blob.end());
+                        artifact.embedding_model = embedding_model;
+                        artifact.embedding_dim = embedding_dim;
+
+                        ungrouped_files.push_back(artifact);
+                    }
+
+                    logger.information("Loaded %zu ungrouped processed files", ungrouped_files.size());
+                }
+                catch (const std::exception &e)
+                {
+                    logger.error("Error loading ungrouped files: %s", std::string(e.what()));
+                }
+
+                // Track new ungrouped files in this batch for potential group creation
+                std::vector<FileArtifact> batch_ungrouped_files;
 
                 // Process each new file
                 int files_checked = 0;
@@ -362,159 +430,122 @@ namespace MediaDedup
                     if (!loadFileArtifacts(file_ids[i], mode, new_file))
                     {
                         logger.warning("Failed to load artifacts for file_id %d, skipping", file_ids[i]);
-                        new_last_processed_id = file_ids[i]; // Still advance checkpoint
+                        new_last_processed_id = file_ids[i];
                         continue;
                     }
 
                     files_checked++;
 
-                    // Check if this file is already in a group (could have been added earlier in this batch)
+                    // Check if already in a group (added earlier in this batch)
                     auto existing_group_opt = getGroupIdForFile(new_file.file_id, mode);
                     if (existing_group_opt.has_value())
                     {
                         logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
-                        existing_files.push_back(new_file);
                         new_last_processed_id = file_ids[i];
                         continue;
                     }
 
-                    // Find all similar files in existing_files
                     double threshold = getThreshold(mode);
-                    std::vector<std::pair<int, double>> similar_files; // file_id, similarity
 
-                    for (const auto &existing : existing_files)
+                    // STEP 1: Compare against group representatives ONLY (representative-based matching)
+                    int best_group_id = -1;
+                    double best_similarity = 0.0;
+
+                    for (const auto &[group_id, representative] : group_representatives)
                     {
-                        double sim = computeSimilarity(new_file, existing, mode);
-                        if (sim >= threshold)
+                        double sim = computeSimilarity(new_file, representative, mode);
+                        if (sim >= threshold && sim > best_similarity)
                         {
-                            similar_files.push_back({existing.file_id, sim});
+                            best_group_id = group_id;
+                            best_similarity = sim;
                         }
                     }
 
-                    if (similar_files.empty())
+                    if (best_group_id > 0)
                     {
-                        // No duplicates found
-                        logger.trace("File_id %d has no duplicates", new_file.file_id);
-                        existing_files.push_back(new_file);
-                        new_last_processed_id = file_ids[i];
-                        continue;
-                    }
-
-                    // Find if any of the similar files are in existing groups
-                    std::map<int, std::vector<int>> groups_to_files; // group_id -> [file_ids]
-                    std::vector<int> ungrouped_similar_files;
-
-                    for (const auto &[similar_file_id, sim] : similar_files)
-                    {
-                        auto group_opt = getGroupIdForFile(similar_file_id, mode);
-                        if (group_opt.has_value())
-                        {
-                            groups_to_files[group_opt.value()].push_back(similar_file_id);
-                        }
-                        else
-                        {
-                            ungrouped_similar_files.push_back(similar_file_id);
-                        }
-                    }
-
-                    if (groups_to_files.empty())
-                    {
-                        // No existing groups - create new group with all similar files
-                        std::vector<FileArtifact> group_members;
-                        group_members.push_back(new_file);
-
-                        for (int similar_fid : ungrouped_similar_files)
-                        {
-                            // Find the artifact in existing_files
-                            for (const auto &existing : existing_files)
-                            {
-                                if (existing.file_id == similar_fid)
-                                {
-                                    group_members.push_back(existing);
-                                    break;
-                                }
-                            }
-                        }
-
-                        int new_group_id = createDuplicateGroup(group_members, mode, threshold);
-                        if (new_group_id > 0)
-                        {
-                            duplicates_found += static_cast<int>(group_members.size());
-                            groups_created++;
-                            logger.information("Created new group %d with %zu members", new_group_id, group_members.size());
-                        }
-                    }
-                    else if (groups_to_files.size() == 1)
-                    {
-                        // Add to the single existing group
-                        int target_group_id = groups_to_files.begin()->first;
-                        double best_sim = similar_files[0].second; // Use first similar file's similarity
-
-                        if (addToGroup(target_group_id, new_file, mode, best_sim))
+                        // Found matching group - add to it (may swap representative)
+                        if (addToGroup(best_group_id, new_file, mode, best_similarity))
                         {
                             duplicates_found++;
                             groups_updated++;
-                            logger.debug("Added file_id %d to existing group %d (similarity=%.3f)",
-                                         new_file.file_id, target_group_id, best_sim);
-                        }
+                            logger.debug("Added file_id %d to group %d (similarity=%.3f to representative)",
+                                         new_file.file_id, best_group_id, best_similarity);
 
-                        // Also add any ungrouped similar files to this group
-                        for (int similar_fid : ungrouped_similar_files)
-                        {
-                            for (const auto &existing : existing_files)
+                            // Update representative in our cache if this file is now the rep
+                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
+                            if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
                             {
-                                if (existing.file_id == similar_fid)
-                                {
-                                    // Check if not already added
-                                    auto check_group = getGroupIdForFile(similar_fid, mode);
-                                    if (!check_group.has_value())
-                                    {
-                                        double sim = computeSimilarity(new_file, existing, mode);
-                                        if (addToGroup(target_group_id, existing, mode, sim))
-                                        {
-                                            duplicates_found++;
-                                            groups_updated++;
-                                            logger.debug("Added bridging file_id %d to group %d", similar_fid, target_group_id);
-                                        }
-                                    }
-                                    break;
-                                }
+                                group_representatives[best_group_id] = new_file;
+                                logger.information("Group %d representative swapped to file_id %d (larger/older)",
+                                                   best_group_id, new_file.file_id);
                             }
                         }
                     }
                     else
                     {
-                        // Multiple groups found - need to merge (handled in next step)
-                        // For now, add to the largest group
-                        int largest_group_id = -1;
-                        size_t max_size = 0;
+                        // No group match - add to batch ungrouped for potential new group creation
+                        batch_ungrouped_files.push_back(new_file);
+                        ungrouped_files.push_back(new_file);
+                        logger.trace("File_id %d doesn't match any group representative, marked as ungrouped", new_file.file_id);
+                    }
 
-                        for (const auto &[gid, files] : groups_to_files)
-                        {
-                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, gid);
-                            if (group_opt.has_value() && static_cast<size_t>(group_opt->member_count) > max_size)
-                            {
-                                largest_group_id = gid;
-                                max_size = group_opt->member_count;
-                            }
-                        }
+                    new_last_processed_id = file_ids[i];
+                }
 
-                        if (largest_group_id > 0)
+                // STEP 2: Create new groups from batch ungrouped files (2+ similar files required)
+                // Compare batch ungrouped files against each other
+                std::vector<bool> already_grouped(batch_ungrouped_files.size(), false);
+
+                for (size_t i = 0; i < batch_ungrouped_files.size(); ++i)
+                {
+                    if (already_grouped[i])
+                        continue;
+
+                    double threshold = getThreshold(mode);
+                    std::vector<FileArtifact> similar_batch_files;
+                    similar_batch_files.push_back(batch_ungrouped_files[i]);
+
+                    // Find all files in this batch similar to file i
+                    for (size_t j = i + 1; j < batch_ungrouped_files.size(); ++j)
+                    {
+                        if (already_grouped[j])
+                            continue;
+
+                        double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
+                        if (sim >= threshold)
                         {
-                            double best_sim = similar_files[0].second;
-                            if (addToGroup(largest_group_id, new_file, mode, best_sim))
-                            {
-                                duplicates_found++;
-                                groups_updated++;
-                                logger.information("Added bridging file_id %d to largest group %d (bridges %zu groups)",
-                                                   new_file.file_id, largest_group_id, groups_to_files.size());
-                            }
+                            similar_batch_files.push_back(batch_ungrouped_files[j]);
+                            already_grouped[j] = true;
                         }
                     }
 
-                    // Add to existing files for next comparisons
-                    existing_files.push_back(new_file);
-                    new_last_processed_id = file_ids[i];
+                    // Only create group if 2+ similar files found
+                    if (similar_batch_files.size() >= 2)
+                    {
+                        already_grouped[i] = true;
+                        int new_group_id = createDuplicateGroup(similar_batch_files, mode, threshold);
+                        if (new_group_id > 0)
+                        {
+                            duplicates_found += static_cast<int>(similar_batch_files.size());
+                            groups_created++;
+                            logger.information("Created new group %d with %zu members from batch ungrouped files",
+                                               new_group_id, similar_batch_files.size());
+
+                            // Add new group's representative to our cache
+                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, new_group_id);
+                            if (group_opt.has_value())
+                            {
+                                for (const auto &file : similar_batch_files)
+                                {
+                                    if (file.file_id == group_opt->representative_file_id)
+                                    {
+                                        group_representatives[new_group_id] = file;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Update checkpoint
