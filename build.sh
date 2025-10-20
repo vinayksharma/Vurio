@@ -88,6 +88,28 @@ check_dependencies() {
     print_success "All dependencies are available"
 }
 
+# Function to clean build artifacts
+clean_build() {
+    if [ "$CLEAN" = "true" ]; then
+        print_status "Cleaning old build artifacts..."
+        if [ -d "build" ]; then
+            # Remove only specific artifacts to avoid deleting external dependencies
+            rm -rf build/CMakeFiles
+            rm -rf build/bin
+            rm -rf build/lib
+            rm -rf build/src
+            rm -rf build/tests
+            rm -f build/CMakeCache.txt
+            rm -f build/cmake_install.cmake
+            rm -f build/Makefile
+            rm -f build/compile_commands.json
+            print_success "Build artifacts cleaned"
+        else
+            print_status "No build directory to clean"
+        fi
+    fi
+}
+
 # Function to create build directory
 create_build_dir() {
     print_status "Ensuring build directory exists..."
@@ -230,10 +252,12 @@ fi
 main() {
     print_status "Starting Media Deduplication Server build process..."
     print_status "Build type: $BUILD_TYPE"
+    print_status "Clean build: $CLEAN"
     print_status "Run tests: $RUN_TESTS"
     print_status "Install: $INSTALL"
     
     check_dependencies
+    clean_build
     create_build_dir
     configure_project
     build_project
