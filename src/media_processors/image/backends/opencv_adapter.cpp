@@ -57,32 +57,32 @@ namespace MediaDedup
             // 3. Apply DCT
             // 4. Extract top-left 8x8 DCT coefficients (low frequencies)
             // 5. Compare to median to generate 64-bit hash
-            
+
             cv::Mat gray;
             cv::cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
-            
+
             // Resize to 32x32 for DCT
             cv::Mat small;
             cv::resize(gray, small, cv::Size(32, 32), 0, 0, cv::INTER_AREA);
-            
+
             // Release previous matrices
             resized.release();
             gray.release();
-            
+
             // Convert to float for DCT
             cv::Mat float_img;
             small.convertTo(float_img, CV_32F);
             small.release();
-            
+
             // Apply DCT (Discrete Cosine Transform)
             cv::Mat dct_img;
             cv::dct(float_img, dct_img);
             float_img.release();
-            
+
             // Extract top-left 8x8 coefficients
             std::vector<float> dct_values;
             dct_values.reserve(64);
-            
+
             for (int y = 0; y < 8; ++y)
             {
                 for (int x = 0; x < 8; ++x)
@@ -90,14 +90,14 @@ namespace MediaDedup
                     dct_values.push_back(dct_img.at<float>(y, x));
                 }
             }
-            
+
             dct_img.release();
-            
+
             // Calculate median of ALL 64 DCT values
             std::vector<float> sorted_values = dct_values;
             std::sort(sorted_values.begin(), sorted_values.end());
             float median = sorted_values[sorted_values.size() / 2];
-            
+
             // Generate 64-bit hash: 1 if > median, 0 otherwise
             std::uint64_t hash_value = 0;
             for (size_t i = 0; i < 64; ++i)
@@ -107,7 +107,7 @@ namespace MediaDedup
                     hash_value |= (1ULL << i);
                 }
             }
-            
+
             // Convert to byte array (8 bytes = 64 bits)
             out.phash64.resize(8);
             for (int i = 0; i < 8; ++i)
@@ -179,29 +179,29 @@ namespace MediaDedup
             // Compute proper DCT-based perceptual hash (64-bit)
             cv::Mat gray;
             cv::cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
-            
+
             // Resize to 32x32 for DCT
             cv::Mat small;
             cv::resize(gray, small, cv::Size(32, 32), 0, 0, cv::INTER_AREA);
-            
+
             // Release previous matrices
             resized.release();
             gray.release();
-            
+
             // Convert to float for DCT
             cv::Mat float_img;
             small.convertTo(float_img, CV_32F);
             small.release();
-            
+
             // Apply DCT
             cv::Mat dct_img;
             cv::dct(float_img, dct_img);
             float_img.release();
-            
+
             // Extract top-left 8x8 coefficients
             std::vector<float> dct_values;
             dct_values.reserve(64);
-            
+
             for (int y = 0; y < 8; ++y)
             {
                 for (int x = 0; x < 8; ++x)
@@ -209,14 +209,14 @@ namespace MediaDedup
                     dct_values.push_back(dct_img.at<float>(y, x));
                 }
             }
-            
+
             dct_img.release();
-            
+
             // Calculate median of ALL 64 DCT values
             std::vector<float> sorted_values = dct_values;
             std::sort(sorted_values.begin(), sorted_values.end());
             float median = sorted_values[sorted_values.size() / 2];
-            
+
             // Generate 64-bit hash: 1 if > median, 0 otherwise
             std::uint64_t hash_value = 0;
             for (size_t i = 0; i < 64; ++i)
@@ -226,7 +226,7 @@ namespace MediaDedup
                     hash_value |= (1ULL << i);
                 }
             }
-            
+
             // Convert to byte array
             out.phash64.resize(8);
             for (int i = 0; i < 8; ++i)

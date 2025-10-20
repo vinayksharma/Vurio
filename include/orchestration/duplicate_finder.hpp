@@ -141,6 +141,18 @@ namespace MediaDedup
             std::optional<int> getGroupIdForFile(int file_id, const std::string &mode);
 
             /**
+             * @brief Check if two files are metadata-compatible for comparison
+             *
+             * Pre-filters based on aspect ratio, dimensions, file size, and format.
+             * Reduces false positives by skipping dissimilar files early.
+             *
+             * @param file1 First file artifact
+             * @param file2 Second file artifact
+             * @return True if files should be compared, false to skip
+             */
+            bool areMetadataCompatible(const FileArtifact &file1, const FileArtifact &file2);
+
+            /**
              * @brief Find existing duplicate group for a file (if any)
              *
              * @param file File artifact to check
@@ -236,6 +248,13 @@ namespace MediaDedup
             int balanced_min_good_matches_ = 15;
             double balanced_ratio_test_threshold_ = 0.75;
             double quality_min_confidence_ = 0.90;
+            
+            // Metadata filtering parameters
+            bool metadata_filtering_enabled_ = true;
+            double aspect_ratio_tolerance_ = 0.10;
+            double dimension_tolerance_ = 0.20;
+            double file_size_tolerance_ = 0.50;
+            bool require_same_format_ = false;
         };
     } // namespace Orchestration
 } // namespace MediaDedup

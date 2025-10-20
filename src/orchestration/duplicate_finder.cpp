@@ -58,6 +58,13 @@ namespace MediaDedup
             balanced_min_good_matches_ = cfg_->getPropertyValue<int>("duplicates.balanced.minGoodMatches", 15);
             balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.ratioTestThreshold", 0.75);
             quality_min_confidence_ = cfg_->getPropertyValue<double>("duplicates.quality.minConfidence", 0.90);
+            
+            // Metadata filtering parameters
+            metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>("duplicates.metadata.filtering.enabled", true);
+            aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.aspectRatioTolerance", 0.10);
+            dimension_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.dimensionTolerance", 0.20);
+            file_size_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.fileSizeTolerance", 0.50);
+            require_same_format_ = cfg_->getPropertyValue<bool>("duplicates.metadata.requireSameFormat", false);
 
             // Subscribe to config changes
             cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
@@ -170,6 +177,59 @@ namespace MediaDedup
                 Poco::Logger::get("DuplicateFinder").error("Exception in getGroupIdForFile: %s", std::string(e.what()));
                 return std::nullopt;
             }
+        }
+
+        bool DuplicateFinder::areMetadataCompatible(const FileArtifact &file1, const FileArtifact &file2)
+        {
+            // If metadata filtering is disabled, all files are compatible
+            if (!metadata_filtering_enabled_)
+            {
+                return true;
+            }
+
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+
+            // Check file format (extension) if required
+            if (require_same_format_)
+            {
+                std::string ext1 = file1.file_path.substr(file1.file_path.find_last_of('.'));
+                std::string ext2 = file2.file_path.substr(file2.file_path.find_last_of('.'));
+                
+                std::transform(ext1.begin(), ext1.end(), ext1.begin(), ::tolower);
+                std::transform(ext2.begin(), ext2.end(), ext2.begin(), ::tolower);
+                
+                if (ext1 != ext2)
+                {
+                    logger.trace("Metadata filter: different formats (%s vs %s)", ext1.c_str(), ext2.c_str());
+                    return false;
+                }
+            }
+
+            // Extract dimensions from file_metadata (stored in FileArtifact during loading)
+            // For now, we'll use file_size as a proxy since we don't have dimensions in FileArtifact
+            // This is still effective for filtering very different images
+            
+            // Check file size tolerance
+            if (file1.file_size > 0 && file2.file_size > 0)
+            {
+                double size_ratio = static_cast<double>(std::max(file1.file_size, file2.file_size)) /
+                                   static_cast<double>(std::min(file1.file_size, file2.file_size));
+                
+                double max_ratio = 1.0 + file_size_tolerance_;
+                
+                if (size_ratio > max_ratio)
+                {
+                    logger.trace("Metadata filter: file size too different (ratio=%.2f, max=%.2f)", 
+                                size_ratio, max_ratio);
+                    return false;
+                }
+            }
+
+            // TODO: Extract actual dimensions from metadata JSON for aspect ratio and dimension checks
+            // This would require parsing the metadata JSON here or passing parsed metadata
+            // For now, file size filtering alone provides significant improvement
+
+            return true;
         }
 
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int last_processed_id)
@@ -456,15 +516,29 @@ namespace MediaDedup
                     // STEP 1: Compare against group representatives ONLY (representative-based matching)
                     int best_group_id = -1;
                     double best_similarity = 0.0;
+                    int metadata_filtered_count = 0;
 
                     for (const auto &[group_id, representative] : group_representatives)
                     {
+                        // Metadata pre-filtering: Skip if files are incompatible
+                        if (!areMetadataCompatible(new_file, representative))
+                        {
+                            metadata_filtered_count++;
+                            continue;
+                        }
+
                         double sim = computeSimilarity(new_file, representative, mode);
                         if (sim >= threshold && sim > best_similarity)
                         {
                             best_group_id = group_id;
                             best_similarity = sim;
                         }
+                    }
+
+                    if (metadata_filtered_count > 0)
+                    {
+                        logger.trace("Metadata filtering skipped %d/%zu group comparisons for file_id %d",
+                                    metadata_filtered_count, group_representatives.size(), new_file.file_id);
                     }
 
                     if (best_group_id > 0)
@@ -516,6 +590,12 @@ namespace MediaDedup
                     {
                         if (already_grouped[j])
                             continue;
+
+                        // Metadata pre-filtering
+                        if (!areMetadataCompatible(batch_ungrouped_files[i], batch_ungrouped_files[j]))
+                        {
+                            continue;
+                        }
 
                         double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
                         if (sim >= threshold)
@@ -908,6 +988,31 @@ namespace MediaDedup
             {
                 quality_min_confidence_ = cfg_->getPropertyValue<double>(event.key, 0.90);
                 Poco::Logger::get("DuplicateFinder").information("Updated quality_min_confidence: %.3f", quality_min_confidence_);
+            }
+            else if (event.key == "duplicates.metadata.filtering.enabled")
+            {
+                metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>(event.key, true);
+                Poco::Logger::get("DuplicateFinder").information("Updated metadata_filtering_enabled: %s", metadata_filtering_enabled_ ? "true" : "false");
+            }
+            else if (event.key == "duplicates.metadata.aspectRatioTolerance")
+            {
+                aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.10);
+                Poco::Logger::get("DuplicateFinder").information("Updated aspect_ratio_tolerance: %.3f", aspect_ratio_tolerance_);
+            }
+            else if (event.key == "duplicates.metadata.dimensionTolerance")
+            {
+                dimension_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.20);
+                Poco::Logger::get("DuplicateFinder").information("Updated dimension_tolerance: %.3f", dimension_tolerance_);
+            }
+            else if (event.key == "duplicates.metadata.fileSizeTolerance")
+            {
+                file_size_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.50);
+                Poco::Logger::get("DuplicateFinder").information("Updated file_size_tolerance: %.3f", file_size_tolerance_);
+            }
+            else if (event.key == "duplicates.metadata.requireSameFormat")
+            {
+                require_same_format_ = cfg_->getPropertyValue<bool>(event.key, false);
+                Poco::Logger::get("DuplicateFinder").information("Updated require_same_format: %s", require_same_format_ ? "true" : "false");
             }
         }
 

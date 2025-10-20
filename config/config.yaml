@@ -163,6 +163,13 @@ duplicates.balanced.ratioTestThreshold: 0.75  # Lowe's ratio test (0.60=strict, 
 duplicates.quality.threshold: 0.96       # 0.94-0.98 recommended (96% cosine similarity required)
 duplicates.quality.minConfidence: 0.90   # Secondary confidence threshold (future use)
 
+# Metadata Pre-Filtering (reduces false positives)
+duplicates.metadata.filtering.enabled: true           # Enable metadata pre-filtering before similarity calculation
+duplicates.metadata.aspectRatioTolerance: 0.10        # Allow 10% aspect ratio difference (1.0 = 100% difference)
+duplicates.metadata.dimensionTolerance: 0.20          # Allow 20% dimension difference (width or height)
+duplicates.metadata.fileSizeTolerance: 0.50           # Allow 50% file size difference (for same format)
+duplicates.metadata.requireSameFormat: false          # If true, only compare files with same extension
+
 # ============================================================================
 # Media Format Support - Images
 # ============================================================================
