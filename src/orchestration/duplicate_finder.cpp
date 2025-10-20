@@ -6,6 +6,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <Poco/Data/LOB.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/Dynamic/Var.h>
@@ -681,7 +682,8 @@ namespace MediaDedup
 
                 int id;
                 std::string path, metadata;
-                std::string phash_blob, features_blob, embedding_blob;
+                // CRITICAL FIX: Use CLOB to read BLOBs to prevent NULL-byte truncation
+                Poco::Data::CLOB phash_blob, features_blob, embedding_blob;
                 std::string features_method, embedding_model;
                 int embedding_dim;
 
@@ -737,10 +739,15 @@ namespace MediaDedup
                         artifact.created_date = "";
                     }
 
-                    artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
-                    artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
+                    // Convert CLOBs to byte vectors (CLOB.rawContent() returns const std::string&)
+                    const std::string &phash_str = phash_blob.rawContent();
+                    const std::string &features_str = features_blob.rawContent();
+                    const std::string &embedding_str = embedding_blob.rawContent();
+                    
+                    artifact.phash = std::vector<std::uint8_t>(phash_str.begin(), phash_str.end());
+                    artifact.features = std::vector<std::uint8_t>(features_str.begin(), features_str.end());
                     artifact.features_method = features_method;
-                    artifact.embedding = std::vector<std::uint8_t>(embedding_blob.begin(), embedding_blob.end());
+                    artifact.embedding = std::vector<std::uint8_t>(embedding_str.begin(), embedding_str.end());
                     artifact.embedding_model = embedding_model;
                     artifact.embedding_dim = embedding_dim;
                     return true;
