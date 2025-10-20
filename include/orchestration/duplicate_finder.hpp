@@ -132,6 +132,15 @@ namespace MediaDedup
                                      const std::string &mode);
 
             /**
+             * @brief Check if a file is already in a duplicate group
+             *
+             * @param file_id File ID to check
+             * @param mode Server mode (FAST/BALANCED/QUALITY)
+             * @return Group ID if file is in a group, nullopt otherwise
+             */
+            std::optional<int> getGroupIdForFile(int file_id, const std::string &mode);
+
+            /**
              * @brief Find existing duplicate group for a file (if any)
              *
              * @param file File artifact to check

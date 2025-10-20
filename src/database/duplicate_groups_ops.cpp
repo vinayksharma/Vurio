@@ -691,15 +691,15 @@ namespace MediaDedup
             if (mode.empty())
             {
                 groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPagination),
-                              use(limit),
-                              use(start));
+                               use(limit),
+                               use(start));
             }
             else
             {
                 groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPaginationByMode),
-                              use(mode_copy),
-                              use(limit),
-                              use(start));
+                               use(mode_copy),
+                               use(limit),
+                               use(start));
             }
             groups_stmt.execute();
 

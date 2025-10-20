@@ -31,7 +31,7 @@ namespace MediaDedupServer
                 Poco::URI::QueryParameters params = uri.getQueryParameters();
 
                 int start = 0;
-                int limit = 100; // Default limit
+                int limit = 100;       // Default limit
                 std::string mode = ""; // Empty = all modes
 
                 for (const auto &param : params)
@@ -80,7 +80,7 @@ namespace MediaDedupServer
                         // Validate mode (FAST or QUALITY)
                         std::string mode_upper = param.second;
                         std::transform(mode_upper.begin(), mode_upper.end(), mode_upper.begin(), ::toupper);
-                        
+
                         if (mode_upper == "FAST" || mode_upper == "QUALITY")
                         {
                             mode = mode_upper;

@@ -12,11 +12,11 @@ GET /api/v1/duplicates/groups
 
 ## Query Parameters
 
-| Parameter | Type    | Required | Default | Max  | Description                                      |
-| --------- | ------- | -------- | ------- | ---- | ------------------------------------------------ |
-| `start`   | integer | No       | 0       | -    | Starting index (0-based offset)                  |
-| `limit`   | integer | No       | 100     | 1000 | Number of groups to return per page              |
-| `mode`    | string  | No       | (all)   | -    | Filter by detection mode: `FAST` or `QUALITY`    |
+| Parameter | Type    | Required | Default | Max  | Description                                   |
+| --------- | ------- | -------- | ------- | ---- | --------------------------------------------- |
+| `start`   | integer | No       | 0       | -    | Starting index (0-based offset)               |
+| `limit`   | integer | No       | 100     | 1000 | Number of groups to return per page           |
+| `mode`    | string  | No       | (all)   | -    | Filter by detection mode: `FAST` or `QUALITY` |
 
 ### Alternative Parameter: `end`
 

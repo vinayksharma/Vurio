@@ -1,6 +1,6 @@
 duplicates.finder.batchSize: 1000
 media.video.webm: true
-duplicates.fast.threshold: 0
+duplicates.fast.threshold: 0.90
 media.audio.m4a: true
 media.video.mkv: true
 media.images.raw.bay: true
@@ -19,7 +19,7 @@ media.images.bmp: true
 media.video.ts: true
 media.video.mpeg: true
 media.image.retry.enabled: true
-duplicates.balanced.threshold: 0
+duplicates.balanced.threshold: 0.30
 thumbnail.generation.timeoutMs: 5000
 duplicates.representative.strategy: size_then_age
 media.video.mov: true
@@ -92,7 +92,7 @@ files.manager.enabled: true
 media.image.quality.onnx.sessionCache.maxSessions: 4
 thumbnail.pipeline.enabled: true
 media.images.tif: true
-duplicates.quality.threshold: 0
+duplicates.quality.threshold: 0.95
 cache.disk.location: cache
 media.image.quality.onnx.inputSize: 224
 logging.level: .inf
@@ -124,7 +124,8 @@ tpm.thread.idleTimeoutSeconds: 120
 media.image.balanced.maxKeypoints: 1000
 media.processor.intervalMs: 5000
 server.mode: fast
-database.session.poolMax: 32
+database.session.poolMax: 32start
+
 media.images.raw.mos: true
 cache.disk.size_limit_mb: 2048
 tpm.types.fileScan.share: 1

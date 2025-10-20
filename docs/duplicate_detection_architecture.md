@@ -144,13 +144,16 @@ Every N ms (configurable: duplicates.finder.intervalMs)
 ```
 For each batch of N files (duplicates.finder.batchSize):
   ├─ Query files with id > last_processed_id AND processed_<mode> = 2
-  ├─ Load existing processed files with artifacts
+  ├─ Load ALL existing processed files with artifacts for comparison
   ├─ For each new file:
   │   ├─ Load artifacts (phash/features/embedding)
-  │   ├─ Compute similarity with all existing files
-  │   ├─ If similarity >= threshold:
-  │   │   ├─ Check if existing file is in a group
-  │   │   ├─ Add to existing group OR create new group
+  │   ├─ Skip if file already in a group (added earlier in batch)
+  │   ├─ Find ALL similar files (similarity >= threshold) in existing files
+  │   ├─ If similar files found:
+  │   │   ├─ Group similar files by their current group membership
+  │   │   ├─ If no groups exist: Create new group with ALL similar files
+  │   │   ├─ If one group exists: Add new file + ungrouped similar files to it
+  │   │   ├─ If multiple groups exist: Add to largest group (bridging)
   │   │   └─ Update representative if needed
   │   └─ Add file to "existing files" for next comparisons
   └─ Update checkpoint
@@ -237,9 +240,11 @@ The duplicate finder is registered as a scheduled job with the ThreadPoolManager
 
 ### Complexity
 
-- **Per-file comparison**: O(N) where N = number of processed files
+- **Per-file comparison**: O(N) where N = number of all processed files
+- **Per-batch**: O(B × N) where B = batch size, N = existing processed files
 - **Batch processing**: Limits memory usage and transaction size
-- **Incremental**: Only new files compared, not full dataset
+- **Incremental**: Only new files compared, but against ALL existing files
+- **Group consolidation**: Automatically merges files when they bridge multiple groups
 
 ### Optimization Strategies
 
@@ -256,6 +261,21 @@ For datasets > 100K files:
 - Increase execution interval (e.g., 4 hours)
 - Use mode-specific thresholds to reduce false positives
 
+## Algorithm Improvements (v2)
+
+**Fixed in October 2025:**
+
+- Proper cross-batch comparison (loads all existing files)
+- Groups ALL similar files together (not just pairs)
+- Handles bridging files that connect multiple groups
+- Prevents duplicate group membership checking
+
+**Previous Issues:**
+
+- Groups were always pairs due to batch-only comparison
+- Existing files from previous batches were never loaded
+- No cross-batch duplicate detection
+
 ## Future Enhancements
 
 Potential improvements not yet implemented:
@@ -263,10 +283,11 @@ Potential improvements not yet implemented:
 1. **Approximate Nearest Neighbors (ANN)**: Use FAISS/Annoy for embedding similarity
 2. **Spatial Hashing**: Bucket files by pHash prefix for faster lookup
 3. **Parallel Processing**: Multi-threaded similarity computation
-4. **User Confirmation**: UI for reviewing/confirming duplicates
-5. **Auto-Deletion**: Configurable rules for automatic duplicate removal
-6. **Cross-Mode Detection**: Compare FAST+BALANCED+QUALITY results
-7. **File Metadata**: Consider EXIF data, camera info in comparison
+4. **Complete Group Merging**: Automatically merge multiple groups when bridged
+5. **User Confirmation**: UI for reviewing/confirming duplicates
+6. **Auto-Deletion**: Configurable rules for automatic duplicate removal
+7. **Cross-Mode Detection**: Compare FAST+BALANCED+QUALITY results
+8. **File Metadata**: Consider EXIF data, camera info in comparison
 
 ## API Integration
 

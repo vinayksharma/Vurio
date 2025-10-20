@@ -13,6 +13,7 @@
 #include <sstream>
 #include <iomanip>
 #include <ctime>
+#include <map>
 
 namespace MediaDedup
 {
@@ -132,6 +133,39 @@ namespace MediaDedup
             running_.store(false);
         }
 
+        std::optional<int> DuplicateFinder::getGroupIdForFile(int file_id, const std::string &mode)
+        {
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                Statement stmt(sess);
+
+                int fid = file_id;
+                std::string mode_str = mode;
+                int group_id = 0;
+
+                // Query duplicate_members joined with duplicate_groups to ensure mode matches
+                std::string query =
+                    "SELECT dm.group_id FROM duplicate_members dm "
+                    "JOIN duplicate_groups dg ON dm.group_id = dg.id "
+                    "WHERE dm.file_id = ? AND dg.mode = ? LIMIT 1";
+
+                stmt << query, into(group_id), use(fid), use(mode_str), now;
+
+                if (stmt.execute() > 0 && group_id > 0)
+                {
+                    return group_id;
+                }
+                return std::nullopt;
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("DuplicateFinder").error("Exception in getGroupIdForFile: %s", std::string(e.what()));
+                return std::nullopt;
+            }
+        }
+
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int last_processed_id)
         {
             Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
@@ -238,10 +272,80 @@ namespace MediaDedup
 
                 logger.information("Executing query for existing files with artifacts");
 
-                // For initial implementation, skip loading existing files
-                // to avoid complex RecordSet issues. We'll compare new files against each other.
-                // TODO: Optimize by loading existing files for incremental comparison
-                logger.information("Skipping existing files comparison (comparing new files against each other)");
+                // Load existing files for proper cross-batch duplicate detection
+                try
+                {
+                    Statement existing_stmt(sess);
+                    int existing_last_id = last_processed_id;
+                    std::string mode_copy = mode;
+
+                    existing_stmt << existing_query, use(existing_last_id), use(mode_copy);
+                    existing_stmt.execute();
+
+                    Poco::Data::RecordSet existing_rs(existing_stmt);
+
+                    for (auto &existing_row : existing_rs)
+                    {
+                        FileArtifact artifact;
+                        artifact.file_id = existing_row[0].convert<int>();
+                        artifact.file_path = existing_row[1].convert<std::string>();
+
+                        // Parse file_metadata JSON to extract size and creation date
+                        std::string metadata_json = existing_row[2].isEmpty() ? "" : existing_row[2].convert<std::string>();
+                        if (!metadata_json.empty())
+                        {
+                            try
+                            {
+                                Poco::JSON::Parser parser;
+                                Poco::Dynamic::Var result = parser.parse(metadata_json);
+                                Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+
+                                if (obj->has("sizeBytes"))
+                                {
+                                    artifact.file_size = obj->getValue<int64_t>("sizeBytes");
+                                }
+                                if (obj->has("createdAt"))
+                                {
+                                    int64_t created_ns = obj->getValue<int64_t>("createdAt");
+                                    int64_t created_s = created_ns / 1000000000LL;
+                                    std::time_t created_time = static_cast<std::time_t>(created_s);
+                                    std::tm *tm = std::gmtime(&created_time);
+                                    std::stringstream ss;
+                                    ss << std::put_time(tm, "%Y-%m-%d");
+                                    artifact.created_date = ss.str();
+                                }
+                            }
+                            catch (const std::exception &e)
+                            {
+                                logger.warning("Failed to parse metadata for file_id %d: %s", artifact.file_id, std::string(e.what()));
+                            }
+                        }
+
+                        // Load artifacts
+                        std::string phash_blob = existing_row[3].isEmpty() ? "" : existing_row[3].convert<std::string>();
+                        std::string features_blob = existing_row[4].isEmpty() ? "" : existing_row[4].convert<std::string>();
+                        std::string features_method = existing_row[5].isEmpty() ? "" : existing_row[5].convert<std::string>();
+                        std::string embedding_blob = existing_row[6].isEmpty() ? "" : existing_row[6].convert<std::string>();
+                        std::string embedding_model = existing_row[7].isEmpty() ? "" : existing_row[7].convert<std::string>();
+                        int embedding_dim = existing_row[8].isEmpty() ? 0 : existing_row[8].convert<int>();
+
+                        artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
+                        artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
+                        artifact.features_method = features_method;
+                        artifact.embedding = std::vector<std::uint8_t>(embedding_blob.begin(), embedding_blob.end());
+                        artifact.embedding_model = embedding_model;
+                        artifact.embedding_dim = embedding_dim;
+
+                        existing_files.push_back(artifact);
+                    }
+
+                    logger.information("Loaded %zu existing files for comparison", existing_files.size());
+                }
+                catch (const std::exception &e)
+                {
+                    logger.error("Error loading existing files: %s", std::string(e.what()));
+                    logger.information("Continuing with empty existing files list");
+                }
 
                 logger.debug("Loaded %zu existing files for comparison", existing_files.size());
 
@@ -264,68 +368,147 @@ namespace MediaDedup
 
                     files_checked++;
 
-                    // Find matching group
+                    // Check if this file is already in a group (could have been added earlier in this batch)
+                    auto existing_group_opt = getGroupIdForFile(new_file.file_id, mode);
+                    if (existing_group_opt.has_value())
+                    {
+                        logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
+                        existing_files.push_back(new_file);
+                        new_last_processed_id = file_ids[i];
+                        continue;
+                    }
+
+                    // Find all similar files in existing_files
                     double threshold = getThreshold(mode);
-                    int matching_group_id = -1;
-                    double best_similarity = 0.0;
+                    std::vector<std::pair<int, double>> similar_files; // file_id, similarity
 
                     for (const auto &existing : existing_files)
                     {
                         double sim = computeSimilarity(new_file, existing, mode);
-                        if (sim >= threshold && sim > best_similarity)
+                        if (sim >= threshold)
                         {
-                            // Check if existing file is in a group
-                            auto groups = DuplicateGroupsOps::getGroupsForFile(db_, existing.file_id, mode);
-                            if (!groups.empty())
-                            {
-                                matching_group_id = groups[0].id;
-                                best_similarity = sim;
-                            }
+                            similar_files.push_back({existing.file_id, sim});
                         }
                     }
 
-                    if (matching_group_id > 0)
+                    if (similar_files.empty())
                     {
-                        // Add to existing group
-                        if (addToGroup(matching_group_id, new_file, mode, best_similarity))
+                        // No duplicates found
+                        logger.trace("File_id %d has no duplicates", new_file.file_id);
+                        existing_files.push_back(new_file);
+                        new_last_processed_id = file_ids[i];
+                        continue;
+                    }
+
+                    // Find if any of the similar files are in existing groups
+                    std::map<int, std::vector<int>> groups_to_files; // group_id -> [file_ids]
+                    std::vector<int> ungrouped_similar_files;
+
+                    for (const auto &[similar_file_id, sim] : similar_files)
+                    {
+                        auto group_opt = getGroupIdForFile(similar_file_id, mode);
+                        if (group_opt.has_value())
                         {
-                            duplicates_found++;
-                            groups_updated++;
-                            logger.debug("Added file_id %d to existing group %d (similarity=%.3f)",
-                                         new_file.file_id, matching_group_id, best_similarity);
+                            groups_to_files[group_opt.value()].push_back(similar_file_id);
+                        }
+                        else
+                        {
+                            ungrouped_similar_files.push_back(similar_file_id);
                         }
                     }
-                    else
-                    {
-                        // Check if this new file matches any other new file in this batch
-                        bool found_match = false;
-                        for (size_t j = 0; j < i; ++j)
-                        {
-                            FileArtifact other_new;
-                            if (!loadFileArtifacts(file_ids[j], mode, other_new))
-                                continue;
 
-                            double sim = computeSimilarity(new_file, other_new, mode);
-                            if (sim >= threshold)
+                    if (groups_to_files.empty())
+                    {
+                        // No existing groups - create new group with all similar files
+                        std::vector<FileArtifact> group_members;
+                        group_members.push_back(new_file);
+
+                        for (int similar_fid : ungrouped_similar_files)
+                        {
+                            // Find the artifact in existing_files
+                            for (const auto &existing : existing_files)
                             {
-                                // Create new group with both files
-                                std::vector<FileArtifact> group_members = {new_file, other_new};
-                                int new_group_id = createDuplicateGroup(group_members, mode, threshold);
-                                if (new_group_id > 0)
+                                if (existing.file_id == similar_fid)
                                 {
-                                    duplicates_found += 2;
-                                    groups_created++;
-                                    found_match = true;
-                                    logger.debug("Created new group %d with file_ids %d and %d (similarity=%.3f)",
-                                                 new_group_id, new_file.file_id, other_new.file_id, sim);
+                                    group_members.push_back(existing);
                                     break;
                                 }
                             }
                         }
 
-                        if (!found_match)
+                        int new_group_id = createDuplicateGroup(group_members, mode, threshold);
+                        if (new_group_id > 0)
                         {
-                            logger.trace("File_id %d has no duplicates yet", new_file.file_id);
+                            duplicates_found += static_cast<int>(group_members.size());
+                            groups_created++;
+                            logger.information("Created new group %d with %zu members", new_group_id, group_members.size());
+                        }
+                    }
+                    else if (groups_to_files.size() == 1)
+                    {
+                        // Add to the single existing group
+                        int target_group_id = groups_to_files.begin()->first;
+                        double best_sim = similar_files[0].second; // Use first similar file's similarity
+
+                        if (addToGroup(target_group_id, new_file, mode, best_sim))
+                        {
+                            duplicates_found++;
+                            groups_updated++;
+                            logger.debug("Added file_id %d to existing group %d (similarity=%.3f)",
+                                         new_file.file_id, target_group_id, best_sim);
+                        }
+
+                        // Also add any ungrouped similar files to this group
+                        for (int similar_fid : ungrouped_similar_files)
+                        {
+                            for (const auto &existing : existing_files)
+                            {
+                                if (existing.file_id == similar_fid)
+                                {
+                                    // Check if not already added
+                                    auto check_group = getGroupIdForFile(similar_fid, mode);
+                                    if (!check_group.has_value())
+                                    {
+                                        double sim = computeSimilarity(new_file, existing, mode);
+                                        if (addToGroup(target_group_id, existing, mode, sim))
+                                        {
+                                            duplicates_found++;
+                                            groups_updated++;
+                                            logger.debug("Added bridging file_id %d to group %d", similar_fid, target_group_id);
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Multiple groups found - need to merge (handled in next step)
+                        // For now, add to the largest group
+                        int largest_group_id = -1;
+                        size_t max_size = 0;
+
+                        for (const auto &[gid, files] : groups_to_files)
+                        {
+                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, gid);
+                            if (group_opt.has_value() && static_cast<size_t>(group_opt->member_count) > max_size)
+                            {
+                                largest_group_id = gid;
+                                max_size = group_opt->member_count;
+                            }
+                        }
+
+                        if (largest_group_id > 0)
+                        {
+                            double best_sim = similar_files[0].second;
+                            if (addToGroup(largest_group_id, new_file, mode, best_sim))
+                            {
+                                duplicates_found++;
+                                groups_updated++;
+                                logger.information("Added bridging file_id %d to largest group %d (bridges %zu groups)",
+                                                   new_file.file_id, largest_group_id, groups_to_files.size());
+                            }
                         }
                     }
 
