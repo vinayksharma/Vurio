@@ -3,6 +3,7 @@
 #include "database/sql_constants.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <Poco/Data/LOB.h>
 #include <Poco/Logger.h>
 #include <string>
 
@@ -110,7 +111,9 @@ namespace MediaDedup
             std::string mode = r.mode;
             std::string model = r.model;
             int dim = r.dim;
-            std::string blob = toBinaryString(r.embedding_blob);
+            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
+            // std::string would truncate at first NULL byte (0x00) in embedding data
+            Poco::Data::CLOB blob(reinterpret_cast<const char*>(r.embedding_blob.data()), r.embedding_blob.size());
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageEmbedding),
                 Keywords::use(file_path),
