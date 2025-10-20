@@ -3,7 +3,8 @@
 
 #ifdef HAVE_OPENCV
 #include <opencv2/opencv.hpp>
-#include <opencv2/img_hash.hpp>
+#include <algorithm>
+#include <vector>
 #endif
 
 namespace MediaDedup
@@ -49,31 +50,70 @@ namespace MediaDedup
             // Release original image memory immediately (can be 70MB+ for large images)
             img.release();
 
-            // Compute perceptual hash (pHash)
-            cv::Mat hash;
-            cv::img_hash::pHash(resized, hash);
-
-            // Release resized image memory immediately
+            // Compute proper DCT-based perceptual hash (64-bit)
+            // Algorithm:
+            // 1. Convert to grayscale
+            // 2. Resize to 32x32
+            // 3. Apply DCT
+            // 4. Extract top-left 8x8 DCT coefficients (low frequencies)
+            // 5. Compare to median to generate 64-bit hash
+            
+            cv::Mat gray;
+            cv::cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
+            
+            // Resize to 32x32 for DCT
+            cv::Mat small;
+            cv::resize(gray, small, cv::Size(32, 32), 0, 0, cv::INTER_AREA);
+            
+            // Release previous matrices
             resized.release();
-
-            // Reduce to 64-bit equivalent by hashing the cv::Mat bytes (simple approach)
-            std::uint64_t acc = 1469598103934665603ULL; // FNV offset basis
-            for (int r = 0; r < hash.rows; ++r)
+            gray.release();
+            
+            // Convert to float for DCT
+            cv::Mat float_img;
+            small.convertTo(float_img, CV_32F);
+            small.release();
+            
+            // Apply DCT (Discrete Cosine Transform)
+            cv::Mat dct_img;
+            cv::dct(float_img, dct_img);
+            float_img.release();
+            
+            // Extract top-left 8x8 coefficients
+            std::vector<float> dct_values;
+            dct_values.reserve(64);
+            
+            for (int y = 0; y < 8; ++y)
             {
-                const unsigned char *ptr = hash.ptr<unsigned char>(r);
-                for (int c = 0; c < hash.cols; ++c)
+                for (int x = 0; x < 8; ++x)
                 {
-                    acc ^= static_cast<std::uint64_t>(ptr[c]);
-                    acc *= 1099511628211ULL; // FNV prime
+                    dct_values.push_back(dct_img.at<float>(y, x));
                 }
             }
-
-            // Release hash matrix memory
-            hash.release();
-
+            
+            dct_img.release();
+            
+            // Calculate median of ALL 64 DCT values
+            std::vector<float> sorted_values = dct_values;
+            std::sort(sorted_values.begin(), sorted_values.end());
+            float median = sorted_values[sorted_values.size() / 2];
+            
+            // Generate 64-bit hash: 1 if > median, 0 otherwise
+            std::uint64_t hash_value = 0;
+            for (size_t i = 0; i < 64; ++i)
+            {
+                if (dct_values[i] > median)
+                {
+                    hash_value |= (1ULL << i);
+                }
+            }
+            
+            // Convert to byte array (8 bytes = 64 bits)
             out.phash64.resize(8);
             for (int i = 0; i < 8; ++i)
-                out.phash64[i] = static_cast<std::uint8_t>((acc >> (i * 8)) & 0xFF);
+            {
+                out.phash64[i] = static_cast<std::uint8_t>((hash_value >> (i * 8)) & 0xFF);
+            }
             out.thumb_w = new_w;
             out.thumb_h = new_h;
             return true;
@@ -136,31 +176,62 @@ namespace MediaDedup
             // Release original decoded image memory immediately (can be 70MB+ for large images)
             img.release();
 
-            // Compute perceptual hash (pHash)
-            cv::Mat hash;
-            cv::img_hash::pHash(resized, hash);
-
-            // Release resized image memory immediately
+            // Compute proper DCT-based perceptual hash (64-bit)
+            cv::Mat gray;
+            cv::cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
+            
+            // Resize to 32x32 for DCT
+            cv::Mat small;
+            cv::resize(gray, small, cv::Size(32, 32), 0, 0, cv::INTER_AREA);
+            
+            // Release previous matrices
             resized.release();
-
-            // Reduce to 64-bit equivalent by hashing the cv::Mat bytes (simple approach)
-            std::uint64_t acc = 1469598103934665603ULL; // FNV offset basis
-            for (int r = 0; r < hash.rows; ++r)
+            gray.release();
+            
+            // Convert to float for DCT
+            cv::Mat float_img;
+            small.convertTo(float_img, CV_32F);
+            small.release();
+            
+            // Apply DCT
+            cv::Mat dct_img;
+            cv::dct(float_img, dct_img);
+            float_img.release();
+            
+            // Extract top-left 8x8 coefficients
+            std::vector<float> dct_values;
+            dct_values.reserve(64);
+            
+            for (int y = 0; y < 8; ++y)
             {
-                for (int c = 0; c < hash.cols; ++c)
+                for (int x = 0; x < 8; ++x)
                 {
-                    acc ^= static_cast<std::uint8_t>(hash.at<uchar>(r, c));
-                    acc *= 1099511628211ULL; // FNV prime
+                    dct_values.push_back(dct_img.at<float>(y, x));
                 }
             }
-
-            // Release hash matrix memory
-            hash.release();
-
+            
+            dct_img.release();
+            
+            // Calculate median of ALL 64 DCT values
+            std::vector<float> sorted_values = dct_values;
+            std::sort(sorted_values.begin(), sorted_values.end());
+            float median = sorted_values[sorted_values.size() / 2];
+            
+            // Generate 64-bit hash: 1 if > median, 0 otherwise
+            std::uint64_t hash_value = 0;
+            for (size_t i = 0; i < 64; ++i)
+            {
+                if (dct_values[i] > median)
+                {
+                    hash_value |= (1ULL << i);
+                }
+            }
+            
+            // Convert to byte array
             out.phash64.resize(8);
             for (int i = 0; i < 8; ++i)
             {
-                out.phash64[i] = static_cast<std::uint8_t>((acc >> (i * 8)) & 0xFF);
+                out.phash64[i] = static_cast<std::uint8_t>((hash_value >> (i * 8)) & 0xFF);
             }
             out.thumb_w = new_w;
             out.thumb_h = new_h;

@@ -60,6 +60,7 @@ set(UNIT_TEST_SOURCES
     unit/test_scheduler_concurrency.cpp
     unit/test_quality_pipeline_memory.cpp
     unit/test_onnx_session_manager.cpp
+    unit/test_phash_quality.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -132,6 +133,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_onnx_session_manager")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="OnnxSessionManagerTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_phash_quality")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PhashQualityTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -469,7 +477,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
       NOT ${test_name} STREQUAL "test_disk_cache" AND
       NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
-      NOT ${test_name} STREQUAL "test_stderr_capture")
+      NOT ${test_name} STREQUAL "test_stderr_capture" AND
+      NOT ${test_name} STREQUAL "test_phash_quality")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()
