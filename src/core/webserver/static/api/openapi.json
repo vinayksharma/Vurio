@@ -370,7 +370,7 @@
     "/api/v1/duplicates/groups": {
       "get": {
         "summary": "Get paginated duplicate groups with members",
-        "description": "Returns duplicate groups with representative and candidate files (all as fully qualified paths), sorted by created_at ascending",
+        "description": "Returns duplicate groups with representative and candidate files (all as fully qualified paths), sorted by created_at ascending. Optionally filter by detection mode.",
         "parameters": [
           {
             "name": "start",
@@ -393,6 +393,16 @@
               "default": 100,
               "minimum": 1,
               "maximum": 1000
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "description": "Filter by detection mode (FAST or QUALITY). Omit to return all modes.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["FAST", "QUALITY"]
             }
           }
         ],

@@ -400,8 +400,16 @@ namespace MediaDedup
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
             "FROM duplicate_groups ORDER BY created_at ASC LIMIT ? OFFSET ?";
 
+        inline constexpr std::string_view kSelectDuplicateGroupsWithPaginationByMode =
+            "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
+            "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
+            "FROM duplicate_groups WHERE mode=? ORDER BY created_at ASC LIMIT ? OFFSET ?";
+
         inline constexpr std::string_view kSelectDuplicateGroupsCount =
             "SELECT COUNT(*) FROM duplicate_groups";
+
+        inline constexpr std::string_view kSelectDuplicateGroupsCountByMode =
+            "SELECT COUNT(*) FROM duplicate_groups WHERE mode=?";
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
             "SELECT file_id, file_path, similarity_score, file_size, created_date, is_representative, added_at "

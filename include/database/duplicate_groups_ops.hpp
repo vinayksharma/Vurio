@@ -128,7 +128,7 @@ namespace MediaDedup
         static DuplicateStats getStats(DatabaseManager &db, const std::string &mode);
 
         // Paginated retrieval with members (for API)
-        static DuplicateGroupsPage getGroupsWithMembers(DatabaseManager &db, int start, int limit);
+        static DuplicateGroupsPage getGroupsWithMembers(DatabaseManager &db, int start, int limit, const std::string &mode = "");
 
         // Checkpoint operations
         static bool upsertCheckpoint(DatabaseManager &db,

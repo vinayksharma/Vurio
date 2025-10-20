@@ -12,10 +12,11 @@ GET /api/v1/duplicates/groups
 
 ## Query Parameters
 
-| Parameter | Type    | Required | Default | Max  | Description                         |
-| --------- | ------- | -------- | ------- | ---- | ----------------------------------- |
-| `start`   | integer | No       | 0       | -    | Starting index (0-based offset)     |
-| `limit`   | integer | No       | 100     | 1000 | Number of groups to return per page |
+| Parameter | Type    | Required | Default | Max  | Description                                      |
+| --------- | ------- | -------- | ------- | ---- | ------------------------------------------------ |
+| `start`   | integer | No       | 0       | -    | Starting index (0-based offset)                  |
+| `limit`   | integer | No       | 100     | 1000 | Number of groups to return per page              |
+| `mode`    | string  | No       | (all)   | -    | Filter by detection mode: `FAST` or `QUALITY`    |
 
 ### Alternative Parameter: `end`
 
@@ -109,10 +110,22 @@ ON duplicate_groups(created_at);
 
 ## Examples
 
-### Get first 10 groups
+### Get first 10 groups (all modes)
 
 ```bash
 curl "http://localhost:8080/api/v1/duplicates/groups?start=0&limit=10"
+```
+
+### Get first 10 FAST mode groups only
+
+```bash
+curl "http://localhost:8080/api/v1/duplicates/groups?start=0&limit=10&mode=FAST"
+```
+
+### Get first 10 QUALITY mode groups only
+
+```bash
+curl "http://localhost:8080/api/v1/duplicates/groups?start=0&limit=10&mode=QUALITY"
 ```
 
 ### Get groups 100-200

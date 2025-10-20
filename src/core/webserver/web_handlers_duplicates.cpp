@@ -8,6 +8,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/Logger.h>
 #include <sstream>
+#include <algorithm>
 
 namespace MediaDedupServer
 {
@@ -31,6 +32,7 @@ namespace MediaDedupServer
 
                 int start = 0;
                 int limit = 100; // Default limit
+                std::string mode = ""; // Empty = all modes
 
                 for (const auto &param : params)
                 {
@@ -73,12 +75,27 @@ namespace MediaDedupServer
                             logger.warning("Invalid limit/end parameter: %s", param.second);
                         }
                     }
+                    else if (param.first == "mode")
+                    {
+                        // Validate mode (FAST or QUALITY)
+                        std::string mode_upper = param.second;
+                        std::transform(mode_upper.begin(), mode_upper.end(), mode_upper.begin(), ::toupper);
+                        
+                        if (mode_upper == "FAST" || mode_upper == "QUALITY")
+                        {
+                            mode = mode_upper;
+                        }
+                        else
+                        {
+                            logger.warning("Invalid mode parameter (must be FAST or QUALITY): %s", param.second);
+                        }
+                    }
                 }
 
-                logger.debug("Retrieving duplicate groups: start=%d, limit=%d", start, limit);
+                logger.debug("Retrieving duplicate groups: start=%d, limit=%d, mode=%s", start, limit, mode.empty() ? "all" : mode.c_str());
 
-                // Get groups with members from database
-                auto page = MediaDedup::DuplicateGroupsOps::getGroupsWithMembers(*database_manager_, start, limit);
+                // Get groups with members from database (filtered by mode if provided)
+                auto page = MediaDedup::DuplicateGroupsOps::getGroupsWithMembers(*database_manager_, start, limit, mode);
 
                 // Build JSON response
                 Poco::JSON::Object root;

@@ -657,7 +657,7 @@ namespace MediaDedup
         }
     }
 
-    DuplicateGroupsPage DuplicateGroupsOps::getGroupsWithMembers(DatabaseManager &db, int start, int limit)
+    DuplicateGroupsPage DuplicateGroupsOps::getGroupsWithMembers(DatabaseManager &db, int start, int limit, const std::string &mode)
     {
         Poco::Logger &logger = Poco::Logger::get("DuplicateGroupsOps");
         DuplicateGroupsPage page;
@@ -669,16 +669,38 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
 
-            // Get total count
-            Statement count_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsCount), into(page.total_count));
-            count_stmt.execute();
+            // Create non-const copy for Poco::Data binding (use() requires non-const)
+            std::string mode_copy = mode;
 
-            logger.debug("Total duplicate groups count: %d", page.total_count);
+            // Get total count (filtered by mode if provided)
+            if (mode.empty())
+            {
+                Statement count_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsCount), into(page.total_count));
+                count_stmt.execute();
+            }
+            else
+            {
+                Statement count_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsCountByMode), into(page.total_count), use(mode_copy));
+                count_stmt.execute();
+            }
 
-            // Get paginated groups
-            Statement groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPagination),
-                                     use(limit),
-                                     use(start));
+            logger.debug("Total duplicate groups count (mode=%s): %d", mode.empty() ? "all" : mode.c_str(), page.total_count);
+
+            // Get paginated groups (filtered by mode if provided)
+            Statement groups_stmt(sess);
+            if (mode.empty())
+            {
+                groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPagination),
+                              use(limit),
+                              use(start));
+            }
+            else
+            {
+                groups_stmt = (sess << std::string(SQL::kSelectDuplicateGroupsWithPaginationByMode),
+                              use(mode_copy),
+                              use(limit),
+                              use(start));
+            }
             groups_stmt.execute();
 
             Poco::Data::RecordSet rs(groups_stmt);
