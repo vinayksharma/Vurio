@@ -53,6 +53,12 @@ namespace MediaDedup
             quality_threshold_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold", 0.95);
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
+            // Quality parameters
+            fast_min_hash_size_ = cfg_->getPropertyValue<int>("duplicates.fast.minHashSize", 64);
+            balanced_min_good_matches_ = cfg_->getPropertyValue<int>("duplicates.balanced.minGoodMatches", 15);
+            balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.ratioTestThreshold", 0.75);
+            quality_min_confidence_ = cfg_->getPropertyValue<double>("duplicates.quality.minConfidence", 0.90);
+
             // Subscribe to config changes
             cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                            { onConfigChange(event); });
@@ -680,7 +686,8 @@ namespace MediaDedup
             else if (mode == "BALANCED")
             {
                 return SimilarityCalculator::computeFeatureSimilarity(
-                    file1.features, file2.features, file1.features_method);
+                    file1.features, file2.features, file1.features_method,
+                    balanced_ratio_test_threshold_, balanced_min_good_matches_);
             }
             else // QUALITY
             {
@@ -881,6 +888,26 @@ namespace MediaDedup
             {
                 quality_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.95);
                 Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold: %.3f", quality_threshold_);
+            }
+            else if (event.key == "duplicates.fast.minHashSize")
+            {
+                fast_min_hash_size_ = cfg_->getPropertyValue<int>(event.key, 64);
+                Poco::Logger::get("DuplicateFinder").information("Updated fast_min_hash_size: %d", fast_min_hash_size_);
+            }
+            else if (event.key == "duplicates.balanced.minGoodMatches")
+            {
+                balanced_min_good_matches_ = cfg_->getPropertyValue<int>(event.key, 15);
+                Poco::Logger::get("DuplicateFinder").information("Updated balanced_min_good_matches: %d", balanced_min_good_matches_);
+            }
+            else if (event.key == "duplicates.balanced.ratioTestThreshold")
+            {
+                balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.75);
+                Poco::Logger::get("DuplicateFinder").information("Updated balanced_ratio_test_threshold: %.3f", balanced_ratio_test_threshold_);
+            }
+            else if (event.key == "duplicates.quality.minConfidence")
+            {
+                quality_min_confidence_ = cfg_->getPropertyValue<double>(event.key, 0.90);
+                Poco::Logger::get("DuplicateFinder").information("Updated quality_min_confidence: %.3f", quality_min_confidence_);
             }
         }
 

@@ -39,15 +39,17 @@ namespace MediaDedup
     double SimilarityCalculator::computePhashSimilarity(const std::vector<std::uint8_t> &hash1,
                                                         const std::vector<std::uint8_t> &hash2)
     {
+        Poco::Logger &logger = Poco::Logger::get("SimilarityCalculator");
+
         if (hash1.empty() || hash2.empty())
         {
-            Poco::Logger::get("SimilarityCalculator").debug("Empty pHash provided");
+            logger.debug("Empty pHash provided");
             return 0.0;
         }
 
         if (hash1.size() != hash2.size())
         {
-            Poco::Logger::get("SimilarityCalculator").warning("pHash size mismatch: %zu vs %zu", hash1.size(), hash2.size());
+            logger.warning("pHash size mismatch: %zu vs %zu", hash1.size(), hash2.size());
             return 0.0;
         }
 
@@ -61,7 +63,8 @@ namespace MediaDedup
         int max_bits = static_cast<int>(hash1.size() * 8);
         double similarity = 1.0 - (static_cast<double>(distance) / max_bits);
 
-        Poco::Logger::get("SimilarityCalculator").trace("pHash similarity: %f (distance=%d bits out of %d)", similarity, distance, max_bits);
+        logger.debug("pHash similarity: %.4f (hamming distance=%d bits out of %d, %d bits different)",
+                     similarity, distance, max_bits, distance);
 
         return similarity;
     }
@@ -131,7 +134,7 @@ namespace MediaDedup
         // Clamp to [-1, 1] due to floating point errors
         similarity = std::max(-1.0, std::min(1.0, similarity));
 
-        Poco::Logger::get("SimilarityCalculator").trace("Embedding similarity: %f (dim=%d)", similarity, dim);
+        Poco::Logger::get("SimilarityCalculator").debug("Embedding similarity: %.4f (cosine similarity, dim=%d, dot=%.2f, norm1=%.2f, norm2=%.2f)", similarity, dim, dot_product, norm1, norm2);
 
         return similarity;
     }
@@ -214,11 +217,15 @@ namespace MediaDedup
 
     double SimilarityCalculator::computeFeatureSimilarity(const std::vector<std::uint8_t> &features1,
                                                           const std::vector<std::uint8_t> &features2,
-                                                          const std::string &method)
+                                                          const std::string &method,
+                                                          double ratio_threshold,
+                                                          int min_good_matches)
     {
+        Poco::Logger &logger = Poco::Logger::get("SimilarityCalculator");
+
         if (features1.empty() || features2.empty())
         {
-            Poco::Logger::get("SimilarityCalculator").debug("Empty features provided");
+            logger.debug("Empty features provided");
             return 0.0;
         }
 
@@ -228,25 +235,25 @@ namespace MediaDedup
 
         if (!deserializeFeatures(features1, keypoints1, descriptors1))
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Failed to deserialize features1");
+            logger.warning("Failed to deserialize features1");
             return 0.0;
         }
 
         if (!deserializeFeatures(features2, keypoints2, descriptors2))
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Failed to deserialize features2");
+            logger.warning("Failed to deserialize features2");
             return 0.0;
         }
 
         if (descriptors1.empty() || descriptors2.empty())
         {
+            logger.debug("Empty descriptors after deserialization");
             return 0.0;
         }
 
-        // Simplified feature matching using Hamming distance
+        // Feature matching using Hamming distance with Lowe's ratio test
         // For each descriptor in set 1, find best and second-best match in set 2
         int good_matches = 0;
-        const double ratio_threshold = 0.75; // Lowe's ratio test threshold
 
         for (size_t i = 0; i < descriptors1.size(); ++i)
         {
@@ -278,13 +285,21 @@ namespace MediaDedup
             }
         }
 
+        // Check minimum good matches requirement
+        if (min_good_matches > 0 && good_matches < min_good_matches)
+        {
+            logger.debug("Feature matching rejected: only %d good matches (minimum %d required)",
+                         good_matches, min_good_matches);
+            return 0.0;
+        }
+
         // Similarity is the ratio of good matches to total keypoints
         double similarity = static_cast<double>(good_matches) /
                             std::max(descriptors1.size(), descriptors2.size());
 
-        Poco::Logger::get("SimilarityCalculator").trace("Feature similarity (%s): %f (%d good matches out of %zu/%zu features)", method.c_str(), similarity, good_matches, descriptors1.size(), descriptors2.size());
+        logger.debug("Feature similarity (%s): %.3f (%d good matches out of %zu/%zu features, ratio_threshold=%.2f)",
+                     method.c_str(), similarity, good_matches, descriptors1.size(), descriptors2.size(), ratio_threshold);
 
         return similarity;
     }
 }
-

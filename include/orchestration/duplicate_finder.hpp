@@ -230,6 +230,12 @@ namespace MediaDedup
             double balanced_threshold_ = 0.30;
             double quality_threshold_ = 0.95;
             std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
+
+            // Quality parameters
+            int fast_min_hash_size_ = 64;
+            int balanced_min_good_matches_ = 15;
+            double balanced_ratio_test_threshold_ = 0.75;
+            double quality_min_confidence_ = 0.90;
         };
     } // namespace Orchestration
 } // namespace MediaDedup

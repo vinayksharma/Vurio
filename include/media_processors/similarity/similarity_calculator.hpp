@@ -71,7 +71,9 @@ namespace MediaDedup
          */
         static double computeFeatureSimilarity(const std::vector<std::uint8_t> &features1,
                                                const std::vector<std::uint8_t> &features2,
-                                               const std::string &method);
+                                               const std::string &method,
+                                               double ratio_threshold = 0.75,
+                                               int min_good_matches = 0);
 
         /**
          * @brief Convert byte array to float32 vector
@@ -105,4 +107,3 @@ namespace MediaDedup
         static int popcount(std::uint8_t byte);
     };
 }
-
