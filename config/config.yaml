@@ -1,150 +1,244 @@
-duplicates.finder.batchSize: 1000
-media.video.mkv: true
-media.audio.m4a: true
-duplicates.fast.threshold: 0.92
-duplicates.fast.minHashSize: 64
-media.video.webm: true
-media.images.raw.bay: true
-media.images.raw.orf: true
-tpm.types.thumbnail_generator.share: 1
-media.video.ts: true
-media.video.mpeg: true
-media.images.raw.iiq: true
-media.images.raw.srw: true
-files.service.immediateJobTrigger.timeoutMs: 30000
-tpm.types.duplicate_finder.share: 1
-media.video.ogv: true
-duplicates.finder.intervalMs: 5000
-media.images.raw.dcr: true
-media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
-media.images.bmp: true
-media.images.pbm: true
-media.image.retry.enabled: true
-duplicates.balanced.threshold: 0.35
-duplicates.balanced.minGoodMatches: 15
-duplicates.balanced.ratioTestThreshold: 0.75
-thumbnail.generation.timeoutMs: 5000
-media.video.mov: true
-duplicates.representative.strategy: size_then_age
-tpm.types.image_processor.share: 1
-media.audio.au: true
-media.video.m4v: true
-media.audio.amr: true
-scheduler.jitter.enabled: false
-thumbnail.default.size: 256
-media.video.mts: true
-media.images.pnm: true
-media.image.transcoding.timeoutMs: 120000
-media.audio.opus: true
-media.video.avi: true
-duplicates.finder.maxGroupSize: 100
-media.images.raw.rw2: true
-server.http.threadPool.maxQueued: 50
-media.audio.aiff: true
-media.images.raw.raf: true
-media.audio.flac: true
-media.images.raw.rwl: true
-media.images.raw.nrw: true
-server.port: 8080
-media.images.raw.fff: true
-scheduler.jitter.percent: 0
-media.images.raw.dng: true
-media.images.raw.arw: true
-media.audio.alac: true
-duplicates.finder.enabled: true
-media.image.retry.maxAttempts: 2
-media.images.raw.3fr: true
-media.image.quality.onnx.sessionCache.enabled: true
-media.video.m2ts: true
-media.audio.ogg: true
-media.video.mp4: true
-media.images.webp: true
-media.images.raw.pef: true
-media.images.tiff: true
-media.audio.mp3: true
-media.images.raw.mef: true
-media.images.raw.kdc: true
-media.images.png: true
-media.images.raw.cr2: true
+# ============================================================================
+# Media Deduplication Server - Configuration
+# ============================================================================
+# This file is monitored for changes and reloaded automatically (1s interval)
+# Most settings take effect immediately without restart
+# ============================================================================
+
+# ============================================================================
+# Server Settings
+# ============================================================================
 server.name: Media Deduplication Server
-media.audio.aac: true
-files.manager.scan.intervalMs: 900000
+server.host: localhost
+server.port: 8080
+server.mode: quality                    # FAST | BALANCED | QUALITY - processing profile
+server.processName: media_dedup_server
+server.instanceCheck.enabled: true      # Prevent multiple server instances
+server.instanceCheck.bufferSize: 128
+
+# HTTP Server Thread Pool
+server.http.threadPool.maxThreads: auto  # 'auto' = 75% of CPU cores + 1
+server.http.threadPool.maxQueued: 50     # Request queue depth
+
+# ============================================================================
+# Database Settings
+# ============================================================================
+database.path: data/dedup_server.db
+database.session.poolMin: 8              # Minimum connection pool size
+database.session.poolMax: 32             # Maximum connection pool size
+database.session.acquireTimeoutMs: 10000 # Max wait to acquire session
+database.session.acquireBackoffMs: 50    # Retry backoff delay
+database.sqlite.cacheSize: 1000          # SQLite cache pages
+database.sqlite.tempStore: memory        # Use memory for temp tables
+
+# ============================================================================
+# Logging Settings
+# ============================================================================
+logging.level: .inf                      # trace | debug | info | warn | error
+
+# ============================================================================
+# Cache Settings
+# ============================================================================
+# Disk Cache (for transcoded files)
+cache.disk.location: cache
+cache.disk.size_limit_mb: 2048           # 2GB limit
+cache.disk.clearOnStartup: true          # Clear temporary transcoded files
+
+# Thumbnail Cache
+cache.thumbnail.location: cache/thumbnails
+cache.thumbnail.size_limit_mb: 10240     # 10GB limit
+cache.thumbnail.clearOnStartup: false    # Persist thumbnails across restarts
+
+# ============================================================================
+# Thumbnail Generation Settings
+# ============================================================================
+thumbnail.pipeline.enabled: true         # Auto-generate thumbnails during processing
+thumbnail.pipeline.size: 256             # Default size (pixels)
+thumbnail.pipeline.onlyIfMissing: true   # Skip if thumbnail exists
+thumbnail.default.size: 256
+thumbnail.allowed.sizes: 128             # API allowed sizes
+thumbnail.jpeg.quality: 85               # JPEG quality (0-100, higher = better)
+thumbnail.generation.timeoutMs: 5000     # Per-thumbnail timeout
+
+# ============================================================================
+# Thread Pool Manager (TPM) Settings
+# ============================================================================
+tpm.pool.max: auto                       # 'auto' = 75% of CPU cores + 1
+tpm.killTimeoutMs: 10000                 # Graceful shutdown timeout
+tpm.thread.idleTimeoutSeconds: 120       # Thread reap timeout
+tpm.thread.stackSizeKB: 1024             # Thread stack size
+
+# TPM Task Type Shares (concurrency allocation)
+tpm.types.media_processor.share: 1
+tpm.types.image_processor.share: 1
+tpm.types.audio_processor.share: 1
+tpm.types.video_processor.share: 1
+tpm.types.fileScan.share: 1
+tpm.types.thumbnail_generator.share: 1
+tpm.types.duplicate_finder.share: 1
+
+# ============================================================================
+# Scheduler Settings
+# ============================================================================
+scheduler.jobs: ""
+scheduler.jitter.enabled: false          # Randomize schedule times
+scheduler.jitter.percent: 0
+scheduler.drift.mode: anchored           # anchored | floating
+scheduler.drift.maxDriftMs: 60000
+scheduler.maxConsecutiveFailures: 5
+
+# Exponential Backoff (after failures)
+scheduler.backoff.enabled: true
+scheduler.backoff.initialMs: 1000
+scheduler.backoff.multiplier: 2
+scheduler.backoff.maxMs: 30000
+scheduler.backoff.jitterPercent: 10
+
+# ============================================================================
+# Files Manager Settings
+# ============================================================================
+files.manager.enabled: true
+files.manager.scan.intervalMs: 900000    # 15 minutes
+files.manager.useInMemoryIndex: false
+
+# Immediate Scan Trigger
+files.service.immediateJobTrigger.enabled: true
+files.service.immediateJobTrigger.timeoutMs: 30000
+
+# ============================================================================
+# Media Processor Settings
+# ============================================================================
+media.processor.enabled: true
+media.processor.intervalMs: 5000         # Processing dispatch frequency
+media.processor.maxQueueSize: 1000
+
+# Image Processing
+media.image.timeoutMs: 30000             # Per-image timeout
+media.image.retry.enabled: true
+media.image.retry.maxAttempts: 2
+media.image.retry.baseDelayMs: 500
+
+# Image Transcoding (RAW to JPEG conversion)
+media.image.transcoding.enabled: true
+media.image.transcoding.timeoutMs: 120000  # 2 minutes for large RAW files
+media.image.transcoding.preserveMetadata: true
+
+# ============================================================================
+# Image Processing Pipeline Settings (Mode-Specific)
+# ============================================================================
+
+# FAST Mode - Perceptual Hash (pHash)
+media.image.fast.thumbSize: 256          # Thumbnail size for pHash generation
+
+# BALANCED Mode - ORB Feature Matching
+media.image.balanced.resizeLongEdge: 1024    # Resize before feature detection
+media.image.balanced.maxKeypoints: 1500      # Max features to detect (increased for accuracy)
+
+# QUALITY Mode - CLIP Deep Learning Embeddings
+media.image.quality.embeddingDim: 512        # CLIP embedding dimension
+media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
+media.image.quality.onnx.inputSize: 224      # Input image size for CLIP
+media.image.quality.onnx.sessionCache.enabled: true
+media.image.quality.onnx.sessionCache.maxSessions: 4
+
+# ============================================================================
+# Duplicate Detection Settings
+# ============================================================================
+duplicates.finder.enabled: true
+duplicates.finder.intervalMs: 5000       # Run every 5 seconds
+duplicates.finder.batchSize: 1000        # Files per batch
+duplicates.finder.maxGroupSize: 100      # Max duplicates per group
+duplicates.representative.strategy: size_then_age  # Larger files preferred, then older
+
+# FAST Mode - pHash Similarity Thresholds
+duplicates.fast.threshold: 0.92          # 0.90-0.95 recommended (allows 5 bits to differ out of 64)
+duplicates.fast.minHashSize: 64          # pHash size in bits
+
+# BALANCED Mode - Feature Matching Thresholds  
+duplicates.balanced.threshold: 0.35      # 0.30-0.40 recommended (35% of features must match)
+duplicates.balanced.minGoodMatches: 15   # Minimum absolute good matches required (0=disabled)
+duplicates.balanced.ratioTestThreshold: 0.75  # Lowe's ratio test (0.60=strict, 0.85=loose)
+
+# QUALITY Mode - Embedding Similarity Thresholds
+duplicates.quality.threshold: 0.96       # 0.94-0.98 recommended (96% cosine similarity required)
+duplicates.quality.minConfidence: 0.90   # Secondary confidence threshold (future use)
+
+# ============================================================================
+# Media Format Support - Images
+# ============================================================================
+# Standard Formats
 media.images.jpeg: true
 media.images.jpg: true
+media.images.png: true
+media.images.gif: true
+media.images.bmp: true
+media.images.tiff: true
+media.images.tif: true
+media.images.webp: true
+media.images.jp2: true
+
+# Special Formats
 media.images.hdr: true
 media.images.exr: true
-media.image.quality.embeddingDim: 512
-media.image.balanced.resizeLongEdge: 1024
-files.service.immediateJobTrigger.enabled: true
-media.processor.enabled: true
-media.audio.wma: true
-media.images.raw.mrw: true
-media.image.transcoding.preserveMetadata: true
-tpm.thread.stackSizeKB: 1024
-server.host: localhost
-media.images.raw.nef: true
-scheduler.backoff.initialMs: 1000
-media.image.retry.baseDelayMs: 500
-media.audio.wav: true
-scheduler.backoff.enabled: true
-media.images.ppm: true
-media.images.raw.raw: true
-scheduler.backoff.jitterPercent: 10
-database.sqlite.tempStore: memory
-files.manager.enabled: true
-media.image.quality.onnx.sessionCache.maxSessions: 4
-thumbnail.pipeline.enabled: true
-cache.disk.location: cache
-media.image.quality.onnx.inputSize: 224
-media.images.tif: true
-duplicates.quality.threshold: 0.96
-duplicates.quality.minConfidence: 0.90
-logging.level: .inf
-files.manager.useInMemoryIndex: false
-media.images.jp2: true
-media.processor.maxQueueSize: 1000
-tpm.types.audio_processor.share: 1
-cache.thumbnail.clearOnStartup: false
-thumbnail.jpeg.quality: 85
-media.image.timeoutMs: 30000
-cache.thumbnail.size_limit_mb: 10240
-thumbnail.allowed.sizes: 128
-media.video.mpg: true
-thumbnail.pipeline.onlyIfMissing: true
-cache.disk.clearOnStartup: true
-database.session.poolMin: 8
-media.image.fast.thumbSize: 256
-tpm.killTimeoutMs: 10000
-cache.thumbnail.location: cache/thumbnails
-media.video.flv: true
-scheduler.backoff.maxMs: 30000
-scheduler.maxConsecutiveFailures: 5
-thumbnail.pipeline.size: 256
-media.video.wmv: true
-scheduler.jobs: ""
-scheduler.drift.mode: anchored
-database.session.acquireBackoffMs: 50
-tpm.thread.idleTimeoutSeconds: 120
-media.image.balanced.maxKeypoints: 1500
-media.processor.intervalMs: 5000
-server.mode: balanced
-database.session.poolMax: 32
-media.images.raw.mos: true
-cache.disk.size_limit_mb: 2048
-tpm.types.fileScan.share: 1
-database.sqlite.cacheSize: 1000
-server.http.threadPool.maxThreads: auto
-media.images.raw.rwz: true
-server.instanceCheck.enabled: true
-tpm.types.video_processor.share: 1
-server.processName: media_dedup_server
-media.images.gif: true
+media.images.pbm: true
 media.images.pgm: true
-database.path: data/dedup_server.db
-media.image.transcoding.enabled: true
-database.session.acquireTimeoutMs: 10000
-tpm.pool.max: auto
-scheduler.backoff.multiplier: 2
-server.instanceCheck.bufferSize: 128
-scheduler.drift.maxDriftMs: 60000
-tpm.types.media_processor.share: 1
+media.images.ppm: true
+media.images.pnm: true
+
+# RAW Formats (Camera-Specific)
+media.images.raw.cr2: true               # Canon
+media.images.raw.arw: true               # Sony
+media.images.raw.nef: true               # Nikon
+media.images.raw.orf: true               # Olympus
+media.images.raw.dng: true               # Adobe/Generic
+media.images.raw.rw2: true               # Panasonic
+media.images.raw.raf: true               # Fujifilm
+media.images.raw.pef: true               # Pentax
+media.images.raw.srw: true               # Samsung
+media.images.raw.3fr: true               # Hasselblad
+media.images.raw.bay: true               # Casio
+media.images.raw.dcr: true               # Kodak
+media.images.raw.fff: true               # Imacon
+media.images.raw.iiq: true               # Phase One
+media.images.raw.kdc: true               # Kodak
+media.images.raw.mef: true               # Mamiya
+media.images.raw.mos: true               # Leaf
+media.images.raw.mrw: true               # Minolta
+media.images.raw.nrw: true               # Nikon
+media.images.raw.raw: true               # Generic
+media.images.raw.rwl: true               # Leica
+media.images.raw.rwz: true               # Rawzor
+
+# ============================================================================
+# Media Format Support - Video
+# ============================================================================
+media.video.mp4: true
+media.video.mov: true
+media.video.avi: true
+media.video.mkv: true
+media.video.webm: true
+media.video.flv: true
+media.video.wmv: true
+media.video.mpg: true
+media.video.mpeg: true
+media.video.m4v: true
+media.video.m2ts: true
+media.video.mts: true
+media.video.ts: true
+media.video.ogv: true
+
+# ============================================================================
+# Media Format Support - Audio
+# ============================================================================
+media.audio.mp3: true
+media.audio.aac: true
+media.audio.flac: true
+media.audio.wav: true
+media.audio.ogg: true
+media.audio.m4a: true
+media.audio.wma: true
+media.audio.aiff: true
+media.audio.alac: true
+media.audio.au: true
+media.audio.amr: true
+media.audio.opus: true
