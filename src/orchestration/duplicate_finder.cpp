@@ -345,7 +345,7 @@ namespace MediaDedup
                     {
                         int group_id = row[0].convert<int>();
                         int file_id = row[1].convert<int>();
-                        
+
                         FileArtifact artifact;
                         // Load artifacts using loadFileArtifacts (handles CLOBs correctly)
                         if (loadFileArtifacts(file_id, mode, artifact))
@@ -504,7 +504,8 @@ namespace MediaDedup
                 }
 
                 // STEP 2: Create new groups from batch ungrouped files (2+ similar files required)
-                // Compare batch ungrouped files against each other
+                // CRITICAL FIX: Use ALL-pairs similarity check to avoid transitivity assumption bug
+                // (files A,B,C should only group if sim(A,B) >= threshold AND sim(A,C) >= threshold AND sim(B,C) >= threshold)
                 std::vector<bool> already_grouped(batch_ungrouped_files.size(), false);
 
                 for (size_t i = 0; i < batch_ungrouped_files.size(); ++i)
@@ -515,6 +516,8 @@ namespace MediaDedup
                     double threshold = getThreshold(mode);
                     std::vector<FileArtifact> similar_batch_files;
                     similar_batch_files.push_back(batch_ungrouped_files[i]);
+                    std::vector<size_t> similar_indices;
+                    similar_indices.push_back(i);
 
                     // Find all files in this batch similar to file i
                     for (size_t j = i + 1; j < batch_ungrouped_files.size(); ++j)
@@ -531,8 +534,34 @@ namespace MediaDedup
                         double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
                         if (sim >= threshold)
                         {
-                            similar_batch_files.push_back(batch_ungrouped_files[j]);
-                            already_grouped[j] = true;
+                            // Check if j is similar to ALL files already in similar_batch_files
+                            bool similar_to_all = true;
+                            for (size_t k = 0; k < similar_batch_files.size(); ++k)
+                            {
+                                // Skip comparison with itself
+                                if (similar_indices[k] == j)
+                                    continue;
+                                
+                                // Already checked i vs j above
+                                if (similar_indices[k] == i)
+                                    continue;
+
+                                double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
+                                if (sim_kj < threshold)
+                                {
+                                    similar_to_all = false;
+                                    logger.debug("File %d not added to group: similar to file %zu (%.3f) but not to file %zu (%.3f < %.3f threshold)",
+                                                 batch_ungrouped_files[j].file_id, i, sim, similar_indices[k], sim_kj, threshold);
+                                    break;
+                                }
+                            }
+
+                            if (similar_to_all)
+                            {
+                                similar_batch_files.push_back(batch_ungrouped_files[j]);
+                                similar_indices.push_back(j);
+                                already_grouped[j] = true;
+                            }
                         }
                     }
 
@@ -545,7 +574,7 @@ namespace MediaDedup
                         {
                             duplicates_found += static_cast<int>(similar_batch_files.size());
                             groups_created++;
-                            logger.information("Created new group %d with %zu members from batch ungrouped files",
+                            logger.information("Created new group %d with %zu members from batch ungrouped files (all-pairs check passed)",
                                                new_group_id, similar_batch_files.size());
 
                             // Add new group's representative to our cache
@@ -738,7 +767,8 @@ namespace MediaDedup
                              file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
                 double sim = SimilarityCalculator::computeEmbeddingSimilarity(
                     file1.embedding, file2.embedding, file1.embedding_dim);
-                if (sim == 0.0 && file1.embedding.size() > 0 && file2.embedding.size() > 0) {
+                if (sim == 0.0 && file1.embedding.size() > 0 && file2.embedding.size() > 0)
+                {
                     logger.warning("Similarity is 0.0 despite non-empty embeddings! emb1=%zu bytes, emb2=%zu bytes, dim=%d",
                                    file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
                 }
