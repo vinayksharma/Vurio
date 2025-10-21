@@ -84,7 +84,7 @@ namespace MediaDedup
         void DuplicateFinder::findDuplicates()
         {
             Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
-            
+
             if (!enabled_)
             {
                 logger.debug("Duplicate finder is disabled");
@@ -327,72 +327,35 @@ namespace MediaDedup
                 int existing_last_id = last_processed_id;
 
                 // Query 1: Load group representatives for this mode
+                // CRITICAL FIX: Query IDs first, then use loadFileArtifacts to avoid NULL-byte truncation
                 try
                 {
-                    std::string rep_query =
-                        "SELECT dg.id, sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
-                        "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
+                    std::string rep_id_query =
+                        "SELECT dg.id, sf.id "
                         "FROM duplicate_groups dg "
                         "JOIN scanned_files sf ON dg.representative_file_id = sf.id "
-                        "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
-                        "WHERE dg.mode = ? AND ia.mode = ?";
+                        "WHERE dg.mode = ?";
 
-                    Statement rep_stmt(sess);
-                    rep_stmt << rep_query, use(mode_copy), use(mode_copy);
-                    rep_stmt.execute();
+                    Statement rep_id_stmt(sess);
+                    rep_id_stmt << rep_id_query, use(mode_copy);
+                    rep_id_stmt.execute();
 
-                    Poco::Data::RecordSet rep_rs(rep_stmt);
-                    for (auto &row : rep_rs)
+                    Poco::Data::RecordSet rep_id_rs(rep_id_stmt);
+                    for (auto &row : rep_id_rs)
                     {
                         int group_id = row[0].convert<int>();
+                        int file_id = row[1].convert<int>();
+                        
                         FileArtifact artifact;
-                        artifact.file_id = row[1].convert<int>();
-                        artifact.file_path = row[2].convert<std::string>();
-
-                        // Parse metadata
-                        std::string metadata_json = row[3].isEmpty() ? "" : row[3].convert<std::string>();
-                        if (!metadata_json.empty())
+                        // Load artifacts using loadFileArtifacts (handles CLOBs correctly)
+                        if (loadFileArtifacts(file_id, mode, artifact))
                         {
-                            try
-                            {
-                                Poco::JSON::Parser parser;
-                                Poco::Dynamic::Var result = parser.parse(metadata_json);
-                                Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
-
-                                if (obj->has("sizeBytes"))
-                                    artifact.file_size = obj->getValue<int64_t>("sizeBytes");
-                                if (obj->has("createdAt"))
-                                {
-                                    int64_t created_ns = obj->getValue<int64_t>("createdAt");
-                                    int64_t created_s = created_ns / 1000000000LL;
-                                    std::time_t created_time = static_cast<std::time_t>(created_s);
-                                    std::tm *tm = std::gmtime(&created_time);
-                                    std::stringstream ss;
-                                    ss << std::put_time(tm, "%Y-%m-%d");
-                                    artifact.created_date = ss.str();
-                                }
-                            }
-                            catch (...)
-                            { /* ignore parse errors */
-                            }
+                            group_representatives[group_id] = artifact;
                         }
-
-                        // Load artifacts
-                        std::string phash_blob = row[4].isEmpty() ? "" : row[4].convert<std::string>();
-                        std::string features_blob = row[5].isEmpty() ? "" : row[5].convert<std::string>();
-                        std::string features_method = row[6].isEmpty() ? "" : row[6].convert<std::string>();
-                        std::string embedding_blob = row[7].isEmpty() ? "" : row[7].convert<std::string>();
-                        std::string embedding_model = row[8].isEmpty() ? "" : row[8].convert<std::string>();
-                        int embedding_dim = row[9].isEmpty() ? 0 : row[9].convert<int>();
-
-                        artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
-                        artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
-                        artifact.features_method = features_method;
-                        artifact.embedding = std::vector<std::uint8_t>(embedding_blob.begin(), embedding_blob.end());
-                        artifact.embedding_model = embedding_model;
-                        artifact.embedding_dim = embedding_dim;
-
-                        group_representatives[group_id] = artifact;
+                        else
+                        {
+                            logger.warning("Failed to load artifacts for representative file_id %d in group %d", file_id, group_id);
+                        }
                     }
 
                     logger.information("Loaded %zu group representatives", group_representatives.size());
@@ -403,78 +366,42 @@ namespace MediaDedup
                 }
 
                 // Query 2: Load ungrouped processed files (not in any duplicate group)
+                // CRITICAL FIX: Use loadFileArtifacts to avoid NULL-byte truncation in BLOBs
                 try
                 {
-                    std::string ungrouped_query =
-                        "SELECT sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
-                        "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
+                    // First query: Get IDs of ungrouped files
+                    std::string id_query =
+                        "SELECT sf.id "
                         "FROM scanned_files sf "
-                        "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
-                        "WHERE sf.id <= ? AND ia.mode = ? "
+                        "WHERE sf.id <= ? "
                         "AND sf.id NOT IN (SELECT file_id FROM duplicate_members) ";
 
                     if (mode == "FAST")
-                        ungrouped_query += "AND sf.processed_fast = 2";
+                        id_query += "AND sf.processed_fast = 2";
                     else if (mode == "BALANCED")
-                        ungrouped_query += "AND sf.processed_balanced = 2";
+                        id_query += "AND sf.processed_balanced = 2";
                     else
-                        ungrouped_query += "AND sf.processed_quality = 2";
+                        id_query += "AND sf.processed_quality = 2";
 
-                    Statement ungrouped_stmt(sess);
-                    ungrouped_stmt << ungrouped_query, use(existing_last_id), use(mode_copy);
-                    ungrouped_stmt.execute();
+                    Statement id_stmt(sess);
+                    id_stmt << id_query, use(existing_last_id);
+                    id_stmt.execute();
 
-                    Poco::Data::RecordSet ungrouped_rs(ungrouped_stmt);
-                    for (auto &row : ungrouped_rs)
+                    Poco::Data::RecordSet id_rs(id_stmt);
+                    std::vector<int> ungrouped_ids;
+                    for (auto &row : id_rs)
+                    {
+                        ungrouped_ids.push_back(row[0].convert<int>());
+                    }
+
+                    // Load artifacts for each ungrouped file using loadFileArtifacts (handles CLOBs correctly)
+                    for (int ung_id : ungrouped_ids)
                     {
                         FileArtifact artifact;
-                        artifact.file_id = row[0].convert<int>();
-                        artifact.file_path = row[1].convert<std::string>();
-
-                        // Parse metadata
-                        std::string metadata_json = row[2].isEmpty() ? "" : row[2].convert<std::string>();
-                        if (!metadata_json.empty())
+                        if (loadFileArtifacts(ung_id, mode, artifact))
                         {
-                            try
-                            {
-                                Poco::JSON::Parser parser;
-                                Poco::Dynamic::Var result = parser.parse(metadata_json);
-                                Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
-
-                                if (obj->has("sizeBytes"))
-                                    artifact.file_size = obj->getValue<int64_t>("sizeBytes");
-                                if (obj->has("createdAt"))
-                                {
-                                    int64_t created_ns = obj->getValue<int64_t>("createdAt");
-                                    int64_t created_s = created_ns / 1000000000LL;
-                                    std::time_t created_time = static_cast<std::time_t>(created_s);
-                                    std::tm *tm = std::gmtime(&created_time);
-                                    std::stringstream ss;
-                                    ss << std::put_time(tm, "%Y-%m-%d");
-                                    artifact.created_date = ss.str();
-                                }
-                            }
-                            catch (...)
-                            { /* ignore parse errors */
-                            }
+                            ungrouped_files.push_back(artifact);
                         }
-
-                        // Load artifacts
-                        std::string phash_blob = row[3].isEmpty() ? "" : row[3].convert<std::string>();
-                        std::string features_blob = row[4].isEmpty() ? "" : row[4].convert<std::string>();
-                        std::string features_method = row[5].isEmpty() ? "" : row[5].convert<std::string>();
-                        std::string embedding_blob = row[6].isEmpty() ? "" : row[6].convert<std::string>();
-                        std::string embedding_model = row[7].isEmpty() ? "" : row[7].convert<std::string>();
-                        int embedding_dim = row[8].isEmpty() ? 0 : row[8].convert<int>();
-
-                        artifact.phash = std::vector<std::uint8_t>(phash_blob.begin(), phash_blob.end());
-                        artifact.features = std::vector<std::uint8_t>(features_blob.begin(), features_blob.end());
-                        artifact.features_method = features_method;
-                        artifact.embedding = std::vector<std::uint8_t>(embedding_blob.begin(), embedding_blob.end());
-                        artifact.embedding_model = embedding_model;
-                        artifact.embedding_dim = embedding_dim;
-
-                        ungrouped_files.push_back(artifact);
                     }
 
                     logger.information("Loaded %zu ungrouped processed files", ungrouped_files.size());
@@ -742,26 +669,40 @@ namespace MediaDedup
                         artifact.created_date = "";
                     }
 
-                    // Convert CLOBs to byte vectors (CLOB.rawContent() returns const std::string&)
-                    // CRITICAL FIX: Check CLOB size first to avoid hanging on NULL/empty BLOBs
-                    std::string phash_str, features_str, embedding_str;
-                    
-                    if (phash_blob.size() > 0) {
-                        phash_str = phash_blob.rawContent();
-                    }
-                    
-                    if (features_blob.size() > 0) {
-                        features_str = features_blob.rawContent();
-                    }
-                    
-                    if (embedding_blob.size() > 0) {
-                        embedding_str = embedding_blob.rawContent();
+                    // Convert CLOBs to byte vectors
+                    // CRITICAL FIX: rawContent() returns std::string which truncates at NULL bytes!
+                    // Use size() and direct pointer access to get raw binary data.
+                    const char *phash_data = phash_blob.rawContent();
+                    const char *features_data = features_blob.rawContent();
+                    const char *embedding_data = embedding_blob.rawContent();
+
+                    std::size_t phash_size = phash_blob.size();
+                    std::size_t features_size = features_blob.size();
+                    std::size_t embedding_size = embedding_blob.size();
+
+                    // Copy raw bytes using size(), not std::string length (which stops at NULL)
+                    if (phash_size > 0)
+                    {
+                        artifact.phash = std::vector<std::uint8_t>(
+                            reinterpret_cast<const std::uint8_t *>(phash_data),
+                            reinterpret_cast<const std::uint8_t *>(phash_data) + phash_size);
                     }
 
-                    artifact.phash = std::vector<std::uint8_t>(phash_str.begin(), phash_str.end());
-                    artifact.features = std::vector<std::uint8_t>(features_str.begin(), features_str.end());
+                    if (features_size > 0)
+                    {
+                        artifact.features = std::vector<std::uint8_t>(
+                            reinterpret_cast<const std::uint8_t *>(features_data),
+                            reinterpret_cast<const std::uint8_t *>(features_data) + features_size);
+                    }
+
+                    if (embedding_size > 0)
+                    {
+                        artifact.embedding = std::vector<std::uint8_t>(
+                            reinterpret_cast<const std::uint8_t *>(embedding_data),
+                            reinterpret_cast<const std::uint8_t *>(embedding_data) + embedding_size);
+                    }
+
                     artifact.features_method = features_method;
-                    artifact.embedding = std::vector<std::uint8_t>(embedding_str.begin(), embedding_str.end());
                     artifact.embedding_model = embedding_model;
                     artifact.embedding_dim = embedding_dim;
                     return true;
@@ -792,8 +733,16 @@ namespace MediaDedup
             }
             else // QUALITY
             {
-                return SimilarityCalculator::computeEmbeddingSimilarity(
+                Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+                logger.trace("Computing embedding similarity: file1.embedding_size=%zu, file2.embedding_size=%zu, dim=%d",
+                             file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
+                double sim = SimilarityCalculator::computeEmbeddingSimilarity(
                     file1.embedding, file2.embedding, file1.embedding_dim);
+                if (sim == 0.0 && file1.embedding.size() > 0 && file2.embedding.size() > 0) {
+                    logger.warning("Similarity is 0.0 despite non-empty embeddings! emb1=%zu bytes, emb2=%zu bytes, dim=%d",
+                                   file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
+                }
+                return sim;
             }
         }
 
