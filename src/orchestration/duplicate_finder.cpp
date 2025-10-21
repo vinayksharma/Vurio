@@ -83,19 +83,20 @@ namespace MediaDedup
 
         void DuplicateFinder::findDuplicates()
         {
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            
             if (!enabled_)
             {
-                Poco::Logger::get("DuplicateFinder").debug("Duplicate finder is disabled");
+                logger.debug("Duplicate finder is disabled");
                 return;
             }
 
             if (running_.exchange(true))
             {
-                Poco::Logger::get("DuplicateFinder").warning("Duplicate finder already running, skipping this invocation");
+                logger.warning("Duplicate finder already running, skipping this invocation");
                 return;
             }
 
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
             logger.information("Starting duplicate detection run...");
 
             try
@@ -243,8 +244,6 @@ namespace MediaDedup
 
             try
             {
-                logger.information("processBatch starting for mode=%s, last_processed_id=%d", mode, last_processed_id);
-
                 // Query for newly processed files (status=2) with id > last_processed_id
                 auto lease = db_.acquireSessionLease();
                 Session &sess = lease.get();
@@ -744,9 +743,20 @@ namespace MediaDedup
                     }
 
                     // Convert CLOBs to byte vectors (CLOB.rawContent() returns const std::string&)
-                    const std::string &phash_str = phash_blob.rawContent();
-                    const std::string &features_str = features_blob.rawContent();
-                    const std::string &embedding_str = embedding_blob.rawContent();
+                    // CRITICAL FIX: Check CLOB size first to avoid hanging on NULL/empty BLOBs
+                    std::string phash_str, features_str, embedding_str;
+                    
+                    if (phash_blob.size() > 0) {
+                        phash_str = phash_blob.rawContent();
+                    }
+                    
+                    if (features_blob.size() > 0) {
+                        features_str = features_blob.rawContent();
+                    }
+                    
+                    if (embedding_blob.size() > 0) {
+                        embedding_str = embedding_blob.rawContent();
+                    }
 
                     artifact.phash = std::vector<std::uint8_t>(phash_str.begin(), phash_str.end());
                     artifact.features = std::vector<std::uint8_t>(features_str.begin(), features_str.end());
