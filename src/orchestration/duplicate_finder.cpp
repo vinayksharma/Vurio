@@ -600,7 +600,7 @@ namespace MediaDedup
 
                                 double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
                                 all_pairs_checked++;
-                                
+
                                 if (sim_kj < threshold)
                                 {
                                     similar_to_all = false;
@@ -817,17 +817,8 @@ namespace MediaDedup
             }
             else // QUALITY
             {
-                Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
-                logger.trace("Computing embedding similarity: file1.embedding_size=%zu, file2.embedding_size=%zu, dim=%d",
-                             file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
-                double sim = SimilarityCalculator::computeEmbeddingSimilarity(
+                return SimilarityCalculator::computeEmbeddingSimilarity(
                     file1.embedding, file2.embedding, file1.embedding_dim);
-                if (sim == 0.0 && file1.embedding.size() > 0 && file2.embedding.size() > 0)
-                {
-                    logger.warning("Similarity is 0.0 despite non-empty embeddings! emb1=%zu bytes, emb2=%zu bytes, dim=%d",
-                                   file1.embedding.size(), file2.embedding.size(), file1.embedding_dim);
-                }
-                return sim;
             }
         }
 
