@@ -25,7 +25,6 @@ namespace MediaDedup
                 std::string key = item.first.Scalar();
                 auto value = yamlNodeToAny(item.second);
                 properties[key] = value;
-                
             }
         }
         catch (const std::exception &e)
@@ -141,13 +140,13 @@ namespace MediaDedup
         {
             // CRITICAL FIX: Try double FIRST to preserve decimal values!
             // Previously tried int first, which truncated "0.94" → 0
-            
+
             // Check if value contains a decimal point - if so, parse as double
             if (str_value.find('.') != std::string::npos)
             {
                 return std::any{std::stod(str_value)};
             }
-            
+
             // Try int for whole numbers
             try
             {

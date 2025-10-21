@@ -55,7 +55,6 @@ namespace MediaDedup
             // Range-based threshold for QUALITY mode
             quality_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.min", 0.94);
             quality_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.max", 0.98);
-            
 
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
@@ -478,25 +477,20 @@ namespace MediaDedup
                         // CRITICAL FIX: Verify similarity against ALL group members, not just representative
                         // This prevents the transitivity assumption bug where files are added based only on
                         // representative match, leading to groups with low inter-member similarity
-                        
+
                         bool similar_to_all_members = true;
                         int members_checked = 0;
-                        
+
                         // Get all existing members of the group
                         auto existing_members = DuplicateGroupsOps::getMembersByGroup(db_, best_group_id);
-                        
-                        logger.debug("Group %d has %zu existing members before all-members check", best_group_id, existing_members.size());
-                        
+
                         // Check new file against ALL existing members
                         for (const auto &member : existing_members)
                         {
                             // Skip representative (already checked above)
                             if (member.is_representative)
-                            {
-                                logger.trace("Skipping representative file_id %d in group %d", member.file_id, best_group_id);
                                 continue;
-                            }
-                            
+
                             // Load artifacts for this member
                             FileArtifact member_artifact;
                             if (!loadFileArtifacts(member.file_id, mode, member_artifact))
@@ -505,11 +499,11 @@ namespace MediaDedup
                                                member.file_id, best_group_id);
                                 continue;
                             }
-                            
+
                             // Check similarity
                             double sim_to_member = computeSimilarity(new_file, member_artifact, mode);
                             members_checked++;
-                            
+
                             if (sim_to_member < threshold)
                             {
                                 similar_to_all_members = false;
@@ -518,7 +512,7 @@ namespace MediaDedup
                                 break;
                             }
                         }
-                        
+
                         if (similar_to_all_members)
                         {
                             // All checks passed - add to group
@@ -544,7 +538,7 @@ namespace MediaDedup
                             // Failed all-members check - add to ungrouped for potential new group
                             batch_ungrouped_files.push_back(new_file);
                             ungrouped_files.push_back(new_file);
-                            logger.debug("File_id %d failed all-members check for group %d, marked as ungrouped", 
+                            logger.debug("File_id %d failed all-members check for group %d, marked as ungrouped",
                                          new_file.file_id, best_group_id);
                         }
                     }
@@ -588,22 +582,18 @@ namespace MediaDedup
                         }
 
                         double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
-                        
-                        logger.information("STEP2: Comparing file %d vs %d: similarity=%.3f, threshold=%.3f",
-                                           batch_ungrouped_files[i].file_id, batch_ungrouped_files[j].file_id, sim, threshold);
-                        
                         if (sim >= threshold)
                         {
                             // Check if j is similar to ALL files already in similar_batch_files
                             bool similar_to_all = true;
                             int all_pairs_checked = 0;
-                            
+
                             for (size_t k = 0; k < similar_batch_files.size(); ++k)
                             {
                                 // Skip comparison with itself
                                 if (similar_indices[k] == j)
                                     continue;
-                                
+
                                 // Already checked i vs j above
                                 if (similar_indices[k] == i)
                                     continue;
@@ -611,14 +601,11 @@ namespace MediaDedup
                                 double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
                                 all_pairs_checked++;
                                 
-                                logger.information("  All-pairs check: file %d vs file %d (existing member): similarity=%.3f",
-                                                   batch_ungrouped_files[j].file_id, similar_batch_files[k].file_id, sim_kj);
-                                
                                 if (sim_kj < threshold)
                                 {
                                     similar_to_all = false;
                                     logger.information("File %d REJECTED: similar to file %d (%.3f) but NOT to member %d (%.3f < %.3f)",
-                                                       batch_ungrouped_files[j].file_id, batch_ungrouped_files[i].file_id, sim, 
+                                                       batch_ungrouped_files[j].file_id, batch_ungrouped_files[i].file_id, sim,
                                                        similar_batch_files[k].file_id, sim_kj, threshold);
                                     break;
                                 }
@@ -629,14 +616,7 @@ namespace MediaDedup
                                 similar_batch_files.push_back(batch_ungrouped_files[j]);
                                 similar_indices.push_back(j);
                                 already_grouped[j] = true;
-                                logger.information("  File %d ACCEPTED into group (checked %d all-pairs)", 
-                                                   batch_ungrouped_files[j].file_id, all_pairs_checked);
                             }
-                        }
-                        else
-                        {
-                            logger.information("  File %d REJECTED: similarity %.3f < threshold %.3f",
-                                               batch_ungrouped_files[j].file_id, sim, threshold);
                         }
                     }
 
@@ -1031,7 +1011,7 @@ namespace MediaDedup
                 // Return minimum threshold (loosest match) for range-based matching
                 threshold = quality_threshold_min_;
             }
-            
+
             return threshold;
         }
 
