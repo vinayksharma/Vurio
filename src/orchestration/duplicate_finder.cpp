@@ -55,6 +55,7 @@ namespace MediaDedup
             // Range-based threshold for QUALITY mode
             quality_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.min", 0.94);
             quality_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.max", 0.98);
+            
 
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
@@ -474,22 +475,77 @@ namespace MediaDedup
 
                     if (best_group_id > 0)
                     {
-                        // Found matching group - add to it (may swap representative)
-                        if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                        // CRITICAL FIX: Verify similarity against ALL group members, not just representative
+                        // This prevents the transitivity assumption bug where files are added based only on
+                        // representative match, leading to groups with low inter-member similarity
+                        
+                        bool similar_to_all_members = true;
+                        int members_checked = 0;
+                        
+                        // Get all existing members of the group
+                        auto existing_members = DuplicateGroupsOps::getMembersByGroup(db_, best_group_id);
+                        
+                        logger.debug("Group %d has %zu existing members before all-members check", best_group_id, existing_members.size());
+                        
+                        // Check new file against ALL existing members
+                        for (const auto &member : existing_members)
                         {
-                            duplicates_found++;
-                            groups_updated++;
-                            logger.debug("Added file_id %d to group %d (similarity=%.3f to representative)",
-                                         new_file.file_id, best_group_id, best_similarity);
-
-                            // Update representative in our cache if this file is now the rep
-                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
-                            if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
+                            // Skip representative (already checked above)
+                            if (member.is_representative)
                             {
-                                group_representatives[best_group_id] = new_file;
-                                logger.information("Group %d representative swapped to file_id %d (larger/older)",
-                                                   best_group_id, new_file.file_id);
+                                logger.trace("Skipping representative file_id %d in group %d", member.file_id, best_group_id);
+                                continue;
                             }
+                            
+                            // Load artifacts for this member
+                            FileArtifact member_artifact;
+                            if (!loadFileArtifacts(member.file_id, mode, member_artifact))
+                            {
+                                logger.warning("Failed to load artifacts for member file_id %d in group %d, skipping member check",
+                                               member.file_id, best_group_id);
+                                continue;
+                            }
+                            
+                            // Check similarity
+                            double sim_to_member = computeSimilarity(new_file, member_artifact, mode);
+                            members_checked++;
+                            
+                            if (sim_to_member < threshold)
+                            {
+                                similar_to_all_members = false;
+                                logger.debug("File %d NOT added to group %d: similar to representative (%.3f) but not to member %d (%.3f < %.3f)",
+                                             new_file.file_id, best_group_id, best_similarity, member.file_id, sim_to_member, threshold);
+                                break;
+                            }
+                        }
+                        
+                        if (similar_to_all_members)
+                        {
+                            // All checks passed - add to group
+                            if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                            {
+                                duplicates_found++;
+                                groups_updated++;
+                                logger.information("Added file_id %d to group %d (similarity=%.3f to rep, checked %d members, all-members check passed)",
+                                                   new_file.file_id, best_group_id, best_similarity, members_checked);
+
+                                // Update representative in our cache if this file is now the rep
+                                auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
+                                if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
+                                {
+                                    group_representatives[best_group_id] = new_file;
+                                    logger.information("Group %d representative swapped to file_id %d (larger/older)",
+                                                       best_group_id, new_file.file_id);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Failed all-members check - add to ungrouped for potential new group
+                            batch_ungrouped_files.push_back(new_file);
+                            ungrouped_files.push_back(new_file);
+                            logger.debug("File_id %d failed all-members check for group %d, marked as ungrouped", 
+                                         new_file.file_id, best_group_id);
                         }
                     }
                     else
@@ -532,10 +588,16 @@ namespace MediaDedup
                         }
 
                         double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
+                        
+                        logger.information("STEP2: Comparing file %d vs %d: similarity=%.3f, threshold=%.3f",
+                                           batch_ungrouped_files[i].file_id, batch_ungrouped_files[j].file_id, sim, threshold);
+                        
                         if (sim >= threshold)
                         {
                             // Check if j is similar to ALL files already in similar_batch_files
                             bool similar_to_all = true;
+                            int all_pairs_checked = 0;
+                            
                             for (size_t k = 0; k < similar_batch_files.size(); ++k)
                             {
                                 // Skip comparison with itself
@@ -547,11 +609,17 @@ namespace MediaDedup
                                     continue;
 
                                 double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
+                                all_pairs_checked++;
+                                
+                                logger.information("  All-pairs check: file %d vs file %d (existing member): similarity=%.3f",
+                                                   batch_ungrouped_files[j].file_id, similar_batch_files[k].file_id, sim_kj);
+                                
                                 if (sim_kj < threshold)
                                 {
                                     similar_to_all = false;
-                                    logger.debug("File %d not added to group: similar to file %zu (%.3f) but not to file %zu (%.3f < %.3f threshold)",
-                                                 batch_ungrouped_files[j].file_id, i, sim, similar_indices[k], sim_kj, threshold);
+                                    logger.information("File %d REJECTED: similar to file %d (%.3f) but NOT to member %d (%.3f < %.3f)",
+                                                       batch_ungrouped_files[j].file_id, batch_ungrouped_files[i].file_id, sim, 
+                                                       similar_batch_files[k].file_id, sim_kj, threshold);
                                     break;
                                 }
                             }
@@ -561,7 +629,14 @@ namespace MediaDedup
                                 similar_batch_files.push_back(batch_ungrouped_files[j]);
                                 similar_indices.push_back(j);
                                 already_grouped[j] = true;
+                                logger.information("  File %d ACCEPTED into group (checked %d all-pairs)", 
+                                                   batch_ungrouped_files[j].file_id, all_pairs_checked);
                             }
+                        }
+                        else
+                        {
+                            logger.information("  File %d REJECTED: similarity %.3f < threshold %.3f",
+                                               batch_ungrouped_files[j].file_id, sim, threshold);
                         }
                     }
 
@@ -942,19 +1017,22 @@ namespace MediaDedup
 
         double DuplicateFinder::getThreshold(const std::string &mode)
         {
+            double threshold = 0.0;
             if (mode == "FAST")
             {
-                return fast_threshold_;
+                threshold = fast_threshold_;
             }
             else if (mode == "BALANCED")
             {
-                return balanced_threshold_;
+                threshold = balanced_threshold_;
             }
             else // QUALITY
             {
                 // Return minimum threshold (loosest match) for range-based matching
-                return quality_threshold_min_;
+                threshold = quality_threshold_min_;
             }
+            
+            return threshold;
         }
 
         void DuplicateFinder::onConfigChange(const ConfigChangeEvent &event)

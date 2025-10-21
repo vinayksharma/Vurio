@@ -25,6 +25,7 @@ namespace MediaDedup
                 std::string key = item.first.Scalar();
                 auto value = yamlNodeToAny(item.second);
                 properties[key] = value;
+                
             }
         }
         catch (const std::exception &e)
@@ -138,34 +139,43 @@ namespace MediaDedup
     {
         try
         {
-            // Try int first
-            return std::any{std::stoi(str_value)};
-        }
-        catch (...)
-        {
+            // CRITICAL FIX: Try double FIRST to preserve decimal values!
+            // Previously tried int first, which truncated "0.94" → 0
+            
+            // Check if value contains a decimal point - if so, parse as double
+            if (str_value.find('.') != std::string::npos)
+            {
+                return std::any{std::stod(str_value)};
+            }
+            
+            // Try int for whole numbers
             try
             {
-                // Try double
-                return std::any{std::stod(str_value)};
+                return std::any{std::stoi(str_value)};
             }
             catch (...)
             {
-                // Try bool
-                std::string lower_value = str_value;
-                std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
-                if (lower_value == "true" || lower_value == "1" || lower_value == "yes")
-                {
-                    return std::any{true};
-                }
-                else if (lower_value == "false" || lower_value == "0" || lower_value == "no")
-                {
-                    return std::any{false};
-                }
-                else
-                {
-                    // Default to string
-                    return std::any{str_value};
-                }
+                // If int fails, try double anyway (might be scientific notation)
+                return std::any{std::stod(str_value)};
+            }
+        }
+        catch (...)
+        {
+            // Try bool
+            std::string lower_value = str_value;
+            std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(), ::tolower);
+            if (lower_value == "true" || lower_value == "1" || lower_value == "yes")
+            {
+                return std::any{true};
+            }
+            else if (lower_value == "false" || lower_value == "0" || lower_value == "no")
+            {
+                return std::any{false};
+            }
+            else
+            {
+                // Default to string
+                return std::any{str_value};
             }
         }
     }
