@@ -62,6 +62,7 @@ set(UNIT_TEST_SOURCES
     unit/test_onnx_session_manager.cpp
     unit/test_phash_quality.cpp
     unit/test_duplicate_finder_range.cpp
+    unit/test_duplicates_reset_api.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -148,6 +149,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_duplicate_finder_range")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DuplicateFinderRangeTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_duplicates_reset_api")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DuplicatesResetAPITest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -490,7 +498,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
       NOT ${test_name} STREQUAL "test_stderr_capture" AND
       NOT ${test_name} STREQUAL "test_phash_quality" AND
-      NOT ${test_name} STREQUAL "test_duplicate_finder_range")
+      NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
+      NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} setup_test_data)
     endif()
 endforeach()

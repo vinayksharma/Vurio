@@ -136,6 +136,8 @@ namespace MediaDedup
             return new ResetErrorsHandler(config_manager_, scanned_files_service_);
         if (path == "/api/v1/duplicates/groups" && method == "GET")
             return new MediaDedupServer::Core::DuplicateGroupsHandler(database_manager_);
+        if (path == "/api/v1/duplicates/reset" && method == "DELETE")
+            return new MediaDedupServer::Core::ResetDuplicatesHandler(database_manager_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 

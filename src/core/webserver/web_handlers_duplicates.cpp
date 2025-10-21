@@ -158,5 +158,144 @@ namespace MediaDedupServer
             }
         }
 
+        ResetDuplicatesHandler::ResetDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
+            : database_manager_(db)
+        {
+        }
+
+        void ResetDuplicatesHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                   Poco::Net::HTTPServerResponse &response)
+        {
+            Poco::Logger &logger = Poco::Logger::get("ResetDuplicatesHandler");
+
+            try
+            {
+                // Parse query parameters
+                Poco::URI uri(request.getURI());
+                Poco::URI::QueryParameters params = uri.getQueryParameters();
+
+                std::string mode = ""; // Empty = all modes
+                std::vector<std::string> modes_to_reset;
+
+                for (const auto &param : params)
+                {
+                    if (param.first == "mode")
+                    {
+                        // Validate mode (FAST, BALANCED, or QUALITY)
+                        std::string mode_upper = param.second;
+                        std::transform(mode_upper.begin(), mode_upper.end(), mode_upper.begin(), ::toupper);
+
+                        if (mode_upper == "FAST" || mode_upper == "BALANCED" || mode_upper == "QUALITY")
+                        {
+                            mode = mode_upper;
+                            modes_to_reset.push_back(mode_upper);
+                            logger.information("Reset requested for mode: %s", mode_upper);
+                        }
+                        else
+                        {
+                            logger.warning("Invalid mode parameter (must be FAST, BALANCED, or QUALITY): %s", param.second);
+                            
+                            response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                            response.setContentType("application/json");
+                            
+                            Poco::JSON::Object error_obj;
+                            error_obj.set("success", false);
+                            error_obj.set("error", "Invalid mode parameter. Must be FAST, BALANCED, or QUALITY");
+                            
+                            std::ostringstream oss;
+                            error_obj.stringify(oss);
+                            response.sendBuffer(oss.str().data(), oss.str().length());
+                            return;
+                        }
+                    }
+                }
+
+                // If no mode specified, reset all modes
+                if (modes_to_reset.empty())
+                {
+                    modes_to_reset = {"FAST", "BALANCED", "QUALITY"};
+                    logger.information("Reset requested for ALL modes");
+                }
+
+                // Perform reset for each mode
+                int groups_deleted = 0;
+                int checkpoints_reset = 0;
+                
+                for (const std::string &reset_mode : modes_to_reset)
+                {
+                    // Delete groups and members for this mode
+                    if (MediaDedup::DuplicateGroupsOps::deleteGroupsByMode(*database_manager_, reset_mode))
+                    {
+                        groups_deleted++;
+                        logger.information("Successfully deleted duplicate groups for mode: %s", reset_mode);
+                    }
+                    else
+                    {
+                        logger.error("Failed to delete duplicate groups for mode: %s", reset_mode);
+                    }
+
+                    // Reset checkpoint for this mode
+                    if (MediaDedup::DuplicateGroupsOps::resetCheckpoint(*database_manager_, reset_mode))
+                    {
+                        checkpoints_reset++;
+                        logger.information("Successfully reset checkpoint for mode: %s", reset_mode);
+                    }
+                    else
+                    {
+                        logger.error("Failed to reset checkpoint for mode: %s", reset_mode);
+                    }
+                }
+
+                // Check if all operations succeeded
+                bool success = (groups_deleted == static_cast<int>(modes_to_reset.size())) &&
+                              (checkpoints_reset == static_cast<int>(modes_to_reset.size()));
+
+                if (success)
+                {
+                    logger.information("Duplicate reset completed successfully for %zu mode(s)", modes_to_reset.size());
+                    
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                    response.setContentType("application/json");
+
+                    Poco::JSON::Object result;
+                    result.set("success", true);
+
+                    std::ostringstream oss;
+                    result.stringify(oss);
+                    response.sendBuffer(oss.str().data(), oss.str().length());
+                }
+                else
+                {
+                    logger.error("Duplicate reset failed for one or more modes");
+                    
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                    response.setContentType("application/json");
+
+                    Poco::JSON::Object error_obj;
+                    error_obj.set("success", false);
+                    error_obj.set("error", "Failed to reset one or more modes");
+
+                    std::ostringstream oss;
+                    error_obj.stringify(oss);
+                    response.sendBuffer(oss.str().data(), oss.str().length());
+                }
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in ResetDuplicatesHandler: %s", std::string(e.what()));
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                response.setContentType("application/json");
+
+                Poco::JSON::Object error_obj;
+                error_obj.set("success", false);
+                error_obj.set("error", std::string(e.what()));
+
+                std::ostringstream oss;
+                error_obj.stringify(oss);
+                response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+        }
+
     } // namespace Core
 } // namespace MediaDedupServer
