@@ -33,72 +33,16 @@ namespace MediaDedup
 
     bool ImageArtifactsOps::upsertPhash(DatabaseManager &db, const ImagePhashRecord &r)
     {
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            std::string file_path = r.file_path;
-            std::string mode = r.mode;
-            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.phash.data()), r.phash.size());
-            int tw = r.thumb_w;
-            int th = r.thumb_h;
-            int v = r.version;
-            stmt << std::string(SQL::kUpsertImagePhash),
-                Keywords::use(file_path),
-                Keywords::use(mode),
-                Keywords::use(blob),
-                Keywords::use(tw),
-                Keywords::use(th),
-                Keywords::use(v),
-                Keywords::now;
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ImageArtifactsOps").error(std::string("upsertPhash exception: ") + e.what());
-            return false;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ImageArtifactsOps").error("upsertPhash unknown exception");
-            return false;
-        }
+        // REMOVED: FAST mode (pHash) not supported - only EMBEDDING mode (CLIP) supported
+        Poco::Logger::get("ImageArtifactsOps").warning("upsertPhash called but FAST mode not supported");
+        return false;
     }
 
     bool ImageArtifactsOps::upsertFeatures(DatabaseManager &db, const ImageFeaturesRecord &r)
     {
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            std::string file_path = r.file_path;
-            std::string mode = r.mode;
-            std::string method = r.method;
-            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.features_blob.data()), r.features_blob.size());
-            int v = r.version;
-            stmt << std::string(SQL::kUpsertImageFeatures),
-                Keywords::use(file_path),
-                Keywords::use(mode),
-                Keywords::use(method),
-                Keywords::use(blob),
-                Keywords::use(v),
-                Keywords::now;
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ImageArtifactsOps").error(std::string("upsertFeatures exception: ") + e.what());
-            return false;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ImageArtifactsOps").error("upsertFeatures unknown exception");
-            return false;
-        }
+        // REMOVED: BALANCED mode (features) not supported - only EMBEDDING mode (CLIP) supported
+        Poco::Logger::get("ImageArtifactsOps").warning("upsertFeatures called but BALANCED mode not supported");
+        return false;
     }
 
     bool ImageArtifactsOps::upsertEmbedding(DatabaseManager &db, const ImageEmbeddingRecord &r)
@@ -109,7 +53,6 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string file_path = r.file_path;
-            std::string mode = r.mode;
             std::string model = r.model;
             int dim = r.dim;
             // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
@@ -118,7 +61,6 @@ namespace MediaDedup
             int v = r.version;
             stmt << std::string(SQL::kUpsertImageEmbedding),
                 Keywords::use(file_path),
-                Keywords::use(mode),
                 Keywords::use(model),
                 Keywords::use(dim),
                 Keywords::use(blob),

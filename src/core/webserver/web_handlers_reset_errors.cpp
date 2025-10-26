@@ -25,14 +25,14 @@ namespace MediaDedup
     }
 
     ResetErrorsHandler::ResetErrorsHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                          std::shared_ptr<ScannedFilesService> scanned_files_service)
+                                           std::shared_ptr<ScannedFilesService> scanned_files_service)
         : config_manager_(std::move(config_manager)),
           scanned_files_service_(std::move(scanned_files_service))
     {
     }
 
     void ResetErrorsHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
-                                          Poco::Net::HTTPServerResponse &response)
+                                           Poco::Net::HTTPServerResponse &response)
     {
         if (request.getMethod() != "POST")
         {
@@ -42,12 +42,9 @@ namespace MediaDedup
 
         try
         {
-            // Get current server mode from configuration
-            ServerMode current_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
-            
-            // Reset all errors for the current mode
-            int files_reset = scanned_files_service_->resetAllErrors(current_mode);
-            
+            // Reset all errors
+            int files_reset = scanned_files_service_->resetAllErrors();
+
             if (files_reset < 0)
             {
                 sendErrorResponse(response, "Failed to reset errors", 500);
@@ -57,7 +54,7 @@ namespace MediaDedup
             // Create success response
             Poco::JSON::Object response_obj;
             response_obj.set("success", true);
-            
+
             std::stringstream ss;
             response_obj.stringify(ss);
             sendJsonResponse(response, ss.str());

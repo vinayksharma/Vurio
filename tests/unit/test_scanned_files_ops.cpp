@@ -16,12 +16,8 @@ namespace MediaDedup
             r.share_name = "share";
             r.file_name = "name";
             r.file_metadata = "meta";
-            r.processed_fast = 0;
-            r.processed_balanced = 0;
-            r.processed_quality = 0;
-            r.links_fast = "";
-            r.links_balanced = "";
-            r.links_quality = "";
+            r.processed = 0;
+            r.links = "";
             r.is_network_file = false;
             r.location_key = "mediaLocation:test123"; // Test location key
             return r;
@@ -44,24 +40,24 @@ namespace MediaDedup
             auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
             EXPECT_EQ(fetched->file_path, row.file_path);
-            EXPECT_EQ(fetched->processed_fast, 0);
+            EXPECT_EQ(fetched->processed, 0);
 
             // Mark processed with state codes
-            EXPECT_TRUE(ScannedFilesOps::markProcessed(dbm, row.file_path, ServerMode::FAST, 2));
+            EXPECT_TRUE(ScannedFilesOps::markProcessed(dbm, row.file_path, 2));
             fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, 2);
+            EXPECT_EQ(fetched->processed, 2);
 
             // Set links and get links
             std::vector<int> links{1, 2, 3};
-            EXPECT_TRUE(ScannedFilesOps::setLinks(dbm, row.file_path, ServerMode::FAST, links));
-            auto gotLinks = ScannedFilesOps::getLinks(dbm, row.file_path, ServerMode::FAST);
+            EXPECT_TRUE(ScannedFilesOps::setLinks(dbm, row.file_path, links));
+            auto gotLinks = ScannedFilesOps::getLinks(dbm, row.file_path);
             EXPECT_EQ(gotLinks, links);
 
-            // List unprocessed for another mode should include this row still
-            auto notBalanced = ScannedFilesOps::listUnprocessed(dbm, ServerMode::BALANCED);
+            // List unprocessed should include this row still
+            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm);
             bool found = false;
-            for (const auto &it : notBalanced)
+            for (const auto &it : unprocessed)
                 if (it.file_path == row.file_path)
                     found = true;
             EXPECT_TRUE(found);
@@ -134,34 +130,34 @@ namespace MediaDedup
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
 
             // Test 1: First error should not be escalated
-            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, -1));
+            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, -1));
             auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, -1); // Should remain -1, not escalated
+            EXPECT_EQ(fetched->processed, -1); // Should remain -1, not escalated
 
             // Test 2: Second error should be escalated
-            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, -3));
+            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, -3));
             fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, -103); // Should be escalated: -3 - 100 = -103
+            EXPECT_EQ(fetched->processed, -103); // Should be escalated: -3 - 100 = -103
 
             // Test 3: Success after error should not be escalated
-            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, 2));
+            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, 2));
             fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, 2); // Should be success state
+            EXPECT_EQ(fetched->processed, 2); // Should be success state
 
             // Test 4: Error after success should not be escalated (back to initial error)
-            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, -4));
+            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, -4));
             fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, -4); // Should be -4, not escalated
+            EXPECT_EQ(fetched->processed, -4); // Should be -4, not escalated
 
             // Test 5: Second error after success should be escalated
-            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, -5));
+            EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, -5));
             fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, -105); // Should be escalated: -5 - 100 = -105
+            EXPECT_EQ(fetched->processed, -105); // Should be escalated: -5 - 100 = -105
         }
 
         TEST(ScannedFilesOpsTest, ErrorEscalationAllErrorCodes)
@@ -184,16 +180,16 @@ namespace MediaDedup
                 ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
 
                 // First error should not be escalated
-                EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, error_codes[i]));
+                EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, error_codes[i]));
                 auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
                 ASSERT_TRUE(fetched.has_value());
-                EXPECT_EQ(fetched->processed_fast, error_codes[i]) << "First error should not be escalated for code " << error_codes[i];
+                EXPECT_EQ(fetched->processed, error_codes[i]) << "First error should not be escalated for code " << error_codes[i];
 
                 // Second error should be escalated
-                EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, ServerMode::FAST, error_codes[i]));
+                EXPECT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, row.file_path, error_codes[i]));
                 fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
                 ASSERT_TRUE(fetched.has_value());
-                EXPECT_EQ(fetched->processed_fast, expected_escalated[i]) << "Second error should be escalated for code " << error_codes[i];
+                EXPECT_EQ(fetched->processed, expected_escalated[i]) << "Second error should be escalated for code " << error_codes[i];
             }
         }
 
@@ -225,12 +221,12 @@ namespace MediaDedup
             for (const auto &file : test_files)
             {
                 auto row = makeRow(file.first);
-                row.processed_fast = file.second;
+                row.processed = file.second;
                 ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
             }
 
             // Test listUnprocessed - should include unprocessed (0) and retryable errors (>= -100)
-            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm, ServerMode::FAST);
+            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm);
 
             // Should include: unprocessed (0), -1, -3, -4, -5, -6
             // Should NOT include: success (2), backpressure (-2), escalated errors (-101, -103, -104, -105, -106)
@@ -273,13 +269,13 @@ namespace MediaDedup
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
 
             // Test that backpressure (-2) is not escalated (should use regular markProcessed)
-            EXPECT_TRUE(ScannedFilesOps::markProcessed(dbm, row.file_path, ServerMode::FAST, -2));
+            EXPECT_TRUE(ScannedFilesOps::markProcessed(dbm, row.file_path, -2));
             auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
-            EXPECT_EQ(fetched->processed_fast, -2); // Should remain -2
+            EXPECT_EQ(fetched->processed, -2); // Should remain -2
 
             // Test that backpressure files are now included in retry logic
-            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm, ServerMode::FAST);
+            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm);
             bool found_backpressure = false;
             for (const auto &file : unprocessed)
             {
@@ -308,36 +304,36 @@ namespace MediaDedup
 
             // Create files with different error statuses and proper location_key
             auto row_error = makeRow("/test/error.jpg");
-            row_error.processed_fast = -1; // Real error
+            row_error.processed = -1; // Real error
             row_error.location_key = "mediaLocation:test123";
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_error));
 
             auto row_backpressure = makeRow("/test/backpressure.jpg");
-            row_backpressure.processed_fast = -2; // Backpressure (should NOT be counted as error)
+            row_backpressure.processed = -2; // Backpressure (should NOT be counted as error)
             row_backpressure.location_key = "mediaLocation:test123";
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_backpressure));
 
             auto row_queued = makeRow("/test/queued.jpg");
-            row_queued.processed_fast = -99; // Queued (should NOT be counted as error)
+            row_queued.processed = -99; // Queued (should NOT be counted as error)
             row_queued.location_key = "mediaLocation:test123";
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_queued));
 
             auto row_escalated = makeRow("/test/escalated.jpg");
-            row_escalated.processed_fast = -101; // Escalated error (SHOULD be counted as error)
+            row_escalated.processed = -101; // Escalated error (SHOULD be counted as error)
             row_escalated.location_key = "mediaLocation:test123";
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_escalated));
 
             auto row_file_access = makeRow("/test/file_access.jpg");
-            row_file_access.processed_fast = -3; // File access error (SHOULD be counted as error)
+            row_file_access.processed = -3; // File access error (SHOULD be counted as error)
             row_file_access.location_key = "mediaLocation:test123";
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row_file_access));
 
             // First test the unfiltered version (countErrorAll) to make sure the SQL itself works
-            int error_count_all = ScannedFilesOps::countErrorAll(dbm, ServerMode::FAST);
+            int error_count_all = ScannedFilesOps::countErrorAll(dbm);
             EXPECT_EQ(error_count_all, 3) << "Unfiltered error count should be 3: -1 (general), -3 (file access), -101 (escalated), excluding -2 (backpressure) and -99 (queued)";
 
             // Test queued count (unfiltered)
-            int queued_count_all = ScannedFilesOps::countQueuedAll(dbm, ServerMode::FAST);
+            int queued_count_all = ScannedFilesOps::countQueuedAll(dbm);
             EXPECT_EQ(queued_count_all, 1) << "Unfiltered queued count should be 1 for the -99 status file";
 
             // Verify location keys are registered
@@ -349,10 +345,10 @@ namespace MediaDedup
             }
 
             // Now test the filtered versions (these use location_key filtering)
-            int error_count = ScannedFilesOps::countError(dbm, ServerMode::FAST);
+            int error_count = ScannedFilesOps::countError(dbm);
             EXPECT_EQ(error_count, 3) << "Filtered error count should be 3 (all files are in registered location)";
 
-            int queued_count = ScannedFilesOps::countQueued(dbm, ServerMode::FAST);
+            int queued_count = ScannedFilesOps::countQueued(dbm);
             EXPECT_EQ(queued_count, 1) << "Filtered queued count should be 1";
         }
     }
@@ -379,18 +375,18 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file4));
 
     // Set different statuses
-    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file1.file_path, MediaDedup::ServerMode::FAST, -99)); // Queued
-    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file2.file_path, MediaDedup::ServerMode::FAST, -99)); // Queued
-    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file3.file_path, MediaDedup::ServerMode::FAST, 2));   // Processed
-    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file4.file_path, MediaDedup::ServerMode::FAST, -1));  // Error
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file1.file_path, -99)); // Queued
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file2.file_path, -99)); // Queued
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file3.file_path, 2));   // Processed
+    EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file4.file_path, -1));  // Error
 
     // Test queued count
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::FAST), 2);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::BALANCED), 0);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm, MediaDedup::ServerMode::QUALITY), 0);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 2);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 0);
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 0);
 
     // Test that queued files are included in unprocessed list
-    auto unprocessed = MediaDedup::ScannedFilesOps::listUnprocessed(dbm, MediaDedup::ServerMode::FAST);
+    auto unprocessed = MediaDedup::ScannedFilesOps::listUnprocessed(dbm);
     EXPECT_EQ(unprocessed.size(), 3); // 2 queued + 1 error file
 }
 
@@ -405,79 +401,79 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 
 //     // Create test files with various error statuses
 //     auto file1 = MediaDedup::Test::makeRow("/tmp/error1.jpg");
-//     file1.processed_fast = -1;    // General error
-//     file1.processed_balanced = -3; // File access error
-//     file1.processed_quality = -101; // Escalated error
+//     file1.processed = -1;    // General error
+//     file1.processed = -3; // File access error
+//     file1.processed = -101; // Escalated error
 //     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file1));
 
 //     auto file2 = MediaDedup::Test::makeRow("/tmp/error2.jpg");
-//     file2.processed_fast = -6;    // Cache error
-//     file2.processed_balanced = 2;  // Successfully processed
-//     file2.processed_quality = -2;  // Backpressure (should not be reset)
+//     file2.processed = -6;    // Cache error
+//     file2.processed = 2;  // Successfully processed
+//     file2.processed = -2;  // Backpressure (should not be reset)
 //     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file2));
 
 //     auto file3 = MediaDedup::Test::makeRow("/tmp/error3.jpg");
-//     file3.processed_fast = 0;     // Unprocessed
-//     file3.processed_balanced = -99; // Queued
-//     file3.processed_quality = -106; // Escalated cache error
+//     file3.processed = 0;     // Unprocessed
+//     file3.processed = -99; // Queued
+//     file3.processed = -106; // Escalated cache error
 //     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, file3));
 
 //     // Verify initial error counts
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 2);     // -1, -6
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 1); // -3
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 2);  // -101, -106
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 2);     // -1, -6
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 1); // -3
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 2);  // -101, -106
 
 //     // Reset errors for FAST mode
-//     int reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::FAST);
+//     int reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm);
 //     EXPECT_EQ(reset_count, 2); // Should reset 2 files with errors in FAST mode
 
 //     // Verify FAST mode errors were reset
 //     auto fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
 //     ASSERT_TRUE(fetched1.has_value());
-//     EXPECT_EQ(fetched1->processed_fast, 0);     // Reset from -1 to 0
-//     EXPECT_EQ(fetched1->processed_balanced, -3); // Unchanged
-//     EXPECT_EQ(fetched1->processed_quality, -101); // Unchanged
+//     EXPECT_EQ(fetched1->processed, 0);     // Reset from -1 to 0
+//     EXPECT_EQ(fetched1->processed, -3); // Unchanged
+//     EXPECT_EQ(fetched1->processed, -101); // Unchanged
 
 //     auto fetched2 = MediaDedup::ScannedFilesOps::getByPath(dbm, file2.file_path);
 //     ASSERT_TRUE(fetched2.has_value());
-//     EXPECT_EQ(fetched2->processed_fast, 0);     // Reset from -6 to 0
-//     EXPECT_EQ(fetched2->processed_balanced, 2);  // Unchanged
-//     EXPECT_EQ(fetched2->processed_quality, -2);  // Unchanged
+//     EXPECT_EQ(fetched2->processed, 0);     // Reset from -6 to 0
+//     EXPECT_EQ(fetched2->processed, 2);  // Unchanged
+//     EXPECT_EQ(fetched2->processed, -2);  // Unchanged
 
 //     // Verify error counts after reset
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 0);     // All reset
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 1); // Unchanged
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 2);  // Unchanged
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 0);     // All reset
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 1); // Unchanged
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 2);  // Unchanged
 
 //     // Reset errors for BALANCED mode
-//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::BALANCED);
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm);
 //     EXPECT_EQ(reset_count, 1); // Should reset 1 file with error in BALANCED mode
 
 //     // Verify BALANCED mode error was reset
 //     fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
 //     ASSERT_TRUE(fetched1.has_value());
-//     EXPECT_EQ(fetched1->processed_balanced, 0); // Reset from -3 to 0
+//     EXPECT_EQ(fetched1->processed, 0); // Reset from -3 to 0
 
 //     // Reset errors for QUALITY mode
-//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::QUALITY);
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm);
 //     EXPECT_EQ(reset_count, 2); // Should reset 2 files with errors in QUALITY mode
 
 //     // Verify QUALITY mode errors were reset
 //     fetched1 = MediaDedup::ScannedFilesOps::getByPath(dbm, file1.file_path);
 //     ASSERT_TRUE(fetched1.has_value());
-//     EXPECT_EQ(fetched1->processed_quality, 0); // Reset from -101 to 0
+//     EXPECT_EQ(fetched1->processed, 0); // Reset from -101 to 0
 
 //     auto fetched3 = MediaDedup::ScannedFilesOps::getByPath(dbm, file3.file_path);
 //     ASSERT_TRUE(fetched3.has_value());
-//     EXPECT_EQ(fetched3->processed_quality, 0); // Reset from -106 to 0
+//     EXPECT_EQ(fetched3->processed, 0); // Reset from -106 to 0
 
 //     // Verify all error counts are now 0
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST), 0);
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::BALANCED), 0);
-//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::QUALITY), 0);
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 0);
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 0);
+//     EXPECT_EQ(MediaDedup::ScannedFilesOps::countError(dbm), 0);
 
 //     // Test reset with no errors (should return 0)
-//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm, MediaDedup::ServerMode::FAST);
+//     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm);
 //     EXPECT_EQ(reset_count, 0);
 // }
 
@@ -495,19 +491,19 @@ TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
     // Create test data with different location keys
     auto row1 = MediaDedup::Test::makeRow("/tmp/test1.jpg");
     row1.location_key = "mediaLocation:abc123";
-    row1.processed_fast = 2; // processed
+    row1.processed = 2; // processed
 
     auto row2 = MediaDedup::Test::makeRow("/tmp/test2.jpg");
     row2.location_key = "mediaLocation:abc123";
-    row2.processed_fast = -1; // error
+    row2.processed = -1; // error
 
     auto row3 = MediaDedup::Test::makeRow("/tmp/test3.jpg");
     row3.location_key = "mediaLocation:def456";
-    row3.processed_fast = 0; // unprocessed
+    row3.processed = 0; // unprocessed
 
     auto row4 = MediaDedup::Test::makeRow("/tmp/test4.jpg");
     row4.location_key = "mediaLocation:xyz789"; // This location will not be registered
-    row4.processed_fast = 2;                    // processed
+    row4.processed = 2;                         // processed
 
     // Insert test data
     ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row1));
@@ -526,10 +522,10 @@ TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
     int total_count = MediaDedup::ScannedFilesOps::count(dbm);
     EXPECT_EQ(total_count, 3); // Only files from registered locations
 
-    int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm, MediaDedup::ServerMode::FAST);
+    int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm);
     EXPECT_EQ(processed_count, 1); // Only row1 is processed and from registered location
 
-    int error_count = MediaDedup::ScannedFilesOps::countError(dbm, MediaDedup::ServerMode::FAST);
+    int error_count = MediaDedup::ScannedFilesOps::countError(dbm);
     EXPECT_EQ(error_count, 1); // Only row2 has error and is from registered location
 
     // Test getRegisteredLocationKeys

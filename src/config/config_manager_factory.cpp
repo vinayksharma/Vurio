@@ -298,7 +298,6 @@ namespace MediaDedup
         manager->createProperty<std::string>("server.host", "0.0.0.0", "Server host address");
         manager->createProperty<int>("server.port", 8080, "Server port number");
         manager->createProperty<std::string>("server.name", "Media Deduplication Server", "Server name");
-        manager->createProperty<std::string>("server.mode", "FAST", "Server mode (FAST|BALANCED|QUALITY)");
         manager->createProperty<std::string>("server.processName", "media_dedup_server", "Process name for instance checking");
         manager->createProperty<bool>("server.instanceCheck.enabled", true, "Enable instance checking");
         manager->createProperty<int>("server.instanceCheck.bufferSize", 128, "Instance check buffer size");
@@ -354,13 +353,11 @@ namespace MediaDedup
         manager->createProperty<int>("media.image.retry.maxAttempts", 2, "Max retry attempts (not counting first try)");
         manager->createProperty<int>("media.image.retry.baseDelayMs", 500, "Base delay for exponential backoff in ms");
 
-        manager->createProperty<int>("media.image.fast.thumbSize", 256, "Thumbnail size for FAST pipeline");
-        manager->createProperty<int>("media.image.balanced.resizeLongEdge", 1024, "Resize long edge for BALANCED pipeline");
-        manager->createProperty<int>("media.image.balanced.maxKeypoints", 1000, "Max keypoints to keep for BALANCED pipeline");
-
-        manager->createProperty<std::string>("media.image.quality.onnx.modelPath", "models/clip-RN50.onnx", "ONNX model path for QUALITY pipeline");
-        manager->createProperty<int>("media.image.quality.onnx.inputSize", 224, "ONNX input size for QUALITY pipeline");
-        manager->createProperty<int>("media.image.quality.embeddingDim", 512, "Embedding dimension for QUALITY pipeline");
+        manager->createProperty<std::string>("media.image.onnx.modelPath", "models/clip-RN50.onnx", "ONNX model path for image processing");
+        manager->createProperty<int>("media.image.onnx.inputSize", 224, "ONNX input size for image processing");
+        manager->createProperty<bool>("media.image.onnx.sessionCache.enabled", true, "Enable ONNX session caching");
+        manager->createProperty<int>("media.image.onnx.sessionCache.maxSessions", 4, "Max ONNX sessions to cache");
+        manager->createProperty<int>("media.image.embeddingDim", 512, "Embedding dimension for image processing");
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, "Enable debug mode");
@@ -383,14 +380,8 @@ namespace MediaDedup
         // TPM share for duplicate finder
         manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, "Thread pool share for duplicate finder");
 
-        // Mode-specific thresholds
-        manager->createProperty<double>("duplicates.fast.threshold", 0.90, "pHash similarity threshold (FAST mode)");
-        manager->createProperty<double>("duplicates.balanced.threshold", 0.30, "Feature match ratio (BALANCED mode)");
-
-        // QUALITY mode uses range-based thresholds
-        manager->createProperty<double>("duplicates.quality.threshold.min", 0.94, "Minimum threshold for QUALITY mode (loosest match)");
-        manager->createProperty<double>("duplicates.quality.threshold.max", 0.98, "Maximum threshold for QUALITY mode (strictest match)");
-        manager->createProperty<double>("duplicates.quality.minConfidence", 0.90, "Minimum confidence for QUALITY mode (future use)");
+        // Similarity threshold
+        manager->createProperty<double>("duplicates.threshold", 0.94, "Embedding similarity threshold (0.94-0.98 recommended)");
 
         // Representative selection strategy
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",

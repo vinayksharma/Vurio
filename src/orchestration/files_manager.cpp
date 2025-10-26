@@ -199,18 +199,14 @@ namespace MediaDedup::Orchestration
 
             if (!exists)
             {
-                // New file - reset all processing status to 0
-                row.processed_fast = 0;
-                row.processed_balanced = 0;
-                row.processed_quality = 0;
+                // New file - reset processing status to 0
+                row.processed = 0;
             }
             else
             {
                 // Significant change (like file size change) - reset processing status to 0
                 // This ensures files are re-processed if their content actually changed
-                row.processed_fast = 0;
-                row.processed_balanced = 0;
-                row.processed_quality = 0;
+                row.processed = 0;
             }
 
             // Perform upsert for new or significantly changed files

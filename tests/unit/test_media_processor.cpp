@@ -196,24 +196,13 @@ TEST_F(MediaProcessorTest, RouteToProcessor_RawImageFormat_Works)
     EXPECT_TRUE(result);
 }
 
-TEST_F(MediaProcessorTest, RouteToProcessor_DifferentServerModes_Work)
+TEST_F(MediaProcessorTest, RouteToProcessor_EmbeddingMode_Works)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    // Test FAST mode
-    config_manager_->setPropertyValue<std::string>("server.mode", "FAST");
-    bool result_fast = media_processor_->RouteToProcessor(test_file);
-    EXPECT_TRUE(result_fast);
-
-    // Test BALANCED mode
-    config_manager_->setPropertyValue<std::string>("server.mode", "BALANCED");
-    bool result_balanced = media_processor_->RouteToProcessor(test_file);
-    EXPECT_TRUE(result_balanced);
-
-    // Test QUALITY mode
-    config_manager_->setPropertyValue<std::string>("server.mode", "QUALITY");
-    bool result_quality = media_processor_->RouteToProcessor(test_file);
-    EXPECT_TRUE(result_quality);
+    // Test EMBEDDING mode (single mode now)
+    bool result = media_processor_->RouteToProcessor(test_file);
+    EXPECT_TRUE(result);
 }
 
 TEST_F(MediaProcessorTest, RouteToProcessor_ThreadSafety_Works)
@@ -354,34 +343,14 @@ protected:
     std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
 };
 
-TEST_F(ImageProcessorTest, ProcessFast_WithInvalidFile_ReturnsTrue)
+TEST_F(ImageProcessorTest, Process_WithInvalidFile_ReturnsTrue)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    bool result = image_processor_->ProcessFast(test_file, test_file, *database_manager_, config_manager_);
+    bool result = image_processor_->Process(test_file, test_file, *database_manager_, config_manager_);
 
-    // Fast pipeline has fallback mechanism - should return true even for invalid files
+    // Pipeline should handle invalid files
     EXPECT_TRUE(result);
-}
-
-TEST_F(ImageProcessorTest, ProcessBalanced_WithInvalidFile_ReturnsFalse)
-{
-    std::string test_file = "/path/to/test/image.jpg";
-
-    bool result = image_processor_->ProcessBalanced(test_file, test_file, *database_manager_, config_manager_);
-
-    // Balanced pipeline should return false for non-existent files
-    EXPECT_FALSE(result);
-}
-
-TEST_F(ImageProcessorTest, ProcessQuality_WithInvalidFile_ReturnsFalse)
-{
-    std::string test_file = "/path/to/test/image.jpg";
-
-    bool result = image_processor_->ProcessQuality(test_file, test_file, *database_manager_, config_manager_);
-
-    // Quality pipeline should return false for non-existent files
-    EXPECT_FALSE(result);
 }
 
 TEST_F(ImageProcessorTest, ProcessMethods_WithEmptyPath_ReturnExpectedResults)
@@ -390,9 +359,9 @@ TEST_F(ImageProcessorTest, ProcessMethods_WithEmptyPath_ReturnExpectedResults)
 
     // Fast pipeline has fallback - returns true even for empty paths
     // Balanced and Quality pipelines should return false for empty file paths
-    EXPECT_TRUE(image_processor_->ProcessFast(empty_file, empty_file, *database_manager_, config_manager_));
-    EXPECT_FALSE(image_processor_->ProcessBalanced(empty_file, empty_file, *database_manager_, config_manager_));
-    EXPECT_FALSE(image_processor_->ProcessQuality(empty_file, empty_file, *database_manager_, config_manager_));
+    EXPECT_TRUE(image_processor_->Process(empty_file, empty_file, *database_manager_, config_manager_));
+    EXPECT_FALSE(image_processor_->Process(empty_file, empty_file, *database_manager_, config_manager_));
+    EXPECT_FALSE(image_processor_->Process(empty_file, empty_file, *database_manager_, config_manager_));
 }
 
 // Note: The fix for storing metadata against original file path instead of transcoded file path
@@ -418,17 +387,13 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     ScannedFileRow test_file1;
     test_file1.file_path = "/tmp/test_media_processor_files/image1.jpg";
     test_file1.file_name = "image1.jpg";
-    test_file1.processed_fast = 0; // Unprocessed
-    test_file1.processed_balanced = 0;
-    test_file1.processed_quality = 0;
+    test_file1.processed = 0; // Unprocessed
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file1));
 
     ScannedFileRow test_file2;
     test_file2.file_path = "/tmp/test_media_processor_files/image2.png";
     test_file2.file_name = "image2.png";
-    test_file2.processed_fast = 0; // Unprocessed
-    test_file2.processed_balanced = 0;
-    test_file2.processed_quality = 0;
+    test_file2.processed = 0; // Unprocessed
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file2));
 
     // ProcessMedia should submit files for processing (fire-and-forget)
@@ -440,11 +405,11 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnprocessedFiles_ProcessesSuccessful
     // Verify files were marked as completed (2) for FAST mode
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
     ASSERT_TRUE(file1_result.has_value());
-    EXPECT_EQ(file1_result->processed_fast, 2);
+    EXPECT_EQ(file1_result->processed, 2);
 
     auto file2_result = ScannedFilesOps::getByPath(*database_manager_, test_file2.file_path);
     ASSERT_TRUE(file2_result.has_value());
-    EXPECT_EQ(file2_result->processed_fast, 2);
+    EXPECT_EQ(file2_result->processed, 2);
 }
 
 TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnprocessed)
@@ -456,18 +421,18 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     ScannedFileRow unprocessed_file;
     unprocessed_file.file_path = "/tmp/test_media_processor_files/image1.jpg";
     unprocessed_file.file_name = "image1.jpg";
-    unprocessed_file.processed_fast = 0; // Unprocessed
-    unprocessed_file.processed_balanced = 0;
-    unprocessed_file.processed_quality = 0;
+    unprocessed_file.processed = 0; // Unprocessed
+    unprocessed_file.processed = 0;
+    unprocessed_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unprocessed_file));
 
     // Add already picked up for processing file (using a non-existent file since it won't be processed)
     ScannedFileRow processed_file;
     processed_file.file_path = "/path/to/test/processed.jpg";
     processed_file.file_name = "processed.jpg";
-    processed_file.processed_fast = 1; // Already picked up for processing
-    processed_file.processed_balanced = 0;
-    processed_file.processed_quality = 0;
+    processed_file.processed = 1; // Already picked up for processing
+    processed_file.processed = 0;
+    processed_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, processed_file));
 
     // ProcessMedia should only process the unprocessed file
@@ -479,11 +444,11 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     // Verify only unprocessed file was completed
     auto unprocessed_result = ScannedFilesOps::getByPath(*database_manager_, unprocessed_file.file_path);
     ASSERT_TRUE(unprocessed_result.has_value());
-    EXPECT_EQ(unprocessed_result->processed_fast, 2);
+    EXPECT_EQ(unprocessed_result->processed, 2);
 
     auto processed_result = ScannedFilesOps::getByPath(*database_manager_, processed_file.file_path);
     ASSERT_TRUE(processed_result.has_value());
-    EXPECT_EQ(processed_result->processed_fast, 1); // Should remain unchanged
+    EXPECT_EQ(processed_result->processed, 1); // Should remain unchanged
 }
 
 TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
@@ -495,9 +460,9 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     ScannedFileRow unsupported_file;
     unsupported_file.file_path = "/path/to/test/document.pdf";
     unsupported_file.file_name = "document.pdf";
-    unsupported_file.processed_fast = 0; // Unprocessed
-    unsupported_file.processed_balanced = 0;
-    unsupported_file.processed_quality = 0;
+    unsupported_file.processed = 0; // Unprocessed
+    unsupported_file.processed = 0;
+    unsupported_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unsupported_file));
 
     // ProcessMedia should submit files for processing (fire-and-forget)
@@ -509,7 +474,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     // Verify file was marked as error
     auto result = ScannedFilesOps::getByPath(*database_manager_, unsupported_file.file_path);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->processed_fast, -1); // Error
+    EXPECT_EQ(result->processed, -1); // Error
 }
 
 TEST_F(MediaProcessorTest, ProcessMedia_DisabledInConfig_DoesNotProcess)
@@ -524,9 +489,9 @@ TEST_F(MediaProcessorTest, ProcessMedia_DisabledInConfig_DoesNotProcess)
     ScannedFileRow test_file;
     test_file.file_path = "/path/to/test/image.jpg";
     test_file.file_name = "image.jpg";
-    test_file.processed_fast = 0; // Unprocessed
-    test_file.processed_balanced = 0;
-    test_file.processed_quality = 0;
+    test_file.processed = 0; // Unprocessed
+    test_file.processed = 0;
+    test_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file));
 
     // ProcessMedia should not process files when disabled
@@ -535,7 +500,7 @@ TEST_F(MediaProcessorTest, ProcessMedia_DisabledInConfig_DoesNotProcess)
     // Verify file remains unprocessed
     auto result = ScannedFilesOps::getByPath(*database_manager_, test_file.file_path);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->processed_fast, 0); // Still unprocessed
+    EXPECT_EQ(result->processed, 0); // Still unprocessed
 }
 
 TEST_F(MediaProcessorTest, GetAllSupportedMediaExtensions_ReturnsAllConfiguredExtensions)
@@ -596,33 +561,33 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithProcessingFiles_ClearsAllFla
     ScannedFileRow test_file1;
     test_file1.file_path = "/path/to/test/image1.jpg";
     test_file1.file_name = "image1.jpg";
-    test_file1.processed_fast = 1; // Picked up for processing
-    test_file1.processed_balanced = 0;
-    test_file1.processed_quality = 0;
+    test_file1.processed = 1; // Picked up for processing
+    test_file1.processed = 0;
+    test_file1.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file1));
 
     ScannedFileRow test_file2;
     test_file2.file_path = "/path/to/test/image2.png";
     test_file2.file_name = "image2.png";
-    test_file2.processed_fast = 0;
-    test_file2.processed_balanced = 1; // Picked up for processing
-    test_file2.processed_quality = 0;
+    test_file2.processed = 0;
+    test_file2.processed = 1; // Picked up for processing
+    test_file2.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file2));
 
     ScannedFileRow test_file3;
     test_file3.file_path = "/path/to/test/image3.gif";
     test_file3.file_name = "image3.gif";
-    test_file3.processed_fast = 0;
-    test_file3.processed_balanced = 0;
-    test_file3.processed_quality = 1; // Picked up for processing
+    test_file3.processed = 0;
+    test_file3.processed = 0;
+    test_file3.processed = 1; // Picked up for processing
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file3));
 
     ScannedFileRow test_file4;
     test_file4.file_path = "/path/to/test/image4.bmp";
     test_file4.file_name = "image4.bmp";
-    test_file4.processed_fast = 0; // Already ready for processing
-    test_file4.processed_balanced = 0;
-    test_file4.processed_quality = 0;
+    test_file4.processed = 0; // Already ready for processing
+    test_file4.processed = 0;
+    test_file4.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file4));
 
     // Clear processing flags
@@ -634,27 +599,27 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithProcessingFiles_ClearsAllFla
     // Verify all files now have processing flags set to 0
     auto file1_result = ScannedFilesOps::getByPath(*database_manager_, test_file1.file_path);
     ASSERT_TRUE(file1_result.has_value());
-    EXPECT_EQ(file1_result->processed_fast, 0);
-    EXPECT_EQ(file1_result->processed_balanced, 0);
-    EXPECT_EQ(file1_result->processed_quality, 0);
+    EXPECT_EQ(file1_result->processed, 0);
+    EXPECT_EQ(file1_result->processed, 0);
+    EXPECT_EQ(file1_result->processed, 0);
 
     auto file2_result = ScannedFilesOps::getByPath(*database_manager_, test_file2.file_path);
     ASSERT_TRUE(file2_result.has_value());
-    EXPECT_EQ(file2_result->processed_fast, 0);
-    EXPECT_EQ(file2_result->processed_balanced, 0);
-    EXPECT_EQ(file2_result->processed_quality, 0);
+    EXPECT_EQ(file2_result->processed, 0);
+    EXPECT_EQ(file2_result->processed, 0);
+    EXPECT_EQ(file2_result->processed, 0);
 
     auto file3_result = ScannedFilesOps::getByPath(*database_manager_, test_file3.file_path);
     ASSERT_TRUE(file3_result.has_value());
-    EXPECT_EQ(file3_result->processed_fast, 0);
-    EXPECT_EQ(file3_result->processed_balanced, 0);
-    EXPECT_EQ(file3_result->processed_quality, 0);
+    EXPECT_EQ(file3_result->processed, 0);
+    EXPECT_EQ(file3_result->processed, 0);
+    EXPECT_EQ(file3_result->processed, 0);
 
     auto file4_result = ScannedFilesOps::getByPath(*database_manager_, test_file4.file_path);
     ASSERT_TRUE(file4_result.has_value());
-    EXPECT_EQ(file4_result->processed_fast, 0);
-    EXPECT_EQ(file4_result->processed_balanced, 0);
-    EXPECT_EQ(file4_result->processed_quality, 0);
+    EXPECT_EQ(file4_result->processed, 0);
+    EXPECT_EQ(file4_result->processed, 0);
+    EXPECT_EQ(file4_result->processed, 0);
 }
 
 TEST_F(MediaProcessorTest, ClearProcessingFlags_WithMixedStates_OnlyClearsProcessingFlags)
@@ -666,9 +631,9 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithMixedStates_OnlyClearsProces
     ScannedFileRow test_file;
     test_file.file_path = "/path/to/test/mixed.jpg";
     test_file.file_name = "mixed.jpg";
-    test_file.processed_fast = 1;      // Picked up for processing
-    test_file.processed_balanced = -1; // Error state
-    test_file.processed_quality = 0;   // Ready for processing
+    test_file.processed = 1;  // Picked up for processing
+    test_file.processed = -1; // Error state
+    test_file.processed = 0;  // Ready for processing
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file));
 
     // Clear processing flags
@@ -680,9 +645,9 @@ TEST_F(MediaProcessorTest, ClearProcessingFlags_WithMixedStates_OnlyClearsProces
     // Verify the file states after clearing
     auto result = ScannedFilesOps::getByPath(*database_manager_, test_file.file_path);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->processed_fast, 0);      // Should be cleared
-    EXPECT_EQ(result->processed_balanced, -1); // Should remain unchanged (error state)
-    EXPECT_EQ(result->processed_quality, 0);   // Should remain unchanged (already ready)
+    EXPECT_EQ(result->processed, 0);  // Should be cleared
+    EXPECT_EQ(result->processed, -1); // Should remain unchanged (error state)
+    EXPECT_EQ(result->processed, 0);  // Should remain unchanged (already ready)
 }
 
 TEST_F(MediaProcessorTest, TranscodingConfigChange_ReactsToConfigChanges)
@@ -739,38 +704,38 @@ TEST_F(MediaProcessorTest, SkipAlreadyProcessedFiles_ImageProcessing)
 {
     // Test that MediaProcessor skips files that are already processed
     std::string test_file = "/tmp/test_skip_processed.jpg";
-    
+
     // Create a simple test file
     std::ofstream file(test_file);
     file << "fake jpg content for testing";
     file.close();
-    
+
     // Ensure test file exists
     ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
-    
+
     // Insert file into database first
     ScannedFileRow test_file_row;
     test_file_row.file_path = test_file;
     test_file_row.file_name = "test_skip_processed.jpg";
-    test_file_row.processed_fast = 0;
-    test_file_row.processed_balanced = 0;
-    test_file_row.processed_quality = 0;
+    test_file_row.processed = 0;
+    test_file_row.processed = 0;
+    test_file_row.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file_row));
-    
+
     // Mark the file as already processed (status = 2)
-    EXPECT_TRUE(ScannedFilesOps::markProcessed(*database_manager_, test_file, ServerMode::FAST, 2));
-    
+    EXPECT_TRUE(ScannedFilesOps::markProcessed(*database_manager_, test_file, 2));
+
     // Try to process the same file again - it should be skipped
     EXPECT_TRUE(media_processor_->RouteToProcessor(test_file));
-    
+
     // Wait a bit for the lambda to execute
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    
+
     // Verify the file is still marked as processed (status should remain 2)
     auto file_record = ScannedFilesOps::getByPath(*database_manager_, test_file);
     ASSERT_TRUE(file_record.has_value());
-    EXPECT_EQ(file_record->processed_fast, 2) << "File should still be marked as processed";
-    
+    EXPECT_EQ(file_record->processed, 2) << "File should still be marked as processed";
+
     // Clean up test file
     std::filesystem::remove(test_file);
 }
@@ -781,47 +746,47 @@ TEST_F(MediaProcessorTest, SkipFileInProgress_ImageProcessing)
     // This test verifies that the skip logic is implemented in the code
     // Note: Due to race conditions in multi-threaded processing, the exact timing
     // of when the skip check happens vs when processing completes may vary
-    
+
     std::string test_file = "/tmp/test_skip_in_progress.jpg";
-    
+
     // Create a simple test file
     std::ofstream file(test_file);
     file << "fake jpg content for testing";
     file.close();
-    
+
     // Ensure test file exists
     ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
-    
+
     // Insert file into database first
     ScannedFileRow test_file_row;
     test_file_row.file_path = test_file;
     test_file_row.file_name = "test_skip_in_progress.jpg";
-    test_file_row.processed_fast = 0;
-    test_file_row.processed_balanced = 0;
-    test_file_row.processed_quality = 0;
+    test_file_row.processed = 0;
+    test_file_row.processed = 0;
+    test_file_row.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, test_file_row));
-    
+
     // Mark the file as currently in progress (status = 1)
-    EXPECT_TRUE(ScannedFilesOps::markProcessed(*database_manager_, test_file, ServerMode::FAST, 1));
-    
+    EXPECT_TRUE(ScannedFilesOps::markProcessed(*database_manager_, test_file, 1));
+
     // Verify initial state
     auto initial_record = ScannedFilesOps::getByPath(*database_manager_, test_file);
     ASSERT_TRUE(initial_record.has_value());
-    EXPECT_EQ(initial_record->processed_fast, 1) << "File should initially be marked as in progress";
-    
+    EXPECT_EQ(initial_record->processed, 1) << "File should initially be marked as in progress";
+
     // Try to process the file - it should be skipped (but RouteToProcessor will still return true)
     EXPECT_TRUE(media_processor_->RouteToProcessor(test_file));
-    
+
     // Wait for any processing to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    
+
     // Check final state - the file should either still be in progress (1) or processed (2)
     // The skip logic should prevent it from being processed again, but race conditions may occur
     auto final_record = ScannedFilesOps::getByPath(*database_manager_, test_file);
     ASSERT_TRUE(final_record.has_value());
-    EXPECT_GE(final_record->processed_fast, 1) << "File should be marked as in progress (1) or processed (2)";
-    EXPECT_LE(final_record->processed_fast, 2) << "File should not have an error status";
-    
+    EXPECT_GE(final_record->processed, 1) << "File should be marked as in progress (1) or processed (2)";
+    EXPECT_LE(final_record->processed, 2) << "File should not have an error status";
+
     // Clean up test file
     std::filesystem::remove(test_file);
 }

@@ -20,30 +20,29 @@ namespace MediaDedup
         std::vector<ScannedFileRow> listAll() { return ScannedFilesOps::listAll(db_); }
         int count() { return ScannedFilesOps::count(db_); }
         int countProcessed() { return ScannedFilesOps::countProcessed(db_); }
-    int countProcessed(ServerMode mode) { return ScannedFilesOps::countProcessed(db_, mode); }
-    int countError(ServerMode mode) { return ScannedFilesOps::countError(db_, mode); }
-    int countQueued(ServerMode mode) { return ScannedFilesOps::countQueued(db_, mode); }
+        int countError() { return ScannedFilesOps::countError(db_); }
+        int countQueued() { return ScannedFilesOps::countQueued(db_); }
 
         // Convenience wrappers
-        bool markProcessed(const std::string &file_path, ServerMode mode, int state)
+        bool markProcessed(const std::string &file_path, int state)
         {
-            return ScannedFilesOps::markProcessed(db_, file_path, mode, state);
+            return ScannedFilesOps::markProcessed(db_, file_path, state);
         }
-        bool setLinks(const std::string &file_path, ServerMode mode, const std::vector<int> &link_ids)
+        bool setLinks(const std::string &file_path, const std::vector<int> &link_ids)
         {
-            return ScannedFilesOps::setLinks(db_, file_path, mode, link_ids);
+            return ScannedFilesOps::setLinks(db_, file_path, link_ids);
         }
-        std::vector<int> getLinks(const std::string &file_path, ServerMode mode)
+        std::vector<int> getLinks(const std::string &file_path)
         {
-            return ScannedFilesOps::getLinks(db_, file_path, mode);
+            return ScannedFilesOps::getLinks(db_, file_path);
         }
-        std::vector<ScannedFileRow> listUnprocessed(ServerMode mode, int limit = -1)
+        std::vector<ScannedFileRow> listUnprocessed(int limit = -1)
         {
-            return ScannedFilesOps::listUnprocessed(db_, mode, limit);
+            return ScannedFilesOps::listUnprocessed(db_, limit);
         }
-        int resetAllErrors(ServerMode mode)
+        int resetAllErrors()
         {
-            return ScannedFilesOps::resetAllErrors(db_, mode);
+            return ScannedFilesOps::resetAllErrors(db_);
         }
 
     private:

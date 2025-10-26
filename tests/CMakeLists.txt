@@ -286,8 +286,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
@@ -320,8 +318,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
@@ -400,8 +396,6 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/fast_pipeline.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/balanced_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp

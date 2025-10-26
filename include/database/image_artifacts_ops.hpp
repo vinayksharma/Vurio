@@ -30,7 +30,7 @@ namespace MediaDedup
     struct ImageEmbeddingRecord
     {
         std::string file_path;
-        std::string mode;
+        // Note: mode field removed as mode column was removed from image_artifacts table
         std::string model; // e.g., "CLIP-RN50"
         int dim = 512;
         std::vector<std::uint8_t> embedding_blob; // float32 bytes

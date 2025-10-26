@@ -11,7 +11,6 @@
 server.name: Media Deduplication Server
 server.host: localhost
 server.port: 8080
-server.mode: quality                    # FAST | BALANCED | QUALITY - processing profile
 server.processName: media_dedup_server
 server.instanceCheck.enabled: true      # Prevent multiple server instances
 server.instanceCheck.bufferSize: 128
@@ -34,7 +33,7 @@ database.sqlite.tempStore: memory        # Use memory for temp tables
 # ============================================================================
 # Logging Settings
 # ============================================================================
-logging.level: .inf                      # trace | debug | info | warn | error
+logging.level: trace                      # trace | debug | info | warn | error
 
 # ============================================================================
 # Cache Settings
@@ -124,22 +123,15 @@ media.image.transcoding.timeoutMs: 120000  # 2 minutes for large RAW files
 media.image.transcoding.preserveMetadata: true
 
 # ============================================================================
-# Image Processing Pipeline Settings (Mode-Specific)
+# Image Processing Pipeline Settings
 # ============================================================================
 
-# FAST Mode - Perceptual Hash (pHash)
-media.image.fast.thumbSize: 256          # Thumbnail size for pHash generation
-
-# BALANCED Mode - ORB Feature Matching
-media.image.balanced.resizeLongEdge: 1024    # Resize before feature detection
-media.image.balanced.maxKeypoints: 1500      # Max features to detect (increased for accuracy)
-
-# QUALITY Mode - CLIP Deep Learning Embeddings
-media.image.quality.embeddingDim: 512        # CLIP embedding dimension
-media.image.quality.onnx.modelPath: models/clip-image-vitb32.onnx
-media.image.quality.onnx.inputSize: 224      # Input image size for CLIP
-media.image.quality.onnx.sessionCache.enabled: true
-media.image.quality.onnx.sessionCache.maxSessions: 4
+# CLIP Deep Learning Embeddings
+media.image.embeddingDim: 512                # CLIP embedding dimension
+media.image.onnx.modelPath: models/clip-image-vitb32.onnx
+media.image.onnx.inputSize: 224              # Input image size for CLIP
+media.image.onnx.sessionCache.enabled: true
+media.image.onnx.sessionCache.maxSessions: 4
 
 # ============================================================================
 # Duplicate Detection Settings
@@ -150,24 +142,11 @@ duplicates.finder.batchSize: 1000        # Files per batch
 duplicates.finder.maxGroupSize: 100      # Max duplicates per group
 duplicates.representative.strategy: size_then_age  # Larger files preferred, then older
 
-# FAST Mode - pHash Similarity Thresholds (STRICT FOR LOW FALSE POSITIVES)
-duplicates.fast.threshold: 0.97          # STRICT: only 3 bits can differ out of 64 
-duplicates.fast.minHashSize: 64          # pHash size in bits
+# Embedding Similarity Threshold (CLIP-based)
+duplicates.threshold: 0.94               # Similarity threshold (0.94-0.98 recommended, lower = more matches)
 
-# BALANCED Mode - Feature Matching Thresholds  
-duplicates.balanced.threshold: 0.35      # 0.30-0.40 recommended (35% of features must match)
-duplicates.balanced.minGoodMatches: 15   # Minimum absolute good matches required (0=disabled)
-duplicates.balanced.ratioTestThreshold: 0.75  # Lowe's ratio test (0.60=strict, 0.85=loose)
-
-# QUALITY Mode - Embedding Similarity Thresholds (Range-Based)
-duplicates.quality.threshold.min: 0.94   # Minimum threshold (loosest match, 0.94-0.96 recommended)
-duplicates.quality.threshold.max: 0.98   # Maximum threshold (strictest match, 0.96-0.98 recommended)
-# When threshold.min decreases (range expands), all QUALITY groups are deleted and reprocessed
-# This allows catching more duplicates without manual intervention
-duplicates.quality.minConfidence: 0.90   # Secondary confidence threshold (future use)
-
-# Metadata Pre-Filtering (STRICT TO REDUCE FALSE POSITIVES)
-duplicates.metadata.filtering.enabled: true           # Enable metadata pre-filtering before similarity calculation
+# Metadata Pre-Filtering
+duplicates.metadata.filtering.enabled: false          # Enable metadata pre-filtering before similarity calculation
 duplicates.metadata.aspectRatioTolerance: 0.05        # STRICT: only 5% aspect ratio difference 
 duplicates.metadata.dimensionTolerance: 0.10          # STRICT: only 10% dimension difference 
 duplicates.metadata.fileSizeTolerance: 0.20           # STRICT: only 20% file size difference 

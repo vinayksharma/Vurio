@@ -25,16 +25,14 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
-            
+
             // Create file_path index
             stmt << std::string(SQL::kCreateScannedFilesIndexFilePath), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created index on scanned_files.file_path");
-            
-            // Create composite indexes for filtered queries
-            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedFast), Poco::Data::Keywords::now;
-            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedBalanced), Poco::Data::Keywords::now;
-            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessedQuality), Poco::Data::Keywords::now;
-            Poco::Logger::get("ScannedFilesOps").debug("Created composite indexes for location_key filtering");
+
+            // Create composite index for filtered queries
+            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessed), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created composite index for location_key filtering");
         }
         catch (const std::exception &e)
         {
@@ -52,12 +50,8 @@ namespace MediaDedup
         std::string share_name = r.share_name;
         std::string file_name = r.file_name;
         std::string file_metadata = r.file_metadata;
-        int pf = r.processed_fast; // Preserve state code (0,1,2,...)
-        int pb = r.processed_balanced;
-        int pq = r.processed_quality;
-        std::string lf = r.links_fast;
-        std::string lb = r.links_balanced;
-        std::string lq = r.links_quality;
+        int p = r.processed; // Preserve state code (0,1,2,...)
+        std::string l = r.links;
         int inf = r.is_network_file ? 1 : 0;
         std::string location_key = r.location_key;
         stmt << std::string(SQL::kUpsertScannedFile),
@@ -66,12 +60,8 @@ namespace MediaDedup
             Keywords::use(share_name),
             Keywords::use(file_name),
             Keywords::use(file_metadata),
-            Keywords::use(pf),
-            Keywords::use(pb),
-            Keywords::use(pq),
-            Keywords::use(lf),
-            Keywords::use(lb),
-            Keywords::use(lq),
+            Keywords::use(p),
+            Keywords::use(l),
             Keywords::use(inf),
             Keywords::use(location_key),
             Keywords::now;
@@ -129,15 +119,11 @@ namespace MediaDedup
             r.share_name = rs[3].convert<std::string>();
             r.file_name = rs[4].convert<std::string>();
             r.file_metadata = rs[5].convert<std::string>();
-            r.processed_fast = rs[6].convert<int>();
-            r.processed_balanced = rs[7].convert<int>();
-            r.processed_quality = rs[8].convert<int>();
-            r.links_fast = rs[9].convert<std::string>();
-            r.links_balanced = rs[10].convert<std::string>();
-            r.links_quality = rs[11].convert<std::string>();
-            r.is_network_file = rs[12].convert<int>() != 0;
-            r.location_key = rs[13].convert<std::string>();
-            r.created_at = rs[14].convert<std::string>();
+            r.processed = rs[6].convert<int>();
+            r.links = rs[7].convert<std::string>();
+            r.is_network_file = rs[8].convert<int>() != 0;
+            r.location_key = rs[9].convert<std::string>();
+            r.created_at = rs[10].convert<std::string>();
             return r;
         }
         catch (...)
@@ -166,15 +152,11 @@ namespace MediaDedup
                 r.share_name = rs[3].convert<std::string>();
                 r.file_name = rs[4].convert<std::string>();
                 r.file_metadata = rs[5].convert<std::string>();
-                r.processed_fast = rs[6].convert<int>();
-                r.processed_balanced = rs[7].convert<int>();
-                r.processed_quality = rs[8].convert<int>();
-                r.links_fast = rs[9].convert<std::string>();
-                r.links_balanced = rs[10].convert<std::string>();
-                r.links_quality = rs[11].convert<std::string>();
-                r.is_network_file = rs[12].convert<int>() != 0;
-                r.location_key = rs[13].convert<std::string>();
-                r.created_at = rs[14].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -237,195 +219,10 @@ namespace MediaDedup
         return 0;
     }
 
-    int ScannedFilesOps::countProcessed(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountProcessedFilesFastFiltered;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountProcessedFilesBalancedFiltered;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountProcessedFilesQualityFiltered;
-            break;
-        default:
-            query = SQL::kCountProcessedFilesFastFiltered;
-            break;
-        }
-        return executeFilteredCount(db, std::string(query));
-    }
+    // REMOVED: Mode-specific overloads - only EMBEDDING mode supported
+    // REMOVED: countErrorAll, countQueuedAll, modeToLinksColumn - mode-specific methods not needed
 
-    int ScannedFilesOps::countError(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountErrorFilesFastFiltered;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountErrorFilesBalancedFiltered;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountErrorFilesQualityFiltered;
-            break;
-        default:
-            query = SQL::kCountErrorFilesFastFiltered;
-            break;
-        }
-        return executeFilteredCount(db, std::string(query));
-    }
-
-    int ScannedFilesOps::countQueued(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountQueuedFilesFastFiltered;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountQueuedFilesBalancedFiltered;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountQueuedFilesQualityFiltered;
-            break;
-        default:
-            query = SQL::kCountQueuedFilesFastFiltered;
-            break;
-        }
-        return executeFilteredCount(db, std::string(query));
-    }
-
-    int ScannedFilesOps::countProcessedAll(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountProcessedFilesFast;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountProcessedFilesBalanced;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountProcessedFilesQuality;
-            break;
-        default:
-            query = SQL::kCountProcessedFilesFast;
-            break;
-        }
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            stmt << std::string(query), Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
-        }
-        catch (...)
-        {
-            // Return 0 on error
-        }
-        return 0;
-    }
-
-    int ScannedFilesOps::countErrorAll(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountErrorFilesFast;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountErrorFilesBalanced;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountErrorFilesQuality;
-            break;
-        default:
-            query = SQL::kCountErrorFilesFast;
-            break;
-        }
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            stmt << std::string(query), Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
-        }
-        catch (...)
-        {
-            // Return 0 on error
-        }
-        return 0;
-    }
-
-    int ScannedFilesOps::countQueuedAll(DatabaseManager &db, ServerMode mode)
-    {
-        std::string_view query;
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            query = SQL::kCountQueuedFilesFast;
-            break;
-        case ServerMode::BALANCED:
-            query = SQL::kCountQueuedFilesBalanced;
-            break;
-        case ServerMode::QUALITY:
-            query = SQL::kCountQueuedFilesQuality;
-            break;
-        default:
-            query = SQL::kCountQueuedFilesFast;
-            break;
-        }
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            stmt << std::string(query), Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
-        }
-        catch (...)
-        {
-            // Return 0 on error
-        }
-        return 0;
-    }
-
-    static std::string modeToLinksColumn(ServerMode mode)
-    {
-        switch (mode)
-        {
-        case ServerMode::FAST:
-            return "links_fast";
-        case ServerMode::BALANCED:
-            return "links_balanced";
-        case ServerMode::QUALITY:
-            return "links_quality";
-        }
-        return "links_fast";
-    }
-
-    bool ScannedFilesOps::markProcessed(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state)
+    bool ScannedFilesOps::markProcessed(DatabaseManager &db, const std::string &file_path, int state)
     {
         try
         {
@@ -434,20 +231,8 @@ namespace MediaDedup
             Statement stmt(sess);
             int flag = state;
             std::string p = file_path;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                stmt << std::string(SQL::kUpdateProcessedFast), Keywords::use(flag), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::BALANCED:
-                stmt << std::string(SQL::kUpdateProcessedBalanced), Keywords::use(flag), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::QUALITY:
-                stmt << std::string(SQL::kUpdateProcessedQuality), Keywords::use(flag), Keywords::use(p), Keywords::now;
-                break;
-            }
+            stmt << std::string(SQL::kUpdateProcessed), Keywords::use(flag), Keywords::use(p), Keywords::now;
 
-            // Log successful update for debugging
             Poco::Logger::get("ScannedFilesOps").debug("Successfully updated file " + file_path + " to state " + std::to_string(state));
             return true;
         }
@@ -463,7 +248,7 @@ namespace MediaDedup
         }
     }
 
-    bool ScannedFilesOps::markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, ServerMode mode, int state)
+    bool ScannedFilesOps::markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, int state)
     {
         try
         {
@@ -475,20 +260,8 @@ namespace MediaDedup
                 return false;
             }
 
-            // Get current status for the specific mode
-            int current_status = 0;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                current_status = current_file->processed_fast;
-                break;
-            case ServerMode::BALANCED:
-                current_status = current_file->processed_balanced;
-                break;
-            case ServerMode::QUALITY:
-                current_status = current_file->processed_quality;
-                break;
-            }
+            // Get current status
+            int current_status = current_file->processed;
 
             // Determine final status based on escalation logic
             int final_status = state;
@@ -508,7 +281,7 @@ namespace MediaDedup
             }
 
             // Use the existing markProcessed method with the final status
-            return markProcessed(db, file_path, mode, final_status);
+            return markProcessed(db, file_path, final_status);
         }
         catch (const std::exception &e)
         {
@@ -534,7 +307,7 @@ namespace MediaDedup
         return s;
     }
 
-    bool ScannedFilesOps::setLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode, const std::vector<int> &link_ids)
+    bool ScannedFilesOps::setLinks(DatabaseManager &db, const std::string &file_path, const std::vector<int> &link_ids)
     {
         try
         {
@@ -543,18 +316,7 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string links = joinIds(link_ids);
             std::string p = file_path;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                stmt << std::string(SQL::kUpdateLinksFast), Keywords::use(links), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::BALANCED:
-                stmt << std::string(SQL::kUpdateLinksBalanced), Keywords::use(links), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::QUALITY:
-                stmt << std::string(SQL::kUpdateLinksQuality), Keywords::use(links), Keywords::use(p), Keywords::now;
-                break;
-            }
+            stmt << std::string(SQL::kUpdateLinks), Keywords::use(links), Keywords::use(p), Keywords::now;
             return true;
         }
         catch (...)
@@ -563,34 +325,7 @@ namespace MediaDedup
         }
     }
 
-    // Overloads that infer ServerMode from config
-    bool ScannedFilesOps::markProcessed(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
-                                        const std::string &file_path, int state)
-    {
-        ServerMode mode = cfg.getServerMode();
-        return markProcessed(db, file_path, mode, state);
-    }
-
-    bool ScannedFilesOps::setLinks(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
-                                   const std::string &file_path, const std::vector<int> &link_ids)
-    {
-        ServerMode mode = cfg.getServerMode();
-        return setLinks(db, file_path, mode, link_ids);
-    }
-
-    std::vector<int> ScannedFilesOps::getLinks(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
-                                               const std::string &file_path)
-    {
-        ServerMode mode = cfg.getServerMode();
-        return getLinks(db, file_path, mode);
-    }
-
-    std::vector<ScannedFileRow> ScannedFilesOps::listUnprocessed(DatabaseManager &db, UnifiedObservableConfigManager &cfg,
-                                                                 int limit)
-    {
-        ServerMode mode = cfg.getServerMode();
-        return listUnprocessed(db, mode, limit);
-    }
+    // REMOVED: Overloads that infer ServerMode from config - no longer needed
 
     static std::vector<int> splitIds(const std::string &s)
     {
@@ -617,7 +352,7 @@ namespace MediaDedup
         return out;
     }
 
-    std::vector<int> ScannedFilesOps::getLinks(DatabaseManager &db, const std::string &file_path, ServerMode mode)
+    std::vector<int> ScannedFilesOps::getLinks(DatabaseManager &db, const std::string &file_path)
     {
         try
         {
@@ -625,18 +360,7 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string p = file_path;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                stmt << std::string(SQL::kSelectLinksFast), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::BALANCED:
-                stmt << std::string(SQL::kSelectLinksBalanced), Keywords::use(p), Keywords::now;
-                break;
-            case ServerMode::QUALITY:
-                stmt << std::string(SQL::kSelectLinksQuality), Keywords::use(p), Keywords::now;
-                break;
-            }
+            stmt << std::string(SQL::kSelectLinks), Keywords::use(p), Keywords::now;
             RecordSet rs(stmt);
             if (!rs.moveFirst())
                 return {};
@@ -649,7 +373,7 @@ namespace MediaDedup
         }
     }
 
-    std::vector<ScannedFileRow> ScannedFilesOps::listUnprocessed(DatabaseManager &db, ServerMode mode, int limit)
+    std::vector<ScannedFileRow> ScannedFilesOps::listUnprocessed(DatabaseManager &db, int limit)
     {
         std::vector<ScannedFileRow> out;
         try
@@ -657,18 +381,7 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                stmt << std::string(SQL::kListUnprocessedFast);
-                break;
-            case ServerMode::BALANCED:
-                stmt << std::string(SQL::kListUnprocessedBalanced);
-                break;
-            case ServerMode::QUALITY:
-                stmt << std::string(SQL::kListUnprocessedQuality);
-                break;
-            }
+            stmt << std::string(SQL::kListUnprocessed);
             if (limit > 0)
             {
                 stmt << " LIMIT " << limit;
@@ -685,15 +398,11 @@ namespace MediaDedup
                 r.share_name = rs[3].convert<std::string>();
                 r.file_name = rs[4].convert<std::string>();
                 r.file_metadata = rs[5].convert<std::string>();
-                r.processed_fast = rs[6].convert<int>();
-                r.processed_balanced = rs[7].convert<int>();
-                r.processed_quality = rs[8].convert<int>();
-                r.links_fast = rs[9].convert<std::string>();
-                r.links_balanced = rs[10].convert<std::string>();
-                r.links_quality = rs[11].convert<std::string>();
-                r.is_network_file = rs[12].convert<int>() != 0;
-                r.location_key = rs[13].convert<std::string>();
-                r.created_at = rs[14].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -780,48 +489,31 @@ namespace MediaDedup
         }
     }
 
-    int ScannedFilesOps::resetAllErrors(DatabaseManager &db, ServerMode mode)
+    int ScannedFilesOps::resetAllErrors(DatabaseManager &db)
     {
         try
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
 
-            // First count the error files for this mode
-            int count = countError(db, mode);
+            // First count the error files
+            int count = countError(db);
             if (count == 0)
             {
-                Poco::Logger::get("ScannedFilesOps").information("No error files to reset for mode " + std::to_string(static_cast<int>(mode)));
+                Poco::Logger::get("ScannedFilesOps").information("No error files to reset");
                 return 0;
             }
 
             // Now reset the errors
             Statement stmt(sess);
-            std::string_view query;
-            switch (mode)
-            {
-            case ServerMode::FAST:
-                query = SQL::kResetAllErrorsFast;
-                break;
-            case ServerMode::BALANCED:
-                query = SQL::kResetAllErrorsBalanced;
-                break;
-            case ServerMode::QUALITY:
-                query = SQL::kResetAllErrorsQuality;
-                break;
-            default:
-                query = SQL::kResetAllErrorsFast;
-                break;
-            }
+            stmt << std::string(SQL::kResetAllErrors), Keywords::now;
 
-            stmt << std::string(query), Keywords::now;
-            
-            Poco::Logger::get("ScannedFilesOps").information("Reset " + std::to_string(count) + " error files to unprocessed for mode " + std::to_string(static_cast<int>(mode)));
+            Poco::Logger::get("ScannedFilesOps").information("Reset " + std::to_string(count) + " error files to unprocessed");
             return count;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ScannedFilesOps").error("Failed to reset all errors for mode " + std::to_string(static_cast<int>(mode)) + ": " + std::string(e.what()));
+            Poco::Logger::get("ScannedFilesOps").error("Failed to reset all errors: " + std::string(e.what()));
             return -1;
         }
     }
@@ -848,7 +540,7 @@ namespace MediaDedup
             }
             Poco::Logger::get("ScannedFilesOps").information("Total keys found: " + std::to_string(result.size()));
         }
-        catch (const std::exception& e)
+        catch (const std::exception &e)
         {
             // Log the error for debugging
             Poco::Logger::get("ScannedFilesOps").error("Error in getRegisteredLocationKeys: " + std::string(e.what()));
@@ -881,19 +573,20 @@ namespace MediaDedup
             {
                 return 0; // No registered locations = no files to count
             }
-            
+
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            
+
             // Build IN clause for location_key filtering
             std::string in_clause = "";
             for (size_t i = 0; i < registered_keys.size(); ++i)
             {
-                if (i > 0) in_clause += ",";
+                if (i > 0)
+                    in_clause += ",";
                 in_clause += "'" + registered_keys[i] + "'";
             }
-            
+
             std::string query = base_query;
             // Replace ? with the IN clause
             size_t pos = query.find("?");
@@ -901,7 +594,7 @@ namespace MediaDedup
             {
                 query.replace(pos, 1, in_clause);
             }
-            
+
             stmt << query, Keywords::now;
             RecordSet rs(stmt);
             if (rs.moveFirst())
@@ -913,5 +606,49 @@ namespace MediaDedup
         {
         }
         return 0;
+    }
+
+    int ScannedFilesOps::countError(DatabaseManager &db)
+    {
+        return executeFilteredCount(db, std::string(SQL::kCountErrorFiles));
+    }
+
+    int ScannedFilesOps::countQueued(DatabaseManager &db)
+    {
+        return executeFilteredCount(db, std::string(SQL::kCountQueuedFiles));
+    }
+
+    int ScannedFilesOps::countErrorAll(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            int count = 0;
+            stmt << std::string(SQL::kCountErrorFiles), Keywords::into(count), Keywords::now;
+            return count;
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::countQueuedAll(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            int count = 0;
+            stmt << std::string(SQL::kCountQueuedFiles), Keywords::into(count), Keywords::now;
+            return count;
+        }
+        catch (...)
+        {
+            return 0;
+        }
     }
 }

@@ -5,6 +5,7 @@
 #include "media_processors/image/backends/onnx_adapter.hpp"
 #include "media_processors/image/backends/tiff_validator.hpp"
 #include <Poco/Logger.h>
+#include <filesystem>
 #include "config/unified_observable_config.hpp"
 #include "config/config_enums.hpp"
 
@@ -21,10 +22,10 @@ namespace MediaDedup
         }
         try
         {
-            cfg.input_size = config_manager->getPropertyValue<int>("media.image.quality.onnx.inputSize", cfg.input_size);
-            cfg.embedding_dim = config_manager->getPropertyValue<int>("media.image.quality.embeddingDim", cfg.embedding_dim);
-            cfg.model = config_manager->getPropertyValue<std::string>("media.image.quality.onnx.modelPath", cfg.model);
-            Poco::Logger::get("QualityPipeline").debug("Loaded quality config: input=%d, dim=%d, model=%s", cfg.input_size, cfg.embedding_dim, cfg.model);
+            cfg.input_size = config_manager->getPropertyValue<int>("media.image.onnx.inputSize", cfg.input_size);
+            cfg.embedding_dim = config_manager->getPropertyValue<int>("media.image.embeddingDim", cfg.embedding_dim);
+            cfg.model = config_manager->getPropertyValue<std::string>("media.image.onnx.modelPath", cfg.model);
+            Poco::Logger::get("QualityPipeline").debug("Loaded config: input=%d, dim=%d, model=%s", cfg.input_size, cfg.embedding_dim, cfg.model);
         }
         catch (const std::exception &e)
         {
@@ -50,7 +51,7 @@ namespace MediaDedup
 
             ImageEmbeddingRecord rec;
             rec.file_path = file_path;
-            rec.mode = "QUALITY";
+            // Note: rec.mode removed as mode column was removed from image_artifacts table
             rec.model = cfg.model;
             rec.dim = cfg.embedding_dim;
             rec.embedding_blob = std::move(blob);
@@ -97,8 +98,8 @@ namespace MediaDedup
                 if (!validation_result.is_valid)
                 {
                     logger.warning("TIFF validation failed for %s: %s", processing_file_path, validation_result.error_message);
-                    ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -5, 
-                        "TIFF validation failed: " + validation_result.error_message, "TiffValidator");
+                    ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -5,
+                                                     "TIFF validation failed: " + validation_result.error_message, "TiffValidator");
                     return false;
                 }
                 logger.debug("TIFF validation passed for %s", processing_file_path);
@@ -110,14 +111,18 @@ namespace MediaDedup
 
             if (!onnx_success)
             {
-                logger.warning("ONNX embedding failed for %s", processing_file_path);
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "ONNX embedding computation failed", "ONNX");
+                bool file_exists = std::filesystem::exists(processing_file_path);
+                logger.warning("ONNX embedding failed for %s (processing path: %s, file exists: %s)",
+                               original_file_path, processing_file_path, file_exists ? "yes" : "no");
+                std::string error_msg = "ONNX embedding computation failed for: " + processing_file_path +
+                                        " (file exists: " + (file_exists ? "yes" : "no") + ")";
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, error_msg, "ONNX");
                 return false;
             }
 
             ImageEmbeddingRecord rec;
             rec.file_path = original_file_path; // Store metadata against original file path
-            rec.mode = "QUALITY";
+            // Note: rec.mode removed as mode column was removed from image_artifacts table
             rec.model = cfg.model;
             rec.dim = cfg.embedding_dim;
             rec.embedding_blob = std::move(blob);
@@ -126,13 +131,13 @@ namespace MediaDedup
             if (!ImageArtifactsOps::ensureTable(db))
             {
                 Poco::Logger::get("QualityPipeline").error("Failed to ensure image_artifacts table");
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "Failed to ensure image_artifacts table", "Database");
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Failed to ensure image_artifacts table", "Database");
                 return false;
             }
             if (!ImageArtifactsOps::upsertEmbedding(db, rec))
             {
                 Poco::Logger::get("QualityPipeline").error("Failed to upsert embedding for %s", original_file_path);
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "Failed to upsert embedding to database", "Database");
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Failed to upsert embedding to database", "Database");
                 return false;
             }
             return true;
@@ -140,13 +145,13 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("QualityPipeline").error("Exception: %s", std::string(e.what()));
-            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "Quality pipeline exception: " + std::string(e.what()), "Pipeline");
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Quality pipeline exception: " + std::string(e.what()), "Pipeline");
             return false;
         }
         catch (...)
         {
             Poco::Logger::get("QualityPipeline").error("Unknown exception");
-            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::QUALITY, -1, "Quality pipeline unknown exception", "Pipeline");
+            ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Quality pipeline unknown exception", "Pipeline");
             return false;
         }
     }

@@ -60,14 +60,8 @@ namespace MediaDedup
             std::string mode_str;
             switch (mode)
             {
-            case ServerMode::FAST:
-                mode_str = "FAST";
-                break;
-            case ServerMode::BALANCED:
-                mode_str = "BALANCED";
-                break;
-            case ServerMode::QUALITY:
-                mode_str = "QUALITY";
+            case ServerMode::EMBEDDING:
+                mode_str = "EMBEDDING";
                 break;
             default:
                 mode_str = "UNKNOWN";

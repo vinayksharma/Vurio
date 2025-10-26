@@ -252,19 +252,8 @@ namespace MediaDedup
                     "SELECT id, file_path, file_metadata FROM scanned_files "
                     "WHERE id > ? AND ";
 
-                // Add mode-specific processing status check
-                if (mode == "FAST")
-                {
-                    query += "processed_fast = 2 ";
-                }
-                else if (mode == "BALANCED")
-                {
-                    query += "processed_balanced = 2 ";
-                }
-                else // QUALITY
-                {
-                    query += "processed_quality = 2 ";
-                }
+                // Add processing status check (only processed files)
+                query += "processed = 2 ";
 
                 query += "ORDER BY id ASC LIMIT ?";
 
@@ -374,14 +363,8 @@ namespace MediaDedup
                         "SELECT sf.id "
                         "FROM scanned_files sf "
                         "WHERE sf.id <= ? "
-                        "AND sf.id NOT IN (SELECT file_id FROM duplicate_members) ";
-
-                    if (mode == "FAST")
-                        id_query += "AND sf.processed_fast = 2";
-                    else if (mode == "BALANCED")
-                        id_query += "AND sf.processed_balanced = 2";
-                    else
-                        id_query += "AND sf.processed_quality = 2";
+                        "AND sf.id NOT IN (SELECT file_id FROM duplicate_members) "
+                        "AND sf.processed = 2";
 
                     Statement id_stmt(sess);
                     id_stmt << id_query, use(existing_last_id);

@@ -3,6 +3,7 @@
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
 #include <iostream>
+#include <filesystem>
 #if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
 #include <onnxruntime/core/session/onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
@@ -45,6 +46,8 @@ namespace MediaDedup
 #if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
         try
         {
+            Poco::Logger::get("OnnxAdapter").trace("ComputeEmbedding called - file_path: %s, model_path: %s, input_size: %d, embedding_dim: %d", file_path.c_str(), model_path.c_str(), input_size, embedding_dim);
+
             if (model_path.empty())
             {
                 Poco::Logger::get("OnnxAdapter").warning("Model path missing");
@@ -53,13 +56,24 @@ namespace MediaDedup
             }
 
             cv::setNumThreads(0);
+            Poco::Logger::get("OnnxAdapter").trace("Attempting to load image: %s", file_path);
             std::cerr << "[OnnxAdapter] Loading image: " << file_path << std::endl;
+
+            // Check if file exists before attempting to read
+            if (!std::filesystem::exists(file_path))
+            {
+                Poco::Logger::get("OnnxAdapter").error("File does not exist when trying to load: %s", file_path);
+                std::cerr << "[OnnxAdapter] File does not exist: " << file_path << std::endl;
+                return false;
+            }
+            Poco::Logger::get("OnnxAdapter").trace("File exists, proceeding to load with OpenCV");
 
             // Enhanced error handling for OpenCV imread
             cv::Mat bgr;
             try
             {
                 bgr = cv::imread(file_path, cv::IMREAD_COLOR);
+                Poco::Logger::get("OnnxAdapter").trace("cv::imread returned - rows: %d, cols: %d, empty: %s", bgr.rows, bgr.cols, bgr.empty() ? "true" : "false");
             }
             catch (const cv::Exception &e)
             {
@@ -82,8 +96,11 @@ namespace MediaDedup
 
             if (bgr.empty())
             {
-                Poco::Logger::get("OnnxAdapter").warning("Failed to load image for ONNX (empty result): %s", file_path);
-                std::cerr << "[OnnxAdapter] Failed to load image (empty result)" << std::endl;
+                bool still_exists = std::filesystem::exists(file_path);
+                auto file_size = still_exists ? std::filesystem::file_size(file_path) : 0;
+                Poco::Logger::get("OnnxAdapter").warning("Failed to load image for ONNX (empty result): %s (exists: %s, size: %zu)", file_path, still_exists ? "yes" : "no", file_size);
+                Poco::Logger::get("OnnxAdapter").trace("File exists check: %s", still_exists ? "yes" : "no");
+                std::cerr << "[OnnxAdapter] Failed to load image (empty result, exists: " << (still_exists ? "yes" : "no") << ", size: " << file_size << ")" << std::endl;
                 return false;
             }
 

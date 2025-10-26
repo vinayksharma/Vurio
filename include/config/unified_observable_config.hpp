@@ -159,7 +159,7 @@ namespace MediaDedup
 
         // Convenience: get server processing mode as enum
         ServerMode getServerMode(const std::string &key = "server.mode",
-                                 ServerMode default_mode = ServerMode::FAST);
+                                 ServerMode default_mode = ServerMode::EMBEDDING);
 
     private:
         std::string config_file_path_;

@@ -81,7 +81,7 @@ namespace MediaDedup
                 Poco::Logger::get("ServerStatusHandler").debug("Configuration status set successfully");
 
                 // Server mode
-                auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
+                auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::EMBEDDING);
                 status_obj.set("server_mode", toString(server_mode));
                 Poco::Logger::get("ServerStatusHandler").debug("Server mode set successfully");
             }
@@ -93,44 +93,19 @@ namespace MediaDedup
                 int scanned_count = scanned_files_service_->count();
                 status_obj.set("scanned_files_count", scanned_count);
 
-                // Get processed count for current server mode
-                if (config_manager_)
-                {
-                    auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
-                    int processed_count = scanned_files_service_->countProcessed(server_mode);
-                    status_obj.set("processed_files_count", processed_count);
-                }
-                else
-                {
-                    // Fallback to total processed count if config manager not available
-                    int processed_count = scanned_files_service_->countProcessed();
-                    status_obj.set("processed_files_count", processed_count);
-                }
+                // Get processed count
+                int processed_count = scanned_files_service_->countProcessed();
+                status_obj.set("processed_files_count", processed_count);
 
-                // Add error count for current server mode only
-                if (config_manager_)
-                {
-                    auto server_mode = config_manager_->getServerMode("server.mode", ServerMode::FAST);
-                    int error_count = scanned_files_service_->countError(server_mode);
-                    status_obj.set("error_files_count", error_count);
-                    Poco::Logger::get("ServerStatusHandler").debug("Error count for current mode: %d", error_count);
+                // Add error count
+                int error_count = scanned_files_service_->countError();
+                status_obj.set("error_files_count", error_count);
+                Poco::Logger::get("ServerStatusHandler").debug("Error count: %d", error_count);
 
-                    // Add queued count for current server mode
-                    int queued_count = scanned_files_service_->countQueued(server_mode);
-                    status_obj.set("queued_files_count", queued_count);
-                    Poco::Logger::get("ServerStatusHandler").debug("Queued count for current mode: %d", queued_count);
-                }
-                else
-                {
-                    // Fallback to FAST mode if config manager not available
-                    int error_count = scanned_files_service_->countError(ServerMode::FAST);
-                    status_obj.set("error_files_count", error_count);
-                    Poco::Logger::get("ServerStatusHandler").debug("Error count (fallback to FAST mode): %d", error_count);
-
-                    int queued_count = scanned_files_service_->countQueued(ServerMode::FAST);
-                    status_obj.set("queued_files_count", queued_count);
-                    Poco::Logger::get("ServerStatusHandler").debug("Queued count (fallback to FAST mode): %d", queued_count);
-                }
+                // Add queued count
+                int queued_count = scanned_files_service_->countQueued();
+                status_obj.set("queued_files_count", queued_count);
+                Poco::Logger::get("ServerStatusHandler").debug("Queued count: %d", queued_count);
             }
 
             // Duplicate statistics

@@ -51,18 +51,18 @@ namespace MediaDedup
                     // Note: FatalErrorHandler requires noreturn attribute so we can't override it
                     // Instead we rely on MAGICK_DEBUG=None to disable assertions at compile/runtime level
                     
-                    // Set regular error handler
+                    // Set regular error handler - just log, don't abort
                     MagickCore::SetErrorHandler([](const MagickCore::ExceptionType severity,
                                                    const char *reason,
                                                    const char *description) {
-                        // Log but don't abort - convert to exception instead
+                        // Log errors but don't throw - let the transcoding continue
                         Poco::Logger::get("ImageMagick").error("ImageMagick Error [%d]: %s - %s",
                                                                static_cast<int>(severity),
                                                                reason ? reason : "unknown",
                                                                description ? description : "");
                     });
                     
-                    // Set warning handler
+                    // Set warning handler - just log, don't interrupt
                     MagickCore::SetWarningHandler([](const MagickCore::ExceptionType severity,
                                                      const char *reason,
                                                      const char *description) {

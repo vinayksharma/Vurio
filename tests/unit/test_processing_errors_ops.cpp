@@ -35,7 +35,7 @@ namespace MediaDedup
             bool result = ProcessingErrorsOps::insertError(
                 dbm,
                 "/path/to/test/file.jpg",
-                ServerMode::FAST,
+                ServerMode::EMBEDDING,
                 -1,
                 "Test error message",
                 "OpenCV");
@@ -54,17 +54,17 @@ namespace MediaDedup
 
             // Insert multiple errors for different files
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/file1.jpg", ServerMode::FAST, -1, "Error 1", "ImageMagick"));
+                dbm, "/file1.jpg", ServerMode::EMBEDDING, -1, "Error 1", "ImageMagick"));
 
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/file2.jpg", ServerMode::BALANCED, -3, "File access error", "FileSystem"));
+                dbm, "/file2.jpg", ServerMode::EMBEDDING, -3, "File access error", "FileSystem"));
 
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/file3.jpg", ServerMode::QUALITY, -4, "Out of memory", "Memory"));
+                dbm, "/file3.jpg", ServerMode::EMBEDDING, -4, "Out of memory", "Memory"));
 
             // Insert multiple errors for the same file (allowed)
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/file1.jpg", ServerMode::FAST, -101, "Escalated error", "ImageMagick"));
+                dbm, "/file1.jpg", ServerMode::EMBEDDING, -101, "Escalated error", "ImageMagick"));
         }
 
         TEST(ProcessingErrorsOpsTest, InsertErrorAllModes)
@@ -78,13 +78,13 @@ namespace MediaDedup
 
             // Test all server modes
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/test.jpg", ServerMode::FAST, -1, "Fast mode error", "General"));
+                dbm, "/test.jpg", ServerMode::EMBEDDING, -1, "Fast mode error", "General"));
 
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/test.jpg", ServerMode::BALANCED, -1, "Balanced mode error", "General"));
+                dbm, "/test.jpg", ServerMode::EMBEDDING, -1, "Balanced mode error", "General"));
 
             EXPECT_TRUE(ProcessingErrorsOps::insertError(
-                dbm, "/test.jpg", ServerMode::QUALITY, -1, "Quality mode error", "General"));
+                dbm, "/test.jpg", ServerMode::EMBEDDING, -1, "Quality mode error", "General"));
         }
 
         TEST(ProcessingErrorsOpsTest, InsertErrorWithEmptySource)
@@ -100,7 +100,7 @@ namespace MediaDedup
             bool result = ProcessingErrorsOps::insertError(
                 dbm,
                 "/path/to/file.jpg",
-                ServerMode::FAST,
+                ServerMode::EMBEDDING,
                 -1,
                 "Error without source",
                 "" // Empty source
@@ -126,7 +126,7 @@ namespace MediaDedup
                 EXPECT_TRUE(ProcessingErrorsOps::insertError(
                     dbm,
                     "/file_" + std::to_string(code) + ".jpg",
-                    ServerMode::FAST,
+                    ServerMode::EMBEDDING,
                     code,
                     "Error code " + std::to_string(code),
                     "TestSource"));

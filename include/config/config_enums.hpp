@@ -6,35 +6,21 @@
 namespace MediaDedup
 {
     // Server-wide processing mode
+    // Currently only supports embedding-based duplicate detection (formerly QUALITY mode)
     enum class ServerMode
     {
-        FAST,
-        BALANCED,
-        QUALITY
+        EMBEDDING // CLIP embedding-based processing (default and only mode)
     };
 
     inline ServerMode parseServerMode(const std::string &value)
     {
-        std::string v = value;
-        std::transform(v.begin(), v.end(), v.begin(), ::toupper);
-        if (v == "BALANCED")
-            return ServerMode::BALANCED;
-        if (v == "QUALITY")
-            return ServerMode::QUALITY;
-        return ServerMode::FAST;
+        // Always return EMBEDDING regardless of input
+        // This maintains API compatibility while enforcing single mode
+        return ServerMode::EMBEDDING;
     }
 
     inline const char *toString(ServerMode mode)
     {
-        switch (mode)
-        {
-        case ServerMode::BALANCED:
-            return "BALANCED";
-        case ServerMode::QUALITY:
-            return "QUALITY";
-        case ServerMode::FAST:
-        default:
-            return "FAST";
-        }
+        return "EMBEDDING";
     }
 }
