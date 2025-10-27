@@ -61,6 +61,42 @@ Configuration Management
 • Keep the default configuration generation code (used when no config file exists) in sync whenever new config keys are added or existing ones change.
 • Keep the configuration reference/documentation up to date with every config change.
 
+Configuration File Organization
+• The config/config.yaml file MUST be organized into the following sections IN THIS ORDER:
+
+1. SERVER CONFIGURATION - All server.\* settings
+2. DATABASE CONFIGURATION - All database.\* settings
+3. CACHE CONFIGURATION - All cache.\* settings
+4. LOGGING CONFIGURATION - All logging.\* settings
+5. THREAD POOL MANAGER (TPM) CONFIGURATION - All tpm.\* settings
+6. FILES MANAGER CONFIGURATION - All files.\* settings
+7. MEDIA PROCESSOR CONFIGURATION - All media.processor.\* settings
+8. IMAGE PROCESSING CONFIGURATION - All media.image(s).\* settings
+   - Image Formats (standard formats)
+   - RAW Image Formats (raw image formats alphabetically)
+   - Image Processing Settings
+   - Image Transcoding
+   - ONNX Model Configuration
+9. VIDEO PROCESSING CONFIGURATION - All media.video.\* settings
+10. AUDIO PROCESSING CONFIGURATION - All media.audio.\* settings
+11. THUMBNAIL CONFIGURATION - All thumbnail.\* settings
+12. DUPLICATE DETECTION CONFIGURATION - All duplicates.\* settings
+13. SCHEDULER CONFIGURATION - All scheduler.\* settings
+
+• Each section MUST:
+
+- Start with a clear header comment block using = separators
+- Group related settings together with sub-headers where appropriate
+- List settings alphabetically within each subsection
+- Use consistent indentation and spacing
+
+• When adding new configuration keys:
+
+- Place them in the appropriate section based on their prefix/category
+- If creating a new category, add it in a logical position and update this list
+- Never append new settings at the end without proper categorization
+- Always maintain the established section order
+
 ⸻
 
 API Documentation & OpenAPI Specification

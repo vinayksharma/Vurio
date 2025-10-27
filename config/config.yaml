@@ -1,145 +1,209 @@
-media.audio.amr: true
-scheduler.jitter.enabled: false
-media.images.raw.dng: true
-media.video.m4v: true
-media.audio.au: true
-tpm.types.image_processor.share: 1
-media.images.raw.bay: true
-media.image.onnx.sessionCache.enabled: true
-media.images.raw.srw: true
-media.video.mov: true
-media.audio.m4a: true
-media.video.mkv: true
-media.images.raw.nrw: true
-media.images.exr: true
-media.images.raw.rwl: true
-media.images.tiff: true
-media.images.raw.rwz: true
-media.video.mpeg: true
-media.video.ts: true
-media.video.webm: true
-media.images.raw.dcr: true
-media.video.ogv: true
-media.images.raw.rw2: true
-media.images.raw.arw: true
-media.image.transcoding.timeoutMs: 120000
-media.images.pnm: true
-media.audio.opus: true
-duplicates.metadata.filtering.enabled: false
-media.video.m2ts: true
-media.video.mp4: true
-media.images.webp: true
-media.audio.ogg: true
-media.images.raw.pef: true
-media.images.raw.cr2: true
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
 server.name: Media Deduplication Server
-media.images.png: true
-media.images.raw.mef: true
-media.audio.mp3: true
-media.images.raw.kdc: true
-media.images.jpg: true
-media.images.hdr: true
-media.audio.aac: true
-files.manager.scan.intervalMs: 900000
-media.images.jpeg: true
-media.images.raw.mos: true
-duplicates.threshold: 0.93999999999999995
-media.video.mts: true
-thumbnail.default.size: 256
-duplicates.metadata.requireSameFormat: false
-scheduler.jobs: ""
-media.video.wmv: true
-duplicates.finder.batchSize: 1000
-media.audio.aiff: true
-media.image.onnx.modelPath: models/clip-image-vitb32.onnx
-duplicates.metadata.dimensionTolerance: 0.10000000000000001
-media.audio.flac: true
-media.images.raw.raf: true
-media.audio.alac: true
-media.images.raw.3fr: true
-duplicates.finder.enabled: true
-media.image.retry.maxAttempts: 2
-media.image.onnx.inputSize: 224
-files.service.immediateJobTrigger.enabled: true
-scheduler.backoff.multiplier: 2
-tpm.types.audio_processor.share: 1
-media.processor.maxQueueSize: 1000
-media.images.jp2: true
-cache.thumbnail.clearOnStartup: false
-duplicates.finder.maxGroupSize: 100
-media.video.avi: true
-media.image.retry.baseDelayMs: 500
+server.processName: media_dedup_server
 server.host: localhost
+server.port: 8080
+server.instanceCheck.enabled: true
+server.instanceCheck.bufferSize: 128
+server.http.threadPool.maxThreads: auto
+server.http.threadPool.maxQueued: 50
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database.path: data/dedup_server.db
+database.sqlite.cacheSize: 1000
+database.sqlite.tempStore: memory
+database.session.poolMin: 8
+database.session.poolMax: 32
+database.session.acquireTimeoutMs: 10000
+database.session.acquireBackoffMs: 50
+
+# =============================================================================
+# CACHE CONFIGURATION
+# =============================================================================
+cache.disk.location: cache
+cache.disk.size_limit_mb: 2048
+cache.disk.clearOnStartup: true
+cache.thumbnail.location: cache/thumbnails
+cache.thumbnail.size_limit_mb: 10240
+cache.thumbnail.clearOnStartup: false
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging.level: trace
+
+# =============================================================================
+# THREAD POOL MANAGER (TPM) CONFIGURATION
+# =============================================================================
+tpm.pool.max: auto
+tpm.thread.idleTimeoutSeconds: 120
+tpm.thread.stackSizeKB: 1024
+tpm.killTimeoutMs: 10000
+tpm.types.media_processor.share: 1
+tpm.types.image_processor.share: 1
+tpm.types.video_processor.share: 1
+tpm.types.audio_processor.share: 1
+tpm.types.thumbnail_generator.share: 1
+tpm.types.duplicate_finder.share: 1
+tpm.types.fileScan.share: 1
+
+# =============================================================================
+# FILES MANAGER CONFIGURATION
+# =============================================================================
+files.manager.enabled: true
+files.manager.useInMemoryIndex: false
+files.manager.scan.intervalMs: 900000
+files.service.immediateJobTrigger.enabled: true
+files.service.immediateJobTrigger.timeoutMs: 30000
+
+# =============================================================================
+# MEDIA PROCESSOR CONFIGURATION
+# =============================================================================
+media.processor.enabled: true
+media.processor.intervalMs: 5000
+media.processor.maxQueueSize: 1000
+
+# =============================================================================
+# IMAGE PROCESSING CONFIGURATION
+# =============================================================================
+# Image Formats
+media.images.jpg: true
+media.images.jpeg: true
+media.images.png: true
+media.images.gif: true
+media.images.bmp: true
+media.images.tiff: true
+media.images.tif: true
+media.images.webp: true
+media.images.jp2: true
+media.images.hdr: true
+media.images.exr: true
+media.images.pnm: true
+media.images.ppm: true
+media.images.pgm: true
+media.images.pbm: true
+
+# RAW Image Formats
+media.images.raw.arw: true
+media.images.raw.cr2: true
 media.images.raw.nef: true
+media.images.raw.dng: true
+media.images.raw.orf: true
+media.images.raw.rw2: true
+media.images.raw.pef: true
+media.images.raw.srw: true
+media.images.raw.raf: true
+media.images.raw.raw: true
+media.images.raw.rwl: true
+media.images.raw.rwz: true
+media.images.raw.mrw: true
+media.images.raw.nrw: true
+media.images.raw.3fr: true
+media.images.raw.fff: true
+media.images.raw.mef: true
+media.images.raw.mos: true
+media.images.raw.dcr: true
+media.images.raw.kdc: true
+media.images.raw.bay: true
+media.images.raw.iiq: true
+
+# Image Processing Settings
+media.image.timeoutMs: 30000
+media.image.embeddingDim: 512
+media.image.retry.enabled: true
+media.image.retry.maxAttempts: 2
+media.image.retry.baseDelayMs: 500
+
+# Image Transcoding
+media.image.transcoding.enabled: true
+media.image.transcoding.timeoutMs: 120000
+media.image.transcoding.preserveMetadata: true
+
+# ONNX Model Configuration
+media.image.onnx.modelPath: models/clip-image-vitb32.onnx
+media.image.onnx.inputSize: 224
+media.image.onnx.sessionCache.enabled: true
+media.image.onnx.sessionCache.maxSessions: 4
+
+# =============================================================================
+# VIDEO PROCESSING CONFIGURATION
+# =============================================================================
+media.video.mp4: true
+media.video.mov: true
+media.video.avi: true
+media.video.mkv: true
+media.video.webm: true
+media.video.flv: true
+media.video.wmv: true
+media.video.m4v: true
+media.video.mpg: true
+media.video.mpeg: true
+media.video.m2ts: true
+media.video.mts: true
+media.video.ts: true
+media.video.ogv: true
+
+# =============================================================================
+# AUDIO PROCESSING CONFIGURATION
+# =============================================================================
+media.audio.mp3: true
+media.audio.wav: true
+media.audio.flac: true
+media.audio.aac: true
+media.audio.ogg: true
+media.audio.m4a: true
+media.audio.wma: true
+media.audio.aiff: true
+media.audio.alac: true
+media.audio.amr: true
+media.audio.au: true
+media.audio.opus: true
+
+# =============================================================================
+# THUMBNAIL CONFIGURATION
+# =============================================================================
+thumbnail.default.size: 256
+thumbnail.pipeline.size: 256
+thumbnail.pipeline.enabled: true
+thumbnail.pipeline.onlyIfMissing: true
+thumbnail.generation.timeoutMs: 5000
+thumbnail.jpeg.quality: 85
+thumbnail.allowed.sizes: 128
+
+# =============================================================================
+# DUPLICATE DETECTION CONFIGURATION
+# =============================================================================
+duplicates.finder.enabled: true
+duplicates.finder.intervalMs: 5000
+duplicates.finder.batchSize: 1000
+duplicates.finder.maxGroupSize: 100
+duplicates.threshold: 0.93999999999999995
+duplicates.representative.strategy: size_then_age
+
+# Duplicate Metadata Filtering
+duplicates.metadata.filtering.enabled: false
+duplicates.metadata.requireSameFormat: false
+duplicates.metadata.dimensionTolerance: 0.10000000000000001
+duplicates.metadata.fileSizeTolerance: 0.20000000000000001
+duplicates.metadata.aspectRatioTolerance: 0.050000000000000003
+
+# =============================================================================
+# SCHEDULER CONFIGURATION
+# =============================================================================
+scheduler.jobs: ""
+scheduler.maxConsecutiveFailures: 5
+scheduler.drift.mode: anchored
+scheduler.drift.maxDriftMs: 60000
+scheduler.jitter.enabled: false
+scheduler.jitter.percent: 0
+
+# Scheduler Backoff
+scheduler.backoff.enabled: true
 scheduler.backoff.initialMs: 1000
 scheduler.backoff.maxMs: 30000
-scheduler.maxConsecutiveFailures: 5
-media.video.flv: true
-thumbnail.pipeline.size: 256
-database.session.acquireBackoffMs: 50
-scheduler.drift.mode: anchored
-media.processor.intervalMs: 5000
-tpm.types.duplicate_finder.share: 1
-media.images.tif: true
-duplicates.metadata.fileSizeTolerance: 0.20000000000000001
-scheduler.drift.maxDriftMs: 60000
-server.instanceCheck.bufferSize: 128
-tpm.types.media_processor.share: 1
-tpm.thread.idleTimeoutSeconds: 120
-tpm.pool.max: auto
-media.images.raw.mrw: true
-tpm.thread.stackSizeKB: 1024
-media.image.transcoding.preserveMetadata: true
-media.image.timeoutMs: 30000
-thumbnail.jpeg.quality: 85
-thumbnail.pipeline.onlyIfMissing: true
-thumbnail.allowed.sizes: 128
-media.video.mpg: true
-media.image.embeddingDim: 512
-media.audio.wma: true
-media.processor.enabled: true
-cache.thumbnail.size_limit_mb: 10240
-cache.disk.location: cache
-media.images.raw.raw: true
+scheduler.backoff.multiplier: 2
 scheduler.backoff.jitterPercent: 10
-media.images.ppm: true
-media.audio.wav: true
-scheduler.backoff.enabled: true
-media.images.raw.iiq: true
-media.image.onnx.sessionCache.maxSessions: 4
-database.sqlite.cacheSize: 1000
-tpm.types.fileScan.share: 1
-cache.disk.size_limit_mb: 2048
-logging.level: trace
-files.manager.useInMemoryIndex: false
-duplicates.finder.intervalMs: 5000
-media.images.bmp: true
-database.session.poolMin: 8
-cache.disk.clearOnStartup: true
-media.images.pbm: true
-database.session.poolMax: 32
-media.image.retry.enabled: true
-duplicates.metadata.aspectRatioTolerance: 0.050000000000000003
-media.images.raw.orf: true
-tpm.types.thumbnail_generator.share: 1
-server.instanceCheck.enabled: true
-files.manager.enabled: true
-database.sqlite.tempStore: memory
-server.http.threadPool.maxThreads: auto
-tpm.types.video_processor.share: 1
-database.session.acquireTimeoutMs: 10000
-database.path: data/dedup_server.db
-media.image.transcoding.enabled: true
-duplicates.representative.strategy: size_then_age
-thumbnail.generation.timeoutMs: 5000
-tpm.killTimeoutMs: 10000
-cache.thumbnail.location: cache/thumbnails
-server.processName: media_dedup_server
-media.images.pgm: true
-media.images.gif: true
-server.port: 8080
-media.images.raw.fff: true
-files.service.immediateJobTrigger.timeoutMs: 30000
-server.http.threadPool.maxQueued: 50
-scheduler.jitter.percent: 0
-thumbnail.pipeline.enabled: true
