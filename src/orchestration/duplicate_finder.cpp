@@ -49,20 +49,11 @@ namespace MediaDedup
             enabled_ = cfg_->getPropertyValue<bool>("duplicates.finder.enabled", true);
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
-            fast_threshold_ = cfg_->getPropertyValue<double>("duplicates.fast.threshold", 0.90);
-            balanced_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.threshold", 0.30);
-
-            // Range-based threshold for QUALITY mode
-            quality_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.min", 0.94);
-            quality_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.quality.threshold.max", 0.98);
+            
+            // Single threshold for EMBEDDING mode (formerly QUALITY)
+            embedding_threshold_ = cfg_->getPropertyValue<double>("duplicates.threshold", 0.94);
 
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
-
-            // Quality parameters
-            fast_min_hash_size_ = cfg_->getPropertyValue<int>("duplicates.fast.minHashSize", 64);
-            balanced_min_good_matches_ = cfg_->getPropertyValue<int>("duplicates.balanced.minGoodMatches", 15);
-            balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>("duplicates.balanced.ratioTestThreshold", 0.75);
-            quality_min_confidence_ = cfg_->getPropertyValue<double>("duplicates.quality.minConfidence", 0.90);
 
             // Metadata filtering parameters
             metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>("duplicates.metadata.filtering.enabled", true);
@@ -101,9 +92,8 @@ namespace MediaDedup
 
             try
             {
-                // Get current server mode
-                std::string mode_str = cfg_->getPropertyValue<std::string>("server.mode", "FAST");
-                std::transform(mode_str.begin(), mode_str.end(), mode_str.begin(), ::toupper);
+                // Use EMBEDDING mode (single mode operation)
+                std::string mode_str = "EMBEDDING";
 
                 logger.information("Running duplicate detection in %s mode", mode_str);
 
@@ -788,21 +778,9 @@ namespace MediaDedup
                                                   const FileArtifact &file2,
                                                   const std::string &mode)
         {
-            if (mode == "FAST")
-            {
-                return SimilarityCalculator::computePhashSimilarity(file1.phash, file2.phash);
-            }
-            else if (mode == "BALANCED")
-            {
-                return SimilarityCalculator::computeFeatureSimilarity(
-                    file1.features, file2.features, file1.features_method,
-                    balanced_ratio_test_threshold_, balanced_min_good_matches_);
-            }
-            else // QUALITY
-            {
-                return SimilarityCalculator::computeEmbeddingSimilarity(
-                    file1.embedding, file2.embedding, file1.embedding_dim);
-            }
+            // Single mode operation - only EMBEDDING mode is supported
+            return SimilarityCalculator::computeEmbeddingSimilarity(
+                file1.embedding, file2.embedding, file1.embedding_dim);
         }
 
         DuplicateFinder::RepresentativeInfo DuplicateFinder::selectRepresentative(
@@ -969,24 +947,10 @@ namespace MediaDedup
             return true;
         }
 
-        double DuplicateFinder::getThreshold(const std::string &mode)
+        double DuplicateFinder::getThreshold(const std::string & /* mode */)
         {
-            double threshold = 0.0;
-            if (mode == "FAST")
-            {
-                threshold = fast_threshold_;
-            }
-            else if (mode == "BALANCED")
-            {
-                threshold = balanced_threshold_;
-            }
-            else // QUALITY
-            {
-                // Return minimum threshold (loosest match) for range-based matching
-                threshold = quality_threshold_min_;
-            }
-
-            return threshold;
+            // Single threshold for EMBEDDING mode (formerly QUALITY)
+            return embedding_threshold_;
         }
 
         void DuplicateFinder::onConfigChange(const ConfigChangeEvent &event)
@@ -1003,68 +967,33 @@ namespace MediaDedup
                 batch_size_ = cfg_->getPropertyValue<int>(event.key, 1000);
                 Poco::Logger::get("DuplicateFinder").information("Updated batch_size: %d", batch_size_);
             }
-            else if (event.key == "duplicates.fast.threshold")
+            else if (event.key == "duplicates.threshold")
             {
-                fast_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.90);
-                Poco::Logger::get("DuplicateFinder").information("Updated fast_threshold: %.3f", fast_threshold_);
-            }
-            else if (event.key == "duplicates.balanced.threshold")
-            {
-                balanced_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.30);
-                Poco::Logger::get("DuplicateFinder").information("Updated balanced_threshold: %.3f", balanced_threshold_);
-            }
-            else if (event.key == "duplicates.quality.threshold.min")
-            {
-                double new_min = cfg_->getPropertyValue<double>(event.key, 0.94);
+                double new_threshold = cfg_->getPropertyValue<double>(event.key, 0.94);
 
-                // Detect range expansion (threshold became more permissive)
-                if (new_min < quality_threshold_min_)
+                // Detect threshold expansion (threshold became more permissive)
+                if (new_threshold < embedding_threshold_)
                 {
-                    Poco::Logger::get("DuplicateFinder").warning("Quality threshold range expanded: min %.3f -> %.3f (catching more duplicates)", quality_threshold_min_, new_min);
+                    Poco::Logger::get("DuplicateFinder").warning("Embedding threshold expanded: %.3f -> %.3f (catching more duplicates)", embedding_threshold_, new_threshold);
 
-                    // Delete all QUALITY groups and reset checkpoint for full reprocessing
-                    if (DuplicateGroupsOps::deleteGroupsByMode(db_, "QUALITY"))
+                    // Delete all EMBEDDING groups and reset checkpoint for full reprocessing
+                    if (DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Deleted all QUALITY duplicate groups due to threshold expansion");
+                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold expansion");
                     }
 
-                    if (DuplicateGroupsOps::resetCheckpoint(db_, "QUALITY"))
+                    if (DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Reset QUALITY checkpoint to 0 - will reprocess all files with new threshold %.3f", new_min);
+                        Poco::Logger::get("DuplicateFinder").information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new threshold %.3f", new_threshold);
                     }
                 }
-                else if (new_min > quality_threshold_min_)
+                else if (new_threshold > embedding_threshold_)
                 {
-                    Poco::Logger::get("DuplicateFinder").information("Quality threshold became stricter: min %.3f -> %.3f (existing groups unaffected)", quality_threshold_min_, new_min);
+                    Poco::Logger::get("DuplicateFinder").information("Embedding threshold became stricter: %.3f -> %.3f (existing groups unaffected)", embedding_threshold_, new_threshold);
                 }
 
-                quality_threshold_min_ = new_min;
-                Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold_min: %.3f", quality_threshold_min_);
-            }
-            else if (event.key == "duplicates.quality.threshold.max")
-            {
-                quality_threshold_max_ = cfg_->getPropertyValue<double>(event.key, 0.98);
-                Poco::Logger::get("DuplicateFinder").information("Updated quality_threshold_max: %.3f", quality_threshold_max_);
-            }
-            else if (event.key == "duplicates.fast.minHashSize")
-            {
-                fast_min_hash_size_ = cfg_->getPropertyValue<int>(event.key, 64);
-                Poco::Logger::get("DuplicateFinder").information("Updated fast_min_hash_size: %d", fast_min_hash_size_);
-            }
-            else if (event.key == "duplicates.balanced.minGoodMatches")
-            {
-                balanced_min_good_matches_ = cfg_->getPropertyValue<int>(event.key, 15);
-                Poco::Logger::get("DuplicateFinder").information("Updated balanced_min_good_matches: %d", balanced_min_good_matches_);
-            }
-            else if (event.key == "duplicates.balanced.ratioTestThreshold")
-            {
-                balanced_ratio_test_threshold_ = cfg_->getPropertyValue<double>(event.key, 0.75);
-                Poco::Logger::get("DuplicateFinder").information("Updated balanced_ratio_test_threshold: %.3f", balanced_ratio_test_threshold_);
-            }
-            else if (event.key == "duplicates.quality.minConfidence")
-            {
-                quality_min_confidence_ = cfg_->getPropertyValue<double>(event.key, 0.90);
-                Poco::Logger::get("DuplicateFinder").information("Updated quality_min_confidence: %.3f", quality_min_confidence_);
+                embedding_threshold_ = new_threshold;
+                Poco::Logger::get("DuplicateFinder").information("Updated embedding_threshold: %.3f", embedding_threshold_);
             }
             else if (event.key == "duplicates.metadata.filtering.enabled")
             {
@@ -1099,8 +1028,8 @@ namespace MediaDedup
 
             try
             {
-                std::string mode = cfg_->getPropertyValue<std::string>("server.mode", "FAST");
-                std::transform(mode.begin(), mode.end(), mode.begin(), ::toupper);
+                // Use EMBEDDING mode (single mode operation)
+                std::string mode = "EMBEDDING";
 
                 auto dup_stats = DuplicateGroupsOps::getStats(db_, mode);
                 stats.total_groups = dup_stats.total_groups;

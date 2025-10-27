@@ -77,11 +77,9 @@ namespace MediaDedup
             bool isRunning() const { return running_.load(); }
 
             /**
-             * @brief Get threshold for current mode
+             * @brief Get threshold for EMBEDDING mode
              *
-             * For QUALITY mode, returns the minimum threshold (loosest match) from the range.
-             *
-             * @param mode Server mode (FAST/BALANCED/QUALITY)
+             * @param mode Server mode (EMBEDDING only)
              * @return Similarity threshold
              */
             double getThreshold(const std::string &mode);
@@ -112,7 +110,7 @@ namespace MediaDedup
             /**
              * @brief Process a batch of files for duplicate detection
              *
-             * @param mode Current server mode (FAST/BALANCED/QUALITY)
+             * @param mode Current server mode (EMBEDDING only)
              * @param batch_size Maximum files to process
              * @param last_processed_id Start processing from this ID + 1
              * @return Number of files processed
@@ -123,18 +121,18 @@ namespace MediaDedup
              * @brief Load artifacts for a single file
              *
              * @param file_id File ID in scanned_files table
-             * @param mode Server mode
+             * @param mode Server mode (EMBEDDING only)
              * @param artifact Output artifact data
              * @return True if artifacts loaded successfully
              */
             bool loadFileArtifacts(int file_id, const std::string &mode, FileArtifact &artifact);
 
             /**
-             * @brief Compute similarity between two files based on current mode
+             * @brief Compute similarity between two files using embedding-based matching
              *
              * @param file1 First file's artifacts
              * @param file2 Second file's artifacts
-             * @param mode Server mode (determines which artifact to use)
+             * @param mode Server mode (EMBEDDING only)
              * @return Similarity score [0.0, 1.0]
              */
             double computeSimilarity(const FileArtifact &file1,
@@ -145,7 +143,7 @@ namespace MediaDedup
              * @brief Check if a file is already in a duplicate group
              *
              * @param file_id File ID to check
-             * @param mode Server mode (FAST/BALANCED/QUALITY)
+             * @param mode Server mode (EMBEDDING only)
              * @return Group ID if file is in a group, nullopt otherwise
              */
             std::optional<int> getGroupIdForFile(int file_id, const std::string &mode);
@@ -166,7 +164,7 @@ namespace MediaDedup
              * @brief Find existing duplicate group for a file (if any)
              *
              * @param file File artifact to check
-             * @param mode Server mode
+             * @param mode Server mode (EMBEDDING only)
              * @param processed_files All previously processed files
              * @return Group ID if found, -1 if no match
              */
@@ -199,7 +197,7 @@ namespace MediaDedup
              * @brief Create a new duplicate group
              *
              * @param files Files in the group
-             * @param mode Server mode
+             * @param mode Server mode (EMBEDDING only)
              * @param threshold Similarity threshold used
              * @return Group ID, or -1 on failure
              */
@@ -214,7 +212,7 @@ namespace MediaDedup
              *
              * @param group_id Existing group ID
              * @param file File to add
-             * @param mode Server mode
+             * @param mode Server mode (EMBEDDING only)
              * @param similarity_score Similarity to current representative
              * @return True if addition succeeded
              */
@@ -240,17 +238,8 @@ namespace MediaDedup
             bool enabled_ = true;
             int batch_size_ = 1000;
             int max_group_size_ = 100;
-            double fast_threshold_ = 0.90;
-            double balanced_threshold_ = 0.30;
-            double quality_threshold_min_ = 0.94;                   // Range-based: minimum (loosest match)
-            double quality_threshold_max_ = 0.98;                   // Range-based: maximum (strictest match)
+            double embedding_threshold_ = 0.94;                     // Single threshold for EMBEDDING mode
             std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
-
-            // Quality parameters
-            int fast_min_hash_size_ = 64;
-            int balanced_min_good_matches_ = 15;
-            double balanced_ratio_test_threshold_ = 0.75;
-            double quality_min_confidence_ = 0.90;
 
             // Metadata filtering parameters
             bool metadata_filtering_enabled_ = true;
