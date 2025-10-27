@@ -29,7 +29,7 @@ namespace MediaDedupServer
          *   "groups": [
          *     {
          *       "id": 1,
-         *       "mode": "FAST",
+         *       "mode": "EMBEDDING",
          *       "representative": "/full/path/to/file.jpg",
          *       "candidates": ["/full/path/to/dup1.jpg", "/full/path/to/dup2.jpg"],
          *       "similarity_threshold": 0.95,
@@ -63,7 +63,7 @@ namespace MediaDedupServer
          * all processed artifacts (phash, features, embeddings).
          *
          * Query Parameters:
-         * - mode (optional): Specific mode to reset (FAST, BALANCED, or QUALITY)
+         * - mode (optional): Specific mode to reset (EMBEDDING - single mode operation)
          *                    Omit to reset ALL modes
          *
          * What gets cleared:

@@ -96,7 +96,7 @@ namespace MediaDedup
          * back to ready for processing (status = 0). This is useful for recovering from interrupted
          * processing sessions or resetting files that may have been left in an in-progress state.
          *
-         * The method operates on all server modes (FAST, BALANCED, QUALITY) and is thread-safe.
+         * The method operates using EMBEDDING mode (single mode operation) and is thread-safe.
          *
          * @return Number of files that were reset from processing state to ready state
          */

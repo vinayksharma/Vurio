@@ -32,7 +32,7 @@ namespace MediaDedup
          * @brief Insert a processing error record
          * @param db Database manager instance
          * @param file_path Path to the file that failed processing
-         * @param mode Server mode during processing (FAST, BALANCED, QUALITY)
+         * @param mode Server mode during processing (EMBEDDING)
          * @param error_code Error code (e.g., -1, -3, -4, -101, etc.)
          * @param error_message Detailed error message from exception
          * @param error_source Source of error (e.g., "ImageMagick", "OpenCV", "ONNX")

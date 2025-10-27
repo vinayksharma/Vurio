@@ -225,7 +225,7 @@ namespace MediaDedup
             server_port_ = static_cast<uint16_t>(config_manager_->getPropertyValue<int>("server.port", 8080));
             database_path_ = config_manager_->getPropertyValue<std::string>("database.path", "data/dedup_server.db");
             logging_level_ = config_manager_->getPropertyValue<std::string>("logging.level", "info");
-            server_mode_ = config_manager_->getPropertyValue<std::string>("server.mode", "FAST");
+            server_mode_ = "EMBEDDING";  // Single mode operation
 
             // Apply the logging level from configuration
             std::cout << "DEBUG: About to apply logging level: " << logging_level_ << std::endl;
