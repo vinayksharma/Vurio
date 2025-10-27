@@ -23,14 +23,14 @@ protected:
     {
         // Create test database in temp directory
         test_db_path_ = "/tmp/test_dup_reset_" + std::to_string(std::time(nullptr)) + ".db";
-        
+
         // Remove if exists
         std::filesystem::remove(test_db_path_);
 
         // Initialize database
         db_ = std::make_unique<DatabaseManager>(test_db_path_);
         ASSERT_TRUE(db_->initialize());
-        
+
         // Ensure duplicate detection tables exist
         ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_));
     }
@@ -66,72 +66,66 @@ protected:
 
     int countAllGroups()
     {
-        int count = 0;
-        count += DuplicateGroupsOps::countGroupsByMode(*db_, "FAST");
-        count += DuplicateGroupsOps::countGroupsByMode(*db_, "BALANCED");
-        count += DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY");
-        return count;
+        // After mode refactoring, only EMBEDDING mode exists
+        return DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING");
     }
 };
 
 TEST_F(DuplicatesResetAPITest, DeleteGroupsByMode_RemovesOnlySpecifiedMode)
 {
-    // Create groups for different modes
-    createTestGroups("FAST", 5);
-    createTestGroups("BALANCED", 3);
-    createTestGroups("QUALITY", 7);
+    // After mode refactoring, only EMBEDDING mode exists
+    // Create groups for EMBEDDING and a test legacy mode
+    createTestGroups("EMBEDDING", 15);
+    createTestGroups("LEGACY_TEST", 3);
 
     // Verify initial counts
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 5);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "BALANCED"), 3);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 7);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 15);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "LEGACY_TEST"), 3);
 
-    // Delete only QUALITY mode
-    bool deleted = DuplicateGroupsOps::deleteGroupsByMode(*db_, "QUALITY");
+    // Delete only EMBEDDING mode
+    bool deleted = DuplicateGroupsOps::deleteGroupsByMode(*db_, "EMBEDDING");
     ASSERT_TRUE(deleted);
 
-    // Verify QUALITY deleted, others preserved
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 5);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "BALANCED"), 3);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 0);
+    // Verify EMBEDDING deleted, LEGACY_TEST preserved
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 0);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "LEGACY_TEST"), 3);
 }
 
 TEST_F(DuplicatesResetAPITest, DeleteGroupsByMode_ClearsGroupsCompletely)
 {
+    // After mode refactoring, only EMBEDDING mode exists
     // Create groups with members
-    createTestGroups("QUALITY", 5);
-    createTestGroups("FAST", 3);
+    createTestGroups("EMBEDDING", 8);
 
     // Verify groups created
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 5);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 3);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 8);
 
-    // Delete QUALITY groups
-    bool deleted = DuplicateGroupsOps::deleteGroupsByMode(*db_, "QUALITY");
+    // Delete EMBEDDING groups
+    bool deleted = DuplicateGroupsOps::deleteGroupsByMode(*db_, "EMBEDDING");
     ASSERT_TRUE(deleted);
 
-    // Verify QUALITY groups deleted, FAST preserved
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 0);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 3);
+    // Verify EMBEDDING groups deleted
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 0);
 }
 
 TEST_F(DuplicatesResetAPITest, ResetCheckpoint_ResetsToZero)
 {
+    // After mode refactoring, only EMBEDDING mode exists
     // Create checkpoint with progress
-    createTestCheckpoint("QUALITY", 10000, 150);
+    createTestCheckpoint("EMBEDDING", 10000, 150);
 
     // Verify checkpoint exists with progress
-    auto checkpoint_opt = DuplicateGroupsOps::getCheckpoint(*db_, "QUALITY");
+    auto checkpoint_opt = DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
     ASSERT_TRUE(checkpoint_opt.has_value());
     EXPECT_EQ(checkpoint_opt->last_processed_id, 10000);
     EXPECT_EQ(checkpoint_opt->groups_created, 150);
 
     // Reset checkpoint
-    bool reset = DuplicateGroupsOps::resetCheckpoint(*db_, "QUALITY");
+    bool reset = DuplicateGroupsOps::resetCheckpoint(*db_, "EMBEDDING");
     ASSERT_TRUE(reset);
 
     // Verify checkpoint reset to 0
-    checkpoint_opt = DuplicateGroupsOps::getCheckpoint(*db_, "QUALITY");
+    checkpoint_opt = DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
     ASSERT_TRUE(checkpoint_opt.has_value());
     EXPECT_EQ(checkpoint_opt->last_processed_id, 0);
     EXPECT_EQ(checkpoint_opt->files_checked, 0);
@@ -142,43 +136,23 @@ TEST_F(DuplicatesResetAPITest, ResetCheckpoint_ResetsToZero)
 
 TEST_F(DuplicatesResetAPITest, ResetAll_ClearsAllModes)
 {
-    // Create groups and checkpoints for all modes
-    createTestGroups("FAST", 5);
-    createTestGroups("BALANCED", 3);
-    createTestGroups("QUALITY", 7);
-    createTestCheckpoint("FAST", 5000, 5);
-    createTestCheckpoint("BALANCED", 3000, 3);
-    createTestCheckpoint("QUALITY", 7000, 7);
+    // After mode refactoring, only EMBEDDING mode exists
+    // Create groups and checkpoint for EMBEDDING mode
+    createTestGroups("EMBEDDING", 15);
+    createTestCheckpoint("EMBEDDING", 15000, 15);
 
     // Verify initial state
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 5);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "BALANCED"), 3);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 7);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 15);
 
-    // Reset all modes (simulating the API call)
-    std::vector<std::string> modes = {"FAST", "BALANCED", "QUALITY"};
-    for (const auto &mode : modes)
-    {
-        ASSERT_TRUE(DuplicateGroupsOps::deleteGroupsByMode(*db_, mode));
-        ASSERT_TRUE(DuplicateGroupsOps::resetCheckpoint(*db_, mode));
-    }
+    // Reset EMBEDDING mode (simulating the API call)
+    ASSERT_TRUE(DuplicateGroupsOps::deleteGroupsByMode(*db_, "EMBEDDING"));
+    ASSERT_TRUE(DuplicateGroupsOps::resetCheckpoint(*db_, "EMBEDDING"));
 
     // Verify all groups deleted
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "FAST"), 0);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "BALANCED"), 0);
-    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "QUALITY"), 0);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"), 0);
 
-    // Verify all checkpoints reset
-    auto checkpoint_fast = DuplicateGroupsOps::getCheckpoint(*db_, "FAST");
-    auto checkpoint_balanced = DuplicateGroupsOps::getCheckpoint(*db_, "BALANCED");
-    auto checkpoint_quality = DuplicateGroupsOps::getCheckpoint(*db_, "QUALITY");
-
-    ASSERT_TRUE(checkpoint_fast.has_value());
-    ASSERT_TRUE(checkpoint_balanced.has_value());
-    ASSERT_TRUE(checkpoint_quality.has_value());
-
-    EXPECT_EQ(checkpoint_fast->last_processed_id, 0);
-    EXPECT_EQ(checkpoint_balanced->last_processed_id, 0);
-    EXPECT_EQ(checkpoint_quality->last_processed_id, 0);
+    // Verify checkpoint reset
+    auto checkpoint_embedding = DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint_embedding.has_value());
+    EXPECT_EQ(checkpoint_embedding->last_processed_id, 0);
 }
-

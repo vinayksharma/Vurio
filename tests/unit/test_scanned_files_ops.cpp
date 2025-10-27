@@ -54,13 +54,13 @@ namespace MediaDedup
             auto gotLinks = ScannedFilesOps::getLinks(dbm, row.file_path);
             EXPECT_EQ(gotLinks, links);
 
-            // List unprocessed should include this row still
+            // List unprocessed should NOT include this row (it's marked as completed)
             auto unprocessed = ScannedFilesOps::listUnprocessed(dbm);
             bool found = false;
             for (const auto &it : unprocessed)
                 if (it.file_path == row.file_path)
                     found = true;
-            EXPECT_TRUE(found);
+            EXPECT_FALSE(found);
 
             // Test count functionality (using unfiltered count for backward compatibility)
             EXPECT_EQ(ScannedFilesOps::countAll(dbm), 1);
@@ -380,12 +380,11 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
     EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file3.file_path, 2));   // Processed
     EXPECT_TRUE(MediaDedup::ScannedFilesOps::markProcessed(dbm, file4.file_path, -1));  // Error
 
-    // Test queued count
+    // Test queued count (after mode refactoring, only one processing column exists)
     EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 2);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 0);
-    EXPECT_EQ(MediaDedup::ScannedFilesOps::countQueuedAll(dbm), 0);
 
     // Test that queued files are included in unprocessed list
+    // listUnprocessed includes: queued (-99), unprocessed (0), and retryable errors (< 0, >= -100)
     auto unprocessed = MediaDedup::ScannedFilesOps::listUnprocessed(dbm);
     EXPECT_EQ(unprocessed.size(), 3); // 2 queued + 1 error file
 }
