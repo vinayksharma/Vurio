@@ -60,20 +60,20 @@ namespace MediaDedupServer
          * @brief Handler for DELETE /api/v1/duplicates/reset
          *
          * Resets duplicate detection by clearing groups and checkpoints while preserving
-         * all processed artifacts (phash, features, embeddings).
+         * all processed artifacts (embeddings).
          *
          * Query Parameters:
-         * - mode (optional): Specific mode to reset (EMBEDDING - single mode operation)
-         *                    Omit to reset ALL modes
+         * - mode (optional): Specific mode to reset (only "EMBEDDING" is supported)
+         *                    Omit to reset EMBEDDING mode (default)
          *
          * What gets cleared:
-         * - duplicate_groups table (for specified mode(s))
-         * - duplicate_members table (for specified mode(s))
+         * - duplicate_groups table (for EMBEDDING mode)
+         * - duplicate_members table (for EMBEDDING mode)
          * - duplicate_processing_checkpoint (reset to 0)
          *
          * What is PRESERVED:
          * - scanned_files table (file scan data)
-         * - image_artifacts table (phash, features, embeddings)
+         * - image_artifacts table (embeddings)
          *
          * Response Format:
          * {

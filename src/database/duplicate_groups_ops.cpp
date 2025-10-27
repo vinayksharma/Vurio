@@ -308,31 +308,29 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            Statement stmt(sess);
 
             std::string mode_str = mode;
-            DuplicateGroupRecord rec;
 
-            stmt << std::string(SQL::kSelectDuplicateGroupsByMode),
-                into(rec.id),
-                into(rec.mode),
-                into(rec.representative_file_id),
-                into(rec.representative_file_path),
-                into(rec.representative_file_size),
-                into(rec.representative_created_date),
-                into(rec.similarity_threshold),
-                into(rec.member_count),
-                into(rec.created_at),
-                into(rec.updated_at),
-                use(mode_str),
-                now;
+            // Use RecordSet for more robust extraction
+            Statement stmt = (sess << std::string(SQL::kSelectDuplicateGroupsByMode), use(mode_str));
+            stmt.execute();
 
-            while (!stmt.done())
+            Poco::Data::RecordSet rs(stmt);
+            for (auto &row : rs)
             {
-                if (stmt.execute() > 0)
-                {
-                    results.push_back(rec);
-                }
+                DuplicateGroupRecord rec;
+                rec.id = row[0].convert<int>();
+                rec.mode = row[1].convert<std::string>();
+                rec.representative_file_id = row[2].convert<int>();
+                rec.representative_file_path = row[3].convert<std::string>();
+                rec.representative_file_size = row[4].convert<int64_t>();
+                rec.representative_created_date = row[5].convert<std::string>();
+                rec.similarity_threshold = row[6].convert<double>();
+                rec.member_count = row[7].convert<int>();
+                rec.created_at = row[8].convert<std::string>();
+                rec.updated_at = row[9].convert<std::string>();
+
+                results.push_back(rec);
             }
         }
         catch (const std::exception &e)
@@ -355,33 +353,30 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            Statement stmt(sess);
 
             int fid = file_id;
             std::string mode_str = mode;
-            DuplicateGroupRecord rec;
 
-            stmt << std::string(SQL::kSelectDuplicateGroupsForFile),
-                into(rec.id),
-                into(rec.mode),
-                into(rec.representative_file_id),
-                into(rec.representative_file_path),
-                into(rec.representative_file_size),
-                into(rec.representative_created_date),
-                into(rec.similarity_threshold),
-                into(rec.member_count),
-                into(rec.created_at),
-                into(rec.updated_at),
-                use(fid),
-                use(mode_str),
-                now;
+            // Use RecordSet for more robust extraction
+            Statement stmt = (sess << std::string(SQL::kSelectDuplicateGroupsForFile), use(fid), use(mode_str));
+            stmt.execute();
 
-            while (!stmt.done())
+            Poco::Data::RecordSet rs(stmt);
+            for (auto &row : rs)
             {
-                if (stmt.execute() > 0)
-                {
-                    results.push_back(rec);
-                }
+                DuplicateGroupRecord rec;
+                rec.id = row[0].convert<int>();
+                rec.mode = row[1].convert<std::string>();
+                rec.representative_file_id = row[2].convert<int>();
+                rec.representative_file_path = row[3].convert<std::string>();
+                rec.representative_file_size = row[4].convert<int64_t>();
+                rec.representative_created_date = row[5].convert<std::string>();
+                rec.similarity_threshold = row[6].convert<double>();
+                rec.member_count = row[7].convert<int>();
+                rec.created_at = row[8].convert<std::string>();
+                rec.updated_at = row[9].convert<std::string>();
+
+                results.push_back(rec);
             }
         }
         catch (const std::exception &e)
@@ -513,31 +508,27 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            Statement stmt(sess);
 
             int gid = group_id;
-            DuplicateMemberRecord rec;
-            int rep_flag = 0;
 
-            stmt << std::string(SQL::kSelectDuplicateMembersByGroup),
-                into(rec.group_id),
-                into(rec.file_id),
-                into(rec.file_path),
-                into(rec.similarity_score),
-                into(rec.file_size),
-                into(rec.created_date),
-                into(rep_flag),
-                into(rec.added_at),
-                use(gid),
-                now;
+            // Use RecordSet for more robust extraction
+            Statement stmt = (sess << std::string(SQL::kSelectDuplicateMembersByGroup), use(gid));
+            stmt.execute();
 
-            while (!stmt.done())
+            Poco::Data::RecordSet rs(stmt);
+            for (auto &row : rs)
             {
-                if (stmt.execute() > 0)
-                {
-                    rec.is_representative = (rep_flag != 0);
-                    results.push_back(rec);
-                }
+                DuplicateMemberRecord rec;
+                rec.group_id = row[0].convert<int>();
+                rec.file_id = row[1].convert<int>();
+                rec.file_path = row[2].convert<std::string>();
+                rec.similarity_score = row[3].convert<double>();
+                rec.file_size = row[4].convert<int64_t>();
+                rec.created_date = row[5].convert<std::string>();
+                rec.is_representative = row[6].convert<bool>();
+                rec.added_at = row[7].convert<std::string>();
+
+                results.push_back(rec);
             }
         }
         catch (const std::exception &e)

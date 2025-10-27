@@ -181,11 +181,11 @@ namespace MediaDedupServer
                 {
                     if (param.first == "mode")
                     {
-                        // Validate mode (FAST, BALANCED, or QUALITY)
+                        // Validate mode (currently only EMBEDDING is supported)
                         std::string mode_upper = param.second;
                         std::transform(mode_upper.begin(), mode_upper.end(), mode_upper.begin(), ::toupper);
 
-                        if (mode_upper == "FAST" || mode_upper == "BALANCED" || mode_upper == "QUALITY")
+                        if (mode_upper == "EMBEDDING")
                         {
                             mode = mode_upper;
                             modes_to_reset.push_back(mode_upper);
@@ -193,15 +193,15 @@ namespace MediaDedupServer
                         }
                         else
                         {
-                            logger.warning("Invalid mode parameter (must be FAST, BALANCED, or QUALITY): %s", param.second);
-                            
+                            logger.warning("Invalid mode parameter (only EMBEDDING is supported): %s", param.second);
+
                             response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
                             response.setContentType("application/json");
-                            
+
                             Poco::JSON::Object error_obj;
                             error_obj.set("success", false);
-                            error_obj.set("error", "Invalid mode parameter. Must be FAST, BALANCED, or QUALITY");
-                            
+                            error_obj.set("error", "Invalid mode parameter. Only EMBEDDING mode is supported");
+
                             std::ostringstream oss;
                             error_obj.stringify(oss);
                             response.sendBuffer(oss.str().data(), oss.str().length());
@@ -210,17 +210,17 @@ namespace MediaDedupServer
                     }
                 }
 
-                // If no mode specified, reset all modes
+                // If no mode specified, reset EMBEDDING mode (the only mode after refactoring)
                 if (modes_to_reset.empty())
                 {
-                    modes_to_reset = {"FAST", "BALANCED", "QUALITY"};
-                    logger.information("Reset requested for ALL modes");
+                    modes_to_reset = {"EMBEDDING"};
+                    logger.information("Reset requested for EMBEDDING mode (default)");
                 }
 
                 // Perform reset for each mode
                 int groups_deleted = 0;
                 int checkpoints_reset = 0;
-                
+
                 for (const std::string &reset_mode : modes_to_reset)
                 {
                     // Delete groups and members for this mode
@@ -248,12 +248,12 @@ namespace MediaDedupServer
 
                 // Check if all operations succeeded
                 bool success = (groups_deleted == static_cast<int>(modes_to_reset.size())) &&
-                              (checkpoints_reset == static_cast<int>(modes_to_reset.size()));
+                               (checkpoints_reset == static_cast<int>(modes_to_reset.size()));
 
                 if (success)
                 {
                     logger.information("Duplicate reset completed successfully for %zu mode(s)", modes_to_reset.size());
-                    
+
                     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                     response.setContentType("application/json");
 
@@ -267,7 +267,7 @@ namespace MediaDedupServer
                 else
                 {
                     logger.error("Duplicate reset failed for one or more modes");
-                    
+
                     response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                     response.setContentType("application/json");
 

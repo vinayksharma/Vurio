@@ -501,17 +501,17 @@
     },
     "/api/v1/duplicates/reset": {
       "delete": {
-        "summary": "Reset duplicate detection for all modes or specific mode",
-        "description": "Clears duplicate groups and resets duplicate detection checkpoint while preserving all processed artifacts (scanned files, phash, features, embeddings). This allows re-running duplicate detection with new thresholds or algorithms without re-processing media files.",
+        "summary": "Reset duplicate detection for EMBEDDING mode",
+        "description": "Clears duplicate groups and resets duplicate detection checkpoint while preserving all processed artifacts (scanned files, embeddings). This allows re-running duplicate detection with new thresholds without re-processing media files.",
         "parameters": [
           {
             "name": "mode",
             "in": "query",
-            "description": "Specific mode to reset (FAST, BALANCED, or QUALITY). Omit to reset ALL modes.",
+            "description": "Specific mode to reset (only EMBEDDING is supported). Omit to reset EMBEDDING mode (default).",
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["FAST", "BALANCED", "QUALITY"]
+              "enum": ["EMBEDDING"]
             }
           }
         ],
@@ -545,7 +545,7 @@
                     },
                     "error": {
                       "type": "string",
-                      "example": "Invalid mode parameter. Must be FAST, BALANCED, or QUALITY"
+                      "example": "Invalid mode parameter. Only EMBEDDING mode is supported"
                     }
                   }
                 }
