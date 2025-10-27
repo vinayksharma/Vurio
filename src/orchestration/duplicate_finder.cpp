@@ -68,7 +68,9 @@ namespace MediaDedup
 
             logger.information("DuplicateFinder initialized successfully (enabled=" +
                                std::string(enabled_ ? "true" : "false") +
-                               ", batch_size=" + std::to_string(batch_size_) + ")");
+                               ", batch_size=" + std::to_string(batch_size_) +
+                               ", metadata_filtering=" + std::string(metadata_filtering_enabled_ ? "true" : "false") +
+                               ", threshold=" + std::to_string(embedding_threshold_) + ")");
             return true;
         }
 
