@@ -651,7 +651,7 @@ namespace MediaDedup
             }
         }
 
-        bool DuplicateFinder::loadFileArtifacts(int file_id, const std::string &mode, FileArtifact &artifact)
+        bool DuplicateFinder::loadFileArtifacts(int file_id, const std::string & /* mode */, FileArtifact &artifact)
         {
             try
             {
@@ -756,7 +756,7 @@ namespace MediaDedup
 
         double DuplicateFinder::computeSimilarity(const FileArtifact &file1,
                                                   const FileArtifact &file2,
-                                                  const std::string &mode)
+                                                  const std::string & /* mode */)
         {
             // Single mode operation - only EMBEDDING mode is supported
             return SimilarityCalculator::computeEmbeddingSimilarity(
