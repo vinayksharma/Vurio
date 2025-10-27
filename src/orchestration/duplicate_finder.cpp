@@ -49,7 +49,7 @@ namespace MediaDedup
             enabled_ = cfg_->getPropertyValue<bool>("duplicates.finder.enabled", true);
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
-            
+
             // Single threshold for EMBEDDING mode (formerly QUALITY)
             embedding_threshold_ = cfg_->getPropertyValue<double>("duplicates.threshold", 0.94);
 
