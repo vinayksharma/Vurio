@@ -5,14 +5,17 @@
 This document provides a comprehensive audit of `mode` parameter usage across the codebase after the single-mode refactoring (EMBEDDING mode only).
 
 ## Audit Date
+
 2025-10-27
 
 ## Status
+
 ✅ **PASSED** - All mode parameters are handled correctly
 
 ## Key Findings
 
 ### 1. Database Schema
+
 - **`duplicate_groups.mode`**: Still exists and is populated with "EMBEDDING"
 - **`duplicate_processing_checkpoint.mode`**: Still exists as PRIMARY KEY
 - **`image_artifacts.mode`**: Successfully removed during refactoring
@@ -20,6 +23,7 @@ This document provides a comprehensive audit of `mode` parameter usage across th
 ### 2. Mode Parameter Flow
 
 #### Duplicate Finder (Main Consumer)
+
 ```
 findDuplicates()
   └─> mode_str = "EMBEDDING"  (hardcoded)
@@ -35,6 +39,7 @@ findDuplicates()
 ```
 
 #### Database Layer
+
 ```
 DuplicateGroupsOps::createGroup(db, mode, ...)
   └─> SQL INSERT with mode parameter
@@ -54,6 +59,7 @@ DuplicateGroupsOps::getStats(db, mode)
 Two functions receive `mode` but don't use it anymore:
 
 1. **`loadFileArtifacts(int file_id, const std::string & /* mode */, ...)`**
+
    - Previously used to filter `image_artifacts` by mode
    - Mode column removed from `image_artifacts` table
    - Parameter kept for backward compatibility, marked as unused
@@ -75,6 +81,7 @@ All mode values are **"EMBEDDING"** (hardcoded or default):
 ### 5. SQL Query Analysis
 
 #### Queries That Use Mode (CORRECT)
+
 ```sql
 -- Duplicate groups
 SELECT * FROM duplicate_groups WHERE mode = ?
@@ -86,6 +93,7 @@ INSERT INTO duplicate_processing_checkpoint(mode, ...)
 ```
 
 #### Queries That Previously Used Mode (FIXED)
+
 ```sql
 -- Previously: image_artifacts.mode was queried
 -- Now: mode column removed, query simplified
@@ -95,6 +103,7 @@ SELECT * FROM image_artifacts WHERE file_path = ?
 ### 6. Function Signatures
 
 All function signatures maintain the `mode` parameter for:
+
 - **Backward compatibility** (existing callers)
 - **Future extensibility** (if modes are re-introduced)
 - **Type safety** (consistent parameter lists)
@@ -102,6 +111,7 @@ All function signatures maintain the `mode` parameter for:
 ### 7. Test Coverage
 
 Tests have been updated to:
+
 - Use `ServerMode::EMBEDDING` exclusively
 - Remove FAST/BALANCED mode test cases
 - Remove mode-specific overloads
@@ -120,6 +130,7 @@ The current implementation is **correct** and **consistent**:
 ### Future Considerations
 
 If additional modes are ever re-introduced:
+
 1. Re-enable mode checking in `loadFileArtifacts` (add back `WHERE mode = ?`)
 2. Re-enable mode selection in `computeSimilarity` (switch on mode)
 3. Update `image_artifacts` schema to include `mode` column
