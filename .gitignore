@@ -57,7 +57,7 @@ temp/
 tmp/
 
 # IDE and editor files
-.vscode/
+# .vscode/ - Now tracked to share build tasks with team
 .idea/
 *.swp
 *.swo

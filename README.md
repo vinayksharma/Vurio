@@ -76,10 +76,17 @@ sudo yum install gcc-c++ cmake3 poco-devel sqlite-devel pkgconfig
 ```bash
 git clone <repository-url>
 cd dedup_server
+
+# Using the build script (recommended)
+./build.sh
+
+# Or manual CMake build
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
 ```
+
+**💡 For development with IDE:** See [Build Tasks Documentation](docs/BUILD_TASKS.md) for VS Code/Cursor build tasks and keyboard shortcuts (Cmd+Shift+B).
 
 ### 3. Install
 

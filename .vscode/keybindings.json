@@ -1,0 +1,13 @@
+[
+    {
+        "key": "cmd+shift+b",
+        "command": "workbench.action.tasks.runTask",
+        "args": "build-complete",
+        "when": "!inDebugMode"
+    },
+    {
+        "key": "f5",
+        "command": "workbench.action.debug.start",
+        "when": "!inDebugMode"
+    }
+]
