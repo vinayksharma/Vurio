@@ -128,6 +128,7 @@ if(ONNXRUNTIME_LIBRARY AND NOT ONNXRUNTIME_INCLUDE_DIR)
         onnxruntime_headers
         URL https://github.com/microsoft/onnxruntime/archive/refs/tags/${ONNXRUNTIME_GIT_TAG}.tar.gz
         SOURCE_SUBDIR ""
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(onnxruntime_headers)
     if(onnxruntime_headers_SOURCE_DIR)

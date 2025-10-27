@@ -1,0 +1,180 @@
+#!/bin/bash
+
+# smart_rebuild - Clean, rebuild, and test while preserving dependency cache
+# This script performs a complete rebuild and test cycle but keeps the
+# _deps/ directory to avoid re-downloading external dependencies
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to check if we're in the right directory
+check_directory() {
+    if [[ ! -f "CMakeLists.txt" ]] || [[ ! -f "build.sh" ]]; then
+        print_error "This script must be run from the project root directory"
+        print_error "Expected files: CMakeLists.txt, build.sh"
+        exit 1
+    fi
+}
+
+# Function to clean build directory while preserving dependencies
+smart_clean() {
+    print_status "Smart cleaning build directory (preserving dependencies cache)..."
+    
+    if [[ -d "build" ]]; then
+        # Preserve _deps directory if it exists
+        if [[ -d "build/_deps" ]]; then
+            print_status "Backing up dependency cache..."
+            mv build/_deps /tmp/build_deps_backup_$$
+            DEPS_BACKUP_EXISTS=true
+        else
+            DEPS_BACKUP_EXISTS=false
+        fi
+        
+        # Remove the build directory
+        rm -rf build
+        print_success "Build directory cleaned"
+        
+        # Restore _deps directory
+        if [[ "$DEPS_BACKUP_EXISTS" == "true" ]]; then
+            mkdir -p build
+            mv /tmp/build_deps_backup_$$ build/_deps
+            print_success "Dependency cache restored (ONNX Runtime won't be re-downloaded)"
+        fi
+    else
+        print_warning "Build directory not found, nothing to clean"
+    fi
+}
+
+# Function to rebuild project
+rebuild_project() {
+    print_status "Rebuilding project..."
+    
+    if [[ ! -f "build.sh" ]]; then
+        print_error "build.sh not found!"
+        exit 1
+    fi
+    
+    # Make build.sh executable if it isn't
+    chmod +x build.sh
+
+    # Run the build script (no clean, no tests)
+    if ./build.sh; then
+        print_success "Project rebuilt successfully"
+    else
+        print_error "Build failed!"
+        exit 1
+    fi
+}
+
+# Function to run tests
+run_tests() {
+    print_status "Running all tests..."
+    if [[ ! -f "build/bin/all_unit_tests" ]]; then
+        print_error "Test executable not found! Build may have failed."
+        exit 1
+    fi
+    
+    # Change to build directory for test execution
+    cd build
+    
+    # Run the test executable
+    print_status "Executing test suite..."
+    if ./bin/all_unit_tests; then
+        print_success "All tests passed! 🎉"
+    else
+        print_error "Some tests failed!"
+        exit 1
+    fi
+
+    # Run integration tests via ctest if present
+    if command -v ctest >/dev/null 2>&1; then
+        print_status "Running integration tests via ctest..."
+        if ctest --output-on-failure --tests-regex "test_user_settings_http"; then
+            print_success "Integration tests passed!"
+        else
+            print_error "Integration tests failed!"
+            cd ..
+            exit 1
+        fi
+    else
+        print_warning "ctest not found; skipping integration tests"
+    fi
+    
+    # Go back to project root
+    cd ..
+}
+
+# Function to show build summary
+show_summary() {
+    print_status "Build Summary:"
+    echo "  - Build directory: $(pwd)/build"
+    echo "  - Main executable: build/bin/media_dedup_server"
+    echo "  - Demo executable: build/bin/unified_config_demo"
+    echo "  - Test executable: build/bin/all_unit_tests"
+    echo "  - Dependency cache: build/_deps/ (preserved)"
+}
+
+# Main execution
+main() {
+    echo "=========================================="
+    echo "  Smart Rebuild (Fast)"
+    echo "  Preserves Dependency Cache"
+    echo "=========================================="
+    echo ""
+    
+    # Check if we're in the right directory
+    check_directory
+    
+    # Check if required tools are available
+    if ! command_exists cmake; then
+        print_error "CMake not found! Please install CMake first."
+        exit 1
+    fi
+    
+    if ! command_exists make; then
+        print_error "Make not found! Please install Make first."
+        exit 1
+    fi
+    
+    # Perform smart rebuild cycle
+    smart_clean
+    rebuild_project
+    run_tests
+    
+    echo ""
+    print_success "Smart rebuild and test cycle completed successfully!"
+    print_status "💡 Tip: Dependencies cached in build/_deps/ were preserved"
+    show_summary
+}
+
+# Run main function
+main "$@"
+
