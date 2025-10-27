@@ -659,28 +659,26 @@ namespace MediaDedup
                 Session &sess = lease.get();
 
                 std::string query =
-                    "SELECT sf.id, sf.file_path, sf.file_metadata, ia.phash, ia.features, "
-                    "ia.features_method, ia.embedding, ia.embedding_model, ia.embedding_dim "
+                    "SELECT sf.id, sf.file_path, sf.file_metadata, "
+                    "ia.embedding, ia.embedding_model, ia.embedding_dim "
                     "FROM scanned_files sf "
                     "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
-                    "WHERE sf.id = ? AND ia.mode = ?";
+                    "WHERE sf.id = ?";
 
                 Statement stmt(sess);
                 int fid = file_id;
-                std::string mode_str = mode;
 
                 int id;
                 std::string path, metadata;
                 // CRITICAL FIX: Use CLOB to read BLOBs to prevent NULL-byte truncation
-                Poco::Data::CLOB phash_blob, features_blob, embedding_blob;
-                std::string features_method, embedding_model;
+                Poco::Data::CLOB embedding_blob;
+                std::string embedding_model;
                 int embedding_dim;
 
                 stmt << query,
                     into(id), into(path), into(metadata),
-                    into(phash_blob), into(features_blob), into(features_method),
                     into(embedding_blob), into(embedding_model), into(embedding_dim),
-                    use(fid), use(mode_str), now;
+                    use(fid), now;
 
                 if (stmt.execute() > 0)
                 {
@@ -731,29 +729,10 @@ namespace MediaDedup
                     // Convert CLOBs to byte vectors
                     // CRITICAL FIX: rawContent() returns std::string which truncates at NULL bytes!
                     // Use size() and direct pointer access to get raw binary data.
-                    const char *phash_data = phash_blob.rawContent();
-                    const char *features_data = features_blob.rawContent();
                     const char *embedding_data = embedding_blob.rawContent();
-
-                    std::size_t phash_size = phash_blob.size();
-                    std::size_t features_size = features_blob.size();
                     std::size_t embedding_size = embedding_blob.size();
 
                     // Copy raw bytes using size(), not std::string length (which stops at NULL)
-                    if (phash_size > 0)
-                    {
-                        artifact.phash = std::vector<std::uint8_t>(
-                            reinterpret_cast<const std::uint8_t *>(phash_data),
-                            reinterpret_cast<const std::uint8_t *>(phash_data) + phash_size);
-                    }
-
-                    if (features_size > 0)
-                    {
-                        artifact.features = std::vector<std::uint8_t>(
-                            reinterpret_cast<const std::uint8_t *>(features_data),
-                            reinterpret_cast<const std::uint8_t *>(features_data) + features_size);
-                    }
-
                     if (embedding_size > 0)
                     {
                         artifact.embedding = std::vector<std::uint8_t>(
@@ -761,7 +740,6 @@ namespace MediaDedup
                             reinterpret_cast<const std::uint8_t *>(embedding_data) + embedding_size);
                     }
 
-                    artifact.features_method = features_method;
                     artifact.embedding_model = embedding_model;
                     artifact.embedding_dim = embedding_dim;
                     return true;
