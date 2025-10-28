@@ -542,6 +542,50 @@ namespace MediaDedup
         return results;
     }
 
+    bool DuplicateGroupsOps::removeMember(DatabaseManager &db, int group_id, int file_id)
+    {
+        // Alias for deleteMember for semantic clarity
+        return deleteMember(db, group_id, file_id);
+    }
+
+    bool DuplicateGroupsOps::updateGroupMemberCount(DatabaseManager &db, int group_id, int member_count)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            int gid = group_id;
+            int count = member_count;
+
+            stmt << "UPDATE duplicate_groups SET member_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                use(count), use(gid), now;
+
+            int rows_affected = stmt.execute();
+            if (rows_affected > 0)
+            {
+                Poco::Logger::get("DuplicateGroupsOps").debug("Updated group %d member count to %d", group_id, member_count);
+                return true;
+            }
+            else
+            {
+                Poco::Logger::get("DuplicateGroupsOps").warning("No group found with id %d for member count update", group_id);
+                return false;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in updateGroupMemberCount: %s", std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in updateGroupMemberCount");
+            return false;
+        }
+    }
+
     int DuplicateGroupsOps::countGroupsByMode(DatabaseManager &db, const std::string &mode)
     {
         try

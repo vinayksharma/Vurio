@@ -229,6 +229,20 @@ namespace MediaDedup
                             const std::string &mode,
                             double similarity_score);
 
+        public:
+            /**
+             * @brief Perform cross-group similarity checking for low-similarity files
+             *
+             * Identifies files with similarity scores below max threshold and checks
+             * if they would be better matched in other groups.
+             *
+             * @param mode Server mode (EMBEDDING only)
+             * @param threshold_max Maximum threshold for representative swaps
+             * @return Number of files moved between groups
+             */
+            int performCrossGroupChecking(const std::string &mode, double threshold_max);
+
+        private:
             /**
              * @brief React to configuration changes
              *

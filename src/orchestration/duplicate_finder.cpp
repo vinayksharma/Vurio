@@ -637,8 +637,13 @@ namespace MediaDedup
                     logger.warning("Failed to update checkpoint for mode %s", mode);
                 }
 
-                logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
-                                   files_checked, duplicates_found, groups_created, groups_updated);
+                // STEP 3: Cross-group similarity checking for low-similarity files
+                // Files with similarity scores below max threshold may be better matched elsewhere
+                double threshold_max = getThresholdMax(mode);
+                int cross_group_moves = performCrossGroupChecking(mode, threshold_max);
+
+                logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d, cross_group_moves=%d",
+                                   files_checked, duplicates_found, groups_created, groups_updated, cross_group_moves);
 
                 return static_cast<int>(file_ids.size());
             }
@@ -1052,6 +1057,143 @@ namespace MediaDedup
             }
 
             return stats;
+        }
+
+        int DuplicateFinder::performCrossGroupChecking(const std::string &mode, double threshold_max)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            int files_moved = 0;
+
+            try
+            {
+                // Get all groups for this mode
+                auto groups = DuplicateGroupsOps::getGroupsByMode(db_, mode);
+                if (groups.empty())
+                {
+                    logger.debug("No groups found for cross-group checking");
+                    return 0;
+                }
+
+                logger.information("Starting cross-group checking for %zu groups (threshold_max=%.3f)",
+                                   groups.size(), threshold_max);
+
+                // Build representative cache for efficient lookup
+                std::unordered_map<int, FileArtifact> group_representatives;
+                for (const auto &group : groups)
+                {
+                    FileArtifact rep_artifact;
+                    if (loadFileArtifacts(group.representative_file_id, mode, rep_artifact))
+                    {
+                        group_representatives[group.id] = rep_artifact;
+                    }
+                }
+
+                // For each group, find members with low similarity scores
+                for (const auto &group : groups)
+                {
+                    auto members = DuplicateGroupsOps::getMembersByGroup(db_, group.id);
+
+                    for (const auto &member : members)
+                    {
+                        // Skip representative (it has perfect similarity to itself)
+                        if (member.is_representative)
+                            continue;
+
+                        // Check if this member has low similarity score
+                        if (member.similarity_score >= threshold_max)
+                            continue;
+
+                        logger.debug("Found low-similarity member: file_id %d in group %d (score=%.3f < %.3f)",
+                                     member.file_id, group.id, member.similarity_score, threshold_max);
+
+                        // Load artifacts for this member
+                        FileArtifact member_artifact;
+                        if (!loadFileArtifacts(member.file_id, mode, member_artifact))
+                        {
+                            logger.warning("Failed to load artifacts for member file_id %d, skipping cross-group check",
+                                           member.file_id);
+                            continue;
+                        }
+
+                        // Check against representatives of other groups
+                        int best_other_group = -1;
+                        double best_other_similarity = 0.0;
+
+                        for (const auto &[other_group_id, other_rep] : group_representatives)
+                        {
+                            // Skip same group
+                            if (other_group_id == group.id)
+                                continue;
+
+                            // Skip if metadata incompatible
+                            if (!areMetadataCompatible(member_artifact, other_rep))
+                                continue;
+
+                            // Check similarity
+                            double sim = computeSimilarity(member_artifact, other_rep, mode);
+                            if (sim > best_other_similarity)
+                            {
+                                best_other_similarity = sim;
+                                best_other_group = other_group_id;
+                            }
+                        }
+
+                        // If we found a better match, move the file
+                        if (best_other_group > 0 && best_other_similarity > member.similarity_score)
+                        {
+                            logger.information("Moving file_id %d from group %d (score=%.3f) to group %d (score=%.3f)",
+                                               member.file_id, group.id, member.similarity_score,
+                                               best_other_group, best_other_similarity);
+
+                            // Remove from current group
+                            if (DuplicateGroupsOps::removeMember(db_, group.id, member.file_id))
+                            {
+                                // Add to new group
+                                if (addToGroup(best_other_group, member_artifact, mode, best_other_similarity))
+                                {
+                                    files_moved++;
+
+                                    // Update member count for both groups
+                                    DuplicateGroupsOps::updateGroupMemberCount(db_, group.id, group.member_count - 1);
+
+                                    auto other_group_opt = DuplicateGroupsOps::getGroupById(db_, best_other_group);
+                                    if (other_group_opt.has_value())
+                                    {
+                                        DuplicateGroupsOps::updateGroupMemberCount(db_, best_other_group,
+                                                                                   other_group_opt->member_count + 1);
+                                    }
+                                }
+                                else
+                                {
+                                    // Failed to add to new group, restore to original
+                                    logger.error("Failed to add file_id %d to group %d, restoring to group %d",
+                                                 member.file_id, best_other_group, group.id);
+                                    DuplicateGroupsOps::addMember(db_, group.id, member.file_id, member.file_path,
+                                                                  member.similarity_score, member.file_size,
+                                                                  member.created_date, member.is_representative);
+                                }
+                            }
+                            else
+                            {
+                                logger.error("Failed to remove file_id %d from group %d", member.file_id, group.id);
+                            }
+                        }
+                    }
+                }
+
+                logger.information("Cross-group checking complete: moved %d files", files_moved);
+                return files_moved;
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in performCrossGroupChecking: %s", std::string(e.what()));
+                return files_moved; // Return partial count
+            }
+            catch (...)
+            {
+                logger.error("Unknown exception in performCrossGroupChecking");
+                return files_moved; // Return partial count
+            }
         }
     } // namespace Orchestration
 } // namespace MediaDedup

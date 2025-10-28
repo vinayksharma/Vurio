@@ -120,6 +120,10 @@ namespace MediaDedup
 
         static bool deleteMember(DatabaseManager &db, int group_id, int file_id);
 
+        static bool removeMember(DatabaseManager &db, int group_id, int file_id);
+
+        static bool updateGroupMemberCount(DatabaseManager &db, int group_id, int member_count);
+
         static std::vector<DuplicateMemberRecord> getMembersByGroup(DatabaseManager &db, int group_id);
 
         // Statistics
