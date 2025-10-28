@@ -114,13 +114,20 @@ namespace MediaDedupServer
                     group_obj.set("created_at", group.created_at);
                     group_obj.set("updated_at", group.updated_at);
 
-                    // Add candidates (non-representative members) as fully qualified paths
-                    Poco::JSON::Array candidates_array;
+                    // Add members with detailed information including similarity scores
+                    Poco::JSON::Array members_array;
                     for (const auto &member : group_with_members.members)
                     {
-                        candidates_array.add(member.file_path); // Fully qualified path
+                        Poco::JSON::Object member_obj;
+                        member_obj.set("file_path", member.file_path); // Fully qualified path
+                        member_obj.set("similarity_score", member.similarity_score);
+                        member_obj.set("file_size", member.file_size);
+                        member_obj.set("created_date", member.created_date);
+                        member_obj.set("is_representative", member.is_representative);
+                        member_obj.set("added_at", member.added_at);
+                        members_array.add(member_obj);
                     }
-                    group_obj.set("candidates", candidates_array);
+                    group_obj.set("members", members_array);
 
                     groups_array.add(group_obj);
                 }

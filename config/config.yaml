@@ -181,7 +181,8 @@ duplicates.finder.enabled: true
 duplicates.finder.intervalMs: 5000
 duplicates.finder.batchSize: 1000
 duplicates.finder.maxGroupSize: 100
-duplicates.threshold: 0.93999999999999995
+duplicates.threshold.min: 0.92
+duplicates.threshold.max: 0.96
 duplicates.representative.strategy: size_then_age
 
 # Duplicate Metadata Filtering

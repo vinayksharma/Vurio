@@ -50,8 +50,9 @@ namespace MediaDedup
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
 
-            // Single threshold for EMBEDDING mode (formerly QUALITY)
-            embedding_threshold_ = cfg_->getPropertyValue<double>("duplicates.threshold", 0.94);
+            // Threshold range for EMBEDDING mode
+            embedding_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92);
+            embedding_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.96);
 
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
@@ -70,7 +71,8 @@ namespace MediaDedup
                                std::string(enabled_ ? "true" : "false") +
                                ", batch_size=" + std::to_string(batch_size_) +
                                ", metadata_filtering=" + std::string(metadata_filtering_enabled_ ? "true" : "false") +
-                               ", threshold=" + std::to_string(embedding_threshold_) + ")");
+                               ", threshold_min=" + std::to_string(embedding_threshold_min_) +
+                               ", threshold_max=" + std::to_string(embedding_threshold_max_) + ")");
             return true;
         }
 
@@ -417,7 +419,8 @@ namespace MediaDedup
                         continue;
                     }
 
-                    double threshold = getThreshold(mode);
+                    double threshold_min = getThresholdMin(mode);
+                    double threshold_max = getThresholdMax(mode);
 
                     // STEP 1: Compare against group representatives ONLY (representative-based matching)
                     int best_group_id = -1;
@@ -434,7 +437,7 @@ namespace MediaDedup
                         }
 
                         double sim = computeSimilarity(new_file, representative, mode);
-                        if (sim >= threshold && sim > best_similarity)
+                        if (sim >= threshold_min && sim > best_similarity)
                         {
                             best_group_id = group_id;
                             best_similarity = sim;
@@ -479,11 +482,11 @@ namespace MediaDedup
                             double sim_to_member = computeSimilarity(new_file, member_artifact, mode);
                             members_checked++;
 
-                            if (sim_to_member < threshold)
+                            if (sim_to_member < threshold_min)
                             {
                                 similar_to_all_members = false;
                                 logger.debug("File %d NOT added to group %d: similar to representative (%.3f) but not to member %d (%.3f < %.3f)",
-                                             new_file.file_id, best_group_id, best_similarity, member.file_id, sim_to_member, threshold);
+                                             new_file.file_id, best_group_id, best_similarity, member.file_id, sim_to_member, threshold_min);
                                 break;
                             }
                         }
@@ -538,7 +541,7 @@ namespace MediaDedup
                     if (already_grouped[i])
                         continue;
 
-                    double threshold = getThreshold(mode);
+                    double threshold_min = getThresholdMin(mode);
                     std::vector<FileArtifact> similar_batch_files;
                     similar_batch_files.push_back(batch_ungrouped_files[i]);
                     std::vector<size_t> similar_indices;
@@ -557,7 +560,7 @@ namespace MediaDedup
                         }
 
                         double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
-                        if (sim >= threshold)
+                        if (sim >= threshold_min)
                         {
                             // Check if j is similar to ALL files already in similar_batch_files
                             bool similar_to_all = true;
@@ -576,12 +579,12 @@ namespace MediaDedup
                                 double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
                                 all_pairs_checked++;
 
-                                if (sim_kj < threshold)
+                                if (sim_kj < threshold_min)
                                 {
                                     similar_to_all = false;
                                     logger.information("File %d REJECTED: similar to file %d (%.3f) but NOT to member %d (%.3f < %.3f)",
                                                        batch_ungrouped_files[j].file_id, batch_ungrouped_files[i].file_id, sim,
-                                                       similar_batch_files[k].file_id, sim_kj, threshold);
+                                                       similar_batch_files[k].file_id, sim_kj, threshold_min);
                                     break;
                                 }
                             }
@@ -599,7 +602,7 @@ namespace MediaDedup
                     if (similar_batch_files.size() >= 2)
                     {
                         already_grouped[i] = true;
-                        int new_group_id = createDuplicateGroup(similar_batch_files, mode, threshold);
+                        int new_group_id = createDuplicateGroup(similar_batch_files, mode, threshold_min);
                         if (new_group_id > 0)
                         {
                             duplicates_found += static_cast<int>(similar_batch_files.size());
@@ -818,9 +821,10 @@ namespace MediaDedup
             // Select representative
             RepresentativeInfo rep = selectRepresentative(files);
 
-            // Create group
+            // Create group with max threshold (for backwards compatibility)
+            double max_threshold = getThresholdMax(mode);
             int group_id = DuplicateGroupsOps::createGroup(
-                db_, mode, rep.file_id, rep.file_path, rep.file_size, rep.created_date, threshold);
+                db_, mode, rep.file_id, rep.file_path, rep.file_size, rep.created_date, max_threshold);
 
             if (group_id <= 0)
             {
@@ -893,7 +897,8 @@ namespace MediaDedup
             new_candidate.file_size = file.file_size;
             new_candidate.created_date = file.created_date;
 
-            bool should_update_rep = isBetterRepresentative(new_candidate, current_rep);
+            bool should_update_rep = isBetterRepresentative(new_candidate, current_rep) &&
+                                     similarity_score >= getThresholdMax("EMBEDDING");
 
             // Add member
             if (!DuplicateGroupsOps::addMember(db_, group_id, file.file_id, file.file_path,
@@ -927,10 +932,16 @@ namespace MediaDedup
             return true;
         }
 
-        double DuplicateFinder::getThreshold(const std::string & /* mode */)
+        double DuplicateFinder::getThresholdMin(const std::string & /* mode */)
         {
-            // Single threshold for EMBEDDING mode (formerly QUALITY)
-            return embedding_threshold_;
+            // Single threshold range for EMBEDDING mode
+            return embedding_threshold_min_;
+        }
+
+        double DuplicateFinder::getThresholdMax(const std::string & /* mode */)
+        {
+            // Single threshold range for EMBEDDING mode
+            return embedding_threshold_max_;
         }
 
         void DuplicateFinder::onConfigChange(const ConfigChangeEvent &event)
@@ -947,33 +958,44 @@ namespace MediaDedup
                 batch_size_ = cfg_->getPropertyValue<int>(event.key, 1000);
                 Poco::Logger::get("DuplicateFinder").information("Updated batch_size: %d", batch_size_);
             }
-            else if (event.key == "duplicates.threshold")
+            else if (event.key == "duplicates.threshold.min" || event.key == "duplicates.threshold.max")
             {
-                double new_threshold = cfg_->getPropertyValue<double>(event.key, 0.94);
+                double old_min = embedding_threshold_min_;
+                double old_max = embedding_threshold_max_;
 
-                // Detect threshold expansion (threshold became more permissive)
-                if (new_threshold < embedding_threshold_)
+                embedding_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92);
+                embedding_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.96);
+
+                // Validate threshold range
+                if (embedding_threshold_min_ > embedding_threshold_max_)
                 {
-                    Poco::Logger::get("DuplicateFinder").warning("Embedding threshold expanded: %.3f -> %.3f (catching more duplicates)", embedding_threshold_, new_threshold);
+                    Poco::Logger::get("DuplicateFinder").error("Invalid threshold range: min (%.3f) > max (%.3f). Reverting to defaults.", embedding_threshold_min_, embedding_threshold_max_);
+                    embedding_threshold_min_ = 0.92;
+                    embedding_threshold_max_ = 0.96;
+                }
+
+                // Check if thresholds changed significantly (trigger reprocessing)
+                bool min_changed = std::abs(embedding_threshold_min_ - old_min) > 0.001;
+                bool max_changed = std::abs(embedding_threshold_max_ - old_max) > 0.001;
+
+                // Only trigger reprocessing if min threshold changed (makes system more permissive)
+                if (min_changed)
+                {
+                    Poco::Logger::get("DuplicateFinder").warning("Threshold range changed: min %.3f->%.3f, max %.3f->%.3f. Triggering full reprocessing.", old_min, embedding_threshold_min_, old_max, embedding_threshold_max_);
 
                     // Delete all EMBEDDING groups and reset checkpoint for full reprocessing
                     if (DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold expansion");
+                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold range change");
                     }
 
                     if (DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new threshold %.3f", new_threshold);
+                        Poco::Logger::get("DuplicateFinder").information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new thresholds");
                     }
                 }
-                else if (new_threshold > embedding_threshold_)
-                {
-                    Poco::Logger::get("DuplicateFinder").information("Embedding threshold became stricter: %.3f -> %.3f (existing groups unaffected)", embedding_threshold_, new_threshold);
-                }
 
-                embedding_threshold_ = new_threshold;
-                Poco::Logger::get("DuplicateFinder").information("Updated embedding_threshold: %.3f", embedding_threshold_);
+                Poco::Logger::get("DuplicateFinder").information("Updated threshold range: min=%.3f, max=%.3f", embedding_threshold_min_, embedding_threshold_max_);
             }
             else if (event.key == "duplicates.metadata.filtering.enabled")
             {

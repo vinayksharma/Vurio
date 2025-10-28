@@ -380,8 +380,9 @@ namespace MediaDedup
         // TPM share for duplicate finder
         manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, "Thread pool share for duplicate finder");
 
-        // Similarity threshold
-        manager->createProperty<double>("duplicates.threshold", 0.94, "Embedding similarity threshold (0.94-0.98 recommended)");
+        // Similarity threshold range
+        manager->createProperty<double>("duplicates.threshold.min", 0.92, "Minimum similarity threshold for adding files to groups");
+        manager->createProperty<double>("duplicates.threshold.max", 0.96, "Maximum similarity threshold for representative swaps");
 
         // Representative selection strategy
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",

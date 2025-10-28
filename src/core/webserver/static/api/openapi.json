@@ -369,8 +369,8 @@
     },
     "/api/v1/duplicates/groups": {
       "get": {
-        "summary": "Get paginated duplicate groups with members",
-        "description": "Returns duplicate groups with representative and candidate files (all as fully qualified paths), sorted by created_at ascending. Optionally filter by detection mode.",
+        "summary": "Get paginated duplicate groups with detailed member information",
+        "description": "Returns duplicate groups with representative and all members including similarity scores, file sizes, and metadata. Members are sorted by similarity score (highest first). Optionally filter by detection mode.",
         "parameters": [
           {
             "name": "start",
@@ -431,12 +431,38 @@
                             "type": "string",
                             "description": "Fully qualified path to representative file"
                           },
-                          "candidates": {
+                          "members": {
                             "type": "array",
                             "items": {
-                              "type": "string"
+                              "type": "object",
+                              "properties": {
+                                "file_path": {
+                                  "type": "string",
+                                  "description": "Fully qualified path to the file"
+                                },
+                                "similarity_score": {
+                                  "type": "number",
+                                  "description": "Similarity score to the representative (0.0-1.0)"
+                                },
+                                "file_size": {
+                                  "type": "integer",
+                                  "description": "File size in bytes"
+                                },
+                                "created_date": {
+                                  "type": "string",
+                                  "description": "File creation date"
+                                },
+                                "is_representative": {
+                                  "type": "boolean",
+                                  "description": "Whether this file is the group representative"
+                                },
+                                "added_at": {
+                                  "type": "string",
+                                  "description": "ISO 8601 timestamp when this member was added to the group"
+                                }
+                              }
                             },
-                            "description": "Fully qualified paths to duplicate candidate files"
+                            "description": "All members of the duplicate group with detailed information"
                           },
                           "similarity_threshold": {
                             "type": "number",

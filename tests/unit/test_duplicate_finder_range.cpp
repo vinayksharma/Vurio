@@ -21,8 +21,9 @@ protected:
         config_ = ConfigManagerFactory::createForTesting("");
         ASSERT_TRUE(config_->initialize());
 
-        // Set EMBEDDING mode threshold (single threshold after refactoring)
-        config_->setPropertyValue("duplicates.threshold", 0.94);
+        // Set EMBEDDING mode threshold range
+        config_->setPropertyValue("duplicates.threshold.min", 0.92);
+        config_->setPropertyValue("duplicates.threshold.max", 0.96);
         config_->setPropertyValue("duplicates.finder.enabled", true);
         config_->setPropertyValue("duplicates.finder.batchSize", 100);
     }
@@ -46,8 +47,10 @@ TEST_F(DuplicateFinderRangeTest, LoadsThreshold)
     ASSERT_TRUE(finder.initialize());
 
     // Verify threshold is set correctly
-    double threshold = finder.getThreshold("EMBEDDING");
-    EXPECT_DOUBLE_EQ(0.94, threshold);
+    double threshold_min = finder.getThresholdMin("EMBEDDING");
+    double threshold_max = finder.getThresholdMax("EMBEDDING");
+    EXPECT_DOUBLE_EQ(0.92, threshold_min);
+    EXPECT_DOUBLE_EQ(0.96, threshold_max);
 }
 
 /**
@@ -78,11 +81,11 @@ TEST_F(DuplicateFinderRangeTest, ThresholdExpansionTriggersReprocess)
     int groups_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
     EXPECT_EQ(1, groups_before);
 
-    // Trigger threshold expansion by decreasing threshold
-    config_->setPropertyValue("duplicates.threshold", 0.92);
+    // Trigger threshold expansion by decreasing min threshold
+    config_->setPropertyValue("duplicates.threshold.min", 0.90);
 
     // Give config change time to propagate
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Verify groups were deleted
     int groups_after = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
@@ -114,8 +117,8 @@ TEST_F(DuplicateFinderRangeTest, StricterThresholdDoesNotReprocess)
     int groups_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
     EXPECT_EQ(1, groups_before);
 
-    // Make threshold stricter (increase)
-    config_->setPropertyValue("duplicates.threshold", 0.96);
+    // Make threshold stricter (increase max threshold)
+    config_->setPropertyValue("duplicates.threshold.max", 0.98);
 
     // Give config change time to propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

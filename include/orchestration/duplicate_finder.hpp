@@ -77,12 +77,20 @@ namespace MediaDedup
             bool isRunning() const { return running_.load(); }
 
             /**
-             * @brief Get threshold for EMBEDDING mode
+             * @brief Get minimum similarity threshold for adding files to groups
              *
              * @param mode Server mode (EMBEDDING only)
-             * @return Similarity threshold
+             * @return Minimum threshold value
              */
-            double getThreshold(const std::string &mode);
+            double getThresholdMin(const std::string &mode);
+
+            /**
+             * @brief Get maximum similarity threshold for representative swaps
+             *
+             * @param mode Server mode (EMBEDDING only)
+             * @return Maximum threshold value
+             */
+            double getThresholdMax(const std::string &mode);
 
         private:
             struct FileArtifact
@@ -238,7 +246,8 @@ namespace MediaDedup
             bool enabled_ = true;
             int batch_size_ = 1000;
             int max_group_size_ = 100;
-            double embedding_threshold_ = 0.94;                     // Single threshold for EMBEDDING mode
+            double embedding_threshold_min_ = 0.92;                 // Minimum threshold for adding files to groups
+            double embedding_threshold_max_ = 0.96;                 // Maximum threshold for representative swaps
             std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
 
             // Metadata filtering parameters
