@@ -421,8 +421,6 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     unprocessed_file.file_path = "/tmp/test_media_processor_files/image1.jpg";
     unprocessed_file.file_name = "image1.jpg";
     unprocessed_file.processed = 0; // Unprocessed
-    unprocessed_file.processed = 0;
-    unprocessed_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unprocessed_file));
 
     // Add already picked up for processing file (using a non-existent file since it won't be processed)
@@ -430,8 +428,6 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithMixedProcessedFiles_OnlyProcessesUnp
     processed_file.file_path = "/path/to/test/processed.jpg";
     processed_file.file_name = "processed.jpg";
     processed_file.processed = 1; // Already picked up for processing
-    processed_file.processed = 0;
-    processed_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, processed_file));
 
     // ProcessMedia should only process the unprocessed file
@@ -462,8 +458,6 @@ TEST_F(MediaProcessorTest, ProcessMedia_WithUnsupportedFiles_MarksAsFailed)
     unsupported_file.file_path = "/path/to/test/document.pdf";
     unsupported_file.file_name = "document.pdf";
     unsupported_file.processed = 0; // Unprocessed
-    unsupported_file.processed = 0;
-    unsupported_file.processed = 0;
     ASSERT_TRUE(ScannedFilesOps::upsert(*database_manager_, unsupported_file));
 
     // ProcessMedia should submit files for processing (fire-and-forget)
