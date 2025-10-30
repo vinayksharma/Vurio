@@ -31,6 +31,11 @@ cache.thumbnail.location: cache/thumbnails
 cache.thumbnail.size_limit_mb: 10240
 cache.thumbnail.clearOnStartup: false
 
+# Asset Preview Cache
+cache.assetPreview.location: cache/asset_previews
+cache.assetPreview.size_limit_mb: 2048
+cache.assetPreview.clearOnStartup: false
+
 # =============================================================================
 # LOGGING CONFIGURATION
 # =============================================================================
@@ -173,6 +178,10 @@ thumbnail.pipeline.onlyIfMissing: true
 thumbnail.generation.timeoutMs: 5000
 thumbnail.jpeg.quality: 85
 thumbnail.allowed.sizes: 128
+
+# Asset Preview (JPEG) Generation
+assetPreview.generation.timeoutMs: 8000
+assetPreview.jpeg.quality: 85
 
 # =============================================================================
 # DUPLICATE DETECTION CONFIGURATION

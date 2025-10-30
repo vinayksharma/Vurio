@@ -737,6 +737,49 @@
         }
       }
     },
+    "/api/v1/assets/jpeg": {
+      "get": {
+        "summary": "Return a JPEG for a given asset path (served from cache)",
+        "description": "Always serves from cache. If not cached or stale, generates a JPEG from the source (including RAW) and stores it under cache.assetPreview.location. No CORS/auth for now (same-machine).",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Fully qualified path to the asset"
+          },
+          {
+            "name": "maxWidth",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1 },
+            "description": "Maximum width in pixels. If omitted, no resize (highest resolution)."
+          },
+          {
+            "name": "quality",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 85 },
+            "description": "JPEG quality (1-100). Defaults from config."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG image",
+            "content": {
+              "image/jpeg": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": { "description": "Bad request" },
+          "404": { "description": "Source file not found" },
+          "415": { "description": "Unsupported media type" },
+          "500": { "description": "Generation failed (returns error JPEG)" }
+        }
+      }
+    },
     "/api/v1/files/reset-errors": {
       "post": {
         "summary": "Reset all error files to unprocessed",
