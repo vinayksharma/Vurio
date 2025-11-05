@@ -127,6 +127,24 @@ bool isBetterRepresentative(File A, File B) {
 
 **Dynamic Updates**: Representative can change as new files are added to the group.
 
+**Representative Swapping:**
+- Representatives **ARE** swapped dynamically when a better candidate is added
+- Swap occurs when new file has larger size OR (same size + older date)
+- Only files with similarity >= max threshold can become representatives
+- Database and in-memory cache both updated on swap
+- Old representative becomes regular member (`is_representative = 0`)
+
+**Swap Process:**
+1. Add new member to `duplicate_members` with `is_representative = 1`
+2. Clear old representative flag (`is_representative = 0`)
+3. Update group record in `duplicate_groups` with new representative info
+4. Update in-memory representative cache
+
+**Configuration:**
+```yaml
+duplicates.representative.strategy: size_then_age  # Currently only option
+```
+
 ## Processing Flow
 
 ### 1. Scheduled Execution
@@ -166,6 +184,12 @@ For each batch of N files (duplicates.finder.batchSize):
         ├─ If 2+ similar files found: Create new group
         └─ Add new group's representative to cache
   │
+  └─ STEP 3: Cross-group similarity checking
+      ├─ Identify files with similarity < threshold.max in current groups
+      ├─ Compare against representatives of other groups
+      ├─ Move files to groups with higher similarity scores
+      └─ Update group member counts
+  │
   └─ Update checkpoint
 ```
 
@@ -175,6 +199,7 @@ For each batch of N files (duplicates.finder.batchSize):
 - **Non-Transitive:** If A~B and B~C but A≁C, they will be in different groups
 - **Highest Similarity:** If multiple representatives match, add to group with highest similarity
 - **2+ Required:** New groups only created when 2+ similar ungrouped files found in batch
+- **Cross-Group Optimization:** Files with low similarity scores are checked against other groups for better matches
 
 ### 3. Group Management
 
@@ -210,13 +235,42 @@ For each batch of N files (duplicates.finder.batchSize):
 
 **Note**: `duplicates.finder.intervalMs` is monitored for config changes and will update the job interval dynamically without requiring a restart. Changes take effect on the next scheduled run.
 
-### Similarity Thresholds
+### Similarity Thresholds (Range-Based System)
+
+The system uses a **min/max threshold range** for EMBEDDING mode (currently the only supported mode):
 
 | Key                             | Default | Description                                         |
 | ------------------------------- | ------- | --------------------------------------------------- |
-| `duplicates.fast.threshold`     | `0.90`  | pHash similarity (0.85-0.95 recommended)            |
-| `duplicates.balanced.threshold` | `0.30`  | Feature match ratio (0.20-0.40 recommended)         |
-| `duplicates.quality.threshold`  | `0.95`  | Embedding cosine similarity (0.90-0.98 recommended) |
+| `duplicates.threshold.min`      | `0.92`  | Minimum threshold for adding files to groups       |
+| `duplicates.threshold.max`     | `0.96`  | Maximum threshold for representative swaps          |
+
+**Threshold Usage:**
+- **Min Threshold**: Files with similarity score >= min threshold can be added to duplicate groups
+  - Controls the "looseness" of duplicate detection
+  - Changes trigger full reprocessing (groups deleted, checkpoint reset)
+- **Max Threshold**: Only files with similarity score >= max threshold can become representatives
+  - Controls the "strictness" of representative selection
+  - Changes do NOT trigger reprocessing (existing groups preserved)
+
+**Reprocessing Logic:**
+- **Min threshold decrease**: Triggers full reprocessing (more permissive, may find new matches)
+- **Min threshold increase**: No reprocessing (existing groups still valid)
+- **Max threshold changes**: No reprocessing (doesn't affect group membership)
+
+**Configuration Examples:**
+```yaml
+# Conservative (High Precision)
+duplicates.threshold.min: 0.95
+duplicates.threshold.max: 0.98
+
+# Balanced (Recommended)
+duplicates.threshold.min: 0.92
+duplicates.threshold.max: 0.96
+
+# Permissive (High Recall)
+duplicates.threshold.min: 0.88
+duplicates.threshold.max: 0.94
+```
 
 ### Representative Selection
 
@@ -278,6 +332,55 @@ For datasets > 100K files:
 - Consider lowering batch size (e.g., 500)
 - Increase execution interval (e.g., 4 hours)
 - Use mode-specific thresholds to reduce false positives
+
+## Cross-Group Similarity Checking
+
+The system includes **cross-group similarity checking** that identifies files with low similarity scores in their current groups and checks if they would be better matched in other groups.
+
+### How It Works
+
+1. **Identification**: After normal duplicate processing, identifies files with similarity scores **below** `threshold.max` in their current groups
+2. **Cross-Group Comparison**: These low-similarity files are compared against representatives of **other groups**
+3. **File Movement**: If a file finds a better match (higher similarity score) in another group, it's moved there
+4. **Group Updates**: Member counts and representative information are updated accordingly
+
+### Example Scenario
+
+```
+Group 1: File A (rep), File B (similarity=0.75 to A)
+Group 2: File C (rep), File D (similarity=0.85 to C)
+
+If threshold.max = 0.80:
+- File B (0.75 < 0.80) is eligible for cross-group checking
+- File B compared to File C → similarity = 0.90
+- Since 0.90 > 0.75, File B moves to Group 2
+- Result: Group 1 has File A only, Group 2 has Files C, D, B
+```
+
+### Configuration Impact
+
+**Narrow Range (More Cross-Group Checking):**
+```yaml
+duplicates.threshold.min: 0.90
+duplicates.threshold.max: 0.95  # More files below threshold
+```
+- More aggressive optimization
+- More files checked and moved
+
+**Wide Range (Less Cross-Group Checking):**
+```yaml
+duplicates.threshold.min: 0.85
+duplicates.threshold.max: 0.98  # Fewer files below threshold
+```
+- More conservative optimization
+- Fewer files checked and moved
+
+### Performance Considerations
+
+- Cross-group checking runs **after** normal batch processing
+- Only files with low similarity scores are checked
+- Representative-based comparison (not all-pairs) for efficiency
+- Metadata filtering prevents incompatible file comparisons
 
 ## Algorithm Evolution
 
@@ -383,3 +486,21 @@ Key metrics to monitor:
 - Verify file_metadata contains size and date
 - Check representative selection strategy
 - Review logs for group update operations
+- Ensure new file has similarity >= `duplicates.threshold.max` to become representative
+
+### Historical Bug: Pairwise Groups (Fixed October 2025)
+
+**Problem:** All duplicate groups contained exactly 2 members instead of grouping all similar files together.
+
+**Root Causes:**
+1. **No Cross-Batch Comparison**: Existing files from previous batches were never loaded, so new files could only compare against other files in the same batch
+2. **Pairwise Group Creation**: Code created groups with exactly 2 files and immediately broke, preventing larger groups
+3. **Zero Thresholds**: Configuration had thresholds set to 0, making every file match every other file
+
+**Solution:**
+- Fixed existing file loading to properly load all processed files with artifacts
+- Implemented all-pairs similarity check within batches to find all similar files
+- Added cross-batch comparison against existing group representatives
+- Fixed threshold configuration defaults
+
+**Current Status:** ✅ Fixed - Groups now properly contain all similar files across batches

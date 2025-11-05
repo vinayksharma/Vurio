@@ -284,6 +284,114 @@ curl "http://localhost:8080/api/v1/thumbnails?path=/photos/IMG_1234.cr2&size=256
 3. **Transcoding Performance**: RAW file thumbnails take longer (~50-200ms extra for transcoding)
 4. **Disk Usage**: Transcoding temporarily uses `cache.disk` space (cleaned up after thumbnail generation)
 
+## Performance Optimization
+
+### Under Normal Load
+
+- **First request**: ~50-200ms (generation + save + stream)
+- **Cached requests**: ~5-20ms (database lookup + file stream)
+- **RAW file first request**: ~200-500ms (includes transcoding)
+
+### Under Heavy Load
+
+When the server is processing many media files concurrently, thumbnail API response times may increase. The primary bottleneck is typically database contention.
+
+**Recommended Solution: Enable WAL Mode**
+
+SQLite's Write-Ahead Logging (WAL) mode allows concurrent reads and writes, dramatically improving performance under load:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA cache_size = -20000;  -- 20MB cache
+```
+
+**Expected Improvement:**
+- Cache hits: 500-1200ms → 20-50ms (25-60x faster)
+- First generation: 1000-2000ms → 100-300ms
+
+**Additional Optimizations:**
+- Increase database session pool: `database.session.poolMax: 32`
+- Increase SQLite cache size for faster queries
+
+### Performance Characteristics by Load
+
+| Load Level | CPU Usage | Cache Hit | First Generation | RAW First Gen |
+|------------|-----------|-----------|------------------|---------------|
+| **Normal** (<50%) | Low | 5-20ms | 50-200ms | 200-500ms |
+| **Heavy** (70-90%) | High | 50-150ms | 200-500ms | 1000-3000ms |
+| **Extreme** (>90%) | Saturated | 500-1200ms | 1000-2000ms | 4000-8000ms |
+
+**Note:** With WAL mode enabled, even under heavy load, cache hits should remain under 50ms.
+
+## Troubleshooting
+
+### ARW File Failures Under Heavy Load
+
+**Symptoms:**
+- Some ARW files return HTTP 500 during bulk thumbnail generation
+- Failures are inconsistent and appear under heavy system load
+- Manual retry succeeds when system load is lower
+
+**Root Cause:**
+Timeout issues when server is under extreme CPU saturation (>90%). ARW transcoding can take 4-10 seconds under extreme load, exceeding script timeouts.
+
+**Solutions:**
+
+1. **Increase Script Timeout** (if using bulk generation scripts):
+   ```bash
+   curl --max-time 30 ...  # Increase from 10 to 30 seconds
+   ```
+
+2. **Add Rate Limiting** (prevent overwhelming server):
+   ```bash
+   sleep 0.2  # 200ms between requests in bulk scripts
+   ```
+
+3. **Increase Database Session Timeout**:
+   ```yaml
+   database.session.acquireTimeoutMs: 10000  # 10 seconds (up from 3)
+   ```
+
+4. **Enable WAL Mode** (see Performance Optimization section above)
+
+**Verification:**
+```bash
+# Test individual ARW files
+curl -w "Time: %{time_total}s\n" \
+  "http://localhost:8080/api/v1/thumbnails?path=/path/to/file.ARW&size=256" \
+  -o thumb.jpg
+```
+
+### Slow Response Times Under Load
+
+**Symptoms:**
+- Thumbnail API takes 500-1200ms even for cached thumbnails
+- System is processing many media files concurrently
+
+**Root Cause:**
+SQLite DELETE journal mode causes thumbnail reads to wait for media processing writes to complete.
+
+**Solution:**
+Enable WAL mode (see Performance Optimization section). This is the most impactful fix and should reduce response times to 20-50ms even under heavy load.
+
+### Database Session Contention
+
+**Symptoms:**
+- "Timed out acquiring DB session" errors
+- High number of concurrent threads competing for database sessions
+
+**Solution:**
+Increase the database session pool to match or exceed the number of competing threads:
+```yaml
+database.session.poolMax: 32  # Increase from default 20
+```
+
+**Thread Count:**
+- Media processors: Typically 14 threads
+- HTTP threads: Typically 8 threads
+- Total: 22+ threads competing for sessions
+
 ## Future Enhancements
 
 - Background thumbnail generation for all processed files

@@ -34,20 +34,16 @@ All project documentation is consolidated in this directory for easy navigation 
 
 - **[IMAGEMAGICK_CRASH_FIX.md](IMAGEMAGICK_CRASH_FIX.md)** - Fix for SIGABRT crashes on corrupted TIFF files
 - **[ARW_TRANSCODING_FIX.md](ARW_TRANSCODING_FIX.md)** - Sony ARW RAW file transcoding fixes
-- **[THUMBNAIL_FAILURES_ANALYSIS.md](THUMBNAIL_FAILURES_ANALYSIS.md)** - Thumbnail generation failure analysis
-- **[THUMBNAIL_PERFORMANCE_INVESTIGATION.md](THUMBNAIL_PERFORMANCE_INVESTIGATION.md)** - Performance optimization investigation
 - **[LOGGING_LEVEL_FIX.md](LOGGING_LEVEL_FIX.md)** - Logging level configuration fix
 - **[STDERR_CAPTURE_REMOVAL.md](STDERR_CAPTURE_REMOVAL.md)** - stderr capture removal rationale
 - **[VALIDATION_IMPLEMENTATION.md](VALIDATION_IMPLEMENTATION.md)** - TIFF validation implementation
+
+**Note:** Thumbnail troubleshooting and performance information is now consolidated in [THUMBNAIL_API.md](THUMBNAIL_API.md).
 
 ## User Guides
 
 - **[START_SCRIPT_README.md](START_SCRIPT_README.md)** - Server startup script documentation
 - **[WEB_SERVER_README.md](WEB_SERVER_README.md)** - Web server configuration and usage
-
-## Executive Reports
-
-- **[REPORT_EXECUTIVE_SUMMARY.md](REPORT_EXECUTIVE_SUMMARY.md)** - High-level executive summary
 
 ## Directory-Specific READMEs
 
@@ -68,4 +64,4 @@ Per `CURSOR_RULES.md`:
 
 ## Total Documentation
 
-**27 files** organized in `/docs` covering architecture, APIs, configuration, troubleshooting, and project guidelines.
+**20 files** organized in `/docs` covering architecture, APIs, configuration, troubleshooting, and project guidelines.
