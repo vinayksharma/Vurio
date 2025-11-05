@@ -7,12 +7,14 @@ This guide covers strategies to help people discover and use your project.
 ### 1. Optimize GitHub Repository Metadata
 
 **Add a compelling description:**
+
 ```bash
 gh repo edit vinayksharma/dedup_server \
   --description "High-performance C++ media deduplication server with intelligent duplicate detection, REST API, and multi-format support"
 ```
 
 **Add relevant topics/tags:**
+
 ```bash
 gh repo edit vinayksharma/dedup_server \
   --add-topic "cplusplus" \
@@ -29,6 +31,7 @@ gh repo edit vinayksharma/dedup_server \
 ```
 
 **Add a homepage URL (if you have one):**
+
 ```bash
 gh repo edit vinayksharma/dedup_server --homepage "https://github.com/vinayksharma/dedup_server#readme"
 ```
@@ -36,6 +39,7 @@ gh repo edit vinayksharma/dedup_server --homepage "https://github.com/vinaykshar
 ### 2. Enhance Your README.md
 
 Your README is already good! Consider adding:
+
 - **Badges** at the top (license, build status, version)
 - **Screenshots/Demo** section
 - **Quick Start** section (already have this)
@@ -67,6 +71,7 @@ gh release create v1.0.0 \
 ### Reddit Communities
 
 **Technical/Programming:**
+
 - `/r/cpp` - C++ community
 - `/r/programming` - General programming
 - `/r/opensource` - Open source projects
@@ -75,6 +80,7 @@ gh release create v1.0.0 \
 - `/r/photography` - Photographers who might need deduplication
 
 **Post Format:**
+
 ```
 Title: [Project] Media Deduplication Server - C++ server for finding duplicate media files
 
@@ -94,6 +100,7 @@ Post to: https://news.ycombinator.com/show
 "Show HN: Media Deduplication Server - C++ server for finding duplicate files"
 
 **Tips:**
+
 - Post during peak hours (9-11 AM PST)
 - Be ready to answer questions
 - Don't over-promote
@@ -102,6 +109,7 @@ Post to: https://news.ycombinator.com/show
 ### Dev.to / Hashnode / Medium
 
 Write a technical blog post:
+
 - **Title**: "Building a High-Performance Media Deduplication Server in C++"
 - **Content Ideas**:
   - Why you built it
@@ -114,6 +122,7 @@ Write a technical blog post:
 ### Twitter/X
 
 **Tweet Ideas:**
+
 1. "Just open-sourced my Media Deduplication Server! Built in C++, handles images/videos/audio, uses SHA-256 hashing. Check it out: [link]"
 2. "Spent 6 months building a deduplication server. Here's what I learned: [thread]"
 3. Share interesting technical details or performance metrics
@@ -124,6 +133,7 @@ Write a technical blog post:
 ### LinkedIn
 
 Post about your project:
+
 - Share your journey
 - Technical challenges
 - What you learned
@@ -134,6 +144,7 @@ Post about your project:
 ### Stack Overflow
 
 Answer questions related to:
+
 - Media deduplication
 - C++ performance
 - Image processing
@@ -142,11 +153,13 @@ Answer questions related to:
 ### GitHub Discussions
 
 Enable GitHub Discussions in your repo:
+
 ```bash
 gh repo edit vinayksharma/dedup_server --enable-discussions
 ```
 
 Then create discussion topics:
+
 - "Use Cases and Examples"
 - "Feature Requests"
 - "Performance Tips"
@@ -155,11 +168,13 @@ Then create discussion topics:
 ### Discord/Slack Communities
 
 **C++ Communities:**
+
 - C++ Discord servers
 - CppCon Slack
 - Local programming meetups
 
 **Photography/Media Communities:**
+
 - Photography forums
 - Media management tool communities
 
@@ -168,11 +183,13 @@ Then create discussion topics:
 ### 1. Create a Project Website/Blog
 
 Options:
+
 - **GitHub Pages** (free, easy)
 - **Netlify** (free tier)
 - **Vercel** (free tier)
 
 **Content Ideas:**
+
 - Getting started guide
 - API documentation
 - Architecture overview
@@ -182,12 +199,14 @@ Options:
 ### 2. Create Video Content
 
 **YouTube:**
+
 - Demo video (5-10 min)
 - Architecture walkthrough
 - Installation tutorial
 - Use case demonstration
 
 **Platforms:**
+
 - YouTube
 - TikTok/Instagram (short demos)
 - Dev.to (embed videos)
@@ -195,12 +214,14 @@ Options:
 ### 3. Write Technical Articles
 
 **Platforms:**
+
 - Dev.to
 - Medium
 - Hashnode
 - Your own blog
 
 **Article Ideas:**
+
 - "How I Built a Media Deduplication Server"
 - "Performance Optimization in C++"
 - "Designing a RESTful API for Media Management"
@@ -211,15 +232,18 @@ Options:
 ### Make It Easy to Contribute
 
 1. **Add CONTRIBUTING.md:**
+
    - How to submit issues
    - Code style guidelines
    - How to submit PRs
    - Development setup
 
 2. **Add CODE_OF_CONDUCT.md:**
+
    - Create a welcoming environment
 
 3. **Label Issues:**
+
    - `good first issue`
    - `help wanted`
    - `documentation`
@@ -242,6 +266,7 @@ Options:
 ### Track Your Success
 
 **GitHub Metrics:**
+
 - Stars
 - Forks
 - Issues
@@ -249,6 +274,7 @@ Options:
 - Contributors
 
 **Tools:**
+
 - GitHub Insights (built-in)
 - Star History (https://star-history.com)
 - Google Analytics (if you have a website)
@@ -258,12 +284,14 @@ Options:
 ### 1. Find Similar Projects
 
 Search GitHub for:
+
 - "media deduplication"
 - "duplicate finder"
 - "image deduplication"
 - "video deduplication"
 
 **Engage by:**
+
 - Opening issues to share your project
 - Commenting on related discussions
 - Creating comparisons
@@ -271,12 +299,14 @@ Search GitHub for:
 ### 2. Reach Out to Bloggers/Influencers
 
 Find tech bloggers who write about:
+
 - C++ development
 - Media management
 - Open source projects
 - Self-hosted solutions
 
 **Politely ask:**
+
 - To review your project
 - To share it with their audience
 - For feedback
@@ -284,6 +314,7 @@ Find tech bloggers who write about:
 ### 3. Submit to Directories
 
 **Open Source Directories:**
+
 - **Awesome Lists**: Find relevant awesome lists and submit
 - **GitHub Awesome**: Create an awesome list entry
 - **AlternativeTo**: If there are similar commercial tools
@@ -294,16 +325,19 @@ Find tech bloggers who write about:
 ### Regular Activities
 
 1. **Release Updates**
+
    - Create releases for major versions
    - Write detailed release notes
    - Share on social media
 
 2. **Engage with Users**
+
    - Respond to issues promptly
    - Help with setup problems
    - Answer questions
 
 3. **Share Progress**
+
    - Weekly/monthly updates
    - Feature highlights
    - Performance improvements
@@ -344,6 +378,7 @@ Find tech bloggers who write about:
 ## 🎓 Learn from Successful Projects
 
 Study similar open source projects:
+
 - How they present themselves
 - Their README structure
 - Their promotion strategies
@@ -354,4 +389,3 @@ Study similar open source projects:
 **Remember**: The best promotion is building something valuable that solves real problems. Focus on quality, and the users will come!
 
 Good luck with your project! 🚀
-
