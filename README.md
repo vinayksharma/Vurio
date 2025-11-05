@@ -57,6 +57,7 @@ The server is built with a modular, layered architecture:
 #### macOS (Recommended)
 
 **Prerequisites:**
+
 - [Homebrew](https://brew.sh/) package manager
 - Xcode Command Line Tools: `xcode-select --install`
 
@@ -74,6 +75,7 @@ pip3 install huggingface_hub
 ```
 
 **Note for Apple Silicon (M1/M2/M3):**
+
 - Homebrew installs to `/opt/homebrew` by default
 - The build system will automatically detect dependencies in `/opt/homebrew`
 - If you have an Intel Mac, dependencies will be in `/usr/local` (also auto-detected)
@@ -120,6 +122,7 @@ make -j$(sysctl -n hw.ncpu)  # macOS: use all CPU cores
 ```
 
 **Build Options:**
+
 - `./build.sh` - Standard release build
 - `./build.sh --clean` - Clean build (removes old artifacts)
 - `./build.sh --test` - Build and run tests
@@ -128,6 +131,7 @@ make -j$(sysctl -n hw.ncpu)  # macOS: use all CPU cores
 - `./build.sh --help` - Show all options
 
 **Build Output:**
+
 - Executable: `build/bin/media_dedup_server`
 - Test executable: `build/bin/all_unit_tests`
 - Configuration: `config/config.yaml`
@@ -352,6 +356,7 @@ cd build
 ```
 
 **Test Output:**
+
 - Test results: `build/test_results.xml`
 - Test executable: `build/bin/all_unit_tests`
 
@@ -372,6 +377,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Common macOS Issues
 
 **Issue: "Poco not found" or "yaml-cpp not found"**
+
 ```bash
 # Ensure Homebrew is properly installed and in PATH
 eval "$(/opt/homebrew/bin/brew shellenv)"  # Apple Silicon
@@ -383,6 +389,7 @@ brew list | grep -E "(poco|yaml-cpp|imagemagick|libraw|libtiff)"
 ```
 
 **Issue: "ImageMagick not found"**
+
 ```bash
 # Install ImageMagick via Homebrew
 brew install imagemagick
@@ -392,6 +399,7 @@ pkg-config --modversion Magick++
 ```
 
 **Issue: Build fails with "libtiff not found"**
+
 ```bash
 # Install libtiff
 brew install libtiff
@@ -401,6 +409,7 @@ pkg-config --modversion libtiff-4
 ```
 
 **Issue: "Permission denied" when running build.sh**
+
 ```bash
 # Make script executable
 chmod +x build.sh
@@ -408,6 +417,7 @@ chmod +x start
 ```
 
 **Issue: Python dependencies not found**
+
 ```bash
 # Use pip3 explicitly
 pip3 install --user huggingface_hub
@@ -419,7 +429,7 @@ sudo pip3 install huggingface_hub
 ### Getting Help
 
 - **Issues**: Use [GitHub Issues](https://github.com/your-repo/issues)
-- **Documentation**: 
+- **Documentation**:
   - `docs/CONFIGURATION_REFERENCE.md` - Complete configuration reference
   - `docs/WEB_SERVER_README.md` - Web API documentation
   - `docs/START_SCRIPT_README.md` - Start script usage
