@@ -1,5 +1,10 @@
 # Media Deduplication Server
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
+[![CMake](https://img.shields.io/badge/CMake-3.16+-green.svg)](https://cmake.org/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vinayksharma/dedup_server)
+
 A high-performance, scalable media deduplication server built with C++ and modern libraries. This server efficiently identifies and manages duplicate media files (images, videos, audio) using advanced hashing algorithms and database management.
 
 ## 🚀 Features
