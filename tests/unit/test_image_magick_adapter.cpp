@@ -5,9 +5,11 @@
 #include <string>
 #include <filesystem>
 #include <thread>
+#include <mutex>
 #include <unistd.h>
 
 using namespace MediaDedup;
+using namespace MediaDedup::Test;
 
 class ImageMagickAdapterTest : public ::testing::Test
 {
@@ -15,10 +17,12 @@ protected:
     void SetUp() override
     {
         // Test files from the testset directory
-        test_files_dir_ = "/Users/vinaysharma/pictures/testset/";
+        std::filesystem::path test_data_path = TestUtils::getTestDataPath();
+        std::filesystem::path test_set_path = test_data_path / "pictures" / "testset";
+        test_files_dir_ = test_set_path.string() + "/";
 
         // Debug: Check if the test file exists
-        std::string test_file = test_files_dir_ + "sample.jpg";
+        std::string test_file = test_files_dir_ + "test.jpg";
         if (!std::filesystem::exists(test_file))
         {
             std::cout << "WARNING: Test file does not exist: " << test_file << std::endl;
@@ -37,15 +41,15 @@ protected:
 
         // Raw image files to test
         raw_files_ = {
-            "sample.arw",
-            "sample.cr2",
-            "sample.dng"};
+            "test.arw",
+            "test.cr2",
+            "test.dng"};
 
         // Non-raw files for error testing
         non_raw_files_ = {
-            "sample.jpg",
-            "sample.png",
-            "sample.tif"};
+            "test.jpg",
+            "test.png",
+            "test.tif"};
     }
 
     std::string test_files_dir_;
@@ -129,30 +133,34 @@ TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_WithEmptyPath_ReturnsFalse)
 TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_ThreadSafety_ConcurrentCalls)
 {
     // Test thread safety with concurrent calls
+    std::string file_path = test_files_dir_ + "test.jpg";
+    
+    // Skip test if file doesn't exist
+    if (!std::filesystem::exists(file_path))
+    {
+        GTEST_SKIP() << "Test file not found: " << file_path;
+    }
+    
     const int num_threads = 4;
     const int calls_per_thread = 5;
     std::vector<std::thread> threads;
     std::vector<bool> results(num_threads * calls_per_thread, false);
+    std::mutex results_mutex; // Protect results vector access
 
     for (int t = 0; t < num_threads; ++t)
     {
-        threads.emplace_back([this, t, calls_per_thread, &results]()
+        threads.emplace_back([this, t, calls_per_thread, &results, &file_path, &results_mutex]()
                              {
             for (int i = 0; i < calls_per_thread; ++i)
             {
-                std::string file_path = test_files_dir_ + "sample.jpg";
-                
-                // Skip if file doesn't exist
-                if (!std::filesystem::exists(file_path))
-                {
-                    continue;
-                }
-                
-                std::vector<std::uint8_t> tiff_data;
-                bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, tiff_data);
+                std::vector<std::uint8_t> jpeg_data;
+                bool result = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
                 
                 int index = t * calls_per_thread + i;
-                results[index] = result && !tiff_data.empty();
+                {
+                    std::lock_guard<std::mutex> lock(results_mutex);
+                    results[index] = result && !jpeg_data.empty();
+                }
             } });
     }
 
@@ -163,15 +171,15 @@ TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_ThreadSafety_ConcurrentCalls)
     }
 
     // Check that all calls succeeded
-    for (bool result : results)
+    for (size_t i = 0; i < results.size(); ++i)
     {
-        EXPECT_TRUE(result);
+        EXPECT_TRUE(results[i]) << "Thread safety test failed at index " << i;
     }
 }
 
 TEST_F(ImageMagickAdapterTest, TranscodeToJpeg_OutputDataIntegrity)
 {
-    std::string file_path = test_files_dir_ + "sample.jpg";
+    std::string file_path = test_files_dir_ + "test.jpg";
 
     // Skip if file doesn't exist
     if (!std::filesystem::exists(file_path))

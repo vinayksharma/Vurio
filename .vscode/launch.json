@@ -19,7 +19,7 @@
             "stopAtEntry": false,
             "console": "integratedTerminal",
             "sourceMap": {
-                "/Users/vinaysharma/developer/dedup_server": "${workspaceFolder}"
+                "${workspaceFolder}": "${workspaceFolder}"
             }
         },
         {

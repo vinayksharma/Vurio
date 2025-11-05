@@ -41,6 +41,10 @@ The server is built with a modular, layered architecture:
 - **CMake 3.16+**
 - **Poco Libraries** (Foundation, Data, SQLite, Util, Net)
 - **SQLite3** development libraries
+- **yaml-cpp** (YAML configuration parsing)
+- **ImageMagick++** (Image processing and RAW file support)
+- **LibRaw** (RAW image file validation)
+- **libtiff** (TIFF file validation)
 - **pkg-config** (for dependency detection)
 - **Python 3** (for ONNX model downloading)
 - **huggingface_hub** Python package (for automatic model downloads)
@@ -50,41 +54,83 @@ The server is built with a modular, layered architecture:
 
 ### 1. Install Dependencies
 
+#### macOS (Recommended)
+
+**Prerequisites:**
+- [Homebrew](https://brew.sh/) package manager
+- Xcode Command Line Tools: `xcode-select --install`
+
+**Install all dependencies:**
+
+```bash
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install all required dependencies
+brew install cmake poco sqlite3 pkg-config imagemagick libraw libtiff yaml-cpp
+
+# Install Python dependencies for ONNX models
+pip3 install huggingface_hub
+```
+
+**Note for Apple Silicon (M1/M2/M3):**
+- Homebrew installs to `/opt/homebrew` by default
+- The build system will automatically detect dependencies in `/opt/homebrew`
+- If you have an Intel Mac, dependencies will be in `/usr/local` (also auto-detected)
+
 #### Ubuntu/Debian:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libpoco-dev libsqlite3-dev pkg-config python3-pip
-pip3 install huggingface_hub
-```
-
-#### macOS:
-
-```bash
-brew install cmake poco sqlite3 pkg-config
+sudo apt install build-essential cmake libpoco-dev libsqlite3-dev \
+    pkg-config libyaml-cpp-dev libmagick++-dev libraw-dev libtiff-dev \
+    python3-pip
 pip3 install huggingface_hub
 ```
 
 #### CentOS/RHEL:
 
 ```bash
-sudo yum install gcc-c++ cmake3 poco-devel sqlite-devel pkgconfig
+sudo yum install gcc-c++ cmake3 poco-devel sqlite-devel pkgconfig \
+    yaml-cpp-devel ImageMagick-c++-devel libraw-devel libtiff-devel \
+    python3-pip
+pip3 install huggingface_hub
 ```
 
 ### 2. Clone and Build
 
 ```bash
+# Clone the repository
 git clone <repository-url>
 cd dedup_server
 
-# Using the build script (recommended)
+# Make build script executable
+chmod +x build.sh
+
+# Build the project (recommended)
 ./build.sh
+
+# Or build with tests
+./build.sh --clean --test
 
 # Or manual CMake build
 mkdir build && cd build
 cmake ..
-make -j$(nproc)
+make -j$(sysctl -n hw.ncpu)  # macOS: use all CPU cores
 ```
+
+**Build Options:**
+- `./build.sh` - Standard release build
+- `./build.sh --clean` - Clean build (removes old artifacts)
+- `./build.sh --test` - Build and run tests
+- `./build.sh --clean --test` - Clean build and run all tests
+- `./build.sh --debug` - Debug build with symbols
+- `./build.sh --help` - Show all options
+
+**Build Output:**
+- Executable: `build/bin/media_dedup_server`
+- Test executable: `build/bin/all_unit_tests`
+- Configuration: `config/config.yaml`
 
 **💡 For development with IDE:** See [Build Tasks Documentation](docs/BUILD_TASKS.md) for VS Code/Cursor build tasks and keyboard shortcuts (Cmd+Shift+B).
 
@@ -137,30 +183,85 @@ See `config/CONFIGURATION_REFERENCE.md` for the canonical list of configuration 
 
 ## 🚀 Usage
 
-### Basic Server Startup
+### Running the Server
+
+#### Quick Start (macOS)
+
+```bash
+# Start server with default configuration
+./build/bin/media_dedup_server
+
+# Or use the convenience script (builds if needed)
+./start
+
+# Build and start in one command
+./start --build
+```
+
+#### Using the Start Script
+
+The `start` script provides an easy way to run the server:
 
 ```bash
 # Start with default configuration
-./media_dedup_server
+./start
+
+# Build first, then start
+./start --build
+
+# Start in debug mode
+./start --debug
+
+# Start on a specific port
+./start --port 9090
+
+# Start on localhost only
+./start --host localhost
+
+# Use a custom config file
+./start --config /path/to/config.yaml
+```
+
+#### Direct Server Execution
+
+```bash
+# Start with default configuration
+./build/bin/media_dedup_server
 
 # Start with custom config file
-./media_dedup_server --config=/path/to/config.yaml
+./build/bin/media_dedup_server --config=config/config.yaml
 
-# Start in daemon mode
-./media_dedup_server --daemon
+# Start with custom database path
+./build/bin/media_dedup_server --database=data/dedup_server.db
+
+# Start on specific host and port
+./build/bin/media_dedup_server --host=localhost --port=8080
 
 # Show help
-./media_dedup_server --help
+./build/bin/media_dedup_server --help
 ```
 
 ### Command Line Options
 
-- `--config=<file>`: Specify configuration file path
-- `--database=<path>`: Specify database file path
-- `--host=<address>`: Server host address
-- `--port=<number>`: Server port number
-- `--daemon`: Run in daemon mode
+- `--config=<file>`: Specify configuration file path (default: `config/config.yaml`)
+- `--database=<path>`: Specify database file path (default: `data/dedup_server.db`)
+- `--host=<address>`: Server host address (default: `0.0.0.0`)
+- `--port=<number>`: Server port number (default: `8080`)
 - `--help`: Show help information
+
+### Accessing the Web Interface
+
+Once the server is running, you can access:
+
+- **Web API**: `http://localhost:8080/api/v1/config`
+- **OpenAPI Spec**: `http://localhost:8080/api/openapi.json`
+- **Swagger UI**: `http://localhost:8080/` (if available)
+
+### Stopping the Server
+
+- Press `Ctrl+C` in the terminal
+- Or type `exit` in the console interface
+- Or send `SIGTERM` signal: `kill <pid>`
 
 ## 📊 Web API
 
@@ -226,17 +327,33 @@ dedup_server/
 ### Building for Development
 
 ```bash
+# Debug build
 mkdir build-debug && cd build-debug
 cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j$(nproc)
+make -j$(sysctl -n hw.ncpu)  # macOS: use all CPU cores
+# Linux: use make -j$(nproc)
+
+# Or use the build script
+./build.sh --debug
 ```
 
 ### Running Tests
 
 ```bash
+# Run all tests (after building)
 cd build
-make test
+./bin/all_unit_tests
+
+# Or use the build script with test flag
+./build.sh --test
+
+# Or clean build and test
+./build.sh --clean --test
 ```
+
+**Test Output:**
+- Test results: `build/test_results.xml`
+- Test executable: `build/bin/all_unit_tests`
 
 ## 🤝 Contributing
 
@@ -250,10 +367,63 @@ make test
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🆘 Support & Troubleshooting
 
-- Issues: use GitHub Issues
-- Documentation: `config/CONFIGURATION_REFERENCE.md`, `WEB_SERVER_README.md`, `START_SCRIPT_README.md`
+### Common macOS Issues
+
+**Issue: "Poco not found" or "yaml-cpp not found"**
+```bash
+# Ensure Homebrew is properly installed and in PATH
+eval "$(/opt/homebrew/bin/brew shellenv)"  # Apple Silicon
+# or
+eval "$(/usr/local/bin/brew shellenv)"     # Intel
+
+# Verify dependencies are installed
+brew list | grep -E "(poco|yaml-cpp|imagemagick|libraw|libtiff)"
+```
+
+**Issue: "ImageMagick not found"**
+```bash
+# Install ImageMagick via Homebrew
+brew install imagemagick
+
+# Verify installation
+pkg-config --modversion Magick++
+```
+
+**Issue: Build fails with "libtiff not found"**
+```bash
+# Install libtiff
+brew install libtiff
+
+# Verify installation
+pkg-config --modversion libtiff-4
+```
+
+**Issue: "Permission denied" when running build.sh**
+```bash
+# Make script executable
+chmod +x build.sh
+chmod +x start
+```
+
+**Issue: Python dependencies not found**
+```bash
+# Use pip3 explicitly
+pip3 install --user huggingface_hub
+
+# Or install globally (requires sudo)
+sudo pip3 install huggingface_hub
+```
+
+### Getting Help
+
+- **Issues**: Use [GitHub Issues](https://github.com/your-repo/issues)
+- **Documentation**: 
+  - `docs/CONFIGURATION_REFERENCE.md` - Complete configuration reference
+  - `docs/WEB_SERVER_README.md` - Web API documentation
+  - `docs/START_SCRIPT_README.md` - Start script usage
+  - `docs/BUILD_TASKS.md` - IDE build configuration
 
 ## 🔮 Roadmap
 

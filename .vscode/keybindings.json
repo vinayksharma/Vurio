@@ -30,7 +30,15 @@
     },
     {
         "key": "ctrl+f5",
+        "command": "-workbench.action.debug.run"
+    },
+    {
+        "key": "ctrl+f5",
+        "command": "-workbench.action.debug.restart"
+    },
+    {
+        "key": "ctrl+f5",
         "command": "workbench.action.tasks.runTask",
-        "args": "Clean Build and Run"
+        "args": "Rebuild and Test All (Fast)"
     }
 ]
