@@ -4,10 +4,13 @@
         {
             "label": "Rebuild and Test All (Fast)",
             "type": "shell",
-            "command": "./scripts/smart_rebuild",
+            "command": "./build.sh --clean --test",
             "group": {
                 "kind": "build",
                 "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -159,6 +162,33 @@
                     "message": 5
                 }
             }
+        },
+        {
+            "label": "Clean Build and Run",
+            "type": "shell",
+            "command": "./build.sh --clean && ./start",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "isBackground": true
         }
     ]
 }

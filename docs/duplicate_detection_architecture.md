@@ -128,6 +128,7 @@ bool isBetterRepresentative(File A, File B) {
 **Dynamic Updates**: Representative can change as new files are added to the group.
 
 **Representative Swapping:**
+
 - Representatives **ARE** swapped dynamically when a better candidate is added
 - Swap occurs when new file has larger size OR (same size + older date)
 - Only files with similarity >= max threshold can become representatives
@@ -135,14 +136,16 @@ bool isBetterRepresentative(File A, File B) {
 - Old representative becomes regular member (`is_representative = 0`)
 
 **Swap Process:**
+
 1. Add new member to `duplicate_members` with `is_representative = 1`
 2. Clear old representative flag (`is_representative = 0`)
 3. Update group record in `duplicate_groups` with new representative info
 4. Update in-memory representative cache
 
 **Configuration:**
+
 ```yaml
-duplicates.representative.strategy: size_then_age  # Currently only option
+duplicates.representative.strategy: size_then_age # Currently only option
 ```
 
 ## Processing Flow
@@ -239,12 +242,13 @@ For each batch of N files (duplicates.finder.batchSize):
 
 The system uses a **min/max threshold range** for EMBEDDING mode (currently the only supported mode):
 
-| Key                             | Default | Description                                         |
-| ------------------------------- | ------- | --------------------------------------------------- |
-| `duplicates.threshold.min`      | `0.92`  | Minimum threshold for adding files to groups       |
-| `duplicates.threshold.max`     | `0.96`  | Maximum threshold for representative swaps          |
+| Key                        | Default | Description                                  |
+| -------------------------- | ------- | -------------------------------------------- |
+| `duplicates.threshold.min` | `0.92`  | Minimum threshold for adding files to groups |
+| `duplicates.threshold.max` | `0.96`  | Maximum threshold for representative swaps   |
 
 **Threshold Usage:**
+
 - **Min Threshold**: Files with similarity score >= min threshold can be added to duplicate groups
   - Controls the "looseness" of duplicate detection
   - Changes trigger full reprocessing (groups deleted, checkpoint reset)
@@ -253,11 +257,13 @@ The system uses a **min/max threshold range** for EMBEDDING mode (currently the 
   - Changes do NOT trigger reprocessing (existing groups preserved)
 
 **Reprocessing Logic:**
+
 - **Min threshold decrease**: Triggers full reprocessing (more permissive, may find new matches)
 - **Min threshold increase**: No reprocessing (existing groups still valid)
 - **Max threshold changes**: No reprocessing (doesn't affect group membership)
 
 **Configuration Examples:**
+
 ```yaml
 # Conservative (High Precision)
 duplicates.threshold.min: 0.95
@@ -360,18 +366,22 @@ If threshold.max = 0.80:
 ### Configuration Impact
 
 **Narrow Range (More Cross-Group Checking):**
+
 ```yaml
 duplicates.threshold.min: 0.90
-duplicates.threshold.max: 0.95  # More files below threshold
+duplicates.threshold.max: 0.95 # More files below threshold
 ```
+
 - More aggressive optimization
 - More files checked and moved
 
 **Wide Range (Less Cross-Group Checking):**
+
 ```yaml
 duplicates.threshold.min: 0.85
-duplicates.threshold.max: 0.98  # Fewer files below threshold
+duplicates.threshold.max: 0.98 # Fewer files below threshold
 ```
+
 - More conservative optimization
 - Fewer files checked and moved
 
@@ -493,11 +503,13 @@ Key metrics to monitor:
 **Problem:** All duplicate groups contained exactly 2 members instead of grouping all similar files together.
 
 **Root Causes:**
+
 1. **No Cross-Batch Comparison**: Existing files from previous batches were never loaded, so new files could only compare against other files in the same batch
 2. **Pairwise Group Creation**: Code created groups with exactly 2 files and immediately broke, preventing larger groups
 3. **Zero Thresholds**: Configuration had thresholds set to 0, making every file match every other file
 
 **Solution:**
+
 - Fixed existing file loading to properly load all processed files with artifacts
 - Implemented all-pairs similarity check within batches to find all similar files
 - Added cross-batch comparison against existing group representatives

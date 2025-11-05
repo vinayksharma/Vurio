@@ -1,13 +1,36 @@
 [
     {
         "key": "cmd+shift+b",
+        "command": "-workbench.action.tasks.build"
+    },
+    {
+        "key": "cmd+shift+b",
         "command": "workbench.action.tasks.runTask",
-        "args": "build-complete",
-        "when": "!inDebugMode"
+        "args": "Rebuild and Test All (Fast)"
+    },
+    {
+        "key": "cmd+b",
+        "command": "workbench.action.tasks.runTask",
+        "args": "Build Server (No Clean)"
+    },
+    {
+        "key": "cmd+shift+r",
+        "command": "workbench.action.tasks.runTask",
+        "args": "Full Rebuild (Clean Everything)"
+    },
+    {
+        "key": "cmd+k cmd+b",
+        "command": "workbench.action.tasks.runTask",
+        "args": "Clean Build Server"
     },
     {
         "key": "f5",
         "command": "workbench.action.debug.start",
         "when": "!inDebugMode"
+    },
+    {
+        "key": "ctrl+f5",
+        "command": "workbench.action.tasks.runTask",
+        "args": "Clean Build and Run"
     }
 ]
