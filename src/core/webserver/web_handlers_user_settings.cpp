@@ -274,4 +274,135 @@ namespace MediaDedup
         sendJsonResponse(response, oss.str());
     }
 
+    ChangeMediaLocationPathHandler::ChangeMediaLocationPathHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                                   std::shared_ptr<FilesService> service)
+        : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
+
+    void ChangeMediaLocationPathHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                       Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Request received");
+        
+        if (request.getMethod() != "POST")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+        if (!service_)
+        {
+            sendErrorResponse(response, "Service unavailable", 503);
+            return;
+        }
+        std::string body = getRequestBody(request);
+        if (body.empty())
+        {
+            sendErrorResponse(response, "Body required", 400);
+            return;
+        }
+        Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Body received, length=%d", static_cast<int>(body.length()));
+        
+        Poco::JSON::Parser parser;
+        Poco::JSON::Object::Ptr json;
+        try
+        {
+            json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (...)
+        {
+            sendErrorResponse(response, "Invalid JSON", 400);
+            return;
+        }
+        if (!json->has("old_path") || !json->has("new_path"))
+        {
+            sendErrorResponse(response, "Missing old_path or new_path", 400);
+            return;
+        }
+        std::string old_path = json->get("old_path").toString();
+        std::string new_path = json->get("new_path").toString();
+        Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Calling changeMediaLocationPath: old_path=%s, new_path=%s", old_path, new_path);
+        
+        if (old_path.empty() || new_path.empty())
+        {
+            sendErrorResponse(response, "old_path and new_path cannot be empty", 400);
+            return;
+        }
+        int sample_size = 20;
+        if (json->has("sample_size"))
+        {
+            sample_size = json->get("sample_size").convert<int>();
+            if (sample_size < 1 || sample_size > 100)
+            {
+                sendErrorResponse(response, "sample_size must be between 1 and 100", 400);
+                return;
+            }
+        }
+        auto result = service_->changeMediaLocationPath(old_path, new_path, sample_size);
+        Poco::JSON::Object obj;
+        if (result.success)
+        {
+            obj.set("status", "ok");
+        }
+        else if (result.partial_success)
+        {
+            obj.set("status", "partial_success");
+        }
+        else
+        {
+            obj.set("status", "error");
+        }
+        obj.set("old_path", old_path);
+        obj.set("new_path", new_path);
+        obj.set("files_verified", result.files_verified);
+        obj.set("files_verified_success", result.files_verified_success);
+        obj.set("total_files", result.total_files);
+        obj.set("files_updated", result.files_updated);
+        obj.set("files_failed", result.files_failed);
+        obj.set("verification_success_rate", result.verification_success_rate);
+        if (!result.error_message.empty())
+        {
+            obj.set("error", result.error_message);
+        }
+        // Add update details
+        Poco::JSON::Object details_obj;
+        for (const auto &kv : result.update_details)
+        {
+            Poco::JSON::Object table_obj;
+            table_obj.set("updated", kv.second.first);
+            table_obj.set("failed", kv.second.second);
+            details_obj.set(kv.first, table_obj);
+        }
+        obj.set("update_details", details_obj);
+        std::ostringstream oss;
+        obj.stringify(oss);
+        if (result.success)
+        {
+            sendJsonResponse(response, oss.str());
+        }
+        else if (result.partial_success)
+        {
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("application/json");
+            std::ostringstream response_stream;
+            obj.stringify(response_stream);
+            response.setContentLength(response_stream.str().length());
+            response.send() << response_stream.str();
+        }
+        else
+        {
+            if (result.error_message.find("not registered") != std::string::npos)
+            {
+                sendErrorResponse(response, result.error_message, 404);
+            }
+            else if (result.error_message.find("does not exist") != std::string::npos ||
+                     result.error_message.find("Verification failed") != std::string::npos)
+            {
+                sendErrorResponse(response, result.error_message, 400);
+            }
+            else
+            {
+                sendErrorResponse(response, result.error_message, 500);
+            }
+        }
+    }
+
 } // namespace MediaDedup

@@ -122,6 +122,24 @@ namespace MediaDedup
             " processed, links, is_network_file, location_key, created_at\n"
             " FROM scanned_files WHERE file_path=?";
 
+        inline constexpr std::string_view kSelectScannedFilesByLocationKey =
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
+            " processed, links, is_network_file, location_key, created_at\n"
+            " FROM scanned_files WHERE location_key=?";
+
+        inline constexpr std::string_view kCountScannedFilesByLocationKey =
+            "SELECT COUNT(*) FROM scanned_files WHERE location_key=?";
+
+        inline constexpr std::string_view kSelectRandomScannedFilesByLocationKey =
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
+            " processed, links, is_network_file, location_key, created_at\n"
+            " FROM scanned_files WHERE location_key=? ORDER BY RANDOM() LIMIT ?";
+
+        inline constexpr std::string_view kSelectScannedFilesByLocationKeyWithLimit =
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
+            " processed, links, is_network_file, location_key, created_at\n"
+            " FROM scanned_files WHERE location_key=? LIMIT ? OFFSET ?";
+
         inline constexpr std::string_view kListScannedFiles =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
             " processed, links, is_network_file, location_key, created_at\n"
@@ -132,6 +150,24 @@ namespace MediaDedup
 
         inline constexpr std::string_view kUpdateProcessed =
             "UPDATE scanned_files SET processed=? WHERE file_path=?";
+
+        inline constexpr std::string_view kUpdateScannedFilePath =
+            "UPDATE scanned_files SET file_path=?, relative_path=?, location_key=? WHERE id=?";
+
+        inline constexpr std::string_view kUpdateImageArtifactsFilePath =
+            "UPDATE image_artifacts SET file_path=? WHERE file_path=?";
+
+        inline constexpr std::string_view kUpdateProcessingErrorsFilePath =
+            "UPDATE processing_errors SET file_path=? WHERE file_path=?";
+
+        inline constexpr std::string_view kUpdateDuplicateGroupsFilePath =
+            "UPDATE duplicate_groups SET representative_file_path=? WHERE representative_file_path=?";
+
+        inline constexpr std::string_view kUpdateDuplicateMembersFilePath =
+            "UPDATE duplicate_members SET file_path=? WHERE file_path=?";
+
+        inline constexpr std::string_view kUpdateThumbnailCacheSourcePath =
+            "UPDATE thumbnail_cache SET source_path=? WHERE source_path=?";
 
         inline constexpr std::string_view kCountProcessingFiles =
             "SELECT COUNT(*) FROM scanned_files WHERE processed=1";

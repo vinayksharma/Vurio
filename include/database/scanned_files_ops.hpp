@@ -68,6 +68,74 @@ namespace MediaDedup
         // Returns true if file_path exists in scanned_files table
         static bool fileExists(DatabaseManager &db, const std::string &file_path);
 
+        // Path change operations
+        // Get count of files for a location_key
+        static int countFilesByLocationKey(
+            DatabaseManager &db,
+            const std::string &location_key
+        );
+
+        // Get random sample of files for a location_key (for verification)
+        static std::vector<ScannedFileRow> getRandomFilesByLocationKey(
+            DatabaseManager &db,
+            const std::string &location_key,
+            int limit
+        );
+
+        // Get files in batches for a location_key (for batch updates)
+        static std::vector<ScannedFileRow> getFilesByLocationKeyBatch(
+            DatabaseManager &db,
+            const std::string &location_key,
+            int limit,
+            int offset
+        );
+
+        // Get all files for a location_key (kept for backward compatibility, but should use batch method for large datasets)
+        static std::vector<ScannedFileRow> getFilesByLocationKey(
+            DatabaseManager &db,
+            const std::string &location_key
+        );
+
+        // Update file path in scanned_files table
+        static bool updateFilePath(
+            DatabaseManager &db,
+            int file_id,
+            const std::string &new_path,
+            const std::string &new_relative_path,
+            const std::string &new_location_key
+        );
+
+        // Update file path in other tables
+        static int updateFilePathInImageArtifacts(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
+        static int updateFilePathInProcessingErrors(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
+        static int updateFilePathInDuplicateGroups(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
+        static int updateFilePathInDuplicateMembers(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
+        static int updateFilePathInThumbnailCache(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
     private:
         // Helper function to execute filtered count queries
         static int executeFilteredCount(DatabaseManager &db, const std::string &base_query);

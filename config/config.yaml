@@ -65,7 +65,7 @@ media.image.onnx.sessionCache.maxSessions: 4
 media.images.raw.iiq: true
 media.image.onnx.sessionCache.enabled: true
 media.images.raw.bay: true
-server.port: 8080
+server.port: 8088
 media.images.raw.fff: true
 media.images.raw.nrw: true
 duplicates.metadata.dimensionTolerance: 0.10000000000000001

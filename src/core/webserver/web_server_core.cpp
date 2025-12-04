@@ -21,6 +21,8 @@
 #include <Poco/Environment.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/Exception.h>
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
@@ -166,6 +168,8 @@ namespace MediaDedup
             return new RegisterMediaLocationHandler(config_manager_, files_service_);
         if (path == "/api/v1/media-locations/deregister" && method == "POST")
             return new DeregisterMediaLocationHandler(config_manager_, files_service_);
+        if (path == "/api/v1/media-locations/change-path" && method == "POST")
+            return new ChangeMediaLocationPathHandler(config_manager_, files_service_);
 
         // Scheduler management endpoints
         if (path.find("/api/v1/scheduler/trigger/") == 0 && method == "POST")
@@ -217,9 +221,22 @@ namespace MediaDedup
             initializeServer();
             return true;
         }
+        catch (const Poco::Net::NetException &e)
+        {
+            std::cerr << "Failed to start web server: " << e.displayText() << " (" << e.name() << ": " << e.message() << ")" << std::endl;
+            running_ = false;
+            return false;
+        }
+        catch (const Poco::Exception &e)
+        {
+            std::cerr << "Failed to start web server: " << e.displayText() << " (" << e.name() << ")" << std::endl;
+            running_ = false;
+            return false;
+        }
         catch (const std::exception &e)
         {
             std::cerr << "Failed to start web server: " << e.what() << std::endl;
+            running_ = false;
             return false;
         }
     }
@@ -237,8 +254,56 @@ namespace MediaDedup
 
     void WebServer::initializeServer()
     {
-        Poco::Net::SocketAddress socket_address(host_, port_);
-        server_socket_ = std::make_unique<Poco::Net::ServerSocket>(socket_address);
+        std::string actual_host = host_;
+        Poco::Net::SocketAddress socket_address;
+
+        // Try to bind the socket, with IPv4 fallback for localhost if IPv6 fails
+        try
+        {
+            socket_address = Poco::Net::SocketAddress(host_, port_);
+            server_socket_ = std::make_unique<Poco::Net::ServerSocket>(socket_address);
+        }
+        catch (const Poco::Net::NetException &e)
+        {
+            // If binding fails with "Address already in use" and we're using localhost, try IPv4 fallback
+            bool is_address_in_use = (e.message().find("Address already in use") != std::string::npos ||
+                                      e.message().find("already in use") != std::string::npos);
+
+            if (host_ == "localhost" && is_address_in_use)
+            {
+                Poco::Logger::get("WebServer").warning("Failed to bind to localhost (IPv6), trying IPv4 fallback (127.0.0.1)...");
+                try
+                {
+                    actual_host = "127.0.0.1";
+                    socket_address = Poco::Net::SocketAddress("127.0.0.1", port_);
+                    server_socket_ = std::make_unique<Poco::Net::ServerSocket>(socket_address);
+                    host_ = actual_host; // Update host_ to reflect the actual binding address
+                    Poco::Logger::get("WebServer").information("Successfully bound to IPv4 fallback: 127.0.0.1:%u", port_);
+                }
+                catch (const Poco::Net::NetException &e2)
+                {
+                    std::cerr << "Failed to bind to port " << port_
+                              << " (tried " << host_ << " IPv6 and 127.0.0.1 IPv4): " << e2.displayText()
+                              << " (" << e2.name() << ": " << e2.message() << ")" << std::endl;
+                    std::cerr << "Port " << port_ << " is already in use. Please:" << std::endl;
+                    std::cerr << "  1. Stop the process using port " << port_ << " (run: lsof -i :" << port_ << ")" << std::endl;
+                    std::cerr << "  2. Or change the port in config/config.yaml (server.port)" << std::endl;
+                    throw;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to bind to " << host_ << ":" << port_ << ": " << e.displayText()
+                          << " (" << e.name() << ": " << e.message() << ")" << std::endl;
+                if (is_address_in_use)
+                {
+                    std::cerr << "Port " << port_ << " is already in use. Please:" << std::endl;
+                    std::cerr << "  1. Stop the process using port " << port_ << " (run: lsof -i :" << port_ << ")" << std::endl;
+                    std::cerr << "  2. Or change the port in config/config.yaml (server.port)" << std::endl;
+                }
+                throw;
+            }
+        }
 
         auto factory = std::make_unique<ConfigRequestHandlerFactory>(config_manager_,
                                                                      std::shared_ptr<WebServer>(this, [](WebServer *) {}),

@@ -63,6 +63,7 @@ set(UNIT_TEST_SOURCES
     unit/test_phash_quality.cpp
     unit/test_duplicate_finder_range.cpp
     unit/test_duplicates_reset_api.cpp
+    unit/test_files_service_change_path.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -167,6 +168,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_files_service_change_path")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="FilesServiceChangePathTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     elseif(${test_name} STREQUAL "test_scheduled_jobs_independence")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ScheduledJobsIndependenceTest.*")
@@ -196,6 +204,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
         )
     endif()
@@ -388,6 +397,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
@@ -485,6 +495,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
+       NOT ${test_name} STREQUAL "test_files_service_change_path" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
       NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
@@ -505,6 +516,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
+       NOT ${test_name} STREQUAL "test_files_service_change_path" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
        NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")

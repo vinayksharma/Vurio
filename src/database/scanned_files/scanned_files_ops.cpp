@@ -651,4 +651,350 @@ namespace MediaDedup
             return 0;
         }
     }
+
+    int ScannedFilesOps::countFilesByLocationKey(DatabaseManager &db, const std::string &location_key)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string key = location_key;
+            stmt << std::string(SQL::kCountScannedFilesByLocationKey), Keywords::use(key), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error in countFilesByLocationKey: %s", std::string(e.what()));
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error in countFilesByLocationKey");
+        }
+        return 0;
+    }
+
+    std::vector<ScannedFileRow> ScannedFilesOps::getRandomFilesByLocationKey(DatabaseManager &db, const std::string &location_key, int limit)
+    {
+        std::vector<ScannedFileRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string key = location_key;
+            int lim = limit;
+            stmt << std::string(SQL::kSelectRandomScannedFilesByLocationKey), Keywords::use(key), Keywords::use(lim), Keywords::now;
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                ScannedFileRow r;
+                r.id = rs[0].convert<int>();
+                r.file_path = rs[1].convert<std::string>();
+                r.relative_path = rs[2].convert<std::string>();
+                r.share_name = rs[3].convert<std::string>();
+                r.file_name = rs[4].convert<std::string>();
+                r.file_metadata = rs[5].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
+                out.emplace_back(std::move(r));
+                more = rs.moveNext();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error in getRandomFilesByLocationKey: %s", std::string(e.what()));
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error in getRandomFilesByLocationKey");
+        }
+        return out;
+    }
+
+    std::vector<ScannedFileRow> ScannedFilesOps::getFilesByLocationKeyBatch(DatabaseManager &db, const std::string &location_key, int limit, int offset)
+    {
+        std::vector<ScannedFileRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string key = location_key;
+            int lim = limit;
+            int off = offset;
+            stmt << std::string(SQL::kSelectScannedFilesByLocationKeyWithLimit), Keywords::use(key), Keywords::use(lim), Keywords::use(off), Keywords::now;
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                ScannedFileRow r;
+                r.id = rs[0].convert<int>();
+                r.file_path = rs[1].convert<std::string>();
+                r.relative_path = rs[2].convert<std::string>();
+                r.share_name = rs[3].convert<std::string>();
+                r.file_name = rs[4].convert<std::string>();
+                r.file_metadata = rs[5].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
+                out.emplace_back(std::move(r));
+                more = rs.moveNext();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error in getFilesByLocationKeyBatch: %s", std::string(e.what()));
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error in getFilesByLocationKeyBatch");
+        }
+        return out;
+    }
+
+    std::vector<ScannedFileRow> ScannedFilesOps::getFilesByLocationKey(DatabaseManager &db, const std::string &location_key)
+    {
+        Poco::Logger::get("ScannedFilesOps").information("getFilesByLocationKey: Starting query for location_key=%s", location_key);
+        std::vector<ScannedFileRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string key = location_key;
+            stmt << std::string(SQL::kSelectScannedFilesByLocationKey), Keywords::use(key), Keywords::now;
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            int count = 0;
+            while (more)
+            {
+                ScannedFileRow r;
+                r.id = rs[0].convert<int>();
+                r.file_path = rs[1].convert<std::string>();
+                r.relative_path = rs[2].convert<std::string>();
+                r.share_name = rs[3].convert<std::string>();
+                r.file_name = rs[4].convert<std::string>();
+                r.file_metadata = rs[5].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
+                out.emplace_back(std::move(r));
+                count++;
+                if (count % 10000 == 0)
+                {
+                    Poco::Logger::get("ScannedFilesOps").information("getFilesByLocationKey: Loaded %d files so far", count);
+                }
+                more = rs.moveNext();
+            }
+            Poco::Logger::get("ScannedFilesOps").information("getFilesByLocationKey: Completed, loaded %d files", count);
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error in getFilesByLocationKey: " + std::string(e.what()));
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error in getFilesByLocationKey");
+        }
+        return out;
+    }
+
+    bool ScannedFilesOps::updateFilePath(DatabaseManager &db,
+                                         int file_id,
+                                         const std::string &new_path,
+                                         const std::string &new_relative_path,
+                                         const std::string &new_location_key)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string new_rel = new_relative_path;
+            std::string new_key = new_location_key;
+            int id = file_id;
+            stmt << std::string(SQL::kUpdateScannedFilePath),
+                Keywords::use(new_p),
+                Keywords::use(new_rel),
+                Keywords::use(new_key),
+                Keywords::use(id),
+                Keywords::now;
+            int rows_affected = stmt.execute();
+            if (rows_affected == 0)
+            {
+                Poco::Logger::get("ScannedFilesOps").warning("No rows updated for file id: %d (file may not exist in database)", file_id);
+                return false;
+            }
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in scanned_files: " + std::string(e.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in scanned_files");
+            return false;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInImageArtifacts(DatabaseManager &db,
+                                                         const std::string &old_path,
+                                                         const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdateImageArtifactsFilePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p),
+                Keywords::now;
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in image_artifacts: " + std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in image_artifacts");
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInProcessingErrors(DatabaseManager &db,
+                                                           const std::string &old_path,
+                                                           const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdateProcessingErrorsFilePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p),
+                Keywords::now;
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in processing_errors: " + std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in processing_errors");
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInDuplicateGroups(DatabaseManager &db,
+                                                          const std::string &old_path,
+                                                          const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdateDuplicateGroupsFilePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p),
+                Keywords::now;
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in duplicate_groups: " + std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in duplicate_groups");
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInDuplicateMembers(DatabaseManager &db,
+                                                           const std::string &old_path,
+                                                           const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdateDuplicateMembersFilePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p),
+                Keywords::now;
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in duplicate_members: " + std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in duplicate_members");
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInThumbnailCache(DatabaseManager &db,
+                                                         const std::string &old_path,
+                                                         const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdateThumbnailCacheSourcePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p),
+                Keywords::now;
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in thumbnail_cache: " + std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in thumbnail_cache");
+            return 0;
+        }
+    }
 }

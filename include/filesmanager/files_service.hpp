@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <map>
 #include <mutex>
 #include <functional>
 #include <memory>
@@ -35,6 +36,26 @@ namespace MediaDedup
 
         // Utility method for creating location keys
         static std::string makeMediaLocationKey(const std::string &directory_path);
+
+        // Path change operation
+        struct ChangePathResult {
+            bool success;
+            bool partial_success;  // true if some updates succeeded but not all
+            int files_verified;
+            int files_verified_success;
+            int total_files;
+            int files_updated;
+            int files_failed;
+            double verification_success_rate;
+            std::map<std::string, std::pair<int, int>> update_details;  // table_name -> (updated, failed)
+            std::string error_message;
+        };
+
+        ChangePathResult changeMediaLocationPath(
+            const std::string &old_path,
+            const std::string &new_path,
+            int sample_size = 20
+        );
 
     private:
         DatabaseManager &db_manager_;

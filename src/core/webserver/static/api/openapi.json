@@ -367,6 +367,174 @@
         }
       }
     },
+    "/api/v1/media-locations/change-path": {
+      "post": {
+        "summary": "Change a registered media location path",
+        "description": "Verifies the new path by sampling files and updates all associated file paths in the database",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "old_path": {
+                    "type": "string",
+                    "description": "Current registered scan path"
+                  },
+                  "new_path": {
+                    "type": "string",
+                    "description": "New scan path to change to"
+                  },
+                  "sample_size": {
+                    "type": "integer",
+                    "description": "Number of files to verify (default: 20)",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 20
+                  }
+                },
+                "required": ["old_path", "new_path"]
+              },
+              "example": {
+                "old_path": "/Volumes/OldDrive/Photos",
+                "new_path": "/Volumes/NewDrive/Photos",
+                "sample_size": 20
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Path changed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["ok", "partial_success", "error"]
+                    },
+                    "old_path": {
+                      "type": "string"
+                    },
+                    "new_path": {
+                      "type": "string"
+                    },
+                    "files_verified": {
+                      "type": "integer",
+                      "description": "Number of files sampled for verification"
+                    },
+                    "files_verified_success": {
+                      "type": "integer",
+                      "description": "Number of files that verified successfully"
+                    },
+                    "total_files": {
+                      "type": "integer",
+                      "description": "Total number of files associated with the old location"
+                    },
+                    "files_updated": {
+                      "type": "integer",
+                      "description": "Number of files successfully updated"
+                    },
+                    "files_failed": {
+                      "type": "integer",
+                      "description": "Number of files that failed to update"
+                    },
+                    "verification_success_rate": {
+                      "type": "number",
+                      "format": "double",
+                      "description": "Success rate of verification (0.0 to 1.0)"
+                    },
+                    "update_details": {
+                      "type": "object",
+                      "description": "Per-table update statistics",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "updated": {
+                            "type": "integer"
+                          },
+                          "failed": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Error message if status is error or partial_success"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "ok",
+                  "old_path": "/Volumes/OldDrive/Photos",
+                  "new_path": "/Volumes/NewDrive/Photos",
+                  "files_verified": 20,
+                  "files_verified_success": 20,
+                  "total_files": 1500,
+                  "files_updated": 1500,
+                  "files_failed": 0,
+                  "verification_success_rate": 1.0,
+                  "update_details": {
+                    "scanned_files": {"updated": 1500, "failed": 0},
+                    "image_artifacts": {"updated": 1200, "failed": 0},
+                    "processing_errors": {"updated": 50, "failed": 0},
+                    "duplicate_groups": {"updated": 30, "failed": 0},
+                    "duplicate_members": {"updated": 200, "failed": 0},
+                    "thumbnail_cache": {"updated": 800, "failed": 0}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or verification failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string"},
+                    "error": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Old path not registered or no files found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string"},
+                    "error": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Database update failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string"},
+                    "error": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/duplicates/groups": {
       "get": {
         "summary": "Get paginated duplicate groups with detailed member information",
