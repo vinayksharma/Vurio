@@ -330,7 +330,7 @@ namespace MediaDedup
     {
     public:
         DeregisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                      std::shared_ptr<class FilesService> service);
+                                       std::shared_ptr<class FilesService> service);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
@@ -344,6 +344,19 @@ namespace MediaDedup
     public:
         ChangeMediaLocationPathHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                        std::shared_ptr<class FilesService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class FilesService> service_;
+    };
+
+    class VerifyPathRemappingHandler : public ConfigRequestHandler
+    {
+    public:
+        VerifyPathRemappingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                   std::shared_ptr<class FilesService> service);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;

@@ -843,7 +843,20 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in scanned_files: " + std::string(e.what()));
+            std::string error_msg = e.what();
+            // Check if it's a constraint violation (UNIQUE constraint on file_path)
+            if (error_msg.find("UNIQUE") != std::string::npos ||
+                error_msg.find("constraint") != std::string::npos ||
+                error_msg.find("Constraint violation") != std::string::npos)
+            {
+                Poco::Logger::get("ScannedFilesOps").warning("Cannot update file path (id=%d) to %s: path already exists (UNIQUE constraint). "
+                                                             "This may indicate duplicate files.",
+                                                             file_id, new_path);
+            }
+            else
+            {
+                Poco::Logger::get("ScannedFilesOps").error("Error updating file path in scanned_files: " + error_msg);
+            }
             return false;
         }
         catch (...)
@@ -854,8 +867,8 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::updateFilePathInImageArtifacts(DatabaseManager &db,
-                                                         const std::string &old_path,
-                                                         const std::string &new_path)
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
     {
         try
         {
@@ -866,8 +879,7 @@ namespace MediaDedup
             std::string old_p = old_path;
             stmt << std::string(SQL::kUpdateImageArtifactsFilePath),
                 Keywords::use(new_p),
-                Keywords::use(old_p),
-                Keywords::now;
+                Keywords::use(old_p);
             return stmt.execute();
         }
         catch (const std::exception &e)
@@ -883,8 +895,8 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::updateFilePathInProcessingErrors(DatabaseManager &db,
-                                                           const std::string &old_path,
-                                                           const std::string &new_path)
+                                                          const std::string &old_path,
+                                                          const std::string &new_path)
     {
         try
         {
@@ -895,8 +907,7 @@ namespace MediaDedup
             std::string old_p = old_path;
             stmt << std::string(SQL::kUpdateProcessingErrorsFilePath),
                 Keywords::use(new_p),
-                Keywords::use(old_p),
-                Keywords::now;
+                Keywords::use(old_p);
             return stmt.execute();
         }
         catch (const std::exception &e)
@@ -912,8 +923,8 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::updateFilePathInDuplicateGroups(DatabaseManager &db,
-                                                          const std::string &old_path,
-                                                          const std::string &new_path)
+                                                         const std::string &old_path,
+                                                         const std::string &new_path)
     {
         try
         {
@@ -924,8 +935,7 @@ namespace MediaDedup
             std::string old_p = old_path;
             stmt << std::string(SQL::kUpdateDuplicateGroupsFilePath),
                 Keywords::use(new_p),
-                Keywords::use(old_p),
-                Keywords::now;
+                Keywords::use(old_p);
             return stmt.execute();
         }
         catch (const std::exception &e)
@@ -941,8 +951,8 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::updateFilePathInDuplicateMembers(DatabaseManager &db,
-                                                           const std::string &old_path,
-                                                           const std::string &new_path)
+                                                          const std::string &old_path,
+                                                          const std::string &new_path)
     {
         try
         {
@@ -953,8 +963,7 @@ namespace MediaDedup
             std::string old_p = old_path;
             stmt << std::string(SQL::kUpdateDuplicateMembersFilePath),
                 Keywords::use(new_p),
-                Keywords::use(old_p),
-                Keywords::now;
+                Keywords::use(old_p);
             return stmt.execute();
         }
         catch (const std::exception &e)
@@ -970,8 +979,8 @@ namespace MediaDedup
     }
 
     int ScannedFilesOps::updateFilePathInThumbnailCache(DatabaseManager &db,
-                                                         const std::string &old_path,
-                                                         const std::string &new_path)
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
     {
         try
         {
@@ -982,8 +991,7 @@ namespace MediaDedup
             std::string old_p = old_path;
             stmt << std::string(SQL::kUpdateThumbnailCacheSourcePath),
                 Keywords::use(new_p),
-                Keywords::use(old_p),
-                Keywords::now;
+                Keywords::use(old_p);
             return stmt.execute();
         }
         catch (const std::exception &e)

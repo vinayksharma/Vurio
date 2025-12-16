@@ -282,7 +282,7 @@ namespace MediaDedup
                                                        Poco::Net::HTTPServerResponse &response)
     {
         Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Request received");
-        
+
         if (request.getMethod() != "POST")
         {
             sendErrorResponse(response, "Method not allowed", 405);
@@ -300,7 +300,7 @@ namespace MediaDedup
             return;
         }
         Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Body received, length=%d", static_cast<int>(body.length()));
-        
+
         Poco::JSON::Parser parser;
         Poco::JSON::Object::Ptr json;
         try
@@ -320,7 +320,7 @@ namespace MediaDedup
         std::string old_path = json->get("old_path").toString();
         std::string new_path = json->get("new_path").toString();
         Poco::Logger::get("ChangeMediaLocationPathHandler").information("ChangeMediaLocationPathHandler: Calling changeMediaLocationPath: old_path=%s, new_path=%s", old_path, new_path);
-        
+
         if (old_path.empty() || new_path.empty())
         {
             sendErrorResponse(response, "old_path and new_path cannot be empty", 400);
@@ -403,6 +403,92 @@ namespace MediaDedup
                 sendErrorResponse(response, result.error_message, 500);
             }
         }
+    }
+
+    VerifyPathRemappingHandler::VerifyPathRemappingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                           std::shared_ptr<FilesService> service)
+        : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
+
+    void VerifyPathRemappingHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                   Poco::Net::HTTPServerResponse &response)
+    {
+        if (request.getMethod() != "POST")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+        if (!service_)
+        {
+            sendErrorResponse(response, "Service unavailable", 503);
+            return;
+        }
+        std::string body = getRequestBody(request);
+        if (body.empty())
+        {
+            sendErrorResponse(response, "Body required", 400);
+            return;
+        }
+
+        Poco::JSON::Parser parser;
+        Poco::JSON::Object::Ptr json;
+        try
+        {
+            json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (...)
+        {
+            sendErrorResponse(response, "Invalid JSON", 400);
+            return;
+        }
+        if (!json->has("old_path") || !json->has("new_path"))
+        {
+            sendErrorResponse(response, "Missing old_path or new_path", 400);
+            return;
+        }
+        std::string old_path = json->get("old_path").toString();
+        std::string new_path = json->get("new_path").toString();
+
+        if (old_path.empty() || new_path.empty())
+        {
+            sendErrorResponse(response, "old_path and new_path cannot be empty", 400);
+            return;
+        }
+        int sample_size = 20;
+        if (json->has("sample_size"))
+        {
+            sample_size = json->get("sample_size").convert<int>();
+            if (sample_size < 1 || sample_size > 100)
+            {
+                sendErrorResponse(response, "sample_size must be between 1 and 100", 400);
+                return;
+            }
+        }
+
+        auto verification = service_->verifyPathRemapping(old_path, new_path, sample_size);
+
+        Poco::JSON::Object obj;
+        obj.set("is_successful", verification.is_successful);
+        obj.set("old_path", old_path);
+        obj.set("new_path", new_path);
+        obj.set("old_location_key", verification.old_location_key);
+        obj.set("new_location_key", verification.new_location_key);
+        obj.set("old_location_key_file_count", verification.old_location_key_file_count);
+        obj.set("new_location_key_file_count", verification.new_location_key_file_count);
+        obj.set("files_with_old_path_prefix", verification.files_with_old_path_prefix);
+        obj.set("files_with_new_path_prefix", verification.files_with_new_path_prefix);
+        obj.set("sampled_files_verified", verification.sampled_files_verified);
+        obj.set("sampled_files_total", verification.sampled_files_total);
+        obj.set("old_location_registered", verification.old_location_registered);
+        obj.set("new_location_registered", verification.new_location_registered);
+        obj.set("is_in_progress", verification.is_in_progress);
+        if (!verification.error_message.empty())
+        {
+            obj.set("error", verification.error_message);
+        }
+
+        std::ostringstream oss;
+        obj.stringify(oss);
+        sendJsonResponse(response, oss.str());
     }
 
 } // namespace MediaDedup

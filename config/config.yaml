@@ -92,7 +92,7 @@ files.manager.enabled: true
 duplicates.threshold.max: 0.97999999999999998
 scheduler.backoff.jitterPercent: 10
 media.images.raw.raw: true
-logging.level: error
+logging.level: trace
 files.manager.useInMemoryIndex: false
 media.processor.intervalMs: 5000
 tpm.types.duplicate_finder.share: 1
