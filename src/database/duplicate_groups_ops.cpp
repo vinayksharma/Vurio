@@ -647,25 +647,35 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
+            Statement stmt(sess);
 
             std::string mode_str = mode;
 
             // Count total groups
-            sess << std::string(SQL::kCountDuplicateGroupsByMode), into(stats.total_groups), use(mode_str), now;
+            {
+                Statement stmt1(sess);
+                stmt1 << std::string(SQL::kCountDuplicateGroupsByMode), into(stats.total_groups), use(mode_str), now;
+            }
 
             // Count total duplicate members (excluding representatives)
-            std::string count_members_query =
-                "SELECT COUNT(*) FROM duplicate_members dm "
-                "JOIN duplicate_groups dg ON dm.group_id = dg.id "
-                "WHERE dg.mode = ?";
-            sess << count_members_query, into(stats.total_duplicates), use(mode_str), now;
+            {
+                std::string count_members_query =
+                    "SELECT COUNT(*) FROM duplicate_members dm "
+                    "JOIN duplicate_groups dg ON dm.group_id = dg.id "
+                    "WHERE dg.mode = ?";
+                Statement stmt2(sess);
+                stmt2 << count_members_query, into(stats.total_duplicates), use(mode_str), now;
+            }
 
             // Count unique files with duplicates
-            std::string count_files_query =
-                "SELECT COUNT(DISTINCT dm.file_id) FROM duplicate_members dm "
-                "JOIN duplicate_groups dg ON dm.group_id = dg.id "
-                "WHERE dg.mode = ?";
-            sess << count_files_query, into(stats.files_with_duplicates), use(mode_str), now;
+            {
+                std::string count_files_query =
+                    "SELECT COUNT(DISTINCT dm.file_id) FROM duplicate_members dm "
+                    "JOIN duplicate_groups dg ON dm.group_id = dg.id "
+                    "WHERE dg.mode = ?";
+                Statement stmt3(sess);
+                stmt3 << count_files_query, into(stats.files_with_duplicates), use(mode_str), now;
+            }
         }
         catch (const std::exception &e)
         {
