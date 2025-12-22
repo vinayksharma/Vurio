@@ -250,6 +250,33 @@ namespace MediaDedup
              */
             void onConfigChange(const ConfigChangeEvent &event);
 
+            /**
+             * @brief Attempt to create a cross-batch group for a new file
+             *
+             * Compares the new file against previously ungrouped files from prior batches.
+             * If a match is found, creates a new group and expands it with additional
+             * matching ungrouped files (all-pairs verification).
+             *
+             * @param new_file The new file to find cross-batch matches for
+             * @param ungrouped_files Pool of ungrouped files from prior batches
+             * @param last_processed_id Files with ID > this are from current batch (skip)
+             * @param mode Server mode (EMBEDDING only)
+             * @param threshold_min Minimum similarity threshold for grouping
+             * @param group_representatives Cache to update with new group's representative
+             * @param duplicates_found Counter to increment (output)
+             * @param groups_created Counter to increment (output)
+             * @return Group ID if cross-batch group was created, -1 otherwise
+             */
+            int tryCrossBatchGrouping(
+                const FileArtifact &new_file,
+                const std::vector<FileArtifact> &ungrouped_files,
+                int last_processed_id,
+                const std::string &mode,
+                double threshold_min,
+                std::map<int, FileArtifact> &group_representatives,
+                int &duplicates_found,
+                int &groups_created);
+
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             DatabaseManager &db_;
 

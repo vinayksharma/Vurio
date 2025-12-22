@@ -11,6 +11,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Dynamic/Var.h>
 #include <algorithm>
+#include <set>
 #include <sstream>
 #include <iomanip>
 #include <ctime>
@@ -513,19 +514,37 @@ namespace MediaDedup
                         }
                         else
                         {
-                            // Failed all-members check - add to ungrouped for potential new group
-                            batch_ungrouped_files.push_back(new_file);
-                            ungrouped_files.push_back(new_file);
-                            logger.debug("File_id %d failed all-members check for group %d, marked as ungrouped",
-                                         new_file.file_id, best_group_id);
+                            // Failed all-members check - try cross-batch comparison
+                            // The file matched the representative but not all members,
+                            // so it might be a better fit for a different group or ungrouped file
+                            int cross_batch_group_id = tryCrossBatchGrouping(
+                                new_file, ungrouped_files, last_processed_id, mode, threshold_min,
+                                group_representatives, duplicates_found, groups_created);
+
+                            if (cross_batch_group_id < 0)
+                            {
+                                // No cross-batch match - add to batch ungrouped
+                                batch_ungrouped_files.push_back(new_file);
+                                logger.debug("File_id %d failed all-members check for group %d and no cross-batch match, marked as batch-ungrouped",
+                                             new_file.file_id, best_group_id);
+                            }
                         }
                     }
                     else
                     {
-                        // No group match - add to batch ungrouped for potential new group creation
-                        batch_ungrouped_files.push_back(new_file);
-                        ungrouped_files.push_back(new_file);
-                        logger.trace("File_id %d doesn't match any group representative, marked as ungrouped", new_file.file_id);
+                        // No group match - try cross-batch comparison against previously ungrouped files
+                        // This enables finding duplicates across different processing batches
+                        int cross_batch_group_id = tryCrossBatchGrouping(
+                            new_file, ungrouped_files, last_processed_id, mode, threshold_min,
+                            group_representatives, duplicates_found, groups_created);
+
+                        if (cross_batch_group_id < 0)
+                        {
+                            // No cross-batch match found - add to batch ungrouped for within-batch grouping
+                            batch_ungrouped_files.push_back(new_file);
+                            logger.trace("File_id %d doesn't match any representative or ungrouped file, marked as batch-ungrouped",
+                                         new_file.file_id);
+                        }
                     }
 
                     new_last_processed_id = file_ids[i];
@@ -935,6 +954,121 @@ namespace MediaDedup
             }
 
             return true;
+        }
+
+        int DuplicateFinder::tryCrossBatchGrouping(
+            const FileArtifact &new_file,
+            const std::vector<FileArtifact> &ungrouped_files,
+            int last_processed_id,
+            const std::string &mode,
+            double threshold_min,
+            std::map<int, FileArtifact> &group_representatives,
+            int &duplicates_found,
+            int &groups_created)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+
+            // Compare against previously ungrouped files (from prior batches only)
+            // Iterate in reverse order (most recent first) for better locality
+            for (auto it = ungrouped_files.rbegin(); it != ungrouped_files.rend(); ++it)
+            {
+                const FileArtifact &first_match = *it;
+
+                // Skip files from current batch (they're handled in within-batch grouping)
+                if (first_match.file_id > last_processed_id)
+                    continue;
+
+                // Metadata pre-filtering
+                if (!areMetadataCompatible(new_file, first_match))
+                    continue;
+
+                double sim = computeSimilarity(new_file, first_match, mode);
+                if (sim >= threshold_min)
+                {
+                    // Found cross-batch match! Build a group starting with these two files
+                    logger.information("Cross-batch match: new file_id %d matches ungrouped file_id %d (similarity=%.3f)",
+                                       new_file.file_id, first_match.file_id, sim);
+
+                    // Start with the two matched files
+                    std::vector<FileArtifact> cross_batch_group = {first_match, new_file};
+                    std::set<int> grouped_file_ids = {first_match.file_id, new_file.file_id};
+
+                    // ALL-PAIRS EXPANSION: Check if any OTHER ungrouped files should join
+                    // A candidate must be similar to ALL existing group members
+                    for (const auto &candidate : ungrouped_files)
+                    {
+                        // Skip files already in the group
+                        if (grouped_file_ids.count(candidate.file_id) > 0)
+                            continue;
+
+                        // Skip files from current batch
+                        if (candidate.file_id > last_processed_id)
+                            continue;
+
+                        // Metadata pre-filtering against first member
+                        if (!areMetadataCompatible(candidate, cross_batch_group[0]))
+                            continue;
+
+                        // Check similarity against ALL current group members
+                        bool similar_to_all = true;
+                        for (const auto &member : cross_batch_group)
+                        {
+                            double sim_to_member = computeSimilarity(candidate, member, mode);
+                            if (sim_to_member < threshold_min)
+                            {
+                                similar_to_all = false;
+                                break;
+                            }
+                        }
+
+                        if (similar_to_all)
+                        {
+                            cross_batch_group.push_back(candidate);
+                            grouped_file_ids.insert(candidate.file_id);
+                            logger.debug("Cross-batch expansion: file_id %d added to group (passed all-pairs check)",
+                                         candidate.file_id);
+                        }
+                    }
+
+                    // Create the group
+                    int cross_batch_group_id = createDuplicateGroup(cross_batch_group, mode, threshold_min);
+
+                    if (cross_batch_group_id > 0)
+                    {
+                        duplicates_found += static_cast<int>(cross_batch_group.size());
+                        groups_created++;
+
+                        // Add new group's representative to cache
+                        auto group_opt = DuplicateGroupsOps::getGroupById(db_, cross_batch_group_id);
+                        if (group_opt.has_value())
+                        {
+                            for (const auto &file : cross_batch_group)
+                            {
+                                if (file.file_id == group_opt->representative_file_id)
+                                {
+                                    group_representatives[cross_batch_group_id] = file;
+                                    break;
+                                }
+                            }
+                        }
+
+                        logger.information("Created cross-batch group %d with %zu members (file_ids: first=%d, new=%d)",
+                                           cross_batch_group_id, cross_batch_group.size(),
+                                           first_match.file_id, new_file.file_id);
+
+                        return cross_batch_group_id;
+                    }
+                    else
+                    {
+                        logger.error("Failed to create cross-batch group for file_ids [%d, %d]",
+                                     first_match.file_id, new_file.file_id);
+                        return -1;
+                    }
+                }
+            }
+
+            // No cross-batch match found
+            return -1;
         }
 
         double DuplicateFinder::getThresholdMin(const std::string & /* mode */)
