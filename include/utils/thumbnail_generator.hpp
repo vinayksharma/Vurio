@@ -46,6 +46,21 @@ namespace MediaDedup
          */
         static int getClosestValidSize(int requested_size);
 
+        /**
+         * @brief Generate an error thumbnail (warning triangle with exclamation mark)
+         * 
+         * Creates a base error thumbnail with a warning triangle design.
+         * This single base thumbnail can be scaled to any requested size.
+         * 
+         * @param output_path Path where the error thumbnail JPEG will be saved
+         * @param base_size Base size for the error thumbnail (default 512)
+         * @param quality JPEG quality (0-100, default 85)
+         * @return true if error thumbnail generated successfully, false otherwise
+         */
+        static bool generateErrorThumbnail(const std::string &output_path,
+                                          int base_size = 512,
+                                          int quality = 85);
+
     private:
         // Supported thumbnail sizes
         static constexpr int VALID_SIZES[] = {128, 256, 512, 1024};

@@ -6,6 +6,7 @@
 #include <thread>
 #include <future>
 #include <algorithm>
+#include <vector>
 #include <Magick++.h>
 
 namespace MediaDedup
@@ -34,6 +35,17 @@ namespace MediaDedup
                 return false;
             }
 
+            // Check if file is readable (exists() doesn't verify read permissions)
+            // macOS Photos Library files may exist but not be readable due to access restrictions
+            std::error_code ec;
+            auto perms = std::filesystem::status(source_path, ec).permissions();
+            if (ec || (perms & (std::filesystem::perms::owner_read | std::filesystem::perms::group_read | std::filesystem::perms::others_read)) == std::filesystem::perms::none)
+            {
+                // Note: This check may not catch all permission issues (e.g., macOS Photos Library restrictions)
+                // ImageMagick will also check during actual read, but this gives us an early warning
+                logger.warning("File may not be readable (permissions check): %s", source_path);
+            }
+
             // CRITICAL: Validate TIFF files BEFORE passing to ImageMagick
             // Corrupted TIFFs cause ImageMagick assertions that kill the process
             if (TiffValidator::isTiffFile(source_path))
@@ -58,17 +70,39 @@ namespace MediaDedup
             }
             catch (const Magick::ErrorCorruptImage &e)
             {
-                logger.warning("Corrupted image file (skipping): %s - %s", source_path, std::string(e.what()));
+                logger.error("Corrupted image file (skipping): %s - %s", source_path, std::string(e.what()));
                 return false;
             }
             catch (const Magick::ErrorFileOpen &e)
             {
-                logger.warning("Cannot open image file: %s - %s", source_path, std::string(e.what()));
+                std::string error_msg = std::string(e.what());
+                // Check for permission errors and provide helpful message
+                if (error_msg.find("Operation not permitted") != std::string::npos ||
+                    error_msg.find("permission") != std::string::npos)
+                {
+                    logger.error("Cannot open image file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
+                                 source_path, error_msg);
+                }
+                else
+                {
+                    logger.error("Cannot open image file: %s - %s", source_path, error_msg);
+                }
                 return false;
             }
             catch (const Magick::Error &e)
             {
-                logger.warning("ImageMagick error reading file: %s - %s", source_path, std::string(e.what()));
+                std::string error_msg = std::string(e.what());
+                // Check for permission errors in generic ImageMagick errors
+                if (error_msg.find("Operation not permitted") != std::string::npos ||
+                    error_msg.find("permission") != std::string::npos)
+                {
+                    logger.error("ImageMagick error reading file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
+                                 source_path, error_msg);
+                }
+                else
+                {
+                    logger.error("ImageMagick error reading file: %s - %s", source_path, error_msg);
+                }
                 return false;
             }
 
@@ -161,6 +195,93 @@ namespace MediaDedup
         }
 
         return closest;
+    }
+
+    bool ThumbnailGenerator::generateErrorThumbnail(const std::string &output_path,
+                                                    int base_size,
+                                                    int quality)
+    {
+        try
+        {
+            Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
+
+            // Create a square image with light gray background
+            Magick::Image image(Magick::Geometry(base_size, base_size), Magick::Color("lightgray"));
+            image.fillColor(Magick::Color("lightgray"));
+
+            // Draw a yellow warning triangle
+            // Calculate triangle points (centered in image)
+            size_t center_x = base_size / 2;
+            size_t center_y = base_size / 2;
+            size_t triangle_size = base_size * 0.6; // Triangle takes up 60% of image
+
+            // Triangle vertices (pointing upward)
+            size_t top_x = center_x;
+            size_t top_y = center_y - triangle_size / 2;
+            size_t left_x = center_x - triangle_size / 2;
+            size_t left_y = center_y + triangle_size / 3;
+            size_t right_x = center_x + triangle_size / 2;
+            size_t right_y = center_y + triangle_size / 3;
+
+            // Draw yellow triangle with black border
+            std::vector<Magick::Coordinate> triangle_points;
+            triangle_points.push_back(Magick::Coordinate(top_x, top_y));
+            triangle_points.push_back(Magick::Coordinate(left_x, left_y));
+            triangle_points.push_back(Magick::Coordinate(right_x, right_y));
+
+            // Draw triangle with fill and stroke in one draw operation
+            int border_width = std::max(2, static_cast<int>(base_size / 256));
+            std::vector<Magick::Drawable> drawables;
+            drawables.push_back(Magick::DrawableStrokeColor(Magick::Color("black")));
+            drawables.push_back(Magick::DrawableStrokeWidth(border_width));
+            drawables.push_back(Magick::DrawableFillColor(Magick::Color("yellow")));
+            drawables.push_back(Magick::DrawablePolygon(triangle_points));
+            image.draw(drawables);
+
+            // Draw exclamation mark in black inside triangle
+            // Use larger font size for visibility
+            int font_size = static_cast<int>(base_size * 0.25); // 25% of image size
+            std::string font = "Arial-Bold";
+            try
+            {
+                image.font(font);
+            }
+            catch (...)
+            {
+                // Font might not be available, use default
+                logger.debug("Font %s not available, using default", font);
+            }
+
+            // Draw exclamation mark centered in triangle
+            std::vector<Magick::Drawable> text_drawables;
+            text_drawables.push_back(Magick::DrawableFillColor(Magick::Color("black")));
+            text_drawables.push_back(Magick::DrawablePointSize(font_size));
+            text_drawables.push_back(Magick::DrawableTextAlignment(Magick::CenterAlign));
+            text_drawables.push_back(Magick::DrawableText(center_x, center_y + font_size / 4, "!"));
+            image.draw(text_drawables);
+
+            // Set JPEG quality and format
+            image.quality(quality);
+            image.magick("JPEG");
+
+            // Write error thumbnail
+            image.write(output_path);
+
+            logger.debug("Generated error thumbnail: %s (size: %dx%d)",
+                         output_path, base_size, base_size);
+
+            return true;
+        }
+        catch (const Magick::Exception &e)
+        {
+            Poco::Logger::get("ThumbnailGenerator").error("ImageMagick exception in generateErrorThumbnail: %s", std::string(e.what()));
+            return false;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailGenerator").error("Exception in generateErrorThumbnail: %s", std::string(e.what()));
+            return false;
+        }
     }
 
 } // namespace MediaDedup

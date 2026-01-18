@@ -59,6 +59,8 @@ namespace MediaDedup
                                        int size,
                                        std::string &cached_path);
 
+        bool getOrCreateErrorThumbnail(int size, std::string &cached_path);
+
         void streamThumbnailFile(const std::string &file_path,
                                  Poco::Net::HTTPServerResponse &response,
                                  int64_t source_modified_at);

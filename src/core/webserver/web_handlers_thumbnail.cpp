@@ -164,8 +164,20 @@ namespace MediaDedup
             std::string cached_path;
             if (!generateAndCacheThumbnail(source_path, size, cached_path))
             {
-                logger.error("Failed to generate thumbnail for: %s", source_path);
-                sendErrorResponse(response, "Failed to generate thumbnail", 500);
+                logger.error("Failed to generate thumbnail for: %s, serving error thumbnail instead", source_path);
+
+                // Get or create error thumbnail for the requested size
+                std::string error_thumbnail_path;
+                if (!getOrCreateErrorThumbnail(size, error_thumbnail_path))
+                {
+                    // If we can't even generate an error thumbnail, return 500 error
+                    logger.error("Failed to generate error thumbnail for size %d", size);
+                    sendErrorResponse(response, "Failed to generate thumbnail", 500);
+                    return;
+                }
+
+                // Serve error thumbnail instead of failing
+                streamThumbnailFile(error_thumbnail_path, response, source_mtime);
                 return;
             }
 
@@ -247,7 +259,8 @@ namespace MediaDedup
 
             if (!thumbnail_success)
             {
-                logger.error("ThumbnailGenerator::generate failed for: %s", source_path);
+                // Detailed error already logged by ThumbnailGenerator, just summarize here
+                logger.error("ThumbnailGenerator::generate failed for: %s (check ThumbnailGenerator logs for details)", source_path);
                 releaseGenerationLock(lock_key);
                 return false;
             }
@@ -292,6 +305,77 @@ namespace MediaDedup
             releaseGenerationLock(lock_key);
             return false;
         }
+    }
+
+    bool ThumbnailHandler::getOrCreateErrorThumbnail(int size, std::string &cached_path)
+    {
+        Poco::Logger &logger = Poco::Logger::get("ThumbnailHandler");
+
+        // Base error thumbnail filename (always same name)
+        const std::string base_error_filename = "error_thumbnail.jpg";
+        const int base_error_size = 512; // Base size for error thumbnail
+
+        // Scaled error thumbnail filename for this size
+        std::stringstream ss;
+        ss << "error_thumbnail_" << size << ".jpg";
+        std::string scaled_error_filename = ss.str();
+
+        // Check if scaled error thumbnail already exists
+        std::filesystem::path cache_dir = std::filesystem::path(thumbnail_cache_->getCacheLocation());
+        std::filesystem::path scaled_error_path = cache_dir / scaled_error_filename;
+
+        if (std::filesystem::exists(scaled_error_path))
+        {
+            cached_path = scaled_error_path.string();
+            logger.debug("Using existing error thumbnail: %s (size: %d)", cached_path, size);
+            return true;
+        }
+
+        // Need to create base error thumbnail first, then scale it
+        std::filesystem::path base_error_path = cache_dir / base_error_filename;
+        std::string base_error_path_str = base_error_path.string();
+
+        // Check if base error thumbnail exists
+        if (!std::filesystem::exists(base_error_path))
+        {
+            // Generate base error thumbnail
+            logger.debug("Generating base error thumbnail: %s", base_error_path_str);
+
+            int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
+            if (!ThumbnailGenerator::generateErrorThumbnail(base_error_path_str, base_error_size, quality))
+            {
+                logger.error("Failed to generate base error thumbnail: %s", base_error_path_str);
+                return false;
+            }
+
+            // Store base error thumbnail in cache (mark as in use to prevent deletion)
+            thumbnail_cache_->markFileInUse(base_error_path_str);
+        }
+
+        // If requested size matches base size, use base error thumbnail directly
+        if (size == base_error_size)
+        {
+            cached_path = base_error_path_str;
+            return true;
+        }
+
+        // Scale base error thumbnail to requested size
+        logger.debug("Scaling error thumbnail from %d to %d: %s -> %s",
+                     base_error_size, size, base_error_path_str, scaled_error_path.string());
+
+        int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
+        if (!ThumbnailGenerator::generate(base_error_path_str, scaled_error_path.string(), size, quality))
+        {
+            logger.error("Failed to scale error thumbnail from %d to %d", base_error_size, size);
+            return false;
+        }
+
+        // Mark scaled error thumbnail as in use to prevent deletion
+        thumbnail_cache_->markFileInUse(scaled_error_path.string());
+
+        cached_path = scaled_error_path.string();
+        logger.debug("Created error thumbnail: %s (size: %d)", cached_path, size);
+        return true;
     }
 
     void ThumbnailHandler::streamThumbnailFile(const std::string &file_path,
