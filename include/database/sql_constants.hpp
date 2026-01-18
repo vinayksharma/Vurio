@@ -324,7 +324,8 @@ namespace MediaDedup
 
         inline constexpr std::string_view kInsertDuplicateMember =
             "INSERT INTO duplicate_members(group_id, file_id, file_path, similarity_score, "
-            "file_size, created_date, is_representative) VALUES(?, ?, ?, ?, ?, ?, ?)";
+            "file_size, created_date, is_representative) VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(group_id, file_id) DO NOTHING";
 
         inline constexpr std::string_view kUpdateDuplicateMemberRepresentativeFlag =
             "UPDATE duplicate_members SET is_representative=? WHERE group_id=? AND file_id=?";

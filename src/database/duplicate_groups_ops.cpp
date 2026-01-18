@@ -420,10 +420,17 @@ namespace MediaDedup
                 use(score),
                 use(size),
                 use(date),
-                use(rep_flag),
-                now;
+                use(rep_flag);
 
-            Poco::Logger::get("DuplicateGroupsOps").debug("Added member file_id %d to group %d", file_id, group_id);
+            int rows_affected = stmt.execute();
+            if (rows_affected > 0)
+            {
+                Poco::Logger::get("DuplicateGroupsOps").debug("Added member file_id %d to group %d", file_id, group_id);
+            }
+            else
+            {
+                Poco::Logger::get("DuplicateGroupsOps").debug("Member file_id %d already exists in group %d, skipping insert", file_id, group_id);
+            }
             return true;
         }
         catch (const std::exception &e)
