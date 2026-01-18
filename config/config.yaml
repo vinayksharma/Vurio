@@ -1,7 +1,7 @@
 tpm.thread.idleTimeoutSeconds: 120
 media.images.hdr: true
 media.images.jpg: true
-cache.thumbnail.clearOnStartup: false
+cache.thumbnail.clearOnStartup: true
 media.images.jp2: true
 cache.assetPreview.size_limit_mb: 2048
 thumbnail.allowed.sizes: 128
