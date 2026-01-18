@@ -311,62 +311,102 @@ namespace MediaDedup
     {
         Poco::Logger &logger = Poco::Logger::get("ThumbnailHandler");
 
-        // Base error thumbnail filename (always same name)
-        const std::string base_error_filename = "error_thumbnail.jpg";
-        const int base_error_size = 512; // Base size for error thumbnail
+        // Error thumbnail asset path - try multiple locations
+        // 1. Relative to current working directory (for development)
+        // 2. Relative to executable location (for production)
+        const std::vector<std::string> asset_extensions = {".png", ".jpg", ".jpeg"};
+        const std::vector<std::string> asset_base_paths = {
+            "src/core/webserver/static/images/error_thumbnail",      // Relative to project root
+            "../src/core/webserver/static/images/error_thumbnail",   // Relative to build/bin
+            "../../src/core/webserver/static/images/error_thumbnail" // Relative to build
+        };
+
+        std::string source_asset_path;
+        bool asset_found = false;
+
+        // Try each base path with each extension
+        for (const auto &base_path : asset_base_paths)
+        {
+            for (const auto &ext : asset_extensions)
+            {
+                std::string test_path = base_path + ext;
+                if (std::filesystem::exists(test_path))
+                {
+                    source_asset_path = test_path;
+                    asset_found = true;
+                    logger.debug("Found error thumbnail asset at: %s", source_asset_path.c_str());
+                    break;
+                }
+            }
+            if (asset_found)
+                break;
+        }
+
+        if (!asset_found)
+        {
+            logger.error("Error thumbnail asset not found. Searched in:");
+            for (const auto &base_path : asset_base_paths)
+            {
+                for (const auto &ext : asset_extensions)
+                {
+                    logger.error("  - %s%s", base_path.c_str(), ext.c_str());
+                }
+            }
+            return false;
+        }
 
         // Scaled error thumbnail filename for this size
         std::stringstream ss;
         ss << "error_thumbnail_" << size << ".jpg";
         std::string scaled_error_filename = ss.str();
 
-        // Check if scaled error thumbnail already exists
+        // Check if scaled error thumbnail already exists in cache
         std::filesystem::path cache_dir = std::filesystem::path(thumbnail_cache_->getCacheLocation());
         std::filesystem::path scaled_error_path = cache_dir / scaled_error_filename;
 
+        // Check if cached version exists and is newer than source asset
+        bool use_cached = false;
         if (std::filesystem::exists(scaled_error_path))
+        {
+            try
+            {
+                auto cached_mtime = std::filesystem::last_write_time(scaled_error_path);
+                auto source_mtime = std::filesystem::last_write_time(source_asset_path);
+
+                // Use cached version only if it's newer than or equal to source asset
+                if (cached_mtime >= source_mtime)
+                {
+                    use_cached = true;
+                }
+                else
+                {
+                    logger.debug("Source asset is newer, regenerating error thumbnail");
+                    // Delete old cached version
+                    std::filesystem::remove(scaled_error_path);
+                }
+            }
+            catch (...)
+            {
+                // If we can't check mtime, use cached version if it exists
+                use_cached = true;
+            }
+        }
+
+        if (use_cached)
         {
             cached_path = scaled_error_path.string();
             logger.debug("Using existing error thumbnail: %s (size: %d)", cached_path, size);
             return true;
         }
 
-        // Need to create base error thumbnail first, then scale it
-        std::filesystem::path base_error_path = cache_dir / base_error_filename;
-        std::string base_error_path_str = base_error_path.string();
-
-        // Check if base error thumbnail exists
-        if (!std::filesystem::exists(base_error_path))
-        {
-            // Generate base error thumbnail
-            logger.debug("Generating base error thumbnail: %s", base_error_path_str);
-
-            int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
-            if (!ThumbnailGenerator::generateErrorThumbnail(base_error_path_str, base_error_size, quality))
-            {
-                logger.error("Failed to generate base error thumbnail: %s", base_error_path_str);
-                return false;
-            }
-
-            // Store base error thumbnail in cache (mark as in use to prevent deletion)
-            thumbnail_cache_->markFileInUse(base_error_path_str);
-        }
-
-        // If requested size matches base size, use base error thumbnail directly
-        if (size == base_error_size)
-        {
-            cached_path = base_error_path_str;
-            return true;
-        }
-
-        // Scale base error thumbnail to requested size
-        logger.debug("Scaling error thumbnail from %d to %d: %s -> %s",
-                     base_error_size, size, base_error_path_str, scaled_error_path.string());
+        // Scale asset image to requested size
+        logger.debug("Scaling error thumbnail asset from %s to size %d: %s",
+                     source_asset_path, size, scaled_error_path.string());
 
         int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
-        if (!ThumbnailGenerator::generate(base_error_path_str, scaled_error_path.string(), size, quality))
+        if (!ThumbnailGenerator::generate(source_asset_path, scaled_error_path.string(), size, quality))
         {
-            logger.error("Failed to scale error thumbnail from %d to %d", base_error_size, size);
+            logger.error("Failed to scale error thumbnail asset from %s to size %d", source_asset_path.c_str(), size);
             return false;
         }
 
