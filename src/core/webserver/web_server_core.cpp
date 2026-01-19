@@ -13,6 +13,7 @@
 #include "core/web/web_handlers_thumbnail.hpp"
 #include "core/web/web_handlers_asset_preview.hpp"
 #include "core/web/web_handlers_duplicates.hpp"
+#include "core/web/web_handlers_cache.hpp"
 #include "config/unified_observable_config.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
@@ -191,6 +192,10 @@ namespace MediaDedup
         // Asset preview endpoint (public; no CORS/auth as server is same-machine for now)
         if (path == "/api/v1/assets/jpeg" && method == "GET")
             return new AssetPreviewHandler(config_manager_);
+
+        // Cache management endpoints
+        if (path.find("/api/v1/cache/") == 0 && path.find("/invalidate") != std::string::npos && method == "DELETE")
+            return new CacheInvalidationHandler(config_manager_, thumbnail_cache_, transcoding_cache_);
 
         // Static API responses served as files
         if (path == "/api/openapi.json" && method == "GET")

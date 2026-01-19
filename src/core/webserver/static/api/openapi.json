@@ -82,7 +82,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["value"]
+                "required": [
+                  "value"
+                ]
               }
             }
           }
@@ -279,7 +281,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["value"]
+                "required": [
+                  "value"
+                ]
               }
             }
           }
@@ -329,7 +333,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["directory"]
+                "required": [
+                  "directory"
+                ]
               }
             }
           }
@@ -355,7 +361,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["directory"]
+                "required": [
+                  "directory"
+                ]
               }
             }
           }
@@ -394,7 +402,10 @@
                     "default": 20
                   }
                 },
-                "required": ["old_path", "new_path"]
+                "required": [
+                  "old_path",
+                  "new_path"
+                ]
               },
               "example": {
                 "old_path": "/Volumes/OldDrive/Photos",
@@ -414,7 +425,11 @@
                   "properties": {
                     "status": {
                       "type": "string",
-                      "enum": ["ok", "partial_success", "error"]
+                      "enum": [
+                        "ok",
+                        "partial_success",
+                        "error"
+                      ]
                     },
                     "old_path": {
                       "type": "string"
@@ -479,12 +494,30 @@
                   "files_failed": 0,
                   "verification_success_rate": 1.0,
                   "update_details": {
-                    "scanned_files": {"updated": 1500, "failed": 0},
-                    "image_artifacts": {"updated": 1200, "failed": 0},
-                    "processing_errors": {"updated": 50, "failed": 0},
-                    "duplicate_groups": {"updated": 30, "failed": 0},
-                    "duplicate_members": {"updated": 200, "failed": 0},
-                    "thumbnail_cache": {"updated": 800, "failed": 0}
+                    "scanned_files": {
+                      "updated": 1500,
+                      "failed": 0
+                    },
+                    "image_artifacts": {
+                      "updated": 1200,
+                      "failed": 0
+                    },
+                    "processing_errors": {
+                      "updated": 50,
+                      "failed": 0
+                    },
+                    "duplicate_groups": {
+                      "updated": 30,
+                      "failed": 0
+                    },
+                    "duplicate_members": {
+                      "updated": 200,
+                      "failed": 0
+                    },
+                    "thumbnail_cache": {
+                      "updated": 800,
+                      "failed": 0
+                    }
                   }
                 }
               }
@@ -497,8 +530,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {"type": "string"},
-                    "error": {"type": "string"}
+                    "status": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -511,8 +548,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {"type": "string"},
-                    "error": {"type": "string"}
+                    "status": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -525,8 +566,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {"type": "string"},
-                    "error": {"type": "string"}
+                    "status": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -570,7 +615,10 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["FAST", "QUALITY"]
+              "enum": [
+                "FAST",
+                "QUALITY"
+              ]
             }
           }
         ],
@@ -705,7 +753,9 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["EMBEDDING"]
+              "enum": [
+                "EMBEDDING"
+              ]
             }
           }
         ],
@@ -789,7 +839,12 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "enum": [128, 256, 512, 1024],
+              "enum": [
+                128,
+                256,
+                512,
+                1024
+              ],
               "default": 256
             }
           }
@@ -914,21 +969,31 @@
             "name": "path",
             "in": "query",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Fully qualified path to the asset"
           },
           {
             "name": "maxWidth",
             "in": "query",
             "required": false,
-            "schema": { "type": "integer", "minimum": 1 },
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
             "description": "Maximum width in pixels. If omitted, no resize (highest resolution)."
           },
           {
             "name": "quality",
             "in": "query",
             "required": false,
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 85 },
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 85
+            },
             "description": "JPEG quality (1-100). Defaults from config."
           }
         ],
@@ -937,14 +1002,25 @@
             "description": "JPEG image",
             "content": {
               "image/jpeg": {
-                "schema": { "type": "string", "format": "binary" }
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
-          "400": { "description": "Bad request" },
-          "404": { "description": "Source file not found" },
-          "415": { "description": "Unsupported media type" },
-          "500": { "description": "Generation failed (returns error JPEG)" }
+          "400": {
+            "description": "Bad request"
+          },
+          "404": {
+            "description": "Source file not found"
+          },
+          "415": {
+            "description": "Unsupported media type"
+          },
+          "500": {
+            "description": "Generation failed (returns error JPEG)"
+          }
         }
       }
     },
@@ -994,6 +1070,90 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cache/{cache_name}/invalidate": {
+      "delete": {
+        "summary": "Invalidate a disk cache",
+        "description": "Clears all files in the specified disk cache directory. Only supports DiskCache-based caches. Does not clear database entries.",
+        "parameters": [
+          {
+            "name": "cache_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cache.thumbnail",
+                "cache.disk"
+              ]
+            },
+            "description": "Cache name (e.g., cache.thumbnail, cache.disk)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cache invalidated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "boolean",
+                      "description": "true if cache was cleared successfully, false otherwise"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "example": {
+                  "status": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cache name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "error": "Invalid cache name. Supported: cache.thumbnail, cache.disk"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed"
+          },
+          "500": {
+            "description": "Internal server error or cache not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "boolean"
+                    },
                     "error": {
                       "type": "string"
                     }
