@@ -5,6 +5,7 @@
 #include "config/unified_observable_config.hpp"
 #include "utils/thumbnail_generator.hpp"
 #include <Poco/Logger.h>
+#include <Magick++.h>
 #include <filesystem>
 #include <chrono>
 #include <sstream>
@@ -70,11 +71,6 @@ namespace MediaDedup
             ss << std::hash<std::string>{}(file_path) << "_" << size << ".jpg";
             std::string cache_filename = ss.str();
 
-            // Use thumbnail cache to get full path
-            std::string temp_cached_path;
-            std::filesystem::path cache_dir = std::filesystem::path(thumbnail_cache.getCacheLocation());
-            temp_cached_path = (cache_dir / cache_filename).string();
-
             // Get source file modified time
             int64_t source_mtime = getFileModifiedTime(file_path);
             if (source_mtime == 0)
@@ -83,34 +79,36 @@ namespace MediaDedup
                 return false;
             }
 
-            // Generate the thumbnail using ImageMagick
-            logger.debug("Generating pipeline thumbnail: %s -> %s (size: %d, quality: %d)",
-                         file_path, temp_cached_path, size, quality);
-
-            int timeout_ms = config_manager.getPropertyValue<int>("thumbnail.generation.timeoutMs", 5000);
-            bool thumbnail_success = ThumbnailGenerator::generate(file_path, temp_cached_path, size, quality, timeout_ms);
-
-            if (!thumbnail_success)
+            // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
+            Magick::Blob blob;
+            if (!ThumbnailGenerator::generateToBlob(file_path, size, blob, quality))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;
             }
 
-            // Verify the file was created
-            if (!std::filesystem::exists(temp_cached_path))
+            // Create stream from blob and save to cache
+            // Ensure we use the blob length, not string length (string might truncate at null bytes)
+            std::string blob_data(static_cast<const char*>(blob.data()), blob.length());
+            std::istringstream thumbnail_stream(blob_data);
+            thumbnail_stream.clear(); // Clear any error flags
+            thumbnail_stream.seekg(0, std::ios::beg); // Ensure stream is at beginning
+            
+            std::string final_cached_path;
+            if (!thumbnail_cache.saveStreamToCache(thumbnail_stream, cache_filename, final_cached_path))
             {
-                logger.error("Thumbnail file was not created: %s", temp_cached_path);
+                logger.error("Failed to save thumbnail stream to cache: %s", file_path);
                 return false;
             }
 
-            // Get thumbnail file size
-            int64_t thumb_size_bytes = std::filesystem::file_size(temp_cached_path);
+            // Get thumbnail file size for database record (from blob length)
+            int64_t thumb_size_bytes = blob.length();
             int64_t current_time = getCurrentTimestamp();
 
             // Store metadata in database
             ThumbnailCacheRecord record;
             record.source_path = file_path;
-            record.cached_path = temp_cached_path;
+            record.cached_path = final_cached_path;
             record.thumbnail_size = size;
             record.file_size_bytes = thumb_size_bytes;
             record.source_modified_at = source_mtime;

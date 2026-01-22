@@ -241,46 +241,60 @@ namespace MediaDedup
             ss << std::hash<std::string>{}(source_path) << "_" << size << ".jpg";
             std::string cache_filename = ss.str();
 
-            // Use thumbnail cache to get full path
-            std::string temp_cached_path;
-            std::filesystem::path cache_dir = std::filesystem::path(thumbnail_cache_->getCacheLocation());
-            temp_cached_path = (cache_dir / cache_filename).string();
-
             // Get configuration
             int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
-            int timeout_ms = config_manager_->getPropertyValue<int>("thumbnail.generation.timeoutMs", 5000);
 
-            // Generate thumbnail directly from source file
-            // ImageMagick handles ALL formats including RAW (ARW, CR2, NEF, etc.) natively!
-            logger.debug("Generating thumbnail: %s -> %s (size: %d, quality: %d)",
-                         source_path, temp_cached_path, size, quality);
-
-            bool thumbnail_success = ThumbnailGenerator::generate(source_path, temp_cached_path, size, quality, timeout_ms);
-
-            if (!thumbnail_success)
+            // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
+            Magick::Blob blob;
+            if (!ThumbnailGenerator::generateToBlob(source_path, size, blob, quality))
             {
-                // Detailed error already logged by ThumbnailGenerator, just summarize here
-                logger.error("ThumbnailGenerator::generate failed for: %s (check ThumbnailGenerator logs for details)", source_path);
+                logger.error("ThumbnailGenerator::generateToBlob failed for: %s (check ThumbnailGenerator logs for details)", source_path);
                 releaseGenerationLock(lock_key);
                 return false;
             }
 
-            // Check if file was actually created
-            if (!std::filesystem::exists(temp_cached_path))
+            // Verify blob has data
+            if (blob.length() == 0)
             {
-                logger.error("Generated thumbnail file not found: %s", temp_cached_path);
+                logger.error("ThumbnailGenerator::generateToBlob returned empty blob for: %s", source_path);
                 releaseGenerationLock(lock_key);
                 return false;
             }
 
-            // Get thumbnail file size
-            int64_t file_size = std::filesystem::file_size(temp_cached_path);
+            logger.debug("Generated thumbnail blob: %zu bytes for %s", blob.length(), source_path);
+
+            // Create stream from blob and save to cache
+            // Ensure we use the blob length, not string length (string might truncate at null bytes)
+            std::string blob_data(static_cast<const char *>(blob.data()), blob.length());
+            std::istringstream thumbnail_stream(blob_data);
+            thumbnail_stream.clear();                 // Clear any error flags
+            thumbnail_stream.seekg(0, std::ios::beg); // Ensure stream is at beginning
+
+            // Verify stream is valid
+            if (!thumbnail_stream.good())
+            {
+                logger.error("Failed to create valid stream from blob for: %s", source_path);
+                releaseGenerationLock(lock_key);
+                return false;
+            }
+
+            std::string final_cached_path;
+            if (!thumbnail_cache_->saveStreamToCache(thumbnail_stream, cache_filename, final_cached_path))
+            {
+                logger.error("Failed to save thumbnail stream to cache: %s", source_path);
+                releaseGenerationLock(lock_key);
+                return false;
+            }
+
+            // Get thumbnail file size for database record (from blob length)
+            int64_t file_size = blob.length();
+
             int64_t now_ts = getCurrentTimestamp();
 
             // Update database
             ThumbnailCacheRecord record;
             record.source_path = source_path;
-            record.cached_path = temp_cached_path;
+            record.cached_path = final_cached_path;
             record.thumbnail_size = size;
             record.file_size_bytes = file_size;
             record.source_modified_at = source_mtime;
@@ -289,11 +303,11 @@ namespace MediaDedup
 
             if (!ThumbnailCacheOps::upsertThumbnail(*database_manager_, record))
             {
-                logger.warning("Failed to update database, but thumbnail was generated: %s", temp_cached_path);
+                logger.warning("Failed to update database, but thumbnail was generated: %s", final_cached_path);
                 // Continue anyway - we have the thumbnail
             }
 
-            cached_path = temp_cached_path;
+            cached_path = final_cached_path;
             releaseGenerationLock(lock_key);
             logger.information("Successfully generated and cached thumbnail: %s (size: %d, %lld bytes)",
                                source_path, size, file_size);
@@ -399,21 +413,31 @@ namespace MediaDedup
             return true;
         }
 
-        // Scale asset image to requested size
-        logger.debug("Scaling error thumbnail asset from %s to size %d: %s",
-                     source_asset_path, size, scaled_error_path.string());
+        // Scale asset image to requested size using unified approach
+        logger.debug("Scaling error thumbnail asset from %s to size %d", source_asset_path, size);
 
         int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
-        if (!ThumbnailGenerator::generate(source_asset_path, scaled_error_path.string(), size, quality))
+
+        // Generate thumbnail to blob using ThumbnailGenerator (unified approach)
+        Magick::Blob blob;
+        if (!ThumbnailGenerator::generateToBlob(source_asset_path, size, blob, quality))
         {
             logger.error("Failed to scale error thumbnail asset from %s to size %d", source_asset_path.c_str(), size);
             return false;
         }
 
-        // Mark scaled error thumbnail as in use to prevent deletion
-        thumbnail_cache_->markFileInUse(scaled_error_path.string());
+        // Create stream from blob and save to cache (unified approach)
+        std::string blob_data(static_cast<const char *>(blob.data()), blob.length());
+        std::istringstream thumbnail_stream(blob_data);
+        thumbnail_stream.clear(); // Clear any error flags
+        thumbnail_stream.seekg(0, std::ios::beg);
 
-        cached_path = scaled_error_path.string();
+        if (!thumbnail_cache_->saveStreamToCache(thumbnail_stream, scaled_error_filename, cached_path))
+        {
+            logger.error("Failed to save error thumbnail stream to cache: %s", source_asset_path);
+            return false;
+        }
+
         logger.debug("Created error thumbnail: %s (size: %d)", cached_path, size);
         return true;
     }

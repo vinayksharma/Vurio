@@ -54,7 +54,7 @@ tpm.types.image_processor.share: 1
 tpm.types.duplicate_finder.share: 1
 media.processor.intervalMs: 5000
 files.manager.useInMemoryIndex: false
-logging.level: error
+logging.level: debug
 scheduler.backoff.jitterPercent: 10
 duplicates.threshold.max: 0.97999999999999998
 media.images.raw.raw: true

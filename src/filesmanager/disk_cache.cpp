@@ -258,17 +258,76 @@ namespace MediaDedup
                     return false;
                 }
 
+                // Read from stream and write to file
+                // Reset stream position to beginning and clear any error states
+                stream.clear(); // Clear any error flags (eofbit, failbit, badbit)
+                stream.seekg(0, std::ios::beg);
+
+                // Verify stream is in good state before reading
+                if (!stream.good())
+                {
+                    Poco::Logger::get("DiskCache").error("Stream is not in good state before reading: " + temp_path.string());
+                    return false;
+                }
+
+                // Get stream size for logging (try to calculate, but don't fail if it doesn't work)
+                std::streampos stream_size = -1;
+                auto pos_before = stream.tellg();
+                if (pos_before != std::streampos(-1))
+                {
+                    stream.seekg(0, std::ios::end);
+                    auto pos_end = stream.tellg();
+                    if (pos_end != std::streampos(-1))
+                    {
+                        stream_size = pos_end - pos_before;
+                    }
+                    stream.seekg(0, std::ios::beg);
+                    stream.clear(); // Clear any flags set by seek operations
+                }
+
+                if (stream_size >= 0)
+                {
+                    Poco::Logger::get("DiskCache").debug("Reading stream: %lld bytes for %s", static_cast<long long>(stream_size), filename);
+                }
+                else
+                {
+                    Poco::Logger::get("DiskCache").debug("Reading stream (size unknown) for %s", filename);
+                }
+
+                // Write stream to file
                 out_file << stream.rdbuf();
+
+                // Flush to ensure data is written
+                out_file.flush();
+
+                // Check if write was successful
+                if (!out_file.good())
+                {
+                    Poco::Logger::get("DiskCache").error("Failed to write stream data to temporary file: " + temp_path.string());
+                    return false;
+                }
             }
 
             // Get file size
             size_t file_size = std::filesystem::file_size(temp_path);
+
+            // Verify file was actually written (not empty)
+            if (file_size == 0)
+            {
+                Poco::Logger::get("DiskCache").error("Stream resulted in empty file: " + temp_path.string());
+                std::filesystem::remove(temp_path);
+                return false;
+            }
+
+            Poco::Logger::get("DiskCache").debug("Temporary file written: %s (%zu bytes)", temp_path.string(), file_size);
 
             // Enforce size limit
             enforceSizeLimit(file_size);
 
             // Rename temp file to final name
             std::filesystem::rename(temp_path, dest_path);
+
+            Poco::Logger::get("DiskCache").debug("Renamed temp file to: %s", dest_path.string());
 
             // Update cache size
             current_size_bytes_ += file_size;

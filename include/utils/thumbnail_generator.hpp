@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <Magick++.h>
 
 namespace MediaDedup
 {
@@ -16,6 +17,20 @@ namespace MediaDedup
     class ThumbnailGenerator
     {
     public:
+        /**
+         * @brief Generate a thumbnail to a blob in memory
+         *
+         * @param source_path Path to the source image file
+         * @param size Target size in pixels (longer edge will be this size)
+         * @param quality JPEG quality (0-100, default 85)
+         * @param blob Output blob containing the JPEG thumbnail data
+         * @return true if thumbnail generated successfully, false otherwise
+         */
+        static bool generateToBlob(const std::string &source_path,
+                                    int size,
+                                    Magick::Blob &blob,
+                                    int quality = 85);
+
         /**
          * @brief Generate a thumbnail for an image file (synchronous)
          *
