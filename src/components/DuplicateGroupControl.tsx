@@ -1,0 +1,455 @@
+import React, { useRef, useEffect, useState, useMemo } from 'react';
+import type { DuplicateGroup, DuplicateGroupMember } from '../types';
+import { API_BASE } from '../utils/api';
+import { remapEventEmitter, type RemapEvent } from '../utils/remapEvents';
+import { getActiveRequestCount } from '../utils/thumbnailRequests';
+import { errorLogger } from '../utils/errorLogger';
+import { thumbnailQueue } from '../utils/thumbnailQueue';
+
+interface DuplicateGroupControlProps {
+  group: DuplicateGroup;
+}
+
+const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) => {
+  const [showAll, setShowAll] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const groupObserverRef = useRef<IntersectionObserver | null>(null);
+  const [remapKey, setRemapKey] = useState<number>(0); // Force re-render after remap
+  const isGroupVisibleRef = useRef<boolean>(false);
+  const loadedImagesRef = useRef<Set<string>>(new Set()); // Track loaded images
+  const imageSrcRef = useRef<Map<string, string>>(new Map()); // Track original src URLs for unloading
+  const queuedUrlsRef = useRef<Set<string>>(new Set()); // Track URLs queued for this group (for cancellation)
+  const groupRef = useRef<DuplicateGroup>(group);
+
+  // Keep ref updated with latest group
+  useEffect(() => {
+    groupRef.current = group;
+  }, [group]);
+
+  // Use members array if available, sorted by similarity (highest first)
+  const sortedMembers = useMemo((): DuplicateGroupMember[] => {
+    if (group.members && group.members.length > 0) {
+      const sorted = [...group.members].sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0));
+
+      // Ensure representative is included
+      const representativeInMembers = sorted.some(m => m.file_path === group.representative);
+      if (!representativeInMembers) {
+        sorted.unshift({
+          file_path: group.representative,
+          similarity_score: 1.0,
+          is_representative: true,
+          file_size: 0,
+        });
+      }
+      return sorted;
+    } else {
+      // Fallback to old structure
+      return [
+        {
+          file_path: group.representative,
+          similarity_score: 1.0,
+          is_representative: true,
+          file_size: 0
+        },
+        ...(group.candidates || []).map(path => ({
+          file_path: path,
+          similarity_score: group.similarity_threshold || 0.9,
+          file_size: 0
+        })),
+      ];
+    }
+  }, [group.members, group.representative, group.candidates, group.similarity_threshold]);
+
+  if (!group) return null;
+
+  const totalFileCount = group.file_count || sortedMembers.length;
+  const header = `Group #${group.id} • ${totalFileCount} files`;
+
+  // Limit displayed members if not showing all
+  const INITIAL_LIMIT = 20;
+  const hasMore = sortedMembers.length > INITIAL_LIMIT;
+  const displayedMembers = useMemo(
+    () => showAll ? sortedMembers : sortedMembers.slice(0, INITIAL_LIMIT),
+    [showAll, sortedMembers]
+  );
+  const remainingCount = sortedMembers.length - INITIAL_LIMIT;
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      const target = e.currentTarget;
+      target.scrollLeft += e.deltaY;
+    }
+  };
+
+  const handleImageClick = (filePath: string, tooltip: string) => {
+    if (window.imagePopup) {
+      window.imagePopup.open({ filePath, details: tooltip });
+    }
+  };
+
+  // Helper function to check if a file path is affected by a remap
+  const isPathAffected = (filePath: string, oldPath: string): boolean => {
+    return filePath.startsWith(oldPath + '/') || filePath === oldPath;
+  };
+
+  // Listen for remap events and invalidate affected thumbnails
+  useEffect(() => {
+    const handleRemap = (event: RemapEvent) => {
+      const currentGroup = groupRef.current;
+
+      const allPaths = [
+        currentGroup.representative,
+        ...(currentGroup.members?.map(m => m.file_path) || []),
+        ...(currentGroup.candidates || []),
+      ];
+
+      const hasAffectedPath = allPaths.some(path => isPathAffected(path, event.oldPath));
+
+      if (hasAffectedPath) {
+        console.log(`[DuplicateGroupControl] Group ${currentGroup.id} has paths affected by remap, invalidating thumbnails`);
+
+        // Collect URLs to clear from queue
+        const urlsToClear: string[] = [];
+        allPaths.forEach(path => {
+          if (isPathAffected(path, event.oldPath)) {
+            const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(path)}&size=128`;
+            urlsToClear.push(url);
+          }
+        });
+
+        // Clear completed status in queue for remapped paths
+        if (urlsToClear.length > 0) {
+          thumbnailQueue.clearCompleted(urlsToClear);
+        }
+
+        // Clear loaded images cache to force re-loading
+        loadedImagesRef.current.clear();
+
+        // Increment remap key to force re-render
+        setRemapKey(prev => prev + 1);
+      }
+    };
+
+    const unsubscribe = remapEventEmitter.subscribe(handleRemap);
+    return unsubscribe;
+  }, [group.id]);
+
+  // Group-level IntersectionObserver: when group is visible, load all thumbnails
+  useEffect(() => {
+    const scrollContainer = document.getElementById('duplicates-stack');
+    if (!scrollContainer || !containerRef.current) return;
+
+    // Clean up old observer if it exists
+    if (groupObserverRef.current) {
+      groupObserverRef.current.disconnect();
+      groupObserverRef.current = null;
+    }
+
+    // Load all thumbnails function - now uses queue
+    const loadAllThumbnails = () => {
+      if (!containerRef.current) return;
+
+      try {
+        // Get all displayed members from DOM (in case displayedMembers changed)
+        const memberElements = containerRef.current.querySelectorAll('.duplicate-thumbnail');
+        const activeRequestCount = getActiveRequestCount();
+
+        // Log if we're about to create many requests
+        if (memberElements.length > 20) {
+          console.warn(`[DuplicateGroupControl] Queueing ${memberElements.length} thumbnails for group ${group.id}, active requests: ${activeRequestCount}`);
+        }
+
+        const urlsToQueue: string[] = [];
+
+        memberElements.forEach((thumbnailDiv, index) => {
+          try {
+            const img = thumbnailDiv.querySelector('img[data-src]') as HTMLImageElement;
+            if (!img || !img.dataset.src) return;
+
+            const src = img.dataset.src;
+
+            // Skip if already loaded
+            if (loadedImagesRef.current.has(src)) return;
+
+            // Track URL for cancellation later
+            urlsToQueue.push(src);
+            queuedUrlsRef.current.add(src);
+
+            // Push to queue (LIFO - newest requests get priority)
+            thumbnailQueue.push(
+              src,
+              img,
+              thumbnailDiv as HTMLElement,
+              {
+                onLoad: (url: string) => {
+                  // Successfully loaded
+                  loadedImagesRef.current.add(url);
+                  imageSrcRef.current.set(url, url);
+                  queuedUrlsRef.current.delete(url);
+                },
+                onError: (url: string, error: Error) => {
+                  // Failed to load
+                  errorLogger.logThumbnailError(url, error, {
+                    groupId: group.id,
+                    memberIndex: index,
+                    activeRequests: getActiveRequestCount(),
+                    elementExists: !!img,
+                    dataSrc: img.dataset.src,
+                  });
+                  queuedUrlsRef.current.delete(url);
+                },
+              },
+              {
+                groupId: group.id,
+                memberIndex: index,
+              }
+            );
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            errorLogger.logThumbnailError('unknown', error, {
+              groupId: group.id,
+              memberIndex: index,
+              phase: 'setup',
+              activeRequests: getActiveRequestCount(),
+            });
+          }
+        });
+
+        if (urlsToQueue.length > 0) {
+          console.log(`[DuplicateGroupControl] Queued ${urlsToQueue.length} thumbnails for group ${group.id}`);
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        errorLogger.logError({
+          type: 'thumbnail',
+          message: `Error in loadAllThumbnails for group ${group.id}: ${error.message}`,
+          stack: error.stack,
+          context: {
+            groupId: group.id,
+            activeRequests: getActiveRequestCount(),
+          },
+        });
+      }
+    };
+
+    // Unload all thumbnails function - also cancel pending queue requests
+    const unloadAllThumbnails = () => {
+      if (!containerRef.current) return;
+
+      // Collect URLs that were loaded/unloaded
+      const urlsToClear: string[] = [];
+
+      // Don't cancel pending requests - let them become fire-and-forget
+      // This allows server-side caching even when scrolled away
+      // When user scrolls back, thumbnails will be cached and load quickly
+      queuedUrlsRef.current.clear();
+
+      // Unload all images that are currently loaded
+      containerRef.current.querySelectorAll('img[src]').forEach((imgElement) => {
+        const img = imgElement as HTMLImageElement;
+        const src = img.src;
+
+        if (src) {
+          // Get the original data-src or construct it
+          const dataSrc = imageSrcRef.current.get(src) || src;
+
+          // Remove src to free memory
+          img.removeAttribute('src');
+          img.setAttribute('data-src', dataSrc);
+          img.style.display = 'none';
+
+          // Show placeholder
+          const placeholder = img.parentElement?.querySelector('.thumbnail-placeholder') as HTMLElement;
+          if (placeholder) {
+            placeholder.style.display = 'flex';
+          }
+
+          // Remove from tracking
+          loadedImagesRef.current.delete(src);
+          urlsToClear.push(src);
+        }
+      });
+
+      // Clear completed status in queue so these can be re-queued when scrolled back
+      if (urlsToClear.length > 0) {
+        thumbnailQueue.clearCompleted(urlsToClear);
+      }
+
+      // Clear tracking maps
+      imageSrcRef.current.clear();
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            // Group is visible - load all thumbnails
+            if (!isGroupVisibleRef.current) {
+              isGroupVisibleRef.current = true;
+              // Small delay to ensure DOM is ready
+              setTimeout(() => {
+                loadAllThumbnails();
+              }, 0);
+            }
+          } else {
+            // Group is not visible - unload all thumbnails
+            if (isGroupVisibleRef.current) {
+              isGroupVisibleRef.current = false;
+              unloadAllThumbnails();
+            }
+          }
+        });
+      },
+      {
+        root: scrollContainer,
+        rootMargin: '100px', // Start loading before fully visible
+        threshold: 0.01,
+      }
+    );
+
+    groupObserverRef.current = observer;
+    observer.observe(containerRef.current);
+
+    // Also trigger load if group is already visible on mount
+    const rect = containerRef.current.getBoundingClientRect();
+    const containerRect = scrollContainer.getBoundingClientRect();
+    if (rect.bottom > containerRect.top && rect.top < containerRect.bottom) {
+      isGroupVisibleRef.current = true;
+      setTimeout(() => {
+        loadAllThumbnails();
+      }, 0);
+    }
+
+    return () => {
+      if (groupObserverRef.current) {
+        groupObserverRef.current.disconnect();
+        groupObserverRef.current = null;
+      }
+    };
+  }, [group.id, remapKey, displayedMembers, showAll]);
+
+  const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
+    const isFirst = memberIndex === 0;
+    const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
+    const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score?.toFixed(3) || 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}\n\nClick to copy path to clipboard`;
+
+    const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=128`;
+
+    const thumbnailStyle: React.CSSProperties = isFirst
+      ? { width: '64px', height: '64px', border: '2px solid var(--accent)', flexShrink: 0 }
+      : { width: '64px', height: '64px', flexShrink: 0 };
+
+    const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const target = e.target as HTMLImageElement;
+      target.style.display = 'none';
+      const placeholder = target.parentElement?.querySelector('.thumbnail-placeholder');
+      if (placeholder) {
+        (placeholder as HTMLElement).style.display = 'flex';
+      }
+    };
+
+    return (
+      <React.Fragment key={member.file_path}>
+        <div
+          className={`duplicate-thumbnail ${isFirst ? 'key-thumbnail' : ''}`}
+          title={tooltip}
+          onClick={() => handleImageClick(member.file_path, tooltip)}
+          style={thumbnailStyle}
+        >
+          <img
+            data-src={thumbnailUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ display: 'none' }}
+            onError={handleImageError}
+          />
+          <div className="thumbnail-placeholder" style={{ display: 'flex' }}>
+            <div className="thumbnail-loading-spinner"></div>
+          </div>
+        </div>
+        {isFirst && (
+          <div
+            style={{
+              width: '2px',
+              height: '64px',
+              background: 'rgba(255,255,255,0.2)',
+              margin: '0 8px',
+            }}
+          />
+        )}
+      </React.Fragment>
+    );
+  };
+
+  return (
+    <div className="card duplicate-group-card" ref={containerRef} style={{ height: '100%', maxHeight: '100%', minHeight: 0 }}>
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
+        <div
+          className="duplicate-group-header"
+          style={{
+            fontSize: '12px',
+            color: 'var(--text)',
+            marginBottom: '8px',
+            fontWeight: 600,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {header}
+        </div>
+        <div
+          className="thumbnail-scroll-container"
+          style={{
+            flex: 1,
+            display: 'flex',
+            gap: '12px',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            alignItems: 'center',
+            paddingBottom: '8px',
+            scrollBehavior: 'smooth',
+            minWidth: 0,
+            maxWidth: '100%',
+            width: '100%',
+          }}
+          onWheel={handleWheel}
+        >
+          {displayedMembers.map((member, memberIndex) => createThumbnail(member, memberIndex))}
+
+          {hasMore && !showAll && (
+            <div
+              className="show-more-card"
+              onClick={() => setShowAll(true)}
+              style={{
+                width: '64px',
+                height: '64px',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                border: '1px dashed rgba(255, 255, 255, 0.2)',
+                color: 'var(--text-secondary)',
+                fontSize: '11px',
+                textAlign: 'center',
+                padding: '4px'
+              }}
+            >
+              <span>+{remainingCount}</span>
+              <span>more</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DuplicateGroupControl;

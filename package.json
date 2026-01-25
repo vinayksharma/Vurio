@@ -1,0 +1,43 @@
+{
+  "name": "dedup-bun-app",
+  "version": "0.1.0",
+  "description": "Electron + Bun app for Dedup server control and monitoring",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently \"vite\" \"sleep 3 && electron .\"",
+    "build": "tsc --noEmit && vite build && npm run build:electron",
+    "build:electron": "node scripts/build-electron.mjs",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "serve": "node scripts/serve.mjs",
+    "typecheck": "tsc --noEmit",
+    "---BUN COMMANDS---": "echo 'Use these when Bun is installed'",
+    "bun:dev": "bunx --bun vite",
+    "bun:dev:electron": "bunx --bun concurrently \"bunx --bun vite\" \"sleep 3 && electron .\"",
+    "bun:build": "bun run typecheck && bunx --bun vite build && bun run bun:build:electron",
+    "bun:build:electron": "bun build electron/main.ts --outdir dist-electron --target node --packages external && bun build electron/preload.ts --outdir dist-electron --target node --packages external",
+    "bun:serve": "bun run server.ts",
+    "bun:typecheck": "bunx --bun tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.4.7"
+  }
+}

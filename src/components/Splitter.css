@@ -1,0 +1,59 @@
+.splitter {
+  position: relative;
+  background: var(--panel-border);
+  flex-shrink: 0;
+  cursor: col-resize;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.splitter-horizontal {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.splitter-vertical {
+  height: 1px;
+  cursor: row-resize;
+  width: 100%;
+}
+
+.splitter:hover,
+.splitter.dragging {
+  background: var(--accent);
+}
+
+.splitter-handle {
+  position: absolute;
+  background: transparent;
+}
+
+.splitter-horizontal .splitter-handle {
+  left: -4px;
+  right: -4px;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+}
+
+.splitter-vertical .splitter-handle {
+  top: -4px;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 9px;
+}
+
+@media (max-width: 768px) {
+  .splitter-horizontal {
+    width: 100%;
+    height: 1px;
+    cursor: row-resize;
+  }
+  
+  .splitter-vertical {
+    width: 1px;
+    height: 1px;
+    cursor: col-resize;
+  }
+}

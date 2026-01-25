@@ -1,0 +1,1803 @@
+:root {
+  /* Light theme (default) - macOS HIG recommended colors */
+  color-scheme: light dark;
+  --bg: #ffffff;
+  /* Main background - white per macOS HIG */
+  --sidebar: #f5f5f5;
+  /* Secondary background - very light gray per macOS HIG */
+  --panel: #ffffff;
+  /* Panel background - white */
+  --panel-border: rgba(0, 0, 0, 0.1);
+  /* Divider/border color - light gray per macOS HIG */
+  --accent: #007aff;
+  /* Accent blue - macOS system blue */
+  --accent-hover: #0051d5;
+  /* Accent hover state */
+  --text: #000000;
+  /* Primary text - black per macOS HIG */
+  --muted: #6e6e73;
+  /* Secondary/muted text - medium gray per macOS HIG */
+  --muted-light: #86868b;
+  /* Light muted text */
+  --danger: #ff3b30;
+  /* Danger color - macOS red */
+  --danger-hover: #ff2d55;
+  /* Danger hover state */
+  --success: #34c759;
+  /* Success color - macOS green */
+  --warning: #ff9500;
+  /* Warning color - macOS orange */
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  /* Subtle shadow per macOS HIG */
+  /* Interactive states per macOS HIG */
+  --hover-bg: #f0f0f0;
+  /* Hover background - very light gray */
+  --selected-bg: #e5e5e5;
+  /* Selected background - light gray */
+  --input-bg: #ffffff;
+  /* Input field background - white */
+}
+
+/* Automatically adapt to macOS / system dark mode - macOS HIG recommended colors */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* macOS HIG Dark Mode Colors */
+    --bg: #1e1e1e;
+    /* Main background */
+    --sidebar: #252526;
+    /* Secondary background */
+    --panel: #1e1e1e;
+    /* Panel background */
+    --panel-border: #3e3e42;
+    /* Divider/border color */
+    --accent: #007acc;
+    /* Accent blue (VS Code-style) */
+    --accent-hover: #0e639c;
+    /* Accent hover state */
+    --text: #cccccc;
+    /* Primary text */
+    --muted: #858585;
+    /* Secondary/muted text */
+    --muted-light: #858585;
+    /* Light muted text (same as secondary) */
+    --danger: #f48771;
+    --danger-hover: #e06c75;
+    --success: #89d185;
+    --warning: #dcdcaa;
+    --shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+    /* Interactive states per HIG */
+    --hover-bg: #2a2d2e;
+    /* Hover background */
+    --selected-bg: #37373d;
+    /* Selected background */
+    --input-bg: #3c3c3c;
+    /* Input field background */
+  }
+
+  .titlebar-drag {
+    background: #252526;
+    border-bottom-color: #3e3e42;
+  }
+
+  .sidebar {
+    border-right-color: #3e3e42;
+  }
+
+  .panel.settings-panel {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  }
+
+  .card {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+    color: var(--muted);
+  }
+
+  .duplicate-group-card {
+    background: #252526;
+    border-color: #3e3e42;
+  }
+
+  .card-stack {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+  }
+
+  .targets li {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    border-color: var(--panel-border);
+  }
+
+  .config-group {
+    background: #252526;
+    border-color: #3e3e42;
+  }
+
+  .config-group-header {
+    color: var(--text);
+  }
+
+  .config-property {
+    background: transparent;
+  }
+
+  .config-property-label {
+    color: var(--text);
+    /* Primary text per HIG */
+  }
+
+  .config-property-type {
+    color: var(--muted);
+    /* Secondary text per HIG */
+  }
+
+  .config-property-input {
+    background: var(--input-bg);
+    /* Input field background per HIG */
+    border-color: var(--panel-border);
+    color: var(--text);
+  }
+
+  .app-statusbar {
+    background: #1e1e1e;
+    border-top-color: #3e3e42;
+    box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .image-preview-content {
+    background: #1e1e1e;
+  }
+
+  /* High-contrast "Server Configuration" callout in Settings panel */
+  .settings-panel .action-row {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    border-color: var(--panel-border);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .settings-panel .action-details h3 {
+    color: var(--text);
+    /* Primary text per HIG */
+  }
+
+  .settings-panel .action-details p {
+    color: var(--muted);
+    /* Secondary text per HIG */
+  }
+
+  /* Fully dark inline configuration area */
+  .settings-panel .config-panel-content {
+    background: #1e1e1e !important;
+    border-radius: 20px;
+    border: 1px solid #3e3e42 !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Dark theme overrides for configuration groups and inputs */
+  .config-group {
+    background: #252526 !important;
+    border-radius: 12px;
+    border: 1px solid #3e3e42 !important;
+  }
+
+  .config-group-title {
+    color: var(--text) !important;
+    /* Primary text per HIG */
+  }
+
+  .config-group-header {
+    color: var(--text);
+  }
+
+  .config-group-toggle {
+    color: var(--muted) !important;
+  }
+
+  .config-property-label {
+    color: var(--text) !important;
+    /* Primary text per HIG */
+    opacity: 0.9;
+  }
+
+  .config-property-type {
+    color: var(--muted) !important;
+    /* Secondary text per HIG */
+  }
+
+  .config-property-input {
+    background: var(--input-bg) !important;
+    /* Input field background per HIG */
+    color: var(--text) !important;
+    /* Primary text per HIG */
+    border: 1px solid var(--panel-border) !important;
+  }
+
+  .config-property-input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3) !important;
+  }
+
+  .config-loading {
+    color: var(--muted) !important;
+  }
+
+  .config-property:hover {
+    background: var(--hover-bg) !important;
+    /* Hover background per HIG */
+    border-color: var(--panel-border) !important;
+  }
+
+  .config-property.modified {
+    background: var(--selected-bg) !important;
+    /* Selected background per HIG */
+    border: 1px solid var(--accent) !important;
+  }
+
+  .config-property.error {
+    background: rgba(244, 135, 113, 0.15) !important;
+    border: 1px solid rgba(244, 135, 113, 0.4) !important;
+  }
+
+  .config-property-checkbox {
+    accent-color: var(--accent);
+  }
+
+  /* Media Locations input styled similar to Settings config fields */
+  .scan-panel .field-row input[type="text"] {
+    background: var(--input-bg);
+    /* Input field background per HIG */
+    color: var(--text);
+    /* Primary text per HIG */
+    border: 1px solid var(--panel-border);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .scan-panel .field-row input[type="text"]::placeholder {
+    color: var(--muted);
+    /* Secondary text per HIG */
+  }
+
+  /* Nav items with macOS HIG colors */
+  .nav-item:hover,
+  .nav-item:focus-visible {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: var(--selected-bg);
+    /* Selected background per HIG */
+    color: var(--text);
+    border-color: var(--panel-border);
+  }
+
+  /* Buttons with macOS HIG colors */
+  button.ghost {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    color: var(--text);
+    border-color: var(--panel-border);
+  }
+
+  button.ghost:hover {
+    background: var(--selected-bg);
+    /* Selected background per HIG */
+  }
+
+  button.ghost.danger {
+    color: var(--danger);
+    border-color: rgba(244, 135, 113, 0.4);
+    background: rgba(244, 135, 113, 0.1);
+  }
+
+  button.ghost.danger:hover {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--danger);
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  /* Body text size per HIG */
+  line-height: 1.4;
+  /* 1.2-1.5 for readability per HIG */
+  font-weight: 400;
+  /* 400-600 for most text per HIG */
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar-drag {
+  -webkit-app-region: drag;
+  height: 28px;
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.app-shell {
+  flex: 1;
+  display: flex;
+  min-height: calc(100vh - 28px);
+  overflow: hidden;
+}
+
+.app-shell.horizontal {
+  flex-direction: row;
+}
+
+.app-shell.vertical {
+  flex-direction: column;
+}
+
+.sidebar-control {
+  background: var(--sidebar);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hamburger-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  background: var(--sidebar);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  box-shadow: var(--shadow);
+}
+
+.app-shell.vertical .content-area-control {
+  position: relative;
+}
+
+.app-shell.horizontal .hamburger-button {
+  display: none;
+}
+
+.hamburger-button:hover {
+  background: var(--hover-bg);
+  border-color: var(--accent);
+}
+
+.hamburger-icon {
+  width: 20px;
+  height: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+}
+
+.hamburger-icon span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 60px 16px 0 0;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.sidebar-control-vertical {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: 280px;
+  max-height: calc(100vh - 80px);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  animation: slideDown 0.3s ease;
+  overflow: hidden;
+  z-index: 1001;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.app-shell.vertical .sidebar-control {
+  display: none;
+}
+
+.sidebar {
+  width: 100%;
+  height: 100%;
+  background: var(--sidebar);
+  border-right: 1px solid var(--panel-border);
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.app-shell.vertical .sidebar {
+  border-right: none;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.app-shell.vertical .advanced-panel .action-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.app-shell.vertical .advanced-panel .action-row>button {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 12px 20px;
+}
+
+.content-area-control {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-title {
+  font-size: 20px;
+  /* Heading size per HIG */
+  font-weight: 700;
+  /* 700 for headings per HIG */
+  line-height: 1.3;
+  letter-spacing: 0.4px;
+}
+
+.sidebar-subtitle {
+  font-size: 11px;
+  /* Small text per HIG (10-11px) */
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 8-12px between items per HIG */
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  /* Using 8px grid: 12px vertical, 16px horizontal */
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  /* Body text size per HIG (13-15px) */
+  font-weight: 500;
+  /* 400-600 for most text per HIG */
+  line-height: 1.4;
+  cursor: pointer;
+  min-height: 40px;
+  /* 40-48px minimum for list items per HIG */
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  /* 0.2-0.3s ease per HIG */
+}
+
+.nav-item:hover,
+.nav-item:focus-visible {
+  background: var(--hover-bg);
+  /* Hover background per macOS HIG */
+  color: var(--text);
+  outline: none;
+}
+
+.nav-item.active {
+  background: var(--selected-bg);
+  /* Selected background per macOS HIG */
+  color: var(--text);
+  border-color: var(--panel-border);
+  box-shadow: var(--shadow);
+}
+
+.nav-icon {
+  font-size: 18px;
+  width: 28px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.nav-label {
+  flex: 1;
+  text-align: left;
+}
+
+
+.app-main {
+  flex: 1;
+  padding: 36px 48px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 42px;
+  min-height: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-header h1 {
+  margin: 0;
+  font-size: 28px;
+  /* Heading size per HIG (18-30px) */
+  font-weight: 700;
+  /* 700 for headings per HIG */
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.panel-description {
+  margin: 8px 0 0;
+  font-size: 14px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 680px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 18px;
+  /* Heading size per HIG (18-30px) */
+  font-weight: 600;
+  /* 400-600 for most text, 600 for subheadings per HIG */
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-title.split {
+  font-size: 16px;
+  /* Heading size per HIG (18-30px, using 16px for subheadings) */
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+
+.panel-meta {
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.content-panel {
+  display: none;
+  flex-direction: column;
+  gap: 32px;
+  /* Using 8px grid: 32px (16-24px for sections per HIG, using 32px for larger spacing) */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.content-panel.active {
+  display: flex;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 16px;
+  /* 12-16px for cards per HIG */
+  padding: 24px;
+  /* 16-24px per HIG (using 24px for cards) */
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* 16-24px for sections per HIG */
+}
+
+.panel.scan-panel {
+  gap: 24px;
+  /* Using 8px grid: 24px (16-24px for sections per HIG) */
+}
+
+.collapsible {
+  display: block;
+}
+
+.collapsible:not(.open) {
+  display: none;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.field-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-row input[type="text"],
+.field-row input[type="password"] {
+  flex: 1;
+  background: var(--input-bg);
+  /* Input field background per macOS HIG */
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  /* 8-12px per HIG */
+  padding: 12px 16px;
+  /* 10-12px vertical, 14-16px horizontal per HIG */
+  font-size: 14px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  outline: none;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  /* 0.2-0.3s ease per HIG */
+}
+
+.field-row input[type="text"]:focus,
+.field-row input[type="password"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+  /* Accent color with opacity */
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 12px 20px;
+  /* 10-14px vertical, 16-20px horizontal per HIG */
+  border-radius: 12px;
+  /* 12-14px per HIG */
+  cursor: pointer;
+  font-weight: 500;
+  /* 400-600 for most text per HIG */
+  font-size: 14px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  /* 0.2-0.3s ease per HIG */
+  min-height: 40px;
+  /* 32-40px per HIG */
+}
+
+button.primary {
+  box-shadow: 0 14px 28px rgba(79, 107, 237, 0.25);
+}
+
+button.primary:hover {
+  background: var(--accent-hover);
+}
+
+button.ghost {
+  background: var(--hover-bg);
+  /* Hover background per macOS HIG */
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  box-shadow: none;
+}
+
+button.ghost:hover {
+  background: var(--selected-bg);
+  /* Selected background per macOS HIG */
+}
+
+button.ghost.small {
+  min-height: 0;
+  padding: 6px 12px;
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  border-radius: 10px;
+}
+
+button.ghost.danger {
+  color: var(--danger);
+  border-color: rgba(225, 29, 72, 0.34);
+  background: rgba(225, 29, 72, 0.08);
+}
+
+button.ghost.danger:hover {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(225, 29, 72, 0.28);
+  border-color: transparent;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.checkbox {
+  color: var(--muted);
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+}
+
+.message {
+  margin-top: 6px;
+  color: var(--muted);
+  min-height: 20px;
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+}
+
+.targets {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 4-8px between items per HIG */
+}
+
+.targets ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.targets li {
+  padding: 12px 16px;
+  background: var(--hover-bg);
+  /* Hover background per macOS HIG */
+  border-radius: 12px;
+  /* 8-12px per HIG */
+  color: var(--text);
+  border: 1px solid transparent;
+  cursor: pointer;
+  min-height: 40px;
+  /* 40-48px minimum per HIG */
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  /* 0.2-0.3s ease per HIG */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.targets li.selected {
+  border-color: var(--accent);
+  box-shadow: 0 12px 24px rgba(0, 122, 255, 0.18);
+  /* Accent color with opacity */
+  transform: translateY(-2px);
+}
+
+.targets li:hover {
+  border-color: var(--panel-border);
+}
+
+.targets li .location-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.targets li .remap-btn {
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 8px rgba(79, 107, 237, 0.2);
+}
+
+.targets li .remap-btn:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(79, 107, 237, 0.3);
+}
+
+.helper-text {
+  margin: 0;
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.duplicates-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.card-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  height: 0;
+  border-radius: 18px;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+  padding: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+.card-stack::-webkit-scrollbar {
+  width: 8px;
+}
+
+.card-stack::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.card-stack::-webkit-scrollbar-thumb {
+  background: rgba(79, 107, 237, 0.4);
+  border-radius: 4px;
+}
+
+.card-stack::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  /* 12-16px for cards per HIG */
+  padding: 20px;
+  /* 16-24px per HIG (using 20px for cards) */
+  height: 160px;
+  /* Increased from 140px to accommodate taller key thumbnails */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+
+.placeholder {
+  border-style: dashed;
+}
+
+.duplicate-group-card {
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 12px 0;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  position: relative;
+  height: auto !important;
+  min-height: 180px;
+  /* Increased from 140px to accommodate taller key thumbnails */
+  padding: 16px !important;
+  color: var(--text);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.duplicate-group-card:last-child {
+  margin-bottom: 0;
+}
+
+/* Constrain cards in virtual scrolling container to prevent overlap */
+#duplicates-stack [data-group-index] .duplicate-group-card {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+}
+
+.duplicate-thumbnail {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  background: var(--hover-bg);
+  /* Hover background per macOS HIG */
+  position: relative;
+  /* Create positioning context for placeholder */
+  display: flex;
+  /* Allow flex children for proper centering */
+  align-items: center;
+  justify-content: center;
+}
+
+.duplicate-thumbnail:hover {
+  transform: scale(1.05);
+  border-color: var(--accent);
+  box-shadow: 0 12px 20px rgba(0, 122, 255, 0.22);
+  /* Accent color with opacity */
+}
+
+.duplicate-thumbnail[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 41, 59, 0.92);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  /* Small text per HIG (10-11px) */
+  line-height: 1.3;
+  white-space: pre-line;
+  z-index: 1000;
+  max-width: 320px;
+  pointer-events: none;
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.28);
+}
+
+.thumbnail-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(79, 107, 237, 0.14), rgba(79, 107, 237, 0.28));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  /* Small text per HIG (10-11px) */
+  line-height: 1.3;
+  font-weight: 600;
+  color: #fff;
+  z-index: 1;
+  /* Ensure placeholder is above img when img is visible */
+}
+
+.duplicate-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: relative;
+  z-index: 0;
+  /* Behind placeholder */
+}
+
+/* Key image (representative) - same size as others but with blue border */
+.duplicate-thumbnail.key-thumbnail img {
+  object-fit: cover;
+  /* Same as other thumbnails */
+  object-position: center;
+}
+
+.thumbnail-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: thumbnail-spin 0.8s linear infinite;
+}
+
+@keyframes thumbnail-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.thumbnail-scroll-container,
+.duplicate-group-card div[style*='overflow-x: auto'] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) rgba(15, 23, 42, 0.1);
+  scroll-behavior: smooth;
+}
+
+.thumbnail-scroll-container::-webkit-scrollbar,
+.duplicate-group-card div[style*='overflow-x: auto']::-webkit-scrollbar {
+  height: 8px;
+}
+
+.thumbnail-scroll-container::-webkit-scrollbar-track,
+.duplicate-group-card div[style*='overflow-x: auto']::-webkit-scrollbar-track {
+  background: rgba(79, 107, 237, 0.12);
+  border-radius: 4px;
+}
+
+.thumbnail-scroll-container::-webkit-scrollbar-thumb,
+.duplicate-group-card div[style*='overflow-x: auto']::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.thumbnail-scroll-container::-webkit-scrollbar-thumb:hover,
+.duplicate-group-card div[style*='overflow-x: auto']::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-hover);
+}
+
+.duplicate-group-card::before,
+.duplicate-group-card::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 48px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.duplicate-group-card::before {
+  left: 0;
+  background: linear-gradient(to right, var(--panel), transparent);
+}
+
+.duplicate-group-card::after {
+  right: 0;
+  background: linear-gradient(to left, var(--panel), transparent);
+}
+
+.duplicate-group-card:hover::before,
+.duplicate-group-card:hover::after {
+  opacity: 1;
+}
+
+.virtual-spacer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  /* Using 8px grid: 24px */
+  padding: 24px;
+  /* Using 8px grid: 24px (20-28px panel padding per HIG) */
+  border-radius: 16px;
+  /* 12-16px for cards per HIG */
+  background: rgba(79, 107, 237, 0.08);
+  border: 1px solid rgba(79, 107, 237, 0.16);
+}
+
+.action-row+.action-row {
+  margin-top: 12px;
+}
+
+.action-details h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  /* Heading size per HIG (18-30px) */
+  font-weight: 600;
+  /* 400-600 for most text, 600 for subheadings per HIG */
+  line-height: 1.3;
+}
+
+.action-details p {
+  margin: 0;
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.5;
+  /* 1.2-1.5 for readability per HIG */
+  color: var(--muted);
+  max-width: 540px;
+}
+
+/* Settings panel configuration buttons */
+.settings-panel .action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-panel .action-buttons button {
+  flex: 1;
+  padding: 3px 12px;
+  /* default 3px vertical padding, consistent width */
+}
+
+/* Advanced panel action buttons - keep consistent size */
+.advanced-panel .action-row {
+  align-items: center;
+}
+
+.advanced-panel .action-row>button {
+  flex: 0 0 180px;
+  padding: 3px 12px;
+  /* match vertical padding convention */
+}
+
+.app-statusbar {
+  background: var(--panel);
+  border-top: 1px solid var(--panel-border);
+  padding: 12px 24px;
+  /* Using 8px grid: 12px vertical, 24px horizontal */
+  min-height: 40px;
+  /* 40-50px per HIG */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  /* Using 8px grid: 24px */
+  box-shadow: 0 -16px 40px rgba(15, 23, 42, 0.08);
+  position: sticky;
+  bottom: 0;
+}
+
+.status-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 200px;
+}
+
+.indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 12px rgba(79, 107, 237, 0.28);
+}
+
+.indicator.offline {
+  background: var(--danger);
+  box-shadow: 0 0 16px rgba(225, 29, 72, 0.38);
+}
+
+.indicator.online {
+  background: var(--success);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.35);
+}
+
+.status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#server-status-text {
+  font-weight: 500;
+  /* 400-600 for most text per HIG */
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+}
+
+.status-subtitle {
+  font-size: 11px;
+  /* Small text per HIG (10-11px) */
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.status-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.status-summary {
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.status-progress {
+  height: 8px;
+  background: rgba(79, 107, 237, 0.16);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.status-progress-bar-completed {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #7c8ef6);
+  transition: width 0.4s ease;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.status-progress-bar-errors {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--danger), #fb7185);
+  transition: width 0.4s ease;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+}
+
+.timestamp {
+  font-size: 11px;
+  /* Small text per HIG (10-11px) */
+  line-height: 1.3;
+  color: var(--muted-light);
+}
+
+.status-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.status-warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* Modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 9999;
+}
+
+.modal.open {
+  pointer-events: all;
+  opacity: 1;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.modal-dialog {
+  position: absolute;
+  left: 50%;
+  top: 32%;
+  transform: translate(-50%, -32%);
+  width: 500px;
+  /* 400-600px per HIG */
+  max-height: 80vh;
+  /* 80vh per HIG */
+  background: var(--panel);
+  border-radius: 12px;
+  /* Rounded corners per HIG */
+  padding: 24px;
+  /* Using 8px grid: 24px */
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* Using 8px grid: 24px */
+  overflow-y: auto;
+}
+
+.modal .message {
+  min-height: 20px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+.modal h2 {
+  margin: 0;
+  text-align: center;
+  font-size: 22px;
+  /* Heading size per HIG (18-30px) */
+  font-weight: 700;
+  /* 700 for headings per HIG */
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal input {
+  width: 100%;
+  padding: 12px 16px;
+  /* 10-12px vertical, 14-16px horizontal per HIG */
+  border-radius: 12px;
+  /* 8-12px per HIG */
+  border: 1px solid var(--panel-border);
+  background: var(--input-bg);
+  /* Input field background per macOS HIG */
+  color: var(--text);
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  /* 0.2-0.3s ease per HIG */
+}
+
+.modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+  /* Accent color with opacity */
+}
+
+.modal button[type='submit'] {
+  width: 100%;
+  padding: 14px;
+  font-size: 15px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  font-weight: 500;
+  /* 400-600 for most text per HIG */
+  box-sizing: border-box;
+}
+
+/* Configuration Modal */
+.config-dialog {
+  width: 80vw;
+  max-width: 1000px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.config-content {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  background: rgba(79, 107, 237, 0.05);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* Inline Settings panel configuration area */
+.config-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 12px;
+  background: var(--input-bg);
+  /* Input field background per macOS HIG */
+  border-radius: 16px;
+  /* 12-16px for cards per HIG */
+  padding: 20px;
+  /* 16-24px per HIG (using 20px for cards) */
+  border: 1px solid var(--panel-border);
+}
+
+.config-loading {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+}
+
+.config-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-group {
+  background: var(--panel);
+  /* Panel background per macOS HIG */
+  border-radius: 12px;
+  /* 8-12px per HIG */
+  padding: 20px;
+  /* 16-24px per HIG (using 20px for cards) */
+  border: 1px solid var(--panel-border);
+}
+
+.config-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 12px;
+}
+
+.config-group-title {
+  font-weight: 600;
+  /* 400-600 for most text, 600 for subheadings per HIG */
+  font-size: 16px;
+  /* Heading size per HIG (18-30px, using 16px for subheadings) */
+  line-height: 1.3;
+  margin: 0;
+}
+
+.config-group-toggle {
+  color: var(--muted);
+  font-size: 18px;
+  transition: transform 0.2s ease;
+}
+
+.config-group.collapsed .config-group-toggle {
+  transform: rotate(-90deg);
+}
+
+.config-group.collapsed .config-group-properties {
+  display: none;
+}
+
+.config-group-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-property {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.config-property:hover {
+  background: var(--hover-bg);
+  /* Hover background per macOS HIG */
+  border-color: var(--panel-border);
+}
+
+.config-property.modified {
+  background: var(--selected-bg);
+  /* Selected background per macOS HIG */
+  border: 1px solid var(--accent);
+}
+
+.config-property.error {
+  background: rgba(225, 29, 72, 0.12);
+  border: 1px solid rgba(225, 29, 72, 0.28);
+}
+
+.config-property-label {
+  flex: 0 0 280px;
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+  color: var(--text);
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+.config-property-input {
+  flex: 1;
+  background: var(--input-bg);
+  /* Input field background per macOS HIG */
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+  font-size: 13px;
+  /* Body text size per HIG (13-15px) */
+  line-height: 1.4;
+}
+
+.config-property-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.25);
+  /* Accent color with opacity */
+}
+
+.config-property-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.config-property-action {
+  padding: 6px 10px;
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid rgba(79, 107, 237, 0.24);
+  color: var(--muted);
+  background: rgba(79, 107, 237, 0.08);
+}
+
+.config-property-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Image Preview Popup */
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 10000;
+}
+
+.image-preview-modal.open {
+  pointer-events: all;
+  opacity: 1;
+}
+
+.image-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(3px);
+}
+
+.image-preview-dialog {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 80vw;
+  max-width: 1200px;
+  height: 80vh;
+  max-height: 90vh;
+  background: var(--panel);
+  border-radius: 18px;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.45);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 10px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.image-preview-close {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.image-preview-content {
+  position: relative;
+  flex: 1;
+  background: #0f172a;
+  overflow: hidden;
+}
+
+.image-preview-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.image-preview-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
+  max-height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-preview-footer {
+  padding: 14px 16px;
+  border-top: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 12px;
+  /* Label size per HIG (11-13px) */
+  line-height: 1.4;
+  white-space: pre-line;
+  max-height: 120px;
+  overflow: auto;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+/* Zoom cursors */
+.cursor-zoom-in {
+  cursor: zoom-in;
+}
+
+.cursor-zoom-out {
+  cursor: zoom-out;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+}
+
+@media (max-width: 1080px) {
+  .app-shell.vertical .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .app-main {
+    padding: 28px 24px;
+  }
+
+  .panel-header h1 {
+    font-size: 26px;
+    /* Heading size per HIG (18-30px) */
+  }
+}
+
+@media (max-width: 720px) {
+  .field-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .targets li {
+    font-size: 14px;
+    /* Body text size per HIG (13-15px) */
+  }
+
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .advanced-panel .action-row>button {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 12px 20px;
+  }
+
+  .app-statusbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .status-left,
+  .status-right {
+    width: 100%;
+  }
+}

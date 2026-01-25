@@ -1,0 +1,219 @@
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+
+let mainWindow: BrowserWindow | null = null;
+
+const UI_HOST = process.env.UI_HOST || '127.0.0.1';
+const UI_PORT = parseInt(process.env.UI_PORT || '5173', 10);
+// Check if we're in production: NODE_ENV is set to 'production' OR dist folder exists with index.html
+const IS_DEV = process.env.NODE_ENV !== 'production' && 
+  !fs.existsSync(path.join(__dirname, '../dist/index.html'));
+
+// Ensure single instance
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+async function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    backgroundColor: '#0b132b',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false, // Disable web security to allow API calls from file://
+      sandbox: false,
+      allowRunningInsecureContent: true,
+    },
+    titleBarStyle: 'hiddenInset',
+  });
+
+  // Configure session to allow connections to localhost
+  const session = mainWindow.webContents.session;
+  session.setPermissionRequestHandler((webContents, permission, callback) => {
+    // Allow all permissions for localhost connections
+    callback(true);
+  });
+
+  // In development, use Vite dev server; in production, use built files
+  const uiUrl = IS_DEV 
+    ? `http://${UI_HOST}:${UI_PORT}` 
+    : `file://${path.join(__dirname, '../dist/index.html')}`;
+  
+  await mainWindow.loadURL(uiUrl);
+
+  // Build application menu with log reveal actions
+  const isMac = process.platform === 'darwin';
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const }
+      ]
+    }] : []),
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Reveal Server Log',
+          click: async () => {
+            const p = '/tmp/dedup-server.log';
+            const err = await shell.openPath(p);
+            if (err) dialog.showErrorBox('Open Log Failed', `Could not open ${p}:\n${err}`);
+          }
+        },
+        {
+          label: 'Reveal App Log',
+          click: async () => {
+            const p = '/tmp/dedup-app.log';
+            const err = await shell.openPath(p);
+            if (err) dialog.showErrorBox('Open Log Failed', `Could not open ${p}:\n${err}`);
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Export Error Log',
+          click: async () => {
+            if (mainWindow) {
+              try {
+                const errors = await mainWindow.webContents.executeJavaScript(`
+                  (() => {
+                    if (typeof window.exportErrors === 'function') {
+                      return window.exportErrors();
+                    }
+                    return 'Error logger not available. Open DevTools and run: exportErrors()';
+                  })()
+                `);
+                
+                const errorLogPath = path.join(os.homedir(), 'dedup-error-log.txt');
+                fs.writeFileSync(errorLogPath, errors, 'utf8');
+                
+                const result = await dialog.showMessageBox(mainWindow, {
+                  type: 'info',
+                  title: 'Error Log Exported',
+                  message: `Error log exported to:\n${errorLogPath}`,
+                  buttons: ['Open File', 'OK'],
+                  defaultId: 0,
+                });
+                
+                if (result.response === 0) {
+                  await shell.openPath(errorLogPath);
+                }
+              } catch (err) {
+                const error = err as Error;
+                dialog.showErrorBox('Export Failed', `Could not export error log:\n${error.message}`);
+              }
+            }
+          }
+        }
+      ]
+    }
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+ipcMain.handle('utils:revealLog', async (_event, filePath: string) => {
+  try {
+    const err = await shell.openPath(filePath);
+    if (err) throw new Error(err);
+    return { ok: true };
+  } catch (e) {
+    const error = e as Error;
+    dialog.showErrorBox('Open Log Failed', `${error.message}`);
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('utils:toggleDevTools', () => {
+  if (mainWindow) mainWindow.webContents.toggleDevTools();
+});
+
+ipcMain.handle('utils:exportErrorLog', async () => {
+  if (!mainWindow) {
+    return { ok: false, error: 'No main window' };
+  }
+  
+  try {
+    const errors = await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        if (typeof window.exportErrors === 'function') {
+          return window.exportErrors();
+        }
+        return null;
+      })()
+    `);
+    
+    if (!errors) {
+      return { ok: false, error: 'Error logger not available' };
+    }
+    
+    const errorLogPath = path.join(os.homedir(), 'dedup-error-log.txt');
+    fs.writeFileSync(errorLogPath, errors, 'utf8');
+    
+    return { ok: true, path: errorLogPath };
+  } catch (err) {
+    const error = err as Error;
+    return { ok: false, error: error.message };
+  }
+});
+
+app.whenReady().then(async () => {
+  await createWindow();
+
+  app.on('activate', async () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      await createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.handle('dialog:selectDirectory', async (_event, startPath?: string) => {
+  if (!mainWindow) return null;
+  
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select a directory to scan',
+    buttonLabel: 'Use This Folder',
+    defaultPath: startPath && typeof startPath === 'string' ? startPath : undefined,
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});

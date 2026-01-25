@@ -1,0 +1,30 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "Stopping current instance..."
+# Find and kill Electron processes for this app
+# Look for processes with the app directory or main.js
+pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
+pkill -f "electron.*dedup_bun_app" 2>/dev/null || true
+pkill -f "electron.*main.js" 2>/dev/null || true
+# Give it a moment to fully stop
+sleep 1
+
+echo "Building application..."
+cd "$APP_DIR"
+
+# Check if bun is available
+if command -v bun &> /dev/null; then
+  echo "Using Bun..."
+  bun run bun:build
+  echo "Starting application..."
+  NODE_ENV=production bun run electron
+else
+  echo "Using npm..."
+  npm run build
+  echo "Starting application..."
+  NODE_ENV=production npm run electron
+fi
