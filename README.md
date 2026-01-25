@@ -113,7 +113,7 @@ npm run build && npm run serve
 ## Project Structure
 
 ```
-dedup_bun_app/
+vurio/
 ├── electron/           # Electron main process
 │   ├── main.ts        # Main process entry
 │   └── preload.ts     # Preload script for IPC

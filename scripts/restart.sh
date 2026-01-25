@@ -8,7 +8,7 @@ echo "Stopping current instance..."
 # Find and kill Electron processes for this app
 # Look for processes with the app directory or main.js
 pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
-pkill -f "electron.*dedup_bun_app" 2>/dev/null || true
+pkill -f "electron.*vurio" 2>/dev/null || true
 pkill -f "electron.*main.js" 2>/dev/null || true
 # Give it a moment to fully stop
 sleep 1
