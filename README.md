@@ -1,4 +1,4 @@
-# Vurio Desktop (Bun/TypeScript/React)
+# VURIO (Bun/TypeScript/React)
 
 A media management desktop application built with Electron, React, TypeScript, and **Bun**.
 

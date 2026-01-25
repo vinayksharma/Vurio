@@ -1,5 +1,5 @@
 /**
- * UI Server for Vurio Desktop
+ * UI Server for VURIO
  * Serves the built React app and proxies API requests to the backend server
  * Can be used for browser-based access without Electron
  */
@@ -211,7 +211,7 @@ const server = Bun.serve({
   fetch: handleRequest,
 });
 
-console.log(`🚀 Vurio Desktop UI server running at http://${server.hostname}:${server.port}`);
+console.log(`🚀 VURIO UI server running at http://${server.hostname}:${server.port}`);
 console.log(`   Mode: ${IS_DEV ? 'development' : 'production'}`);
 console.log(`   API proxy: ${API_TARGET}`);
 
