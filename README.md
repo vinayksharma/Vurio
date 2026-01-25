@@ -1,6 +1,6 @@
 # VURIO (Bun/TypeScript/React)
 
-A media management desktop application built with Electron, React, TypeScript, and **Bun**.
+A desktop application built with Electron, React, TypeScript, and **Bun**.
 
 ## Features
 

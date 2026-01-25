@@ -17,7 +17,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activePanel, onPanelChange }) => {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-title">VURIO</div>
-        <div className="sidebar-subtitle">Media Management</div>
       </div>
       <nav className="sidebar-nav">
         {navItems.map((item) => (
