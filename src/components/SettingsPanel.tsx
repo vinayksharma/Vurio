@@ -170,7 +170,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         <header className="panel-header">
           <div>
             <h1>Settings</h1>
-            <p className="panel-description">Adjust server configuration and manage how Dedup Desktop behaves.</p>
+            <p className="panel-description">Adjust server configuration and manage how Vurio Desktop behaves.</p>
           </div>
         </header>
         <section className="panel settings-panel">
@@ -186,7 +186,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         <header className="panel-header">
           <div>
             <h1>Settings</h1>
-            <p className="panel-description">Adjust server configuration and manage how Dedup Desktop behaves.</p>
+            <p className="panel-description">Adjust server configuration and manage how Vurio Desktop behaves.</p>
           </div>
         </header>
         <section className="panel settings-panel">

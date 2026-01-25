@@ -123,7 +123,7 @@ async function main() {
     });
     
     server.listen(PORT, '127.0.0.1', () => {
-      console.log(`🚀 Dedup Desktop UI server running at http://127.0.0.1:${PORT}`);
+      console.log(`🚀 Vurio Desktop UI server running at http://127.0.0.1:${PORT}`);
       console.log(`   Mode: production (Node.js fallback)`);
       console.log(`   API proxy: ${API_TARGET}`);
     });

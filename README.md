@@ -1,6 +1,6 @@
-# Dedup Desktop (Bun/TypeScript/React)
+# Vurio Desktop (Bun/TypeScript/React)
 
-A media deduplication desktop application built with Electron, React, TypeScript, and **Bun**.
+A media management desktop application built with Electron, React, TypeScript, and **Bun**.
 
 ## Features
 
