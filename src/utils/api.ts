@@ -2,14 +2,27 @@ import type { ServerStatus, DuplicateGroupsResponse, Configuration, ChangePathRe
 
 // Detect Electron: check for electronAPI or if we're in a file:// protocol
 const isElectron = typeof window !== 'undefined' && (
-  !!window.electronAPI || 
+  !!window.electronAPI ||
   window.location.protocol === 'file:' ||
   navigator.userAgent.includes('Electron')
 );
 
 // In Electron, always use localhost:8088 for API, regardless of protocol
-// In browser, use empty string (relative URLs) or current origin
+// In browser, use empty string (relative URLs) to go through Vite proxy
+// Vite proxy is configured in vite.config.ts to proxy /api/* to http://localhost:8088
 export const API_BASE = isElectron ? 'http://localhost:8088' : '';
+
+// Debug logging
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  console.log('[API] Environment detection:', {
+    isElectron,
+    protocol: window.location.protocol,
+    userAgent: navigator.userAgent,
+    hasElectronAPI: !!window.electronAPI,
+    API_BASE: API_BASE || '(empty - using relative URLs)',
+    origin: window.location.origin,
+  });
+}
 
 if (typeof window !== 'undefined') {
   window.API_BASE = API_BASE || window.location.origin;
@@ -21,13 +34,13 @@ export async function safeFetch(path: string, options: RequestInit = {}): Promis
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   const fullUrl = `${API_BASE}${path}`;
   try {
-    console.log(`[API] Making request to: ${fullUrl}`, { 
+    console.log(`[API] Making request to: ${fullUrl}`, {
       isElectron: typeof window !== 'undefined' && (window as any).__IS_ELECTRON__,
       protocol: typeof window !== 'undefined' ? window.location.protocol : 'unknown',
       hasElectronAPI: typeof window !== 'undefined' && !!window.electronAPI,
       API_BASE,
-      options, 
-      headers 
+      options,
+      headers
     });
     const res = await fetch(fullUrl, { ...options, headers });
     console.log(`[API] Response status: ${res.status} ${res.statusText} for ${fullUrl}`);

@@ -1076,7 +1076,13 @@ button:disabled {
   /* Behind placeholder */
 }
 
-/* Key image (representative) - same size as others but with blue border */
+/* Key image (representative) - 2px larger than others with blue border */
+.duplicate-thumbnail.key-thumbnail {
+  width: 70px;
+  height: 70px;
+  margin-left: 4px;
+}
+
 .duplicate-thumbnail.key-thumbnail img {
   object-fit: cover;
   /* Same as other thumbnails */

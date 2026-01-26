@@ -147,6 +147,7 @@ class ThumbnailRequestQueue {
 
   /**
    * Check if an image element is currently visible in the viewport
+   * Accounts for both vertical scrolling (main container) and horizontal scrolling (group container)
    */
   private isElementVisible(element: HTMLElement | null): boolean {
     if (!element) return false;
@@ -159,13 +160,44 @@ class ThumbnailRequestQueue {
 
       const containerRect = scrollContainer.getBoundingClientRect();
 
-      // Check if element is within viewport (with some margin)
-      const margin = 200; // Extra margin to keep loading slightly off-screen
+      // Check vertical visibility against main scroll container
+      const verticalMargin = 200; // Extra margin to keep loading slightly off-screen
+      const isVerticallyVisible = (
+        rect.bottom > containerRect.top - verticalMargin &&
+        rect.top < containerRect.bottom + verticalMargin
+      );
+
+      if (!isVerticallyVisible) return false;
+
+      // Check horizontal visibility within the group's scroll container
+      // Find the parent horizontal scroll container (thumbnail-scroll-container)
+      let parent = element.parentElement;
+      let horizontalScrollContainer: HTMLElement | null = null;
+
+      while (parent) {
+        if (parent.classList.contains('thumbnail-scroll-container') ||
+          (parent.style.overflowX === 'auto' || parent.style.overflowX === 'scroll')) {
+          horizontalScrollContainer = parent;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+
+      // If no horizontal scroll container found, assume visible (backward compatibility)
+      if (!horizontalScrollContainer) {
+        return (
+          rect.right > containerRect.left - verticalMargin &&
+          rect.left < containerRect.right + verticalMargin
+        );
+      }
+
+      // Check horizontal visibility within the group's scroll container
+      const horizontalContainerRect = horizontalScrollContainer.getBoundingClientRect();
+      const horizontalMargin = 100; // Smaller margin for horizontal scrolling
+
       return (
-        rect.bottom > containerRect.top - margin &&
-        rect.top < containerRect.bottom + margin &&
-        rect.right > containerRect.left - margin &&
-        rect.left < containerRect.right + margin
+        rect.right > horizontalContainerRect.left - horizontalMargin &&
+        rect.left < horizontalContainerRect.right + horizontalMargin
       );
     } catch {
       return false;
