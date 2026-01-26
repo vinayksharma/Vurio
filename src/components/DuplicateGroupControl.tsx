@@ -449,13 +449,14 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
 
   const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
     const isFirst = memberIndex === 0;
+    const hasPerfectMatch = member.similarity_score === 1.0 && !isFirst; // Don't show on key image
     const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
     const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score?.toFixed(3) || 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}\n\nClick to copy path to clipboard`;
 
     const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=128`;
 
     const thumbnailStyle: React.CSSProperties = isFirst
-      ? { border: '2px solid var(--accent)', flexShrink: 0, marginLeft: '4px' }
+      ? { border: '2px solid #FF8C00', flexShrink: 0, marginLeft: '4px' }
       : { width: '64px', height: '64px', flexShrink: 0 };
 
     const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -534,10 +535,79 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
             minWidth: 0,
             maxWidth: '100%',
             width: '100%',
+            position: 'relative',
           }}
           onWheel={handleWheel}
         >
           {displayedMembers.map((member, memberIndex) => createThumbnail(member, memberIndex))}
+
+          {/* Continuous bracket for perfect matches */}
+          {(() => {
+            // Find all perfect matches (excluding key image)
+            const perfectMatches = displayedMembers
+              .map((m, idx) => ({ member: m, index: idx }))
+              .filter(({ member, index }) => member.similarity_score === 1.0 && index > 0);
+
+            if (perfectMatches.length === 0) return null;
+
+            // Calculate starting position accurately:
+            // In flex container with gap: 12px between items
+            // Key image: starts at 4px (marginLeft), width 70px, ends at 74px
+            // Gap: 12px (between key and separator)
+            // Separator: starts at 86px, width 2px + 8px margin each side = 18px total, ends at 104px
+            // Gap: 12px (between separator and first perfect match)
+            // First perfect match starts at: 116px
+
+            const keyImageWidth = 70;
+            const keyImageMargin = 4;
+            const gap = 12;
+            const separatorTotalWidth = 18; // 2px width + 16px margins
+            const thumbnailWidth = 64;
+
+            // Start position: key margin + key width + gap + separator total + gap
+            const startPosition = keyImageMargin + keyImageWidth + gap + separatorTotalWidth + gap;
+
+            // Calculate bracket width: (n * thumbnailWidth) + ((n - 1) * gap)
+            const bracketWidth = (perfectMatches.length * thumbnailWidth) + ((perfectMatches.length - 1) * gap);
+
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '0px',
+                  left: `${startPosition}px`,
+                  width: `${bracketWidth}px`,
+                  height: '2px',
+                  background: '#00FF00',
+                  zIndex: 10,
+                  pointerEvents: 'none',
+                }}
+              >
+                {/* Left vertical bracket extension */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: '-4px',
+                    bottom: 0,
+                    width: '2px',
+                    height: '6px',
+                    background: '#00FF00',
+                  }}
+                />
+                {/* Right vertical bracket extension */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: '-4px',
+                    bottom: 0,
+                    width: '2px',
+                    height: '6px',
+                    background: '#00FF00',
+                  }}
+                />
+              </div>
+            );
+          })()}
 
           {hasMore && !showAll && (
             <div

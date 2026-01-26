@@ -1023,9 +1023,10 @@ button:disabled {
 
 .duplicate-thumbnail:hover {
   transform: scale(1.05);
-  border-color: var(--accent);
-  box-shadow: 0 12px 20px rgba(0, 122, 255, 0.22);
-  /* Accent color with opacity */
+  border-color: #FFBF00;
+  /* Amber border */
+  box-shadow: 0 4px 12px rgba(255, 191, 0, 0.3);
+  /* Amber glow - reduced size to prevent clipping */
 }
 
 .duplicate-thumbnail[title]:hover::after {
@@ -1076,11 +1077,13 @@ button:disabled {
   /* Behind placeholder */
 }
 
-/* Key image (representative) - 2px larger than others with blue border */
+/* Key image (representative) - 2px larger than others with orange border */
 .duplicate-thumbnail.key-thumbnail {
   width: 70px;
   height: 70px;
   margin-left: 4px;
+  border: 2px solid #FF8C00 !important;
+  /* Orange border */
 }
 
 .duplicate-thumbnail.key-thumbnail img {
