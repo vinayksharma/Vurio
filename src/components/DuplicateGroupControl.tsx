@@ -14,6 +14,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
   const [showAll, setShowAll] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const horizontalScrollRef = useRef<HTMLDivElement>(null);
+  const scrollContentRef = useRef<HTMLDivElement>(null); // Inner wrapper so bracket scrolls with thumbnails
   const groupObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbnailObserversRef = useRef<Map<HTMLElement, IntersectionObserver>>(new Map()); // Track individual thumbnail observers
   const [remapKey, setRemapKey] = useState<number>(0); // Force re-render after remap
@@ -22,6 +23,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
   const imageSrcRef = useRef<Map<string, string>>(new Map()); // Track original src URLs for unloading
   const queuedUrlsRef = useRef<Set<string>>(new Set()); // Track URLs queued for this group (for cancellation)
   const groupRef = useRef<DuplicateGroup>(group);
+  const [bracketPosition, setBracketPosition] = useState<{ left: number; width: number } | null>(null);
 
   // Keep ref updated with latest group
   useEffect(() => {
@@ -447,6 +449,45 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     };
   }, [group.id, displayedMembers, showAll, remapKey]);
 
+  // Measure actual positions of perfect match thumbnails for accurate bracket positioning
+  // Uses scrollContentRef (inner wrapper) so bracket coordinates are relative to scrollable content
+  useEffect(() => {
+    if (!scrollContentRef.current || !isGroupVisibleRef.current) {
+      setBracketPosition(null);
+      return;
+    }
+
+    const perfectMatches = displayedMembers
+      .map((m, idx) => ({ member: m, index: idx }))
+      .filter(({ member, index }) => member.similarity_score === 1.0 && index > 0);
+
+    if (perfectMatches.length === 0) {
+      setBracketPosition(null);
+      return;
+    }
+
+    const measure = () => {
+      const content = scrollContentRef.current;
+      if (!content) return;
+
+      const thumbnails = content.querySelectorAll('.perfect-match-thumbnail');
+      if (thumbnails.length === 0) return;
+
+      const first = thumbnails[0] as HTMLElement;
+      const last = thumbnails[thumbnails.length - 1] as HTMLElement;
+      if (!first || !last) return;
+
+      // offsetLeft/offsetWidth relative to scroll content - bracket scrolls with content
+      const left = first.offsetLeft;
+      const width = last.offsetLeft + last.offsetWidth - first.offsetLeft;
+      setBracketPosition({ left, width });
+    };
+
+    requestAnimationFrame(measure);
+  }, [displayedMembers, showAll, remapKey]);
+
+  // No scroll handler needed - bracket is inside scroll content and moves with thumbnails
+
   const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
     const isFirst = memberIndex === 0;
     const hasPerfectMatch = member.similarity_score === 1.0 && !isFirst; // Don't show on key image
@@ -471,10 +512,11 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     return (
       <React.Fragment key={member.file_path}>
         <div
-          className={`duplicate-thumbnail ${isFirst ? 'key-thumbnail' : ''}`}
+          className={`duplicate-thumbnail ${isFirst ? 'key-thumbnail' : ''} ${hasPerfectMatch ? 'perfect-match-thumbnail' : ''}`}
           title={tooltip}
           onClick={() => handleImageClick(member.file_path, tooltip)}
           style={thumbnailStyle}
+          data-member-index={memberIndex}
         >
           <img
             data-src={thumbnailUrl}
@@ -525,58 +567,36 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           className="thumbnail-scroll-container"
           style={{
             flex: 1,
-            display: 'flex',
-            gap: '12px',
             overflowX: 'auto',
             overflowY: 'hidden',
-            alignItems: 'center',
-            paddingBottom: '8px',
             scrollBehavior: 'smooth',
             minWidth: 0,
             maxWidth: '100%',
             width: '100%',
-            position: 'relative',
           }}
           onWheel={handleWheel}
         >
-          {displayedMembers.map((member, memberIndex) => createThumbnail(member, memberIndex))}
+          <div
+            ref={scrollContentRef}
+            style={{
+              display: 'flex',
+              gap: '12px',
+              alignItems: 'center',
+              paddingBottom: '8px',
+              minWidth: 'min-content',
+              position: 'relative',
+            }}
+          >
+            {displayedMembers.map((member, memberIndex) => createThumbnail(member, memberIndex))}
 
-          {/* Continuous bracket for perfect matches */}
-          {(() => {
-            // Find all perfect matches (excluding key image)
-            const perfectMatches = displayedMembers
-              .map((m, idx) => ({ member: m, index: idx }))
-              .filter(({ member, index }) => member.similarity_score === 1.0 && index > 0);
-
-            if (perfectMatches.length === 0) return null;
-
-            // Calculate starting position accurately:
-            // In flex container with gap: 12px between items
-            // Key image: starts at 4px (marginLeft), width 70px, ends at 74px
-            // Gap: 12px (between key and separator)
-            // Separator: starts at 86px, width 2px + 8px margin each side = 18px total, ends at 104px
-            // Gap: 12px (between separator and first perfect match)
-            // First perfect match starts at: 116px
-
-            const keyImageWidth = 70;
-            const keyImageMargin = 4;
-            const gap = 12;
-            const separatorTotalWidth = 18; // 2px width + 16px margins
-            const thumbnailWidth = 64;
-
-            // Start position: key margin + key width + gap + separator total + gap
-            const startPosition = keyImageMargin + keyImageWidth + gap + separatorTotalWidth + gap;
-
-            // Calculate bracket width: (n * thumbnailWidth) + ((n - 1) * gap)
-            const bracketWidth = (perfectMatches.length * thumbnailWidth) + ((perfectMatches.length - 1) * gap);
-
-            return (
+            {/* Continuous bracket for perfect matches - scrolls with thumbnails */}
+            {bracketPosition && (
               <div
                 style={{
                   position: 'absolute',
                   bottom: '0px',
-                  left: `${startPosition}px`,
-                  width: `${bracketWidth}px`,
+                  left: `${bracketPosition.left}px`,
+                  width: `${bracketPosition.width}px`,
                   height: '2px',
                   background: '#00FF00',
                   zIndex: 10,
@@ -587,7 +607,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                 <div
                   style={{
                     position: 'absolute',
-                    left: '-4px',
+                    left: 0,
                     bottom: 0,
                     width: '2px',
                     height: '6px',
@@ -598,7 +618,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                 <div
                   style={{
                     position: 'absolute',
-                    right: '-4px',
+                    right: 0,
                     bottom: 0,
                     width: '2px',
                     height: '6px',
@@ -606,35 +626,35 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                   }}
                 />
               </div>
-            );
-          })()}
+            )}
 
-          {hasMore && !showAll && (
-            <div
-              className="show-more-card"
-              onClick={() => setShowAll(true)}
-              style={{
-                width: '64px',
-                height: '64px',
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                border: '1px dashed rgba(255, 255, 255, 0.2)',
-                color: 'var(--text-secondary)',
-                fontSize: '11px',
-                textAlign: 'center',
-                padding: '4px'
-              }}
-            >
-              <span>+{remainingCount}</span>
-              <span>more</span>
-            </div>
-          )}
+            {hasMore && !showAll && (
+              <div
+                className="show-more-card"
+                onClick={() => setShowAll(true)}
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: '1px dashed rgba(255, 255, 255, 0.2)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  padding: '4px'
+                }}
+              >
+                <span>+{remainingCount}</span>
+                <span>more</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

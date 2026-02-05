@@ -1,27 +1,38 @@
 import type { ServerStatus, DuplicateGroupsResponse, Configuration, ChangePathResponse } from '../types';
 
 // Detect Electron: check for electronAPI or if we're in a file:// protocol
+// Must explicitly check for electronAPI first, as it's the most reliable indicator
 const isElectron = typeof window !== 'undefined' && (
-  !!window.electronAPI ||
+  (typeof (window as any).electronAPI !== 'undefined' && (window as any).electronAPI !== null && !!(window as any).electronAPI) ||
   window.location.protocol === 'file:' ||
-  navigator.userAgent.includes('Electron')
+  (navigator.userAgent && navigator.userAgent.includes('Electron'))
 );
+
+// Force browser mode if we're on http/https and electronAPI is not available
+// This ensures we use the Vite proxy in browser mode
+const forceBrowserMode = typeof window !== 'undefined' &&
+  (window.location.protocol === 'http:' || window.location.protocol === 'https:') &&
+  (typeof (window as any).electronAPI === 'undefined' || (window as any).electronAPI === null);
 
 // In Electron, always use localhost:8088 for API, regardless of protocol
 // In browser, use empty string (relative URLs) to go through Vite proxy
 // Vite proxy is configured in vite.config.ts to proxy /api/* to http://localhost:8088
-export const API_BASE = isElectron ? 'http://localhost:8088' : '';
+export const API_BASE = (isElectron && !forceBrowserMode) ? 'http://localhost:8088' : '';
 
-// Debug logging
-if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-  console.log('[API] Environment detection:', {
-    isElectron,
-    protocol: window.location.protocol,
-    userAgent: navigator.userAgent,
-    hasElectronAPI: !!window.electronAPI,
-    API_BASE: API_BASE || '(empty - using relative URLs)',
-    origin: window.location.origin,
-  });
+// Debug logging - always log in development
+if (typeof window !== 'undefined') {
+  const isDev = import.meta.env.DEV || process.env.NODE_ENV === 'development';
+  if (isDev) {
+    console.log('[API] Environment detection:', {
+      isElectron,
+      protocol: window.location.protocol,
+      userAgent: navigator.userAgent,
+      hasElectronAPI: typeof (window as any).electronAPI !== 'undefined' && !!(window as any).electronAPI,
+      electronAPIType: typeof (window as any).electronAPI,
+      API_BASE: API_BASE || '(empty - using relative URLs)',
+      origin: window.location.origin,
+    });
+  }
 }
 
 if (typeof window !== 'undefined') {
