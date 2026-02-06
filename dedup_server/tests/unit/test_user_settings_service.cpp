@@ -2,15 +2,20 @@
 #include "database/database_manager.hpp"
 #include "database/user_settings_service.hpp"
 #include "filesmanager/files_service.hpp"
+#include "test_utils.hpp"
+#include <filesystem>
 
 namespace MediaDedup
 {
     namespace Test
     {
+        static std::string testDbPath(const std::string& name) {
+            return (std::filesystem::path(TestUtils::getTestDataPath()) / "databases" / name).string();
+        }
 
         TEST(UserSettingsServiceTest, CrudLifecycle)
         {
-            std::string db_path = "../tests/test_data/databases/test_user_settings.sqlite";
+            std::string db_path = testDbPath("test_user_settings.sqlite");
             // Ensure clean slate
             std::remove(db_path.c_str());
 
@@ -41,7 +46,7 @@ namespace MediaDedup
 
         TEST(UserSettingsServiceTest, RegisterAndListMediaLocations)
         {
-            std::string db_path = "../tests/test_data/databases/test_media_locations.sqlite";
+            std::string db_path = testDbPath("test_media_locations.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -62,7 +67,7 @@ namespace MediaDedup
 
         TEST(UserSettingsServiceTest, OverwriteSamePathByCaseInsensitiveKey)
         {
-            std::string db_path = "../tests/test_data/databases/test_media_overwrite.sqlite";
+            std::string db_path = testDbPath("test_media_overwrite.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -81,7 +86,7 @@ namespace MediaDedup
 
         TEST(UserSettingsServiceTest, DeregisterMediaLocation)
         {
-            std::string db_path = "../tests/test_data/databases/test_media_deregister.sqlite";
+            std::string db_path = testDbPath("test_media_deregister.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);

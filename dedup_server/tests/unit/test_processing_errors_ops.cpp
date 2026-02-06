@@ -1,16 +1,22 @@
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "database/database_manager.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "config/config_enums.hpp"
+#include "test_utils.hpp"
 
 namespace MediaDedup
 {
     namespace Test
     {
+        static std::string testDbPath(const std::string& name) {
+            return (std::filesystem::path(TestUtils::getTestDataPath()) / "databases" / name).string();
+        }
+
         TEST(ProcessingErrorsOpsTest, EnsureTableCreation)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors.sqlite";
+            std::string db_path = testDbPath("test_processing_errors.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -24,7 +30,7 @@ namespace MediaDedup
 
         TEST(ProcessingErrorsOpsTest, InsertErrorBasic)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors_insert.sqlite";
+            std::string db_path = testDbPath("test_processing_errors_insert.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -45,7 +51,7 @@ namespace MediaDedup
 
         TEST(ProcessingErrorsOpsTest, InsertMultipleErrors)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors_multiple.sqlite";
+            std::string db_path = testDbPath("test_processing_errors_multiple.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -69,7 +75,7 @@ namespace MediaDedup
 
         TEST(ProcessingErrorsOpsTest, InsertErrorAllModes)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors_modes.sqlite";
+            std::string db_path = testDbPath("test_processing_errors_modes.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -89,7 +95,7 @@ namespace MediaDedup
 
         TEST(ProcessingErrorsOpsTest, InsertErrorWithEmptySource)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors_empty_source.sqlite";
+            std::string db_path = testDbPath("test_processing_errors_empty_source.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -111,7 +117,7 @@ namespace MediaDedup
 
         TEST(ProcessingErrorsOpsTest, InsertErrorVariousErrorCodes)
         {
-            std::string db_path = "../tests/test_data/databases/test_processing_errors_codes.sqlite";
+            std::string db_path = testDbPath("test_processing_errors_codes.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);

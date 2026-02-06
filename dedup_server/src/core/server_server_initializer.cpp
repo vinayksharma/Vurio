@@ -62,6 +62,20 @@ namespace MediaDedup
         {
             // Get database path from config
             std::string db_path = config_manager_->getPropertyValue<std::string>("database.path", "data/dedup_server.db");
+            std::filesystem::path db_path_p(db_path);
+
+            // Resolve relative paths against the config file's project root so the same DB is used
+            // regardless of current working directory (e.g. run from vurio/ vs dedup_server/).
+            if (!db_path_p.is_absolute())
+            {
+                std::filesystem::path config_path(config_manager_->getConfigFilePath());
+                std::filesystem::path abs_config = std::filesystem::absolute(config_path);
+                // Project root = directory containing the config folder (e.g. .../dedup_server)
+                std::filesystem::path project_root = abs_config.parent_path().parent_path();
+                db_path_p = (project_root / db_path_p).lexically_normal();
+                db_path = db_path_p.string();
+                logger.information("Database path resolved to: " + db_path);
+            }
 
             // Create database directory if it doesn't exist
             std::filesystem::path db_dir = std::filesystem::path(db_path).parent_path();
