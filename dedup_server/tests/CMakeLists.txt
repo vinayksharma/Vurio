@@ -483,8 +483,10 @@ add_custom_target(run_all_tests
 
 # Test data setup: create build/test_data and copy from tests/test_data if present
 # (tests/test_data may be absent when not committed, e.g. in .gitignore)
+# Remove and recreate test_data/databases so no leftover .sqlite/.shm/.wal from previous runs (avoids DB lock timeouts)
 add_custom_target(setup_test_data
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/test_data/databases
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data/databases
     COMMENT "Setting up test data..."
 )
