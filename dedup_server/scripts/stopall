@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# stopall - Stop all instances of the Media Deduplication Server
+# This script finds and terminates all running instances of media_dedup_server
+
+set -e
+
+echo "Stopping all Media Deduplication Server instances..."
+
+# Find all processes matching media_dedup_server
+PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+
+if [ -z "$PIDS" ]; then
+    echo "No Media Deduplication Server instances found running."
+    exit 0
+fi
+
+echo "Found Media Deduplication Server instances with PIDs: $PIDS"
+
+# Send SIGTERM first for graceful shutdown
+echo "Sending SIGTERM for graceful shutdown..."
+for pid in $PIDS; do
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "  Sending SIGTERM to PID $pid"
+        kill -TERM "$pid" 2>/dev/null || true
+    fi
+done
+
+# Wait a moment for graceful shutdown
+sleep 2
+
+# Check if any processes are still running
+REMAINING_PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+
+if [ -n "$REMAINING_PIDS" ]; then
+    echo "Some processes still running, sending SIGKILL..."
+    for pid in $REMAINING_PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "  Sending SIGKILL to PID $pid"
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+    done
+    
+    # Final check
+    sleep 1
+    FINAL_PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+    if [ -n "$FINAL_PIDS" ]; then
+        echo "Warning: Some processes may still be running: $FINAL_PIDS"
+        exit 1
+    fi
+fi
+
+echo "All Media Deduplication Server instances stopped successfully."

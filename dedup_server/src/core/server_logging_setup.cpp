@@ -1,0 +1,226 @@
+#include "core/logging_setup.hpp"
+#include <Poco/ConsoleChannel.h>
+#include <Poco/PatternFormatter.h>
+#include <Poco/FormattingChannel.h>
+#include <Poco/DateTime.h>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <cstdlib>
+
+namespace MediaDedup
+{
+    LoggingSetup::LoggingSetup()
+        : logger_(Poco::Logger::get("LoggingSetup"))
+    {
+    }
+
+    void LoggingSetup::setupColorLogging()
+    {
+        // Create a custom formatter that adds colors
+        class ColorFormatter : public Poco::Formatter
+        {
+        public:
+            void format(const Poco::Message &msg, std::string &text)
+            {
+                // Format the message with timestamp and log level
+                std::ostringstream oss;
+                Poco::DateTime dateTime(msg.getTime());
+
+                // Convert priority to string
+                std::string priorityStr;
+                switch (msg.getPriority())
+                {
+                case Poco::Message::PRIO_FATAL:
+                    priorityStr = "FATAL";
+                    break;
+                case Poco::Message::PRIO_CRITICAL:
+                    priorityStr = "CRITICAL";
+                    break;
+                case Poco::Message::PRIO_ERROR:
+                    priorityStr = "ERROR";
+                    break;
+                case Poco::Message::PRIO_WARNING:
+                    priorityStr = "WARNING";
+                    break;
+                case Poco::Message::PRIO_INFORMATION:
+                    priorityStr = "INFORMATION";
+                    break;
+                case Poco::Message::PRIO_DEBUG:
+                    priorityStr = "DEBUG";
+                    break;
+                case Poco::Message::PRIO_TRACE:
+                    priorityStr = "TRACE";
+                    break;
+                default:
+                    priorityStr = "UNKNOWN";
+                    break;
+                }
+
+                oss << std::setfill('0')
+                    << std::setw(4) << dateTime.year() << "-"
+                    << std::setw(2) << dateTime.month() << "-"
+                    << std::setw(2) << dateTime.day() << " "
+                    << std::setw(2) << dateTime.hour() << ":"
+                    << std::setw(2) << dateTime.minute() << ":"
+                    << std::setw(2) << dateTime.second() << "."
+                    << std::setw(3) << (dateTime.millisecond() / 1000) << " "
+                    << "[" << priorityStr << "] "
+                    << msg.getSource() << ": "
+                    << msg.getText();
+
+                text = oss.str();
+            }
+        };
+
+        // Create a custom channel that adds colors
+        class ColorChannel : public Poco::Channel
+        {
+        public:
+            void log(const Poco::Message &msg)
+            {
+                // Enforce level filtering based on current root logger level
+                // Even if a message is delivered here, we suppress output when below threshold
+                try
+                {
+                    int rootLevel = Poco::Logger::root().getLevel();
+                    if (msg.getPriority() > rootLevel)
+                    {
+                        return;
+                    }
+                }
+                catch (...)
+                {
+                    // If anything goes wrong, fall through and log conservatively
+                }
+
+                ColorFormatter formatter;
+                std::string formattedMsg;
+                formatter.format(msg, formattedMsg);
+
+                // Check if we should use colors
+                bool useColors = false;
+                const char *term = std::getenv("TERM");
+                const char *colorterm = std::getenv("COLORTERM");
+                const char *force_color = std::getenv("FORCE_COLOR");
+
+                if (term && (std::string(term) == "xterm" || std::string(term) == "xterm-256color" ||
+                             std::string(term) == "screen" || std::string(term) == "screen-256color" ||
+                             std::string(term).find("color") != std::string::npos))
+                {
+                    useColors = true;
+                }
+                if (colorterm || force_color)
+                {
+                    useColors = true;
+                }
+
+                if (useColors)
+                {
+                    // Apply colors based on log level
+                    std::string colorCode;
+                    switch (msg.getPriority())
+                    {
+                    case Poco::Message::PRIO_FATAL:
+                    case Poco::Message::PRIO_CRITICAL:
+                        colorCode = "\033[1;31m"; // Bold red
+                        break;
+                    case Poco::Message::PRIO_ERROR:
+                        colorCode = "\033[31m"; // Red
+                        break;
+                    case Poco::Message::PRIO_WARNING:
+                        colorCode = "\033[33m"; // Yellow
+                        break;
+                    case Poco::Message::PRIO_INFORMATION:
+                        colorCode = "\033[32m"; // Green
+                        break;
+                    case Poco::Message::PRIO_DEBUG:
+                        colorCode = "\033[36m"; // Cyan
+                        break;
+                    case Poco::Message::PRIO_TRACE:
+                        colorCode = "\033[37m"; // White
+                        break;
+                    default:
+                        colorCode = "\033[0m"; // Reset
+                        break;
+                    }
+
+                    std::cout << colorCode << formattedMsg << "\033[0m" << std::endl;
+                }
+                else
+                {
+                    // No colors, just output the formatted message
+                    std::cout << formattedMsg << std::endl;
+                }
+            }
+        };
+
+        // Set the custom color channel
+        Poco::AutoPtr<Poco::Channel> colorChannel(new ColorChannel);
+        Poco::Logger::root().setChannel(colorChannel);
+    }
+
+    void LoggingSetup::applyLogLevel(const std::string &level)
+    {
+        std::cout << "DEBUG: applyLogLevel called with level: " << level << std::endl;
+        std::string lowered = level;
+        for (char &c : lowered)
+            c = static_cast<char>(::tolower(c));
+
+        // Map synonyms to Poco names
+        std::string pocoLevel = lowered;
+        if (lowered == "info")
+            pocoLevel = "information";
+        else if (lowered == "warn")
+            pocoLevel = "warning";
+
+        try
+        {
+            // First set the root logger level
+            Poco::Logger::root().setLevel(pocoLevel);
+
+            // Then set individual logger levels to ensure they don't inherit old levels
+            logger_.setLevel(pocoLevel);
+            Poco::Logger::get("MediaDedupServer").setLevel(pocoLevel);
+            Poco::Logger::get("ServerInitializer").setLevel(pocoLevel);
+            Poco::Logger::get("FilesManager").setLevel(pocoLevel);
+            Poco::Logger::get("SchedulerService").setLevel(pocoLevel);
+            Poco::Logger::get("ThreadPoolManager").setLevel(pocoLevel);
+            Poco::Logger::get("InstanceChecker").setLevel(pocoLevel);
+            Poco::Logger::get("ConsoleInputManager").setLevel(pocoLevel);
+            Poco::Logger::get("ServerShutdown").setLevel(pocoLevel);
+            Poco::Logger::get("DatabaseManager").setLevel(pocoLevel);
+            Poco::Logger::get("UserSettingsService").setLevel(pocoLevel);
+            Poco::Logger::get("FilesService").setLevel(pocoLevel);
+            Poco::Logger::get("DatabaseService").setLevel(pocoLevel);
+            Poco::Logger::get("LoggingSetup").setLevel(pocoLevel);
+
+            // Log the change for debugging
+            logger_.information("Logging level applied: " + pocoLevel);
+        }
+        catch (...)
+        {
+            Poco::Logger::root().setLevel("information");
+            logger_.setLevel("information");
+        }
+    }
+
+    bool LoggingSetup::supportsColors() const
+    {
+        const char *term = std::getenv("TERM");
+        const char *colorterm = std::getenv("COLORTERM");
+        const char *force_color = std::getenv("FORCE_COLOR");
+
+        if (term && (std::string(term) == "xterm" || std::string(term) == "xterm-256color" ||
+                     std::string(term) == "screen" || std::string(term) == "screen-256color" ||
+                     std::string(term).find("color") != std::string::npos))
+        {
+            return true;
+        }
+        if (colorterm || force_color)
+        {
+            return true;
+        }
+        return false;
+    }
+}
