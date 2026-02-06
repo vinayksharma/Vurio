@@ -1,13 +1,19 @@
 #include <gtest/gtest.h>
 #include <set>
+#include <filesystem>
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/user_settings_ops.hpp"
+#include "test_utils.hpp"
 
 namespace MediaDedup
 {
     namespace Test
     {
+        static std::string testDbPath(const std::string& name) {
+            return (std::filesystem::path(TestUtils::getTestDataPath()) / "databases" / name).string();
+        }
+
         static ScannedFileRow makeRow(const std::string &path)
         {
             ScannedFileRow r;
@@ -25,7 +31,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, CrudAndProcessingStates)
         {
-            std::string db_path = "../tests/test_data/databases/test_scanned_files.sqlite";
+            std::string db_path = testDbPath("test_scanned_files.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -81,7 +87,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, CountMethodVerification)
         {
-            std::string db_path = "../tests/test_data/databases/test_count_verification.sqlite";
+            std::string db_path = testDbPath("test_count_verification.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -118,7 +124,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, ErrorEscalationLogic)
         {
-            std::string db_path = "../tests/test_data/databases/test_error_escalation.sqlite";
+            std::string db_path = testDbPath("test_error_escalation.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -162,7 +168,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, ErrorEscalationAllErrorCodes)
         {
-            std::string db_path = "../tests/test_data/databases/test_all_error_codes.sqlite";
+            std::string db_path = testDbPath("test_all_error_codes.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -195,7 +201,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, RetryLogicSQLQueries)
         {
-            std::string db_path = "../tests/test_data/databases/test_retry_logic.sqlite";
+            std::string db_path = testDbPath("test_retry_logic.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -257,7 +263,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, BackpressureIncludedInRetry)
         {
-            std::string db_path = "../tests/test_data/databases/test_backpressure.sqlite";
+            std::string db_path = testDbPath("test_backpressure.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -290,7 +296,7 @@ namespace MediaDedup
 
         TEST(ScannedFilesOpsTest, ErrorCountExcludesBackpressureAndQueued)
         {
-            std::string db_path = "../tests/test_data/databases/test_error_count_exclusion.sqlite";
+            std::string db_path = testDbPath("test_error_count_exclusion.sqlite");
             std::remove(db_path.c_str());
 
             DatabaseManager dbm(db_path);
@@ -356,7 +362,7 @@ namespace MediaDedup
 
 TEST(ScannedFilesOpsTest, QueuedStatusCount)
 {
-    std::string db_path = "../tests/test_data/databases/test_queued_status_count.sqlite";
+    std::string db_path = MediaDedup::Test::testDbPath("test_queued_status_count.sqlite");
     std::remove(db_path.c_str());
 
     MediaDedup::DatabaseManager dbm(db_path);
@@ -478,7 +484,7 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 
 TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
 {
-    std::string db_path = "../tests/test_data/databases/test_filtered_counts.sqlite";
+    std::string db_path = MediaDedup::Test::testDbPath("test_filtered_counts.sqlite");
     std::remove(db_path.c_str());
 
     MediaDedup::DatabaseManager dbm(db_path);

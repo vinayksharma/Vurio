@@ -441,6 +441,7 @@ target_link_libraries(all_unit_tests
     ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
 )
+add_dependencies(all_unit_tests setup_test_data)
 add_test(NAME all_unit_tests COMMAND all_unit_tests)
 set_tests_properties(all_unit_tests PROPERTIES
     OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/all_unit_tests.log"
@@ -480,12 +481,22 @@ add_custom_target(run_all_tests
     COMMENT "Running all tests..."
 )
 
-# Test data setup
+# Test data setup: create build/test_data and copy from tests/test_data if present
+# (tests/test_data may be absent when not committed, e.g. in .gitignore)
 add_custom_target(setup_test_data
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/tests/test_data ${CMAKE_BINARY_DIR}/test_data
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data/databases
     COMMENT "Setting up test data..."
 )
+set(TEST_DATA_DEPENDENCY setup_test_data)
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_data")
+    add_custom_target(copy_test_data
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/tests/test_data ${CMAKE_BINARY_DIR}/test_data
+        COMMENT "Copying test data..."
+    )
+    add_dependencies(copy_test_data setup_test_data)
+    set(TEST_DATA_DEPENDENCY copy_test_data)
+endif()
 
 # Make all tests depend on test data setup
 foreach(test_source ${UNIT_TEST_SOURCES})
@@ -505,7 +516,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_phash_quality" AND
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
-        add_dependencies(${test_name} setup_test_data)
+        add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()
 

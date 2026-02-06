@@ -41,7 +41,7 @@ protected:
         setupTestConfiguration();
 
         // Create test database
-        db_path_ = "../tests/test_data/databases/test_media_processor.sqlite";
+        db_path_ = (std::filesystem::path(MediaDedup::Test::TestUtils::getTestDataPath()) / "databases" / "test_media_processor.sqlite").string();
 
         // Ensure the directory exists
         std::filesystem::path db_dir = std::filesystem::path(db_path_).parent_path();
@@ -318,7 +318,7 @@ protected:
     void SetUp() override
     {
         // Create test database
-        std::string db_path = "../tests/test_data/databases/test_image_processor.sqlite";
+        std::string db_path = (std::filesystem::path(MediaDedup::Test::TestUtils::getTestDataPath()) / "databases" / "test_image_processor.sqlite").string();
         std::remove(db_path.c_str());
         database_manager_ = std::make_shared<DatabaseManager>(db_path);
         ASSERT_TRUE(database_manager_->initialize());

@@ -22,6 +22,7 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 
 namespace MediaDedup
 {
@@ -88,8 +89,12 @@ namespace MediaDedup
 
         try
         {
-            // Initialize configuration
-            config_manager_ = std::make_shared<UnifiedObservableConfigManager>("config/config.yaml");
+            // Resolve config path: use CWD-relative first, then try project-relative when run from repo root (e.g. vurio/)
+            std::string config_path = "config/config.yaml";
+            if (!std::filesystem::exists(config_path) && std::filesystem::exists("dedup_server/config/config.yaml"))
+                config_path = "dedup_server/config/config.yaml";
+            logger_.information("Using config file: " + config_path);
+            config_manager_ = std::make_shared<UnifiedObservableConfigManager>(config_path);
             ServerInitializer initializer(config_manager_);
 
             if (!initializer.initializeConfiguration())
@@ -406,7 +411,7 @@ namespace MediaDedup
     void MediaDedupServer::logStartupInfo()
     {
         logger_.information("=== Media Deduplication Server Started ===");
-        logger_.information("Configuration file: config/config.yaml");
+        logger_.information("Configuration file: " + config_manager_->getConfigFilePath());
         logger_.information("Database path: " + database_path_);
         logger_.information("Web server: " + server_host_ + ":" + std::to_string(server_port_));
         logger_.information("API Docs: http://" + server_host_ + ":" + std::to_string(server_port_) + "/ (Swagger UI)");
