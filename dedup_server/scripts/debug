@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Debug script for Media Dedup Server
+# This script helps with debugging by setting up the environment and running the server
+
+set -e
+
+echo "🔧 Setting up debug environment..."
+
+# Ensure we're in the project root
+cd "$(dirname "$0")"
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
+
+# Check if debug build exists
+if [ ! -f "build/bin/media_dedup_server" ]; then
+    echo "❌ Debug build not found. Building debug version..."
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+    make -j$(nproc)
+    cd ..
+fi
+
+echo "🚀 Starting Media Dedup Server in debug mode..."
+echo "📁 Working directory: $(pwd)"
+echo "📝 Logs will be written to: logs/"
+echo "🔍 Use Ctrl+C to stop the server"
+echo ""
+
+# Set environment variables for debugging
+export POCO_LOG_LEVEL=debug
+export POCO_LOG_FILE=logs/server_debug.log
+
+# Run the server with debug configuration
+exec ./build/bin/media_dedup_server

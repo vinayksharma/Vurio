@@ -1,0 +1,13 @@
+server.max_connections: 100
+server.port: 8080
+server.timeout: 30
+validation.strict: true
+logging.enable_console: true
+server.host: localhost
+logging.level: info
+file_monitoring.enabled: true
+debug.verbose: false
+logging.enable_file: false
+validation.enabled: true
+debug.enabled: false
+file_monitoring.interval: 1000

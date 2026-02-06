@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Media Dedup Server",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/media_dedup_server",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "POCO_LOG_LEVEL",
+                    "value": "debug"
+                }
+            ],
+            "externalConsole": false,
+            "preLaunchTask": "Debug Build",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "sourceMap": {
+                "${workspaceFolder}": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Attach to Media Dedup Server",
+            "type": "lldb",
+            "request": "attach",
+            "program": "${workspaceFolder}/build/bin/media_dedup_server",
+            "pid": "${command:pickProcess}",
+            "stopAtEntry": false
+        }
+    ]
+}
