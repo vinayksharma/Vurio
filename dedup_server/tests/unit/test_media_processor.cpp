@@ -25,9 +25,11 @@ class MediaProcessorTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        // Create a test configuration manager
+        // Create a test configuration manager (path relative to build dir)
+        std::string test_data = MediaDedup::Test::TestUtils::getTestDataPath();
+        std::string config_path = (std::filesystem::path(test_data) / "test_media_processor.yaml").string();
         ConfigManagerConfig config;
-        config.config_file_path = "../tests/test_data/test_media_processor.yaml";
+        config.config_file_path = config_path;
         config.enable_file_monitoring = false;
         config.emit_file_change_events = false;
         config.emit_programmatic_events = false;
@@ -70,16 +72,15 @@ protected:
         media_processor_ = std::make_unique<MediaProcessor>(config_manager_, database_manager_, thread_pool_manager_);
         ASSERT_TRUE(media_processor_->initialize());
 
-        // Ensure test files exist
+        // Ensure test files exist (use build-relative test_data path)
+        std::filesystem::path test_image = std::filesystem::path(test_data) / "pictures" / "testset" / "test.jpg";
+        if (!std::filesystem::exists(test_image))
+            GTEST_SKIP() << "Test image missing: " << test_image.string() << " (add tests/test_data or run copy_test_data)";
         std::filesystem::create_directories("/tmp/test_media_processor_files");
         if (!std::filesystem::exists("/tmp/test_media_processor_files/image1.jpg"))
-        {
-            std::filesystem::copy_file("../tests/test_data/pictures/testset/test.jpg", "/tmp/test_media_processor_files/image1.jpg");
-        }
+            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image1.jpg");
         if (!std::filesystem::exists("/tmp/test_media_processor_files/image2.png"))
-        {
-            std::filesystem::copy_file("../tests/test_data/pictures/testset/test.jpg", "/tmp/test_media_processor_files/image2.png");
-        }
+            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image2.png");
     }
 
     void TearDown() override
@@ -323,9 +324,11 @@ protected:
         database_manager_ = std::make_shared<DatabaseManager>(db_path);
         ASSERT_TRUE(database_manager_->initialize());
 
-        // Create a minimal config manager for testing
+        // Create a minimal config manager for testing (path relative to build dir)
+        std::string test_data = MediaDedup::Test::TestUtils::getTestDataPath();
+        std::string config_path = (std::filesystem::path(test_data) / "test_image_processor.yaml").string();
         ConfigManagerConfig config;
-        config.config_file_path = "../tests/test_data/test_image_processor.yaml";
+        config.config_file_path = config_path;
         config.enable_file_monitoring = false;
         config.emit_file_change_events = false;
         config.emit_programmatic_events = false;

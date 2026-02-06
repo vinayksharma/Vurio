@@ -11,13 +11,21 @@ namespace MediaDedup
     namespace Test
     {
         static std::string testDbPath(const std::string& name) {
-            return (std::filesystem::path(TestUtils::getTestDataPath()) / "databases" / name).string();
+            std::filesystem::path dir = std::filesystem::path(TestUtils::getTestDataPath()) / "databases" / "processing_errors_ops";
+            std::filesystem::create_directories(dir);
+            return (dir / name).string();
+        }
+
+        static void removeDbAndWal(const std::string& db_path) {
+            std::remove(db_path.c_str());
+            std::remove((db_path + "-shm").c_str());
+            std::remove((db_path + "-wal").c_str());
         }
 
         TEST(ProcessingErrorsOpsTest, EnsureTableCreation)
         {
             std::string db_path = testDbPath("test_processing_errors.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
@@ -31,7 +39,7 @@ namespace MediaDedup
         TEST(ProcessingErrorsOpsTest, InsertErrorBasic)
         {
             std::string db_path = testDbPath("test_processing_errors_insert.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
@@ -52,7 +60,7 @@ namespace MediaDedup
         TEST(ProcessingErrorsOpsTest, InsertMultipleErrors)
         {
             std::string db_path = testDbPath("test_processing_errors_multiple.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
@@ -76,7 +84,7 @@ namespace MediaDedup
         TEST(ProcessingErrorsOpsTest, InsertErrorAllModes)
         {
             std::string db_path = testDbPath("test_processing_errors_modes.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
@@ -96,7 +104,7 @@ namespace MediaDedup
         TEST(ProcessingErrorsOpsTest, InsertErrorWithEmptySource)
         {
             std::string db_path = testDbPath("test_processing_errors_empty_source.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
@@ -118,7 +126,7 @@ namespace MediaDedup
         TEST(ProcessingErrorsOpsTest, InsertErrorVariousErrorCodes)
         {
             std::string db_path = testDbPath("test_processing_errors_codes.sqlite");
-            std::remove(db_path.c_str());
+            removeDbAndWal(db_path);
 
             DatabaseManager dbm(db_path);
             ASSERT_TRUE(dbm.initialize());
