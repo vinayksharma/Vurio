@@ -459,7 +459,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
 
     const perfectMatches = displayedMembers
       .map((m, idx) => ({ member: m, index: idx }))
-      .filter(({ member, index }) => Math.round((member.similarity_score ?? 0) * 100) / 100 === 1 && index > 0);
+      .filter(({ member, index }) => Math.round((member.similarity_score ?? 0) * 1000) / 1000 === 1 && index > 0);
 
     if (perfectMatches.length === 0) {
       setBracketPosition(null);
@@ -490,7 +490,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
 
   const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
     const isFirst = memberIndex === 0;
-    const hasPerfectMatch = Math.round((member.similarity_score ?? 0) * 100) / 100 === 1 && !isFirst; // Don't show on key image
+    const hasPerfectMatch = Math.round((member.similarity_score ?? 0) * 1000) / 1000 === 1 && !isFirst; // Don't show on key image
     const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
     const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score?.toFixed(3) || 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}\n\nClick to copy path to clipboard`;
 
