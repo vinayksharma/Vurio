@@ -3,6 +3,31 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEDUP_SERVER_DIR="$APP_DIR/dedup_server"
+
+# Check if dedup server is running (same check as dedup_server/scripts/stopall)
+dedup_server_running() {
+  [[ -n "$(pgrep -f media_dedup_server 2>/dev/null)" ]]
+}
+
+# If no dedup server instance is running, start it in a new terminal (so it stays up)
+if ! dedup_server_running; then
+  echo "No Media Deduplication Server running; starting dedup_server in a new terminal..."
+  START_IN_TERMINAL="$DEDUP_SERVER_DIR/scripts/start_in_terminal.sh"
+  if [[ -x "$START_IN_TERMINAL" ]]; then
+    "$START_IN_TERMINAL"
+    sleep 2
+    if dedup_server_running; then
+      echo "Dedup server started in new terminal."
+    else
+      echo "A new terminal was opened for the dedup server. It may still be starting."
+    fi
+  else
+    echo "Warning: $START_IN_TERMINAL not found or not executable. Continuing anyway."
+  fi
+else
+  echo "Dedup server already running."
+fi
 
 echo "Stopping current instance..."
 # Find and kill Electron processes for this app
