@@ -40,13 +40,41 @@ const MediaPanel: React.FC<MediaPanelProps> = ({ isActive }) => {
     }
   };
 
+  const getElectronAPI = (): typeof window.electronAPI | null => {
+    if (window.electronAPI) return window.electronAPI;
+    const vurio = (window as unknown as { vurioElectron?: typeof window.electronAPI }).vurioElectron;
+    if (vurio) return vurio;
+    // Fallback when contextIsolation: false and nodeIntegration: true
+    if (typeof (window as any).require === 'function') {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        return {
+          selectDirectory: (p?: string) => ipcRenderer.invoke('dialog:selectDirectory', p),
+          getHomeDir: () => (window as any).require('os').homedir(),
+          revealLog: (p: string) => ipcRenderer.invoke('utils:revealLog', p),
+          toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools'),
+          exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog'),
+        };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
   const browseDirectory = async () => {
-    if (!window.electronAPI) {
-      setMessage('Directory selection is only available in Electron');
+    const electronAPI = getElectronAPI();
+    if (!electronAPI) {
+      const check = (window as { __ELECTRON_API_CHECK__?: boolean }).__ELECTRON_API_CHECK__;
+      setMessage(
+        check === false
+          ? 'Preload did not expose electronAPI. Run from terminal and check console. Rebuild: bun run bun:build'
+          : 'Directory selection only available in Electron. If using Electron, open DevTools (View > Toggle DevTools) and check window.electronAPI'
+      );
       return;
     }
     try {
-      const selected = await window.electronAPI.selectDirectory();
+      const selected = await electronAPI.selectDirectory();
       if (selected) {
         setDirectoryPath(selected);
         setMessage('');
@@ -93,8 +121,8 @@ const MediaPanel: React.FC<MediaPanelProps> = ({ isActive }) => {
 
   const handleRemap = async (oldPath: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent selecting the location when clicking Remap
-    
-    if (!window.electronAPI) {
+    const electronAPI = getElectronAPI();
+    if (!electronAPI) {
       setMessage('Directory selection is only available in Electron');
       return;
     }
@@ -108,7 +136,7 @@ const MediaPanel: React.FC<MediaPanelProps> = ({ isActive }) => {
 
     try {
       // Open directory dialog to select new path
-      const newPath = await window.electronAPI.selectDirectory(oldPath);
+      const newPath = await electronAPI.selectDirectory(oldPath);
       if (!newPath) {
         setIsRemapping(false);
         setMessage('No directory selected');

@@ -2,17 +2,17 @@
 /**
  * Build script for Electron main/preload files
  * Uses Bun bundler if available, falls back to esbuild
+ * Preload: copied as-is (CommonJS) - Bun/ESM bundles can fail to expose in Electron preload context
  */
 
 import { spawn } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const DIST_DIR = 'dist-electron';
-
-// Ensure dist directory exists
-if (!existsSync(DIST_DIR)) {
-  mkdirSync(DIST_DIR, { recursive: true });
-}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const DIST_DIR = path.join(ROOT, 'dist-electron');
 
 /**
  * Check if bun is available
@@ -48,12 +48,9 @@ async function buildWithBun() {
     '--target', 'node',
     '--packages', 'external'
   ]);
-  await run('bun', [
-    'build', 'electron/preload.ts',
-    '--outdir', DIST_DIR,
-    '--target', 'node',
-    '--packages', 'external'
-  ]);
+  // Preload: copy unbundled CJS - Bun ESM bundle fails to expose contextBridge in Electron preload
+  copyFileSync(path.join(ROOT, 'electron', 'preload.cjs'), path.join(DIST_DIR, 'preload.js'));
+  console.log('Copied electron/preload.cjs -> dist-electron/preload.js');
 }
 
 async function buildWithEsbuild() {
@@ -62,16 +59,12 @@ async function buildWithEsbuild() {
     'esbuild', 'electron/main.ts',
     '--bundle',
     '--platform=node',
-    `--outfile=${DIST_DIR}/main.js`,
+    `--outfile=${path.join(DIST_DIR, 'main.js')}`,
     '--external:electron'
   ]);
-  await run('npx', [
-    'esbuild', 'electron/preload.ts',
-    '--bundle',
-    '--platform=node',
-    `--outfile=${DIST_DIR}/preload.js`,
-    '--external:electron'
-  ]);
+  // Preload: copy unbundled CJS
+  copyFileSync(path.join(ROOT, 'electron', 'preload.cjs'), path.join(DIST_DIR, 'preload.js'));
+  console.log('Copied electron/preload.cjs -> dist-electron/preload.js');
 }
 
 async function main() {

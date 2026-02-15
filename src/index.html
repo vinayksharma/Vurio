@@ -2,11 +2,14 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; connect-src 'self' file: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' file:" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VURIO</title>
   </head>
   <body>
+    <script>
+      (function(){var w=window;w.__ELECTRON_API_CHECK__=!!w.electronAPI;console.log('[Vurio] electronAPI at load:',!!w.electronAPI);})();
+    </script>
     <div id="root"></div>
     <script type="module" src="/main.tsx"></script>
   </body>
