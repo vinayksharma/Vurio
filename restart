@@ -40,15 +40,11 @@ sleep 1
 echo "Building application..."
 cd "$APP_DIR"
 
-# Check if bun is available
+# Build and run Electron
 if command -v bun &> /dev/null; then
   echo "Using Bun..."
-  bun run bun:build
-  echo "Starting application..."
-  NODE_ENV=production bun run electron
+  bun run bun:build && NODE_ENV=production bun run electron
 else
   echo "Using npm..."
-  npm run build
-  echo "Starting application..."
-  NODE_ENV=production npm run electron
+  npm run build && NODE_ENV=production npm run electron
 fi

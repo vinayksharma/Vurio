@@ -664,7 +664,8 @@ body {
   /* Using 8px grid: 32px (16-24px for sections per HIG, using 32px for larger spacing) */
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .content-panel.active {
