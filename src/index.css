@@ -1221,7 +1221,9 @@ button:disabled {
 }
 
 .settings-panel .action-buttons button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 110px;
+  white-space: nowrap;
   padding: 3px 12px;
   /* default 3px vertical padding, consistent width */
 }
