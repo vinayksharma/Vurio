@@ -25,6 +25,15 @@ namespace MediaDedup
             cfg.input_size = config_manager->getPropertyValue<int>("media.image.onnx.inputSize", cfg.input_size);
             cfg.embedding_dim = config_manager->getPropertyValue<int>("media.image.embeddingDim", cfg.embedding_dim);
             cfg.model = config_manager->getPropertyValue<std::string>("media.image.onnx.modelPath", cfg.model);
+            // Resolve relative model path against config's project root (same as DB) so it works from any CWD
+            std::filesystem::path model_p(cfg.model);
+            if (!model_p.is_absolute())
+            {
+                std::filesystem::path config_path(config_manager->getConfigFilePath());
+                std::filesystem::path abs_config = std::filesystem::absolute(config_path);
+                std::filesystem::path project_root = abs_config.parent_path().parent_path();
+                cfg.model = (project_root / model_p).lexically_normal().string();
+            }
             Poco::Logger::get("QualityPipeline").debug("Loaded config: input=%d, dim=%d, model=%s", cfg.input_size, cfg.embedding_dim, cfg.model);
         }
         catch (const std::exception &e)

@@ -29,9 +29,11 @@ def download_clip_onnx_model():
         print(f"Model already exists and looks valid: {model_path} (skipping download)")
         return True
 
-    # Server needs an IMAGE-ONLY CLIP encoder (input: image [1,3,224,224], output: embedding).
-    # Full CLIP models (with input_ids) will not work. Prefer a *_visual.onnx or image-encoder export.
+    # Server supports both image-only and full CLIP ONNX (adapter feeds image + optional dummy text
+    # inputs and uses the first output = image embeddings). Use the same source as setup_clip_image_encoder.sh
+    # so downloaded models match the known-working export (sayantan47 full CLIP ~578MB).
     model_urls = [
+        "https://huggingface.co/sayantan47/clip-vit-b32-onnx/resolve/main/onnx/model.onnx",
         "https://github.com/onnx/models/raw/main/vision/classification/clip/model/clip-vit-base-patch32-224.onnx",
         "https://huggingface.co/onnx/clip-vit-base-patch32/resolve/main/model.onnx",
         "https://github.com/microsoft/onnxruntime-extensions/raw/main/test/data/clip-vit-base-patch32.onnx",
