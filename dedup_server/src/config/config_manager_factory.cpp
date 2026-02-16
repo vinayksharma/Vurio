@@ -353,7 +353,7 @@ namespace MediaDedup
         manager->createProperty<int>("media.image.retry.maxAttempts", 2, "Max retry attempts (not counting first try)");
         manager->createProperty<int>("media.image.retry.baseDelayMs", 500, "Base delay for exponential backoff in ms");
 
-        manager->createProperty<std::string>("media.image.onnx.modelPath", "models/clip-RN50.onnx", "ONNX model path for image processing");
+        manager->createProperty<std::string>("media.image.onnx.modelPath", "models/clip-image-vitb32.onnx", "ONNX model path for image processing");
         manager->createProperty<int>("media.image.onnx.inputSize", 224, "ONNX input size for image processing");
         manager->createProperty<bool>("media.image.onnx.sessionCache.enabled", true, "Enable ONNX session caching");
         manager->createProperty<int>("media.image.onnx.sessionCache.maxSessions", 4, "Max ONNX sessions to cache");
