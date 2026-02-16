@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchDuplicateGroups } from '../utils/api';
-import { useServerStatusStore } from '../stores';
+import { useServerStatusStore, useUIStore } from '../stores';
 import type { DuplicateGroup } from '../types';
 import DuplicateGroupControl from './DuplicateGroupControl';
 import { remapEventEmitter } from '../utils/remapEvents';
@@ -27,6 +27,7 @@ interface ScrollTestStats {
 
 const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const { isOnline } = useServerStatusStore();
+  const setActivePanel = useUIStore((state) => state.setActivePanel);
   const [totalGroups, setTotalGroups] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
@@ -906,13 +907,29 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
   }, [isLoading, isActive, totalGroups]);
 
-  // Calculate total scroll height
-  const totalHeight = totalGroups > 0 ? totalGroups * ITEM_HEIGHT - GAP : 0;
+  // Calculate total scroll height (min 200px when empty so empty-state is visible)
+  const totalHeight = totalGroups > 0 ? totalGroups * ITEM_HEIGHT - GAP : 200;
 
   // Render items in the visible range with absolute positioning
   // Memoize to prevent unnecessary re-renders
   const renderItems = useCallback(() => {
     if (totalGroups === 0) {
+      if (isOnline && !isLoading) {
+        return (
+          <div className="card placeholder duplicates-empty-state" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 }}>
+            <p style={{ margin: 0, color: 'var(--muted)', textAlign: 'center' }}>
+              No duplicates found yet. Register a media location to start scanning.
+            </p>
+            <button
+              className="primary"
+              onClick={() => setActivePanel('settings')}
+              style={{ minWidth: 180 }}
+            >
+              Add Media Location
+            </button>
+          </div>
+        );
+      }
       return (
         <div className="card placeholder" style={{ position: 'relative' }}>
           {isLoading ? 'Loading...' : 'Duplicate cards will appear here…'}
@@ -968,7 +985,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
 
     return items;
-  }, [visibleRange, totalGroups, isLoading, cacheVersion, thumbnailReloadKey]);
+  }, [visibleRange, totalGroups, isLoading, isOnline, cacheVersion, thumbnailReloadKey, setActivePanel]);
 
   if (!isOnline) {
     return (

@@ -7,10 +7,8 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ activePanel, onPanelChange }) => {
   const navItems: Array<{ id: PanelType; icon: string; label: string }> = [
-    { id: 'media', icon: '📁', label: 'Media Locations' },
     { id: 'duplicates', icon: '🫂', label: 'Duplicates' },
     { id: 'settings', icon: '⚙️', label: 'Settings' },
-    { id: 'advanced', icon: '🧰', label: 'Advanced' },
   ];
 
   return (

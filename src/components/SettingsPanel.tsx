@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fetchConfiguration, saveConfiguration, reloadConfiguration } from '../utils/api';
 import type { Configuration } from '../types';
+import MediaLocationsSection from './MediaLocationsSection';
+import AdvancedSection from './AdvancedSection';
 
 interface SettingsPanelProps {
   isActive: boolean;
@@ -12,6 +14,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
   const [modifiedProperties, setModifiedProperties] = useState<Set<string>>(new Set());
   const [validationErrors, setValidationErrors] = useState<Map<string, string>>(new Map());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [configSectionCollapsed, setConfigSectionCollapsed] = useState(false);
 
   useEffect(() => {
     if (isActive) {
@@ -173,9 +176,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
             <p className="panel-description">Adjust server configuration and manage how VURIO behaves.</p>
           </div>
         </header>
+        <MediaLocationsSection />
         <section className="panel settings-panel">
-          <div className="config-loading">Loading configuration...</div>
+          <h2 className="panel-title">
+            <span>Configuration</span>
+            <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
+              {configSectionCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </h2>
+          <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
+            <div className="config-loading">Loading configuration...</div>
+          </div>
         </section>
+        <AdvancedSection />
       </section>
     );
   }
@@ -189,9 +202,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
             <p className="panel-description">Adjust server configuration and manage how VURIO behaves.</p>
           </div>
         </header>
+        <MediaLocationsSection />
         <section className="panel settings-panel">
-          <div className="config-loading">Failed to load configuration</div>
+          <h2 className="panel-title">
+            <span>Configuration</span>
+            <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
+              {configSectionCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </h2>
+          <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
+            <div className="config-loading">Failed to load configuration</div>
+          </div>
         </section>
+        <AdvancedSection />
       </section>
     );
   }
@@ -208,10 +231,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
           <p className="panel-description">Adjust server configuration and manage how Dedup Desktop behaves.</p>
         </div>
       </header>
+      <MediaLocationsSection />
       <section className="panel settings-panel">
-        <h2>Configuration</h2>
-        <p className="helper-text">Load, review, and update the server configuration file from here.</p>
-        <div className="action-row">
+        <h2 className="panel-title">
+          <span>Configuration</span>
+          <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
+            {configSectionCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+        </h2>
+        <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
+          <p className="helper-text">Load, review, and update the server configuration file from here.</p>
+          <div className="action-row">
           <div className="action-details">
             <h3>Server Configuration</h3>
             <p>Review and edit advanced options. Changes are validated before saving.</p>
@@ -281,7 +311,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
             ))}
           </div>
         </div>
+        </div>
       </section>
+      <AdvancedSection />
     </section>
   );
 };

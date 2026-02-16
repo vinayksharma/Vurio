@@ -430,6 +430,16 @@ namespace MediaDedup
         manager->createProperty<bool>("media.images.exr", true, "Enable EXR image processing");
         manager->createProperty<bool>("media.images.hdr", true, "Enable HDR image processing");
 
+        // Transcode to JPEG before embedding (for formats OpenCV may not read reliably)
+        manager->createProperty<bool>("media.images.bmp.transcode", true, "Transcode BMP to JPEG before embedding");
+        manager->createProperty<bool>("media.images.dib.transcode", true, "Transcode DIB to JPEG before embedding");
+        manager->createProperty<bool>("media.images.tif.transcode", true, "Transcode TIFF to JPEG before embedding");
+        manager->createProperty<bool>("media.images.tiff.transcode", true, "Transcode TIFF to JPEG before embedding");
+        manager->createProperty<bool>("media.images.gif.transcode", true, "Transcode GIF to JPEG before embedding");
+        manager->createProperty<bool>("media.images.jp2.transcode", true, "Transcode JPEG 2000 to JPEG before embedding");
+        manager->createProperty<bool>("media.images.exr.transcode", true, "Transcode EXR to JPEG before embedding");
+        manager->createProperty<bool>("media.images.hdr.transcode", true, "Transcode HDR to JPEG before embedding");
+
         // Video
         manager->createProperty<bool>("media.video.mp4", true, "Enable MP4 video processing");
         manager->createProperty<bool>("media.video.avi", true, "Enable AVI video processing");

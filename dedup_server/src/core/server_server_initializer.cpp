@@ -298,6 +298,16 @@ namespace MediaDedup
                                             [fm = files_manager_]()
                                             { fm->runOnce(); });
 
+            // Run an initial scan on startup so scan count reflects current directories without waiting for first interval
+            if (scheduler_service_->triggerJob("fileScan"))
+            {
+                logger.information("Triggered initial file scan on startup");
+            }
+            else
+            {
+                logger.debug("Initial file scan trigger skipped (job already running or not ready)");
+            }
+
             // Clear any processing flags from interrupted sessions before starting media processing
             logger.information("Clearing processing flags from any interrupted sessions...");
             int cleared_count = media_processor_->clearProcessingFlags();

@@ -64,12 +64,37 @@ namespace MediaDedup
         static std::string GenerateUniqueFilename(const std::string &original_path, const std::string &extension, const std::string &base_directory = "");
 
         /**
-         * @brief Check if a file needs transcoding based on its extension
+         * @brief Check if a file needs transcoding based on its extension (RAW only)
          *
          * @param file_path The path to the file to check
          * @return true if the file needs transcoding, false otherwise
          */
         static bool NeedsTranscoding(const std::string &file_path);
+
+        /**
+         * @brief Check if a non-RAW file should be transcoded to JPEG for embedding.
+         * Uses config media.images.<extension>.transcode (e.g. media.images.bmp.transcode).
+         * When true, ImageMagick converts to JPEG before the ONNX pipeline so OpenCV reads reliably.
+         *
+         * @param file_path The path to the file to check
+         * @param config_manager Config manager to read media.images.<ext>.transcode (nullable: if null, returns false)
+         * @return true if the file should be transcoded to JPEG before embedding
+         */
+        static bool NeedsTranscodingForEmbedding(const std::string &file_path,
+                                                 std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+
+        /**
+         * @brief Transcode a non-RAW image file to JPEG and save to disk (no RAW validation).
+         * Use for formats like BMP that OpenCV may not read reliably.
+         *
+         * @param source_file_path Path to the image file
+         * @param transcoded_file_path Output path for the JPEG file
+         * @param base_directory Directory for the output file
+         * @return true if successful
+         */
+        static bool TranscodeNonRawToFile(const std::string &source_file_path,
+                                          std::string &transcoded_file_path,
+                                          const std::string &base_directory = "");
 
         /**
          * @brief Validate that a transcoded file can be read by OpenCV

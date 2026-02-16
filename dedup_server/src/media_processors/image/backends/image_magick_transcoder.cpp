@@ -128,11 +128,11 @@ namespace MediaDedup
 
         if (!std::filesystem::exists(file_path))
         {
-            logger_.error("Source file does not exist: %s", file_path);
+            logger_.error("Source file does not exist: %s", file_path.c_str());
             return false;
         }
 
-        logger_.debug("Starting transcoding for file: %s", file_path);
+        logger_.debug("Starting transcoding for file: %s", file_path.c_str());
 
         try
         {
@@ -141,27 +141,27 @@ namespace MediaDedup
             // Read the new file (ImageMagick will automatically clear previous data)
             try
             {
-                logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path);
+                logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path.c_str());
                 image_.read(file_path);
                 logger_.debug("Successfully read image file: %s (size: %zux%zu, depth: %zu)",
                               file_path, image_.columns(), image_.rows(), image_.depth());
             }
             catch (const Magick::Exception &e)
             {
-                logger_.error("Failed to read image file %s: %s [MagickException]", file_path, e.what());
+                logger_.error("Failed to read image file %s: %s [MagickException]", file_path.c_str(), e.what());
                 logger_.error("Possible causes: insufficient memory, unsupported RAW format, or corrupted file");
                 jpeg_data.clear();
                 return false;
             }
             catch (const std::exception &e)
             {
-                logger_.error("Failed to read image file %s (std exception): %s", file_path, e.what());
+                logger_.error("Failed to read image file %s (std exception): %s", file_path.c_str(), e.what());
                 jpeg_data.clear();
                 return false;
             }
             catch (...)
             {
-                logger_.error("Failed to read image file %s (unknown exception)", file_path);
+                logger_.error("Failed to read image file %s (unknown exception)", file_path.c_str());
                 jpeg_data.clear();
                 return false;
             }
@@ -169,12 +169,12 @@ namespace MediaDedup
             // Validate image properties
             if (image_.columns() == 0 || image_.rows() == 0)
             {
-                logger_.error("Invalid image dimensions for %s: %zux%zu", file_path, image_.columns(), image_.rows());
+                logger_.error("Invalid image dimensions for %s: %llux%llu", file_path.c_str(), static_cast<unsigned long long>(image_.columns()), static_cast<unsigned long long>(image_.rows()));
                 return false;
             }
 
-            logger_.debug("Image properties - size: %zux%zu, depth: %zu, colorspace: %d",
-                          image_.columns(), image_.rows(), image_.depth(), image_.colorSpace());
+            logger_.debug("Image properties - size: %llux%llu, depth: %llu, colorspace: %d",
+                          static_cast<unsigned long long>(image_.columns()), static_cast<unsigned long long>(image_.rows()), static_cast<unsigned long long>(image_.depth()), static_cast<int>(image_.colorSpace()));
 
             // Configure image properties for optimal transcoding
             configureImageProperties(image_);
@@ -189,7 +189,7 @@ namespace MediaDedup
             // Validate blob data
             if (blob.length() == 0)
             {
-                logger_.error("Transcoding produced empty data for file: %s", file_path);
+                logger_.error("Transcoding produced empty data for file: %s", file_path.c_str());
                 return false;
             }
 
@@ -203,19 +203,19 @@ namespace MediaDedup
         }
         catch (const Magick::Exception &e)
         {
-            logger_.error("Failed to transcode image %s: %s", file_path, e.what());
+            logger_.error("Failed to transcode image %s: %s", file_path.c_str(), e.what());
             jpeg_data.clear();
             return false;
         }
         catch (const std::exception &e)
         {
-            logger_.error("Failed to transcode image %s (std exception): %s", file_path, e.what());
+            logger_.error("Failed to transcode image %s (std exception): %s", file_path.c_str(), e.what());
             jpeg_data.clear();
             return false;
         }
         catch (...)
         {
-            logger_.error("Failed to transcode image %s (unknown exception)", file_path);
+            logger_.error("Failed to transcode image %s (unknown exception)", file_path.c_str());
             jpeg_data.clear();
             return false;
         }

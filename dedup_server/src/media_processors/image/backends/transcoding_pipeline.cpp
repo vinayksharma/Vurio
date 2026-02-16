@@ -101,6 +101,105 @@ namespace MediaDedup
         return RawFileDetector::IsRawFile(file_path);
     }
 
+    bool TranscodingPipeline::NeedsTranscodingForEmbedding(const std::string &file_path,
+                                                             std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    {
+        if (file_path.empty() || !config_manager)
+            return false;
+        std::filesystem::path p(file_path);
+        std::string ext = p.extension().string();
+        if (ext.empty())
+            return false;
+        if (ext[0] == '.')
+            ext.erase(0, 1);
+        for (char &c : ext)
+            c = static_cast<char>(::tolower(c));
+        // Alias jpx/j2k to jp2 for config lookup (same format family)
+        const std::string config_ext = (ext == "jpx" || ext == "j2k") ? "jp2" : ext;
+        const std::string key = "media.images." + config_ext + ".transcode";
+        return config_manager->getPropertyValue<bool>(key, false);
+    }
+
+    bool TranscodingPipeline::TranscodeNonRawToFile(const std::string &source_file_path,
+                                                     std::string &transcoded_file_path,
+                                                     const std::string &base_directory)
+    {
+        Poco::Logger &logger = Poco::Logger::get("TranscodingPipeline");
+
+        if (source_file_path.empty())
+        {
+            logger.error("TranscodeNonRawToFile: source path is empty");
+            return false;
+        }
+
+        if (!std::filesystem::exists(source_file_path))
+        {
+            logger.error("TranscodeNonRawToFile: source file does not exist: %s", source_file_path.c_str());
+            return false;
+        }
+
+        auto file_size = std::filesystem::file_size(source_file_path);
+        if (file_size == 0)
+        {
+            logger.error("TranscodeNonRawToFile: source file is empty: %s", source_file_path.c_str());
+            return false;
+        }
+
+        logger.information("Transcoding non-RAW image to JPEG for embedding: %s", source_file_path.c_str());
+
+        std::vector<std::uint8_t> jpeg_data;
+        jpeg_data.reserve(static_cast<size_t>(file_size / 2)); // heuristic
+
+        if (!ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data))
+        {
+            logger.error("TranscodeNonRawToFile: ImageMagick failed for %s", source_file_path.c_str());
+            return false;
+        }
+
+        if (jpeg_data.empty())
+        {
+            logger.error("TranscodeNonRawToFile: transcoding produced empty data for %s", source_file_path.c_str());
+            return false;
+        }
+
+        transcoded_file_path = GenerateUniqueFilename(source_file_path, ".jpg", base_directory);
+        if (transcoded_file_path.empty())
+        {
+            logger.error("TranscodeNonRawToFile: failed to generate output path");
+            return false;
+        }
+
+        std::ofstream out_file(transcoded_file_path, std::ios::binary);
+        if (!out_file.is_open())
+        {
+            logger.error("TranscodeNonRawToFile: failed to create file: %s", transcoded_file_path.c_str());
+            return false;
+        }
+
+        out_file.write(reinterpret_cast<const char *>(jpeg_data.data()), jpeg_data.size());
+        size_t jpeg_size = jpeg_data.size();
+        jpeg_data.clear();
+        jpeg_data.shrink_to_fit();
+        out_file.close();
+
+        if (out_file.fail())
+        {
+            logger.error("TranscodeNonRawToFile: failed to write: %s", transcoded_file_path.c_str());
+            std::filesystem::remove(transcoded_file_path);
+            return false;
+        }
+
+        if (!ValidateTranscodedFile(transcoded_file_path))
+        {
+            logger.error("TranscodeNonRawToFile: validation failed for %s", transcoded_file_path.c_str());
+            std::filesystem::remove(transcoded_file_path);
+            return false;
+        }
+
+        logger.information("TranscodeNonRawToFile: %s -> %s (%zu bytes)", source_file_path.c_str(), transcoded_file_path.c_str(), jpeg_size);
+        return true;
+    }
+
     TranscodingConfig TranscodingPipeline::GetDefaultConfig()
     {
         TranscodingConfig config;

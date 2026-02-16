@@ -334,6 +334,28 @@ namespace MediaDedup
                                 return;
                             }
                         }
+                        else if (TranscodingPipeline::NeedsTranscodingForEmbedding(cached_path, config_manager))
+                        {
+                            // Non-RAW formats (e.g. BMP) that OpenCV may not read reliably:
+                            // transcode to JPEG via ImageMagick so the embedding pipeline gets a format it can read
+                            std::string transcoded_filename;
+                            std::string cache_directory = disk_cache->getCacheLocation();
+                            if (TranscodingPipeline::TranscodeNonRawToFile(cached_path, transcoded_filename, cache_directory))
+                            {
+                                processing_file_path = transcoded_filename;
+                                disk_cache->deleteFromCacheImmediately(cached_path);
+                                Poco::Logger::get("MediaProcessor").information("Transcoded image for embedding: %s -> %s", cached_path, transcoded_filename);
+                            }
+                            else
+                            {
+                                Poco::Logger::get("MediaProcessor").error("Failed to transcode image for embedding (e.g. ImageMagick failed): %s", cached_path);
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1,
+                                    "Failed to transcode image to JPEG for embedding (ImageMagick)", "ImageMagick");
+                                ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
+                                disk_cache->deleteFromCacheImmediately(cached_path);
+                                return;
+                            }
+                        }
 
                         // Mark file as in use
                         disk_cache->markFileInUse(processing_file_path);

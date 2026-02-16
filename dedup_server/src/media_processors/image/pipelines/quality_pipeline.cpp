@@ -43,9 +43,10 @@ namespace MediaDedup
 
             // Try ONNX embedding (will fail if runtime/model not available as per policy)
             std::vector<std::uint8_t> blob;
-            if (!OnnxAdapter::ComputeEmbedding(file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob))
+            std::string onnx_reason;
+            if (!OnnxAdapter::ComputeEmbedding(file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob, &onnx_reason))
             {
-                logger.warning("ONNX embedding failed for %s", file_path);
+                logger.warning("ONNX embedding failed for %s: %s", file_path.c_str(), onnx_reason.empty() ? "unknown" : onnx_reason.c_str());
                 return false;
             }
 
@@ -107,15 +108,16 @@ namespace MediaDedup
 
             // Try ONNX embedding (will fail if runtime/model not available as per policy)
             std::vector<std::uint8_t> blob;
-            bool onnx_success = OnnxAdapter::ComputeEmbedding(processing_file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob);
+            std::string onnx_reason;
+            bool onnx_success = OnnxAdapter::ComputeEmbedding(processing_file_path, cfg.input_size, cfg.model, cfg.embedding_dim, blob, &onnx_reason);
 
             if (!onnx_success)
             {
                 bool file_exists = std::filesystem::exists(processing_file_path);
-                logger.warning("ONNX embedding failed for %s (processing path: %s, file exists: %s)",
-                               original_file_path, processing_file_path, file_exists ? "yes" : "no");
-                std::string error_msg = "ONNX embedding computation failed for: " + processing_file_path +
-                                        " (file exists: " + (file_exists ? "yes" : "no") + ")";
+                logger.warning("ONNX embedding failed for %s (processing path: %s, file exists: %s, reason: %s)",
+                               original_file_path.c_str(), processing_file_path.c_str(), file_exists ? "yes" : "no", onnx_reason.empty() ? "unknown" : onnx_reason.c_str());
+                std::string error_msg = "ONNX embedding failed: " + (onnx_reason.empty() ? "unknown" : onnx_reason) +
+                                        " | file: " + processing_file_path + " (exists: " + (file_exists ? "yes" : "no") + ")";
                 ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, error_msg, "ONNX");
                 return false;
             }

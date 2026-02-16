@@ -111,7 +111,7 @@ export interface ConfigProperty {
   error?: string;
 }
 
-export type PanelType = 'media' | 'duplicates' | 'settings' | 'advanced';
+export type PanelType = 'duplicates' | 'settings';
 
 export interface ChangePathResponse {
   status: 'ok' | 'partial_success' | 'error';

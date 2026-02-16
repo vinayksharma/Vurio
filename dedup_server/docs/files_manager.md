@@ -209,13 +209,18 @@ Scheduling semantics:
 - SchedulerService reacts to config changes (jitter/backoff/drift and job intervals) without restart.
 - Shuts down cleanly with TPM draining on Ctrl+C/exit.
 
-## 14) Implementation Notes
+## 14) Scan vs Media Processing (network behavior)
+
+- **File scan (FilesManager / FileScanner)**: Uses `std::filesystem::directory_iterator` and metadata only (`symlink_status`, `last_write_time`, `file_size`). No file content is read or transferred. For network shares this requires only directory listings and stat-like calls—lightweight, no full-file copy.
+- **Media processing (MediaProcessor)**: Runs later in a separate pipeline. Uses `DiskCache::copyToCache()` to copy the full file from source (including network paths) into a local cache before ONNX/embedding work. Network traffic occurs here, not during scan.
+
+## 15) Implementation Notes
 
 - Relative path derivation is best-effort: when scanning directory `D`, compute `relative_path` as `path.lexically_relative(D)` if possible.
 - `file_metadata` JSON is versionable; include a `schemaVersion` key if future evolution is likely.
 - Network share detection can be stubbed initially on macOS/Linux and expanded later.
 
-## 15) Follow-ups (out of immediate scope)
+## 16) Follow-ups (out of immediate scope)
 
 - Deletion tracking (identify and mark deleted files efficiently) – revisit with perf profiling and possibly batched diffs.
 - Expose FilesManager status over Web API (e.g., last run time, counts).
