@@ -1,8 +1,6 @@
 import React from 'react';
-import MediaPanel from './MediaPanel';
 import DuplicatesPanel from './DuplicatesPanel';
 import SettingsPanel from './SettingsPanel';
-import AdvancedPanel from './AdvancedPanel';
 import StatusBar from './StatusBar';
 import StatusPopup from './StatusPopup';
 import type { PanelType } from '../types';
@@ -48,10 +46,8 @@ const ContentAreaControl: React.FC<ContentAreaControlProps> = ({
       )}
       <div className="content-area">
         <main className="app-main">
-          <MediaPanel isActive={activePanel === 'media'} />
           <DuplicatesPanel isActive={activePanel === 'duplicates'} />
           <SettingsPanel isActive={activePanel === 'settings'} />
-          <AdvancedPanel isActive={activePanel === 'advanced'} />
         </main>
         <StatusBar />
       </div>

@@ -171,9 +171,10 @@ namespace MediaDedup
         Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
         std::stringstream thread_id;
         thread_id << std::this_thread::get_id();
+        std::string thread_id_str = thread_id.str();
         logger.debug("Submitted task for type '%s', queue size: %u, file: %s, calling thread: %s",
-                     type, static_cast<unsigned int>(type_to_queue_[type].size()),
-                     file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id.str());
+                     type.c_str(), static_cast<unsigned int>(type_to_queue_[type].size()),
+                     file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id_str.c_str());
         schedule();
     }
 

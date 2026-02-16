@@ -132,7 +132,7 @@ namespace MediaDedup::Orchestration
         row.is_network_file = rec.isShareMapped;                      // best-effort
         row.location_key = filesService_->makeMediaLocationKey(root); // Full user_settings.key format
 
-        // Use database query instead of in-memory index lookup
+        // Use database query instead of in-memory index lookup (precheck)
         auto found = ScannedFilesOps::getByPath(*db_, rec.fullPath);
         const bool exists = found.has_value();
         bool significant_change = false;
@@ -188,6 +188,9 @@ namespace MediaDedup::Orchestration
                 significant_change = (found->file_metadata != row.file_metadata);
             }
         }
+
+        logger.trace("Precheck " + rec.fullPath + ": exists=" + (exists ? "yes" : "no") +
+                     ", significant_change=" + (significant_change ? "yes" : "no"));
 
         // Only reset processing status for new files or significant changes (like file size changes)
         if (!exists || significant_change)

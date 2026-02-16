@@ -16,7 +16,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activePanel: 'media',
+  activePanel: 'duplicates',
   sidebarSize: 260,
   sidebarHeight: undefined,
   isVertical: false,

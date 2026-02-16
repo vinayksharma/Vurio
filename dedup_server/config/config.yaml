@@ -54,7 +54,7 @@ tpm.types.image_processor.share: 1
 tpm.types.duplicate_finder.share: 1
 media.processor.intervalMs: 5000
 files.manager.useInMemoryIndex: false
-logging.level: debug
+logging.level: trace
 scheduler.backoff.jitterPercent: 10
 duplicates.threshold.max: 0.97999999999999998
 media.images.raw.raw: true
@@ -67,6 +67,15 @@ media.images.raw.mef: true
 media.audio.mp3: true
 media.images.tiff: true
 media.images.exr: true
+# Transcode to JPEG before embedding (formats OpenCV may not read reliably)
+media.images.bmp.transcode: true
+media.images.dib.transcode: true
+media.images.exr.transcode: true
+media.images.gif.transcode: true
+media.images.hdr.transcode: true
+media.images.jp2.transcode: true
+media.images.tif.transcode: true
+media.images.tiff.transcode: true
 media.images.raw.arw: true
 media.images.png: true
 server.name: Media Deduplication Server

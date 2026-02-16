@@ -160,19 +160,18 @@ if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     include_directories(${ONNXRUNTIME_INCLUDE_DIR})
     add_definitions(-DHAVE_ONNXRUNTIME)
     
-    # Model download targets
-    # Create models directory
+    # Model download: run only when models/clip-image-vitb32.onnx is missing (no re-download if it exists)
     file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/models)
-    
-    # Download placeholder models for testing
-    add_custom_target(download_models
-        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR} 
+    set(CLIP_VITB32_MODEL "${CMAKE_SOURCE_DIR}/models/clip-image-vitb32.onnx")
+    add_custom_command(
+        OUTPUT ${CLIP_VITB32_MODEL}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/scripts/download_placeholder_models.sh
-        COMMENT "Creating placeholder ONNX models for testing"
+        COMMENT "Ensuring ONNX models exist (download or placeholder; skipped if model already present)"
         VERBATIM
     )
-    
-    message(STATUS "ONNX models will be downloaded automatically during build")
+    add_custom_target(download_models DEPENDS ${CLIP_VITB32_MODEL})
+    message(STATUS "ONNX models will be downloaded automatically during build (only when missing)")
 else()
     message(STATUS "ONNX Runtime not found - QUALITY pipeline will remain stubbed")
 endif()
@@ -276,9 +275,9 @@ add_executable(media_dedup_server
 )
 
 # Add model download dependency if ONNX Runtime is available
+# Run download_models when building the server so models/ exists and is populated (real or placeholder)
 if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
-    # Real model already downloaded - no need for placeholder models
-    # add_dependencies(media_dedup_server download_models)
+    add_dependencies(media_dedup_server download_models)
 endif()
 
 # Link libraries

@@ -19,12 +19,14 @@ namespace MediaDedup
         // Shutdown the global session manager (call at cleanup)
         static void shutdownSessionManager();
         
-        // Returns false if ONNX Runtime is not available or model cannot be loaded
+        // Returns false if ONNX Runtime is not available or model cannot be loaded.
+        // If out_reason is non-null and the call fails, it is set to a brief diagnostic string.
         static bool ComputeEmbedding(const std::string &file_path,
                                      int input_size,
                                      const std::string &model_path,
                                      int embedding_dim,
-                                     std::vector<std::uint8_t> &out_blob);
+                                     std::vector<std::uint8_t> &out_blob,
+                                     std::string *out_reason = nullptr);
 
         // Memory-based version for processing image data directly from memory
         static bool ComputeEmbedding(const std::vector<std::uint8_t> &image_data,

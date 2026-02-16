@@ -10,45 +10,72 @@ import requests
 import tempfile
 from pathlib import Path
 
+def is_real_onnx(path):
+    """Return True if path exists and looks like a real ONNX model (not a placeholder)."""
+    if not os.path.isfile(path):
+        return False
+    size = os.path.getsize(path)
+    if size < 100_000:
+        return False
+    with open(path, "rb") as f:
+        head = f.read(20)
+    return b"ONNX placeholder" not in head
+
+
 def download_clip_onnx_model():
     """Download a real CLIP ONNX model."""
-    
-    # Try to download from a reliable source
+    model_path = "models/clip-image-vitb32.onnx"
+    if is_real_onnx(model_path):
+        print(f"Model already exists and looks valid: {model_path} (skipping download)")
+        return True
+
+    # Server needs an IMAGE-ONLY CLIP encoder (input: image [1,3,224,224], output: embedding).
+    # Full CLIP models (with input_ids) will not work. Prefer a *_visual.onnx or image-encoder export.
     model_urls = [
         "https://github.com/onnx/models/raw/main/vision/classification/clip/model/clip-vit-base-patch32-224.onnx",
         "https://huggingface.co/onnx/clip-vit-base-patch32/resolve/main/model.onnx",
-        "https://github.com/microsoft/onnxruntime-extensions/raw/main/test/data/clip-vit-base-patch32.onnx"
+        "https://github.com/microsoft/onnxruntime-extensions/raw/main/test/data/clip-vit-base-patch32.onnx",
     ]
-    
-    model_path = "models/clip-image-vitb32.onnx"
     
     for url in model_urls:
         try:
             print(f"Trying to download from: {url}")
-            response = requests.get(url, timeout=30)
+            # Stream download (avoids loading full ~350MB into memory; connect 15s, read 10 min)
+            response = requests.get(url, stream=True, timeout=(15, 600))
             response.raise_for_status()
-            
-            # Check if we got HTML instead of binary data
             content_type = response.headers.get('content-type', '').lower()
             if 'text/html' in content_type:
                 print(f"Skipping {url} - got HTML content")
                 continue
-                
-            # Check if content looks like binary ONNX data
-            content = response.content
-            if len(content) < 1000:  # Too small for a real model
-                print(f"Skipping {url} - content too small ({len(content)} bytes)")
+            content_length = response.headers.get('content-length')
+            size_hint = int(content_length) if content_length else 0
+            if 0 < size_hint < 100_000:
+                print(f"Skipping {url} - content too small ({size_hint} bytes)")
                 continue
-                
-            # Save the model
+            total = 0
             with open(model_path, 'wb') as f:
-                f.write(content)
-                
-            print(f"Successfully downloaded model to {model_path} ({len(content)} bytes)")
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        total += len(chunk)
+                        if total % (10 * 1024 * 1024) < 1024 * 1024 and total >= 10 * 1024 * 1024:
+                            print(f"  ... {total // (1024*1024)} MB")
+            if total < 100_000:
+                print(f"Skipping {url} - downloaded too small ({total} bytes)")
+                try:
+                    os.remove(model_path)
+                except Exception:
+                    pass
+                continue
+            print(f"Successfully downloaded model to {model_path} ({total} bytes)")
             return True
-            
         except Exception as e:
             print(f"Failed to download from {url}: {e}")
+            try:
+                if os.path.exists(model_path):
+                    os.remove(model_path)
+            except Exception:
+                pass
             continue
     
     print("Failed to download from all sources")

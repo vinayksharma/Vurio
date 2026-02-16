@@ -41,7 +41,8 @@ namespace MediaDedup
                                        int input_size,
                                        const std::string &model_path,
                                        int embedding_dim,
-                                       std::vector<std::uint8_t> &out_blob)
+                                       std::vector<std::uint8_t> &out_blob,
+                                       std::string *out_reason)
     {
 #if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
         try
@@ -51,19 +52,18 @@ namespace MediaDedup
             if (model_path.empty())
             {
                 Poco::Logger::get("OnnxAdapter").warning("Model path missing");
-                std::cerr << "[OnnxAdapter] Model path missing" << std::endl;
+                if (out_reason) *out_reason = "model_path_missing";
                 return false;
             }
 
             cv::setNumThreads(0);
             Poco::Logger::get("OnnxAdapter").trace("Attempting to load image: %s", file_path);
-            std::cerr << "[OnnxAdapter] Loading image: " << file_path << std::endl;
 
             // Check if file exists before attempting to read
             if (!std::filesystem::exists(file_path))
             {
                 Poco::Logger::get("OnnxAdapter").error("File does not exist when trying to load: %s", file_path);
-                std::cerr << "[OnnxAdapter] File does not exist: " << file_path << std::endl;
+                if (out_reason) *out_reason = "file_not_exists";
                 return false;
             }
             Poco::Logger::get("OnnxAdapter").trace("File exists, proceeding to load with OpenCV");
@@ -78,19 +78,19 @@ namespace MediaDedup
             catch (const cv::Exception &e)
             {
                 Poco::Logger::get("OnnxAdapter").error("OpenCV exception loading image %s: %s", file_path, e.what());
-                std::cerr << "[OnnxAdapter] OpenCV exception: " << e.what() << std::endl;
+                if (out_reason) *out_reason = std::string("opencv_exception: ") + e.what();
                 return false;
             }
             catch (const std::exception &e)
             {
                 Poco::Logger::get("OnnxAdapter").error("Exception loading image %s: %s", file_path, e.what());
-                std::cerr << "[OnnxAdapter] Exception: " << e.what() << std::endl;
+                if (out_reason) *out_reason = std::string("exception: ") + e.what();
                 return false;
             }
             catch (...)
             {
                 Poco::Logger::get("OnnxAdapter").error("Unknown exception loading image: %s", file_path);
-                std::cerr << "[OnnxAdapter] Unknown exception loading image" << std::endl;
+                if (out_reason) *out_reason = "unknown_exception";
                 return false;
             }
 
@@ -99,8 +99,7 @@ namespace MediaDedup
                 bool still_exists = std::filesystem::exists(file_path);
                 auto file_size = still_exists ? std::filesystem::file_size(file_path) : 0;
                 Poco::Logger::get("OnnxAdapter").warning("Failed to load image for ONNX (empty result): %s (exists: %s, size: %zu)", file_path, still_exists ? "yes" : "no", file_size);
-                Poco::Logger::get("OnnxAdapter").trace("File exists check: %s", still_exists ? "yes" : "no");
-                std::cerr << "[OnnxAdapter] Failed to load image (empty result, exists: " << (still_exists ? "yes" : "no") << ", size: " << file_size << ")" << std::endl;
+                if (out_reason) *out_reason = "cv_imread_empty (file_exists=" + std::string(still_exists ? "yes" : "no") + ", size=" + std::to_string(file_size) + ")";
                 return false;
             }
 
@@ -108,7 +107,7 @@ namespace MediaDedup
             if (bgr.rows == 0 || bgr.cols == 0)
             {
                 Poco::Logger::get("OnnxAdapter").warning("Invalid image dimensions (%dx%d) for ONNX: %s", bgr.cols, bgr.rows, file_path);
-                std::cerr << "[OnnxAdapter] Invalid image dimensions" << std::endl;
+                if (out_reason) *out_reason = "invalid_dimensions_" + std::to_string(bgr.cols) + "x" + std::to_string(bgr.rows);
                 return false;
             }
             cv::Mat rgb;
@@ -154,64 +153,160 @@ namespace MediaDedup
             if (!session_manager_)
             {
                 Poco::Logger::get("OnnxAdapter").error("ONNX Session Manager not initialized");
-                std::cerr << "[OnnxAdapter] Session manager not initialized" << std::endl;
+                if (out_reason) *out_reason = "session_manager_not_initialized";
                 return false;
             }
-
-            std::cerr << "[OnnxAdapter] Borrowing cached session for model: " << model_path << std::endl;
             auto session_lease = session_manager_->borrowSession(model_path);
             Ort::Session *session = session_lease.getSession();
 
             if (!session)
             {
                 Poco::Logger::get("OnnxAdapter").error("Failed to borrow ONNX session");
-                std::cerr << "[OnnxAdapter] Failed to borrow session" << std::endl;
+                if (out_reason) *out_reason = "failed_to_borrow_session";
                 return false;
             }
 
             Ort::AllocatorWithDefaultOptions allocator;
-
-            auto in_name = session->GetInputNameAllocated(0, allocator);
             std::vector<int64_t> in_shape = {1, 3, (int64_t)input_size, (int64_t)input_size};
             Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 
-            // Check the expected input type
-            auto input_type_info = session->GetInputTypeInfo(0);
+            // Find the image input: 4D tensor, NCHW (?,3,?,?) or NHWC (?,?,?,3). Accept -1 (dynamic) for dimensions.
+            size_t num_inputs = session->GetInputCount();
+            size_t image_input_index = 0;
+            bool found_image_input = false;
+            bool image_input_nhwc = false;
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                auto type_info = session->GetInputTypeInfo(i);
+                auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+                std::vector<int64_t> dims = tensor_info.GetShape();
+                if (dims.size() != 4) continue;
+                if (dims[1] == 3 || dims[1] == -1)
+                {
+                    image_input_index = i;
+                    found_image_input = true;
+                    break;
+                }
+                if (dims[3] == 3 || dims[3] == -1)
+                {
+                    image_input_index = i;
+                    found_image_input = true;
+                    image_input_nhwc = true;
+                    break;
+                }
+            }
+            if (!found_image_input && num_inputs > 0)
+            {
+                for (size_t i = 0; i < num_inputs; ++i)
+                {
+                    auto name_ptr = session->GetInputNameAllocated(i, allocator);
+                    auto type_info = session->GetInputTypeInfo(i);
+                    auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+                    std::vector<int64_t> dims = tensor_info.GetShape();
+                    std::string dim_str;
+                    for (size_t j = 0; j < dims.size(); ++j)
+                        dim_str += (j ? "," : "") + std::to_string(dims[j]);
+                    std::string msg = "Input[" + std::to_string(i) + "] name=" + std::string(name_ptr.get()) + " shape=[" + dim_str + "]";
+                    Poco::Logger::get("OnnxAdapter").debug("%s", msg.c_str());
+                }
+                auto first_name = session->GetInputNameAllocated(0, allocator);
+                std::string first_str(first_name.get());
+                if (first_str.find("input_ids") != std::string::npos || first_str.find("token") != std::string::npos)
+                {
+                    Poco::Logger::get("OnnxAdapter").error("Model appears to be full CLIP (text+image). Need image-only encoder (e.g. pixel_values input, shape [1,3,224,224]).");
+                    if (out_reason) *out_reason = "model_full_clip_need_image_only_encoder";
+                    return false;
+                }
+            }
+
+            auto input_type_info = session->GetInputTypeInfo(image_input_index);
             auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
             ONNXTensorElementDataType input_type = tensor_info.GetElementType();
+
+            const int64_t spatial = static_cast<int64_t>(input_size) * static_cast<int64_t>(input_size);
+            std::vector<int64_t> image_shape = image_input_nhwc
+                ? std::vector<int64_t>{1, static_cast<int64_t>(input_size), static_cast<int64_t>(input_size), 3}
+                : std::vector<int64_t>{1, 3, static_cast<int64_t>(input_size), static_cast<int64_t>(input_size)};
+            const float *image_data = input_vals.data();
+            std::vector<float> nhwc_vals;
+            if (image_input_nhwc)
+            {
+                nhwc_vals.resize(input_vals.size());
+                for (int64_t i = 0; i < spatial; ++i)
+                    for (int c = 0; c < 3; ++c)
+                        nhwc_vals[static_cast<size_t>(i * 3 + c)] = input_vals[static_cast<size_t>(c * spatial + i)];
+                image_data = nhwc_vals.data();
+            }
 
             Ort::Value in_tensor;
             if (input_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
             {
-                // Convert float data to int64 (multiply by scale and cast)
                 std::vector<int64_t> int64_vals;
                 int64_vals.reserve(input_vals.size());
-                for (float val : input_vals)
-                {
-                    int64_vals.push_back(static_cast<int64_t>(val * 255.0f)); // Scale back to 0-255 range as int64
-                }
-                in_tensor = Ort::Value::CreateTensor<int64_t>(mem, int64_vals.data(), int64_vals.size(), in_shape.data(), in_shape.size());
+                for (size_t i = 0; i < input_vals.size(); ++i)
+                    int64_vals.push_back(static_cast<int64_t>(image_data[i] * 255.0f));
+                in_tensor = Ort::Value::CreateTensor<int64_t>(mem, int64_vals.data(), int64_vals.size(), image_shape.data(), image_shape.size());
             }
             else
             {
-                // Default to float
-                in_tensor = Ort::Value::CreateTensor<float>(mem, input_vals.data(), input_vals.size(), in_shape.data(), in_shape.size());
+                in_tensor = Ort::Value::CreateTensor<float>(mem, const_cast<float *>(image_data), input_vals.size(), image_shape.data(), image_shape.size());
+            }
+
+            // Build full input list in session order (full CLIP needs input_ids + pixel_values)
+            using InputNamePtr = decltype(session->GetInputNameAllocated(0, allocator));
+            std::vector<InputNamePtr> input_name_ptrs;
+            input_name_ptrs.reserve(num_inputs);
+            for (size_t i = 0; i < num_inputs; ++i)
+                input_name_ptrs.push_back(session->GetInputNameAllocated(i, allocator));
+            std::vector<const char *> in_names_vec;
+            in_names_vec.reserve(num_inputs);
+            for (auto &p : input_name_ptrs)
+                in_names_vec.push_back(p.get());
+
+            std::vector<Ort::Value> input_values;
+            input_values.reserve(num_inputs);
+            std::vector<std::vector<int64_t>> dummy_storage;
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                if (i == image_input_index)
+                {
+                    input_values.push_back(std::move(in_tensor));
+                    continue;
+                }
+                auto type_info_i = session->GetInputTypeInfo(i);
+                auto tensor_info_i = type_info_i.GetTensorTypeAndShapeInfo();
+                std::vector<int64_t> dims = tensor_info_i.GetShape();
+                ONNXTensorElementDataType dtype = tensor_info_i.GetElementType();
+                if (dims.size() == 2 && dtype == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
+                {
+                    int64_t d0 = dims[0] == -1 ? 1 : dims[0];
+                    int64_t d1 = dims[1] == -1 ? 77 : dims[1];
+                    size_t total = static_cast<size_t>(d0 * d1);
+                    dummy_storage.emplace_back(total, 0);
+                    std::vector<int64_t> shape = {d0, d1};
+                    Ort::Value dummy = Ort::Value::CreateTensor<int64_t>(mem, dummy_storage.back().data(), total, shape.data(), shape.size());
+                    input_values.push_back(std::move(dummy));
+                }
+                else
+                {
+                    Poco::Logger::get("OnnxAdapter").error("Unsupported non-image input at index %zu (dims=%zu, dtype=%d)", i, dims.size(), (int)dtype);
+                    if (out_reason) *out_reason = "unsupported_extra_input";
+                    return false;
+                }
             }
 
             auto out_name = session->GetOutputNameAllocated(0, allocator);
-            const char *in_names[] = {in_name.get()};
             const char *out_names[] = {out_name.get()};
-            std::cerr << "[OnnxAdapter] Running inference with cached session..." << std::endl;
-            auto results = session->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
+            auto results = session->Run(Ort::RunOptions{nullptr}, in_names_vec.data(), input_values.data(), num_inputs, out_names, 1);
             if (results.empty() || !results[0].IsTensor())
             {
-                std::cerr << "[OnnxAdapter] Inference returned empty or non-tensor output" << std::endl;
+                Poco::Logger::get("OnnxAdapter").warning("Inference returned empty or non-tensor output");
+                if (out_reason) *out_reason = "inference_empty_or_non_tensor_output";
                 return false;
             }
             auto &tensor = results[0];
             auto info = tensor.GetTensorTypeAndShapeInfo();
             size_t count = info.GetElementCount();
-            std::cerr << "[OnnxAdapter] Output elements: " << count << std::endl;
             float *data = tensor.GetTensorMutableData<float>();
 
             out_blob.resize(embedding_dim * sizeof(float));
@@ -219,13 +314,12 @@ namespace MediaDedup
             std::memcpy(out_blob.data(), data, copy_elems * sizeof(float));
             if (copy_elems < (size_t)embedding_dim)
                 std::memset(out_blob.data() + copy_elems * sizeof(float), 0, (embedding_dim - copy_elems) * sizeof(float));
-            std::cerr << "[OnnxAdapter] Embedding computed and copied (dim=" << embedding_dim << ")" << std::endl;
             return true;
         }
         catch (const std::exception &e)
         {
             Poco::Logger::get("OnnxAdapter").error("ONNX exception: %s", std::string(e.what()));
-            std::cerr << "[OnnxAdapter] Exception: " << e.what() << std::endl;
+            if (out_reason) *out_reason = std::string("onnx_exception: ") + e.what();
             return false;
         }
 #else
@@ -234,6 +328,7 @@ namespace MediaDedup
         (void)model_path;
         (void)embedding_dim;
         (void)out_blob;
+        (void)out_reason;
         return false;
 #endif
     }
@@ -337,41 +432,100 @@ namespace MediaDedup
             }
 
             Ort::AllocatorWithDefaultOptions allocator;
-
-            // Prepare input tensor
-            auto in_name = session->GetInputNameAllocated(0, allocator);
             std::vector<int64_t> in_shape = {1, 3, (int64_t)input_size, (int64_t)input_size};
             Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 
-            // Check the expected input type
-            auto input_type_info = session->GetInputTypeInfo(0);
+            // Find image input: 4D NCHW (dims[1]==3 or -1) or NHWC (dims[3]==3 or -1)
+            size_t num_inputs = session->GetInputCount();
+            size_t image_input_index = 0;
+            bool image_input_nhwc = false;
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                auto type_info = session->GetInputTypeInfo(i);
+                auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+                std::vector<int64_t> dims = tensor_info.GetShape();
+                if (dims.size() != 4) continue;
+                if (dims[1] == 3 || dims[1] == -1) { image_input_index = i; break; }
+                if (dims[3] == 3 || dims[3] == -1) { image_input_index = i; image_input_nhwc = true; break; }
+            }
+
+            const int64_t spatial_mem = static_cast<int64_t>(input_size) * static_cast<int64_t>(input_size);
+            std::vector<int64_t> image_shape_mem = image_input_nhwc
+                ? std::vector<int64_t>{1, static_cast<int64_t>(input_size), static_cast<int64_t>(input_size), 3}
+                : in_shape;
+            const float *image_data_mem = input_vals.data();
+            std::vector<float> nhwc_vals_mem;
+            if (image_input_nhwc)
+            {
+                nhwc_vals_mem.resize(input_vals.size());
+                for (int64_t i = 0; i < spatial_mem; ++i)
+                    for (int c = 0; c < 3; ++c)
+                        nhwc_vals_mem[static_cast<size_t>(i * 3 + c)] = input_vals[static_cast<size_t>(c * spatial_mem + i)];
+                image_data_mem = nhwc_vals_mem.data();
+            }
+
+            auto input_type_info = session->GetInputTypeInfo(image_input_index);
             auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
             ONNXTensorElementDataType input_type = tensor_info.GetElementType();
 
             Ort::Value in_tensor;
             if (input_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
             {
-                // Convert float data to int64 (multiply by scale and cast)
                 std::vector<int64_t> int64_vals;
                 int64_vals.reserve(input_vals.size());
-                for (float val : input_vals)
-                {
-                    int64_vals.push_back(static_cast<int64_t>(val * 255.0f)); // Scale back to 0-255 range as int64
-                }
-                in_tensor = Ort::Value::CreateTensor<int64_t>(mem, int64_vals.data(), int64_vals.size(), in_shape.data(), in_shape.size());
+                for (size_t i = 0; i < input_vals.size(); ++i)
+                    int64_vals.push_back(static_cast<int64_t>(image_data_mem[i] * 255.0f));
+                in_tensor = Ort::Value::CreateTensor<int64_t>(mem, int64_vals.data(), int64_vals.size(), image_shape_mem.data(), image_shape_mem.size());
             }
             else
             {
-                // Default to float
-                in_tensor = Ort::Value::CreateTensor<float>(mem, input_vals.data(), input_vals.size(), in_shape.data(), in_shape.size());
+                in_tensor = Ort::Value::CreateTensor<float>(mem, const_cast<float *>(image_data_mem), input_vals.size(), image_shape_mem.data(), image_shape_mem.size());
             }
 
-            // Run inference
+            using InputNamePtr = decltype(session->GetInputNameAllocated(0, allocator));
+            std::vector<InputNamePtr> input_name_ptrs;
+            input_name_ptrs.reserve(num_inputs);
+            for (size_t i = 0; i < num_inputs; ++i)
+                input_name_ptrs.push_back(session->GetInputNameAllocated(i, allocator));
+            std::vector<const char *> in_names_vec;
+            in_names_vec.reserve(num_inputs);
+            for (auto &p : input_name_ptrs)
+                in_names_vec.push_back(p.get());
+
+            std::vector<Ort::Value> input_values;
+            input_values.reserve(num_inputs);
+            std::vector<std::vector<int64_t>> dummy_storage_mem;
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                if (i == image_input_index)
+                {
+                    input_values.push_back(std::move(in_tensor));
+                    continue;
+                }
+                auto type_info_i = session->GetInputTypeInfo(i);
+                auto tensor_info_i = type_info_i.GetTensorTypeAndShapeInfo();
+                std::vector<int64_t> dims = tensor_info_i.GetShape();
+                ONNXTensorElementDataType dtype = tensor_info_i.GetElementType();
+                if (dims.size() == 2 && dtype == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
+                {
+                    int64_t d0 = dims[0] == -1 ? 1 : dims[0];
+                    int64_t d1 = dims[1] == -1 ? 77 : dims[1];
+                    size_t total = static_cast<size_t>(d0 * d1);
+                    dummy_storage_mem.emplace_back(total, 0);
+                    std::vector<int64_t> shape = {d0, d1};
+                    Ort::Value dummy = Ort::Value::CreateTensor<int64_t>(mem, dummy_storage_mem.back().data(), total, shape.data(), shape.size());
+                    input_values.push_back(std::move(dummy));
+                }
+                else
+                {
+                    Poco::Logger::get("OnnxAdapter").error("Unsupported non-image input at index %zu for memory path", i);
+                    return false;
+                }
+            }
+
             auto out_name = session->GetOutputNameAllocated(0, allocator);
-            const char *in_names[] = {in_name.get()};
             const char *out_names[] = {out_name.get()};
-            std::cerr << "[OnnxAdapter] Running inference on memory data with cached session..." << std::endl;
-            auto results = session->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
+            auto results = session->Run(Ort::RunOptions{nullptr}, in_names_vec.data(), input_values.data(), num_inputs, out_names, 1);
 
             if (results.empty() || !results[0].IsTensor())
             {
