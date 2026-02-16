@@ -101,12 +101,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
     if (key.startsWith('files.')) return 'Files Manager Configuration';
     if (key.startsWith('media.processor.')) return 'Media Processor Configuration';
     if (key.startsWith('media.image.')) return 'Media Image Processing Configuration';
+    if (key.startsWith('media.images.') && key.endsWith('.transcode')) {
+      return 'Image Transcode Toggles - Transcode to JPEG before embedding';
+    }
     if (key.startsWith('media.images.') && !key.startsWith('media.images.raw.')) {
       return 'Media Format Toggles - Standard Image Formats';
     }
     if (key.startsWith('media.images.raw.')) return 'Media Format Toggles - RAW Image Formats';
     if (key.startsWith('media.audio.')) return 'Media Format Toggles - Audio Formats';
     if (key.startsWith('media.video.')) return 'Media Format Toggles - Video Formats';
+    if (key.startsWith('thumbnail.')) return 'Thumbnail Configuration';
+    if (key.startsWith('assetPreview.')) return 'Asset Preview Configuration';
+    if (key.startsWith('duplicates.')) return 'Duplicate Finder Configuration';
     return 'Other';
   };
 
