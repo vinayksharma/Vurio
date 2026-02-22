@@ -21,9 +21,9 @@ protected:
         config_ = ConfigManagerFactory::createForTesting("");
         ASSERT_TRUE(config_->initialize());
 
-        // Set EMBEDDING mode threshold range
-        config_->setPropertyValue("duplicates.threshold.min", 0.92);
-        config_->setPropertyValue("duplicates.threshold.max", 0.96);
+        // Set EMBEDDING mode threshold range (two-tier: similarity and duplicate)
+        config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+        config_->setPropertyValue("duplicates.threshold.duplicate", 0.96);
         config_->setPropertyValue("duplicates.finder.enabled", true);
         config_->setPropertyValue("duplicates.finder.batchSize", 100);
     }
@@ -46,11 +46,11 @@ TEST_F(DuplicateFinderRangeTest, LoadsThreshold)
     DuplicateFinder finder(config_, *db_manager_);
     ASSERT_TRUE(finder.initialize());
 
-    // Verify threshold is set correctly
-    double threshold_min = finder.getThresholdMin("EMBEDDING");
-    double threshold_max = finder.getThresholdMax("EMBEDDING");
-    EXPECT_DOUBLE_EQ(0.92, threshold_min);
-    EXPECT_DOUBLE_EQ(0.96, threshold_max);
+    double similarity = finder.getSimilarityThreshold("EMBEDDING");
+    double duplicate = finder.getDuplicateThreshold("EMBEDDING");
+    EXPECT_DOUBLE_EQ(0.92, similarity);
+    EXPECT_DOUBLE_EQ(0.96, duplicate);
+    EXPECT_GT(duplicate, similarity);
 }
 
 /**
@@ -81,8 +81,8 @@ TEST_F(DuplicateFinderRangeTest, ThresholdExpansionTriggersReprocess)
     int groups_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
     EXPECT_EQ(1, groups_before);
 
-    // Trigger threshold expansion by decreasing min threshold
-    config_->setPropertyValue("duplicates.threshold.min", 0.90);
+    // Trigger threshold expansion by decreasing similarity threshold
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.90);
 
     // Give config change time to propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -117,8 +117,8 @@ TEST_F(DuplicateFinderRangeTest, StricterThresholdDoesNotReprocess)
     int groups_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
     EXPECT_EQ(1, groups_before);
 
-    // Make threshold stricter (increase max threshold)
-    config_->setPropertyValue("duplicates.threshold.max", 0.98);
+    // Make threshold stricter (increase duplicate threshold)
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.98);
 
     // Give config change time to propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -207,65 +207,20 @@ TEST_F(DuplicateFinderRangeTest, ResetCheckpointWorks)
     EXPECT_EQ(0, checkpoint_after->groups_updated);
 }
 
-TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingMovesLowSimilarityFiles)
+/**
+ * Test that performCrossGroupChecking can be invoked (uses duplicate threshold).
+ * With no groups or a single group, no moves occur.
+ */
+TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingExecutes)
 {
-    // Test that cross-group checking works with narrow threshold ranges
-    // This is a basic test to verify the functionality exists and can be called
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.30);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.80);
 
-    // Set narrow threshold range to trigger cross-group checking
-    config_->setPropertyValue("duplicates.threshold.min", 0.30); // Low threshold for group formation
-    config_->setPropertyValue("duplicates.threshold.max", 0.80); // High threshold for cross-group moves
-
-    // Initialize duplicate finder
-    DuplicateFinder finder(config_, *db_manager_);
-    ASSERT_TRUE(finder.initialize());
-
-    // Test that performCrossGroupChecking can be called (even with no groups)
-    // This verifies the method exists and handles edge cases
-    int moves = finder.performCrossGroupChecking("EMBEDDING", 0.80);
-    EXPECT_EQ(0, moves); // No groups exist, so no moves should occur
-}
-
-TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingSkipsHighSimilarityFiles)
-{
-    // Test that cross-group checking handles high similarity scenarios correctly
-
-    // Set narrow threshold range
-    config_->setPropertyValue("duplicates.threshold.min", 0.30);
-    config_->setPropertyValue("duplicates.threshold.max", 0.80);
-
-    DuplicateFinder finder(config_, *db_manager_);
-    ASSERT_TRUE(finder.initialize());
-
-    // Run cross-group checking with no groups (should return 0)
-    int moves = finder.performCrossGroupChecking("EMBEDDING", 0.80);
-    EXPECT_EQ(0, moves); // No groups exist, so no moves should occur
-}
-
-TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingHandlesEmptyGroups)
-{
-    // Test cross-group checking when no groups exist
     DuplicateFinder finder(config_, *db_manager_);
     ASSERT_TRUE(finder.initialize());
 
     int moves = finder.performCrossGroupChecking("EMBEDDING", 0.80);
     EXPECT_EQ(0, moves);
-}
-
-TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingHandlesSingleGroup)
-{
-    // Test cross-group checking with only one group
-    // No moves should occur since there are no other groups
-
-    config_->setPropertyValue("duplicates.threshold.min", 0.30);
-    config_->setPropertyValue("duplicates.threshold.max", 0.80);
-
-    DuplicateFinder finder(config_, *db_manager_);
-    ASSERT_TRUE(finder.initialize());
-
-    // Run cross-group checking with no groups
-    int moves = finder.performCrossGroupChecking("EMBEDDING", 0.80);
-    EXPECT_EQ(0, moves); // No moves possible with no groups
 }
 
 /**
@@ -284,10 +239,10 @@ TEST_F(DuplicateFinderRangeTest, CrossBatchGroupingInitializes)
     EXPECT_FALSE(finder.isRunning());
 
     // Verify thresholds are set (used by cross-batch grouping)
-    double threshold_min = finder.getThresholdMin("EMBEDDING");
-    double threshold_max = finder.getThresholdMax("EMBEDDING");
-    EXPECT_GT(threshold_min, 0.0);
-    EXPECT_GT(threshold_max, threshold_min);
+    double similarity = finder.getSimilarityThreshold("EMBEDDING");
+    double duplicate = finder.getDuplicateThreshold("EMBEDDING");
+    EXPECT_GT(similarity, 0.0);
+    EXPECT_GT(duplicate, similarity);
 }
 
 /**
@@ -312,27 +267,18 @@ TEST_F(DuplicateFinderRangeTest, CrossBatchEmptyPoolHandled)
 }
 
 /**
- * Test: All-pairs verification prevents invalid groupings
- *
- * Verifies that the all-pairs check in cross-batch grouping ensures
- * files are only grouped when they are mutually similar.
- *
- * Scenario:
- * - File A is similar to File B (sim = 0.95)
- * - File C is similar to File A (sim = 0.93)
- * - File C is NOT similar to File B (sim = 0.70)
- * - Expected: A and B form a group, C should NOT be added
+ * Test that threshold validation rejects invalid range (similarity >= duplicate).
  */
-TEST_F(DuplicateFinderRangeTest, AllPairsVerificationPreventsInvalidGrouping)
+TEST_F(DuplicateFinderRangeTest, InvalidThresholdRangeRevertsToDefaults)
 {
-    // This is a design verification test
-    // The all-pairs check ensures transitivity bugs are avoided
-    // (A~B, A~C does not imply B~C)
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.98);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.92);  // Invalid: duplicate < similarity
 
     DuplicateFinder finder(config_, *db_manager_);
     ASSERT_TRUE(finder.initialize());
 
-    // The implementation uses all-pairs verification in tryCrossBatchGrouping
-    // This test verifies the finder can initialize with this logic
-    EXPECT_TRUE(true); // Placeholder - full integration test would require mock embeddings
+    // Should clamp to valid range (0.92, 0.97 or similar)
+    double similarity = finder.getSimilarityThreshold("EMBEDDING");
+    double duplicate = finder.getDuplicateThreshold("EMBEDDING");
+    EXPECT_GT(duplicate, similarity);
 }
