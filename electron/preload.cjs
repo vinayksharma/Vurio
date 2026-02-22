@@ -13,3 +13,9 @@ const api = {
 
 contextBridge.exposeInMainWorld('electronAPI', api);
 contextBridge.exposeInMainWorld('vurioElectron', api);
+
+// With contextIsolation: false, the page shares the preload context; ensure API is on global so it's always available
+try {
+  globalThis.electronAPI = api;
+  globalThis.vurioElectron = api;
+} catch (_) {}

@@ -8,6 +8,8 @@ const AdvancedSection: React.FC = () => {
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
+  const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
+  const setDebugOverlayEnabled = useUIStore((state) => state.setDebugOverlayEnabled);
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -42,11 +44,34 @@ const AdvancedSection: React.FC = () => {
   };
 
   const handleToggleDevTools = () => {
-    if (window.electronAPI?.toggleDevTools) {
-      window.electronAPI.toggleDevTools();
-    } else {
-      alert('Developer Tools are only available in Electron');
-    }
+    const invokeToggle = async (): Promise<boolean> => {
+      if (window.electronAPI?.toggleDevTools) {
+        await window.electronAPI.toggleDevTools();
+        return true;
+      }
+      const win = window as unknown as { require?: (id: string) => { ipcRenderer: { invoke: (channel: string) => Promise<void> } } };
+      if (typeof win.require === 'function') {
+        try {
+          const { ipcRenderer } = win.require('electron');
+          await ipcRenderer.invoke('utils:toggleDevTools');
+          return true;
+        } catch {
+          // ignore
+        }
+      }
+      return false;
+    };
+    invokeToggle().then((success) => {
+      if (!success) {
+        alert(
+          'Developer Tools are only available when the app is run in Electron.\n\n' +
+          '• If you opened http://localhost:5173 in a browser: run the app with "npm run dev:electron" or "npm run electron" instead.\n\n' +
+          '• If you already launched via Electron: try rebuilding (npm run build) then run "npm run electron" again.'
+        );
+      }
+    }).catch(() => {
+      alert('Failed to toggle Developer Tools.');
+    });
   };
 
   const handleStartScrollTest = async () => {
@@ -107,6 +132,19 @@ const AdvancedSection: React.FC = () => {
           disabled={isResettingDuplicates}
         >
           {isResettingDuplicates ? 'Resetting...' : 'Reset Duplicates'}
+        </button>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Debug Overlay</h3>
+          <p>Show a live stats overlay on the Duplicates panel (Total, Cache, Queue, Errors, Memory, etc.). Off by default.</p>
+        </div>
+        <button
+          id="debug-overlay-btn"
+          className={debugOverlayEnabled ? 'ghost danger' : 'ghost'}
+          onClick={() => setDebugOverlayEnabled(!debugOverlayEnabled)}
+        >
+          {debugOverlayEnabled ? 'Disable Debug Overlay' : 'Enable Debug Overlay'}
         </button>
       </div>
       <div className="action-row">

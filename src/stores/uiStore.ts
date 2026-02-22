@@ -7,12 +7,14 @@ interface UIState {
   sidebarHeight: number | undefined;
   isVertical: boolean;
   sidebarOpen: boolean;
+  debugOverlayEnabled: boolean;
   setActivePanel: (panel: PanelType) => void;
   setSidebarSize: (size: number) => void;
   setSidebarHeight: (height: number | undefined) => void;
   setIsVertical: (isVertical: boolean) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  setDebugOverlayEnabled: (enabled: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -21,6 +23,7 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarHeight: undefined,
   isVertical: false,
   sidebarOpen: false,
+  debugOverlayEnabled: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setSidebarSize: (size) => set({ sidebarSize: size }),
@@ -28,4 +31,5 @@ export const useUIStore = create<UIState>((set) => ({
   setIsVertical: (isVertical) => set({ isVertical }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  setDebugOverlayEnabled: (enabled) => set({ debugOverlayEnabled: enabled }),
 }));
