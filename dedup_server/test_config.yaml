@@ -71,8 +71,8 @@ media.audio.wma: true
 duplicates.finder.maxGroupSize: 100
 media.video.avi: true
 media.images.raw.mos: true
-duplicates.threshold.min: 0.92
-duplicates.threshold.max: 0.96
+duplicates.threshold.similarity: 0.92
+duplicates.threshold.duplicate: 0.96
 media.video.webm: true
 media.images.raw.orf: true
 tpm.types.thumbnail_generator.share: 1

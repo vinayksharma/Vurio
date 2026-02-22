@@ -51,9 +51,19 @@ namespace MediaDedup
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
 
-            // Threshold range for EMBEDDING mode
-            embedding_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92);
-            embedding_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.96);
+            // Two-tier thresholds: similarity (min to consider) and duplicate (true duplicate tier)
+            embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity",
+                                                                           cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92));
+            embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate",
+                                                                             cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.97));
+
+            if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
+            {
+                logger.warning("Invalid thresholds: similarity (%.3f) >= duplicate (%.3f). Using defaults.",
+                               embedding_threshold_similarity_, embedding_threshold_duplicate_);
+                embedding_threshold_similarity_ = 0.92;
+                embedding_threshold_duplicate_ = 0.96;
+            }
 
             representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
 
@@ -72,8 +82,8 @@ namespace MediaDedup
                                std::string(enabled_ ? "true" : "false") +
                                ", batch_size=" + std::to_string(batch_size_) +
                                ", metadata_filtering=" + std::string(metadata_filtering_enabled_ ? "true" : "false") +
-                               ", threshold_min=" + std::to_string(embedding_threshold_min_) +
-                               ", threshold_max=" + std::to_string(embedding_threshold_max_) + ")");
+                               ", threshold_similarity=" + std::to_string(embedding_threshold_similarity_) +
+                               ", threshold_duplicate=" + std::to_string(embedding_threshold_duplicate_) + ")");
             return true;
         }
 
@@ -453,56 +463,17 @@ namespace MediaDedup
 
                     if (best_group_id > 0)
                     {
-                        // CRITICAL FIX: Verify similarity against ALL group members, not just representative
-                        // This prevents the transitivity assumption bug where files are added based only on
-                        // representative match, leading to groups with low inter-member similarity
-
-                        bool similar_to_all_members = true;
-                        int members_checked = 0;
-
-                        // Get all existing members of the group
-                        auto existing_members = DuplicateGroupsOps::getMembersByGroup(db_, best_group_id);
-
-                        // Check new file against ALL existing members
-                        for (const auto &member : existing_members)
+                        // Two-tier logic: duplicate (>= threshold_max) or similar [threshold_min, threshold_max)
+                        if (best_similarity >= threshold_max)
                         {
-                            // Skip representative (already checked above)
-                            if (member.is_representative)
-                                continue;
-
-                            // Load artifacts for this member
-                            FileArtifact member_artifact;
-                            if (!loadFileArtifacts(member.file_id, mode, member_artifact))
-                            {
-                                logger.warning("Failed to load artifacts for member file_id %d in group %d, skipping member check",
-                                               member.file_id, best_group_id);
-                                continue;
-                            }
-
-                            // Check similarity
-                            double sim_to_member = computeSimilarity(new_file, member_artifact, mode);
-                            members_checked++;
-
-                            if (sim_to_member < threshold_min)
-                            {
-                                similar_to_all_members = false;
-                                logger.debug("File %d NOT added to group %d: similar to representative (%.3f) but not to member %d (%.3f < %.3f)",
-                                             new_file.file_id, best_group_id, best_similarity, member.file_id, sim_to_member, threshold_min);
-                                break;
-                            }
-                        }
-
-                        if (similar_to_all_members)
-                        {
-                            // All checks passed - add to group
+                            // Duplicate tier: add directly (no all-members check)
                             if (addToGroup(best_group_id, new_file, mode, best_similarity))
                             {
                                 duplicates_found++;
                                 groups_updated++;
-                                logger.information("Added file_id %d to group %d (similarity=%.3f to rep, checked %d members, all-members check passed)",
-                                                   new_file.file_id, best_group_id, best_similarity, members_checked);
+                                logger.information("Added file_id %d to group %d (duplicate tier, similarity=%.3f)",
+                                                   new_file.file_id, best_group_id, best_similarity);
 
-                                // Update representative in our cache if this file is now the rep
                                 auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
                                 if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
                                 {
@@ -514,19 +485,24 @@ namespace MediaDedup
                         }
                         else
                         {
-                            // Failed all-members check - try cross-batch comparison
-                            // The file matched the representative but not all members,
-                            // so it might be a better fit for a different group or ungrouped file
-                            int cross_batch_group_id = tryCrossBatchGrouping(
-                                new_file, ungrouped_files, last_processed_id, mode, threshold_min,
-                                group_representatives, duplicates_found, groups_created);
-
-                            if (cross_batch_group_id < 0)
+                            // Similar tier: try split when new_file crosses duplicate threshold with a similar member
+                            if (trySplitAndRedistribute(best_group_id, new_file, best_similarity, mode,
+                                                       group_representatives, duplicates_found,
+                                                       groups_created, groups_updated))
                             {
-                                // No cross-batch match - add to batch ungrouped
-                                batch_ungrouped_files.push_back(new_file);
-                                logger.debug("File_id %d failed all-members check for group %d and no cross-batch match, marked as batch-ungrouped",
-                                             new_file.file_id, best_group_id);
+                                logger.information("Split and redistributed: file_id %d triggered new group from group %d",
+                                                   new_file.file_id, best_group_id);
+                            }
+                            else
+                            {
+                                // No split: add to similar list of best group
+                                if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                                {
+                                    duplicates_found++;
+                                    groups_updated++;
+                                    logger.information("Added file_id %d to group %d (similar tier, similarity=%.3f)",
+                                                       new_file.file_id, best_group_id, best_similarity);
+                                }
                             }
                         }
                     }
@@ -956,6 +932,149 @@ namespace MediaDedup
             return true;
         }
 
+        bool DuplicateFinder::trySplitAndRedistribute(int best_group_id,
+                                                      const FileArtifact &new_file,
+                                                      double best_similarity,
+                                                      const std::string &mode,
+                                                      std::map<int, FileArtifact> &group_representatives,
+                                                      int &duplicates_found,
+                                                      int &groups_created,
+                                                      int &groups_updated)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            double threshold_duplicate = getDuplicateThreshold(mode);
+
+            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
+            if (!group_opt.has_value())
+                return false;
+
+            const auto &group = group_opt.value();
+            auto all_members = DuplicateGroupsOps::getMembersByGroup(db_, best_group_id);
+
+            // Similar members: not representative, and score < duplicate threshold
+            std::vector<DuplicateMemberRecord> similar_members;
+            for (const auto &m : all_members)
+            {
+                if (!m.is_representative && m.similarity_score < threshold_duplicate)
+                    similar_members.push_back(m);
+            }
+
+            // Load orig key artifact for redistribution
+            FileArtifact orig_key_artifact;
+            if (!loadFileArtifacts(group.representative_file_id, mode, orig_key_artifact))
+            {
+                logger.warning("Failed to load representative for group %d", best_group_id);
+                return false;
+            }
+
+            // Find first similar member that crosses duplicate threshold with new_file
+            int split_member_file_id = -1;
+            double split_similarity = 0.0;
+            FileArtifact split_member_artifact;
+
+            for (const auto &member : similar_members)
+            {
+                FileArtifact member_artifact;
+                if (!loadFileArtifacts(member.file_id, mode, member_artifact))
+                    continue;
+
+                double sim = computeSimilarity(new_file, member_artifact, mode);
+                if (sim >= threshold_duplicate)
+                {
+                    split_member_file_id = member.file_id;
+                    split_similarity = sim;
+                    split_member_artifact = std::move(member_artifact);
+                    break;
+                }
+            }
+
+            if (split_member_file_id < 0)
+                return false; // No split triggered
+
+            // Pick new key: better of (new_file, split_member) by size/age
+            RepresentativeInfo new_key_candidate, other_candidate;
+            new_key_candidate.file_id = new_file.file_id;
+            new_key_candidate.file_path = new_file.file_path;
+            new_key_candidate.file_size = new_file.file_size;
+            new_key_candidate.created_date = new_file.created_date;
+            other_candidate.file_id = split_member_artifact.file_id;
+            other_candidate.file_path = split_member_artifact.file_path;
+            other_candidate.file_size = split_member_artifact.file_size;
+            other_candidate.created_date = split_member_artifact.created_date;
+
+            bool new_file_is_key = isBetterRepresentative(new_key_candidate, other_candidate);
+            const FileArtifact *new_key_artifact = new_file_is_key ? &new_file : &split_member_artifact;
+            const FileArtifact *other_artifact = new_file_is_key ? &split_member_artifact : &new_file;
+
+            // Create new group with new_key
+            double max_threshold = getDuplicateThreshold(mode);
+            int new_group_id = DuplicateGroupsOps::createGroup(
+                db_, mode, new_key_artifact->file_id, new_key_artifact->file_path,
+                new_key_artifact->file_size, new_key_artifact->created_date, max_threshold);
+
+            if (new_group_id <= 0)
+            {
+                logger.error("Failed to create new group for split");
+                return false;
+            }
+
+            // Add representative (new_key) and the other image to new group
+            DuplicateGroupsOps::addMember(db_, new_group_id, new_key_artifact->file_id, new_key_artifact->file_path,
+                                         1.0, new_key_artifact->file_size, new_key_artifact->created_date, true);
+            double other_sim = computeSimilarity(*other_artifact, *new_key_artifact, mode);
+            DuplicateGroupsOps::addMember(db_, new_group_id, other_artifact->file_id, other_artifact->file_path,
+                                         other_sim, other_artifact->file_size, other_artifact->created_date, false);
+            DuplicateGroupsOps::updateGroupRepresentative(db_, new_group_id, new_key_artifact->file_id,
+                                                         new_key_artifact->file_path, new_key_artifact->file_size,
+                                                         new_key_artifact->created_date, 2);
+
+            groups_created++;
+            duplicates_found += 2; // new_key + other
+
+            // Remove split member from original group
+            DuplicateGroupsOps::removeMember(db_, best_group_id, split_member_file_id);
+
+            // Redistribute remaining similar members (exclude the one we moved)
+            int orig_count = group.member_count - 1; // -1 for removed split member
+            int new_count = 2;
+
+            for (const auto &member : similar_members)
+            {
+                if (member.file_id == split_member_file_id)
+                    continue;
+
+                FileArtifact member_artifact;
+                if (!loadFileArtifacts(member.file_id, mode, member_artifact))
+                    continue;
+
+                double score_orig = member.similarity_score; // Already stored vs orig key
+                double score_new = computeSimilarity(member_artifact, *new_key_artifact, mode);
+
+                if (score_new > score_orig)
+                {
+                    DuplicateGroupsOps::removeMember(db_, best_group_id, member.file_id);
+                    DuplicateGroupsOps::addMember(db_, new_group_id, member.file_id, member.file_path,
+                                                 score_new, member.file_size, member.created_date, false);
+                    orig_count--;
+                    new_count++;
+                    duplicates_found++;
+                    groups_updated++;
+                    logger.information("Redistributed file_id %d from group %d to new group %d (score %.3f -> %.3f)",
+                                       member.file_id, best_group_id, new_group_id, score_orig, score_new);
+                }
+            }
+
+            DuplicateGroupsOps::updateGroupMemberCount(db_, best_group_id, orig_count);
+            DuplicateGroupsOps::updateGroupRepresentative(db_, new_group_id, new_key_artifact->file_id,
+                                                         new_key_artifact->file_path, new_key_artifact->file_size,
+                                                         new_key_artifact->created_date, new_count);
+
+            // Refresh orig group rep in cache if members changed
+            group_representatives[new_group_id] = *new_key_artifact;
+
+            return true;
+        }
+
         int DuplicateFinder::tryCrossBatchGrouping(
             const FileArtifact &new_file,
             const std::vector<FileArtifact> &ungrouped_files,
@@ -1071,16 +1190,24 @@ namespace MediaDedup
             return -1;
         }
 
-        double DuplicateFinder::getThresholdMin(const std::string & /* mode */)
+        double DuplicateFinder::getSimilarityThreshold(const std::string & /* mode */)
         {
-            // Single threshold range for EMBEDDING mode
-            return embedding_threshold_min_;
+            return embedding_threshold_similarity_;
         }
 
-        double DuplicateFinder::getThresholdMax(const std::string & /* mode */)
+        double DuplicateFinder::getDuplicateThreshold(const std::string & /* mode */)
         {
-            // Single threshold range for EMBEDDING mode
-            return embedding_threshold_max_;
+            return embedding_threshold_duplicate_;
+        }
+
+        double DuplicateFinder::getThresholdMin(const std::string &mode)
+        {
+            return getSimilarityThreshold(mode);
+        }
+
+        double DuplicateFinder::getThresholdMax(const std::string &mode)
+        {
+            return getDuplicateThreshold(mode);
         }
 
         void DuplicateFinder::onConfigChange(const ConfigChangeEvent &event)
@@ -1097,35 +1224,35 @@ namespace MediaDedup
                 batch_size_ = cfg_->getPropertyValue<int>(event.key, 1000);
                 Poco::Logger::get("DuplicateFinder").information("Updated batch_size: %d", batch_size_);
             }
-            else if (event.key == "duplicates.threshold.min" || event.key == "duplicates.threshold.max")
+            else if (event.key == "duplicates.threshold.similarity" || event.key == "duplicates.threshold.duplicate" ||
+                     event.key == "duplicates.threshold.min" || event.key == "duplicates.threshold.max")
             {
-                double old_min = embedding_threshold_min_;
-                double old_max = embedding_threshold_max_;
+                double old_similarity = embedding_threshold_similarity_;
+                double old_duplicate = embedding_threshold_duplicate_;
 
-                embedding_threshold_min_ = cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92);
-                embedding_threshold_max_ = cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.96);
+                embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity",
+                                                                                 cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92));
+                embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate",
+                                                                                cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.97));
 
-                // Validate threshold range
-                if (embedding_threshold_min_ > embedding_threshold_max_)
+                if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
                 {
-                    Poco::Logger::get("DuplicateFinder").error("Invalid threshold range: min (%.3f) > max (%.3f). Reverting to defaults.", embedding_threshold_min_, embedding_threshold_max_);
-                    embedding_threshold_min_ = 0.92;
-                    embedding_threshold_max_ = 0.96;
+                    Poco::Logger::get("DuplicateFinder").error("Invalid thresholds: similarity (%.3f) >= duplicate (%.3f). Reverting to defaults.",
+                                                               embedding_threshold_similarity_, embedding_threshold_duplicate_);
+                    embedding_threshold_similarity_ = 0.92;
+                    embedding_threshold_duplicate_ = 0.96;
                 }
 
-                // Check if thresholds changed significantly (trigger reprocessing)
-                bool min_changed = std::abs(embedding_threshold_min_ - old_min) > 0.001;
-                bool max_changed = std::abs(embedding_threshold_max_ - old_max) > 0.001;
+                bool similarity_changed = std::abs(embedding_threshold_similarity_ - old_similarity) > 0.001;
 
-                // Only trigger reprocessing if min threshold changed (makes system more permissive)
-                if (min_changed)
+                if (similarity_changed)
                 {
-                    Poco::Logger::get("DuplicateFinder").warning("Threshold range changed: min %.3f->%.3f, max %.3f->%.3f. Triggering full reprocessing.", old_min, embedding_threshold_min_, old_max, embedding_threshold_max_);
+                    Poco::Logger::get("DuplicateFinder").warning("Similarity threshold changed: %.3f->%.3f. Triggering full reprocessing.",
+                                                                  old_similarity, embedding_threshold_similarity_);
 
-                    // Delete all EMBEDDING groups and reset checkpoint for full reprocessing
                     if (DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold range change");
+                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold change");
                     }
 
                     if (DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING"))
@@ -1134,7 +1261,8 @@ namespace MediaDedup
                     }
                 }
 
-                Poco::Logger::get("DuplicateFinder").information("Updated threshold range: min=%.3f, max=%.3f", embedding_threshold_min_, embedding_threshold_max_);
+                Poco::Logger::get("DuplicateFinder").information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
+                                                                 embedding_threshold_similarity_, embedding_threshold_duplicate_);
             }
             else if (event.key == "duplicates.metadata.filtering.enabled")
             {

@@ -238,44 +238,38 @@ For each batch of N files (duplicates.finder.batchSize):
 
 **Note**: `duplicates.finder.intervalMs` is monitored for config changes and will update the job interval dynamically without requiring a restart. Changes take effect on the next scheduled run.
 
-### Similarity Thresholds (Range-Based System)
+### Similarity Thresholds (Two-Tier System)
 
-The system uses a **min/max threshold range** for EMBEDDING mode (currently the only supported mode):
+The system uses a **similarity/duplicate threshold** pair for EMBEDDING mode:
 
-| Key                        | Default | Description                                  |
-| -------------------------- | ------- | -------------------------------------------- |
-| `duplicates.threshold.min` | `0.92`  | Minimum threshold for adding files to groups |
-| `duplicates.threshold.max` | `0.96`  | Maximum threshold for representative swaps   |
+| Key                              | Default | Description                                                          |
+| -------------------------------- | ------- | -------------------------------------------------------------------- |
+| `duplicates.threshold.similarity`| `0.92`  | Minimum to consider for a group; scores in [similarity, duplicate) are "similar" tier |
+| `duplicates.threshold.duplicate` | `0.96`  | True duplicate tier; scores >= this are duplicates of the key image |
 
 **Threshold Usage:**
 
-- **Min Threshold**: Files with similarity score >= min threshold can be added to duplicate groups
-  - Controls the "looseness" of duplicate detection
-  - Changes trigger full reprocessing (groups deleted, checkpoint reset)
-- **Max Threshold**: Only files with similarity score >= max threshold can become representatives
-  - Controls the "strictness" of representative selection
-  - Changes do NOT trigger reprocessing (existing groups preserved)
+- **Similarity Threshold**: Minimum score vs key to consider a file for a group. Scores in [similarity, duplicate) are the "similar" tier and may trigger split analysis.
+- **Duplicate Threshold**: Scores >= this are true duplicates. Only files in this tier can become representatives. Cross-group checking uses this as the low-similarity cutoff.
 
-**Reprocessing Logic:**
+**Split Logic:** When a new file matches the best group's key in the similar tier, we check if it crosses duplicate threshold with any similar member. If so, we create a new group and redistribute similar members by higher score.
 
-- **Min threshold decrease**: Triggers full reprocessing (more permissive, may find new matches)
-- **Min threshold increase**: No reprocessing (existing groups still valid)
-- **Max threshold changes**: No reprocessing (doesn't affect group membership)
+**Reprocessing:** Similarity threshold decrease triggers full reprocessing. Duplicate threshold changes do not.
 
 **Configuration Examples:**
 
 ```yaml
 # Conservative (High Precision)
-duplicates.threshold.min: 0.95
-duplicates.threshold.max: 0.98
+duplicates.threshold.similarity: 0.95
+duplicates.threshold.duplicate: 0.98
 
 # Balanced (Recommended)
-duplicates.threshold.min: 0.92
-duplicates.threshold.max: 0.96
+duplicates.threshold.similarity: 0.92
+duplicates.threshold.duplicate: 0.96
 
 # Permissive (High Recall)
-duplicates.threshold.min: 0.88
-duplicates.threshold.max: 0.94
+duplicates.threshold.similarity: 0.88
+duplicates.threshold.duplicate: 0.94
 ```
 
 ### Representative Selection

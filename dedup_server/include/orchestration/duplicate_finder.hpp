@@ -77,19 +77,29 @@ namespace MediaDedup
             bool isRunning() const { return running_.load(); }
 
             /**
-             * @brief Get minimum similarity threshold for adding files to groups
+             * @brief Get similarity threshold (minimum to consider for a group)
+             *
+             * Scores >= this but < duplicate are 'similar' tier.
              *
              * @param mode Server mode (EMBEDDING only)
-             * @return Minimum threshold value
+             * @return Similarity threshold value
              */
-            double getThresholdMin(const std::string &mode);
+            double getSimilarityThreshold(const std::string &mode);
 
             /**
-             * @brief Get maximum similarity threshold for representative swaps
+             * @brief Get duplicate threshold (true duplicate tier)
+             *
+             * Scores >= this are duplicates of the key image.
              *
              * @param mode Server mode (EMBEDDING only)
-             * @return Maximum threshold value
+             * @return Duplicate threshold value
              */
+            double getDuplicateThreshold(const std::string &mode);
+
+            /** @deprecated Use getSimilarityThreshold */
+            double getThresholdMin(const std::string &mode);
+
+            /** @deprecated Use getDuplicateThreshold */
             double getThresholdMax(const std::string &mode);
 
         private:
@@ -277,6 +287,23 @@ namespace MediaDedup
                 int &duplicates_found,
                 int &groups_created);
 
+            /**
+             * @brief Attempt split and redistribution when new_file is in similar tier
+             *
+             * If new_file matches a similar member at duplicate threshold, creates new group,
+             * adds the pair, and redistributes other similar members by higher score.
+             *
+             * @return True if split was performed (new_file handled), false if no split
+             */
+            bool trySplitAndRedistribute(int best_group_id,
+                                         const FileArtifact &new_file,
+                                         double best_similarity,
+                                         const std::string &mode,
+                                         std::map<int, FileArtifact> &group_representatives,
+                                         int &duplicates_found,
+                                         int &groups_created,
+                                         int &groups_updated);
+
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             DatabaseManager &db_;
 
@@ -287,8 +314,8 @@ namespace MediaDedup
             bool enabled_ = true;
             int batch_size_ = 1000;
             int max_group_size_ = 100;
-            double embedding_threshold_min_ = 0.92;                 // Minimum threshold for adding files to groups
-            double embedding_threshold_max_ = 0.96;                 // Maximum threshold for representative swaps
+            double embedding_threshold_similarity_ = 0.92;  // Minimum to consider for a group
+            double embedding_threshold_duplicate_ = 0.97;  // True duplicate tier
             std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
 
             // Metadata filtering parameters
