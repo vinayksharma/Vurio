@@ -28,6 +28,7 @@ interface ScrollTestStats {
 const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const { isOnline } = useServerStatusStore();
   const setActivePanel = useUIStore((state) => state.setActivePanel);
+  const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const [totalGroups, setTotalGroups] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
@@ -1039,7 +1040,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           </div>
         </div>
       </section>
-      {/* Debug Overlay */}
+      {/* Debug Overlay - only when enabled from Settings > Advanced */}
+      {debugOverlayEnabled && (
       <div style={{
         position: 'fixed',
         bottom: 10,
@@ -1085,6 +1087,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         })()}</div>
         <div>Ver: {cacheVersion}</div>
       </div>
+      )}
     </section>
   );
 };
