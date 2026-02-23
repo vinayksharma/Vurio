@@ -30,9 +30,18 @@ if(APPLE)
     endif()
 endif()
 
-# Find SQLite3
+# Find SQLite3 (prefer Homebrew on macOS so load_extension is available for vector index)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+if(APPLE)
+    find_path(SQLITE3_HB_INCLUDE NAMES sqlite3.h PATHS /opt/homebrew/opt/sqlite/include /opt/homebrew/include NO_DEFAULT_PATH)
+    find_library(SQLITE3_HB_LIB NAMES sqlite3 PATHS /opt/homebrew/opt/sqlite/lib /opt/homebrew/lib NO_DEFAULT_PATH)
+    if(SQLITE3_HB_INCLUDE AND SQLITE3_HB_LIB)
+        set(SQLITE3_INCLUDE_DIRS ${SQLITE3_HB_INCLUDE})
+        set(SQLITE3_LIBRARIES ${SQLITE3_HB_LIB})
+        message(STATUS "Using Homebrew SQLite for load_extension support: ${SQLITE3_HB_LIB}")
+    endif()
+endif()
 
 # Find yaml-cpp
 find_package(yaml-cpp REQUIRED)
@@ -267,6 +276,7 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/onnx_adapter.cpp
     src/media_processors/image/backends/onnx_session_manager.cpp
     src/database/image_artifacts_ops.cpp
+    src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp
     src/database/thumbnail_cache_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
@@ -298,18 +308,20 @@ target_link_libraries(media_dedup_server
     ${LIBTIFF_LIBRARIES}
 )
 
-# Add include directories and link directories for LibRaw and libtiff
+# Add include directories and link directories for LibRaw, libtiff, and SQLite
 target_include_directories(media_dedup_server PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
+    ${SQLITE3_INCLUDE_DIRS}
 )
 target_link_directories(media_dedup_server PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
     ${LIBTIFF_LIBRARY_DIRS}
 )
 
-# Set compile definitions
+# Set compile definitions (SQLITE_ENABLE_LOAD_EXTENSION for vector_index / sqlite-vec)
 target_compile_definitions(media_dedup_server PRIVATE
+    SQLITE_ENABLE_LOAD_EXTENSION
     ${SQLITE3_CFLAGS_OTHER}
 )
 

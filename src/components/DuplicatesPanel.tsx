@@ -30,6 +30,7 @@ const STATUS_REFRESH_COOLDOWN_MS = 2500;
 const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const { isOnline, status } = useServerStatusStore();
   const serverDupeCount = status?.duplicate_groups ?? status?.duplicate_groups_count ?? status?.duplicates ?? 0;
+  const serverDuplicatesFound = status?.duplicates_found ?? -1; // Total files in groups; -1 = unknown
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const [totalGroups, setTotalGroups] = useState(0);
@@ -61,6 +62,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const scrollTestRunningRef = useRef<boolean>(false);
   const scrollTestStatsRef = useRef<ScrollTestStats | null>(null);
   const lastStatusDrivenRefreshRef = useRef<number>(0);
+  const lastSyncedDuplicatesFoundRef = useRef<number>(-1);
 
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
@@ -125,20 +127,20 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
 
       if (data.groups && Array.isArray(data.groups)) {
         const cache = groupsCacheRef.current;
-        let hasNewGroups = false;
+        let hasChanges = false;
 
-        // Add new groups to cache, only update version if we actually added new items
+        // Always overwrite cache with fresh data so membership changes (add/remove files) are reflected
         data.groups.forEach((group, idx) => {
           const key = startIndex + idx;
-          if (!cache.has(key)) {
-            cache.set(key, group);
-            hasNewGroups = true;
-          }
+          if (!cache.has(key)) hasChanges = true;
+          cache.set(key, group);
         });
 
-        if (hasNewGroups) {
-          console.log(`Loaded ${data.groups.length} groups, cache size: ${cache.size}`);
-          setCacheVersion(v => v + 1); // Trigger re-render only if new groups were added
+        if (hasChanges || data.groups.length > 0) {
+          if (data.groups.length > 0) {
+            console.log(`Loaded ${data.groups.length} groups, cache size: ${cache.size}`);
+          }
+          setCacheVersion(v => v + 1); // Trigger re-render for new groups or updated membership
         }
         return true;
       }
@@ -869,6 +871,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       setTotalGroups(0);
       totalGroupsRef.current = 0;
       lastTotalGroupsRef.current = 0;
+      lastSyncedDuplicatesFoundRef.current = -1;
       setVisibleRange({ start: 0, end: 20 });
       setCacheVersion(0);
       isInitializedRef.current = false;
@@ -922,18 +925,23 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
   }, [isLoading, isActive, totalGroups]);
 
-  // Sync with server when heartbeat shows different duplicate count (groups added or removed)
+  // Sync with server when heartbeat shows different duplicate count (groups added/removed) or
+  // when duplicates_found changes (files added/removed within existing groups)
   useEffect(() => {
     if (!isActive || !isOnline) return;
-    if (serverDupeCount === totalGroups) return; // Already in sync
-    if (serverDupeCount === 0 && totalGroups === 0) return; // Nothing to sync
+    if (serverDupeCount === 0 && totalGroups === 0 && serverDuplicatesFound <= 0) return; // Nothing to sync
+
+    const groupsOutOfSync = serverDupeCount !== totalGroups;
+    const membersOutOfSync = serverDuplicatesFound >= 0 && serverDuplicatesFound !== lastSyncedDuplicatesFoundRef.current;
+    if (!groupsOutOfSync && !membersOutOfSync) return;
 
     const now = Date.now();
     if (now - lastStatusDrivenRefreshRef.current < STATUS_REFRESH_COOLDOWN_MS) return;
 
     lastStatusDrivenRefreshRef.current = now;
+    lastSyncedDuplicatesFoundRef.current = serverDuplicatesFound;
     refreshVisibleRange();
-  }, [isActive, isOnline, serverDupeCount, totalGroups, refreshVisibleRange]);
+  }, [isActive, isOnline, serverDupeCount, serverDuplicatesFound, totalGroups, refreshVisibleRange]);
 
   // Calculate total scroll height (min 200px when empty so empty-state is visible)
   const totalHeight = totalGroups > 0 ? totalGroups * ITEM_HEIGHT - GAP : 200;

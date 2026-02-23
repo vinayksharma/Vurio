@@ -201,21 +201,27 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     if(${test_name} STREQUAL "test_user_settings_service")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_scanned_files_ops")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_image_artifacts_ops")
         target_sources(${test_name} PRIVATE 
@@ -223,16 +229,22 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_processing_errors_ops")
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_tpm")
         target_sources(${test_name} PRIVATE 
@@ -259,13 +271,15 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
         )
-        target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_FILESFM=1)
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE STANDALONE_MAIN_FILESFM=1 SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_file_scanner")
         target_sources(${test_name} PRIVATE 
@@ -299,6 +313,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
@@ -310,6 +325,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_files_manager_scheduler")
         target_sources(${test_name} PRIVATE 
@@ -331,6 +348,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
@@ -338,6 +356,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     target_compile_options(${test_name} PRIVATE ${COMMON_TEST_FLAGS})
     target_include_directories(${test_name} PRIVATE
@@ -352,7 +372,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         ${GTEST_LIBRARIES} 
         pthread
         ${Poco_LIBRARIES}
-        sqlite3
+        ${SQLITE3_LIBRARIES}
         unified_config_lib
         test_utils
         ${OpenCV_LIBS}
@@ -373,7 +393,7 @@ add_executable(all_unit_tests
     unit/all_tests_main.cpp
     ${UNIT_TEST_SOURCES}
 )
-target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS)
+target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS SQLITE_ENABLE_LOAD_EXTENSION)
 target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
 target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
@@ -381,6 +401,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+        ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
         ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
@@ -422,6 +443,7 @@ target_sources(all_unit_tests PRIVATE
 target_include_directories(all_unit_tests PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
+    ${SQLITE3_INCLUDE_DIRS}
 )
 target_link_directories(all_unit_tests PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
@@ -431,7 +453,7 @@ target_link_libraries(all_unit_tests
     ${GTEST_LIBRARIES}
     pthread
     ${Poco_LIBRARIES}
-    sqlite3
+    ${SQLITE3_LIBRARIES}
     unified_config_lib
     yaml-cpp::yaml-cpp
     ${LIBRAW_LIBRARIES}

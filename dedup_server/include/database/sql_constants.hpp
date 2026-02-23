@@ -117,6 +117,9 @@ namespace MediaDedup
         inline constexpr std::string_view kDeleteScannedFile =
             "DELETE FROM scanned_files WHERE file_path=?";
 
+        inline constexpr std::string_view kSelectScannedFileIdByPath =
+            "SELECT id FROM scanned_files WHERE file_path=?";
+
         inline constexpr std::string_view kSelectScannedFileByPath =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
             " processed, links, is_network_file, location_key, created_at\n"

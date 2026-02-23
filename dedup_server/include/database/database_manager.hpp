@@ -23,6 +23,7 @@ namespace MediaDedup
     // Forward declarations
     class UnifiedObservableConfigManager;
     class SessionManager;
+    class VectorIndex;
 
     /**
      * @brief Database manager for the media deduplication server
@@ -158,9 +159,13 @@ namespace MediaDedup
         void setSessionAcquireTimeoutMs(int ms);
         void setSessionAcquireBackoffMs(int ms);
 
+        /** Optional vector index (sqlite-vec) for KNN duplicate search; null if disabled or init failed. */
+        VectorIndex *getVectorIndex();
+
     private:
         // Session management
         std::unique_ptr<SessionManager> session_manager_;
+        std::unique_ptr<VectorIndex> vector_index_;
         std::string db_path_;
         bool connected_;
         Poco::Logger &logger_;

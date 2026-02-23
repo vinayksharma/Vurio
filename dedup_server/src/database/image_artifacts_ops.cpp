@@ -1,6 +1,7 @@
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
 #include "database/sql_constants.hpp"
+#include "database/vector_index.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/LOB.h>
@@ -66,6 +67,19 @@ namespace MediaDedup
                 Keywords::use(blob),
                 Keywords::use(v),
                 Keywords::now;
+
+            // Sync vector index when enabled (for KNN duplicate search)
+            VectorIndex *vix = db.getVectorIndex();
+            if (vix && !r.embedding_blob.empty())
+            {
+                int file_id = 0;
+                Statement sel(sess);
+                sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
+                if (file_id > 0)
+                {
+                    vix->insert(file_id, r.embedding_blob.data(), r.embedding_blob.size());
+                }
+            }
             return true;
         }
         catch (const std::exception &e)

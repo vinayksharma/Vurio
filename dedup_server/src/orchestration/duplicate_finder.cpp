@@ -2,6 +2,7 @@
 #include "database/duplicate_groups_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/image_artifacts_ops.hpp"
+#include "database/vector_index.hpp"
 #include "media_processors/similarity/similarity_calculator.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
@@ -402,6 +403,9 @@ namespace MediaDedup
                 // Track new ungrouped files in this batch for potential group creation
                 std::vector<FileArtifact> batch_ungrouped_files;
 
+                int knn_k = cfg_->getPropertyValue<int>("duplicates.finder.knnK", 200);
+                VectorIndex *vix = db_.getVectorIndex();
+
                 // Process each new file
                 int files_checked = 0;
                 int duplicates_found = 0;
@@ -433,12 +437,27 @@ namespace MediaDedup
                     double threshold_min = getThresholdMin(mode);
                     double threshold_max = getThresholdMax(mode);
 
-                    // STEP 1: Compare against group representatives ONLY (representative-based matching)
+                    // STEP 1: Compare against group representatives (or KNN candidates when vector index is enabled)
                     int best_group_id = -1;
                     double best_similarity = 0.0;
                     int metadata_filtered_count = 0;
 
-                    for (const auto &[group_id, representative] : group_representatives)
+                    const std::map<int, FileArtifact> *reps_to_use = &group_representatives;
+                    std::map<int, FileArtifact> candidate_representatives;
+                    if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
+                    {
+                        auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
+                        std::set<int> knn_ids;
+                        for (const auto &p : knn)
+                            knn_ids.insert(p.first);
+                        for (const auto &[gid, rep] : group_representatives)
+                            if (knn_ids.count(rep.file_id))
+                                candidate_representatives[gid] = rep;
+                        if (!candidate_representatives.empty())
+                            reps_to_use = &candidate_representatives;
+                    }
+
+                    for (const auto &[group_id, representative] : *reps_to_use)
                     {
                         // Metadata pre-filtering: Skip if files are incompatible
                         if (!areMetadataCompatible(new_file, representative))
@@ -458,7 +477,7 @@ namespace MediaDedup
                     if (metadata_filtered_count > 0)
                     {
                         logger.trace("Metadata filtering skipped %d/%zu group comparisons for file_id %d",
-                                     metadata_filtered_count, group_representatives.size(), new_file.file_id);
+                                     metadata_filtered_count, reps_to_use->size(), new_file.file_id);
                     }
 
                     if (best_group_id > 0)

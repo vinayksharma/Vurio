@@ -62,6 +62,7 @@ export interface ServerStatus {
   duplicate_groups?: number;
   duplicates?: number;
   duplicate_count?: number;
+  duplicates_found?: number; // Total files in groups (changes when members added/removed)
   registered_directories?: string[] | Array<{ path: string }>;
   registered_locations?: string[] | Array<{ path: string }>;
   directories?: string[] | Array<{ path: string }>;
