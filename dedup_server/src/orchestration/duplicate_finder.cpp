@@ -1450,8 +1450,19 @@ namespace MediaDedup
                                 {
                                     files_moved++;
 
-                                    // Update member count for both groups
-                                    DuplicateGroupsOps::updateGroupMemberCount(db_, group.id, group.member_count - 1);
+                                    int new_count = group.member_count - 1;
+                                    if (new_count <= 1)
+                                    {
+                                        // Empty or single-member group: delete so the key can re-match
+                                        DuplicateGroupsOps::deleteGroup(db_, group.id);
+                                        group_representatives.erase(group.id);
+                                        logger.information("Deleted group %d (1 member left after cross-group move)",
+                                                           group.id);
+                                    }
+                                    else
+                                    {
+                                        DuplicateGroupsOps::updateGroupMemberCount(db_, group.id, new_count);
+                                    }
 
                                     auto other_group_opt = DuplicateGroupsOps::getGroupById(db_, best_other_group);
                                     if (other_group_opt.has_value())

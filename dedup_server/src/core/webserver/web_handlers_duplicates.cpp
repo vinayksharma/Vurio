@@ -104,6 +104,9 @@ namespace MediaDedupServer
                 for (const auto &group_with_members : page.groups)
                 {
                     const auto &group = group_with_members.group;
+                    // Exclude single-file groups (should not exist after empty-group fix; defensive)
+                    if (group.member_count < 2)
+                        continue;
 
                     Poco::JSON::Object group_obj;
                     group_obj.set("id", group.id);
@@ -136,7 +139,7 @@ namespace MediaDedupServer
                 root.set("total_count", page.total_count);
                 root.set("start", page.start);
                 root.set("end", page.end);
-                root.set("returned", page.returned);
+                root.set("returned", static_cast<int>(groups_array.size())); // exclude single-file groups
 
                 // Send response
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
