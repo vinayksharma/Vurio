@@ -1064,12 +1064,23 @@ namespace MediaDedup
                 }
             }
 
-            DuplicateGroupsOps::updateGroupMemberCount(db_, best_group_id, orig_count);
+            // If original group has only the key left, delete it so the key can be re-used via cross-batch (Option A)
+            if (orig_count == 1)
+            {
+                logger.information("Original group %d has only key (file_id %d) after split; deleting group so key can re-match via cross-batch",
+                                   best_group_id, group.representative_file_id);
+                DuplicateGroupsOps::deleteGroup(db_, best_group_id);
+                group_representatives.erase(best_group_id);
+            }
+            else
+            {
+                DuplicateGroupsOps::updateGroupMemberCount(db_, best_group_id, orig_count);
+            }
+
             DuplicateGroupsOps::updateGroupRepresentative(db_, new_group_id, new_key_artifact->file_id,
                                                          new_key_artifact->file_path, new_key_artifact->file_size,
                                                          new_key_artifact->created_date, new_count);
 
-            // Refresh orig group rep in cache if members changed
             group_representatives[new_group_id] = *new_key_artifact;
 
             return true;
