@@ -310,6 +310,8 @@ namespace MediaDedup
         manager->createProperty<int>("database.session.acquireBackoffMs", 50, "Database session acquire backoff");
         manager->createProperty<int>("database.session.poolMin", 4, "Minimum database session pool size");
         manager->createProperty<int>("database.session.poolMax", 20, "Maximum database session pool size");
+        manager->createProperty<bool>("database.vector.enabled", false, "Enable sqlite-vec vector index for KNN duplicate search");
+        manager->createProperty<std::string>("database.vector.extensionPath", "", "Full path to sqlite-vec vec0 extension (e.g. vec0.dylib or vec0.so)");
 
         // Create default logging properties
         manager->createProperty<std::string>("logging.level", config.log_level, "Logging level");
@@ -376,6 +378,7 @@ namespace MediaDedup
         manager->createProperty<int>("duplicates.finder.intervalMs", 3600000, "Duplicate finder interval (1 hour default)");
         manager->createProperty<int>("duplicates.finder.batchSize", 1000, "Files to process per batch");
         manager->createProperty<int>("duplicates.finder.maxGroupSize", 100, "Max duplicates per group");
+        manager->createProperty<int>("duplicates.finder.knnK", 200, "KNN candidate count when vector index is enabled (0 = use full scan)");
 
         // TPM share for duplicate finder
         manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, "Thread pool share for duplicate finder");

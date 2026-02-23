@@ -5,6 +5,7 @@
 #include <Poco/Data/RecordSet.h>
 #include "database/session_manager.hpp"
 #include "database/user_settings_ops.hpp"
+#include "database/vector_index.hpp"
 #include "config/unified_observable_config.hpp"
 #include <fstream>
 #include <sstream>
@@ -46,7 +47,26 @@ namespace MediaDedup
             {
                 connected_ = true;
                 logger_.information("Database connected successfully: " + db_path_);
-                
+
+                // Optional vector index (sqlite-vec) for KNN duplicate search
+                if (config_manager_)
+                {
+                    bool vec_enabled = config_manager_->getPropertyValue<bool>("database.vector.enabled", false);
+                    std::string vec_path = config_manager_->getPropertyValue<std::string>("database.vector.extensionPath", "");
+                    int embedding_dim = config_manager_->getPropertyValue<int>("media.image.embeddingDim", 512);
+                    if (vec_enabled && !vec_path.empty() && embedding_dim > 0)
+                    {
+                        vector_index_ = std::make_unique<VectorIndex>();
+                        if (vector_index_->init(db_path_, vec_path, embedding_dim))
+                            logger_.information("Vector index enabled: extension=%s, dim=%d", vec_path.c_str(), embedding_dim);
+                        else
+                        {
+                            logger_.warning("Vector index init failed; duplicate finder will use linear scan.");
+                            vector_index_.reset();
+                        }
+                    }
+                }
+
                 // Subscribe to config changes for pool sizes
                 if (config_manager_)
                 {
@@ -76,6 +96,11 @@ namespace MediaDedup
     bool DatabaseManager::isConnected() const
     {
         return connected_;
+    }
+
+    VectorIndex *DatabaseManager::getVectorIndex()
+    {
+        return vector_index_.get();
     }
 
     // Removed direct getSession()/getConnectedSession(); use acquireSessionLease()

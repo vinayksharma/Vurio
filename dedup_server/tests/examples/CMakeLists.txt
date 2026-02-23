@@ -47,6 +47,7 @@ target_link_libraries(quality_smoke
     ${ImageMagick++_LIBRARIES}
     ${LIBRAW_LIBRARIES}
     ${LIBTIFF_LIBRARIES}
+    ${SQLITE3_LIBRARIES}
     Poco::Foundation
     Poco::Data
     Poco::DataSQLite
@@ -56,6 +57,7 @@ target_sources(quality_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -72,7 +74,9 @@ target_sources(quality_smoke PRIVATE
 target_include_directories(quality_smoke PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
+    ${SQLITE3_INCLUDE_DIRS}
 )
+target_compile_definitions(quality_smoke PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
 target_link_directories(quality_smoke PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
     ${LIBTIFF_LIBRARY_DIRS}

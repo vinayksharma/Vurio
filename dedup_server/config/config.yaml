@@ -158,3 +158,5 @@ scheduler.jitter.enabled: false
 thumbnail.pipeline.enabled: true
 duplicates.finder.batchSize: 1000
 scheduler.jitter.percent: 0
+database.vector.enabled: true
+database.vector.extensionPath: "extensions/vec0.dylib"
