@@ -78,7 +78,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     totalGroupsRef.current = totalGroups;
   }, [totalGroups]);
 
-  // Update active thumbnail request count, error count, and queue stats periodically for debug panel
+  // Update active thumbnail request count, error count, and queue stats for debug panel
+  // Only use 100ms interval when overlay is visible to avoid memory churn from constant re-renders
   useEffect(() => {
     const updateCounts = () => {
       setActiveThumbnailRequests(getActiveRequestCount());
@@ -87,10 +88,11 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       setQueueStats({ pending: stats.pending, active: stats.active, completed: stats.completed });
     };
 
-    updateCounts(); // Update immediately
-    const interval = setInterval(updateCounts, 100); // Update every 100ms for real-time display
+    updateCounts(); // Update immediately on mount
+    const ms = debugOverlayEnabled && isActive ? 100 : 5000; // 100ms when debugging, 5s when not
+    const interval = setInterval(updateCounts, ms);
     return () => clearInterval(interval);
-  }, []);
+  }, [debugOverlayEnabled, isActive]);
 
   // Calculate the visible range based on scroll position
   const calculateVisibleRange = useCallback((container: HTMLElement) => {
@@ -319,7 +321,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
 
       // Calculate a wider range - anything outside this gets cleaned up
       // Use a very large buffer to be conservative and avoid unloading visible images
-      const cleanupBuffer = 20; // Keep images loaded for 20 cards outside viewport
+      const cleanupBuffer = 12; // Keep images for 12 cards outside viewport (reduced to limit memory)
       const safeStart = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - cleanupBuffer);
       const safeEnd = Math.min(totalGroupsRef.current - 1, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + cleanupBuffer);
 
@@ -331,35 +333,26 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         const index = parseInt(cardEl.getAttribute('data-group-index') || '-1');
         if (index < 0) return;
 
-        // Only unload images from cards that are VERY far outside safe range
-        // This prevents unloading images that are still somewhat visible
-        if (index < safeStart - 25 || index > safeEnd + 25) {
+        // Unload images from cards outside safe range to prevent OOM
+        if (index < safeStart - 15 || index > safeEnd + 15) {
           const images = cardEl.querySelectorAll('img[src]');
           images.forEach((imgEl) => {
             const img = imgEl as HTMLImageElement;
             if (img.src) {
-              // Check if image was recently loaded - don't unload if loaded within last 10 seconds
-              // This prevents flickering when scrolling quickly
               const loadTimestamp = img.getAttribute('data-loaded-at');
               if (loadTimestamp) {
                 const loadTime = parseInt(loadTimestamp, 10);
-                if (Date.now() - loadTime < 10000) {
-                  return; // Too recent, don't unload
-                }
+                if (Date.now() - loadTime < 4000) return; // Don't unload recent loads
               }
 
-              // Double-check the image is actually far from viewport using getBoundingClientRect
               const rect = cardEl.getBoundingClientRect();
               const containerRect = container.getBoundingClientRect();
               const distanceFromViewport = Math.min(
-                containerRect.top - rect.bottom, // Above viewport
-                rect.top - containerRect.bottom  // Below viewport
+                containerRect.top - rect.bottom,
+                rect.top - containerRect.bottom
               );
 
-              // Only unload if more than 1000px away from viewport
-              if (distanceFromViewport < 1000) {
-                return; // Still close enough, keep loaded
-              }
+              if (distanceFromViewport < 500) return; // Still close enough
 
               // Unload image by removing src
               const src = img.src;
@@ -385,13 +378,12 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       }
     };
 
-    // Run cleanup less frequently - every 10 seconds, and only if scrolling has stopped
+    // Run cleanup every 6s to unload thumbnails outside viewport (prevents OOM)
     memoryCleanupIntervalRef.current = setInterval(() => {
-      // Only cleanup if we haven't cleaned up in the last 5 seconds (to avoid during active scrolling)
-      if (Date.now() - lastMemoryCleanupRef.current > 5000) {
+      if (Date.now() - lastMemoryCleanupRef.current > 4000) {
         performMemoryCleanup();
       }
-    }, 10000); // Less frequent - every 10 seconds
+    }, 6000);
 
     // Also cleanup after scrolling stops (with longer delay)
     const handleScrollForCleanup = () => {

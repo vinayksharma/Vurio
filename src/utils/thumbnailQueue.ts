@@ -81,7 +81,12 @@ class ThumbnailRequestQueue {
       addedAt: Date.now(),
     };
 
-    // Add to end of stack (LIFO - newest at end, processed from end)
+    // Cap pending stack to prevent OOM when scrolling through many groups
+    const MAX_PENDING = 400;
+    if (this.pendingStack.length >= MAX_PENDING) {
+      this.pendingStack = this.pendingStack.slice(-Math.floor(MAX_PENDING * 0.7));
+    }
+
     this.pendingStack.push(request);
   }
 
@@ -384,10 +389,10 @@ class ThumbnailRequestQueue {
         // Mark as completed for deduplication
         this.completedRequests.add(request.url);
 
-        // Clean up completed requests set if it gets too large (keep last 1000)
-        if (this.completedRequests.size > 1000) {
+        // Clean up completed requests set to avoid unbounded growth (keep last 250)
+        if (this.completedRequests.size > 400) {
           const entries = Array.from(this.completedRequests);
-          this.completedRequests = new Set(entries.slice(-500));
+          this.completedRequests = new Set(entries.slice(-250));
         }
       }
 

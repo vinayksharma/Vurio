@@ -4,6 +4,9 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import fs from 'fs';
 
+// Increase JS heap limit to reduce OOM risk when scrolling many thumbnails
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=3072');
+
 let mainWindow: BrowserWindow | null = null;
 
 const UI_HOST = process.env.UI_HOST || '127.0.0.1';
