@@ -25,8 +25,11 @@ interface ScrollTestStats {
   lastScrollPosition?: number;
 }
 
+const STATUS_REFRESH_COOLDOWN_MS = 2500;
+
 const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
-  const { isOnline } = useServerStatusStore();
+  const { isOnline, status } = useServerStatusStore();
+  const serverDupeCount = status?.duplicate_groups ?? status?.duplicate_groups_count ?? status?.duplicates ?? 0;
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const [totalGroups, setTotalGroups] = useState(0);
@@ -57,6 +60,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const [queueStats, setQueueStats] = useState<{ pending: number; active: number; completed: number }>({ pending: 0, active: 0, completed: 0 });
   const scrollTestRunningRef = useRef<boolean>(false);
   const scrollTestStatsRef = useRef<ScrollTestStats | null>(null);
+  const lastStatusDrivenRefreshRef = useRef<number>(0);
 
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
@@ -232,6 +236,16 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       console.log(`Pruned ${deleted} items from cache, new size: ${cache.size}`);
     }
   }, []);
+
+  // Refresh visible range without changing scroll - keeps viewport stable when syncing with server
+  const refreshVisibleRange = useCallback(() => {
+    if (!cardStackRef.current || !isActive || !isOnline || isLoadingRef.current) return;
+    const container = cardStackRef.current;
+    const range = calculateVisibleRange(container);
+    const rangeSize = range.end - range.start + 1;
+    const count = Math.min(BATCH_SIZE * 2, Math.max(1, rangeSize));
+    loadGroupsFromAPI(range.start, count);
+  }, [calculateVisibleRange, loadGroupsFromAPI, isActive, isOnline]);
 
   // Handle scroll events
   const handleScroll = useCallback(() => {
@@ -907,6 +921,19 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       }
     }
   }, [isLoading, isActive, totalGroups]);
+
+  // Sync with server when heartbeat shows different duplicate count (groups added or removed)
+  useEffect(() => {
+    if (!isActive || !isOnline) return;
+    if (totalGroups === 0) return; // Initial load handles first fetch
+    if (serverDupeCount === totalGroups) return; // Already in sync
+
+    const now = Date.now();
+    if (now - lastStatusDrivenRefreshRef.current < STATUS_REFRESH_COOLDOWN_MS) return;
+
+    lastStatusDrivenRefreshRef.current = now;
+    refreshVisibleRange();
+  }, [isActive, isOnline, serverDupeCount, totalGroups, refreshVisibleRange]);
 
   // Calculate total scroll height (min 200px when empty so empty-state is visible)
   const totalHeight = totalGroups > 0 ? totalGroups * ITEM_HEIGHT - GAP : 200;
