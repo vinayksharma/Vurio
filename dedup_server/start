@@ -37,21 +37,24 @@ show_usage() {
     echo "  -h, --help     Show this help message"
     echo "  -b, --build    Build the project before starting"
     echo "  -d, --debug    Start in debug mode"
+    echo "  -l, --log      Redirect output to logs/server.log (tee)"
     echo "  -c, --config   Use specific config file"
     echo "  -p, --port     Use specific port (default: 8080)"
     echo "  --host         Use specific host (default: 0.0.0.0)"
     echo ""
     echo "Examples:"
-    echo "  $0                    # Start server with defaults"
-    echo "  $0 --build           # Build and start server"
-    echo "  $0 --debug           # Start in debug mode"
-    echo "  $0 --port 9090       # Start on port 9090"
-    echo "  $0 --host localhost  # Start on localhost only"
+    echo "  $0                    # Start server, output to console only"
+    echo "  $0 -l                 # Start server and log to logs/server.log"
+    echo "  $0 --build            # Build and start server"
+    echo "  $0 --debug            # Start in debug mode"
+    echo "  $0 --port 9090        # Start on port 9090"
+    echo "  $0 --host localhost   # Start on localhost only"
 }
 
 # Default values
 BUILD_FIRST=false
 DEBUG_MODE=false
+LOG_OUTPUT=false
 CONFIG_FILE=""
 PORT=""
 HOST=""
@@ -69,6 +72,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--debug)
             DEBUG_MODE=true
+            shift
+            ;;
+        -l|--log)
+            LOG_OUTPUT=true
             shift
             ;;
         -c|--config)
@@ -222,13 +229,25 @@ PY
     print_status "ImageMagick debug mode disabled (MAGICK_DEBUG=None) to prevent crashes on corrupted files"
     echo ""
     
-    # Start the server
+    # Start the server (-l logs to logs/server.log; otherwise console only)
+    if [ "$LOG_OUTPUT" = true ]; then
+        mkdir -p logs
+        print_status "Logging to logs/server.log"
+    fi
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Starting server in debug mode..."
-        ./build/bin/media_dedup_server $SERVER_ARGS
+        if [ "$LOG_OUTPUT" = true ]; then
+            ./build/bin/media_dedup_server $SERVER_ARGS 2>&1 | tee logs/server.log
+        else
+            ./build/bin/media_dedup_server $SERVER_ARGS
+        fi
     else
         print_status "Starting server..."
-        ./build/bin/media_dedup_server $SERVER_ARGS
+        if [ "$LOG_OUTPUT" = true ]; then
+            ./build/bin/media_dedup_server $SERVER_ARGS 2>&1 | tee logs/server.log
+        else
+            ./build/bin/media_dedup_server $SERVER_ARGS
+        fi
     fi
 }
 

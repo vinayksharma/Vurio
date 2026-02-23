@@ -405,6 +405,11 @@ namespace MediaDedup
 
                 int knn_k = cfg_->getPropertyValue<int>("duplicates.finder.knnK", 200);
                 VectorIndex *vix = db_.getVectorIndex();
+                if (vix && vix->isReady() && knn_k > 0)
+                    logger.information("Duplicate finder batch: using KNN (k=%d) for candidate search", knn_k);
+                else
+                    logger.information("Duplicate finder batch: using full scan (vector index %s, knnK=%d)",
+                                      (vix && vix->isReady()) ? "ready" : "unavailable", knn_k);
 
                 // Process each new file
                 int files_checked = 0;
