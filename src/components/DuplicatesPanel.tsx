@@ -925,8 +925,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   // Sync with server when heartbeat shows different duplicate count (groups added or removed)
   useEffect(() => {
     if (!isActive || !isOnline) return;
-    if (totalGroups === 0) return; // Initial load handles first fetch
     if (serverDupeCount === totalGroups) return; // Already in sync
+    if (serverDupeCount === 0 && totalGroups === 0) return; // Nothing to sync
 
     const now = Date.now();
     if (now - lastStatusDrivenRefreshRef.current < STATUS_REFRESH_COOLDOWN_MS) return;
