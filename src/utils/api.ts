@@ -176,46 +176,13 @@ export async function resetDuplicates(): Promise<void> {
 }
 
 export function extractScannedCount(statusObj: ServerStatus): number {
-  if (!statusObj || typeof statusObj !== 'object') return 0;
-  return (
-    statusObj.scanned_files_count ||
-    statusObj.files_scanned ||
-    statusObj.scanned_files ||
-    statusObj.scannedCount ||
-    statusObj.scanned ||
-    statusObj.total_scanned ||
-    0
-  );
+  return statusObj?.scanned_files_count || 0;
 }
 
 export function extractProcessedCount(statusObj: ServerStatus): number {
-  if (!statusObj || typeof statusObj !== 'object') return 0;
-  return (
-    statusObj.processed_files_count ||
-    statusObj.files_processed ||
-    statusObj.processed_files ||
-    statusObj.processedCount ||
-    statusObj.processed ||
-    statusObj.total_processed ||
-    0
-  );
+  return statusObj?.processed_files_count || 0;
 }
 
 export function extractRegisteredDirectories(statusObj: ServerStatus): string[] {
-  if (!statusObj || typeof statusObj !== 'object') return [];
-  const candidates = [
-    statusObj.registered_directories,
-    statusObj.registered_locations,
-    statusObj.directories,
-    statusObj.locations,
-    statusObj.media_locations,
-  ];
-  for (const c of candidates) {
-    if (Array.isArray(c)) {
-      return c
-        .map((x) => (typeof x === 'string' ? x : x && typeof x.path === 'string' ? x.path : null))
-        .filter(Boolean) as string[];
-    }
-  }
-  return [];
+  return statusObj?.registered_directories || [];
 }

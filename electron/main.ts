@@ -46,9 +46,9 @@ async function createWindow() {
     backgroundColor: '#0b132b',
     webPreferences: {
       preload: PRELOAD_PATH,
-      nodeIntegration: true,  // Required for Electron 30+ when preload/contextBridge fails
-      contextIsolation: false, // Fallback so page can use require('electron').ipcRenderer
-      sandbox: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
     },
     titleBarStyle: 'hiddenInset',
   });

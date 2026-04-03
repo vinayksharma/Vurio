@@ -10,6 +10,7 @@
 #include "core/web/static_file_handler.hpp"
 #include "core/web/web_handlers_server_status.hpp"
 #include "core/web/web_handlers_reset_errors.hpp"
+#include "core/web/web_handlers_websocket.hpp"
 #include "core/web/web_handlers_thumbnail.hpp"
 #include "core/web/web_handlers_asset_preview.hpp"
 #include "core/web/web_handlers_duplicates.hpp"
@@ -67,6 +68,38 @@ namespace MediaDedup
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
     };
 
+    // CORS Wrapper Handler
+    class CorsWrapperHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        CorsWrapperHandler(Poco::Net::HTTPRequestHandler* inner) : inner_(inner) {}
+        ~CorsWrapperHandler() { delete inner_; }
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response) override
+        {
+            response.set("Access-Control-Allow-Origin", "*");
+            response.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            response.set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-requested-with");
+            response.set("Access-Control-Max-Age", "86400");
+            
+            if (request.getMethod() == "OPTIONS") {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+                response.setContentLength(0);
+                response.send();
+                return;
+            }
+
+            if (inner_) {
+                inner_->handleRequest(request, response);
+            } else {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+                response.send();
+            }
+        }
+    private:
+        Poco::Net::HTTPRequestHandler* inner_;
+    };
+
     // Factory
     ConfigRequestHandlerFactory::ConfigRequestHandlerFactory(
         std::shared_ptr<UnifiedObservableConfigManager> config_manager,
@@ -100,22 +133,26 @@ namespace MediaDedup
         const std::string &uri = request.getURI();
         const std::string &method = request.getMethod();
 
+        Poco::Net::HTTPRequestHandler* handler = nullptr;
+
         // Root endpoint - serve Swagger UI
         if (uri == "/" && method == "GET")
-            return new SwaggerUIHandler(web_root_path_);
-
+            handler = new SwaggerUIHandler(web_root_path_);
         // Swagger UI assets
-        if (uri.find("/swagger-ui/") == 0)
-            return new StaticFileHandler(web_root_path_);
-
+        else if (uri.find("/swagger-ui/") == 0)
+            handler = new StaticFileHandler(web_root_path_);
+        // Handle CORS preflight explicitly across all API
+        else if (method == "OPTIONS")
+            handler = nullptr; // Handled by CorsWrapperHandler base
         // API endpoints - these need C++ handlers for dynamic data
-        if (uri.find("/api/") == 0)
-        {
-            return createApiHandler(uri, method);
-        }
-
+        else if (uri.find("/api/") == 0)
+            handler = createApiHandler(uri, method);
         // Everything else (HTML, CSS, JS, images) served as static files
-        return new StaticFileHandler(web_root_path_);
+        else
+            handler = new StaticFileHandler(web_root_path_);
+
+        // Wrap EVERYTHING in CORS, as local Vite/Electron needs to access these
+        return new CorsWrapperHandler(handler);
     }
 
     Poco::Net::HTTPRequestHandler *ConfigRequestHandlerFactory::createApiHandler(
@@ -136,6 +173,8 @@ namespace MediaDedup
             return new ReloadConfigHandler(config_manager_);
         if (path == "/api/v1/server/status" && method == "GET")
             return new ServerStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_, duplicate_finder_);
+        if (path == "/api/v1/server/status/ws")
+            return new WebSocketStatusHandler(config_manager_, files_service_, scanned_files_service_, tpm_, duplicate_finder_);
         if (path == "/api/v1/files/reset-errors" && method == "POST")
             return new ResetErrorsHandler(config_manager_, scanned_files_service_);
         if (path == "/api/v1/duplicates/groups" && method == "GET")

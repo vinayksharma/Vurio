@@ -8,12 +8,12 @@ const StatusBar: React.FC = () => {
   const getStatusSummary = (status: ServerStatus | null): string => {
     if (!status) return 'Scanned 0 • Processed 0 • Threads 0/0 • Errors 0 • Dupes 0 • Dirs 0';
     
-    const scanned = status.scanned_files_count || status.files_scanned || status.scanned_files || 0;
-    const processed = status.processed_files_count || status.files_processed || status.processed_files || 0;
-    const threads = status.thread_pool?.running_total || status.active_threads || status.threads || 0;
-    const maxThreads = status.thread_pool?.effective_max_threads || status.max_threads || 0;
-    const errors = status.error_files_count || status.errors || status.error_count || 0;
-    const dupes = status.duplicate_groups_count || status.duplicate_groups || status.duplicates || status.duplicate_count || 0;
+    const scanned = status.scanned_files_count || 0;
+    const processed = status.processed_files_count || 0;
+    const threads = status.thread_pool?.running_total || 0;
+    const maxThreads = status.thread_pool?.effective_max_threads || 0;
+    const errors = status.error_files_count || 0;
+    const dupes = status.duplicate_groups || 0;
     const dirs = registeredDirs.length;
 
     return `Scanned ${scanned} • Processed ${processed} • Threads ${threads}/${maxThreads} • Errors ${errors} • Dupes ${dupes} • Dirs ${dirs}`;
@@ -22,9 +22,9 @@ const StatusBar: React.FC = () => {
   const getProgressPercent = (status: ServerStatus | null): { completed: number; errors: number; errorLeft: number } => {
     if (!status) return { completed: 0, errors: 0, errorLeft: 0 };
     
-    const scanned = status.scanned_files_count || status.files_scanned || 0;
-    const processed = status.processed_files_count || status.files_processed || 0;
-    const errors = status.error_files_count || status.errors || status.error_count || 0;
+    const scanned = status.scanned_files_count || 0;
+    const processed = status.processed_files_count || 0;
+    const errors = status.error_files_count || 0;
     
     const total = scanned || 1;
     const completedPercent = Math.round((processed / total) * 100);
@@ -41,8 +41,8 @@ const StatusBar: React.FC = () => {
   const timestamp = new Date().toLocaleTimeString();
   
   const summaryText = getStatusSummary(status);
-  const errors = status?.error_files_count || status?.errors || status?.error_count || 0;
-  const dupes = status?.duplicate_groups_count || status?.duplicate_groups || status?.duplicates || status?.duplicate_count || 0;
+  const errors = status?.error_files_count || 0;
+  const dupes = status?.duplicate_groups || 0;
 
   return (
     <footer className="app-statusbar">
