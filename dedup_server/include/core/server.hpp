@@ -85,6 +85,9 @@ namespace MediaDedup
          */
         void handleHelp(const std::string &name, const std::string &value);
 
+        void handleConfig(const std::string &name, const std::string &value);
+        void handleDebug(const std::string &name, const std::string &value);
+
         /**
          * @brief Main application logic
          * @return Exit code

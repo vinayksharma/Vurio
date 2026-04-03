@@ -52,7 +52,7 @@ OPTIONS:
     -h, --help          Show this help message
     -v, --verbose       Enable verbose output
     -d, --debug         Enable debug mode
-    -c, --config FILE   Use specific config file (default: config/logging.yaml)
+    -c, --config FILE   Use specific config file (default: config/config.yaml)
     --no-build          Skip building before running
     --clean             Clean build directory before building
 
@@ -314,6 +314,9 @@ run_server() {
     print_status "Logs will be written to: $LOGS_DIR/"
     echo
     
+    # Set non-interactive mode to prevent immediate exit on EOF when running in background
+    export DEDUP_NON_INTERACTIVE=1
+    
     # Run server in background
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Running in debug mode..."
@@ -564,7 +567,7 @@ main() {
     DEBUG_MODE=false
     SKIP_BUILD=false
     CLEAN_BUILD=false
-    CONFIG_FILE="$CONFIG_DIR/logging.yaml"
+    CONFIG_FILE="$CONFIG_DIR/config.yaml"
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do

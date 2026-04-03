@@ -3,23 +3,45 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKEND_DIR="${APP_DIR}/dedup_server"
 
-echo "Stopping current Electron instance..."
+echo "Stopping current instances..."
+# Stop backend gracefully if possible
+if [ -d "$BACKEND_DIR" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
+  (cd "$BACKEND_DIR" && ./scripts/run.sh stop 2>/dev/null || true)
+fi
+
 # Find and kill Electron processes for this app
 pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
 pkill -f "electron.*vurio" 2>/dev/null || true
 pkill -f "electron.*main.js" 2>/dev/null || true
+
 # Give it a moment to fully stop
 sleep 1
 
 echo "Building application..."
 cd "$APP_DIR"
 
-# Build and run Electron
+# Build and run using Bun (priority) or npm
 if command -v bun &> /dev/null; then
   echo "Using Bun..."
-  bun run bun:build && NODE_ENV=production bun run electron
+  # Clean build and typecheck
+  bun run bun:build
+  
+  echo "Starting Backend..."
+  (cd "$BACKEND_DIR" && ./scripts/run.sh server)
+  
+  echo "Starting Electron..."
+  sleep 2
+  NODE_ENV=production bun run electron
 else
   echo "Using npm..."
-  npm run build && NODE_ENV=production npm run electron
+  npm run npm:build
+  
+  echo "Starting Backend..."
+  (cd "$BACKEND_DIR" && ./scripts/run.sh server)
+  
+  echo "Starting Electron..."
+  sleep 2
+  NODE_ENV=production npm run electron
 fi

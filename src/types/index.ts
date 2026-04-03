@@ -34,40 +34,34 @@ declare global {
 }
 
 export interface ServerStatus {
-  server_mode?: string;
-  scanned_files_count?: number;
-  files_scanned?: number;
-  scanned_files?: number;
-  scannedCount?: number;
-  scanned?: number;
-  total_scanned?: number;
-  processed_files_count?: number;
-  files_processed?: number;
-  processed_files?: number;
-  processedCount?: number;
-  processed?: number;
-  total_processed?: number;
-  active_threads?: number;
-  threads?: number;
-  max_threads?: number;
-  thread_pool?: {
-    running_total?: number;
-    effective_max_threads?: number;
-    queue_depths?: Record<string, number>;
+  server_mode: string;
+  scanned_files_count: number;
+  processed_files_count: number;
+  error_files_count: number;
+  queued_files_count: number;
+  duplicates_found: number;
+  duplicate_groups: number;
+  files_with_duplicates: number;
+  registered_directories: string[];
+  registered_directories_count: number;
+  thread_pool: {
+    running_total: number;
+    effective_max_threads: number;
+    queue_depths: Record<string, number>;
+    per_type: Record<string, {
+      share: number;
+      running: number;
+      queued: number;
+      queue_depth: number;
+    }>;
   };
-  error_files_count?: number;
-  errors?: number;
-  error_count?: number;
-  duplicate_groups_count?: number;
-  duplicate_groups?: number;
-  duplicates?: number;
-  duplicate_count?: number;
-  duplicates_found?: number; // Total files in groups (changes when members added/removed)
-  registered_directories?: string[] | Array<{ path: string }>;
-  registered_locations?: string[] | Array<{ path: string }>;
-  directories?: string[] | Array<{ path: string }>;
-  locations?: string[] | Array<{ path: string }>;
-  media_locations?: string[] | Array<{ path: string }>;
+  configuration: {
+    valid: boolean;
+    config_file: string;
+    property_count: number;
+    validation_errors: string[];
+  };
+  timestamp: number;
 }
 
 export interface DuplicateGroupMember {

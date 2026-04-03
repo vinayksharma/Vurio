@@ -47,12 +47,27 @@ namespace MediaDedup
 
     void MediaDedupServer::defineOptions(Poco::Util::OptionSet &options)
     {
+        Poco::Util::ServerApplication::defineOptions(options);
+
         // Basic help option
         options.addOption(
             Poco::Util::Option("help", "h", "Display help information")
                 .required(false)
                 .repeatable(false)
                 .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleHelp)));
+
+        options.addOption(
+            Poco::Util::Option("config", "c", "Load configuration file")
+                .required(false)
+                .repeatable(false)
+                .argument("file")
+                .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleConfig)));
+
+        options.addOption(
+            Poco::Util::Option("debug", "d", "Enable debug mode")
+                .required(false)
+                .repeatable(false)
+                .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleDebug)));
     }
 
     void MediaDedupServer::handleOption(const std::string &name, const std::string &value)
@@ -69,6 +84,16 @@ namespace MediaDedup
         helpFormatter.setHeader("Media Deduplication Server");
         helpFormatter.format(std::cout);
         stopOptionsProcessing();
+    }
+
+    void MediaDedupServer::handleConfig(const std::string &name, const std::string &value)
+    {
+        config_file_ = value;
+    }
+
+    void MediaDedupServer::handleDebug(const std::string &name, const std::string &value)
+    {
+        // For now, this is just parsed to avoid exception.
     }
 
     int MediaDedupServer::main(const std::vector<std::string> &args)
@@ -89,10 +114,13 @@ namespace MediaDedup
 
         try
         {
-            // Resolve config path: use CWD-relative first, then try project-relative when run from repo root (e.g. vurio/)
+            // Resolve config path: use user-provided path, or CWD-relative first, then try project-relative
             std::string config_path = "config/config.yaml";
-            if (!std::filesystem::exists(config_path) && std::filesystem::exists("dedup_server/config/config.yaml"))
+            if (!config_file_.empty()) {
+                config_path = config_file_;
+            } else if (!std::filesystem::exists(config_path) && std::filesystem::exists("dedup_server/config/config.yaml")) {
                 config_path = "dedup_server/config/config.yaml";
+            }
             logger_.information("Using config file: " + config_path);
             config_manager_ = std::make_shared<UnifiedObservableConfigManager>(config_path);
             ServerInitializer initializer(config_manager_);
