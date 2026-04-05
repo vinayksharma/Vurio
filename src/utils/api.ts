@@ -172,7 +172,7 @@ export async function resetErrors(): Promise<void> {
 }
 
 export async function resetDuplicates(): Promise<void> {
-  await safeFetch('/api/v1/duplicates/reset', { method: 'POST' });
+  await safeFetch('/api/v1/duplicates/reset', { method: 'DELETE' });
 }
 
 export function extractScannedCount(statusObj: ServerStatus): number {

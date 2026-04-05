@@ -5,6 +5,10 @@
 
 set -e  # Exit on any error
 
+# Automatically navigate to the project root directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd "${SCRIPT_DIR}/.."
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
