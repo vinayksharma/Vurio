@@ -1732,17 +1732,94 @@ button:disabled {
   -webkit-user-drag: none;
 }
 
-.image-preview-footer {
-  padding: 14px 16px;
-  border-top: 1px solid var(--panel-border);
-  color: var(--muted);
+.details-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.details-toggle-btn {
+  align-self: center;
+  background: rgba(30, 41, 59, 0.85);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: all;
+  backdrop-filter: blur(8px);
+  margin-bottom: -1px;
+  transition: background 0.2s;
+}
+
+.details-toggle-btn:hover {
+  background: rgba(51, 65, 85, 0.95);
+}
+
+.details-content {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  color: #f8fafc;
+  padding: 16px 20px;
   font-size: 12px;
-  /* Label size per HIG (11-13px) */
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: pre-line;
-  max-height: 120px;
+  pointer-events: all;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  max-height: 200px;
   overflow: auto;
-  background: rgba(15, 23, 42, 0.04);
+}
+
+.image-preview-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.image-preview-toolbar-container {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-top: 1px solid var(--panel-border);
+}
+
+.image-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.image-preview-toolbar button {
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.image-preview-toolbar button:hover {
+  background: var(--hover-bg);
+  border-color: var(--accent);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--panel-border);
 }
 
 /* Zoom cursors */
