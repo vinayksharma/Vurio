@@ -186,3 +186,19 @@ export function extractProcessedCount(statusObj: ServerStatus): number {
 export function extractRegisteredDirectories(statusObj: ServerStatus): string[] {
   return statusObj?.registered_directories || [];
 }
+
+export async function saveUserSetting(key: string, value: string): Promise<void> {
+  await safeFetch(`/api/v1/user-settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function fetchUserSetting(key: string): Promise<string | null> {
+  try {
+    const res = await safeFetch(`/api/v1/user-settings/${encodeURIComponent(key)}`) as { value: string };
+    return res.value;
+  } catch {
+    return null;
+  }
+}

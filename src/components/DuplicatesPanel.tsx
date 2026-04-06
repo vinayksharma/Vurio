@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchDuplicateGroups } from '../utils/api';
+import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting } from '../utils/api';
 import { useServerStatusStore, useUIStore } from '../stores';
 import type { DuplicateGroup } from '../types';
 import DuplicateGroupControl from './DuplicateGroupControl';
@@ -33,6 +33,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const serverDuplicatesFound = status?.duplicates_found ?? -1; // Total files in groups; -1 = unknown
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
+  const duplicateTightness = useUIStore((state) => state.duplicateTightness);
+  const setDuplicateTightness = useUIStore((state) => state.setDuplicateTightness);
   const [totalGroups, setTotalGroups] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
@@ -77,6 +79,38 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   useEffect(() => {
     totalGroupsRef.current = totalGroups;
   }, [totalGroups]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchUserSetting('duplicate_tightness').then(val => {
+      if (!mounted) return;
+      if (val !== null) {
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+          setDuplicateTightness(parsed);
+        }
+      }
+    });
+    return () => { mounted = false; };
+  }, [setDuplicateTightness]);
+
+  const [sliderValue, setSliderValue] = useState<number>(0);
+  
+  useEffect(() => {
+    setSliderValue(Math.round(Math.cbrt(duplicateTightness) * 1000));
+  }, [duplicateTightness]);
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseInt(e.target.value, 10);
+    setSliderValue(v);
+    const t = Math.pow(v / 1000, 3);
+    setDuplicateTightness(t);
+  };
+
+  const handleSliderPointerUp = () => {
+    const t = Math.pow(sliderValue / 1000, 3);
+    saveUserSetting('duplicate_tightness', t.toString()).catch(e => console.error('Failed to save lightness:', e));
+  };
 
   // Update active thumbnail request count, error count, and queue stats for debug panel
   useEffect(() => {
@@ -431,6 +465,22 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         <div className="panel-title split">
           <span>Live Duplicate Feed</span>
           <span className="panel-meta" id="duplicates-meta">{totalGroups > 0 ? `${totalGroups} groups` : 'No duplicates'}</span>
+        </div>
+        <div className="tightness-slider-container">
+          <span className="slider-label">duplicates</span>
+          <input 
+            type="range" 
+            min="0" 
+            max="1000" 
+            value={sliderValue} 
+            onChange={handleSliderChange} 
+            onMouseUp={handleSliderPointerUp} 
+            onTouchEnd={handleSliderPointerUp}
+            className="tightness-slider"
+            title="Adjust tightness for perfect matches"
+            style={{ '--slider-value': `${(sliderValue / 1000) * 100}%` } as React.CSSProperties}
+          />
+          <span className="slider-label right">similar</span>
         </div>
         <div className="card-stack" id="duplicates-stack" ref={cardStackRef} style={{ position: 'relative', overflow: 'auto' }}>
           <div style={{ height: `${totalHeight}px`, position: 'relative' }}>{renderItems()}</div>
