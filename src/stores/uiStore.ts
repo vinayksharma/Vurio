@@ -16,6 +16,8 @@ interface UIState {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setDebugOverlayEnabled: (enabled: boolean) => void;
+  duplicateTightness: number;
+  setDuplicateTightness: (tightness: number) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -36,6 +38,8 @@ export const useUIStore = create<UIState>()(
         setSidebarOpen: (open) => set({ sidebarOpen: open }, false, 'ui/setSidebarOpen'),
         toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen }), false, 'ui/toggleSidebar'),
         setDebugOverlayEnabled: (enabled) => set({ debugOverlayEnabled: enabled }, false, 'ui/setDebugOverlayEnabled'),
+        duplicateTightness: 0.0,
+        setDuplicateTightness: (tightness) => set({ duplicateTightness: tightness }, false, 'ui/setDuplicateTightness'),
       }),
       {
         name: 'vurio-ui-storage',

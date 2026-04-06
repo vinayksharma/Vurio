@@ -85,6 +85,7 @@ if(NOT ONNXRUNTIME_ROOT AND DEFINED ENV{ONNXRUNTIME_ROOT})
 endif()
 
 set(_onnx_hints
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/include
     ${ONNXRUNTIME_ROOT}/include
     ${ONNXRUNTIME_ROOT}
     /opt/homebrew/include
@@ -127,43 +128,7 @@ if(NOT ONNXRUNTIME_LIBRARY)
         endif()
     endforeach()
 endif()
-if(ONNXRUNTIME_LIBRARY AND NOT ONNXRUNTIME_INCLUDE_DIR)
-    include(FetchContent)
-    if(NOT ONNXRUNTIME_GIT_TAG)
-        set(ONNXRUNTIME_GIT_TAG v1.22.2)
-    endif()
-    message(STATUS "Fetching ONNX Runtime headers from release tarball (tag: ${ONNXRUNTIME_GIT_TAG})")
-    FetchContent_Declare(
-        onnxruntime_headers
-        URL https://github.com/microsoft/onnxruntime/archive/refs/tags/${ONNXRUNTIME_GIT_TAG}.tar.gz
-        SOURCE_SUBDIR ""
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    FetchContent_MakeAvailable(onnxruntime_headers)
-    if(onnxruntime_headers_SOURCE_DIR)
-        set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_SOURCE_DIR}/include")
-    endif()
-endif()
-# ONNX Runtime is now enabled - remove the temporary disable
-
-if(ONNXRUNTIME_LIBRARY AND ONNXRUNTIME_INCLUDE_DIR)
-    if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime/core/session/onnxruntime_cxx_api.h")
-        include(FetchContent)
-        if(NOT ONNXRUNTIME_GIT_TAG)
-            set(ONNXRUNTIME_GIT_TAG v1.22.2)
-        endif()
-        message(STATUS "Vendoring ONNX Runtime headers from tarball (tag: ${ONNXRUNTIME_GIT_TAG}) due to missing header in provided include dir")
-        FetchContent_Declare(
-            onnxruntime_headers_fallback
-            URL https://github.com/microsoft/onnxruntime/archive/refs/tags/${ONNXRUNTIME_GIT_TAG}.tar.gz
-            SOURCE_SUBDIR ""
-        )
-        FetchContent_MakeAvailable(onnxruntime_headers_fallback)
-        if(onnxruntime_headers_fallback_SOURCE_DIR)
-            set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_headers_fallback_SOURCE_DIR}/include")
-        endif()
-    endif()
-endif()
+# ONNX Runtime headers are vendored locally in third_party / provided locally by hints.
 if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIBRARY}")
     include_directories(${ONNXRUNTIME_INCLUDE_DIR})

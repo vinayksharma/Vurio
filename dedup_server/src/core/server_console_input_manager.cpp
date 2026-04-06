@@ -359,12 +359,11 @@ namespace MediaDedupServer
                     return;
                 }
 
-                // Map Ctrl+C (SIGINT) to behave exactly like typing 'exit' without doing heavy work in the handler
+                // Map Ctrl+C (SIGINT) to perform an immediate hard shutdown instead of normal graceful exit.
                 if (signal == SIGINT)
                 {
-                    Poco::Logger::get("ConsoleInputManager").information("Received Ctrl+C (SIGINT); mapping to 'exit' command");
-                    // Set a flag for the console thread to emit the exit event and shutdown
-                    instance_->exit_requested_by_signal_.store(true);
+                    Poco::Logger::get("ConsoleInputManager").information("Received Ctrl+C (SIGINT); shutting down server IMMEDIATELY");
+                    std::_Exit(0);
                     return;
                 }
 
