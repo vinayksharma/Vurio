@@ -120,8 +120,19 @@ namespace MediaDedup
             // Check if source file exists
             if (!std::filesystem::exists(source_path))
             {
-                logger.warning("Source file not found: %s", source_path);
-                sendErrorResponse(response, "Source file not found", 404);
+                logger.warning("Source file not found or inaccessible: %s, serving error thumbnail", source_path);
+                
+                std::string error_thumbnail_path;
+                if (!getOrCreateErrorThumbnail(size, error_thumbnail_path))
+                {
+                    logger.error("Failed to generate error thumbnail for size %d", size);
+                    sendErrorResponse(response, "Source file not found", 404);
+                    return;
+                }
+                
+                // Serve error thumbnail with short cache time or modified time
+                int64_t current_time = getCurrentTimestamp();
+                streamThumbnailFile(error_thumbnail_path, response, current_time);
                 return;
             }
 
