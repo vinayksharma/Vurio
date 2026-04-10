@@ -265,13 +265,15 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           img.setAttribute('data-src', dataSrc);
           img.style.display = 'none';
 
-          // Show placeholder
-          const placeholder = img.parentElement?.querySelector('.thumbnail-placeholder') as HTMLElement;
-          if (placeholder) {
-            placeholder.style.display = 'flex';
+          // Show placeholder and hide error
+          const thumbnailDiv = img.parentElement as HTMLElement;
+          if (thumbnailDiv) {
+            const placeholder = thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
+            if (placeholder) placeholder.style.display = 'flex';
+            
+            const errorIndicator = thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+            if (errorIndicator) errorIndicator.style.display = 'none';
           }
-
-          // Remove from tracking
           loadedImagesRef.current.delete(src);
           urlsToClear.push(src);
         }
@@ -505,9 +507,13 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
       const target = e.target as HTMLImageElement;
       target.style.display = 'none';
-      const placeholder = target.parentElement?.querySelector('.thumbnail-placeholder');
-      if (placeholder) {
-        (placeholder as HTMLElement).style.display = 'flex';
+      const thumbnailDiv = target.parentElement;
+      if (thumbnailDiv) {
+        const placeholder = thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
+        if (placeholder) placeholder.style.display = 'none';
+        
+        const errorIndicator = thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+        if (errorIndicator) errorIndicator.style.display = 'flex';
       }
     };
 
@@ -530,6 +536,13 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           />
           <div className="thumbnail-placeholder" style={{ display: 'flex' }}>
             <div className="thumbnail-loading-spinner"></div>
+          </div>
+          <div className="thumbnail-error" style={{ display: 'none' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
           </div>
         </div>
         {isFirst && (

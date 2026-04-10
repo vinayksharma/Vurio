@@ -431,6 +431,10 @@ class ThumbnailRequestQueue {
             if (placeholder) {
               placeholder.style.display = 'none';
             }
+            const errorIndicator = request.thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+            if (errorIndicator) {
+              errorIndicator.style.display = 'none';
+            }
           }
 
           cleanup(true);
@@ -452,7 +456,11 @@ class ThumbnailRequestQueue {
             img.style.display = 'none';
             const placeholder = request.thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
             if (placeholder) {
-              placeholder.style.display = 'flex';
+              placeholder.style.display = 'none';
+            }
+            const errorIndicator = request.thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+            if (errorIndicator) {
+              errorIndicator.style.display = 'flex';
             }
           }
 
@@ -514,7 +522,11 @@ class ThumbnailRequestQueue {
         if (request.thumbnailDiv) {
           const placeholder = request.thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
           if (placeholder) {
-            placeholder.style.display = 'flex';
+            placeholder.style.display = 'none';
+          }
+          const errorIndicator = request.thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+          if (errorIndicator) {
+            errorIndicator.style.display = 'flex';
           }
         }
         cleanup(false);
