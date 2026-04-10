@@ -16,7 +16,7 @@ const MediaLocationsSection: React.FC = () => {
   const [locations, setLocations] = useState<string[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isRemapping, setIsRemapping] = useState(false);
+  const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
   const openStatusPopup = useStatusPopupStore((state) => state.open);
 
   const refreshLocations = async () => {
@@ -42,10 +42,8 @@ const MediaLocationsSection: React.FC = () => {
     if (typeof win.require === 'function') {
       try {
         const { ipcRenderer } = win.require('electron') as { ipcRenderer: { invoke: (channel: string, arg?: string) => Promise<unknown> } };
-        const os = win.require('os') as { homedir: () => string };
         return {
           selectDirectory: (p?: string) => ipcRenderer.invoke('dialog:selectDirectory', p) as Promise<string | null>,
-          getHomeDir: () => os.homedir(),
           revealLog: (p: string) => ipcRenderer.invoke('utils:revealLog', p) as Promise<{ ok: boolean; error?: string }>,
           toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools') as Promise<void>,
           exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog') as Promise<{ ok: boolean; path?: string; error?: string }>,
@@ -122,19 +120,19 @@ const MediaLocationsSection: React.FC = () => {
       return;
     }
 
-    if (isRemapping) return;
-    setIsRemapping(true);
+    if (remappingLocation) return;
+    setRemappingLocation(oldPath);
 
     try {
       const newPath = await electronAPI.selectDirectory(oldPath);
       if (!newPath) {
-        setIsRemapping(false);
+        setRemappingLocation(null);
         setMessage('No directory selected');
         return;
       }
 
       if (newPath === oldPath) {
-        setIsRemapping(false);
+        setRemappingLocation(null);
         setMessage('New path must be different from the old path');
         return;
       }
@@ -178,54 +176,19 @@ const MediaLocationsSection: React.FC = () => {
       console.error('Failed to remap path:', error);
       setMessage((error as Error).message || 'Failed to remap path');
     } finally {
-      setIsRemapping(false);
+      setRemappingLocation(null);
     }
   };
 
   return (
     <section className="panel scan-panel media-locations-section" style={{ position: 'relative' }}>
-      {isRemapping && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 10000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '12px',
-            pointerEvents: 'all',
-            cursor: 'wait',
-          }}
-        >
-          <div
-            style={{
-              padding: '24px 32px',
-              background: 'var(--panel)',
-              borderRadius: '12px',
-              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.2)',
-              textAlign: 'center',
-              border: '1px solid var(--panel-border)',
-            }}
-          >
-            <div style={{ marginBottom: '12px', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
-              Remapping in progress...
-            </div>
-            <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
-              Please wait while the path is being remapped.
-            </div>
-          </div>
-        </div>
-      )}
       <h2 className="panel-title">
         <span>Media Locations</span>
         <button
           className="ghost small"
           onClick={() => setIsCollapsed(!isCollapsed)}
           aria-expanded={!isCollapsed}
-          disabled={isRemapping}
+          disabled={!!remappingLocation}
         >
           {isCollapsed ? 'Expand' : 'Collapse'}
         </button>
@@ -233,7 +196,6 @@ const MediaLocationsSection: React.FC = () => {
       <p className="helper-text">Register and manage the folders you want the deduplication service to scan.</p>
       <div
         className={`collapsible ${isCollapsed ? '' : 'open'}`}
-        style={{ position: 'relative', pointerEvents: isRemapping ? 'none' : 'auto', opacity: isRemapping ? 0.5 : 1 }}
       >
         <div className="field-row">
           <input
@@ -242,12 +204,12 @@ const MediaLocationsSection: React.FC = () => {
             placeholder="Select a directory..."
             value={directoryPath}
             onChange={(e) => setDirectoryPath(e.target.value)}
-            disabled={isRemapping}
+            disabled={!!remappingLocation}
           />
-          <button id="browse-btn" onClick={browseDirectory} disabled={isRemapping}>
+          <button id="browse-btn" onClick={browseDirectory} disabled={!!remappingLocation}>
             Browse
           </button>
-          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={isRemapping}>
+          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={!!remappingLocation}>
             Register
           </button>
         </div>
@@ -262,17 +224,27 @@ const MediaLocationsSection: React.FC = () => {
               <li
                 key={location}
                 className={selectedLocation === location ? 'selected' : ''}
-                onClick={() => !isRemapping && setSelectedLocation(location)}
-                style={{ cursor: isRemapping ? 'not-allowed' : 'pointer' }}
+                onClick={() => !remappingLocation && setSelectedLocation(location)}
+                style={{ cursor: remappingLocation ? 'not-allowed' : 'pointer' }}
               >
                 <span className="location-path">{location}</span>
                 <button
                   className="remap-btn"
                   onClick={(e) => handleRemap(location, e)}
                   title="Remap this location to a different path"
-                  disabled={isRemapping}
+                  disabled={!!remappingLocation}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  Remap
+                  {remappingLocation === location ? (
+                    <>
+                      <svg viewBox="0 0 50 50" style={{ width: '14px', height: '14px', animation: 'thumbnail-spin 0.8s linear infinite' }}>
+                        <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+                      </svg>
+                      Remapping...
+                    </>
+                  ) : (
+                    'Remap'
+                  )}
                 </button>
               </li>
             ))}
@@ -281,7 +253,7 @@ const MediaLocationsSection: React.FC = () => {
             <button
               id="deregister-selected-btn"
               className="ghost"
-              disabled={!selectedLocation || isRemapping}
+              disabled={!selectedLocation || !!remappingLocation}
               onClick={handleDeregisterSelected}
             >
               Deregister Selected
