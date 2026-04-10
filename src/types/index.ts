@@ -2,7 +2,6 @@
 
 export interface ElectronAPI {
   selectDirectory: (startPath?: string) => Promise<string | null>;
-  getHomeDir: () => string;
   revealLog: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
   toggleDevTools: () => Promise<void>;
   exportErrorLog: () => Promise<{ ok: boolean; path?: string; error?: string }>;

@@ -49,6 +49,8 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      webSecurity: false, // Required to load ES modules via file:// in production
+      allowRunningInsecureContent: true,
     },
     titleBarStyle: 'hiddenInset',
   });
