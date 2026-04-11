@@ -610,12 +610,12 @@ namespace MediaDedup
 
     int ScannedFilesOps::countError(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountErrorFiles));
+        return executeFilteredCount(db, std::string(SQL::kCountErrorFilesFiltered));
     }
 
     int ScannedFilesOps::countQueued(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountQueuedFiles));
+        return executeFilteredCount(db, std::string(SQL::kCountQueuedFilesFiltered));
     }
 
     int ScannedFilesOps::countErrorAll(DatabaseManager &db)
@@ -720,7 +720,7 @@ namespace MediaDedup
         return out;
     }
 
-    std::vector<ScannedFileRow> ScannedFilesOps::getFilesByLocationKeyBatch(DatabaseManager &db, const std::string &location_key, int limit, int offset)
+    std::vector<ScannedFileRow> ScannedFilesOps::getFilesByLocationKeyBatch(DatabaseManager &db, const std::string &location_key, int limit, int last_id)
     {
         std::vector<ScannedFileRow> out;
         try
@@ -730,8 +730,8 @@ namespace MediaDedup
             Statement stmt(sess);
             std::string key = location_key;
             int lim = limit;
-            int off = offset;
-            stmt << std::string(SQL::kSelectScannedFilesByLocationKeyWithLimit), Keywords::use(key), Keywords::use(lim), Keywords::use(off), Keywords::now;
+            int lid = last_id;
+            stmt << std::string(SQL::kSelectScannedFilesByLocationKeyAndIdWithLimit), Keywords::use(key), Keywords::use(lid), Keywords::use(lim), Keywords::now;
             RecordSet rs(stmt);
             bool more = rs.moveFirst();
             while (more)

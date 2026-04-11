@@ -143,6 +143,11 @@ namespace MediaDedup
             " processed, links, is_network_file, location_key, created_at\n"
             " FROM scanned_files WHERE location_key=? LIMIT ? OFFSET ?";
 
+        inline constexpr std::string_view kSelectScannedFilesByLocationKeyAndIdWithLimit =
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
+            " processed, links, is_network_file, location_key, created_at\n"
+            " FROM scanned_files WHERE location_key=? AND id > ? ORDER BY id ASC LIMIT ?";
+
         inline constexpr std::string_view kListScannedFiles =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
             " processed, links, is_network_file, location_key, created_at\n"
