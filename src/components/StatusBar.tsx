@@ -26,6 +26,10 @@ const StatusBar: React.FC = () => {
     const processed = status.processed_files_count || 0;
     const errors = status.error_files_count || 0;
     
+    if (scanned === 0 && errors === 0 && processed === 0) {
+      return { completed: 0, errors: 0, errorLeft: 0 };
+    }
+    
     const total = scanned || 1;
     const completedPercent = Math.round((processed / total) * 100);
     const errorsPercent = Math.round((errors / total) * 100);

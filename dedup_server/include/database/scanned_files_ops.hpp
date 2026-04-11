@@ -87,7 +87,7 @@ namespace MediaDedup
             DatabaseManager &db,
             const std::string &location_key,
             int limit,
-            int offset
+            int last_id = 0
         );
 
         // Get all files for a location_key (kept for backward compatibility, but should use batch method for large datasets)

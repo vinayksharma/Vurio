@@ -518,7 +518,9 @@ namespace MediaDedup
         int total_updated = 0;
         int total_failed = 0;
         const int batch_size = 1000; // Process 1000 files at a time
-        int offset = 0;
+        int processed_in_current_batch = 0;
+        int last_id = 0;
+        int total_processed_so_far = 0;
 
         // Track updates per table
         int image_artifacts_updated = 0;
@@ -537,10 +539,11 @@ namespace MediaDedup
         int failed_path_conflict = 0;
         int failed_update_error = 0;
 
-        while (offset < result.total_files)
+        while (total_processed_so_far < result.total_files)
         {
-            logger_.information("changeMediaLocationPath: Processing batch: offset=%d, batch_size=%d", offset, batch_size);
-            auto batch = ScannedFilesOps::getFilesByLocationKeyBatch(db_manager_, old_key, batch_size, offset);
+            logger_.information("changeMediaLocationPath: Processing batch: last_id=%d, batch_size=%d, processed=%d/%d", 
+                                last_id, batch_size, total_processed_so_far, result.total_files);
+            auto batch = ScannedFilesOps::getFilesByLocationKeyBatch(db_manager_, old_key, batch_size, last_id);
 
             if (batch.empty())
             {
@@ -742,9 +745,13 @@ namespace MediaDedup
             }
 
             // Move to next batch
-            offset += batch_size;
+            if (!batch.empty())
+            {
+                last_id = batch.back().id;
+                total_processed_so_far += static_cast<int>(batch.size());
+            }
             logger_.information("changeMediaLocationPath: Batch complete. Total updated: %d, Total failed: %d, Progress: %d/%d",
-                                total_updated, total_failed, offset, result.total_files);
+                                total_updated, total_failed, total_processed_so_far, result.total_files);
         }
 
         result.files_updated = total_updated;
