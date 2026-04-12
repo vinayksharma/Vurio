@@ -202,3 +202,10 @@ export async function fetchUserSetting(key: string): Promise<string | null> {
     return null;
   }
 }
+
+export async function ejectDuplicates(filePaths: string[]): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/duplicates/eject', {
+    method: 'POST',
+    body: JSON.stringify({ files: filePaths }),
+  }) as Promise<any>;
+}

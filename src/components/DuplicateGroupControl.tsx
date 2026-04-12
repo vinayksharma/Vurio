@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { DuplicateGroup, DuplicateGroupMember } from '../types';
-import { API_BASE } from '../utils/api';
+import { API_BASE, ejectDuplicates } from '../utils/api';
 import { remapEventEmitter, type RemapEvent } from '../utils/remapEvents';
 import { getActiveRequestCount } from '../utils/thumbnailRequests';
 import { errorLogger } from '../utils/errorLogger';
@@ -26,6 +26,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
   const queuedUrlsRef = useRef<Set<string>>(new Set()); // Track URLs queued for this group (for cancellation)
   const groupRef = useRef<DuplicateGroup>(group);
   const [bracketPosition, setBracketPosition] = useState<{ left: number; width: number } | null>(null);
+  const [isEjecting, setIsEjecting] = useState(false);
 
   // Keep ref updated with latest group
   useEffect(() => {
@@ -492,6 +493,45 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
 
   // No scroll handler needed - bracket is inside scroll content and moves with thumbnails
 
+  const handleEjectClick = async () => {
+    if (isEjecting || !bracketPosition) return;
+    
+    // Find all perfect match members (those under the bracket)
+    const perfectMatches = displayedMembers
+      .filter((member, index) => (1 - (member.similarity_score ?? 0)) <= duplicateTightness && index > 0 && !member.is_ejected);
+      
+    if (perfectMatches.length === 0) return;
+
+    const filePaths = perfectMatches.map(m => m.file_path);
+    setIsEjecting(true);
+
+    try {
+      const result = await ejectDuplicates(filePaths);
+      if (result.success) {
+        // Find these members and mark them as ejected locally immediately
+        groupRef.current.members?.forEach(m => {
+          if (filePaths.includes(m.file_path)) {
+            m.is_ejected = true;
+          }
+        });
+        setRemapKey(prev => prev + 1); // trigger re-render
+      } else {
+        console.error('Failed to eject duplicates:', result.error);
+        if (window.errorLogger) {
+          window.errorLogger.logError({
+            type: 'react',
+            message: 'Eject failed',
+            context: { error: result.error }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Exception during eject:', err);
+    } finally {
+      setIsEjecting(false);
+    }
+  };
+
   const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
     const isFirst = memberIndex === 0;
     const hasPerfectMatch = (1 - (member.similarity_score ?? 0)) <= duplicateTightness && !isFirst; // Don't show on key image
@@ -523,9 +563,26 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           className={`duplicate-thumbnail ${isFirst ? 'key-thumbnail' : ''} ${hasPerfectMatch ? 'perfect-match-thumbnail' : ''}`}
           title={tooltip}
           onClick={() => handleImageClick(member.file_path, tooltip)}
-          style={thumbnailStyle}
+          style={{ ...thumbnailStyle, position: 'relative' }}
           data-member-index={memberIndex}
         >
+          {member.is_ejected && (
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 5,
+              borderRadius: isFirst ? '2px' : '4px',
+              border: '2px solid rgba(255, 0, 0, 0.4)'
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4d4d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3m0 12l-4-4m4 4l4-4"/>
+              </svg>
+            </div>
+          )}
           <img
             data-src={thumbnailUrl}
             alt=""
@@ -618,6 +675,9 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                   pointerEvents: 'none',
                 }}
               >
+                {/* Bracket line */}
+                <div style={{ width: '100%', height: '100%', background: '#a85858' }} />
+
                 {/* Left vertical bracket extension */}
                 <div
                   style={{
@@ -640,6 +700,50 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                     background: '#a85858',
                   }}
                 />
+
+                {/* Eject Button Overlay */}
+                <div
+                  onClick={handleEjectClick}
+                  style={{
+                    position: 'absolute',
+                    top: '-10px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    backgroundColor: '#cc0000',
+                    border: '1px solid #1a1a1a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: isEjecting ? 'wait' : 'pointer',
+                    pointerEvents: 'auto',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                    opacity: isEjecting ? 0.6 : 1,
+                    transition: 'transform 0.1s, opacity 0.2s'
+                  }}
+                  title="Eject perfect duplicates"
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#ff1a1a'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1)'; e.currentTarget.style.backgroundColor = '#cc0000'; }}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(0.95)'; }}
+                  onMouseUp={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; }}
+                >
+                  {isEjecting ? (
+                    <div style={{
+                      width: '10px',
+                      height: '10px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      borderTop: '2px solid #fff',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2v10M12 2l-3 3M12 2l3 3M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+                    </svg>
+                  )}
+                </div>
               </div>
             )}
 

@@ -547,6 +547,52 @@ TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
     std::remove(db_path.c_str());
 }
 
+TEST(ScannedFilesOpsTest, RemoveByLocationKeyCascade)
+{
+    std::string db_path = MediaDedup::Test::testDbPath("test_remove_location_key.sqlite");
+    std::remove(db_path.c_str());
+
+    MediaDedup::DatabaseManager dbm(db_path);
+    ASSERT_TRUE(dbm.initialize());
+
+    // Assume all tables have been ensured/created (this test mimics DB setup loosely, might need actual table creation for duplicate tables).
+    // Let's create scanned files first:
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
+
+    // We will just verify it safely runs without throwing, and successfully cleans the scanned_files at the very least.
+    // If further schema is needed, it would occur in DatabaseManager initialization, or we can just ensure scanned_files.
+    
+    // Create a few files for location 1 and location 2
+    auto row1 = MediaDedup::Test::makeRow("/tmp/loc1/file1.jpg");
+    row1.location_key = "mediaLocation:loc1";
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row1));
+
+    auto row2 = MediaDedup::Test::makeRow("/tmp/loc1/file2.jpg");
+    row2.location_key = "mediaLocation:loc1";
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row2));
+
+    auto row3 = MediaDedup::Test::makeRow("/tmp/loc2/file3.jpg");
+    row3.location_key = "mediaLocation:loc2";
+    ASSERT_TRUE(MediaDedup::ScannedFilesOps::upsert(dbm, row3));
+
+    // Assert initial counts
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countAll(dbm), 3);
+
+    // Call removeByLocationKey for loc1
+    bool result = MediaDedup::ScannedFilesOps::removeByLocationKey(dbm, "mediaLocation:loc1");
+    EXPECT_TRUE(result);
+
+    // Assert counts after removal
+    EXPECT_EQ(MediaDedup::ScannedFilesOps::countAll(dbm), 1);
+    
+    // Verify only loc2 remains
+    auto remaining = MediaDedup::ScannedFilesOps::getByPath(dbm, "/tmp/loc2/file3.jpg");
+    ASSERT_TRUE(remaining.has_value());
+    EXPECT_EQ(remaining->location_key, "mediaLocation:loc2");
+
+    std::remove(db_path.c_str());
+}
+
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv)
 {

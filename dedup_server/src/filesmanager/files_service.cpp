@@ -198,6 +198,11 @@ namespace MediaDedup
     bool FilesService::deregisterMediaLocation(const std::string &directory_path)
     {
         const std::string key = makeMediaLocationKey(directory_path);
+        
+        // Remove all database rows associated with this location key
+        ScannedFilesOps::removeByLocationKey(db_manager_, key);
+
+        // Finally remove it from user settings
         return UserSettingsOps::remove(db_manager_, key);
     }
 

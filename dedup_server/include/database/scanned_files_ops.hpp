@@ -30,6 +30,7 @@ namespace MediaDedup
         static bool ensureTable(DatabaseManager &db);
         static bool upsert(DatabaseManager &db, const ScannedFileRow &row);
         static bool removeByPath(DatabaseManager &db, const std::string &file_path);
+        static bool removeByLocationKey(DatabaseManager &db, const std::string &location_key);
         static std::optional<ScannedFileRow> getByPath(DatabaseManager &db, const std::string &file_path);
         static std::vector<ScannedFileRow> listAll(DatabaseManager &db);
         static int count(DatabaseManager &db);

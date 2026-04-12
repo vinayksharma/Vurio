@@ -139,6 +139,14 @@ namespace MediaDedup
         logger.information("ThreadPoolManager shutdown complete");
     }
 
+    void ThreadPoolManager::clearQueues()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        type_to_queue_.clear();
+        round_robin_types_.clear();
+        Poco::Logger::get("ThreadPoolManager").information("Queues cleared successfully");
+    }
+
     void ThreadPoolManager::setShare(const std::string &type, double share)
     {
         if (share <= 0)

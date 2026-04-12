@@ -200,6 +200,12 @@ Communication
 
 ⸻
 
+App Constraints & Exceptions
+• The Media Deduplicator application operates strictly in a **READ-ONLY** mode regarding the user's source media files.
+• **EXCEPTION:** The "Eject Duplicates" feature is the *only* explicit exception to this read-only rule. When ejecting duplicates, the system is allowed to copy the file to a designated ejection folder and subsequently delete the original source file.
+
+⸻
+
 Rules Checklist (run after every task)
 • Plan was proposed and approved before implementation.
 

@@ -12,6 +12,7 @@
 #include <regex>
 #include "database/user_settings_service.hpp"
 #include "filesmanager/files_service.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 
 namespace MediaDedup
 {
@@ -227,8 +228,9 @@ namespace MediaDedup
     }
 
     DeregisterMediaLocationHandler::DeregisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                                                   std::shared_ptr<FilesService> service)
-        : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
+                                                                   std::shared_ptr<FilesService> service,
+                                                                   std::shared_ptr<ThreadPoolManager> tpm)
+        : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)), tpm_(std::move(tpm)) {}
     void DeregisterMediaLocationHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                                        Poco::Net::HTTPServerResponse &response)
     {
@@ -261,6 +263,13 @@ namespace MediaDedup
             sendErrorResponse(response, "Invalid directory", 400);
             return;
         }
+
+        if (tpm_)
+        {
+            Poco::Logger::get("DeregisterHandler").information("Clearing thread pool queues prior to deregistering a path.");
+            tpm_->clearQueues();
+        }
+
         if (!service_->deregisterMediaLocation(dir))
         {
             sendErrorResponse(response, "Failed to deregister", 500);

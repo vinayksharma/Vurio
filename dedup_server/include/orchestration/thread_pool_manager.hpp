@@ -43,6 +43,7 @@ namespace MediaDedup
 
         void initialize();
         void shutdownAndDrain(std::chrono::milliseconds killTimeout);
+        void clearQueues();
 
         void setShare(const std::string &type, double share);
 

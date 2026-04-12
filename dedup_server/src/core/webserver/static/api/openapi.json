@@ -818,6 +818,61 @@
         }
       }
     },
+    "/api/v1/duplicates/eject": {
+      "post": {
+        "summary": "Eject duplicate files",
+        "description": "Copies duplicate files to an ejection folder, verifies the copy via SHA1, and deletes the original file, updating the media path registry. This is the only exception to the read-only rule for user media.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of fully qualified file paths to eject"
+                  }
+                },
+                "required": ["files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ejection processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "success_count": {
+                      "type": "integer"
+                    },
+                    "failure_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/api/v1/thumbnails": {
       "get": {
         "summary": "Generate or retrieve thumbnail for a source image",

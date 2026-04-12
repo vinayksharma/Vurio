@@ -92,5 +92,24 @@ namespace MediaDedupServer
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
         };
 
+        /**
+         * @brief Handler for POST /api/v1/duplicates/eject
+         *
+         * Ejects duplicates by copying them to an <uuid>_ejected folder at their registered root location,
+         * verified via SHA1 checksum, and then explicitly replacing their original path in the DB
+         * while deleting the original source file.
+         */
+        class EjectDuplicatesHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit EjectDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+        };
+
     } // namespace Core
 } // namespace MediaDedupServer
