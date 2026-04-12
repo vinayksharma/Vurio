@@ -194,6 +194,17 @@ export async function saveUserSetting(key: string, value: string): Promise<void>
   });
 }
 
+export async function fetchUserSettings(): Promise<Array<{key: string, value: string}>> {
+  try {
+    const raw = await safeFetch('/api/v1/user-settings') as Record<string, string>;
+    if (!raw || typeof raw !== 'object') return [];
+    
+    return Object.entries(raw).map(([key, value]) => ({ key, value }));
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchUserSetting(key: string): Promise<string | null> {
   try {
     const res = await safeFetch(`/api/v1/user-settings/${encodeURIComponent(key)}`) as { value: string };

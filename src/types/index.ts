@@ -5,6 +5,7 @@ export interface ElectronAPI {
   revealLog: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
   toggleDevTools: () => Promise<void>;
   exportErrorLog: () => Promise<{ ok: boolean; path?: string; error?: string }>;
+  openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

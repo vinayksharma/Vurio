@@ -176,6 +176,18 @@ ipcMain.handle('utils:revealLog', async (_event, filePath: string) => {
   }
 });
 
+ipcMain.handle('utils:openPath', async (_event, filePath: string) => {
+  try {
+    const err = await shell.openPath(filePath);
+    if (err) throw new Error(err);
+    return { ok: true };
+  } catch (e) {
+    const error = e as Error;
+    dialog.showErrorBox('Open path failed', `${error.message}`);
+    return { ok: false, error: error.message };
+  }
+});
+
 ipcMain.handle('utils:toggleDevTools', () => {
   if (mainWindow) mainWindow.webContents.toggleDevTools();
 });

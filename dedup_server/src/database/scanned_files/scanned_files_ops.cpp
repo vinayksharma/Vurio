@@ -228,7 +228,7 @@ namespace MediaDedup
 
     int ScannedFilesOps::count(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountScannedFilesFiltered));
+        return countAll(db);
     }
 
     int ScannedFilesOps::countAll(DatabaseManager &db)
@@ -254,7 +254,20 @@ namespace MediaDedup
 
     int ScannedFilesOps::countProcessed(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountProcessedFilesFiltered));
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(SQL::kCountProcessedFiles), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...) {}
+        return 0;
     }
 
     int ScannedFilesOps::countProcessedAll(DatabaseManager &db)
@@ -669,12 +682,38 @@ namespace MediaDedup
 
     int ScannedFilesOps::countError(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountErrorFilesFiltered));
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(SQL::kCountErrorFiles), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...) {}
+        return 0;
     }
 
     int ScannedFilesOps::countQueued(DatabaseManager &db)
     {
-        return executeFilteredCount(db, std::string(SQL::kCountQueuedFilesFiltered));
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << std::string(SQL::kCountQueuedFiles), Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...) {}
+        return 0;
     }
 
     int ScannedFilesOps::countErrorAll(DatabaseManager &db)
