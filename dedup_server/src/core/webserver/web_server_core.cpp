@@ -181,6 +181,8 @@ namespace MediaDedup
             return new MediaDedupServer::Core::DuplicateGroupsHandler(database_manager_);
         if (path == "/api/v1/duplicates/reset" && method == "DELETE")
             return new MediaDedupServer::Core::ResetDuplicatesHandler(database_manager_);
+        if (path == "/api/v1/duplicates/eject" && method == "POST")
+            return new MediaDedupServer::Core::EjectDuplicatesHandler(database_manager_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 
@@ -207,7 +209,7 @@ namespace MediaDedup
         if (path == "/api/v1/media-locations/register" && method == "POST")
             return new RegisterMediaLocationHandler(config_manager_, files_service_);
         if (path == "/api/v1/media-locations/deregister" && method == "POST")
-            return new DeregisterMediaLocationHandler(config_manager_, files_service_);
+            return new DeregisterMediaLocationHandler(config_manager_, files_service_, tpm_);
         if (path == "/api/v1/media-locations/change-path" && method == "POST")
             return new ChangeMediaLocationPathHandler(config_manager_, files_service_);
         if (path == "/api/v1/media-locations/verify-remapping" && method == "POST")

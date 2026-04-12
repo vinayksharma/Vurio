@@ -108,7 +108,10 @@ const MediaLocationsSection: React.FC = () => {
 
   const handleDeregisterSelected = async () => {
     if (selectedLocation) {
-      await handleDeregister(selectedLocation);
+      const confirmMessage = "Are you sure you want to deregister this path?\n\nAll duplicate finding and scanning threads will be stopped, and indexing data will be removed. Your source files on disk will NOT be touched. Background tasks will resume in their next scheduled run.";
+      if (window.confirm(confirmMessage)) {
+        await handleDeregister(selectedLocation);
+      }
     }
   };
 

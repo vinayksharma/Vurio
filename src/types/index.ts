@@ -25,6 +25,7 @@ declare global {
       getErrorCount: () => number;
       exportErrorsAsText: () => string;
       clearErrors: () => void;
+      logError: (entry: Omit<import('./index').ErrorLogEntry, 'timestamp'>) => void;
     };
     exportErrors?: () => string;
     getErrorCount?: () => number;
@@ -70,6 +71,7 @@ export interface DuplicateGroupMember {
   added_at?: string;
   is_representative?: boolean;
   rank?: number;
+  is_ejected?: boolean;
 }
 
 export interface DuplicateGroup {

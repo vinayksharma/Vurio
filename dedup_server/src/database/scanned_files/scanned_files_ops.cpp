@@ -100,6 +100,65 @@ namespace MediaDedup
         }
     }
 
+    bool ScannedFilesOps::removeByLocationKey(DatabaseManager &db, const std::string &location_key)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            sess.begin();
+
+            std::string key = location_key;
+
+            // Delete from dependent tables using subqueries
+            Statement del_members(sess);
+            del_members << "DELETE FROM duplicate_members WHERE file_id IN (SELECT id FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+
+            Statement del_groups(sess);
+            del_groups << "DELETE FROM duplicate_groups WHERE representative_file_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+            
+            // Delete orphaned members of those groups that just got deleted
+            Statement del_orphaned_members(sess);
+            del_orphaned_members << "DELETE FROM duplicate_members WHERE group_id NOT IN (SELECT id FROM duplicate_groups)", Keywords::now;
+            
+            // Update member counts for remaining groups
+            Statement update_counts(sess);
+            update_counts << "UPDATE duplicate_groups SET member_count = (SELECT COUNT(*) FROM duplicate_members WHERE group_id = duplicate_groups.id)", Keywords::now;
+
+            // Delete groups with less than 2 members
+            Statement del_small_groups(sess);
+            del_small_groups << "DELETE FROM duplicate_groups WHERE member_count < 2", Keywords::now;
+            
+            Statement del_small_groups_members(sess);
+            del_small_groups_members << "DELETE FROM duplicate_members WHERE group_id NOT IN (SELECT id FROM duplicate_groups)", Keywords::now;
+
+            Statement del_artifacts(sess);
+            del_artifacts << "DELETE FROM image_artifacts WHERE file_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+
+            Statement del_errors(sess);
+            del_errors << "DELETE FROM processing_errors WHERE file_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+
+            Statement del_thumbs(sess);
+            del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+
+            Statement del_files(sess);
+            del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
+
+            sess.commit();
+            Poco::Logger::get("ScannedFilesOps").information("Successfully removed all references for location key: " + location_key);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            try { 
+                auto lease = db.acquireSessionLease();
+                lease.get().rollback(); 
+            } catch(...) {}
+            Poco::Logger::get("ScannedFilesOps").error("Failed to remove by location key: %s", std::string(e.what()));
+            return false;
+        }
+    }
+
     std::optional<ScannedFileRow> ScannedFilesOps::getByPath(DatabaseManager &db, const std::string &file_path)
     {
         try
