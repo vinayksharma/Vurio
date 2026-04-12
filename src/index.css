@@ -1706,7 +1706,7 @@ button:disabled {
 .image-preview-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 10px;
   border-bottom: 1px solid var(--panel-border);
 }
@@ -1795,45 +1795,6 @@ button:disabled {
   color: var(--text);
   font-weight: 600;
   font-size: 14px;
-}
-
-.image-preview-toolbar-container {
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-top: 1px solid var(--panel-border);
-}
-
-.image-preview-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px;
-  background: rgba(15, 23, 42, 0.4);
-}
-
-.image-preview-toolbar button {
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.image-preview-toolbar button:hover {
-  background: var(--hover-bg);
-  border-color: var(--accent);
-}
-
-.toolbar-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--panel-border);
 }
 
 /* Zoom cursors */

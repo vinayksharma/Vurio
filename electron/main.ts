@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, powerMonitor } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
@@ -6,6 +6,10 @@ import fs from 'fs';
 
 // Increase JS heap limit to reduce OOM risk when scrolling many thumbnails
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=3072');
+
+// Prevent renderer from blanking/crashing when display sleeps (macOS App Nap)
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -164,6 +168,50 @@ async function createWindow() {
   Menu.setApplicationMenu(menu);
 }
 
+async function createViewerWindow(filePath: string, details: string) {
+  const appPath = app.getAppPath();
+  const distHtmlPath = path.join(appPath, 'dist', 'index.html');
+  const IS_DEV = process.env.NODE_ENV !== 'production' && !fs.existsSync(distHtmlPath);
+
+  const viewerWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    backgroundColor: '#0b132b',
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+    },
+    // Standard OS titlebar instead of hiddenInset
+  });
+
+  viewerWindow.setMenu(null); // No menu for viewer windows
+
+  const session = viewerWindow.webContents.session;
+  session.setPermissionRequestHandler((webContents, permission, callback) => callback(true));
+
+  if (IS_DEV) {
+    viewerWindow.webContents.once('did-finish-load', () => viewerWindow.webContents.openDevTools());
+    await viewerWindow.loadURL(`http://${UI_HOST}:${UI_PORT}?window=viewer&filePath=${encodeURIComponent(filePath)}&details=${encodeURIComponent(details)}`);
+  } else {
+    // loadFile expects options to pass query parameters since it handles the full URL assembly securely
+    await viewerWindow.loadFile(distHtmlPath, { query: { window: 'viewer', filePath, details } });
+  }
+}
+
+ipcMain.handle('window:openViewer', async (_event, options: { filePath: string; details: string }) => {
+  try {
+    await createViewerWindow(options.filePath, options.details);
+    return { ok: true };
+  } catch (err) {
+    const error = err as Error;
+    return { ok: false, error: error.message };
+  }
+});
+
 ipcMain.handle('utils:revealLog', async (_event, filePath: string) => {
   try {
     const err = await shell.openPath(filePath);
@@ -222,6 +270,20 @@ ipcMain.handle('utils:exportErrorLog', async () => {
 });
 
 app.whenReady().then(async () => {
+  powerMonitor.on('suspend', () => {
+    console.log('[Electron] System suspending, pausing renderers');
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('app:suspend');
+    });
+  });
+
+  powerMonitor.on('resume', () => {
+    console.log('[Electron] System resuming, waking renderers');
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('app:resume');
+    });
+  });
+
   app.on('web-contents-created', (_, contents) => {
     contents.on('did-finish-load', () => {
       contents.executeJavaScript(`
