@@ -8,6 +8,7 @@ const api = {
   toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools'),
   exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog'),
   openPath: (path) => ipcRenderer.invoke('utils:openPath', path),
+  openViewer: (options) => ipcRenderer.invoke('window:openViewer', options),
 };
 
 // Expose the API to the renderer process via a secure bridge

@@ -13,11 +13,17 @@ export const useImagePopupStore = create<ImagePopupState>((set) => ({
   filePath: '',
   details: '',
 
-  open: ({ filePath, details }) => set({
-    isOpen: true,
-    filePath,
-    details,
-  }),
+  open: ({ filePath, details }) => {
+    if (window.electronAPI && window.electronAPI.openViewer) {
+      window.electronAPI.openViewer({ filePath, details }).catch(console.error);
+    } else {
+      set({
+        isOpen: true,
+        filePath,
+        details,
+      });
+    }
+  },
 
   close: () => set({
     isOpen: false,

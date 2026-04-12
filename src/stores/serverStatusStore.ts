@@ -181,3 +181,18 @@ export const useServerStatusStore = create<ServerStatusState>((set, get) => ({
     }
   },
 }));
+
+if (typeof window !== 'undefined' && window.electronAPI) {
+  if (window.electronAPI.onSuspend) {
+    window.electronAPI.onSuspend(() => {
+      console.log('[StatusStore] System suspended, stopping polling');
+      useServerStatusStore.getState().stopPolling();
+    });
+  }
+  if (window.electronAPI.onResume) {
+    window.electronAPI.onResume(() => {
+      console.log('[StatusStore] System resumed, starting polling');
+      useServerStatusStore.getState().startPolling();
+    });
+  }
+}

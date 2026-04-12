@@ -98,7 +98,6 @@ function App() {
           onClose={() => setSidebarOpen(false)}
         />
       )}
-      <ImagePopup />
     </>
   );
 }

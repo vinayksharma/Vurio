@@ -214,6 +214,7 @@ class ThumbnailRequestQueue {
    * This allows server-side caching without blocking UI or waiting for response
    */
   private startVisibilityChecker(): void {
+    if (this.visibilityCheckInterval) return;
     this.visibilityCheckInterval = setInterval(() => {
       if (this.lock) return;
 
@@ -266,6 +267,14 @@ class ThumbnailRequestQueue {
       clearInterval(this.visibilityCheckInterval);
       this.visibilityCheckInterval = null;
     }
+  }
+
+  /**
+   * Start the queue processors
+   */
+  public start(): void {
+    this.startProcessor();
+    this.startVisibilityChecker();
   }
 
   /**
@@ -574,4 +583,19 @@ export const thumbnailQueue = new ThumbnailRequestQueue();
 // Expose for debugging
 if (typeof window !== 'undefined') {
   window.thumbnailQueue = thumbnailQueue;
+}
+
+if (typeof window !== 'undefined' && window.electronAPI) {
+  if (window.electronAPI.onSuspend) {
+    window.electronAPI.onSuspend(() => {
+      console.log('[ThumbnailQueue] System suspended, stopping processor');
+      thumbnailQueue.stop();
+    });
+  }
+  if (window.electronAPI.onResume) {
+    window.electronAPI.onResume(() => {
+      console.log('[ThumbnailQueue] System resumed, starting processor');
+      thumbnailQueue.start();
+    });
+  }
 }
