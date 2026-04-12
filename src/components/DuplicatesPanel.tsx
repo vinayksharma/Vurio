@@ -28,9 +28,9 @@ interface ScrollTestStats {
 const STATUS_REFRESH_COOLDOWN_MS = 2500;
 
 const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
-  const { isOnline, status } = useServerStatusStore();
-  const serverDupeCount = status?.duplicate_groups || 0;
-  const serverDuplicatesFound = status?.duplicates_found ?? -1; // Total files in groups; -1 = unknown
+  const isOnline = useServerStatusStore((state) => state.isOnline);
+  const serverDupeCount = useServerStatusStore((state) => state.status?.duplicate_groups || 0);
+  const serverDuplicatesFound = useServerStatusStore((state) => state.status?.duplicates_found ?? -1); // Total files in groups; -1 = unknown
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const duplicateTightness = useUIStore((state) => state.duplicateTightness);
@@ -54,8 +54,6 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const isInitializedRef = useRef(false);
   const lastRemapTimestampRef = useRef<number>(0);
   const [thumbnailReloadKey, setThumbnailReloadKey] = useState<number>(0);
-  const memoryCleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastMemoryCleanupRef = useRef<number>(0);
   const scrollStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scrollPercent, setScrollPercent] = useState<number>(0);
   const [activeThumbnailRequests, setActiveThumbnailRequests] = useState<number>(0);
@@ -119,7 +117,10 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       setActiveThumbnailRequests(getActiveRequestCount());
       setErrorCount(errorLogger.getErrorCount());
       const stats = thumbnailQueue.getStats();
-      setQueueStats({ pending: stats.pending, active: stats.active, completed: stats.completed });
+      setQueueStats(prev => {
+        if (prev.pending === stats.pending && prev.active === stats.active && prev.completed === stats.completed) return prev;
+        return { pending: stats.pending, active: stats.active, completed: stats.completed };
+      });
     };
 
     updateCounts(); // Update immediately on mount
@@ -317,6 +318,10 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     window.startScrollTest = async () => {}; // Stub for build
     window.stopScrollTest = () => {}; // Stub for build
     return () => {
+      if (scrollStopTimeoutRef.current) {
+        clearTimeout(scrollStopTimeoutRef.current);
+        scrollStopTimeoutRef.current = null;
+      }
       delete (window as any).startScrollTest;
       delete (window as any).stopScrollTest;
     };
@@ -347,12 +352,14 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
 
   useEffect(() => {
     const container = cardStackRef.current;
-    if (!container || !isActive) return;
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
+    if (container) {
+      container.addEventListener('scroll', handleScroll, { passive: true });
+    }
 
     return () => {
-      container.removeEventListener('scroll', handleScroll);
+      if (container) {
+        container.removeEventListener('scroll', handleScroll);
+      }
       if (scrollRAFRef.current) {
         cancelAnimationFrame(scrollRAFRef.current);
       }

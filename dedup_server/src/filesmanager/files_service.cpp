@@ -800,13 +800,16 @@ namespace MediaDedup
             // If some files failed, keep old registration to allow retry
             if (result.success)
             {
-                if (!UserSettingsOps::remove(db_manager_, old_key))
+                if (old_key != new_key)
                 {
-                    logger_.warning("changeMediaLocationPath: Failed to remove old location entry, but operation succeeded");
-                }
-                else
-                {
-                    logger_.information("changeMediaLocationPath: Removed old registration entry: %s", old_key);
+                    if (!UserSettingsOps::remove(db_manager_, old_key))
+                    {
+                        logger_.warning("changeMediaLocationPath: Failed to remove old location entry, but operation succeeded");
+                    }
+                    else
+                    {
+                        logger_.information("changeMediaLocationPath: Removed old registration entry: %s", old_key);
+                    }
                 }
             }
             else

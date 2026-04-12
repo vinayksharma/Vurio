@@ -261,7 +261,8 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           // Get the original data-src or construct it
           const dataSrc = imageSrcRef.current.get(src) || src;
 
-          // Remove src to free memory
+          // Remove src to free memory and explicitly force GC in Chromium
+          img.src = '';
           img.removeAttribute('src');
           img.setAttribute('data-src', dataSrc);
           img.style.display = 'none';
