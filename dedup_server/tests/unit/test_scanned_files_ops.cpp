@@ -482,7 +482,9 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 //     EXPECT_EQ(reset_count, 0);
 // }
 
-TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
+#include "database/sql_constants.hpp"
+
+TEST(ScannedFilesOpsTest, GlobalCountsIgnoreLocationKey)
 {
     std::string db_path = MediaDedup::Test::testDbPath("test_filtered_counts.sqlite");
     std::remove(db_path.c_str());
@@ -523,15 +525,15 @@ TEST(ScannedFilesOpsTest, FilteredCountsByLocationKey)
     ASSERT_TRUE(upsert1);
     ASSERT_TRUE(upsert2);
 
-    // Test filtered counts - should only count files from registered locations
+    // Test counts - should count ALL files regardless of registration status (reverted fix)
     int total_count = MediaDedup::ScannedFilesOps::count(dbm);
-    EXPECT_EQ(total_count, 3); // Only files from registered locations
+    EXPECT_EQ(total_count, 4); // All 4 rows
 
     int processed_count = MediaDedup::ScannedFilesOps::countProcessed(dbm);
-    EXPECT_EQ(processed_count, 1); // Only row1 is processed and from registered location
+    EXPECT_EQ(processed_count, 2); // row1 and row4 are processed
 
     int error_count = MediaDedup::ScannedFilesOps::countError(dbm);
-    EXPECT_EQ(error_count, 1); // Only row2 has error and is from registered location
+    EXPECT_EQ(error_count, 1); // Only row2 has error
 
     // Test getRegisteredLocationKeys
     auto registered_keys = MediaDedup::ScannedFilesOps::getRegisteredLocationKeys(dbm);
@@ -556,11 +558,20 @@ TEST(ScannedFilesOpsTest, RemoveByLocationKeyCascade)
     ASSERT_TRUE(dbm.initialize());
 
     // Assume all tables have been ensured/created (this test mimics DB setup loosely, might need actual table creation for duplicate tables).
+    // Create necessary cascading tables manually to prevent no-such-table exceptions
+    {
+        auto lease = dbm.acquireSessionLease();
+        Poco::Data::Session &sess = lease.get();
+        Poco::Data::Statement stmt1(sess), stmt2(sess), stmt3(sess), stmt4(sess), stmt5(sess);
+        stmt1 << std::string(MediaDedup::SQL::kCreateDuplicateGroupsTable), Poco::Data::Keywords::now;
+        stmt2 << std::string(MediaDedup::SQL::kCreateDuplicateMembersTable), Poco::Data::Keywords::now;
+        stmt3 << std::string(MediaDedup::SQL::kCreateThumbnailCacheTable), Poco::Data::Keywords::now;
+        stmt4 << std::string(MediaDedup::SQL::kCreateProcessingErrorsTable), Poco::Data::Keywords::now;
+        stmt5 << std::string(MediaDedup::SQL::kCreateImageArtifactsTable), Poco::Data::Keywords::now;
+    }
+
     // Let's create scanned files first:
     ASSERT_TRUE(MediaDedup::ScannedFilesOps::ensureTable(dbm));
-
-    // We will just verify it safely runs without throwing, and successfully cleans the scanned_files at the very least.
-    // If further schema is needed, it would occur in DatabaseManager initialization, or we can just ensure scanned_files.
     
     // Create a few files for location 1 and location 2
     auto row1 = MediaDedup::Test::makeRow("/tmp/loc1/file1.jpg");

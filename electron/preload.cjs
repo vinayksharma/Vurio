@@ -7,6 +7,7 @@ const api = {
   revealLog: (filePath) => ipcRenderer.invoke('utils:revealLog', filePath),
   toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools'),
   exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog'),
+  openPath: (path) => ipcRenderer.invoke('utils:openPath', path),
 };
 
 // Expose the API to the renderer process via a secure bridge

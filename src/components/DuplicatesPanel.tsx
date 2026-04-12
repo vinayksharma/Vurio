@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting } from '../utils/api';
+import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting, fetchUserSettings, ejectDuplicates } from '../utils/api';
 import { useServerStatusStore, useUIStore } from '../stores';
 import type { DuplicateGroup } from '../types';
 import DuplicateGroupControl from './DuplicateGroupControl';
@@ -65,6 +65,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const scrollTestStatsRef = useRef<ScrollTestStats | null>(null);
   const lastStatusDrivenRefreshRef = useRef<number>(0);
   const lastSyncedDuplicatesFoundRef = useRef<number>(-1);
+  const [bulkEjectState, setBulkEjectState] = useState<{ calculating: boolean; current: number; total: number; } | null>(null);
 
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
@@ -453,6 +454,127 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     );
   }
 
+  const handleOpenEjectedFolders = async () => {
+    try {
+      const settings = await fetchUserSettings();
+      const ejectionPaths = settings
+        .filter(s => s.key.startsWith('ejectionPath:'))
+        .map(s => s.value);
+
+      if (ejectionPaths.length === 0) {
+        alert('No ejection folders have been created yet. Try ejecting some duplicates first.');
+        return;
+      }
+
+      if (window.electronAPI?.openPath) {
+        for (const path of ejectionPaths) {
+          const res = await window.electronAPI.openPath(path);
+          if (!res.ok) {
+            console.error(`Failed to open path ${path}:`, res.error);
+          }
+        }
+      } else {
+        alert('System path launching is only available in the desktop app.');
+      }
+    } catch (e) {
+      console.error('Failed to resolve ejection folders:', e);
+    }
+  };
+
+  const handleBulkEject = async () => {
+    if (bulkEjectState) return;
+
+    setBulkEjectState({ calculating: true, current: 0, total: 0 });
+
+    const LIMIT = 1000;
+    let start = 0;
+    let hasMore = true;
+
+    const filePathsToEject: string[] = [];
+    const eligibleMembers: { groupIndex: number, memberIndex: number, filePath: string }[] = [];
+
+    // Phase 1: Count
+    while (hasMore) {
+      try {
+        const data = await fetchDuplicateGroups(start, LIMIT, null);
+        if (!data || !data.groups || data.groups.length === 0) break;
+
+        data.groups.forEach((group, idx) => {
+          const groupIndex = start + idx;
+          group.members?.forEach((member, mIdx) => {
+            if (member.is_ejected) return;
+            const score = typeof member.similarity_score === 'number' ? member.similarity_score : 1;
+            if ((1.0 - score) <= duplicateTightness) {
+              filePathsToEject.push(member.file_path);
+              eligibleMembers.push({ groupIndex, memberIndex: mIdx, filePath: member.file_path });
+            }
+          });
+        });
+
+        start += data.returned || data.groups.length;
+        if (start >= (data.total_count || 0) || (data.returned || 0) < LIMIT) {
+          hasMore = false;
+        }
+      } catch (error) {
+        console.error("Error calculating bulk eject:", error);
+        break;
+      }
+    }
+
+    if (filePathsToEject.length === 0) {
+      alert("No eligible duplicates found to eject securely under the current duplication selection scale.");
+      setBulkEjectState(null);
+      return;
+    }
+
+    if (!window.confirm(`Found ${filePathsToEject.length} identical duplicates based on your duplication selection scale. Eject them all?`)) {
+      setBulkEjectState(null);
+      return;
+    }
+
+    // Phase 2: Execute
+    setBulkEjectState({ calculating: false, current: 0, total: filePathsToEject.length });
+
+    (async () => {
+      const chunkSize = 50;
+      const cache = groupsCacheRef.current;
+
+      for (let i = 0; i < filePathsToEject.length; i += chunkSize) {
+        const chunk = filePathsToEject.slice(i, i + chunkSize);
+
+        try {
+          await ejectDuplicates(chunk);
+
+          const chunkSet = new Set(chunk);
+          let cacheChanged = false;
+
+          eligibleMembers.forEach(m => {
+            if (chunkSet.has(m.filePath)) {
+              const g = cache.get(m.groupIndex);
+              if (g && g.members && g.members[m.memberIndex]) {
+                g.members[m.memberIndex].is_ejected = true;
+                cacheChanged = true;
+              }
+            }
+          });
+
+          if (cacheChanged) setCacheVersion(v => v + 1);
+          setBulkEjectState(prev => prev ? { ...prev, current: Math.min(i + chunk.length, filePathsToEject.length) } : null);
+        } catch (error) {
+          console.error("Bulk eject chunk failed:", error);
+          if (window.errorLogger) {
+            window.errorLogger.logError({
+              type: 'react',
+              message: 'Failed during bulk eject iteration',
+              context: { error: String(error) }
+            });
+          }
+        }
+      }
+      setTimeout(() => setBulkEjectState(null), 2000); // Clear status after 2s
+    })();
+  };
+
   return (
     <section id="panel-duplicates" className={`content-panel ${isActive ? 'active' : ''}`}>
       <header className="panel-header">
@@ -477,10 +599,40 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
             onMouseUp={handleSliderPointerUp} 
             onTouchEnd={handleSliderPointerUp}
             className="tightness-slider"
-            title="Adjust tightness for perfect matches"
+            title="Adjust duplication selection scale for perfect matches"
             style={{ '--slider-value': `${(sliderValue / 1000) * 100}%` } as React.CSSProperties}
           />
           <span className="slider-label right">similar</span>
+          
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+            <button 
+              className="secondary icon-button" 
+              onClick={handleOpenEjectedFolders}
+              title="Open Ejected Folders in OS"
+              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', borderRadius: '4px' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              Find Ejected
+            </button>
+            <button 
+              className="danger icon-button" 
+              onClick={handleBulkEject}
+              disabled={!!bulkEjectState}
+              title="Eject all duplicates matching the current duplication selection scale"
+              style={{
+                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', 
+                backgroundColor: bulkEjectState ? 'rgba(100, 100, 100, 0.2)' : 'rgba(204, 0, 0, 0.1)', 
+                border: bulkEjectState ? '1px solid rgba(100, 100, 100, 0.4)' : '1px solid rgba(204, 0, 0, 0.4)', 
+                color: bulkEjectState ? '#aaa' : '#ff4d4d', 
+                borderRadius: '4px', cursor: bulkEjectState ? 'wait' : 'pointer', transition: 'all 0.2s ease' 
+              }}
+              onMouseEnter={(e) => { if(!bulkEjectState) e.currentTarget.style.backgroundColor = 'rgba(204, 0, 0, 0.3)'; }}
+              onMouseLeave={(e) => { if(!bulkEjectState) e.currentTarget.style.backgroundColor = 'rgba(204, 0, 0, 0.1)'; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/></svg>
+              {bulkEjectState?.calculating ? 'Calculating...' : (bulkEjectState ? `${bulkEjectState.current} / ${bulkEjectState.total} Ejected` : 'Bulk Eject')}
+            </button>
+          </div>
         </div>
         <div className="card-stack" id="duplicates-stack" ref={cardStackRef} style={{ position: 'relative', overflow: 'auto' }}>
           <div style={{ height: `${totalHeight}px`, position: 'relative' }}>{renderItems()}</div>
