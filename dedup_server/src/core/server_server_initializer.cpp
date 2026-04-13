@@ -291,6 +291,12 @@ namespace MediaDedup
             files_manager_ = std::make_shared<Orchestration::FilesManager>(config_manager_, db_shared, files_service_, media_processor_);
             files_manager_->initialize();
 
+            // Setup scan abort on path deregistration
+            files_service_->setPathDeregisteredCallback([fm = files_manager_]()
+                                                        {
+                Poco::Logger::get("ServerInitializer").information("Path deregistered, aborting current scan if running");
+                fm->abortCurrentScan(); });
+
             // Register fileScan job
             int intervalMs = config_manager_->getPropertyValue<int>("files.manager.scan.intervalMs", 300000);
             logger.information("Loading fileScan interval from config: %d ms", intervalMs);

@@ -6,6 +6,8 @@ import { getActiveRequestCount } from '../utils/thumbnailRequests';
 import { errorLogger } from '../utils/errorLogger';
 import { thumbnailQueue } from '../utils/thumbnailQueue';
 import { useUIStore } from '../stores';
+// @ts-ignore
+import FallbackImage from '../assets/error_thumbnail.jpg';
 
 interface DuplicateGroupControlProps {
   group: DuplicateGroup;
@@ -142,6 +144,108 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     return unsubscribe;
   }, [group.id]);
 
+  const startUIBackoff = (
+    thumbnailDiv: HTMLElement,
+    img: HTMLImageElement,
+    url: string,
+    memberIdx: number
+  ) => {
+    const errorIndicator = thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+    if (!errorIndicator) return;
+    
+    let timerEl = errorIndicator.querySelector('.ui-retry-timer') as HTMLElement;
+    if (!timerEl) {
+      timerEl = document.createElement('div');
+      timerEl.className = 'ui-retry-timer';
+      timerEl.style.fontSize = '12px';
+      timerEl.style.fontWeight = 'bold';
+      timerEl.style.color = '#fff';
+      timerEl.style.textAlign = 'center';
+      timerEl.style.textShadow = '0px 1px 3px rgba(0,0,0,0.9)';
+      timerEl.style.position = 'absolute';
+      timerEl.style.bottom = '0px';
+      timerEl.style.left = '0';
+      timerEl.style.right = '0';
+      timerEl.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+      timerEl.style.padding = '3px 0';
+      errorIndicator.appendChild(timerEl);
+    }
+    
+    errorIndicator.style.display = 'flex';
+    
+    const retries = parseInt(img.getAttribute('data-ui-retries') || '0', 10);
+    const MAX_UI_RETRIES = 12; // Allow many retries since ffmpeg can be slow
+    
+    if (retries >= MAX_UI_RETRIES) {
+      timerEl.innerText = 'Failed';
+      return;
+    }
+    
+    const nextRetry = retries + 1;
+    img.setAttribute('data-ui-retries', nextRetry.toString());
+    
+    // Backoff: 5s, 10s, 20s, 40s... cap at 60s
+    let secondsLeft = Math.min(60, 5 * Math.pow(2, retries));
+    timerEl.innerText = `Retry in ${secondsLeft}s`;
+    
+    // Clear any existing interval
+    const currentInterval = (img as any)._uiRetryInterval;
+    if (currentInterval) clearInterval(currentInterval);
+    
+    const interval = setInterval(() => {
+      secondsLeft--;
+      
+      // Stop if element is removed from DOM
+      if (!document.body.contains(thumbnailDiv)) {
+        clearInterval(interval);
+        return;
+      }
+      
+      if (secondsLeft <= 0) {
+        clearInterval(interval);
+        
+        const currentDataSrc = img.getAttribute('data-src') || url;
+        const urlObj = new URL(currentDataSrc, window.location.origin);
+        urlObj.searchParams.set('_retry', Date.now().toString());
+        const newUrl = urlObj.toString();
+        
+        errorIndicator.style.display = 'none';
+        timerEl.innerText = '';
+        const placeholder = thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
+        if (placeholder) placeholder.style.display = 'flex';
+        
+        img.setAttribute('data-src', newUrl);
+        queuedUrlsRef.current.add(newUrl);
+        
+        thumbnailQueue.push(
+          newUrl,
+          img,
+          thumbnailDiv,
+          {
+            onLoad: (u) => {
+              loadedImagesRef.current.add(u);
+              imageSrcRef.current.set(u, u);
+              queuedUrlsRef.current.delete(u);
+              img.removeAttribute('data-ui-retries');
+            },
+            onError: (u, err) => {
+              queuedUrlsRef.current.delete(u);
+              startUIBackoff(thumbnailDiv, img, newUrl, memberIdx);
+            }
+          },
+          {
+            groupId: group.id,
+            memberIndex: memberIdx
+          }
+        );
+      } else {
+        timerEl.innerText = `Retry in ${secondsLeft}s`;
+      }
+    }, 1000);
+    
+    (img as any)._uiRetryInterval = interval;
+  };
+
   // Group-level IntersectionObserver: when group is visible, load all thumbnails
   useEffect(() => {
     const scrollContainer = document.getElementById('duplicates-stack');
@@ -205,6 +309,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                     dataSrc: img.dataset.src,
                   });
                   queuedUrlsRef.current.delete(url);
+                  startUIBackoff(thumbnailDiv as HTMLElement, img, url, index);
                 },
               },
               {
@@ -428,6 +533,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                         dataSrc: imgElement.dataset.src,
                       });
                       queuedUrlsRef.current.delete(url);
+                      startUIBackoff(thumbnailElement, imgElement, url, -1);
                     },
                   },
                   {
@@ -539,7 +645,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
     const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score != null ? member.similarity_score.toFixed(4) : 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}`;
 
-    const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=128`;
+    const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=128&_c=1`;
 
     const thumbnailStyle: React.CSSProperties = isFirst
       ? { border: '2px solid #FF8C00', flexShrink: 0, marginLeft: '4px' }
@@ -595,12 +701,8 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           <div className="thumbnail-placeholder" style={{ display: 'flex' }}>
             <div className="thumbnail-loading-spinner"></div>
           </div>
-          <div className="thumbnail-error" style={{ display: 'none' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
+          <div className="thumbnail-error" style={{ display: 'none', position: 'relative', width: '100%', height: '100%', borderRadius: isFirst ? '2px' : '4px', overflow: 'hidden' }}>
+            <img src={FallbackImage} alt="Error" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         </div>
         {isFirst && (
@@ -653,9 +755,9 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
             ref={scrollContentRef}
             style={{
               display: 'flex',
-              gap: '12px',
+              height: '100%',
               alignItems: 'center',
-              paddingBottom: '8px',
+              gap: '12px',
               minWidth: 'min-content',
               position: 'relative',
             }}
@@ -667,7 +769,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '0px',
+                  bottom: '12px',
                   left: `${bracketPosition.left}px`,
                   width: `${bracketPosition.width}px`,
                   height: '2px',

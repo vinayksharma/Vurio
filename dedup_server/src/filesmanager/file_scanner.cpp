@@ -102,6 +102,12 @@ namespace MediaDedup::Files
             }
             for (; it != end; ++it)
             {
+                if (options.shouldAbort && options.shouldAbort())
+                {
+                    Poco::Logger::get("FileScanner").information("Scan aborted by options.shouldAbort");
+                    break;
+                }
+
                 try
                 {
                     const fs::directory_entry &de = *it;
@@ -131,6 +137,12 @@ namespace MediaDedup::Files
             fs::directory_iterator it(directory, fs::directory_options::skip_permission_denied), end;
             for (; it != end; ++it)
             {
+                if (options.shouldAbort && options.shouldAbort())
+                {
+                    logger.information("Scan aborted by options.shouldAbort");
+                    break;
+                }
+
                 try
                 {
                     const fs::directory_entry &de = *it;

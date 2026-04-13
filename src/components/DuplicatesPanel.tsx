@@ -67,7 +67,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
 
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
-  const CARD_HEIGHT = 150; // Increased from 140 to accommodate taller key thumbnails
+  const CARD_HEIGHT = 166; // Increased from 150 to accommodate taller key thumbnails
   const GAP = 12;
   const ITEM_HEIGHT = CARD_HEIGHT + GAP;
   const BATCH_SIZE = 30;

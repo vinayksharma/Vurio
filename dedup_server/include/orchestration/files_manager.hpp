@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <atomic>
 
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
@@ -34,6 +35,8 @@ namespace MediaDedup
             std::string getCurrentScanThreadId() const;
             std::chrono::milliseconds getScanDuration() const;
 
+            void abortCurrentScan();
+
         private:
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<DatabaseManager> db_;
@@ -42,6 +45,7 @@ namespace MediaDedup
 
             std::mutex runMutex_;
             bool running_ = false;
+            std::atomic<bool> abortScan_{false};
 
             void onFileEmitted(const std::string &root,
                                const MediaDedup::Files::FileRecord &rec);

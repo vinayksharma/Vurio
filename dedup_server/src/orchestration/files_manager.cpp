@@ -39,6 +39,11 @@ namespace MediaDedup::Orchestration
         runOnce();
     }
 
+    void FilesManager::abortCurrentScan()
+    {
+        abortScan_.store(true);
+    }
+
     void FilesManager::onFileEmitted(const std::string &root,
                                      const FileRecord &rec)
     {
@@ -236,6 +241,7 @@ namespace MediaDedup::Orchestration
             return;
         }
         running_ = true;
+        abortScan_.store(false);
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
         logger.information("FilesManager scan started");
 
@@ -265,6 +271,7 @@ namespace MediaDedup::Orchestration
                     opt.recursive = cfg_->getPropertyValue<bool>("filesservice.scan.recursive", true);
                     opt.followSymlinks = cfg_->getPropertyValue<bool>("filesservice.scan.followSymlinks", false);
                     opt.includeHidden = cfg_->getPropertyValue<bool>("filesservice.scan.includeHidden", true);
+                    opt.shouldAbort = [this]() { return abortScan_.load(); };
 
                     logger.information(std::string("Scanning root: ") + root +
                                        ", recursive=" + (opt.recursive ? "true" : "false") +
