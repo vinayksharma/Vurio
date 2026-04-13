@@ -109,6 +109,7 @@ namespace MediaDedup
                 std::string file_path;
                 int64_t file_size = 0;
                 std::string created_date;
+                bool has_exif_date = false;
                 std::vector<std::uint8_t> phash;
                 std::vector<std::uint8_t> features;
                 std::string features_method;
@@ -123,6 +124,7 @@ namespace MediaDedup
                 std::string file_path;
                 int64_t file_size = 0;
                 std::string created_date;
+                bool has_exif_date = false;
             };
 
             /**

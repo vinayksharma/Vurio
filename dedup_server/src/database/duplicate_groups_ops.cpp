@@ -864,11 +864,8 @@ namespace MediaDedup
                     member.is_representative = member_row[5].convert<bool>();
                     member.added_at = member_row[6].convert<std::string>();
 
-                    // Only add non-representative members to the candidates list
-                    if (!member.is_representative)
-                    {
-                        group_with_members.members.push_back(member);
-                    }
+                    // Always add the member, including the representative, so the UI receives full metadata
+                    group_with_members.members.push_back(member);
                 }
 
                 page.groups.push_back(group_with_members);
