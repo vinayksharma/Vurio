@@ -54,6 +54,15 @@ namespace MediaDedup
         std::string l = r.links;
         int inf = r.is_network_file ? 1 : 0;
         std::string location_key = r.location_key;
+        std::string exif_dt = r.exif_datetime.value_or("");
+        std::string exif_cam = r.exif_camera.value_or("");
+        std::string exif_res = r.exif_resolution.value_or("");
+        
+        Poco::Data::BLOB blob_obj;
+        if (r.exif_blob.has_value() && !r.exif_blob->empty()) {
+            blob_obj.assignRaw(r.exif_blob->data(), r.exif_blob->size());
+        }
+
         stmt << std::string(SQL::kUpsertScannedFile),
             Keywords::use(file_path),
             Keywords::use(relative_path),
@@ -64,6 +73,10 @@ namespace MediaDedup
             Keywords::use(l),
             Keywords::use(inf),
             Keywords::use(location_key),
+            Keywords::use(exif_dt),
+            Keywords::use(exif_cam),
+            Keywords::use(exif_res),
+            Keywords::use(blob_obj),
             Keywords::now;
     }
 
@@ -183,6 +196,10 @@ namespace MediaDedup
             r.is_network_file = rs[8].convert<int>() != 0;
             r.location_key = rs[9].convert<std::string>();
             r.created_at = rs[10].convert<std::string>();
+            if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+            if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+            if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+            // Note: exif_blob is intentionally excluded from this SELECT query to save memory
             return r;
         }
         catch (...)
@@ -216,6 +233,9 @@ namespace MediaDedup
                 r.is_network_file = rs[8].convert<int>() != 0;
                 r.location_key = rs[9].convert<std::string>();
                 r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -475,6 +495,9 @@ namespace MediaDedup
                 r.is_network_file = rs[8].convert<int>() != 0;
                 r.location_key = rs[9].convert<std::string>();
                 r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -499,6 +522,43 @@ namespace MediaDedup
         }
         catch (...)
         {
+            return false;
+        }
+    }
+
+    bool ScannedFilesOps::updateExifMetadata(DatabaseManager &db, const std::string &file_path, 
+                                 const std::string &exif_datetime, const std::string &exif_camera, 
+                                 const std::string &exif_resolution, const std::vector<std::uint8_t> &exif_blob)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            
+            Poco::Data::BLOB blob_obj;
+            if (!exif_blob.empty()) {
+                blob_obj.assignRaw(exif_blob.data(), exif_blob.size());
+            }
+
+            // Bind references directly, they won't go out of scope before the execute
+            std::string dt = exif_datetime;
+            std::string cam = exif_camera;
+            std::string res = exif_resolution;
+            std::string p = file_path;
+
+            stmt << std::string(SQL::kUpdateExifMetadata), 
+                Keywords::use(dt), 
+                Keywords::use(cam), 
+                Keywords::use(res), 
+                Keywords::use(blob_obj),
+                Keywords::use(p), Keywords::now;
+                
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("updateExifMetadata error: %s", std::string(e.what()));
             return false;
         }
     }
@@ -803,6 +863,9 @@ namespace MediaDedup
                 r.is_network_file = rs[8].convert<int>() != 0;
                 r.location_key = rs[9].convert<std::string>();
                 r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -846,6 +909,9 @@ namespace MediaDedup
                 r.is_network_file = rs[8].convert<int>() != 0;
                 r.location_key = rs[9].convert<std::string>();
                 r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -889,6 +955,9 @@ namespace MediaDedup
                 r.is_network_file = rs[8].convert<int>() != 0;
                 r.location_key = rs[9].convert<std::string>();
                 r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
                 out.emplace_back(std::move(r));
                 count++;
                 if (count % 10000 == 0)

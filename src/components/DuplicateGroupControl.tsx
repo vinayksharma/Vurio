@@ -685,7 +685,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     const isFirst = memberIndex === 0;
     const hasPerfectMatch = (1 - (member.similarity_score ?? 0)) <= duplicateTightness && !isFirst; // Don't show on key image
     const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
-    const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score != null ? member.similarity_score.toFixed(4) : 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}`;
+    const tooltip = `Group #${group.id} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score != null ? member.similarity_score.toFixed(4) : 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nDate Taken: ${member.created_date ? new Date(member.created_date).toLocaleString() : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}`;
 
     const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=128&_c=1`;
 
