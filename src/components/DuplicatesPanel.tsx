@@ -596,7 +596,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           <span className="panel-meta" id="duplicates-meta">{totalGroups > 0 ? `${totalGroups} groups` : 'No duplicates'}</span>
         </div>
         <div className="tightness-slider-container">
-          <span className="slider-label">duplicates</span>
+          <span className="slider-label">identical</span>
           <input 
             type="range" 
             min="0" 
