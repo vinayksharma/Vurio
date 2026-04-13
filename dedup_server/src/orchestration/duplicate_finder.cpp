@@ -732,6 +732,7 @@ namespace MediaDedup
                         // Use EXIF datetime if available
                         if (!exif_dt.empty())
                         {
+                            artifact.has_exif_date = true;
                             // exif dates can sometimes be separated by colons in the date part (e.g. 2024:01:01 12:00:00)
                             std::string cleaned_dt = exif_dt;
                             if (cleaned_dt.size() >= 10 && cleaned_dt[4] == ':' && cleaned_dt[7] == ':') {
@@ -816,6 +817,7 @@ namespace MediaDedup
             best.file_path = members[0].file_path;
             best.file_size = members[0].file_size;
             best.created_date = members[0].created_date;
+            best.has_exif_date = members[0].has_exif_date;
 
             for (size_t i = 1; i < members.size(); ++i)
             {
@@ -824,6 +826,7 @@ namespace MediaDedup
                 candidate.file_path = members[i].file_path;
                 candidate.file_size = members[i].file_size;
                 candidate.created_date = members[i].created_date;
+                candidate.has_exif_date = members[i].has_exif_date;
 
                 if (isBetterRepresentative(candidate, best))
                 {
@@ -836,14 +839,20 @@ namespace MediaDedup
 
         bool DuplicateFinder::isBetterRepresentative(const RepresentativeInfo &a, const RepresentativeInfo &b)
         {
-            // Priority 1: Larger file size
-            if (a.file_size != b.file_size)
+            // Priority 0: Presence of EXIF data
+            if (a.has_exif_date != b.has_exif_date)
             {
-                return a.file_size > b.file_size;
+                return a.has_exif_date; // true if A has EXIF and B doesn't
             }
 
-            // Priority 2: Older date (lexicographic comparison, assumes ISO format)
-            return a.created_date < b.created_date;
+            // Priority 1: Oldest Date Taken (EXIF or OS Fallback) determines the original
+            if (a.created_date != b.created_date)
+            {
+                return a.created_date < b.created_date;
+            }
+
+            // Priority 2: Larger file size
+            return a.file_size > b.file_size;
         }
 
         int DuplicateFinder::createDuplicateGroup(const std::vector<FileArtifact> &files,
@@ -928,11 +937,27 @@ namespace MediaDedup
             current_rep.file_size = group.representative_file_size;
             current_rep.created_date = group.representative_created_date;
 
+            // Check if current rep has EXIF date
+            try {
+                auto lease = db_.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int has_exif_count = 0;
+                Poco::Data::Statement stmt(sess);
+                stmt << "SELECT COUNT(*) FROM scanned_files WHERE id = ? AND exif_datetime IS NOT NULL AND exif_datetime != ''",
+                        Poco::Data::Keywords::into(has_exif_count),
+                        Poco::Data::Keywords::use(current_rep.file_id),
+                        Poco::Data::Keywords::now;
+                current_rep.has_exif_date = (has_exif_count > 0);
+            } catch (...) {
+                current_rep.has_exif_date = false;
+            }
+
             RepresentativeInfo new_candidate;
             new_candidate.file_id = file.file_id;
             new_candidate.file_path = file.file_path;
             new_candidate.file_size = file.file_size;
             new_candidate.created_date = file.created_date;
+            new_candidate.has_exif_date = file.has_exif_date;
 
             bool should_update_rep = isBetterRepresentative(new_candidate, current_rep) &&
                                      similarity_score >= getThresholdMax("EMBEDDING");
@@ -956,7 +981,7 @@ namespace MediaDedup
                                                               new_candidate.file_path, new_candidate.file_size,
                                                               new_candidate.created_date, new_member_count);
 
-                Poco::Logger::get("DuplicateFinder").information("Updated group %d representative from file_id %d to %d (bigger/older)", group_id, current_rep.file_id, new_candidate.file_id);
+                Poco::Logger::get("DuplicateFinder").information("Updated group %d representative from file_id %d to %d (exif/bigger/older)", group_id, current_rep.file_id, new_candidate.file_id);
             }
             else
             {
