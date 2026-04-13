@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 namespace MediaDedup::Files
 {
     // Options to control directory scanning behavior.
@@ -17,5 +19,9 @@ namespace MediaDedup::Files
         // If true, include hidden files when emitting results (dotfiles on Unix, hidden attribute on Windows).
         // Default: true. Best-effort cross-platform behavior (may vary by platform semantics).
         bool includeHidden = true;
+
+        // Callback invoked periodically to check if the scan should be aborted.
+        // Returns true to abort the scan.
+        std::function<bool()> shouldAbort = nullptr;
     };
 }

@@ -120,19 +120,8 @@ namespace MediaDedup
             // Check if source file exists
             if (!std::filesystem::exists(source_path))
             {
-                logger.warning("Source file not found or inaccessible: %s, serving error thumbnail", source_path);
-                
-                std::string error_thumbnail_path;
-                if (!getOrCreateErrorThumbnail(size, error_thumbnail_path))
-                {
-                    logger.error("Failed to generate error thumbnail for size %d", size);
-                    sendErrorResponse(response, "Source file not found", 404);
-                    return;
-                }
-                
-                // Serve error thumbnail with short cache time or modified time
-                int64_t current_time = getCurrentTimestamp();
-                streamThumbnailFile(error_thumbnail_path, response, current_time);
+                logger.warning("Source file not found or inaccessible: %s", source_path);
+                sendErrorResponse(response, "Source file not found", 404);
                 return;
             }
 
@@ -175,20 +164,8 @@ namespace MediaDedup
             std::string cached_path;
             if (!generateAndCacheThumbnail(source_path, size, cached_path))
             {
-                logger.error("Failed to generate thumbnail for: %s, serving error thumbnail instead", source_path);
-
-                // Get or create error thumbnail for the requested size
-                std::string error_thumbnail_path;
-                if (!getOrCreateErrorThumbnail(size, error_thumbnail_path))
-                {
-                    // If we can't even generate an error thumbnail, return 500 error
-                    logger.error("Failed to generate error thumbnail for size %d", size);
-                    sendErrorResponse(response, "Failed to generate thumbnail", 500);
-                    return;
-                }
-
-                // Serve error thumbnail instead of failing
-                streamThumbnailFile(error_thumbnail_path, response, source_mtime);
+                logger.error("Failed to generate thumbnail for: %s", source_path);
+                sendErrorResponse(response, "Failed to generate thumbnail", 500);
                 return;
             }
 

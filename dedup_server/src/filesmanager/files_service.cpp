@@ -199,11 +199,21 @@ namespace MediaDedup
     {
         const std::string key = makeMediaLocationKey(directory_path);
         
-        // Remove all database rows associated with this location key
+        // 1. Remove from user settings first so subsequent scans ignore it
+        bool result = UserSettingsOps::remove(db_manager_, key);
+        
+        // 2. Abort any running scan BEFORE we delete rows
+        if (result && path_deregistered_callback_) {
+            path_deregistered_callback_();
+        }
+        
+        // Small delay to ensure DB locks from aborted upserts are released
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // 3. Remove all database rows associated with this location key
         ScannedFilesOps::removeByLocationKey(db_manager_, key);
 
-        // Finally remove it from user settings
-        return UserSettingsOps::remove(db_manager_, key);
+        return result;
     }
 
     std::unordered_map<std::string, std::string> FilesService::listMediaLocations()
@@ -226,6 +236,12 @@ namespace MediaDedup
     {
         path_registered_callback_ = std::move(callback);
         logger_.debug("Path registered callback set");
+    }
+
+    void FilesService::setPathDeregisteredCallback(std::function<void()> callback)
+    {
+        path_deregistered_callback_ = std::move(callback);
+        logger_.debug("Path deregistered callback set");
     }
 
     bool FilesService::isImmediateJobTriggerEnabled() const
