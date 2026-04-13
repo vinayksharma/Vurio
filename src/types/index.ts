@@ -73,6 +73,7 @@ export interface DuplicateGroupMember {
   similarity_score?: number;
   file_size?: number;
   added_at?: string;
+  created_date?: string;
   is_representative?: boolean;
   rank?: number;
   is_ejected?: boolean;

@@ -22,6 +22,10 @@ namespace MediaDedup
         bool is_network_file = false;
         std::string location_key; // Full user_settings.key format (e.g., "mediaLocation:abc123")
         std::string created_at;
+        std::optional<std::string> exif_datetime;
+        std::optional<std::string> exif_camera;
+        std::optional<std::string> exif_resolution;
+        std::optional<std::vector<std::uint8_t>> exif_blob;
     };
 
     class ScannedFilesOps
@@ -61,6 +65,11 @@ namespace MediaDedup
 
         // Update metadata for a file
         static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
+        
+        // Update EXIF metadata
+        static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path, 
+                                     const std::string &exif_datetime, const std::string &exif_camera, 
+                                     const std::string &exif_resolution, const std::vector<std::uint8_t> &exif_blob);
 
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);

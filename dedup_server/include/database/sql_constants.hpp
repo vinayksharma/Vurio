@@ -44,7 +44,11 @@ namespace MediaDedup
             "    links TEXT,\n"
             "    is_network_file BOOLEAN DEFAULT 0,\n"
             "    location_key TEXT NOT NULL,\n"
-            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    exif_datetime TEXT,\n"
+            "    exif_camera TEXT,\n"
+            "    exif_resolution TEXT,\n"
+            "    exif_blob BLOB\n"
             ");";
 
         // Index for efficient file_path lookups during scan operations
@@ -102,8 +106,8 @@ namespace MediaDedup
 
         inline constexpr std::string_view kUpsertScannedFile =
             "INSERT INTO scanned_files (file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key)\n"
-            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
+            " processed, links, is_network_file, location_key, exif_datetime, exif_camera, exif_resolution, exif_blob)\n"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
             " ON CONFLICT(file_path) DO UPDATE SET\n"
             "   relative_path=excluded.relative_path,\n"
             "   share_name=excluded.share_name,\n"
@@ -112,7 +116,11 @@ namespace MediaDedup
             "   processed=excluded.processed,\n"
             "   links=excluded.links,\n"
             "   is_network_file=excluded.is_network_file,\n"
-            "   location_key=excluded.location_key";
+            "   location_key=excluded.location_key,\n"
+            "   exif_datetime=excluded.exif_datetime,\n"
+            "   exif_camera=excluded.exif_camera,\n"
+            "   exif_resolution=excluded.exif_resolution,\n"
+            "   exif_blob=excluded.exif_blob";
 
         inline constexpr std::string_view kDeleteScannedFile =
             "DELETE FROM scanned_files WHERE file_path=?";
@@ -122,12 +130,12 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectScannedFileByPath =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE file_path=?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKey =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE location_key=?";
 
         inline constexpr std::string_view kCountScannedFilesByLocationKey =
@@ -135,22 +143,22 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectRandomScannedFilesByLocationKey =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE location_key=? ORDER BY RANDOM() LIMIT ?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKeyWithLimit =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE location_key=? LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKeyAndIdWithLimit =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE location_key=? AND id > ? ORDER BY id ASC LIMIT ?";
 
         inline constexpr std::string_view kListScannedFiles =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files";
 
         inline constexpr std::string_view kCountScannedFiles =
@@ -226,8 +234,11 @@ namespace MediaDedup
             "SELECT EXISTS(SELECT 1 FROM scanned_files WHERE file_path=? LIMIT 1)";
 
         inline constexpr std::string_view kListUnprocessed =
-            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at\n"
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
             " FROM scanned_files WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0)";
+
+        inline constexpr std::string_view kUpdateExifMetadata =
+            "UPDATE scanned_files SET exif_datetime=?, exif_camera=?, exif_resolution=?, exif_blob=? WHERE file_path=?";
 
         // Image artifacts queries
         inline constexpr std::string_view kSelectImageArtifactsByFile =
@@ -346,17 +357,17 @@ namespace MediaDedup
         inline constexpr std::string_view kSelectDuplicateGroupsByMode =
             "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
-            "FROM duplicate_groups WHERE mode=? ORDER BY updated_at DESC";
+            "FROM duplicate_groups WHERE mode=? ORDER BY representative_created_date DESC";
 
         inline constexpr std::string_view kSelectDuplicateGroupsWithPagination =
             "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
-            "FROM duplicate_groups ORDER BY created_at ASC LIMIT ? OFFSET ?";
+            "FROM duplicate_groups ORDER BY representative_created_date DESC LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectDuplicateGroupsWithPaginationByMode =
             "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
-            "FROM duplicate_groups WHERE mode=? ORDER BY created_at ASC LIMIT ? OFFSET ?";
+            "FROM duplicate_groups WHERE mode=? ORDER BY representative_created_date DESC LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectDuplicateGroupsCount =
             "SELECT COUNT(*) FROM duplicate_groups";

@@ -686,7 +686,7 @@ namespace MediaDedup
                 Session &sess = lease.get();
 
                 std::string query =
-                    "SELECT sf.id, sf.file_path, sf.file_metadata, "
+                    "SELECT sf.id, sf.file_path, sf.file_metadata, COALESCE(sf.exif_datetime, ''), "
                     "ia.embedding, ia.embedding_model, ia.embedding_dim "
                     "FROM scanned_files sf "
                     "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
@@ -696,14 +696,14 @@ namespace MediaDedup
                 int fid = file_id;
 
                 int id;
-                std::string path, metadata;
+                std::string path, metadata, exif_dt;
                 // CRITICAL FIX: Use CLOB to read BLOBs to prevent NULL-byte truncation
                 Poco::Data::CLOB embedding_blob;
                 std::string embedding_model;
                 int embedding_dim;
 
                 stmt << query,
-                    into(id), into(path), into(metadata),
+                    into(id), into(path), into(metadata), into(exif_dt),
                     into(embedding_blob), into(embedding_model), into(embedding_dim),
                     use(fid), now;
 
@@ -729,8 +729,21 @@ namespace MediaDedup
                             artifact.file_size = 0;
                         }
 
-                        // Extract createdAt (nanosecond timestamp)
-                        if (obj->has("createdAt"))
+                        // Use EXIF datetime if available
+                        if (!exif_dt.empty())
+                        {
+                            // exif dates can sometimes be separated by colons in the date part (e.g. 2024:01:01 12:00:00)
+                            std::string cleaned_dt = exif_dt;
+                            if (cleaned_dt.size() >= 10 && cleaned_dt[4] == ':' && cleaned_dt[7] == ':') {
+                                cleaned_dt[4] = '-';
+                                cleaned_dt[7] = '-';
+                            }
+                            // Only take the date part for grouping (up to first space) 
+                            // or keep the whole string for precise sorting later
+                            artifact.created_date = cleaned_dt;
+                        }
+                        // Fallback: Extract createdAt (nanosecond timestamp)
+                        else if (obj->has("createdAt"))
                         {
                             int64_t created_ns = obj->getValue<int64_t>("createdAt");
                             // Convert nanoseconds to ISO date string (YYYY-MM-DD format)
@@ -738,7 +751,7 @@ namespace MediaDedup
                             std::time_t created_time = static_cast<std::time_t>(created_s);
                             std::tm *tm = std::gmtime(&created_time);
                             std::stringstream ss;
-                            ss << std::put_time(tm, "%Y-%m-%d");
+                            ss << std::put_time(tm, "%Y-%m-%d %H:%M:%S"); // store full time
                             artifact.created_date = ss.str();
                         }
                         else
