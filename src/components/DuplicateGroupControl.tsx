@@ -29,6 +29,8 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
   const groupRef = useRef<DuplicateGroup>(group);
   const [bracketPosition, setBracketPosition] = useState<{ left: number; width: number } | null>(null);
   const [isEjecting, setIsEjecting] = useState(false);
+  const [hoveredFilePath, setHoveredFilePath] = useState<string | null>(null);
+  const [ejectingPaths, setEjectingPaths] = useState<Set<string>>(new Set());
 
   // Keep ref updated with latest group
   useEffect(() => {
@@ -639,6 +641,46 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
     }
   };
 
+  const handleSingleEjectClick = async (e: React.MouseEvent, path: string) => {
+    e.stopPropagation();
+    if (ejectingPaths.has(path)) return;
+    
+    setEjectingPaths(prev => {
+      const next = new Set(prev);
+      next.add(path);
+      return next;
+    });
+
+    try {
+      const result = await ejectDuplicates([path]);
+      if (result.success) {
+        groupRef.current.members?.forEach(m => {
+          if (m.file_path === path) {
+            m.is_ejected = true;
+          }
+        });
+        setRemapKey(prev => prev + 1); // trigger re-render
+      } else {
+        console.error('Failed to eject specific duplicate:', result.error);
+        if (window.errorLogger) {
+          window.errorLogger.logError({
+            type: 'react',
+            message: 'Single Eject failed',
+            context: { error: result.error }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Exception during single eject:', err);
+    } finally {
+      setEjectingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+  };
+
   const createThumbnail = (member: DuplicateGroupMember, memberIndex: number) => {
     const isFirst = memberIndex === 0;
     const hasPerfectMatch = (1 - (member.similarity_score ?? 0)) <= duplicateTightness && !isFirst; // Don't show on key image
@@ -670,9 +712,57 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           className={`duplicate-thumbnail ${isFirst ? 'key-thumbnail' : ''} ${hasPerfectMatch ? 'perfect-match-thumbnail' : ''}`}
           title={tooltip}
           onClick={() => handleImageClick(member.file_path, tooltip)}
+          onMouseEnter={() => setHoveredFilePath(member.file_path)}
+          onMouseLeave={() => setHoveredFilePath(null)}
           style={{ ...thumbnailStyle, position: 'relative' }}
           data-member-index={memberIndex}
         >
+          {/* Individual Eject Button for non-bracketed images */}
+          {!hasPerfectMatch && !isFirst && !member.is_ejected && hoveredFilePath === member.file_path && (
+            <div
+              onClick={(e) => handleSingleEjectClick(e, member.file_path)}
+              style={{
+                position: 'absolute',
+                bottom: '4px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                backgroundColor: '#cc0000',
+                border: '1px solid #1a1a1a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: ejectingPaths.has(member.file_path) ? 'wait' : 'pointer',
+                pointerEvents: 'auto',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                opacity: ejectingPaths.has(member.file_path) ? 0.6 : 0.85,
+                transition: 'opacity 0.2s',
+                zIndex: 10
+              }}
+              title="Eject this duplicate manually"
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#ff1a1a'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateX(-50%) scale(1)'; e.currentTarget.style.backgroundColor = '#cc0000'; }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(0.95)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; }}
+            >
+              {ejectingPaths.has(member.file_path) ? (
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderTop: '2px solid #fff',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2v10M12 2l-3 3M12 2l3 3M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+                </svg>
+              )}
+            </div>
+          )}
           {member.is_ejected && (
             <div style={{
               position: 'absolute',
@@ -682,7 +772,8 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
               alignItems: 'center',
               justifyContent: 'center',
               zIndex: 5,
-              borderRadius: isFirst ? '2px' : '4px',
+              borderRadius: 'inherit',
+              boxSizing: 'border-box',
               border: '2px solid rgba(255, 0, 0, 0.4)'
             }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4d4d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -701,7 +792,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
           <div className="thumbnail-placeholder" style={{ display: 'flex' }}>
             <div className="thumbnail-loading-spinner"></div>
           </div>
-          <div className="thumbnail-error" style={{ display: 'none', position: 'relative', width: '100%', height: '100%', borderRadius: isFirst ? '2px' : '4px', overflow: 'hidden' }}>
+          <div className="thumbnail-error" style={{ display: 'none', position: 'relative', width: '100%', height: '100%', borderRadius: 'inherit', overflow: 'hidden' }}>
             <img src={FallbackImage} alt="Error" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         </div>
