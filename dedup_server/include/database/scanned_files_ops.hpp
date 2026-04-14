@@ -5,6 +5,8 @@
 #include <optional>
 #include "config/unified_observable_config.hpp"
 
+namespace Poco { namespace Data { class Session; } }
+
 namespace MediaDedup
 {
     class DatabaseManager;
@@ -114,10 +116,21 @@ namespace MediaDedup
             const std::string &new_relative_path,
             const std::string &new_location_key
         );
+        static bool updateFilePath(
+            Poco::Data::Session &sess,
+            int file_id,
+            const std::string &new_path,
+            const std::string &new_relative_path,
+            const std::string &new_location_key
+        );
 
-        // Update file path in other tables
         static int updateFilePathInImageArtifacts(
             DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+        static int updateFilePathInImageArtifacts(
+            Poco::Data::Session &sess,
             const std::string &old_path,
             const std::string &new_path
         );
@@ -127,9 +140,19 @@ namespace MediaDedup
             const std::string &old_path,
             const std::string &new_path
         );
+        static int updateFilePathInProcessingErrors(
+            Poco::Data::Session &sess,
+            const std::string &old_path,
+            const std::string &new_path
+        );
 
         static int updateFilePathInDuplicateGroups(
             DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+        static int updateFilePathInDuplicateGroups(
+            Poco::Data::Session &sess,
             const std::string &old_path,
             const std::string &new_path
         );
@@ -139,9 +162,19 @@ namespace MediaDedup
             const std::string &old_path,
             const std::string &new_path
         );
+        static int updateFilePathInDuplicateMembers(
+            Poco::Data::Session &sess,
+            const std::string &old_path,
+            const std::string &new_path
+        );
 
         static int updateFilePathInThumbnailCache(
             DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+        static int updateFilePathInThumbnailCache(
+            Poco::Data::Session &sess,
             const std::string &old_path,
             const std::string &new_path
         );

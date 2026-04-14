@@ -988,7 +988,22 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePath(lease.get(), file_id, new_path, new_relative_path, new_location_key);
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    bool ScannedFilesOps::updateFilePath(Session &sess,
+                                         int file_id,
+                                         const std::string &new_path,
+                                         const std::string &new_relative_path,
+                                         const std::string &new_location_key)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string new_rel = new_relative_path;
@@ -1011,24 +1026,16 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             std::string error_msg = e.what();
-            // Check if it's a constraint violation (UNIQUE constraint on file_path)
             if (error_msg.find("UNIQUE") != std::string::npos ||
                 error_msg.find("constraint") != std::string::npos ||
                 error_msg.find("Constraint violation") != std::string::npos)
             {
-                Poco::Logger::get("ScannedFilesOps").warning("Cannot update file path (id=%d) to %s: path already exists (UNIQUE constraint). "
-                                                             "This may indicate duplicate files.",
-                                                             file_id, new_path);
+                Poco::Logger::get("ScannedFilesOps").warning("Cannot update file path (id=%d) to %s: path already exists (UNIQUE constraint). ", file_id, new_path);
             }
             else
             {
                 Poco::Logger::get("ScannedFilesOps").error("Error updating file path in scanned_files: " + error_msg);
             }
-            return false;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in scanned_files");
             return false;
         }
     }
@@ -1040,7 +1047,20 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePathInImageArtifacts(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInImageArtifacts(Session &sess,
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string old_p = old_path;
@@ -1054,11 +1074,6 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in image_artifacts: " + std::string(e.what()));
             return 0;
         }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in image_artifacts");
-            return 0;
-        }
     }
 
     int ScannedFilesOps::updateFilePathInProcessingErrors(DatabaseManager &db,
@@ -1068,7 +1083,20 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePathInProcessingErrors(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInProcessingErrors(Session &sess,
+                                                          const std::string &old_path,
+                                                          const std::string &new_path)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string old_p = old_path;
@@ -1082,11 +1110,6 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in processing_errors: " + std::string(e.what()));
             return 0;
         }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in processing_errors");
-            return 0;
-        }
     }
 
     int ScannedFilesOps::updateFilePathInDuplicateGroups(DatabaseManager &db,
@@ -1096,7 +1119,20 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePathInDuplicateGroups(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInDuplicateGroups(Session &sess,
+                                                         const std::string &old_path,
+                                                         const std::string &new_path)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string old_p = old_path;
@@ -1110,11 +1146,6 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in duplicate_groups: " + std::string(e.what()));
             return 0;
         }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in duplicate_groups");
-            return 0;
-        }
     }
 
     int ScannedFilesOps::updateFilePathInDuplicateMembers(DatabaseManager &db,
@@ -1124,7 +1155,20 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePathInDuplicateMembers(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInDuplicateMembers(Session &sess,
+                                                          const std::string &old_path,
+                                                          const std::string &new_path)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string old_p = old_path;
@@ -1138,11 +1182,6 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in duplicate_members: " + std::string(e.what()));
             return 0;
         }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in duplicate_members");
-            return 0;
-        }
     }
 
     int ScannedFilesOps::updateFilePathInThumbnailCache(DatabaseManager &db,
@@ -1152,7 +1191,20 @@ namespace MediaDedup
         try
         {
             auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
+            return updateFilePathInThumbnailCache(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInThumbnailCache(Session &sess,
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
+    {
+        try
+        {
             Statement stmt(sess);
             std::string new_p = new_path;
             std::string old_p = old_path;
@@ -1164,11 +1216,6 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in thumbnail_cache: " + std::string(e.what()));
-            return 0;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error updating file path in thumbnail_cache");
             return 0;
         }
     }

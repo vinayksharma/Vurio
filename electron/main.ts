@@ -231,7 +231,6 @@ ipcMain.handle('utils:openPath', async (_event, filePath: string) => {
     return { ok: true };
   } catch (e) {
     const error = e as Error;
-    dialog.showErrorBox('Open path failed', `${error.message}`);
     return { ok: false, error: error.message };
   }
 });

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include "database/database_manager.hpp"
 #include "database/duplicate_groups_ops.hpp"
+#include "database/scanned_files_ops.hpp"
 #include <filesystem>
 
 using namespace MediaDedup;
@@ -31,7 +32,8 @@ protected:
         db_ = std::make_unique<DatabaseManager>(test_db_path_);
         ASSERT_TRUE(db_->initialize());
 
-        // Ensure duplicate detection tables exist
+        // Ensure tables exist
+        ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_));
         ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_));
     }
 
@@ -46,13 +48,26 @@ protected:
         for (int i = 0; i < count; ++i)
         {
             std::string file_path = "/test/file_" + mode + "_" + std::to_string(i) + ".jpg";
+            
+            // Insert mock scanned file to satisfy foreign keys
+            ScannedFileRow file_row;
+            file_row.file_path = file_path;
+            file_row.relative_path = file_path;
+            file_row.location_key = "test_location";
+            file_row.file_name = file_path;
+            ScannedFilesOps::upsert(*db_, file_row);
+            
+            auto inserted = ScannedFilesOps::getByPath(*db_, file_path);
+            ASSERT_TRUE(inserted.has_value());
+            int file_id = inserted->id;
+
             int group_id = DuplicateGroupsOps::createGroup(
-                *db_, mode, i + 1, file_path, 1024, "2025-10-21", 0.95);
+                *db_, mode, file_id, file_path, 1024, "2025-10-21", 0.95);
             ASSERT_GT(group_id, 0);
 
             // Add a member
             bool added = DuplicateGroupsOps::addMember(
-                *db_, group_id, i + 1, file_path, 1.0, 1024, "2025-10-21", true);
+                *db_, group_id, file_id, file_path, 1.0, 1024, "2025-10-21", true);
             ASSERT_TRUE(added);
         }
     }

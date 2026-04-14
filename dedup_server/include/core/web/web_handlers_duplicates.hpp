@@ -111,5 +111,22 @@ namespace MediaDedupServer
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
         };
 
+        /**
+         * @brief Handler for POST /api/v1/duplicates/undo-eject
+         *
+         * Restores ejected images to their original location.
+         */
+        class UndoEjectDuplicatesHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit UndoEjectDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+        };
+
     } // namespace Core
 } // namespace MediaDedupServer

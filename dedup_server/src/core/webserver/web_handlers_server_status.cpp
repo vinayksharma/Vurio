@@ -1,5 +1,7 @@
 #include "core/web/web_handlers_server_status.hpp"
 #include "config/config_enums.hpp"
+#include "database/user_settings_ops.hpp"
+#include "database/ejected_files_ops.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <sstream>
@@ -106,6 +108,18 @@ namespace MediaDedup
                 int queued_count = scanned_files_service_->countQueued();
                 status_obj.set("queued_files_count", queued_count);
                 Poco::Logger::get("ServerStatusHandler").debug("Queued count: %d", queued_count);
+
+                auto& db = scanned_files_service_->getDb();
+                auto user_settings = MediaDedup::UserSettingsOps::list(db);
+                bool has_ejected_folders = false;
+                for (const auto& kv : user_settings) {
+                    if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                        has_ejected_folders = true;
+                        break;
+                    }
+                }
+                status_obj.set("has_ejected_folders", has_ejected_folders);
+                status_obj.set("has_ejected_files", MediaDedup::EjectedFilesOps::hasAny(db));
             }
 
             // Duplicate statistics

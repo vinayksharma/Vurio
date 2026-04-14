@@ -45,6 +45,8 @@ namespace MediaDedup
             return ScannedFilesOps::resetAllErrors(db_);
         }
 
+        DatabaseManager &getDb() { return db_; }
+
     private:
         DatabaseManager &db_;
     };

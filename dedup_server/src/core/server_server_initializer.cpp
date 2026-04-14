@@ -6,6 +6,7 @@
 #include "database/user_settings_service.hpp"
 #include "database/scanned_files_service.hpp"
 #include "database/thumbnail_cache_ops.hpp"
+#include "database/ejected_files_ops.hpp"
 #include "core/web/web_server.hpp"
 #include "filesmanager/files_service.hpp"
 #include "filesmanager/disk_cache.hpp"
@@ -270,6 +271,14 @@ namespace MediaDedup
                 return false;
             }
             logger.information("Thumbnail cache table ensured");
+
+            // Ensure ejected_files_history database table exists
+            if (!EjectedFilesOps::ensureTable(*database_manager_))
+            {
+                logger.error("Failed to ensure ejected_files_history table");
+                return false;
+            }
+            logger.information("Ejected files history table ensured");
 
             // Initialize ONNX Session Manager (for QUALITY mode memory optimization)
             // Must be initialized before MediaProcessor for session reuse

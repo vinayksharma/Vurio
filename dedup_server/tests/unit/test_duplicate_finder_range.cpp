@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "orchestration/duplicate_finder.hpp"
 #include "database/duplicate_groups_ops.hpp"
+#include "database/scanned_files_ops.hpp"
 #include "config/config_manager_factory.hpp"
 #include "test_utils.hpp"
 #include <memory>
@@ -34,6 +35,18 @@ protected:
         config_.reset();
     }
 
+    int mockScannedFile(const std::string& path) {
+        ScannedFilesOps::ensureTable(*db_manager_);
+        ScannedFileRow file_row;
+        file_row.file_path = path;
+        file_row.relative_path = path;
+        file_row.location_key = "test_location";
+        file_row.file_name = path;
+        ScannedFilesOps::upsert(*db_manager_, file_row);
+        auto opt = ScannedFilesOps::getByPath(*db_manager_, path);
+        return opt ? opt->id : 1;
+    }
+
     std::unique_ptr<DatabaseManager> db_manager_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
 };
@@ -65,8 +78,9 @@ TEST_F(DuplicateFinderRangeTest, ThresholdExpansionTriggersReprocess)
     ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
 
     // Create a mock EMBEDDING group
+    int file_id = mockScannedFile("/test/file1.jpg");
     int group_id = DuplicateGroupsOps::createGroup(
-        *db_manager_, "EMBEDDING", 1, "/test/file1.jpg", 1000, "2025-01-01", 0.96);
+        *db_manager_, "EMBEDDING", file_id, "/test/file1.jpg", 1000, "2025-01-01", 0.96);
     ASSERT_GT(group_id, 0);
 
     // Create checkpoint
@@ -109,8 +123,9 @@ TEST_F(DuplicateFinderRangeTest, StricterThresholdDoesNotReprocess)
     ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
 
     // Create a mock EMBEDDING group
+    int file_id = mockScannedFile("/test/file1.jpg");
     int group_id = DuplicateGroupsOps::createGroup(
-        *db_manager_, "EMBEDDING", 1, "/test/file1.jpg", 1000, "2025-01-01", 0.94);
+        *db_manager_, "EMBEDDING", file_id, "/test/file1.jpg", 1000, "2025-01-01", 0.94);
     ASSERT_GT(group_id, 0);
 
     // Verify group exists
@@ -143,14 +158,19 @@ TEST_F(DuplicateFinderRangeTest, DeleteGroupsByModeWorks)
 {
     ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
 
+    int id_e1 = mockScannedFile("/test/e1.jpg");
+    int id_e2 = mockScannedFile("/test/e2.jpg");
+    int id_legacy = mockScannedFile("/test/legacy1.jpg");
+    int id_dup = mockScannedFile("/test/e1_dup.jpg");
+
     // Create groups - using EMBEDDING mode (the only mode after refactoring)
     // We can still test the database operations with different mode strings for testing purposes
     int embedding_group1 = DuplicateGroupsOps::createGroup(
-        *db_manager_, "EMBEDDING", 1, "/test/e1.jpg", 1000, "2025-01-01", 0.96);
+        *db_manager_, "EMBEDDING", id_e1, "/test/e1.jpg", 1000, "2025-01-01", 0.96);
     int embedding_group2 = DuplicateGroupsOps::createGroup(
-        *db_manager_, "EMBEDDING", 2, "/test/e2.jpg", 2000, "2025-01-02", 0.95);
+        *db_manager_, "EMBEDDING", id_e2, "/test/e2.jpg", 2000, "2025-01-02", 0.95);
     int legacy_group = DuplicateGroupsOps::createGroup(
-        *db_manager_, "LEGACY_TEST", 3, "/test/legacy1.jpg", 3000, "2025-01-03", 0.92);
+        *db_manager_, "LEGACY_TEST", id_legacy, "/test/legacy1.jpg", 3000, "2025-01-03", 0.92);
 
     ASSERT_GT(embedding_group1, 0);
     ASSERT_GT(embedding_group2, 0);
@@ -158,9 +178,9 @@ TEST_F(DuplicateFinderRangeTest, DeleteGroupsByModeWorks)
 
     // Add members to EMBEDDING groups
     ASSERT_TRUE(DuplicateGroupsOps::addMember(
-        *db_manager_, embedding_group1, 1, "/test/e1.jpg", 1.0, 1000, "2025-01-01", true));
+        *db_manager_, embedding_group1, id_e1, "/test/e1.jpg", 1.0, 1000, "2025-01-01", true));
     ASSERT_TRUE(DuplicateGroupsOps::addMember(
-        *db_manager_, embedding_group1, 4, "/test/e1_dup.jpg", 0.97, 1100, "2025-01-04", false));
+        *db_manager_, embedding_group1, id_dup, "/test/e1_dup.jpg", 0.97, 1100, "2025-01-04", false));
 
     // Verify groups exist
     int embedding_count_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");

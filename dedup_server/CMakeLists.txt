@@ -245,6 +245,7 @@ add_executable(media_dedup_server
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp
     src/database/thumbnail_cache_ops.cpp
+    src/database/ejected_files_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp
