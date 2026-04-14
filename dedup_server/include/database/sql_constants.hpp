@@ -71,6 +71,18 @@ namespace MediaDedup
             "    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
             ");";
 
+        // Ejected Files History (tracks originally routed paths)
+        inline constexpr std::string_view kCreateEjectedFilesHistoryTable =
+            "CREATE TABLE IF NOT EXISTS ejected_files_history (\n"
+            "    file_id INTEGER PRIMARY KEY,\n"
+            "    ejected_path TEXT NOT NULL UNIQUE,\n"
+            "    original_file_path TEXT NOT NULL,\n"
+            "    original_relative_path TEXT NOT NULL,\n"
+            "    original_location_key TEXT NOT NULL,\n"
+            "    ejected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+            "    FOREIGN KEY (file_id) REFERENCES scanned_files(id) ON DELETE CASCADE\n"
+            ");";
+
         inline constexpr std::string_view kCreateProcessingErrorsIndexFilePath =
             "CREATE INDEX IF NOT EXISTS idx_processing_errors_file_path ON processing_errors(file_path);";
 
@@ -329,6 +341,9 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateMembersIndexFilePath =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_path ON duplicate_members(file_path);";
 
+        inline constexpr std::string_view kCreateEjectedFilesHistoryIndexEjectedPath =
+            "CREATE INDEX IF NOT EXISTS idx_ejected_files_history_path ON ejected_files_history(ejected_path);";
+
         // Duplicate groups operations
         inline constexpr std::string_view kInsertDuplicateGroup =
             "INSERT INTO duplicate_groups(mode, representative_file_id, representative_file_path, "
@@ -447,6 +462,28 @@ namespace MediaDedup
 
         inline constexpr std::string_view kCountThumbnailCache =
             "SELECT COUNT(*) FROM thumbnail_cache";
+
+        // Ejected Files History operations
+        inline constexpr std::string_view kInsertEjectedFileHistory =
+            "INSERT INTO ejected_files_history(file_id, ejected_path, original_file_path, original_relative_path, original_location_key) "
+            "VALUES(?, ?, ?, ?, ?) "
+            "ON CONFLICT(file_id) DO UPDATE SET "
+            "ejected_path=excluded.ejected_path, original_file_path=excluded.original_file_path, "
+            "original_relative_path=excluded.original_relative_path, original_location_key=excluded.original_location_key";
+
+        inline constexpr std::string_view kSelectEjectedFileHistoryByPath =
+            "SELECT file_id, ejected_path, original_file_path, original_relative_path, original_location_key, ejected_at "
+            "FROM ejected_files_history WHERE ejected_path=?";
+
+        inline constexpr std::string_view kSelectAllEjectedFilesHistory =
+            "SELECT file_id, ejected_path, original_file_path, original_relative_path, original_location_key, ejected_at "
+            "FROM ejected_files_history";
+
+        inline constexpr std::string_view kDeleteEjectedFileHistoryByEjectedPath =
+            "DELETE FROM ejected_files_history WHERE ejected_path=?";
+
+        inline constexpr std::string_view kDeleteEjectedFileHistoryAll =
+            "DELETE FROM ejected_files_history";
 
     } // namespace SQL
 } // namespace MediaDedup

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting, fetchUserSettings, ejectDuplicates } from '../utils/api';
+import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting, fetchUserSettings, ejectDuplicates, bulkUndoEjectDuplicates } from '../utils/api';
 import { useServerStatusStore, useUIStore } from '../stores';
 import type { DuplicateGroup } from '../types';
 import DuplicateGroupControl from './DuplicateGroupControl';
@@ -31,6 +31,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const isOnline = useServerStatusStore((state) => state.isOnline);
   const serverDupeCount = useServerStatusStore((state) => state.status?.duplicate_groups || 0);
   const serverDuplicatesFound = useServerStatusStore((state) => state.status?.duplicates_found ?? -1); // Total files in groups; -1 = unknown
+  const hasEjectedFolders = useServerStatusStore((state) => (state.status as any)?.has_ejected_folders || false);
+  const hasEjectedFiles = useServerStatusStore((state) => (state.status as any)?.has_ejected_files || false);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const duplicateTightness = useUIStore((state) => state.duplicateTightness);
@@ -474,11 +476,18 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       }
 
       if (window.electronAPI?.openPath) {
+        let openedCount = 0;
         for (const path of ejectionPaths) {
           const res = await window.electronAPI.openPath(path);
-          if (!res.ok) {
+          if (res.ok) {
+            openedCount++;
+          } else {
             console.error(`Failed to open path ${path}:`, res.error);
           }
+        }
+        
+        if (openedCount === 0 && ejectionPaths.length > 0) {
+          alert("Could not find any ejected image folders. They may have been fully restored, deleted, or moved manually.");
         }
       } else {
         alert('System path launching is only available in the desktop app.');
@@ -582,6 +591,31 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     })();
   };
 
+  const handleBulkUndoEject = async () => {
+    if (bulkEjectState) return;
+
+    if (!window.confirm(`Are you sure you want to globally undo all ejections and securely restore all ejected files back to their original locations?`)) {
+      return;
+    }
+
+    setBulkEjectState({ calculating: true, current: 0, total: 1 });
+
+    try {
+      const result = await bulkUndoEjectDuplicates();
+      if (result.success) {
+        // Clear cache and trigger refetch
+        setCacheVersion(v => v + 1);
+        groupsCacheRef.current.clear();
+      } else {
+        alert("Failed to undo bulk eject: " + result.error);
+      }
+    } catch (e) {
+      alert("Error undoing bulk eject.");
+    } finally {
+      setBulkEjectState(null);
+    }
+  };
+
   return (
     <section id="panel-duplicates" className={`content-panel ${isActive ? 'active' : ''}`}>
       <header className="panel-header">
@@ -613,20 +647,13 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
             <button 
-              className="secondary icon-button" 
-              onClick={handleOpenEjectedFolders}
-              title="Open Ejected Folders in OS"
-              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', borderRadius: '4px' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-              Find Ejected
-            </button>
-            <button 
               className="danger icon-button" 
               onClick={handleBulkEject}
               disabled={!!bulkEjectState}
               title="Eject all duplicates matching the current duplication selection scale"
               style={{
+                width: '105px',
+                justifyContent: 'center',
                 padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', 
                 backgroundColor: bulkEjectState ? 'rgba(100, 100, 100, 0.2)' : 'rgba(204, 0, 0, 0.1)', 
                 border: bulkEjectState ? '1px solid rgba(100, 100, 100, 0.4)' : '1px solid rgba(204, 0, 0, 0.4)', 
@@ -636,8 +663,47 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
               onMouseEnter={(e) => { if(!bulkEjectState) e.currentTarget.style.backgroundColor = 'rgba(204, 0, 0, 0.3)'; }}
               onMouseLeave={(e) => { if(!bulkEjectState) e.currentTarget.style.backgroundColor = 'rgba(204, 0, 0, 0.1)'; }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/></svg>
-              {bulkEjectState?.calculating ? 'Calculating...' : (bulkEjectState ? `${bulkEjectState.current} / ${bulkEjectState.total} Ejected` : 'Bulk Eject')}
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/></svg>
+              {bulkEjectState?.calculating ? 'Working...' : (bulkEjectState ? `${bulkEjectState.current}/${bulkEjectState.total}` : 'Eject')}
+            </button>
+            <button
+              className="success icon-button"
+              onClick={handleBulkUndoEject}
+              disabled={!!bulkEjectState || !hasEjectedFiles}
+              title="Restore all globally ejected files"
+              style={{
+                width: '105px',
+                justifyContent: 'center',
+                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px',
+                backgroundColor: (bulkEjectState || !hasEjectedFiles) ? 'rgba(100, 100, 100, 0.2)' : 'rgba(16, 185, 129, 0.1)',
+                border: (bulkEjectState || !hasEjectedFiles) ? '1px solid rgba(100, 100, 100, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
+                color: (bulkEjectState || !hasEjectedFiles) ? '#aaa' : '#10b981',
+                borderRadius: '4px', cursor: (bulkEjectState || !hasEjectedFiles) ? 'not-allowed' : 'pointer', transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => { if(!bulkEjectState && hasEjectedFiles) e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.3)'; }}
+              onMouseLeave={(e) => { if(!bulkEjectState && hasEjectedFiles) e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'; }}
+            >
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 3v12M8 11l4 4 4-4"/>
+              </svg>
+              Restore
+            </button>
+            <button 
+              className="secondary icon-button" 
+              onClick={handleOpenEjectedFolders}
+              disabled={!hasEjectedFolders}
+              title="Open Ejected Folders in OS"
+              style={{ 
+                width: '105px',
+                justifyContent: 'center',
+                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', 
+                borderRadius: '4px',
+                cursor: !hasEjectedFolders ? 'not-allowed' : 'pointer',
+                opacity: !hasEjectedFolders ? 0.6 : 1
+              }}
+            >
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              Ejected
             </button>
           </div>
         </div>

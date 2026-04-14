@@ -220,3 +220,17 @@ export async function ejectDuplicates(filePaths: string[]): Promise<{ success: b
     body: JSON.stringify({ files: filePaths }),
   }) as Promise<any>;
 }
+
+export async function undoEjectDuplicates(filePaths: string[]): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/duplicates/undo-eject', {
+    method: 'POST',
+    body: JSON.stringify({ files: filePaths }),
+  }) as Promise<any>;
+}
+
+export async function bulkUndoEjectDuplicates(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/duplicates/undo-eject', {
+    method: 'POST',
+    body: JSON.stringify({ undo_all: true }),
+  }) as Promise<any>;
+}

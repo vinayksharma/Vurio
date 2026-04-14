@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { DuplicateGroup, DuplicateGroupMember } from '../types';
-import { API_BASE, ejectDuplicates } from '../utils/api';
+import { API_BASE, ejectDuplicates, undoEjectDuplicates } from '../utils/api';
 import { remapEventEmitter, type RemapEvent } from '../utils/remapEvents';
 import { getActiveRequestCount } from '../utils/thumbnailRequests';
 import { errorLogger } from '../utils/errorLogger';
@@ -662,6 +662,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
         setRemapKey(prev => prev + 1); // trigger re-render
       } else {
         console.error('Failed to eject specific duplicate:', result.error);
+        alert(result.error || 'Failed to eject duplicate');
         if (window.errorLogger) {
           window.errorLogger.logError({
             type: 'react',
@@ -672,6 +673,85 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
       }
     } catch (err) {
       console.error('Exception during single eject:', err);
+    } finally {
+      setEjectingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+  };
+
+  const handleUndoEjectClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isEjecting) return;
+    
+    const filePaths = groupRef.current.members
+      ?.filter((member, index) => (1 - (member.similarity_score ?? 0)) <= duplicateTightness && index > 0 && member.is_ejected)
+      .map(member => member.file_path) || [];
+
+    if (filePaths.length === 0) return;
+
+    setIsEjecting(true);
+
+    try {
+      const result = await undoEjectDuplicates(filePaths);
+      if (result.success) {
+        groupRef.current.members?.forEach(m => {
+          if (filePaths.includes(m.file_path)) {
+            m.is_ejected = false;
+          }
+        });
+        setRemapKey(prev => prev + 1);
+      } else {
+        console.error('Failed to undo eject duplicates:', result.error);
+        if (window.errorLogger) {
+          window.errorLogger.logError({
+            type: 'react',
+            message: 'Undo Eject failed',
+            context: { error: result.error }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Exception during undo eject:', err);
+    } finally {
+      setIsEjecting(false);
+    }
+  };
+
+  const handleSingleUndoEjectClick = async (e: React.MouseEvent, path: string) => {
+    e.stopPropagation();
+    if (ejectingPaths.has(path)) return;
+    
+    setEjectingPaths(prev => {
+      const next = new Set(prev);
+      next.add(path);
+      return next;
+    });
+
+    try {
+      const result = await undoEjectDuplicates([path]);
+      if (result.success) {
+        groupRef.current.members?.forEach(m => {
+          if (m.file_path === path) {
+            m.is_ejected = false;
+          }
+        });
+        setRemapKey(prev => prev + 1);
+      } else {
+        console.error('Failed to undo eject specific duplicate:', result.error);
+        alert(result.error || 'Failed to undo eject duplicate');
+        if (window.errorLogger) {
+          window.errorLogger.logError({
+            type: 'react',
+            message: 'Single Undo Eject failed',
+            context: { error: result.error }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Exception during single undo eject:', err);
     } finally {
       setEjectingPaths(prev => {
         const next = new Set(prev);
@@ -776,9 +856,49 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
               boxSizing: 'border-box',
               border: '2px solid rgba(255, 0, 0, 0.4)'
             }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4d4d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/>
-              </svg>
+              <div
+                title="Undo Eject"
+                onClick={(e) => handleSingleUndoEjectClick(e, member.file_path)}
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
+                  border: '1px solid #064e3b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: ejectingPaths.has(member.file_path) ? 'wait' : 'pointer',
+                  pointerEvents: 'auto',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                  opacity: ejectingPaths.has(member.file_path) ? 0.6 : 0.85,
+                  transition: 'opacity 0.2s',
+                  zIndex: 10
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#13ce90'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)'; e.currentTarget.style.backgroundColor = '#10b981'; }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'translate(-50%, -50%) scale(0.95)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)'; }}
+              >
+                {ejectingPaths.has(member.file_path) ? (
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    borderTop: '2px solid #fff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2v10M9 9l3 3 3-3M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+                  </svg>
+                )}
+              </div>
             </div>
           )}
           <img
@@ -809,6 +929,10 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
       </React.Fragment>
     );
   };
+
+  const perfectMatches = displayedMembers
+    .filter((member, index) => (1 - (member.similarity_score ?? 0)) <= duplicateTightness && index > 0);
+  const allPerfectMatchesEjected = perfectMatches.length > 0 && perfectMatches.every(m => m.is_ejected);
 
   return (
     <div className="card duplicate-group-card" ref={containerRef} style={{ height: '100%', maxHeight: '100%', minHeight: 0 }}>
@@ -856,7 +980,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
             {displayedMembers.map((member, memberIndex) => createThumbnail(member, memberIndex))}
 
             {/* Continuous bracket for perfect matches - scrolls with thumbnails */}
-            {bracketPosition && (
+            {bracketPosition && !allPerfectMatchesEjected && (
               <div
                 style={{
                   position: 'absolute',
@@ -873,27 +997,9 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                 <div style={{ width: '100%', height: '100%', background: '#a85858' }} />
 
                 {/* Left vertical bracket extension */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    bottom: 0,
-                    width: '2px',
-                    height: '6px',
-                    background: '#a85858',
-                  }}
-                />
+                <div style={{ position: 'absolute', left: 0, bottom: 0, width: '2px', height: '6px', background: '#a85858' }} />
                 {/* Right vertical bracket extension */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    bottom: 0,
-                    width: '2px',
-                    height: '6px',
-                    background: '#a85858',
-                  }}
-                />
+                <div style={{ position: 'absolute', right: 0, bottom: 0, width: '2px', height: '6px', background: '#a85858' }} />
 
                 {/* Eject Button Overlay */}
                 <div
@@ -924,17 +1030,71 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
                   onMouseUp={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; }}
                 >
                   {isEjecting ? (
-                    <div style={{
-                      width: '10px',
-                      height: '10px',
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      borderTop: '2px solid #fff',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite'
-                    }} />
+                    <div style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                   ) : (
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 2v10M12 2l-3 3M12 2l3 3M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+                    </svg>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Undo Eject Continuous bracket for perfect matches */}
+            {bracketPosition && allPerfectMatchesEjected && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '12px',
+                  left: `${bracketPosition.left}px`,
+                  width: `${bracketPosition.width}px`,
+                  height: '2px',
+                  background: '#10b981',
+                  zIndex: 10,
+                  pointerEvents: 'none',
+                }}
+              >
+                {/* Bracket line */}
+                <div style={{ width: '100%', height: '100%', background: '#10b981' }} />
+
+                {/* Left vertical bracket extension */}
+                <div style={{ position: 'absolute', left: 0, bottom: 0, width: '2px', height: '6px', background: '#10b981' }} />
+                {/* Right vertical bracket extension */}
+                <div style={{ position: 'absolute', right: 0, bottom: 0, width: '2px', height: '6px', background: '#10b981' }} />
+
+                {/* Undo Eject Button Overlay */}
+                <div
+                  onClick={handleUndoEjectClick}
+                  style={{
+                    position: 'absolute',
+                    top: '-10px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    backgroundColor: '#10b981',
+                    border: '1px solid #064e3b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: isEjecting ? 'wait' : 'pointer',
+                    pointerEvents: 'auto',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                    opacity: isEjecting ? 0.6 : 1,
+                    transition: 'transform 0.1s, opacity 0.2s'
+                  }}
+                  title="Undo eject perfect duplicates"
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#13ce90'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1)'; e.currentTarget.style.backgroundColor = '#10b981'; }}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(0.95)'; }}
+                  onMouseUp={(e) => { e.currentTarget.style.transform = 'translateX(-50%) scale(1.1)'; }}
+                >
+                  {isEjecting ? (
+                    <div style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2v10M9 9l3 3 3-3M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
                     </svg>
                   )}
                 </div>

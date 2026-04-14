@@ -183,6 +183,8 @@ namespace MediaDedup
             return new MediaDedupServer::Core::ResetDuplicatesHandler(database_manager_);
         if (path == "/api/v1/duplicates/eject" && method == "POST")
             return new MediaDedupServer::Core::EjectDuplicatesHandler(database_manager_);
+        if (path == "/api/v1/duplicates/undo-eject" && method == "POST")
+            return new MediaDedupServer::Core::UndoEjectDuplicatesHandler(database_manager_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 

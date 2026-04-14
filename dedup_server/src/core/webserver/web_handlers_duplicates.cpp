@@ -3,6 +3,7 @@
 #include "database/user_settings_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
+#include "database/ejected_files_ops.hpp"
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
@@ -384,6 +385,7 @@ namespace MediaDedupServer
                 Poco::JSON::Array::Ptr files_array = object->getArray("files");
                 int success_count = 0;
                 int failure_count = 0;
+                std::string last_error = "";
 
                 for (size_t i = 0; i < files_array->size(); ++i)
                 {
@@ -391,6 +393,7 @@ namespace MediaDedupServer
                     auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*database_manager_, file_path);
                     if (!file_opt) {
                         logger.warning("File not found in DB: %s", file_path);
+                        last_error = "File not found in database: " + file_path;
                         failure_count++;
                         continue;
                     }
@@ -403,6 +406,7 @@ namespace MediaDedupServer
                         std::string media_location_path;
                         if (!MediaDedup::UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
                             logger.error("Cannot find media location for key: %s", location_key);
+                            last_error = "Cannot find registered media location for key: " + location_key;
                             failure_count++;
                             continue;
                         }
@@ -416,9 +420,23 @@ namespace MediaDedupServer
                             std::filesystem::create_directories(ejected);
                             MediaDedup::UserSettingsOps::upsert(*database_manager_, "ejectionPath:" + location_key, ejection_path);
                         } catch (const std::exception& e) {
-                            logger.error("Failed to create ejection directory %s: %s", ejection_path, std::string(e.what()));
+                            logger.error("Failed to create ejection directory %s: %s", ejected.string(), std::string(e.what()));
+                            last_error = "Failed to create ejection directory: " + std::string(e.what());
                             failure_count++;
                             continue;
+                        }
+                    } else {
+                        // Ensure it exists on disk, recreate if missing
+                        std::filesystem::path ejected(ejection_path);
+                        if (!std::filesystem::exists(ejected)) {
+                            try {
+                                std::filesystem::create_directories(ejected);
+                            } catch (const std::exception& e) {
+                                logger.error("Failed to recreate missing ejection directory %s: %s", ejection_path, std::string(e.what()));
+                                last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
+                                failure_count++;
+                                continue;
+                            }
                         }
                     }
 
@@ -434,6 +452,7 @@ namespace MediaDedupServer
                     std::filesystem::path src(file_path);
                     if (!std::filesystem::exists(src)) {
                         logger.warning("File does not exist on disk: %s", file_path);
+                        last_error = "File does not exist on disk: " + file_path;
                         failure_count++;
                         continue;
                     }
@@ -449,8 +468,6 @@ namespace MediaDedupServer
                         std::string dest_sha1 = calculateFileSHA1(dest.string());
 
                         if (src_sha1 == dest_sha1) {
-                            std::filesystem::remove(src);
-
                             std::string new_file_path = dest.string();
                             std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
 
@@ -461,22 +478,234 @@ namespace MediaDedupServer
                                 std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
                             }
 
-                            MediaDedup::ScannedFilesOps::updateFilePath(*database_manager_, file_opt->id, new_file_path, new_relative_path, location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(*database_manager_, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(*database_manager_, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(*database_manager_, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(*database_manager_, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(*database_manager_, file_path, new_file_path);
+                            MediaDedup::EjectedFileHistory history;
+                            history.file_id = file_opt->id;
+                            history.ejected_path = new_file_path;
+                            history.original_file_path = file_opt->file_path;
+                            history.original_relative_path = file_opt->relative_path;
+                            history.original_location_key = location_key;
+
+                            try {
+                                auto lease = database_manager_->acquireSessionLease();
+                                Poco::Data::Session& sess = lease.get();
+                                sess.begin();
+
+                                MediaDedup::EjectedFilesOps::insert(sess, history);
+                                MediaDedup::ScannedFilesOps::updateFilePath(sess, file_opt->id, new_file_path, new_relative_path, location_key);
+                                MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
+                                MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
+                                MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
+
+                                sess.commit();
+                            } catch (...) {
+                                std::filesystem::remove(dest);
+                                throw;
+                            }
+
+                            // Filesystem teardown happens ONLY after DB successfully committed
+                            std::filesystem::remove(src);
 
                             logger.information("Successfully ejected %s to %s", file_path, new_file_path);
                             success_count++;
                         } else {
                             logger.error("SHA1 mismatch after copy for %s", file_path);
                             std::filesystem::remove(dest);
+                            last_error = "SHA1 mismatch after copy - file corruption prevented.";
                             failure_count++;
                         }
                     } catch (const std::exception& e) {
                         logger.error("Error copying/ejecting file %s: %s", file_path, std::string(e.what()));
+                        last_error = "Error copying file: " + std::string(e.what());
+                        failure_count++;
+                    }
+                }
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                response.setContentType("application/json");
+
+                Poco::JSON::Object result_obj;
+                result_obj.set("success", success_count > 0);
+                result_obj.set("success_count", success_count);
+                result_obj.set("failure_count", failure_count);
+                if (success_count == 0 && !last_error.empty()) {
+                    result_obj.set("error", last_error);
+                }
+
+                std::ostringstream oss;
+                result_obj.stringify(oss);
+                response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in EjectDuplicatesHandler: %s", std::string(e.what()));
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                response.setContentType("application/json");
+
+                Poco::JSON::Object error_obj;
+                error_obj.set("success", false);
+                error_obj.set("error", std::string(e.what()));
+
+                std::ostringstream oss;
+                error_obj.stringify(oss);
+                response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+        }
+
+        UndoEjectDuplicatesHandler::UndoEjectDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
+            : database_manager_(db)
+        {
+        }
+
+        void UndoEjectDuplicatesHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                       Poco::Net::HTTPServerResponse &response)
+        {
+            Poco::Logger &logger = Poco::Logger::get("UndoEjectDuplicatesHandler");
+
+            try
+            {
+                if (request.getMethod() != "POST")
+                {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+                    response.send();
+                    return;
+                }
+
+                Poco::JSON::Parser parser;
+                Poco::Dynamic::Var result = parser.parse(request.stream());
+                Poco::JSON::Object::Ptr object = result.extract<Poco::JSON::Object::Ptr>();
+
+                bool undo_all = object->optValue("undo_all", false);
+                std::vector<std::string> target_files;
+
+                if (!undo_all)
+                {
+                    if (!object->has("files") || !object->isArray("files"))
+                    {
+                        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                        response.setContentType("application/json");
+                        std::string err = "{\"success\":false,\"error\":\"Expected 'files' array or 'undo_all' boolean\"}";
+                        response.sendBuffer(err.data(), err.length());
+                        return;
+                    }
+
+                    Poco::JSON::Array::Ptr files_array = object->getArray("files");
+                    for (size_t i = 0; i < files_array->size(); ++i)
+                    {
+                        target_files.push_back(files_array->get(i).toString());
+                    }
+                }
+
+                std::vector<MediaDedup::EjectedFileHistory> histories;
+                if (undo_all)
+                {
+                    histories = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
+                }
+                else
+                {
+                    for (const auto& f : target_files)
+                    {
+                        auto hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*database_manager_, f);
+                        if (hist)
+                        {
+                            histories.push_back(*hist);
+                        }
+                        else
+                        {
+                            logger.warning("No ejection history found for %s", f);
+                        }
+                    }
+                }
+
+                int success_count = 0;
+                int failure_count = 0;
+
+                for (const auto& history : histories)
+                {
+                    std::string ejected_path = history.ejected_path;
+                    std::string original_path = history.original_file_path;
+
+                    std::filesystem::path src(ejected_path);
+                    std::filesystem::path dest(original_path);
+
+                    if (!std::filesystem::exists(src))
+                    {
+                        logger.warning("Ejected file does not exist on disk: %s", ejected_path);
+                        MediaDedup::EjectedFilesOps::deleteByEjectedPath(*database_manager_, ejected_path);
+                        failure_count++;
+                        continue;
+                    }
+
+                    try
+                    {
+                        std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+
+                        std::string src_sha1 = calculateFileSHA1(src.string());
+                        std::string dest_sha1 = calculateFileSHA1(dest.string());
+
+                        if (src_sha1 == dest_sha1)
+                        {
+                            std::string dest_path_str = dest.string();
+                            std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
+
+                            try {
+                                auto lease = database_manager_->acquireSessionLease();
+                                Poco::Data::Session& sess = lease.get();
+                                sess.begin();
+
+                                MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
+                                MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
+
+                                MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
+
+                                sess.commit();
+                            } catch (...) {
+                                std::filesystem::remove(dest);
+                                throw;
+                            }
+
+                            // Filesystem teardown happens ONLY after DB successfully committed
+                            std::filesystem::remove(src);
+
+                            // Try to remove ejected directory if empty
+                            try {
+                                std::filesystem::path parent = src.parent_path();
+                                
+                                // On macOS, Finders creates .DS_Store instantly, preventing is_empty from returning true
+                                std::filesystem::path ds_store = parent / ".DS_Store";
+                                if (std::filesystem::exists(ds_store)) {
+                                    std::filesystem::remove(ds_store);
+                                }
+
+                                if (std::filesystem::is_empty(parent)) {
+                                    std::filesystem::remove(parent);
+                                    logger.information("Removed empty ejection directory: %s", parent.string());
+                                    // Remove the user setting so the UI doesn't try to query a missing folder
+                                    MediaDedup::UserSettingsOps::remove(*database_manager_, "ejectionPath:" + history.original_location_key);
+                                }
+                            } catch (...) {
+                                // Ignore directory remove errors
+                            }
+
+                            logger.information("Successfully undid ejection %s to %s", ejected_path, dest_path_str);
+                            success_count++;
+                        }
+                        else
+                        {
+                            logger.error("SHA1 mismatch after copy for undo: %s", ejected_path);
+                            std::filesystem::remove(dest);
+                            failure_count++;
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        logger.error("Error moving file back for undo %s: %s", ejected_path, std::string(e.what()));
                         failure_count++;
                     }
                 }
@@ -495,7 +724,7 @@ namespace MediaDedupServer
             }
             catch (const std::exception &e)
             {
-                logger.error("Exception in EjectDuplicatesHandler: %s", std::string(e.what()));
+                logger.error("Exception in UndoEjectDuplicatesHandler: %s", std::string(e.what()));
 
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                 response.setContentType("application/json");

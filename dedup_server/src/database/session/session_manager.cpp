@@ -99,7 +99,19 @@ namespace MediaDedup
     {
         if (!pool_)
             throw std::runtime_error("Session pool not initialized");
-        return pool_->get();
+        Poco::Data::Session session = pool_->get();
+        if (connector_ == "SQLite")
+        {
+            try
+            {
+                session << "PRAGMA foreign_keys = ON", Poco::Data::Keywords::now;
+            }
+            catch (...)
+            {
+                // Silently ignore pragma errors on leased session reuse
+            }
+        }
+        return session;
     }
 
     void SessionManager::releaseLease()

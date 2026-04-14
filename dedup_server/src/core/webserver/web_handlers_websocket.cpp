@@ -1,5 +1,7 @@
 #include "core/web/web_handlers_websocket.hpp"
 #include "config/config_enums.hpp"
+#include "database/user_settings_ops.hpp"
+#include "database/ejected_files_ops.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/Net/NetException.h>
@@ -119,13 +121,25 @@ namespace MediaDedup
             status_obj.set("server_mode", toString(server_mode));
         }
 
-        // Scanned files count
+        // Scanned files count and ejected status
         if (scanned_files_service_)
         {
             status_obj.set("scanned_files_count", scanned_files_service_->count());
             status_obj.set("processed_files_count", scanned_files_service_->countProcessed());
             status_obj.set("error_files_count", scanned_files_service_->countError());
             status_obj.set("queued_files_count", scanned_files_service_->countQueued());
+
+            auto& db = scanned_files_service_->getDb();
+            auto user_settings = MediaDedup::UserSettingsOps::list(db);
+            bool has_ejected_folders = false;
+            for (const auto& kv : user_settings) {
+                if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                    has_ejected_folders = true;
+                    break;
+                }
+            }
+            status_obj.set("has_ejected_folders", has_ejected_folders);
+            status_obj.set("has_ejected_files", MediaDedup::EjectedFilesOps::hasAny(db));
         }
 
         // Duplicate statistics

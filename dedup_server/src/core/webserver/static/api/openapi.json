@@ -873,6 +873,64 @@
         }
       }
     },
+    "/api/v1/duplicates/undo-eject": {
+      "post": {
+        "summary": "Undo duplicate ejection",
+        "description": "Restores ejected files from the ejection folder to their original locations and updates the database records accordingly. If undo_all is true, all globally ejected files will be restored. Otherwise, specific files must be provided.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of fully qualified ejected file paths to restore"
+                  },
+                  "undo_all": {
+                    "type": "boolean",
+                    "description": "If true, restores all globally ejected files. Overrides 'files' if true."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Undo ejection processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "success_count": {
+                      "type": "integer"
+                    },
+                    "failure_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/api/v1/thumbnails": {
       "get": {
         "summary": "Generate or retrieve thumbnail for a source image",
