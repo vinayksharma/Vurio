@@ -98,11 +98,15 @@ const AdvancedSection: React.FC = () => {
 
   return (
     <section className="panel advanced-panel">
-      <h2 className="panel-title">
+      <h2 className="panel-title" onClick={() => setIsCollapsed(!isCollapsed)} style={{ cursor: 'pointer' }}>
         <span>Advanced</span>
-        <button className="ghost small" onClick={() => setIsCollapsed(!isCollapsed)} aria-expanded={!isCollapsed}>
-          {isCollapsed ? 'Expand' : 'Collapse'}
-        </button>
+        <span 
+          className="config-group-toggle" 
+          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+          aria-expanded={!isCollapsed}
+        >
+          ▼
+        </span>
       </h2>
       <p className="helper-text">Maintenance shortcuts and developer tools for troubleshooting the server.</p>
       <div className={`collapsible ${isCollapsed ? '' : 'open'}`}>

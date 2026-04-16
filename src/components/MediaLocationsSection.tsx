@@ -185,16 +185,15 @@ const MediaLocationsSection: React.FC = () => {
 
   return (
     <section className="panel scan-panel media-locations-section" style={{ position: 'relative' }}>
-      <h2 className="panel-title">
+      <h2 className="panel-title" onClick={() => !remappingLocation && setIsCollapsed(!isCollapsed)} style={{ cursor: remappingLocation ? 'not-allowed' : 'pointer', opacity: remappingLocation ? 0.6 : 1 }}>
         <span>Media Locations</span>
-        <button
-          className="ghost small"
-          onClick={() => setIsCollapsed(!isCollapsed)}
+        <span 
+          className="config-group-toggle" 
+          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
           aria-expanded={!isCollapsed}
-          disabled={!!remappingLocation}
         >
-          {isCollapsed ? 'Expand' : 'Collapse'}
-        </button>
+          ▼
+        </span>
       </h2>
       <p className="helper-text">Register and manage the folders you want the deduplication service to scan.</p>
       <div

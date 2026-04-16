@@ -77,11 +77,11 @@ const PurityOrderSection: React.FC = () => {
   };
 
   return (
-    <section className="panel settings-panel">
-      <h2 className="panel-title">
-        <span>Duplicate Purity Rules</span>
-      </h2>
-      <div className="collapsible open">
+    <div className="config-group">
+      <div className="config-group-header" style={{ cursor: 'default' }}>
+        <h3 className="config-group-title">Duplicate Purity Rules</h3>
+      </div>
+      <div className="config-group-properties">
         <p className="helper-text">
           Customize the rules the detection engine uses to determine which file in a duplicate group should be retained as the original representation. 
           The top-most rule is evaluated first.
@@ -142,7 +142,7 @@ const PurityOrderSection: React.FC = () => {
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 };
 
