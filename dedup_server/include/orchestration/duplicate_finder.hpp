@@ -318,7 +318,7 @@ namespace MediaDedup
             int max_group_size_ = 100;
             double embedding_threshold_similarity_ = 0.92;  // Minimum to consider for a group
             double embedding_threshold_duplicate_ = 0.97;  // True duplicate tier
-            std::string representative_strategy_ = "size_then_age"; // or "age_then_size"
+            std::vector<PurityCriterion> purity_order_ = {PurityCriterion::CAMERA_RAW, PurityCriterion::EXIF_CAPTURE_DATE, PurityCriterion::FILE_SIZE};
 
             // Metadata filtering parameters
             bool metadata_filtering_enabled_ = true;

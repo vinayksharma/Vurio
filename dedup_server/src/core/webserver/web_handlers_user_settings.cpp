@@ -13,9 +13,28 @@
 #include "database/user_settings_service.hpp"
 #include "filesmanager/files_service.hpp"
 #include "orchestration/thread_pool_manager.hpp"
+#include "database/duplicate_groups_ops.hpp"
+#include "database/ejected_files_ops.hpp"
+#include "database/database_manager.hpp"
+#include "database/scanned_files_ops.hpp"
+#include "database/user_settings_ops.hpp"
+#include <Poco/SHA1Engine.h>
+#include <Poco/DigestEngine.h>
+#include <Poco/DigestStream.h>
+#include <Poco/FileStream.h>
+#include <Poco/StreamCopier.h>
+#include <filesystem>
 
 namespace MediaDedup
 {
+    static std::string calculateFileSHA1_UserSettings(const std::string& path) {
+        Poco::SHA1Engine sha1;
+        Poco::DigestOutputStream dos(sha1);
+        Poco::FileInputStream fis(path);
+        Poco::StreamCopier::copyStream(fis, dos);
+        dos.close();
+        return Poco::DigestEngine::digestToHex(sha1.digest());
+    }
 
     ListUserSettingsHandler::ListUserSettingsHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                                      std::shared_ptr<UserSettingsService> service)
@@ -177,6 +196,149 @@ namespace MediaDedup
         : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
 
     // -------- Media Location endpoints (register/deregister) --------
+
+    ConfigurePurityOrderHandler::ConfigurePurityOrderHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                             std::shared_ptr<DatabaseManager> db_manager)
+        : ConfigRequestHandler(std::move(config_manager)), db_manager_(std::move(db_manager)) {}
+
+    void ConfigurePurityOrderHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                    Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger::get("ConfigurePurityOrderHandler").information("Request received to configure purity order and wipe groups");
+
+        if (request.getMethod() != "POST")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+
+        std::string body = getRequestBody(request);
+        if (body.empty())
+        {
+            sendErrorResponse(response, "Body required", 400);
+            return;
+        }
+
+        Poco::JSON::Parser parser;
+        Poco::JSON::Object::Ptr json;
+        try
+        {
+            json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (...)
+        {
+            sendErrorResponse(response, "Invalid JSON body", 400);
+            return;
+        }
+
+        if (!json->has("purity_order"))
+        {
+            sendErrorResponse(response, "Missing 'purity_order' in JSON", 400);
+            return;
+        }
+
+        std::string new_order = json->get("purity_order").toString();
+        if (new_order.empty())
+        {
+            sendErrorResponse(response, "purity_order cannot be empty", 400);
+            return;
+        }
+
+        if (!config_manager_ || !db_manager_)
+        {
+            sendErrorResponse(response, "Service unavailable", 503);
+            return;
+        }
+
+        try
+        {
+            Poco::Logger::get("ConfigurePurityOrderHandler").information("Bulk restoring ejected items...");
+            {
+                auto histories = MediaDedup::EjectedFilesOps::getAll(*db_manager_);
+                for (const auto& history : histories)
+                {
+                    std::string ejected_path = history.ejected_path;
+                    std::string original_path = history.original_file_path;
+
+                    std::filesystem::path src(ejected_path);
+                    std::filesystem::path dest(original_path);
+
+                    if (!std::filesystem::exists(src))
+                    {
+                        MediaDedup::EjectedFilesOps::deleteByEjectedPath(*db_manager_, ejected_path);
+                        continue;
+                    }
+
+                    try
+                    {
+                        std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+
+                        std::string src_sha1 = calculateFileSHA1_UserSettings(src.string());
+                        std::string dest_sha1 = calculateFileSHA1_UserSettings(dest.string());
+
+                        if (src_sha1 == dest_sha1)
+                        {
+                            std::string dest_path_str = dest.string();
+                            std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
+
+                            try {
+                                auto lease = db_manager_->acquireSessionLease();
+                                Poco::Data::Session& sess = lease.get();
+                                sess.begin();
+
+                                MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
+                                MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
+
+                                MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
+
+                                sess.commit();
+                            } catch (...) {
+                                std::filesystem::remove(dest);
+                                throw;
+                            }
+
+                            std::filesystem::remove(src);
+                        }
+                        else
+                        {
+                            std::filesystem::remove(dest);
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        Poco::Logger::get("ConfigurePurityOrderHandler").error("Error restoring %s: %s", ejected_path, std::string(e.what()));
+                    }
+                }
+            }
+
+            Poco::Logger::get("ConfigurePurityOrderHandler").information("Wiping duplicate groups for EMBEDDING mode...");
+            DuplicateGroupsOps::deleteGroupsByMode(*db_manager_, "EMBEDDING");
+
+            Poco::Logger::get("ConfigurePurityOrderHandler").information("Resetting checkpoint and regenerating...");
+            DuplicateGroupsOps::resetCheckpoint(*db_manager_, "EMBEDDING");
+
+            Poco::Logger::get("ConfigurePurityOrderHandler").information("Writing config.yaml with new order: %s", new_order);
+            config_manager_->setPropertyValue<std::string>("duplicates.purity.order", new_order);
+            config_manager_->saveConfiguration();
+
+            Poco::JSON::Object obj;
+            obj.set("status", "ok");
+            obj.set("message", "Purity order configured, duplicate groups wiped, and scanner reschedueled.");
+            
+            std::ostringstream oss;
+            obj.stringify(oss);
+            sendJsonResponse(response, oss.str());
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ConfigurePurityOrderHandler").error("Error during wipe and rebuild: %s", std::string(e.what()));
+            sendErrorResponse(response, std::string("Internal error: ") + e.what(), 500);
+        }
+    }
 
     RegisterMediaLocationHandler::RegisterMediaLocationHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                                                std::shared_ptr<FilesService> service)

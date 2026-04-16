@@ -391,9 +391,9 @@ namespace MediaDedup
         manager->createProperty<double>("duplicates.threshold.min", 0.92, "Deprecated: use duplicates.threshold.similarity");
         manager->createProperty<double>("duplicates.threshold.max", 0.96, "Deprecated: use duplicates.threshold.duplicate");
 
-        // Representative selection strategy
-        manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age",
-                                             "Representative selection: size_then_age | age_then_size");
+        // Purity order criteria
+        manager->createProperty<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE",
+                                             "Priority rules for selecting the master representative image in a Duplicate Group");
 
         // Thumbnail cache configuration
         manager->createProperty<std::string>("cache.thumbnail.location", "cache/thumbnails", "Thumbnail cache directory");

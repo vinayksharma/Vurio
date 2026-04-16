@@ -3,6 +3,7 @@ import { fetchConfiguration, saveConfiguration, reloadConfiguration } from '../u
 import type { Configuration } from '../types';
 import MediaLocationsSection from './MediaLocationsSection';
 import AdvancedSection from './AdvancedSection';
+import PurityOrderSection from './PurityOrderSection';
 
 interface SettingsPanelProps {
   isActive: boolean;
@@ -183,6 +184,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
           </div>
         </header>
         <MediaLocationsSection />
+        <PurityOrderSection />
         <section className="panel settings-panel">
           <h2 className="panel-title">
             <span>Configuration</span>
@@ -209,6 +211,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
           </div>
         </header>
         <MediaLocationsSection />
+        <PurityOrderSection />
         <section className="panel settings-panel">
           <h2 className="panel-title">
             <span>Configuration</span>
@@ -238,6 +241,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         </div>
       </header>
       <MediaLocationsSection />
+      <PurityOrderSection />
       <section className="panel settings-panel">
         <h2 className="panel-title">
           <span>Configuration</span>
