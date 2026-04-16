@@ -46,6 +46,7 @@ namespace MediaDedup
             std::mutex runMutex_;
             bool running_ = false;
             std::atomic<bool> abortScan_{false};
+            std::atomic<bool> pendingReRun_{false};
 
             void onFileEmitted(const std::string &root,
                                const MediaDedup::Files::FileRecord &rec);

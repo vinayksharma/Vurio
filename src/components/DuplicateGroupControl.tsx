@@ -40,7 +40,14 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group }) 
   // Use members array if available, sorted by similarity (highest first)
   const sortedMembers = useMemo((): DuplicateGroupMember[] => {
     if (group.members && group.members.length > 0) {
-      const sorted = [...group.members].sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0));
+      const sorted = [...group.members].sort((a, b) => {
+        const aIsRep = a.file_path === group.representative || a.is_representative;
+        const bIsRep = b.file_path === group.representative || b.is_representative;
+        if (aIsRep && !bIsRep) return -1;
+        if (!aIsRep && bIsRep) return 1;
+        
+        return (b.similarity_score || 0) - (a.similarity_score || 0);
+      });
 
       // Ensure representative is included
       const representativeInMembers = sorted.some(m => m.file_path === group.representative);

@@ -237,7 +237,8 @@ namespace MediaDedup::Orchestration
         if (!lk.owns_lock() || running_)
         {
             Poco::Logger &logger = Poco::Logger::get("FilesManager");
-            logger.information("Scan request rejected: scan already in progress or mutex locked");
+            logger.information("Scan request rejected: scan already in progress or mutex locked, queuing rerun.");
+            pendingReRun_.store(true);
             return;
         }
         running_ = true;
@@ -247,6 +248,9 @@ namespace MediaDedup::Orchestration
 
         try
         {
+            do {
+                pendingReRun_.store(false);
+
             // Use database queries instead of in-memory index for better memory efficiency
             logger.information("Using database-backed file tracking (optimized for low memory usage)");
 
@@ -293,7 +297,8 @@ namespace MediaDedup::Orchestration
                 }
             }
 
-            logger.information("FilesManager scan completed");
+            logger.information("FilesManager scan pass completed");
+            } while (pendingReRun_.load() && !abortScan_.load());
         }
         catch (const std::exception &e)
         {
