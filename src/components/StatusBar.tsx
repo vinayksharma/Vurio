@@ -13,7 +13,7 @@ const StatusBar: React.FC = () => {
   const dirs = useServerStatusStore(state => state.registeredDirs.length);
 
   const getStatusSummary = (): string => {
-    return `Scanned ${scanned} • Processed ${processed} • Threads ${threads}/${maxThreads} • Errors ${errors} • Dupes ${dupes} • Dirs ${dirs}`;
+    return `scanned ${scanned} • processed ${processed} • threads ${threads}/${maxThreads} • errors ${errors} • duplicates found ${dupes} • registered paths ${dirs}`;
   };
 
   const getProgressPercent = (): { completed: number; errors: number; errorLeft: number } => {
@@ -33,19 +33,11 @@ const StatusBar: React.FC = () => {
   };
 
   const progress = getProgressPercent();
-  const timestamp = new Date().toLocaleTimeString();
   
   const summaryText = getStatusSummary();
 
   return (
     <footer className="app-statusbar">
-      <div className="status-left">
-        <span className={`indicator ${isOnline ? 'online' : 'offline'}`} id="server-indicator"></span>
-        <div className="status-text">
-          <span id="server-status-text">{isOnline ? 'Online' : 'Offline'}</span>
-          <span id="server-name" className="status-subtitle">Media Deduplication Server</span>
-        </div>
-      </div>
       <div className="status-center">
         <div className="status-progress">
           <div
@@ -59,16 +51,14 @@ const StatusBar: React.FC = () => {
             style={{ width: `${progress.errors}%`, left: `${progress.errorLeft}%` }}
           ></div>
         </div>
-        <span id="status-summary" dangerouslySetInnerHTML={{
-          __html: summaryText
-            .replace(`Errors ${errors}`, errors > 0 ? `<span class="status-error">Errors ${errors}</span>` : `Errors ${errors}`)
-            .replace(`Dupes ${dupes}`, dupes > 0 ? `<span class="status-warning">Dupes ${dupes}</span>` : `Dupes ${dupes}`)
-        }}></span>
-      </div>
-      <div className="status-right">
-        <span id="server-timestamp" className="timestamp">
-          {timestamp}
-        </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span id="status-summary" dangerouslySetInnerHTML={{
+            __html: summaryText
+              .replace(`errors ${errors}`, errors > 0 ? `<span class="status-error">errors ${errors}</span>` : `errors ${errors}`)
+              .replace(`duplicates found ${dupes}`, dupes > 0 ? `<span class="status-warning">duplicates found ${dupes}</span>` : `duplicates found ${dupes}`)
+          }}></span>
+          <span className={`indicator ${isOnline ? 'online' : 'offline'}`} id="server-indicator" title={isOnline ? 'Server Online' : 'Server Offline'}></span>
+        </div>
       </div>
     </footer>
   );

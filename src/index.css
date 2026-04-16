@@ -13,11 +13,11 @@
   /* Accent blue - macOS system blue */
   --accent-hover: #0051d5;
   /* Accent hover state */
-  --text: #000000;
-  /* Primary text - black per macOS HIG */
-  --muted: #6e6e73;
-  /* Secondary/muted text - medium gray per macOS HIG */
-  --muted-light: #86868b;
+  --text: #333333;
+  /* Primary text - dark grey */
+  --muted: #666666;
+  /* Secondary/muted text - medium grey */
+  --muted-light: #888888;
   /* Light muted text */
   --danger: #ff3b30;
   /* Danger color - macOS red */
@@ -54,11 +54,11 @@
     /* Accent blue (VS Code-style) */
     --accent-hover: #0e639c;
     /* Accent hover state */
-    --text: #cccccc;
-    /* Primary text */
-    --muted: #858585;
+    --text: #f0f0f0;
+    /* Primary text - very light grey */
+    --muted: #a0a0a0;
     /* Secondary/muted text */
-    --muted-light: #858585;
+    --muted-light: #bababa;
     /* Light muted text (same as secondary) */
     --danger: #f48771;
     --danger-hover: #e06c75;
@@ -518,13 +518,24 @@ body {
   gap: 4px;
 }
 
+@keyframes color-wave {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 .sidebar-title {
-  font-size: 20px;
-  /* Heading size per HIG */
-  font-weight: 700;
-  /* 700 for headings per HIG */
-  line-height: 1.3;
-  letter-spacing: 0.4px;
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+  background: linear-gradient(270deg, #4a148c, #311b92, #0d47a1, #004d40, #b71c1c, #4a148c);
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+  animation: color-wave 120s ease infinite;
 }
 
 .sidebar-subtitle {
@@ -1323,9 +1334,11 @@ button:disabled {
   gap: 10px;
 }
 
-.status-summary {
-  font-size: 12px;
-  /* Label size per HIG (11-13px) */
+#status-summary {
+  font-size: 9px;
+  text-transform: uppercase;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  letter-spacing: 0.5px;
   line-height: 1.4;
   color: var(--muted);
 }
