@@ -415,30 +415,10 @@ namespace MediaDedup
                         // Step 1: Trigger fileScan
                         bool scanTriggered = scheduler->triggerJob("fileScan");
                         if (!scanTriggered) {
-                            threadLogger.debug("fileScan job was already running or not found, skipping immediate scan");
-                            return;
+                            threadLogger.debug("fileScan queued or already running");
                         }
 
-                        // Step 2: Wait for fileScan to complete (with timeout)
-                        auto start = std::chrono::steady_clock::now();
-                        int timeoutMs = cfg->getPropertyValue<int>("files.service.immediateJobTrigger.timeoutMs", 30000);
-                        auto timeout = std::chrono::milliseconds(timeoutMs);
-
-                        while (scheduler->isJobRunning("fileScan") && scheduler->isRunning()) {
-                            if (std::chrono::steady_clock::now() - start > timeout) {
-                                threadLogger.warning("fileScan job did not complete within timeout, skipping immediate processing");
-                                return;
-                            }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Poll every 100ms
-                        }
-
-                        // Check if scheduler is still running before triggering mediaProcessor
-                        if (!scheduler->isRunning()) {
-                            threadLogger.debug("Scheduler stopped during fileScan wait, skipping immediate processing");
-                            return;
-                        }
-
-                        // Step 3: Trigger mediaProcessor
+                        // Step 2: Trigger mediaProcessor natively
                         bool processTriggered = scheduler->triggerJob("mediaProcessor");
                         if (processTriggered) {
                             threadLogger.debug("mediaProcessor job triggered successfully");

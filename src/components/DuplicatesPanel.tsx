@@ -33,6 +33,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const serverDuplicatesFound = useServerStatusStore((state) => state.status?.duplicates_found ?? -1); // Total files in groups; -1 = unknown
   const hasEjectedFolders = useServerStatusStore((state) => (state.status as any)?.has_ejected_folders || false);
   const hasEjectedFiles = useServerStatusStore((state) => (state.status as any)?.has_ejected_files || false);
+  const registeredDirsCount = useServerStatusStore((state) => state.registeredDirs.length);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const duplicateTightness = useUIStore((state) => state.duplicateTightness);
@@ -410,11 +411,15 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         return (
           <div className="card placeholder duplicates-empty-state" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 }}>
             <p style={{ margin: 0, color: 'var(--muted)', textAlign: 'center' }}>
-              No duplicates found yet. Register a media location to start scanning.
+              {registeredDirsCount === 0 
+                ? 'No duplicates found yet. Register a media location to start scanning.' 
+                : 'No duplicates found yet. Check back once scanning is complete, or adjust your duplication selection scale.'}
             </p>
-            <button className="primary" onClick={() => setActivePanel('settings')} style={{ minWidth: 180 }}>
-              Add Media Location
-            </button>
+            {registeredDirsCount === 0 && (
+              <button className="primary" onClick={() => setActivePanel('settings')} style={{ minWidth: 180 }}>
+                Add Media Location
+              </button>
+            )}
           </div>
         );
       }
@@ -519,6 +524,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           const groupIndex = start + idx;
           group.members?.forEach((member, mIdx) => {
             if (member.is_ejected) return;
+            if (member.file_path === group.representative || member.is_representative) return;
+            
             const score = typeof member.similarity_score === 'number' ? member.similarity_score : 1;
             if ((1.0 - score) <= duplicateTightness) {
               filePathsToEject.push(member.file_path);

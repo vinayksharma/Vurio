@@ -2,6 +2,7 @@
 #include "database/user_settings_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/sql_constants.hpp"
+#include "database/ejected_files_ops.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/DigestEngine.h>
 #include <Poco/SHA1Engine.h>
@@ -207,10 +208,40 @@ namespace MediaDedup
             path_deregistered_callback_();
         }
         
-        // Small delay to ensure DB locks from aborted upserts are released
+        // Set up the small delay
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // 3. Remove all database rows associated with this location key
+        // 3. Bulk restore any physically ejected files belonging to this location key
+        auto ejected_files = EjectedFilesOps::getByLocationKey(db_manager_, key);
+        for (const auto& history : ejected_files)
+        {
+            try
+            {
+                if (std::filesystem::exists(history.ejected_path))
+                {
+                    logger_.information("Deregister: Restoring physically ejected file %s back to %s", 
+                                        history.ejected_path, history.original_file_path);
+                                        
+                    // Ensure destination directory exists
+                    std::filesystem::path dest_path(history.original_file_path);
+                    if (dest_path.has_parent_path()) {
+                        std::filesystem::create_directories(dest_path.parent_path());
+                    }
+
+                    // Copy and delete to handle mount boundaries safely
+                    std::filesystem::copy_file(history.ejected_path, history.original_file_path, 
+                                            std::filesystem::copy_options::overwrite_existing);
+                    std::filesystem::remove(history.ejected_path);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                logger_.error("Deregister: Failed to restore physically ejected file %s: %s", 
+                              history.ejected_path, std::string(e.what()));
+            }
+        }
+
+        // 4. Remove all database rows associated with this location key
         ScannedFilesOps::removeByLocationKey(db_manager_, key);
 
         return result;

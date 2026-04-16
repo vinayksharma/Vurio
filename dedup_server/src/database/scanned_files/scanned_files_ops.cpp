@@ -154,6 +154,9 @@ namespace MediaDedup
             Statement del_thumbs(sess);
             del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
+            Statement del_ejected(sess);
+            del_ejected << "DELETE FROM ejected_files_history WHERE original_location_key=?", Keywords::use(key), Keywords::now;
+
             Statement del_files(sess);
             del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
 

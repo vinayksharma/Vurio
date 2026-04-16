@@ -112,6 +112,44 @@ namespace MediaDedup
         }
     }
 
+    std::vector<EjectedFileHistory> EjectedFilesOps::getByLocationKey(DatabaseManager &db, const std::string &location_key)
+    {
+        std::vector<EjectedFileHistory> results;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string key_val = location_key;
+
+            stmt << std::string(SQL::kSelectEjectedFileHistoryByLocationKey),
+                Keywords::use(key_val),
+                Keywords::now;
+
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                EjectedFileHistory history;
+                history.file_id = rs[0].convert<int>();
+                history.ejected_path = rs[1].convert<std::string>();
+                history.original_file_path = rs[2].convert<std::string>();
+                history.original_relative_path = rs[3].convert<std::string>();
+                history.original_location_key = rs[4].convert<std::string>();
+                history.ejected_at = rs[5].convert<std::string>();
+
+                results.push_back(history);
+                more = rs.moveNext();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("EjectedFilesOps").error("Failed to get ejected file history by location key: " + std::string(e.what()));
+        }
+        return results;
+    }
+
     bool EjectedFilesOps::hasAny(DatabaseManager &db)
     {
         try

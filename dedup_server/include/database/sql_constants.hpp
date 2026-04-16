@@ -479,6 +479,10 @@ namespace MediaDedup
             "SELECT file_id, ejected_path, original_file_path, original_relative_path, original_location_key, ejected_at "
             "FROM ejected_files_history";
 
+        inline constexpr std::string_view kSelectEjectedFileHistoryByLocationKey =
+            "SELECT file_id, ejected_path, original_file_path, original_relative_path, original_location_key, ejected_at "
+            "FROM ejected_files_history WHERE original_location_key=?";
+
         inline constexpr std::string_view kDeleteEjectedFileHistoryByEjectedPath =
             "DELETE FROM ejected_files_history WHERE ejected_path=?";
 
