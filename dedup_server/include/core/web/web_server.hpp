@@ -312,6 +312,19 @@ namespace MediaDedup
         static std::string extractUserKey(const std::string &path);
     };
 
+    class ConfigurePurityOrderHandler : public ConfigRequestHandler
+    {
+    public:
+        ConfigurePurityOrderHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                    std::shared_ptr<class DatabaseManager> db_manager);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class DatabaseManager> db_manager_;
+    };
+
     // Media locations handlers
     class RegisterMediaLocationHandler : public ConfigRequestHandler
     {

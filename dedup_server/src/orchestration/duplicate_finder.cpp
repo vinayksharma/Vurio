@@ -4,6 +4,7 @@
 #include "database/image_artifacts_ops.hpp"
 #include "database/vector_index.hpp"
 #include "media_processors/similarity/similarity_calculator.hpp"
+#include "media_processors/image/backends/raw_file_detector.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
@@ -66,8 +67,8 @@ namespace MediaDedup
                 embedding_threshold_duplicate_ = 0.96;
             }
 
-            representative_strategy_ = cfg_->getPropertyValue<std::string>("duplicates.representative.strategy", "size_then_age");
-
+            std::string purity_str = cfg_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
+            purity_order_ = parsePurityOrder(purity_str);
             // Metadata filtering parameters
             metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>("duplicates.metadata.filtering.enabled", true);
             aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.aspectRatioTolerance", 0.10);
@@ -839,20 +840,41 @@ namespace MediaDedup
 
         bool DuplicateFinder::isBetterRepresentative(const RepresentativeInfo &a, const RepresentativeInfo &b)
         {
-            // Priority 0: Presence of EXIF data
-            if (a.has_exif_date != b.has_exif_date)
+            for (auto criterion : purity_order_)
             {
-                return a.has_exif_date; // true if A has EXIF and B doesn't
+                switch (criterion)
+                {
+                case PurityCriterion::CAMERA_RAW:
+                {
+                    bool a_is_raw = RawFileDetector::IsRawFile(a.file_path);
+                    bool b_is_raw = RawFileDetector::IsRawFile(b.file_path);
+                    if (a_is_raw != b_is_raw)
+                        return a_is_raw;
+                    break;
+                }
+                case PurityCriterion::EXIF_CAPTURE_DATE:
+                {
+                    // If one has EXIF and the other doesn't, favor EXIF
+                    if (a.has_exif_date != b.has_exif_date)
+                        return a.has_exif_date;
+                    
+                    if (a.created_date != b.created_date)
+                        return a.created_date < b.created_date;
+                    break;
+                }
+                case PurityCriterion::FILE_SIZE:
+                {
+                    if (a.file_size != b.file_size)
+                        return a.file_size > b.file_size;
+                    break;
+                }
+                default:
+                    break;
+                }
             }
-
-            // Priority 1: Oldest Date Taken (EXIF or OS Fallback) determines the original
-            if (a.created_date != b.created_date)
-            {
-                return a.created_date < b.created_date;
-            }
-
-            // Priority 2: Larger file size
-            return a.file_size > b.file_size;
+            
+            // If completely identical structurally, fallback to deterministic characteristic
+            return a.file_id < b.file_id;
         }
 
         int DuplicateFinder::createDuplicateGroup(const std::vector<FileArtifact> &files,
@@ -1336,6 +1358,12 @@ namespace MediaDedup
 
                 Poco::Logger::get("DuplicateFinder").information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
                                                                  embedding_threshold_similarity_, embedding_threshold_duplicate_);
+            }
+            else if (event.key == "duplicates.purity.order")
+            {
+                std::string purity_str = cfg_->getPropertyValue<std::string>(event.key, "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
+                purity_order_ = parsePurityOrder(purity_str);
+                Poco::Logger::get("DuplicateFinder").information("Updated duplicates.purity.order");
             }
             else if (event.key == "duplicates.metadata.filtering.enabled")
             {

@@ -234,3 +234,10 @@ export async function bulkUndoEjectDuplicates(): Promise<{ success: boolean; suc
     body: JSON.stringify({ undo_all: true }),
   }) as Promise<any>;
 }
+
+export async function configurePurityOrder(purityOrderString: string): Promise<{ status: string; message: string; error?: string }> {
+  return safeFetch('/api/v1/user-settings/purity-order', {
+    method: 'POST',
+    body: JSON.stringify({ purity_order: purityOrderString }),
+  }) as Promise<any>;
+}

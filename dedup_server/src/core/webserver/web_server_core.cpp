@@ -200,6 +200,9 @@ namespace MediaDedup
             return new ListUserSettingsHandler(config_manager_, user_settings_service_);
         if (path.find("/api/v1/user-settings/") == 0)
         {
+            if (path == "/api/v1/user-settings/purity-order" && method == "POST")
+                return new ConfigurePurityOrderHandler(config_manager_, database_manager_);
+
             if (method == "GET")
                 return new GetUserSettingHandler(config_manager_, user_settings_service_);
             if (method == "PUT")
