@@ -66,7 +66,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const scrollTestStatsRef = useRef<ScrollTestStats | null>(null);
   const lastStatusDrivenRefreshRef = useRef<number>(0);
   const lastSyncedDuplicatesFoundRef = useRef<number>(-1);
-  const [bulkEjectState, setBulkEjectState] = useState<{ calculating: boolean; current: number; total: number; } | null>(null);
+  const [bulkEjectState, setBulkEjectState] = useState<{ type: 'eject' | 'restore'; calculating: boolean; current: number; total: number; } | null>(null);
 
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
@@ -505,7 +505,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const handleBulkEject = async () => {
     if (bulkEjectState) return;
 
-    setBulkEjectState({ calculating: true, current: 0, total: 0 });
+    setBulkEjectState({ type: 'eject', calculating: true, current: 0, total: 0 });
 
     const LIMIT = 1000;
     let start = 0;
@@ -556,7 +556,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
 
     // Phase 2: Execute
-    setBulkEjectState({ calculating: false, current: 0, total: filePathsToEject.length });
+    setBulkEjectState({ type: 'eject', calculating: false, current: 0, total: filePathsToEject.length });
 
     (async () => {
       const chunkSize = 50;
@@ -605,7 +605,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       return;
     }
 
-    setBulkEjectState({ calculating: true, current: 0, total: 1 });
+    setBulkEjectState({ type: 'restore', calculating: true, current: 0, total: 1 });
 
     try {
       const result = await bulkUndoEjectDuplicates();
@@ -613,13 +613,14 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         // Clear cache and trigger refetch
         setCacheVersion(v => v + 1);
         groupsCacheRef.current.clear();
+        setBulkEjectState({ type: 'restore', calculating: false, current: 1, total: 1 });
       } else {
         alert("Failed to undo bulk eject: " + result.error);
       }
     } catch (e) {
       alert("Error undoing bulk eject.");
     } finally {
-      setBulkEjectState(null);
+      setTimeout(() => setBulkEjectState(null), 2000);
     }
   };
 
@@ -671,7 +672,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
               onMouseLeave={(e) => { if(!bulkEjectState) e.currentTarget.style.backgroundColor = 'rgba(204, 0, 0, 0.1)'; }}
             >
               <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/></svg>
-              {bulkEjectState?.calculating ? 'Working...' : (bulkEjectState ? `${bulkEjectState.current}/${bulkEjectState.total}` : 'Eject')}
+              {bulkEjectState?.type === 'eject' ? (bulkEjectState.calculating ? 'Working...' : `${bulkEjectState.current}/${bulkEjectState.total}`) : 'Eject'}
             </button>
             <button
               className="success icon-button"
@@ -693,7 +694,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
               <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 3v12M8 11l4 4 4-4"/>
               </svg>
-              Restore
+              {bulkEjectState?.type === 'restore' ? (bulkEjectState.calculating ? 'Working...' : `${bulkEjectState.current}/${bulkEjectState.total}`) : 'Restore'}
             </button>
             <button 
               className="secondary icon-button" 
