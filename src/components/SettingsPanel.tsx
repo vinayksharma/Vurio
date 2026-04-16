@@ -186,11 +186,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         <MediaLocationsSection />
         <PurityOrderSection />
         <section className="panel settings-panel">
-          <h2 className="panel-title">
+          <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
             <span>Configuration</span>
-            <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
-              {configSectionCollapsed ? 'Expand' : 'Collapse'}
-            </button>
+            <span 
+              className="config-group-toggle" 
+              style={{ transform: configSectionCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+              aria-expanded={!configSectionCollapsed}
+            >
+              ▼
+            </span>
           </h2>
           <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
             <div className="config-loading">Loading configuration...</div>
@@ -213,11 +217,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         <MediaLocationsSection />
         <PurityOrderSection />
         <section className="panel settings-panel">
-          <h2 className="panel-title">
+          <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
             <span>Configuration</span>
-            <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
-              {configSectionCollapsed ? 'Expand' : 'Collapse'}
-            </button>
+            <span 
+              className="config-group-toggle" 
+              style={{ transform: configSectionCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+              aria-expanded={!configSectionCollapsed}
+            >
+              ▼
+            </span>
           </h2>
           <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
             <div className="config-loading">Failed to load configuration</div>
@@ -241,13 +249,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         </div>
       </header>
       <MediaLocationsSection />
-      <PurityOrderSection />
       <section className="panel settings-panel">
-        <h2 className="panel-title">
+        <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
           <span>Configuration</span>
-          <button className="ghost small" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} aria-expanded={!configSectionCollapsed}>
-            {configSectionCollapsed ? 'Expand' : 'Collapse'}
-          </button>
+          <span 
+            className="config-group-toggle" 
+            style={{ transform: configSectionCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+            aria-expanded={!configSectionCollapsed}
+          >
+            ▼
+          </span>
         </h2>
         <div className={`collapsible ${configSectionCollapsed ? '' : 'open'}`}>
           <p className="helper-text">Load, review, and update the server configuration file from here.</p>
@@ -267,6 +278,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         </div>
         <div className="config-panel-content">
           <div className="config-properties">
+            <PurityOrderSection />
             {Object.entries(groups).map(([category, properties]) => (
               <div key={category} className={`config-group ${collapsedGroups.has(category) ? 'collapsed' : ''}`}>
                 <div className="config-group-header" onClick={() => toggleGroup(category)}>
@@ -311,7 +323,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
                             />
                           )}
                         </div>
-                        <div className="config-property-type">{type}</div>
                         {error && <div className="config-property-error">{error}</div>}
                       </div>
                     );
