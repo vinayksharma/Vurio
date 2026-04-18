@@ -28,6 +28,7 @@ namespace MediaDedup
         static bool insert(Poco::Data::Session &sess, const EjectedFileHistory &history);
         
         static std::optional<EjectedFileHistory> getByEjectedPath(DatabaseManager &db, const std::string &ejected_path);
+        static std::optional<EjectedFileHistory> getByOriginalPath(DatabaseManager &db, const std::string &original_path);
         static std::vector<EjectedFileHistory> getByLocationKey(DatabaseManager &db, const std::string &location_key);
         static std::vector<EjectedFileHistory> getAll(DatabaseManager &db);
         static bool hasAny(DatabaseManager &db);

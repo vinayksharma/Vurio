@@ -4,7 +4,7 @@ interface ImagePopupState {
   isOpen: boolean;
   filePath: string;
   details: string;
-  open: (options: { filePath: string; details: string; groupImages?: { filePath: string; details: string }[]; currentIndex?: number }) => void;
+  open: (options: { filePath: string; details: string; groupImages?: { filePath: string; details: string; is_ejected?: boolean }[]; currentIndex?: number }) => void;
   close: () => void;
 }
 
@@ -38,7 +38,7 @@ export const useImagePopupStore = create<ImagePopupState>((set) => ({
 // Expose to window for compatibility with original code
 if (typeof window !== 'undefined') {
   window.imagePopup = {
-    open: (options: { filePath: string; details: string; groupImages?: { filePath: string; details: string }[]; currentIndex?: number }) => {
+    open: (options: { filePath: string; details: string; groupImages?: { filePath: string; details: string; is_ejected?: boolean }[]; currentIndex?: number }) => {
       useImagePopupStore.getState().open(options);
     },
     close: () => {

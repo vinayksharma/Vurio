@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { API_BASE } from '../utils/api';
+import { API_BASE, ejectDuplicates, undoEjectDuplicates } from '../utils/api';
 
 const IconButton = ({ onClick, title, children }: { onClick: () => void, title: string, children: React.ReactNode }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -44,8 +44,9 @@ const ImagePopup: React.FC = () => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [showDetails, setShowDetails] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEjecting, setIsEjecting] = useState(false);
   
-  const [groupImages, setGroupImages] = useState<{filePath: string, details: string}[]>([]);
+  const [groupImages, setGroupImages] = useState<{filePath: string, details: string, is_ejected?: boolean}[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   
   // Track dragging operation explicitly
@@ -63,7 +64,7 @@ const ImagePopup: React.FC = () => {
     const urlFilePath = params.get('filePath') || '';
     const urlDetails = params.get('details') || '';
     
-    let storedGroupImages: {filePath: string, details: string}[] = [];
+    let storedGroupImages: {filePath: string, details: string, is_ejected?: boolean}[] = [];
     let storedIndex = 0;
     
     try {
@@ -191,6 +192,66 @@ const ImagePopup: React.FC = () => {
 
   const copyPath = () => {
     if (filePath) navigator.clipboard.writeText(filePath);
+  };
+
+  const currentImage = groupImages[currentIndex];
+  const isRepresentative = currentIndex === 0;
+  const isEjected = currentImage?.is_ejected || false;
+
+  const handleEject = async () => {
+    if (!filePath || isEjecting || isRepresentative || isEjected) return;
+    setIsEjecting(true);
+    try {
+      const res = await ejectDuplicates([filePath]);
+      if (res.success) {
+        setGroupImages(prev => prev.map((img, idx) => 
+          idx === currentIndex ? { ...img, is_ejected: true } : img
+        ));
+        // Also update localStorage so it persists on reload
+        try {
+          const storedData = localStorage.getItem('viewer_group_images');
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            if (parsed.groupImages) {
+              parsed.groupImages[currentIndex].is_ejected = true;
+              localStorage.setItem('viewer_group_images', JSON.stringify(parsed));
+            }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsEjecting(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!filePath || isEjecting || !isEjected) return;
+    setIsEjecting(true);
+    try {
+      const res = await undoEjectDuplicates([filePath]);
+      if (res.success) {
+        setGroupImages(prev => prev.map((img, idx) => 
+          idx === currentIndex ? { ...img, is_ejected: false } : img
+        ));
+        // Also update localStorage
+        try {
+          const storedData = localStorage.getItem('viewer_group_images');
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            if (parsed.groupImages) {
+              parsed.groupImages[currentIndex].is_ejected = false;
+              localStorage.setItem('viewer_group_images', JSON.stringify(parsed));
+            }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsEjecting(false);
+    }
   };
 
   if (!filePath) return <div style={{ color: 'white', padding: 20 }}>Loading...</div>;
@@ -332,6 +393,24 @@ const ImagePopup: React.FC = () => {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
           </IconButton>
           <div className="toolbar-divider" style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)', margin: '0 4px' }}></div>
+          {groupImages.length > 0 && !isRepresentative && (
+            <>
+              {isEjected ? (
+                 <IconButton onClick={handleRestore} title="Restore Image">
+                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                     <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 3v12M8 11l4 4 4-4"/>
+                   </svg>
+                 </IconButton>
+              ) : (
+                 <IconButton onClick={handleEject} title="Eject Image">
+                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                     <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/>
+                   </svg>
+                 </IconButton>
+              )}
+              <div className="toolbar-divider" style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)', margin: '0 4px' }}></div>
+            </>
+          )}
           <IconButton onClick={copyPath} title="Copy Path">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </IconButton>
