@@ -45,6 +45,9 @@ const ImagePopup: React.FC = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
+  const [groupImages, setGroupImages] = useState<{filePath: string, details: string}[]>([]);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
+  
   // Track dragging operation explicitly
   const dragStateRef = useRef({ 
     startX: 0, 
@@ -57,9 +60,53 @@ const ImagePopup: React.FC = () => {
   useEffect(() => {
     // Read from URL search params since it's a standalone window now
     const params = new URLSearchParams(window.location.search);
-    setFilePath(params.get('filePath') || '');
-    setDetails(params.get('details') || '');
+    const urlFilePath = params.get('filePath') || '';
+    const urlDetails = params.get('details') || '';
+    
+    let storedGroupImages: {filePath: string, details: string}[] = [];
+    let storedIndex = 0;
+    
+    try {
+      const storedData = localStorage.getItem('viewer_group_images');
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        if (parsed.groupImages && Array.isArray(parsed.groupImages)) {
+          storedGroupImages = parsed.groupImages;
+          storedIndex = parsed.currentIndex || 0;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse viewer group images', e);
+    }
+    
+    if (storedGroupImages.length > 0) {
+      setGroupImages(storedGroupImages);
+      setCurrentIndex(storedIndex);
+      setFilePath(storedGroupImages[storedIndex]?.filePath || urlFilePath);
+      setDetails(storedGroupImages[storedIndex]?.details || urlDetails);
+    } else {
+      setFilePath(urlFilePath);
+      setDetails(urlDetails);
+    }
   }, []);
+
+  const navigateTo = (index: number) => {
+    if (groupImages.length === 0) return;
+    let newIndex = index;
+    if (newIndex < 0) newIndex = groupImages.length - 1;
+    if (newIndex >= groupImages.length) newIndex = 0;
+    
+    setCurrentIndex(newIndex);
+    setFilePath(groupImages[newIndex].filePath);
+    setDetails(groupImages[newIndex].details);
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+    setRotation(0);
+    setIsLoading(true);
+  };
+
+  const handlePrev = () => navigateTo(currentIndex - 1);
+  const handleNext = () => navigateTo(currentIndex + 1);
 
   // Keyboard navigation
   useEffect(() => {
@@ -70,10 +117,12 @@ const ImagePopup: React.FC = () => {
       if (e.key === '-') setScale(s => Math.max(s / 1.5, 0.1));
       if (e.key === 'r') setRotation(r => r + 90);
       if (e.key === 'R') setRotation(r => r - 90);
+      if (e.key === 'ArrowLeft') handlePrev();
+      if (e.key === 'ArrowRight') handleNext();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [groupImages, currentIndex]);
 
   const buildImageUrl = (path: string): string => {
     // Request a larger thumbnail image for zooming (backend max size is 1024)
@@ -176,12 +225,73 @@ const ImagePopup: React.FC = () => {
               left: '50%',
               maxWidth: Math.abs(rotation % 180) === 90 ? '100vh' : '100%',
               maxHeight: Math.abs(rotation % 180) === 90 ? '100vw' : '100%',
-              objectFit: 'contain'
+              objectFit: 'contain',
+              boxSizing: 'border-box',
+              outline: (currentIndex === 0 && !isLoading) ? '4px solid rgba(255, 140, 0, 0.7)' : 'none',
+              outlineOffset: '-4px',
             }}
             onDragStart={(e) => e.preventDefault()}
             onLoad={() => setIsLoading(false)}
             onError={() => setIsLoading(false)}
           />
+          
+          {groupImages.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); handlePrev(); }}
+                style={{
+                  position: 'absolute',
+                  left: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.5)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '50px',
+                  height: '50px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 30,
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.8)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.5)'}
+                title="Previous Image (Left Arrow)"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              
+              <button
+                onClick={(e) => { e.stopPropagation(); handleNext(); }}
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.5)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '50px',
+                  height: '50px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 30,
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.8)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.5)'}
+                title="Next Image (Right Arrow)"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </>
+          )}
         </div>
         
         {details && (

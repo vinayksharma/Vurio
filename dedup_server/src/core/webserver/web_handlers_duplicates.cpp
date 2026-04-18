@@ -457,8 +457,7 @@ namespace MediaDedupServer
                         continue;
                     }
 
-                    Poco::UUID file_uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                    std::string dest_filename = src.stem().string() + "_" + file_uuid.toString() + src.extension().string();
+                    std::string dest_filename = src.filename().string();
                     std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
 
                     try {

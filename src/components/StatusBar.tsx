@@ -13,7 +13,7 @@ const StatusBar: React.FC = () => {
   const dirs = useServerStatusStore(state => state.registeredDirs.length);
 
   const getStatusSummary = (): string => {
-    return `scanned ${scanned} • processed ${processed} • threads ${threads}/${maxThreads} • errors ${errors} • duplicates found ${dupes} • registered paths ${dirs}`;
+    return `scanned ${scanned} • processed ${processed} • threads ${threads}/${maxThreads} • errors ${errors} • duplicate candidates ${dupes} • registered paths ${dirs}`;
   };
 
   const getProgressPercent = (): { completed: number; errors: number; errorLeft: number } => {
@@ -55,7 +55,7 @@ const StatusBar: React.FC = () => {
           <span id="status-summary" dangerouslySetInnerHTML={{
             __html: summaryText
               .replace(`errors ${errors}`, errors > 0 ? `<span class="status-error">errors ${errors}</span>` : `errors ${errors}`)
-              .replace(`duplicates found ${dupes}`, dupes > 0 ? `<span class="status-warning">duplicates found ${dupes}</span>` : `duplicates found ${dupes}`)
+              .replace(`duplicate candidates ${dupes}`, dupes > 0 ? `<span class="status-warning">duplicate candidates ${dupes}</span>` : `duplicate candidates ${dupes}`)
           }}></span>
           <span className={`indicator ${isOnline ? 'online' : 'offline'}`} id="server-indicator" title={isOnline ? 'Server Online' : 'Server Offline'}></span>
         </div>
