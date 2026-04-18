@@ -68,6 +68,10 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const lastSyncedDuplicatesFoundRef = useRef<number>(-1);
   const [bulkEjectState, setBulkEjectState] = useState<{ type: 'eject' | 'restore'; calculating: boolean; current: number; total: number; } | null>(null);
 
+  const isDraggingRef = useRef(false);
+  const dragStartYRef = useRef(0);
+  const dragStartScrollTopRef = useRef(0);
+
   const SCROLL_TEST_STORAGE_KEY = 'dedup_scroll_test_state';
 
   const CARD_HEIGHT = 166; // Increased from 150 to accommodate taller key thumbnails
@@ -284,7 +288,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
 
       const scrollTop = container.scrollTop;
       const scrollHeight = container.scrollHeight - container.clientHeight;
-      const percent = scrollHeight > 0 ? Math.round((scrollTop / scrollHeight) * 100) : 0;
+      const percent = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
       setScrollPercent(percent);
 
       setVisibleRange(prev => {
@@ -624,6 +628,40 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
   };
 
+  const handleThumbPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!cardStackRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    isDraggingRef.current = true;
+    dragStartYRef.current = e.clientY;
+    dragStartScrollTopRef.current = cardStackRef.current.scrollTop;
+    document.body.style.userSelect = 'none';
+    
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!isDraggingRef.current || !cardStackRef.current) return;
+      const deltaY = moveEvent.clientY - dragStartYRef.current;
+      const trackHeight = cardStackRef.current.clientHeight - 8;
+      const thumbHeight = Math.max(20, trackHeight * (trackHeight / Math.max(1, cardStackRef.current.scrollHeight)));
+      const scrollableTrackHeight = trackHeight - thumbHeight;
+      if (scrollableTrackHeight <= 0) return;
+      
+      const scrollRatio = deltaY / scrollableTrackHeight;
+      const maxScrollTop = cardStackRef.current.scrollHeight - cardStackRef.current.clientHeight;
+      
+      cardStackRef.current.scrollTop = Math.max(0, Math.min(maxScrollTop, dragStartScrollTopRef.current + (scrollRatio * maxScrollTop)));
+    };
+    
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+    
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   return (
     <section id="panel-duplicates" className={`content-panel ${isActive ? 'active' : ''}`}>
       <header className="panel-header">
@@ -715,8 +753,27 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
             </button>
           </div>
         </div>
-        <div className="card-stack" id="duplicates-stack" ref={cardStackRef} style={{ position: 'relative', overflow: 'auto' }}>
-          <div style={{ height: `${totalHeight}px`, position: 'relative' }}>{renderItems()}</div>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, height: 0, display: 'flex', flexDirection: 'column', borderRadius: 18, border: '1px solid var(--panel-border)', overflow: 'hidden', background: 'var(--bg)' }}>
+          <div className="card-stack hide-scrollbars" id="duplicates-stack" ref={cardStackRef} style={{ position: 'relative', overflow: 'auto', flex: 1, border: 'none', borderRadius: 0, width: '100%', paddingRight: '16px' }}>
+            <div style={{ height: `${totalHeight}px`, position: 'relative' }}>{renderItems()}</div>
+          </div>
+          <div style={{ position: 'absolute', right: 4, top: 4, bottom: 4, width: '10px', zIndex: 50, pointerEvents: 'none' }}>
+            {totalGroups > 0 && cardStackRef.current && totalHeight > cardStackRef.current.clientHeight && (
+              <div 
+                onPointerDown={handleThumbPointerDown}
+                style={{
+                  position: 'absolute',
+                  width: '100%',
+                  background: 'var(--accent)',
+                  borderRadius: '5px',
+                  opacity: 0.8,
+                  cursor: 'grab',
+                  pointerEvents: 'auto',
+                  transform: `translateY(${(scrollPercent / 100) * ((cardStackRef.current.clientHeight - 8) - Math.max(20, (cardStackRef.current.clientHeight - 8) * (cardStackRef.current.clientHeight / Math.max(1, totalHeight))))}px)`,
+                  height: `${Math.max(20, (cardStackRef.current.clientHeight - 8) * (cardStackRef.current.clientHeight / Math.max(1, totalHeight)))}px`,
+              }} />
+            )}
+          </div>
         </div>
       </section>
     </section>

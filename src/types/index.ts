@@ -16,7 +16,7 @@ declare global {
     electronAPI?: ElectronAPI;
     API_BASE?: string;
     imagePopup?: {
-      open: (options: { filePath: string; details: string }) => void;
+      open: (options: { filePath: string; details: string; groupImages?: { filePath: string; details: string }[]; currentIndex?: number }) => void;
       close: () => void;
     };
     thumbnailQueue?: {
