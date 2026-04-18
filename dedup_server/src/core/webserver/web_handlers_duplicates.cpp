@@ -607,6 +607,11 @@ namespace MediaDedupServer
                     for (const auto& f : target_files)
                     {
                         auto hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*database_manager_, f);
+                        if (!hist)
+                        {
+                            hist = MediaDedup::EjectedFilesOps::getByOriginalPath(*database_manager_, f);
+                        }
+                        
                         if (hist)
                         {
                             histories.push_back(*hist);
@@ -713,7 +718,7 @@ namespace MediaDedupServer
                 response.setContentType("application/json");
 
                 Poco::JSON::Object result_obj;
-                result_obj.set("success", true);
+                result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
                 result_obj.set("success_count", success_count);
                 result_obj.set("failure_count", failure_count);
 
