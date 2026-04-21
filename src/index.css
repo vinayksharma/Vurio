@@ -39,8 +39,9 @@
 }
 
 /* Automatically adapt to macOS / system dark mode - macOS HIG recommended colors */
-@media (prefers-color-scheme: dark) {
-  :root {
+
+/* Forced Dark Theme */
+html[data-theme="dark"] {
     /* macOS HIG Dark Mode Colors */
     --bg: #1e1e1e;
     /* Main background */
@@ -73,170 +74,139 @@
     --input-bg: #3c3c3c;
     /* Input field background */
   }
-
-  .titlebar-drag {
+html[data-theme="dark"] .titlebar-drag {
     background: #252526;
     border-bottom-color: #3e3e42;
   }
-
-  .sidebar {
+html[data-theme="dark"] .sidebar {
     border-right-color: #3e3e42;
   }
-
-  .panel.settings-panel {
+html[data-theme="dark"] .panel.settings-panel {
     background: #1e1e1e;
     border-color: #3e3e42;
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
   }
-
-  .card {
+html[data-theme="dark"] .card {
     background: #1e1e1e;
     border-color: #3e3e42;
     color: var(--muted);
   }
-
-  .duplicate-group-card {
+html[data-theme="dark"] .duplicate-group-card {
     background: #252526;
     border-color: #3e3e42;
   }
-
-  .card-stack {
+html[data-theme="dark"] .card-stack {
     background: #1e1e1e;
     border-color: #3e3e42;
   }
-
-  .targets li {
+html[data-theme="dark"] .targets li {
     background: var(--hover-bg);
     /* Hover background per HIG */
     border-color: var(--panel-border);
   }
-
-  .config-group {
+html[data-theme="dark"] .config-group {
     background: #252526;
     border-color: #3e3e42;
   }
-
-  .config-group-header {
+html[data-theme="dark"] .config-group-header {
     color: var(--text);
   }
-
-  .config-property {
+html[data-theme="dark"] .config-property {
     background: transparent;
   }
-
-  .config-property-label {
+html[data-theme="dark"] .config-property-label {
     color: var(--text);
     /* Primary text per HIG */
   }
-
-  .config-property-input {
+html[data-theme="dark"] .config-property-input {
     background: var(--input-bg);
     /* Input field background per HIG */
     border-color: var(--panel-border);
     color: var(--text);
   }
-
-  .app-statusbar {
+html[data-theme="dark"] .app-statusbar {
     background: #1e1e1e;
     border-top-color: #3e3e42;
     box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.5);
   }
-
-  .image-preview-content {
+html[data-theme="dark"] .image-preview-content {
     background: #1e1e1e;
   }
-
-  /* High-contrast "Server Configuration" callout in Settings panel */
+html[data-theme="dark"] /* High-contrast "Server Configuration" callout in Settings panel */
   .settings-panel .action-row {
     background: var(--hover-bg);
     /* Hover background per HIG */
     border-color: var(--panel-border);
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   }
-
-  .settings-panel .action-details h3 {
+html[data-theme="dark"] .settings-panel .action-details h3 {
     color: var(--text);
     /* Primary text per HIG */
   }
-
-  .settings-panel .action-details p {
+html[data-theme="dark"] .settings-panel .action-details p {
     color: var(--muted);
     /* Secondary text per HIG */
   }
-
-  /* Fully dark inline configuration area */
+html[data-theme="dark"] /* Fully dark inline configuration area */
   .settings-panel .config-panel-content {
     background: #1e1e1e !important;
     border-radius: 20px;
     border: 1px solid #3e3e42 !important;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   }
-
-  /* Dark theme overrides for configuration groups and inputs */
+html[data-theme="dark"] /* Dark theme overrides for configuration groups and inputs */
   .config-group {
     background: #252526 !important;
     border-radius: 12px;
     border: 1px solid #3e3e42 !important;
   }
-
-  .config-group-title {
+html[data-theme="dark"] .config-group-title {
     color: var(--text) !important;
     /* Primary text per HIG */
   }
-
-  .config-group-header {
+html[data-theme="dark"] .config-group-header {
     color: var(--text);
   }
-
-  .config-group-toggle {
+html[data-theme="dark"] .config-group-toggle {
     color: var(--muted) !important;
   }
-
-  .config-property-label {
+html[data-theme="dark"] .config-property-label {
     color: var(--text) !important;
     /* Primary text per HIG */
     opacity: 0.9;
   }
-
-  .config-property-input {
+html[data-theme="dark"] .config-property-input {
     background: var(--input-bg) !important;
     /* Input field background per HIG */
     color: var(--text) !important;
     /* Primary text per HIG */
     border: 1px solid var(--panel-border) !important;
   }
-
-  .config-property-input:focus {
+html[data-theme="dark"] .config-property-input:focus {
     border-color: var(--accent) !important;
     box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3) !important;
   }
-
-  .config-loading {
+html[data-theme="dark"] .config-loading {
     color: var(--muted) !important;
   }
-
-  .config-property:hover {
+html[data-theme="dark"] .config-property:hover {
     background: var(--hover-bg) !important;
     /* Hover background per HIG */
     border-color: var(--panel-border) !important;
   }
-
-  .config-property.modified {
+html[data-theme="dark"] .config-property.modified {
     background: var(--selected-bg) !important;
     /* Selected background per HIG */
     border: 1px solid var(--accent) !important;
   }
-
-  .config-property.error {
+html[data-theme="dark"] .config-property.error {
     background: rgba(244, 135, 113, 0.15) !important;
     border: 1px solid rgba(244, 135, 113, 0.4) !important;
   }
-
-  .config-property-checkbox {
+html[data-theme="dark"] .config-property-checkbox {
     accent-color: var(--accent);
   }
-
-  /* Media Locations input styled similar to Settings config fields */
+html[data-theme="dark"] /* Media Locations input styled similar to Settings config fields */
   .scan-panel .field-row input[type="text"] {
     background: var(--input-bg);
     /* Input field background per HIG */
@@ -245,47 +215,252 @@
     border: 1px solid var(--panel-border);
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
   }
-
-  .scan-panel .field-row input[type="text"]::placeholder {
+html[data-theme="dark"] .scan-panel .field-row input[type="text"]::placeholder {
     color: var(--muted);
     /* Secondary text per HIG */
   }
-
-  /* Nav items with macOS HIG colors */
-  .nav-item:hover,
-  .nav-item:focus-visible {
+html[data-theme="dark"] /* Nav items with macOS HIG colors */
+  .nav-item:hover, html[data-theme="dark"] .nav-item:focus-visible {
     background: var(--hover-bg);
     /* Hover background per HIG */
     color: var(--text);
   }
-
-  .nav-item.active {
+html[data-theme="dark"] .nav-item.active {
     background: var(--selected-bg);
     /* Selected background per HIG */
     color: var(--text);
     border-color: var(--panel-border);
   }
-
-  /* Buttons with macOS HIG colors */
+html[data-theme="dark"] /* Buttons with macOS HIG colors */
   button.ghost {
     background: var(--hover-bg);
     /* Hover background per HIG */
     color: var(--text);
     border-color: var(--panel-border);
   }
-
-  button.ghost:hover {
+html[data-theme="dark"] button.ghost:hover {
     background: var(--selected-bg);
     /* Selected background per HIG */
   }
-
-  button.ghost.danger {
+html[data-theme="dark"] button.ghost.danger {
     color: var(--danger);
     border-color: rgba(244, 135, 113, 0.4);
     background: rgba(244, 135, 113, 0.1);
   }
+html[data-theme="dark"] button.ghost.danger:hover {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--danger);
+  }
 
-  button.ghost.danger:hover {
+/* OS Dark Theme */
+@media (prefers-color-scheme: dark) {
+html:not([data-theme="light"]) {
+    /* macOS HIG Dark Mode Colors */
+    --bg: #1e1e1e;
+    /* Main background */
+    --sidebar: #252526;
+    /* Secondary background */
+    --panel: #1e1e1e;
+    /* Panel background */
+    --panel-border: #3e3e42;
+    /* Divider/border color */
+    --accent: #007acc;
+    /* Accent blue (VS Code-style) */
+    --accent-hover: #0e639c;
+    /* Accent hover state */
+    --text: #f0f0f0;
+    /* Primary text - very light grey */
+    --muted: #a0a0a0;
+    /* Secondary/muted text */
+    --muted-light: #bababa;
+    /* Light muted text (same as secondary) */
+    --danger: #f48771;
+    --danger-hover: #e06c75;
+    --success: #89d185;
+    --warning: #dcdcaa;
+    --shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+    /* Interactive states per HIG */
+    --hover-bg: #2a2d2e;
+    /* Hover background */
+    --selected-bg: #37373d;
+    /* Selected background */
+    --input-bg: #3c3c3c;
+    /* Input field background */
+  }
+html:not([data-theme="light"]) .titlebar-drag {
+    background: #252526;
+    border-bottom-color: #3e3e42;
+  }
+html:not([data-theme="light"]) .sidebar {
+    border-right-color: #3e3e42;
+  }
+html:not([data-theme="light"]) .panel.settings-panel {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  }
+html:not([data-theme="light"]) .card {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+    color: var(--muted);
+  }
+html:not([data-theme="light"]) .duplicate-group-card {
+    background: #252526;
+    border-color: #3e3e42;
+  }
+html:not([data-theme="light"]) .card-stack {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+  }
+html:not([data-theme="light"]) .targets li {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    border-color: var(--panel-border);
+  }
+html:not([data-theme="light"]) .config-group {
+    background: #252526;
+    border-color: #3e3e42;
+  }
+html:not([data-theme="light"]) .config-group-header {
+    color: var(--text);
+  }
+html:not([data-theme="light"]) .config-property {
+    background: transparent;
+  }
+html:not([data-theme="light"]) .config-property-label {
+    color: var(--text);
+    /* Primary text per HIG */
+  }
+html:not([data-theme="light"]) .config-property-input {
+    background: var(--input-bg);
+    /* Input field background per HIG */
+    border-color: var(--panel-border);
+    color: var(--text);
+  }
+html:not([data-theme="light"]) .app-statusbar {
+    background: #1e1e1e;
+    border-top-color: #3e3e42;
+    box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.5);
+  }
+html:not([data-theme="light"]) .image-preview-content {
+    background: #1e1e1e;
+  }
+html:not([data-theme="light"]) /* High-contrast "Server Configuration" callout in Settings panel */
+  .settings-panel .action-row {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    border-color: var(--panel-border);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+html:not([data-theme="light"]) .settings-panel .action-details h3 {
+    color: var(--text);
+    /* Primary text per HIG */
+  }
+html:not([data-theme="light"]) .settings-panel .action-details p {
+    color: var(--muted);
+    /* Secondary text per HIG */
+  }
+html:not([data-theme="light"]) /* Fully dark inline configuration area */
+  .settings-panel .config-panel-content {
+    background: #1e1e1e !important;
+    border-radius: 20px;
+    border: 1px solid #3e3e42 !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+html:not([data-theme="light"]) /* Dark theme overrides for configuration groups and inputs */
+  .config-group {
+    background: #252526 !important;
+    border-radius: 12px;
+    border: 1px solid #3e3e42 !important;
+  }
+html:not([data-theme="light"]) .config-group-title {
+    color: var(--text) !important;
+    /* Primary text per HIG */
+  }
+html:not([data-theme="light"]) .config-group-header {
+    color: var(--text);
+  }
+html:not([data-theme="light"]) .config-group-toggle {
+    color: var(--muted) !important;
+  }
+html:not([data-theme="light"]) .config-property-label {
+    color: var(--text) !important;
+    /* Primary text per HIG */
+    opacity: 0.9;
+  }
+html:not([data-theme="light"]) .config-property-input {
+    background: var(--input-bg) !important;
+    /* Input field background per HIG */
+    color: var(--text) !important;
+    /* Primary text per HIG */
+    border: 1px solid var(--panel-border) !important;
+  }
+html:not([data-theme="light"]) .config-property-input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3) !important;
+  }
+html:not([data-theme="light"]) .config-loading {
+    color: var(--muted) !important;
+  }
+html:not([data-theme="light"]) .config-property:hover {
+    background: var(--hover-bg) !important;
+    /* Hover background per HIG */
+    border-color: var(--panel-border) !important;
+  }
+html:not([data-theme="light"]) .config-property.modified {
+    background: var(--selected-bg) !important;
+    /* Selected background per HIG */
+    border: 1px solid var(--accent) !important;
+  }
+html:not([data-theme="light"]) .config-property.error {
+    background: rgba(244, 135, 113, 0.15) !important;
+    border: 1px solid rgba(244, 135, 113, 0.4) !important;
+  }
+html:not([data-theme="light"]) .config-property-checkbox {
+    accent-color: var(--accent);
+  }
+html:not([data-theme="light"]) /* Media Locations input styled similar to Settings config fields */
+  .scan-panel .field-row input[type="text"] {
+    background: var(--input-bg);
+    /* Input field background per HIG */
+    color: var(--text);
+    /* Primary text per HIG */
+    border: 1px solid var(--panel-border);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+html:not([data-theme="light"]) .scan-panel .field-row input[type="text"]::placeholder {
+    color: var(--muted);
+    /* Secondary text per HIG */
+  }
+html:not([data-theme="light"]) /* Nav items with macOS HIG colors */
+  .nav-item:hover, html:not([data-theme="light"]) .nav-item:focus-visible {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    color: var(--text);
+  }
+html:not([data-theme="light"]) .nav-item.active {
+    background: var(--selected-bg);
+    /* Selected background per HIG */
+    color: var(--text);
+    border-color: var(--panel-border);
+  }
+html:not([data-theme="light"]) /* Buttons with macOS HIG colors */
+  button.ghost {
+    background: var(--hover-bg);
+    /* Hover background per HIG */
+    color: var(--text);
+    border-color: var(--panel-border);
+  }
+html:not([data-theme="light"]) button.ghost:hover {
+    background: var(--selected-bg);
+    /* Selected background per HIG */
+  }
+html:not([data-theme="light"]) button.ghost.danger {
+    color: var(--danger);
+    border-color: rgba(244, 135, 113, 0.4);
+    background: rgba(244, 135, 113, 0.1);
+  }
+html:not([data-theme="light"]) button.ghost.danger:hover {
     background: rgba(244, 135, 113, 0.2);
     color: var(--danger);
   }
@@ -1106,34 +1281,6 @@ button:disabled {
   scroll-behavior: smooth;
 }
 
-.duplicate-group-card::before,
-.duplicate-group-card::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 22px;
-  height: 48px;
-  pointer-events: none;
-  z-index: 5;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.duplicate-group-card::before {
-  left: 0;
-  background: linear-gradient(to right, var(--panel), transparent);
-}
-
-.duplicate-group-card::after {
-  right: 0;
-  background: linear-gradient(to left, var(--panel), transparent);
-}
-
-.duplicate-group-card:hover::before,
-.duplicate-group-card:hover::after {
-  opacity: 1;
-}
 
 .virtual-spacer {
   position: absolute;

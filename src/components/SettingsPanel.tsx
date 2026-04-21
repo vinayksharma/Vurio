@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchConfiguration, saveConfiguration, reloadConfiguration } from '../utils/api';
 import type { Configuration } from '../types';
 import MediaLocationsSection from './MediaLocationsSection';
+import UISettingsSection from './UISettingsSection';
 import AdvancedSection from './AdvancedSection';
 import PurityOrderSection from './PurityOrderSection';
 
@@ -184,6 +185,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
           </div>
         </header>
         <MediaLocationsSection />
+        <UISettingsSection />
         <PurityOrderSection />
         <section className="panel settings-panel">
           <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
@@ -215,6 +217,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
           </div>
         </header>
         <MediaLocationsSection />
+        <UISettingsSection />
         <PurityOrderSection />
         <section className="panel settings-panel">
           <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
@@ -249,6 +252,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
         </div>
       </header>
       <MediaLocationsSection />
+      <UISettingsSection />
       <section className="panel settings-panel">
         <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
           <span>Configuration</span>

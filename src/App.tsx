@@ -4,6 +4,7 @@ import ContentAreaControl from './components/ContentAreaControl';
 import Splitter from './components/Splitter';
 import ImagePopup from './components/ImagePopup';
 import { useUIStore, useServerStatusStore } from './stores';
+import { fetchUserSetting } from './utils/api';
 import './index.css';
 
 function App() {
@@ -28,6 +29,17 @@ function App() {
     startPolling();
     return () => stopPolling();
   }, [startPolling, stopPolling]);
+
+  // Load UI theme on startup
+  useEffect(() => {
+    fetchUserSetting('ui_theme')
+      .then((theme) => {
+        if (theme && theme !== 'os') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      })
+      .catch((err) => console.error('Failed to load UI theme on startup:', err));
+  }, []);
 
   useEffect(() => {
     const checkLayout = () => {
