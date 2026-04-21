@@ -476,7 +476,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
       if (group) {
         items.push(
           <div key={`group-${idx}`} data-group-index={idx} style={{ position: 'absolute', top: `${top}px`, left: 0, right: 0, height: `${CARD_HEIGHT}px`, overflow: 'hidden' }}>
-            <DuplicateGroupControl group={group} />
+            <DuplicateGroupControl group={group} groupIndex={idx} />
           </div>
         );
       } else {
