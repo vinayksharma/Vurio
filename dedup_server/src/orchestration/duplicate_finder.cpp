@@ -858,8 +858,10 @@ namespace MediaDedup
                     if (a.has_exif_date != b.has_exif_date)
                         return a.has_exif_date;
                     
-                    if (a.created_date != b.created_date)
-                        return a.created_date < b.created_date;
+                    if (a.has_exif_date && b.has_exif_date) {
+                        if (a.created_date != b.created_date)
+                            return a.created_date < b.created_date;
+                    }
                     break;
                 }
                 case PurityCriterion::FILE_SIZE:
