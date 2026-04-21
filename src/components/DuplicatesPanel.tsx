@@ -41,6 +41,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const [totalGroups, setTotalGroups] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+  const visibleRangeRef = useRef(visibleRange);
   const [cacheVersion, setCacheVersion] = useState(0); // Force re-render when cache updates
   const cardStackRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +86,41 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   useEffect(() => {
     totalGroupsRef.current = totalGroups;
   }, [totalGroups]);
+
+  useEffect(() => {
+    visibleRangeRef.current = visibleRange;
+  }, [visibleRange]);
+
+  // Periodic polling of the visible range to catch inner group updates
+  useEffect(() => {
+    if (!isActive || !isOnline) return;
+
+    const fetchVisible = () => {
+      const total = totalGroupsRef.current;
+      if (total === 0 || !loadGroupsFromAPIRef.current) return;
+      
+      const { start, end } = visibleRangeRef.current;
+      if (start === 0 && end === 0 && total === 0) return;
+      
+      const safeEnd = Math.min(end, total - 1);
+      const count = Math.max(0, safeEnd - start + 1);
+      
+      if (count > 0) {
+        loadGroupsFromAPIRef.current(start, count).catch(err => {
+          console.error('Error during periodic visible range polling:', err);
+        });
+      }
+    };
+
+    // Immediate fetch to refresh stale cache when returning to the view
+    const delayId = setTimeout(fetchVisible, 100);
+    const intervalId = setInterval(fetchVisible, 5000);
+
+    return () => {
+      clearTimeout(delayId);
+      clearInterval(intervalId);
+    };
+  }, [isActive, isOnline]);
 
   useEffect(() => {
     let mounted = true;
