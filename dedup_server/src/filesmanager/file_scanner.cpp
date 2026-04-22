@@ -114,6 +114,10 @@ namespace MediaDedup::Files
                     FileRecord r;
                     fillStats(de, r);
 
+                    std::string filename = de.path().filename().string();
+                    if (de.is_directory() && (filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
+                        continue;
+
                     if (!options.includeHidden && r.isHidden)
                         continue;
                     onFile(r);
@@ -148,6 +152,10 @@ namespace MediaDedup::Files
                     const fs::directory_entry &de = *it;
                     FileRecord r;
                     fillStats(de, r);
+
+                    std::string filename = de.path().filename().string();
+                    if (de.is_directory() && (filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
+                        continue;
 
                     if (!options.includeHidden && r.isHidden)
                         continue;

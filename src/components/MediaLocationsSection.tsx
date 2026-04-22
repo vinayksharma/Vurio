@@ -3,17 +3,15 @@ import {
   registerLocation,
   deregisterLocation,
   changePath,
-  fetchServerStatus,
-  extractRegisteredDirectories,
   verifyRemapSuccess,
 } from '../utils/api';
-import { useStatusPopupStore } from '../stores';
+import { useStatusPopupStore, useServerStatusStore } from '../stores';
 import { remapEventEmitter } from '../utils/remapEvents';
 
 const MediaLocationsSection: React.FC = () => {
   const [directoryPath, setDirectoryPath] = useState('');
   const [message, setMessage] = useState('');
-  const [locations, setLocations] = useState<string[]>([]);
+  const locations = useServerStatusStore((state) => state.registeredDirs);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
@@ -21,17 +19,16 @@ const MediaLocationsSection: React.FC = () => {
 
   const refreshLocations = async () => {
     try {
-      const status = await fetchServerStatus();
-      const dirs = extractRegisteredDirectories(status);
-      setLocations(dirs);
+      useServerStatusStore.getState().pollStatus();
     } catch (error) {
-      console.error('Failed to refresh locations:', error);
-      setMessage('Failed to load registered locations');
+      console.error('Failed to trigger status poll:', error);
     }
   };
 
   useEffect(() => {
-    refreshLocations();
+    if (locations.length === 0) {
+      refreshLocations();
+    }
   }, []);
 
   const getElectronAPI = (): typeof window.electronAPI | null => {

@@ -511,6 +511,46 @@ namespace MediaDedup
         return out;
     }
 
+    std::vector<ScannedFileRow> ScannedFilesOps::listErroredFiles(DatabaseManager &db)
+    {
+        std::vector<ScannedFileRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            // Select all files where processed < 0
+            stmt << "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution FROM scanned_files WHERE processed < 0";
+            stmt.execute();
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                ScannedFileRow r;
+                r.id = rs[0].convert<int>();
+                r.file_path = rs[1].convert<std::string>();
+                r.relative_path = rs[2].convert<std::string>();
+                r.share_name = rs[3].convert<std::string>();
+                r.file_name = rs[4].convert<std::string>();
+                r.file_metadata = rs[5].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                out.emplace_back(std::move(r));
+                more = rs.moveNext();
+            }
+        }
+        catch (...)
+        {
+        }
+        return out;
+    }
+
     bool ScannedFilesOps::updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata)
     {
         try

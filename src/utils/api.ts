@@ -241,3 +241,15 @@ export async function configurePurityOrder(purityOrderString: string): Promise<{
     body: JSON.stringify({ purity_order: purityOrderString }),
   }) as Promise<any>;
 }
+
+export async function ejectErrors(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/files/eject-errors', {
+    method: 'POST',
+  }) as Promise<any>;
+}
+
+export async function undoEjectErrors(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/files/undo-eject-errors', {
+    method: 'POST',
+  }) as Promise<any>;
+}
