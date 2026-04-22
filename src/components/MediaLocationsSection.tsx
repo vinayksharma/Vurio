@@ -15,6 +15,7 @@ const MediaLocationsSection: React.FC = () => {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
+  const [deregisteringPath, setDeregisteringPath] = useState<string | null>(null);
   const openStatusPopup = useStatusPopupStore((state) => state.open);
 
   const refreshLocations = async () => {
@@ -93,6 +94,8 @@ const MediaLocationsSection: React.FC = () => {
 
   const handleDeregister = async (path: string) => {
     try {
+      setDeregisteringPath(path);
+      setMessage('Deregistering location and wiping database gracefully. This may take several seconds, please do not click away...');
       await deregisterLocation(path);
       setMessage('Location deregistered successfully');
       setSelectedLocation(null);
@@ -100,6 +103,8 @@ const MediaLocationsSection: React.FC = () => {
     } catch (error) {
       const err = error as Error;
       setMessage(err.message || 'Failed to deregister location');
+    } finally {
+      setDeregisteringPath(null);
     }
   };
 
@@ -182,7 +187,7 @@ const MediaLocationsSection: React.FC = () => {
 
   return (
     <section className="panel scan-panel media-locations-section" style={{ position: 'relative' }}>
-      <h2 className="panel-title" onClick={() => !remappingLocation && setIsCollapsed(!isCollapsed)} style={{ cursor: remappingLocation ? 'not-allowed' : 'pointer', opacity: remappingLocation ? 0.6 : 1 }}>
+      <h2 className="panel-title" onClick={() => !remappingLocation && !deregisteringPath && setIsCollapsed(!isCollapsed)} style={{ cursor: (remappingLocation || deregisteringPath) ? 'wait' : 'pointer', opacity: (remappingLocation || deregisteringPath) ? 0.6 : 1 }}>
         <span>Media Locations</span>
         <span 
           className="config-group-toggle" 
@@ -203,12 +208,12 @@ const MediaLocationsSection: React.FC = () => {
             placeholder="Select a directory..."
             value={directoryPath}
             onChange={(e) => setDirectoryPath(e.target.value)}
-            disabled={!!remappingLocation}
+            disabled={!!remappingLocation || !!deregisteringPath}
           />
-          <button id="browse-btn" onClick={browseDirectory} disabled={!!remappingLocation}>
+          <button id="browse-btn" onClick={browseDirectory} disabled={!!remappingLocation || !!deregisteringPath}>
             Browse
           </button>
-          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={!!remappingLocation}>
+          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={!!remappingLocation || !!deregisteringPath}>
             Register
           </button>
         </div>
@@ -223,15 +228,15 @@ const MediaLocationsSection: React.FC = () => {
               <li
                 key={location}
                 className={selectedLocation === location ? 'selected' : ''}
-                onClick={() => !remappingLocation && setSelectedLocation(location)}
-                style={{ cursor: remappingLocation ? 'not-allowed' : 'pointer' }}
+                onClick={() => !remappingLocation && !deregisteringPath && setSelectedLocation(location)}
+                style={{ cursor: (remappingLocation || deregisteringPath) ? 'wait' : 'pointer' }}
               >
                 <span className="location-path">{location}</span>
                 <button
                   className="remap-btn"
                   onClick={(e) => handleRemap(location, e)}
                   title="Remap this location to a different path"
-                  disabled={!!remappingLocation}
+                  disabled={!!remappingLocation || !!deregisteringPath}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   {remappingLocation === location ? (
@@ -252,10 +257,20 @@ const MediaLocationsSection: React.FC = () => {
             <button
               id="deregister-selected-btn"
               className="ghost"
-              disabled={!selectedLocation || !!remappingLocation}
+              disabled={!selectedLocation || !!remappingLocation || !!deregisteringPath}
               onClick={handleDeregisterSelected}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              Deregister Selected
+              {deregisteringPath ? (
+                <>
+                  <svg viewBox="0 0 50 50" style={{ width: '14px', height: '14px', animation: 'thumbnail-spin 0.8s linear infinite' }}>
+                    <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+                  </svg>
+                  Deregistering...
+                </>
+              ) : (
+                'Deregister Selected'
+              )}
             </button>
           </div>
         </div>
