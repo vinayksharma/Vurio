@@ -164,6 +164,12 @@ namespace MediaDedup
             size_t file_size = std::filesystem::file_size(source_path);
             Poco::Logger::get("DiskCache").debug("File size: " + std::to_string(file_size) + " bytes, current cache size: " + std::to_string(current_size_bytes_) + " bytes, limit: " + std::to_string(size_limit_bytes_) + " bytes");
 
+            if (file_size > size_limit_bytes_)
+            {
+                Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
+                return false;
+            }
+
             // Enforce size limit
             enforceSizeLimit(file_size);
             Poco::Logger::get("DiskCache").debug("Size limit enforced successfully");
@@ -218,7 +224,7 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to copy to cache: " + std::string(e.what()));
+            Poco::Logger::get("DiskCache").error("Failed to copy to cache: " + std::string(e.what())); std::cerr << "COPY EXCEPTION: " << e.what() << std::endl;
             return false;
         }
     }
@@ -320,6 +326,13 @@ namespace MediaDedup
             if (file_size == 0)
             {
                 Poco::Logger::get("DiskCache").error("Stream resulted in empty file: " + temp_path.string());
+                std::filesystem::remove(temp_path);
+                return false;
+            }
+
+            if (file_size > size_limit_bytes_)
+            {
+                Poco::Logger::get("DiskCache").warning("Stream size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
                 std::filesystem::remove(temp_path);
                 return false;
             }
@@ -464,12 +477,14 @@ namespace MediaDedup
         {
             Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(required_space_bytes / (1024 * 1024)) + " MB) exceeds cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Removing all cached files to accommodate.");
 
-            // Remove all cached files (but keep the cache directory)
-            for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
-            {
-                if (entry.is_regular_file())
+            if (std::filesystem::exists(cache_location_)) {
+                // Remove all cached files (but keep the cache directory)
+                for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
                 {
-                    std::filesystem::remove(entry.path());
+                    if (entry.is_regular_file())
+                    {
+                        std::filesystem::remove(entry.path());
+                    }
                 }
             }
             current_size_bytes_ = 0;

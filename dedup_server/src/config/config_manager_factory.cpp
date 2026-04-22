@@ -408,15 +408,7 @@ namespace MediaDedup
         // TPM share for thumbnail generation
         manager->createProperty<double>("tpm.types.thumbnail_generator.share", 1.0, "Thread pool share for thumbnail generation");
 
-        // Asset preview cache configuration
-        manager->createProperty<int>("cache.assetPreview.size_limit_mb", 2048, "Asset preview cache size limit in MB");
-        manager->createProperty<bool>("cache.assetPreview.clearOnStartup", false, "Clear asset preview cache on startup");
 
-        // Asset preview generation configuration
-        manager->createProperty<int>("assetPreview.generation.timeoutMs", 8000, "Asset preview generation timeout in milliseconds");
-        manager->createProperty<int>("assetPreview.jpeg.quality", 85, "JPEG quality for asset previews (0-100)");
-
-        // TPM share for asset preview generation
 
         // Create default media category properties
         // Images

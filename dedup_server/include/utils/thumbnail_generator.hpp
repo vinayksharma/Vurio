@@ -62,8 +62,8 @@ namespace MediaDedup
         static int getClosestValidSize(int requested_size);
 
     private:
-        // Supported thumbnail sizes
-        static constexpr int VALID_SIZES[] = {128, 256, 512, 1024};
+        // Supported thumbnail sizes (0 means native resolution)
+        static constexpr int VALID_SIZES[] = {0, 128, 256, 512, 1024};
         static constexpr int DEFAULT_SIZE = 256;
         static constexpr int DEFAULT_QUALITY = 85;
         static constexpr int DEFAULT_TIMEOUT_MS = 5000;
