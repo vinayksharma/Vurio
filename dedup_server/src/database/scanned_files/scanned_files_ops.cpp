@@ -151,6 +151,29 @@ namespace MediaDedup
             Statement del_errors(sess);
             del_errors << "DELETE FROM processing_errors WHERE file_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
+            // Delete physical cached thumbnails
+            Statement sel_thumbs(sess);
+            sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+            RecordSet rs(sel_thumbs);
+            bool more = rs.moveFirst();
+            int deleted_thumbs = 0;
+            while (more)
+            {
+                std::string cached_path = rs[0].convert<std::string>();
+                try
+                {
+                    if (std::filesystem::exists(cached_path))
+                    {
+                        std::filesystem::remove(cached_path);
+                        deleted_thumbs++;
+                    }
+                }
+                catch (...) {}
+                more = rs.moveNext();
+            }
+            if (deleted_thumbs > 0)
+                Poco::Logger::get("ScannedFilesOps").information("Deleted %d physical thumbnail files for location key: %s", deleted_thumbs, location_key);
+
             Statement del_thumbs(sess);
             del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
