@@ -24,6 +24,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <filesystem>
+#include <fstream>
 
 namespace MediaDedup
 {
@@ -375,6 +376,47 @@ namespace MediaDedup
             sendErrorResponse(response, "Invalid directory", 400);
             return;
         }
+
+        // --- Permission Check ---
+        try
+        {
+            if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir))
+            {
+                sendErrorResponse(response, "Path does not exist or is not a directory", 400);
+                return;
+            }
+
+            // 1. Test Read access by initiating a directory iterator
+            auto it = std::filesystem::directory_iterator(dir);
+
+            // 2. Test Write access by creating and deleting a temporary hidden file
+            std::filesystem::path test_file = std::filesystem::path(dir) / ".vurio_write_test";
+            std::ofstream ofs(test_file);
+            if (!ofs.is_open())
+            {
+                sendErrorResponse(response, "Vurio lacks WRITE permissions to this directory. Please check Mac OS Privacy & Security settings or ensure the drive is not Read-Only.", 403);
+                return;
+            }
+            ofs << "test";
+            ofs.close();
+
+            // Clean up the test file
+            std::filesystem::remove(test_file);
+        }
+        catch (const std::filesystem::filesystem_error& e)
+        {
+            Poco::Logger::get("RegisterMediaLocationHandler").error("Filesystem error during permission check: %s", std::string(e.what()));
+            sendErrorResponse(response, "Vurio lacks READ/WRITE permissions to this directory (" + std::string(e.what()) + "). Please check Mac OS Privacy & Security settings.", 403);
+            return;
+        }
+        catch (const std::exception& e)
+        {
+            Poco::Logger::get("RegisterMediaLocationHandler").error("Error during permission check: %s", std::string(e.what()));
+            sendErrorResponse(response, "Could not verify permissions for this directory: " + std::string(e.what()), 500);
+            return;
+        }
+        // --- End Permission Check ---
+
         if (!service_->registerMediaLocation(dir))
         {
             sendErrorResponse(response, "Failed to register", 500);
