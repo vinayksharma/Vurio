@@ -48,6 +48,7 @@ const ImagePopup: React.FC = () => {
   
   const [groupImages, setGroupImages] = useState<{filePath: string, details: string, is_ejected?: boolean}[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [nativeUrl, setNativeUrl] = useState<string | null>(null);
   
   // Track dragging operation explicitly
   const dragStateRef = useRef({ 
@@ -98,6 +99,8 @@ const ImagePopup: React.FC = () => {
     if (newIndex >= groupImages.length) newIndex = 0;
     
     setCurrentIndex(newIndex);
+    setNativeUrl(null);
+    setIsFetchingNative(false);
     setFilePath(groupImages[newIndex].filePath);
     setDetails(groupImages[newIndex].details);
     setScale(1);
@@ -124,6 +127,34 @@ const ImagePopup: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [groupImages, currentIndex]);
+
+  // Track native fetch to prevent scroll-wheel spam
+  const fetchingNativePathRef = useRef<string | null>(null);
+  const [isFetchingNative, setIsFetchingNative] = useState(false);
+
+  useEffect(() => {
+    // Reset our fetch lock when the image changes entirely
+    if (filePath !== fetchingNativePathRef.current) {
+       fetchingNativePathRef.current = null;
+    }
+
+    if (scale > 1.2 && filePath && !nativeUrl && fetchingNativePathRef.current !== filePath) {
+      fetchingNativePathRef.current = filePath;
+      setIsFetchingNative(true);
+      const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(filePath)}&size=0`;
+      const img = new window.Image();
+      img.onload = () => {
+         setNativeUrl(url);
+         setIsFetchingNative(false);
+      };
+      img.onerror = () => {
+         // Allow retry on next zoom
+         fetchingNativePathRef.current = null;
+         setIsFetchingNative(false);
+      };
+      img.src = url;
+    }
+  }, [scale, filePath, nativeUrl]);
 
   const buildImageUrl = (path: string): string => {
     // Request a larger thumbnail image for zooming (backend max size is 1024)
@@ -275,7 +306,7 @@ const ImagePopup: React.FC = () => {
           )}
           <img
             className="image-preview-image"
-            src={buildImageUrl(filePath)}
+            src={nativeUrl || buildImageUrl(filePath)}
             alt="Preview"
             style={{
               transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale}) rotate(${rotation}deg)`,
@@ -357,14 +388,21 @@ const ImagePopup: React.FC = () => {
         
         {details && (
           <div className="details-overlay" style={{ position: 'absolute', top: 10, left: 10, zIndex: 20 }}>
-            <button 
-              className="details-toggle-btn" 
-              onClick={() => setShowDetails(!showDetails)}
-              title={showDetails ? "Hide metadata" : "Show metadata"}
-              style={{ background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
-            >
-              {showDetails ? '▼ Hide Info' : '▲ Show Info'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                className="details-toggle-btn" 
+                onClick={() => setShowDetails(!showDetails)}
+                title={showDetails ? "Hide metadata" : "Show metadata"}
+                style={{ background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                {showDetails ? '▼ Hide Info' : '▲ Show Info'}
+              </button>
+              {isFetchingNative && (
+                <div title="Loading Native Resolution..." style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="thumbnail-loading-spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></div>
+                </div>
+              )}
+            </div>
             {showDetails && (
               <div className="details-content" style={{ background: 'rgba(30, 41, 59, 0.9)', padding: '10px', marginTop: '5px', borderRadius: '4px', color: 'white', maxWidth: '300px', wordBreak: 'break-all' }}>
                 {details}

@@ -115,30 +115,33 @@ namespace MediaDedup
                 return false;
             }
 
-            // Calculate new dimensions maintaining aspect ratio
-            size_t new_w, new_h;
-            if (orig_w > orig_h)
+            size_t new_w = orig_w, new_h = orig_h;
+            if (size > 0)
             {
-                new_w = size;
-                new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
-            }
-            else
-            {
-                new_h = size;
-                new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
-            }
+                // Calculate new dimensions maintaining aspect ratio
+                if (orig_w > orig_h)
+                {
+                    new_w = size;
+                    new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
+                }
+                else
+                {
+                    new_h = size;
+                    new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
+                }
 
-            // Ensure minimum dimensions
-            if (new_w == 0)
-                new_w = 1;
-            if (new_h == 0)
-                new_h = 1;
+                // Ensure minimum dimensions
+                if (new_w == 0)
+                    new_w = 1;
+                if (new_h == 0)
+                    new_h = 1;
 
-            // Resize image with high-quality filter
-            // Geometry syntax: "WIDTHxHEIGHT!" where ! means ignore aspect ratio
-            // But we already calculated correct aspect ratio above
-            std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
-            image.resize(Magick::Geometry(geometry));
+                // Resize image with high-quality filter
+                // Geometry syntax: "WIDTHxHEIGHT!" where ! means ignore aspect ratio
+                // But we already calculated correct aspect ratio above
+                std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
+                image.resize(Magick::Geometry(geometry));
+            }
 
             // Set JPEG quality (0-100)
             image.quality(quality);
@@ -269,28 +272,31 @@ namespace MediaDedup
                 return false;
             }
 
-            // Calculate new dimensions maintaining aspect ratio
-            size_t new_w, new_h;
-            if (orig_w > orig_h)
+            size_t new_w = orig_w, new_h = orig_h;
+            if (size > 0)
             {
-                new_w = size;
-                new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
-            }
-            else
-            {
-                new_h = size;
-                new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
-            }
+                // Calculate new dimensions maintaining aspect ratio
+                if (orig_w > orig_h)
+                {
+                    new_w = size;
+                    new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
+                }
+                else
+                {
+                    new_h = size;
+                    new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
+                }
 
-            // Ensure minimum dimensions
-            if (new_w == 0)
-                new_w = 1;
-            if (new_h == 0)
-                new_h = 1;
+                // Ensure minimum dimensions
+                if (new_w == 0)
+                    new_w = 1;
+                if (new_h == 0)
+                    new_h = 1;
 
-            // Resize image with high-quality filter
-            std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
-            image.resize(Magick::Geometry(geometry));
+                // Resize image with high-quality filter
+                std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
+                image.resize(Magick::Geometry(geometry));
+            }
 
             // Set JPEG quality (0-100)
             image.quality(quality);
@@ -336,7 +342,10 @@ namespace MediaDedup
 
     int ThumbnailGenerator::getClosestValidSize(int requested_size)
     {
-        if (requested_size <= 0)
+        if (requested_size == 0)
+            return 0;
+            
+        if (requested_size < 0)
             return DEFAULT_SIZE;
 
         int closest = VALID_SIZES[0];

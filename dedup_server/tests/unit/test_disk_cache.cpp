@@ -270,7 +270,7 @@ TEST_F(DiskCacheTest, EnforceSizeLimit_RemovesOldestFiles)
     EXPECT_TRUE(std::filesystem::exists(cached_paths[2]));
 }
 
-TEST_F(DiskCacheTest, FileLargerThanLimit_ClearsCacheAndAllows)
+TEST_F(DiskCacheTest, FileLargerThanLimit_ClearsCacheAndRefuses)
 {
     ASSERT_TRUE(disk_cache_->initialize());
 
@@ -290,14 +290,14 @@ TEST_F(DiskCacheTest, FileLargerThanLimit_ClearsCacheAndAllows)
     auto large_file = test_files_dir_ / "very_large.bin";
     createTestFile(large_file, 1024 * 1024 * 15); // 15 MB
 
-    std::string cached_path;
-    EXPECT_TRUE(disk_cache_->copyToCache(large_file.string(), cached_path));
+    std::string cached_path_large;
+    EXPECT_FALSE(disk_cache_->copyToCache(large_file.string(), cached_path_large));
 
-    // Large file should be cached
-    EXPECT_TRUE(std::filesystem::exists(cached_path));
+    // Large file should NOT be cached
+    EXPECT_FALSE(std::filesystem::exists(cached_path_large));
 
-    // Cache should now exceed limit (warning logged)
-    EXPECT_GT(disk_cache_->getCurrentSizeMB(), 10);
+    // Cache was NOT cleared because the file was rejected early
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 2);
 }
 
 TEST_F(DiskCacheTest, ConfigChange_Location_UpdatesCache)
@@ -768,21 +768,15 @@ TEST_F(DiskCacheTest, CacheLimitBehavior_DoesNotHaltServer)
     size_t file_size = std::filesystem::file_size(large_file);
     EXPECT_GT(file_size, 10 * 1024 * 1024) << "File should be larger than 10MB cache limit";
 
-    // Copy file to cache - this should trigger cache clearing
+    // Copy file to cache - this should be rejected because it exceeds the total limit
     std::string cached_path;
     bool copy_result = disk_cache_->copyToCache(large_file.string(), cached_path);
 
-    // This should succeed because we clear the cache to accommodate
-    EXPECT_TRUE(copy_result) << "Should succeed by clearing cache to accommodate large file";
+    // This should fail gracefully without halting the server
+    EXPECT_FALSE(copy_result) << "Should reject file that is larger than the total cache limit";
 
-    // Verify the file is in cache
-    EXPECT_TRUE(std::filesystem::exists(cached_path));
-
-    // Verify cache size is now the size of the large file
-    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), (file_size / (1024 * 1024)));
-
-    // Verify files_in_use_ set is properly cleared
-    // (This is tested indirectly by the fact that we can copy the file)
+    // Verify cache size is still 0 (since it was empty and we rejected the file)
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0);
 
     // Clean up
     disk_cache_->deleteFromCacheImmediately(cached_path);

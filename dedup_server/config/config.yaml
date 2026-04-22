@@ -158,3 +158,4 @@ media.images.raw.rwl: true
 media.images.jp2: true
 cache.thumbnail.clearOnStartup: true
 tpm.thread.idleTimeoutSeconds: 120
+cache.thumbnail.size_limit_mb: 10240
