@@ -59,6 +59,29 @@ const ImagePopup: React.FC = () => {
     isDragging: false 
   });
   
+  const bcRef = useRef<BroadcastChannel | null>(null);
+
+  useEffect(() => {
+    bcRef.current = new BroadcastChannel('viewer_group_navigation');
+    bcRef.current.onmessage = (e) => {
+      if (e.data.type === 'NEW_GROUP') {
+        setGroupImages(e.data.groupImages);
+        setCurrentIndex(e.data.currentIndex);
+        setNativeUrl(null);
+        setIsFetchingNative(false);
+        setFilePath(e.data.filePath);
+        setDetails(e.data.details);
+        setIsLoading(true);
+        setScale(1);
+        setOffset({ x: 0, y: 0 });
+        setRotation(0);
+      }
+    };
+    return () => {
+      bcRef.current?.close();
+    };
+  }, []);
+
   useEffect(() => {
     // Read from URL search params since it's a standalone window now
     const params = new URLSearchParams(window.location.search);
@@ -119,10 +142,12 @@ const ImagePopup: React.FC = () => {
       if (e.key === 'R') setRotation(r => r - 90);
       if (e.key === 'ArrowLeft') handlePrev();
       if (e.key === 'ArrowRight') handleNext();
+      if (e.key === 'ArrowUp') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: -1, currentFilePath: filePath });
+      if (e.key === 'ArrowDown') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: 1, currentFilePath: filePath });
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [groupImages, currentIndex]);
+  }, [groupImages, currentIndex, filePath]);
 
   // Track native fetch to prevent scroll-wheel spam
   const fetchingNativePathRef = useRef<string | null>(null);
@@ -137,16 +162,21 @@ const ImagePopup: React.FC = () => {
     if (scale > 1.2 && filePath && !nativeUrl && fetchingNativePathRef.current !== filePath) {
       fetchingNativePathRef.current = filePath;
       setIsFetchingNative(true);
+      const activeFilePath = filePath;
       const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(filePath)}&size=0`;
       const img = new window.Image();
       img.onload = () => {
-         setNativeUrl(url);
-         setIsFetchingNative(false);
+         if (fetchingNativePathRef.current === activeFilePath) {
+           setNativeUrl(url);
+           setIsFetchingNative(false);
+         }
       };
       img.onerror = () => {
-         // Allow retry on next zoom
-         fetchingNativePathRef.current = null;
-         setIsFetchingNative(false);
+         if (fetchingNativePathRef.current === activeFilePath) {
+           // Allow retry on next zoom
+           fetchingNativePathRef.current = null;
+           setIsFetchingNative(false);
+         }
       };
       img.src = url;
     }
