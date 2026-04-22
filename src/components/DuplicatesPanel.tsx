@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchDuplicateGroups, fetchUserSetting, saveUserSetting, fetchUserSettings, ejectDuplicates, bulkUndoEjectDuplicates } from '../utils/api';
 import { useServerStatusStore, useUIStore } from '../stores';
-import type { DuplicateGroup } from '../types';
+import type { DuplicateGroup, DuplicateGroupMember } from '../types';
 import DuplicateGroupControl from './DuplicateGroupControl';
 import { remapEventEmitter } from '../utils/remapEvents';
 import { getActiveRequestCount } from '../utils/thumbnailRequests';
@@ -442,6 +442,81 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     lastSyncedDuplicatesFoundRef.current = serverDuplicatesFound;
     refreshVisibleRange();
   }, [isActive, isOnline, serverDupeCount, serverDuplicatesFound, totalGroups, refreshVisibleRange]);
+
+  useEffect(() => {
+    const bc = new BroadcastChannel('viewer_group_navigation');
+    bc.onmessage = async (e) => {
+      if (e.data.type === 'NAVIGATE_GROUP') {
+        const { direction, currentFilePath } = e.data;
+        const cache = groupsCacheRef.current;
+        let currentGroupIndex = -1;
+        
+        for (const [idx, group] of cache.entries()) {
+           if (group.members?.some(m => m.file_path === currentFilePath) || group.representative === currentFilePath || group.candidates?.includes(currentFilePath)) {
+              currentGroupIndex = idx;
+              break;
+           }
+        }
+        
+        if (currentGroupIndex !== -1 && totalGroupsRef.current > 0) {
+           let targetIndex = currentGroupIndex + direction;
+           if (targetIndex < 0) targetIndex = totalGroupsRef.current - 1;
+           if (targetIndex >= totalGroupsRef.current) targetIndex = 0;
+           
+           let targetGroup = cache.get(targetIndex);
+           if (!targetGroup && loadGroupsFromAPIRef.current) {
+              await loadGroupsFromAPIRef.current(targetIndex, 1);
+              targetGroup = groupsCacheRef.current.get(targetIndex);
+           }
+           
+           if (targetGroup) {
+              let sortedMembers: DuplicateGroupMember[] = [];
+              if (targetGroup.members && targetGroup.members.length > 0) {
+                sortedMembers = [...targetGroup.members].sort((a, b) => {
+                  const aIsRep = a.file_path === targetGroup!.representative || a.is_representative;
+                  const bIsRep = b.file_path === targetGroup!.representative || b.is_representative;
+                  if (aIsRep && !bIsRep) return -1;
+                  if (!aIsRep && bIsRep) return 1;
+                  return (b.similarity_score || 0) - (a.similarity_score || 0);
+                });
+                const repInMembers = sortedMembers.some(m => m.file_path === targetGroup!.representative);
+                if (!repInMembers) {
+                  sortedMembers.unshift({ file_path: targetGroup!.representative, similarity_score: 1.0, is_representative: true, file_size: 0 } as DuplicateGroupMember);
+                }
+              } else {
+                sortedMembers = [
+                  { file_path: targetGroup.representative, similarity_score: 1.0, is_representative: true, file_size: 0 } as DuplicateGroupMember,
+                  ...(targetGroup.candidates || []).map(path => ({ file_path: path, similarity_score: targetGroup!.similarity_threshold || 0.9, file_size: 0 } as DuplicateGroupMember))
+                ];
+              }
+              
+              const displayId = targetIndex + 1;
+              const groupImages = sortedMembers.map((member, index) => {
+                const isFirst = index === 0;
+                const rankText = isFirst ? 'Highest Similarity' : `Rank #${index + 1}`;
+                const itemTooltip = `Group #${displayId} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score != null ? member.similarity_score.toFixed(4) : 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nDate Taken: ${member.created_date ? new Date(member.created_date).toLocaleString() : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}`;
+                return { filePath: member.file_path, details: itemTooltip, is_ejected: member.is_ejected };
+              });
+              
+              const container = cardStackRef.current;
+              if (container) {
+                const targetScroll = targetIndex * ITEM_HEIGHT;
+                container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+              }
+              
+              bc.postMessage({
+                 type: 'NEW_GROUP',
+                 groupImages,
+                 currentIndex: 0,
+                 filePath: groupImages[0].filePath,
+                 details: groupImages[0].details
+              });
+           }
+        }
+      }
+    };
+    return () => bc.close();
+  }, [ITEM_HEIGHT]);
 
   const totalHeight = totalGroups > 0 ? totalGroups * ITEM_HEIGHT - GAP : 200;
 
