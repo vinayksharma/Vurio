@@ -50,35 +50,35 @@ namespace MediaDedup
     {
         try
         {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            std::string file_path = r.file_path;
-            std::string model = r.model;
-            int dim = r.dim;
-            // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-            // std::string would truncate at first NULL byte (0x00) in embedding data
-            Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.embedding_blob.data()), r.embedding_blob.size());
-            int v = r.version;
-            stmt << std::string(SQL::kUpsertImageEmbedding),
-                Keywords::use(file_path),
-                Keywords::use(model),
-                Keywords::use(dim),
-                Keywords::use(blob),
-                Keywords::use(v),
-                Keywords::now;
+            int file_id = 0;
+            {
+                auto lease = db.acquireSessionLease();
+                Session &sess = lease.get();
+                Statement stmt(sess);
+                std::string file_path = r.file_path;
+                std::string model = r.model;
+                int dim = r.dim;
+                // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
+                // std::string would truncate at first NULL byte (0x00) in embedding data
+                Poco::Data::CLOB blob(reinterpret_cast<const char *>(r.embedding_blob.data()), r.embedding_blob.size());
+                int v = r.version;
+                stmt << std::string(SQL::kUpsertImageEmbedding),
+                    Keywords::use(file_path),
+                    Keywords::use(model),
+                    Keywords::use(dim),
+                    Keywords::use(blob),
+                    Keywords::use(v),
+                    Keywords::now;
+
+                Statement sel(sess);
+                sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
+            } // POCO lease is released, freeing up lock!
 
             // Sync vector index when enabled (for KNN duplicate search)
             VectorIndex *vix = db.getVectorIndex();
-            if (vix && !r.embedding_blob.empty())
+            if (vix && !r.embedding_blob.empty() && file_id > 0)
             {
-                int file_id = 0;
-                Statement sel(sess);
-                sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
-                if (file_id > 0)
-                {
-                    vix->insert(file_id, r.embedding_blob.data(), r.embedding_blob.size());
-                }
+                vix->insert(file_id, r.embedding_blob.data(), r.embedding_blob.size());
             }
             return true;
         }

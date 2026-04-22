@@ -600,7 +600,12 @@ namespace MediaDedupServer
                 std::vector<MediaDedup::EjectedFileHistory> histories;
                 if (undo_all)
                 {
-                    histories = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
+                    auto all = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
+                    for (const auto& h : all) {
+                        if (h.ejected_path.find("_ejected") != std::string::npos) {
+                            histories.push_back(h);
+                        }
+                    }
                 }
                 else
                 {

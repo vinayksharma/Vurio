@@ -61,6 +61,7 @@ namespace MediaDedup
         static std::vector<int> getLinks(DatabaseManager &db, const std::string &file_path);
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, int limit = -1);
         static std::vector<ScannedFileRow> listUnprocessedAll(DatabaseManager &db, int limit = -1);
+        static std::vector<ScannedFileRow> listErroredFiles(DatabaseManager &db);
 
         // Reset all errors to unprocessed (0)
         static int resetAllErrors(DatabaseManager &db);

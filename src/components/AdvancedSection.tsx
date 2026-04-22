@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { resetErrors, resetDuplicates } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
   const [isResettingErrors, setIsResettingErrors] = useState(false);
+  const [isEjectingErrors, setIsEjectingErrors] = useState(false);
+  const [isRestoringErrors, setIsRestoringErrors] = useState(false);
   const [isResettingDuplicates, setIsResettingDuplicates] = useState(false);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -24,6 +26,43 @@ const AdvancedSection: React.FC = () => {
       alert('Failed to reset errors: ' + err.message);
     } finally {
       setIsResettingErrors(false);
+    }
+  };
+
+  const handleEjectErrors = async () => {
+    if (!confirm('WARNING: Are you sure you want to eject all errored files? They will be moved to a unique \'_errored\' folder.\n\nPlease click \'Cancel\' if you would simply like to try Clearing the Errors and retrying them first.')) {
+      return;
+    }
+    setIsEjectingErrors(true);
+    try {
+      const res = await ejectErrors();
+      if (res.success || res.success_count > 0) {
+        alert(`Successfully ejected ${res.success_count} errored files. ${res.failure_count > 0 ? `Failed to eject ${res.failure_count} files.` : ''}`);
+      } else {
+        alert(`Failed to eject error files. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to eject errors: ' + err.message);
+    } finally {
+      setIsEjectingErrors(false);
+    }
+  };
+
+  const handleRestoreErrors = async () => {
+    setIsRestoringErrors(true);
+    try {
+      const res = await undoEjectErrors();
+      if (res.success || res.success_count > 0) {
+        alert(`Successfully restored ${res.success_count} errored files. They have now been placed back into the processing queue. ${res.failure_count > 0 ? `Failed to restore ${res.failure_count} files.` : ''}`);
+      } else {
+        alert(`Failed to restore error files. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to restore errors: ' + err.message);
+    } finally {
+      setIsRestoringErrors(false);
     }
   };
 
@@ -112,17 +151,35 @@ const AdvancedSection: React.FC = () => {
       <div className={`collapsible ${isCollapsed ? '' : 'open'}`}>
       <div className="action-row">
         <div className="action-details">
-          <h3>Reset Error Files</h3>
-          <p>Clear the list of files that previously failed processing so they can be scanned again.</p>
+          <h3>Manage Error Files</h3>
+          <p>Clear the list of files that failed processing to retry them, or manage previously errored files.</p>
         </div>
-        <button
-          id="reset-errors-btn"
-          className="ghost danger"
-          onClick={handleResetErrors}
-          disabled={isResettingErrors}
-        >
-          {isResettingErrors ? 'Resetting...' : 'Reset Errors'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            id="reset-errors-btn"
+            className="ghost"
+            onClick={handleResetErrors}
+            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+          >
+            {isResettingErrors ? 'Resetting...' : 'Reset Errors'}
+          </button>
+          <button
+            id="eject-errors-btn"
+            className="ghost danger"
+            onClick={handleEjectErrors}
+            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+          >
+            {isEjectingErrors ? 'Ejecting...' : 'Eject Errored'}
+          </button>
+          <button
+            id="restore-errors-btn"
+            className="ghost"
+            onClick={handleRestoreErrors}
+            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+          >
+            {isRestoringErrors ? 'Restoring...' : 'Restore Errored'}
+          </button>
+        </div>
       </div>
       <div className="action-row">
         <div className="action-details">

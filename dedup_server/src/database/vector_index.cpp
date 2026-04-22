@@ -15,9 +15,12 @@ namespace MediaDedup
                            const std::string &extension_path,
                            int embedding_dim)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (db_ != nullptr)
         {
-            close();
+            sqlite3_close(db_);
+            db_ = nullptr;
+            embedding_dim_ = 0;
         }
 
         if (db_path.empty() || extension_path.empty() || embedding_dim <= 0)
@@ -29,7 +32,7 @@ namespace MediaDedup
         int rc = sqlite3_open(db_path.c_str(), &db_);
         if (rc != SQLITE_OK || db_ == nullptr)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex: sqlite3_open failed: %s", sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex: sqlite3_open failed: %s", std::string(sqlite3_errmsg(db_)));
             if (db_)
             {
                 sqlite3_close(db_);
@@ -38,11 +41,20 @@ namespace MediaDedup
             return false;
         }
 
+        // Enable busy timeout (30 seconds) so that this independent connection 
+        // doesn't immediately fail when the POCO connection pool is writing.
+        sqlite3_busy_timeout(db_, 30000);
+
         rc = sqlite3_enable_load_extension(db_, 1);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex: enable_load_extension failed: %s", sqlite3_errmsg(db_));
-            close();
+            Poco::Logger::get("VectorIndex").error("VectorIndex: enable_load_extension failed: %s", std::string(sqlite3_errmsg(db_)));
+            if (db_ != nullptr)
+            {
+                sqlite3_close(db_);
+                db_ = nullptr;
+                embedding_dim_ = 0;
+            }
             return false;
         }
 
@@ -50,10 +62,15 @@ namespace MediaDedup
         rc = sqlite3_load_extension(db_, extension_path.c_str(), nullptr, &errMsg);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex: load_extension failed: %s", errMsg ? errMsg : sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex: load_extension failed: %s", std::string(errMsg ? errMsg : sqlite3_errmsg(db_)));
             if (errMsg)
                 sqlite3_free(errMsg);
-            close();
+            if (db_ != nullptr)
+            {
+                sqlite3_close(db_);
+                db_ = nullptr;
+                embedding_dim_ = 0;
+            }
             return false;
         }
 
@@ -70,10 +87,15 @@ namespace MediaDedup
         rc = sqlite3_exec(db_, create_sql.str().c_str(), nullptr, nullptr, &create_err);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex: CREATE VIRTUAL TABLE failed: %s", create_err ? create_err : sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex: CREATE VIRTUAL TABLE failed: %s", std::string(create_err ? create_err : sqlite3_errmsg(db_)));
             if (create_err)
                 sqlite3_free(create_err);
-            close();
+            if (db_ != nullptr)
+            {
+                sqlite3_close(db_);
+                db_ = nullptr;
+                embedding_dim_ = 0;
+            }
             return false;
         }
 
@@ -83,6 +105,7 @@ namespace MediaDedup
 
     bool VectorIndex::insert(int file_id, const void *embedding_data, std::size_t size_bytes)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (db_ == nullptr || embedding_data == nullptr)
             return false;
 
@@ -98,7 +121,7 @@ namespace MediaDedup
         int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex::insert prepare: %s", sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex::insert prepare: %s", std::string(sqlite3_errmsg(db_)));
             return false;
         }
 
@@ -110,7 +133,7 @@ namespace MediaDedup
 
         if (rc != SQLITE_DONE)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex::insert step: %s", sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex::insert step: %s", std::string(sqlite3_errmsg(db_)));
             return false;
         }
         return true;
@@ -118,6 +141,7 @@ namespace MediaDedup
 
     bool VectorIndex::remove(int file_id)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (db_ == nullptr)
             return false;
 
@@ -126,7 +150,7 @@ namespace MediaDedup
         int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex::remove prepare: %s", sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex::remove prepare: %s", std::string(sqlite3_errmsg(db_)));
             return false;
         }
 
@@ -141,6 +165,7 @@ namespace MediaDedup
                                                              std::size_t size_bytes,
                                                              int k)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::pair<int, double>> result;
         if (db_ == nullptr || embedding_data == nullptr || k <= 0)
             return result;
@@ -154,7 +179,7 @@ namespace MediaDedup
         int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("VectorIndex::queryKnn prepare: %s", sqlite3_errmsg(db_));
+            Poco::Logger::get("VectorIndex").error("VectorIndex::queryKnn prepare: %s", std::string(sqlite3_errmsg(db_)));
             return result;
         }
 
@@ -174,6 +199,7 @@ namespace MediaDedup
 
     void VectorIndex::close()
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (db_ != nullptr)
         {
             sqlite3_close(db_);

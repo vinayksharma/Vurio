@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <mutex>
 
 struct sqlite3;
 
@@ -59,5 +60,6 @@ namespace MediaDedup
         sqlite3 *db_ = nullptr;
         int embedding_dim_ = 0;
         std::string table_name_{ "vec_embedding_index" };
+        std::mutex mutex_;
     };
 } // namespace MediaDedup
