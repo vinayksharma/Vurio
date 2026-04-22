@@ -97,15 +97,11 @@ const ImagePopup: React.FC = () => {
     let newIndex = index;
     if (newIndex < 0) newIndex = groupImages.length - 1;
     if (newIndex >= groupImages.length) newIndex = 0;
-    
     setCurrentIndex(newIndex);
     setNativeUrl(null);
     setIsFetchingNative(false);
     setFilePath(groupImages[newIndex].filePath);
     setDetails(groupImages[newIndex].details);
-    setScale(1);
-    setOffset({ x: 0, y: 0 });
-    setRotation(0);
     setIsLoading(true);
   };
 
