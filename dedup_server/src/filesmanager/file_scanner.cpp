@@ -115,7 +115,7 @@ namespace MediaDedup::Files
                     fillStats(de, r);
 
                     std::string filename = de.path().filename().string();
-                    if (de.is_directory() && (filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
+                    if (de.is_directory() && (filename == "vurio_cache" || filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
                         continue;
 
                     if (!options.includeHidden && r.isHidden)
@@ -154,7 +154,7 @@ namespace MediaDedup::Files
                     fillStats(de, r);
 
                     std::string filename = de.path().filename().string();
-                    if (de.is_directory() && (filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
+                    if (de.is_directory() && (filename == "vurio_cache" || filename.find("_ejected") != std::string::npos || filename.find("_errored") != std::string::npos))
                         continue;
 
                     if (!options.includeHidden && r.isHidden)

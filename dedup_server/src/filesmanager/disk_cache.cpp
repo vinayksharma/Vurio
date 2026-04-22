@@ -55,13 +55,8 @@ namespace MediaDedup
                 config_key_size_limit_, DEFAULT_CACHE_SIZE_LIMIT_MB);
             size_limit_bytes_ = size_limit_mb * 1024ULL * 1024ULL;
 
-            // Create cache directory if it doesn't exist
-            if (!std::filesystem::exists(cache_location_))
-            {
-                std::filesystem::create_directories(cache_location_);
-                Poco::Logger::get("DiskCache").information("Created cache directory: " + cache_location_.string());
-            }
-            else
+            // Check if directory exists before trying to clear it
+            if (std::filesystem::exists(cache_location_))
             {
                 // Check if cache should be cleared on startup (configurable per cache type)
                 std::string clear_key = config_prefix_ + ".clearOnStartup";
@@ -175,6 +170,11 @@ namespace MediaDedup
 
             // Generate cache filename
             std::string cache_filename = generateCacheFilename(source_path);
+            
+            if (!std::filesystem::exists(cache_location_)) {
+                std::filesystem::create_directories(cache_location_);
+            }
+            
             std::filesystem::path dest_path = cache_location_ / cache_filename;
             std::string dest_path_str = dest_path.string();
             Poco::Logger::get("DiskCache").debug("Generated cache filename: " + cache_filename + ", dest path: " + dest_path_str);
@@ -237,6 +237,11 @@ namespace MediaDedup
         {
             // Generate cache filename
             std::string cache_filename = generateCacheFilename(filename);
+            
+            if (!std::filesystem::exists(cache_location_)) {
+                std::filesystem::create_directories(cache_location_);
+            }
+
             std::filesystem::path dest_path = cache_location_ / cache_filename;
             std::string dest_path_str = dest_path.string();
 
@@ -368,8 +373,7 @@ namespace MediaDedup
 
             if (!std::filesystem::exists(path))
             {
-                Poco::Logger::get("DiskCache").warning("File not found in cache: " + cached_path);
-                return false;
+                return false; 
             }
 
             // Get file size before deletion
@@ -407,13 +411,15 @@ namespace MediaDedup
             size_t files_deleted = 0;
             size_t bytes_freed = 0;
 
-            for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
-            {
-                if (entry.is_regular_file())
+            if (std::filesystem::exists(cache_location_)) {
+                for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
                 {
-                    bytes_freed += entry.file_size();
-                    std::filesystem::remove(entry.path());
-                    files_deleted++;
+                    if (entry.is_regular_file())
+                    {
+                        bytes_freed += entry.file_size();
+                        std::filesystem::remove(entry.path());
+                        files_deleted++;
+                    }
                 }
             }
 
