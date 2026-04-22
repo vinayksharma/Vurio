@@ -327,6 +327,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )
@@ -358,6 +359,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
         )

@@ -12,7 +12,6 @@
 #include "core/web/web_handlers_reset_errors.hpp"
 #include "core/web/web_handlers_websocket.hpp"
 #include "core/web/web_handlers_thumbnail.hpp"
-#include "core/web/web_handlers_asset_preview.hpp"
 #include "core/web/web_handlers_duplicates.hpp"
 #include "core/web/web_handlers_cache.hpp"
 #include "config/unified_observable_config.hpp"
@@ -239,9 +238,7 @@ namespace MediaDedup
         if (path == "/api/v1/thumbnails/cleanup" && method == "DELETE")
             return new ThumbnailCleanupHandler(config_manager_, database_manager_, thumbnail_cache_);
 
-        // Asset preview endpoint (public; no CORS/auth as server is same-machine for now)
-        if (path == "/api/v1/assets/jpeg" && method == "GET")
-            return new AssetPreviewHandler(config_manager_);
+
 
         // Cache management endpoints
         if (path.find("/api/v1/cache/") == 0 && path.find("/invalidate") != std::string::npos && method == "DELETE")

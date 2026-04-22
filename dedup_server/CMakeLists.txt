@@ -204,7 +204,6 @@ add_executable(media_dedup_server
     src/core/webserver/web_handlers_websocket.cpp
     src/core/webserver/web_handlers_reset_errors.cpp
     src/core/webserver/web_handlers_thumbnail.cpp
-    src/core/webserver/web_handlers_asset_preview.cpp
     src/core/webserver/web_handlers_duplicates.cpp
     src/core/webserver/web_handlers_cache.cpp
     src/core/server_static_file_handler.cpp

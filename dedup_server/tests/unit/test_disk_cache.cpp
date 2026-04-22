@@ -86,9 +86,16 @@ protected:
     std::filesystem::path test_files_dir_;
 };
 
-TEST_F(DiskCacheTest, InitializeCreatesDirectory)
+TEST_F(DiskCacheTest, LazyCreatesDirectory)
 {
     ASSERT_TRUE(disk_cache_->initialize());
+
+    // Create test file
+    auto test_file = test_files_dir_ / "test_file.txt";
+    createTestFile(test_file, 1024);
+
+    std::string cached_path;
+    EXPECT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path));
 
     std::filesystem::path cache_path = std::filesystem::current_path() / test_cache_location_;
     EXPECT_TRUE(std::filesystem::exists(cache_path));

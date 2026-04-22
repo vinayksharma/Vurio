@@ -115,7 +115,6 @@ tpm.types.audio_processor.share: 1
 media.processor.maxQueueSize: 1000
 cache.disk.location: cache
 tpm.types.video_processor.share: 1
-cache.assetPreview.location: cache/asset_previews
 media.images.raw.nef: true
 server.host: localhost
 scheduler.backoff.initialMs: 1000
