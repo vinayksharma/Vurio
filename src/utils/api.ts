@@ -103,6 +103,31 @@ export async function fetchDuplicateGroups(
   return safeFetch(`/api/v1/duplicates/groups?start=${start}&limit=${limit}${modeParam}`) as Promise<DuplicateGroupsResponse>;
 }
 
+export interface IntegrityCheckStatus {
+  running: boolean;
+  progress: number;
+  total_files: number;
+  processed_files: number;
+  files_removed: number;
+  groups_removed: number;
+  thumbnails_removed: number;
+  artifacts_removed: number;
+  errors_removed: number;
+  current_phase: string;
+}
+
+export async function startDatabaseIntegrityCheck(): Promise<any> {
+  return safeFetch('/api/settings/database-integrity-check/start', {
+    method: 'POST',
+  });
+}
+
+export async function getDatabaseIntegrityCheckStatus(): Promise<IntegrityCheckStatus> {
+  return safeFetch('/api/settings/database-integrity-check/status', {
+    method: 'GET',
+  }) as Promise<IntegrityCheckStatus>;
+}
+
 export async function registerLocation(path: string): Promise<void> {
   await safeFetch('/api/v1/media-locations/register', {
     method: 'POST',

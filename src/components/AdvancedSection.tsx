@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -8,11 +8,15 @@ const AdvancedSection: React.FC = () => {
   const [isRestoringErrors, setIsRestoringErrors] = useState(false);
   const [isResettingDuplicates, setIsResettingDuplicates] = useState(false);
   const [isPurgingEjectedErrored, setIsPurgingEjectedErrored] = useState(false);
+  const [isIntegrityCheckRunning, setIsIntegrityCheckRunning] = useState(false);
+  const [integrityStatus, setIntegrityStatus] = useState<IntegrityCheckStatus | null>(null);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const setDebugOverlayEnabled = useUIStore((state) => state.setDebugOverlayEnabled);
+
+  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning;
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -134,6 +138,44 @@ const AdvancedSection: React.FC = () => {
     });
   };
 
+  const pollIntegrityStatus = async () => {
+    try {
+      const status = await getDatabaseIntegrityCheckStatus();
+      setIntegrityStatus(status);
+      if (status.running) {
+        setTimeout(pollIntegrityStatus, 1500);
+      } else {
+        setIsIntegrityCheckRunning(false);
+        const { current_phase, files_removed, groups_removed, thumbnails_removed, artifacts_removed, errors_removed } = status;
+        if (current_phase.startsWith('Failed')) {
+          alert(`Integrity Check Failed: ${current_phase}`);
+        } else {
+          alert(`Integrity Check Complete!\n\nRemoved:\n- Missing Files: ${files_removed}\n- Orphaned Groups: ${groups_removed}\n- Orphaned Thumbnails: ${thumbnails_removed}\n- Orphaned Artifacts: ${artifacts_removed}\n- Orphaned Errors: ${errors_removed}`);
+          window.dispatchEvent(new Event('duplicatesForceRefresh'));
+        }
+      }
+    } catch (error) {
+      setIsIntegrityCheckRunning(false);
+      alert('Lost connection while checking status.');
+    }
+  };
+
+  const handleIntegrityCheck = async () => {
+    if (!confirm('Are you sure you want to run a full Database Integrity Check?\n\nThis will safely purge records of missing files, orphan groups, and orphan metadata. Background scanning will be temporarily paused.')) {
+      return;
+    }
+    setIsIntegrityCheckRunning(true);
+    setIntegrityStatus(null);
+    try {
+      await startDatabaseIntegrityCheck();
+      setTimeout(pollIntegrityStatus, 1500);
+    } catch (error) {
+      setIsIntegrityCheckRunning(false);
+      const err = error as Error;
+      alert('Failed to start Integrity Check: ' + err.message);
+    }
+  };
+
   const handleStartScrollTest = async () => {
     if (isScrollTestRunning) {
       if (window.stopScrollTest) {
@@ -180,7 +222,7 @@ const AdvancedSection: React.FC = () => {
             id="reset-errors-btn"
             className="ghost"
             onClick={handleResetErrors}
-            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+            disabled={isAnyActionRunning}
           >
             {isResettingErrors ? 'Resetting...' : 'Reset Errors'}
           </button>
@@ -188,7 +230,7 @@ const AdvancedSection: React.FC = () => {
             id="eject-errors-btn"
             className="ghost danger"
             onClick={handleEjectErrors}
-            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+            disabled={isAnyActionRunning}
           >
             {isEjectingErrors ? 'Ejecting...' : 'Eject Errored'}
           </button>
@@ -196,7 +238,7 @@ const AdvancedSection: React.FC = () => {
             id="restore-errors-btn"
             className="ghost"
             onClick={handleRestoreErrors}
-            disabled={isResettingErrors || isEjectingErrors || isRestoringErrors}
+            disabled={isAnyActionRunning}
           >
             {isRestoringErrors ? 'Restoring...' : 'Restore Errored'}
           </button>
@@ -211,7 +253,7 @@ const AdvancedSection: React.FC = () => {
           id="reset-duplicates-btn"
           className="ghost danger"
           onClick={handleResetDuplicates}
-          disabled={isResettingDuplicates || isPurgingEjectedErrored}
+          disabled={isAnyActionRunning}
         >
           {isResettingDuplicates ? 'Resetting...' : 'Reset Duplicates'}
         </button>
@@ -225,9 +267,31 @@ const AdvancedSection: React.FC = () => {
           id="purge-ejected-errored-btn"
           className="ghost danger"
           onClick={handlePurgeEjectedErrored}
-          disabled={isResettingDuplicates || isPurgingEjectedErrored}
+          disabled={isAnyActionRunning}
         >
           {isPurgingEjectedErrored ? 'Purging...' : 'Purge Ejected & Errored'}
+        </button>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Database Integrity Check</h3>
+          <p>Scrub the database for physical files that have been deleted, clean up orphaned metadata and invalid duplicate groups. This runs safely in the background.</p>
+          {isIntegrityCheckRunning && integrityStatus && (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
+              Phase: {integrityStatus.current_phase} 
+              {integrityStatus.total_files > 0 ? ` (${integrityStatus.progress}%) [${integrityStatus.processed_files}/${integrityStatus.total_files}]` : ''}
+            </p>
+          )}
+        </div>
+        <button
+          id="db-integrity-btn"
+          className="ghost warning"
+          onClick={handleIntegrityCheck}
+          disabled={isAnyActionRunning}
+        >
+          {isIntegrityCheckRunning 
+            ? (integrityStatus ? `Running... ${integrityStatus.progress}%` : 'Starting...') 
+            : 'Run Integrity Check'}
         </button>
       </div>
       <div className="action-row">
