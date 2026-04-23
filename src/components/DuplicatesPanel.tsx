@@ -502,7 +502,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     const bc = new BroadcastChannel('viewer_group_navigation');
     bc.onmessage = async (e) => {
       if (e.data.type === 'NAVIGATE_GROUP') {
-        const { direction, currentFilePath } = e.data;
+        const { direction, jumpType, currentFilePath } = e.data;
         const cache = groupsCacheRef.current;
         let currentGroupIndex = -1;
         
@@ -514,9 +514,21 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         }
         
         if (currentGroupIndex !== -1 && totalGroupsRef.current > 0) {
-           let targetIndex = currentGroupIndex + direction;
-           if (targetIndex < 0) targetIndex = totalGroupsRef.current - 1;
-           if (targetIndex >= totalGroupsRef.current) targetIndex = 0;
+           let jumpAmount = direction;
+           if (jumpType === 'page' && cardStackRef.current) {
+             const visibleCount = Math.max(1, Math.floor(cardStackRef.current.clientHeight / ITEM_HEIGHT) - 1);
+             jumpAmount = direction * visibleCount;
+           }
+           
+           let targetIndex = currentGroupIndex + jumpAmount;
+           
+           if (jumpType === 'page') {
+             if (targetIndex < 0) targetIndex = 0;
+             if (targetIndex >= totalGroupsRef.current) targetIndex = totalGroupsRef.current - 1;
+           } else {
+             if (targetIndex < 0) targetIndex = totalGroupsRef.current - 1;
+             if (targetIndex >= totalGroupsRef.current) targetIndex = 0;
+           }
            
            let targetGroup = cache.get(targetIndex);
            if (!targetGroup && loadGroupsFromAPIRef.current) {
