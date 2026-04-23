@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   selectDirectory: (startPath?: string) => ipcRenderer.invoke('dialog:selectDirectory', startPath),
   revealLog: (filePath: string) => ipcRenderer.invoke('utils:revealLog', filePath),
+  showItemInFolder: (filePath: string) => ipcRenderer.invoke('utils:showItemInFolder', filePath),
   toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools'),
   exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog'),
   openViewer: (options: { filePath: string; details: string }) => ipcRenderer.invoke('window:openViewer', options),

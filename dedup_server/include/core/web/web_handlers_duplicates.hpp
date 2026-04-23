@@ -198,5 +198,29 @@ namespace MediaDedupServer
                 std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
         };
 
+        class BackupDatabaseHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit BackupDatabaseHandler(std::shared_ptr<MediaDedup::DatabaseManager> db);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+        };
+
+        class GetLatestBackupHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit GetLatestBackupHandler(std::shared_ptr<MediaDedup::DatabaseManager> db);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+        };
+
     } // namespace Core
 } // namespace MediaDedupServer

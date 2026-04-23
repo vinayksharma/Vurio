@@ -1131,6 +1131,124 @@ namespace MediaDedupServer
                 state_.current_phase = "Failed: " + std::string(e.what());
             }
         }
+        BackupDatabaseHandler::BackupDatabaseHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
+            : database_manager_(db) {}
+
+        void BackupDatabaseHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                  Poco::Net::HTTPServerResponse &response)
+        {
+            response.setContentType("application/json");
+
+            try
+            {
+                std::string db_path = database_manager_->getDatabasePath();
+                if (db_path.empty()) {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                    std::ostream &out = response.send();
+                    out << "{\"success\": false, \"error\": \"Database path is empty\"}";
+                    return;
+                }
+
+                // Generate backup directory: <db_path>_backup_YYYYMMDDHHMMSS/
+                std::filesystem::path p(db_path);
+                std::string stem = p.stem().string();
+                std::string ext = p.extension().string();
+
+                auto now = std::chrono::system_clock::now();
+                auto time_t = std::chrono::system_clock::to_time_t(now);
+                std::stringstream ss;
+                ss << std::put_time(std::localtime(&time_t), "%Y%m%d%H%M%S");
+                std::string timestamp = ss.str();
+
+                std::string backup_dir_name = stem + "_backup_" + timestamp;
+                std::filesystem::path backup_dir = p.parent_path() / backup_dir_name;
+                
+                // Create the directory
+                std::filesystem::create_directories(backup_dir);
+
+                // Place the backup inside with its original name
+                std::filesystem::path backup_path = backup_dir / (stem + ext);
+
+                bool success = database_manager_->backupDatabase(backup_path.string());
+
+                if (success)
+                {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                    std::ostream &out = response.send();
+                    out << "{\"success\": true, \"backup_path\": \"" << backup_path.string() << "\"}";
+                }
+                else
+                {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                    std::ostream &out = response.send();
+                    out << "{\"success\": false, \"error\": \"Failed to backup database\"}";
+                }
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("BackupDatabaseHandler").error("Error: %s", std::string(e.what()));
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                std::ostream &out = response.send();
+                out << "{\"success\": false, \"error\": \"" << e.what() << "\"}";
+            }
+        }
+
+        GetLatestBackupHandler::GetLatestBackupHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
+            : database_manager_(db)
+        {
+        }
+
+        void GetLatestBackupHandler::handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response)
+        {
+            response.setContentType("application/json");
+            try
+            {
+                std::string db_path = database_manager_->getDatabasePath();
+                if (db_path.empty()) {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                    std::ostream &out = response.send();
+                    out << "{\"success\": false, \"error\": \"Database path is empty\"}";
+                    return;
+                }
+
+                std::filesystem::path p(db_path);
+                std::string stem = p.stem().string();
+                std::string prefix = stem + "_backup_";
+                std::filesystem::path parent = p.parent_path();
+                std::string latest_backup_file = "";
+                std::string latest_dir_name = "";
+
+                if (std::filesystem::exists(parent) && std::filesystem::is_directory(parent)) {
+                    for (const auto& entry : std::filesystem::directory_iterator(parent)) {
+                        if (entry.is_directory() && entry.path().filename().string().find(prefix) == 0) {
+                            std::filesystem::path backup_file = entry.path() / p.filename();
+                            if (std::filesystem::exists(backup_file)) {
+                                std::string dir_name = entry.path().filename().string();
+                                if (latest_dir_name.empty() || dir_name > latest_dir_name) {
+                                    latest_dir_name = dir_name;
+                                    latest_backup_file = backup_file.string();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                std::ostream &out = response.send();
+                if (latest_backup_file.empty()) {
+                    out << "{\"success\": true, \"backup_path\": null}";
+                } else {
+                    out << "{\"success\": true, \"backup_path\": \"" << latest_backup_file << "\"}";
+                }
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("GetLatestBackupHandler").error("Error: %s", std::string(e.what()));
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                std::ostream &out = response.send();
+                out << "{\"success\": false, \"error\": \"" << e.what() << "\"}";
+            }
+        }
 
     } // namespace Core
 } // namespace MediaDedupServer

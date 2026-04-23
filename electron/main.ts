@@ -263,6 +263,16 @@ ipcMain.handle('utils:openPath', async (_event, filePath: string) => {
   }
 });
 
+ipcMain.handle('utils:showItemInFolder', async (_event, filePath: string) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  } catch (e) {
+    const error = e as Error;
+    return { ok: false, error: error.message };
+  }
+});
+
 ipcMain.handle('utils:toggleDevTools', () => {
   if (mainWindow) mainWindow.webContents.toggleDevTools();
 });

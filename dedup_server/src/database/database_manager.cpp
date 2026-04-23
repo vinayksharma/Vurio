@@ -98,6 +98,11 @@ namespace MediaDedup
         return connected_;
     }
 
+    std::string DatabaseManager::getDatabasePath() const
+    {
+        return db_path_;
+    }
+
     VectorIndex *DatabaseManager::getVectorIndex()
     {
         return vector_index_.get();
@@ -150,8 +155,24 @@ namespace MediaDedup
 
     bool DatabaseManager::backupDatabase(const std::string &backup_path)
     {
-        // Not implemented
-        return false;
+        try
+        {
+            auto lease = acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            
+            // VACUUM INTO safely creates a transactionally consistent copy of the database
+            // even if it is currently in WAL mode. It does not block concurrent writers.
+            std::string path_copy = backup_path;
+            Poco::Data::Statement stmt(sess);
+            stmt << "VACUUM INTO ?", Poco::Data::Keywords::use(path_copy), Poco::Data::Keywords::now;
+            
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DatabaseManager").error("Failed to backup database to %s: %s", backup_path, std::string(e.what()));
+            return false;
+        }
     }
 
     void DatabaseManager::setSessionAcquireTimeoutMs(int ms)
