@@ -238,11 +238,16 @@ namespace MediaDedup
                 logger_.debug("Converted image depth to 8-bit");
             }
 
-            // Ensure RGB color space
-            if (image.colorSpace() != Magick::RGBColorspace)
+            // Apply EXIF rotation to ensure correct orientation
+            image.autoOrient();
+
+            // Ensure sRGB color space for proper web rendering
+            // Note: Magick::RGBColorspace is linear RGB, which causes washed out/dark colors!
+            // We MUST use Magick::sRGBColorspace for standard JPEGs.
+            if (image.colorSpace() != Magick::sRGBColorspace)
             {
-                image.colorSpace(Magick::RGBColorspace);
-                logger_.debug("Converted image to RGB colorspace");
+                image.colorSpace(Magick::sRGBColorspace);
+                logger_.debug("Converted image to sRGB colorspace");
             }
 
             // Resize if the image is excessively large (e.g., > 2560 on longest edge)
@@ -283,16 +288,14 @@ namespace MediaDedup
             image.magick("JPEG");
             // Use quality 85 for fast web streaming with good visual quality
             image.quality(85);
-            // Ensure 8-bit depth for OpenCV compatibility
+            // Ensure 8-bit depth for web compatibility
             image.depth(8);
-            // Set colorspace to RGB for better compatibility
-            if (image.colorSpace() != Magick::RGBColorspace)
-            {
-                image.colorSpace(Magick::RGBColorspace);
-                logger_.debug("Converted colorspace to RGB for OpenCV compatibility");
-            }
+            // Set colorspace to sRGB for proper web rendering
+            image.colorSpace(Magick::sRGBColorspace);
+            // Apply EXIF rotation
+            image.autoOrient();
 
-            logger_.debug("Set image format to JPEG (8-bit, RGB, quality 95) for OpenCV compatibility");
+            logger_.debug("Set image format to JPEG (8-bit, RGB, quality 85) for web compatibility");
         }
         catch (const Magick::Exception &e)
         {
