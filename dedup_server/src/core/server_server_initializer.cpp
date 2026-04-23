@@ -348,7 +348,7 @@ namespace MediaDedup
 
             // Initialize and register duplicate finder job
             duplicate_finder_ = std::shared_ptr<Orchestration::DuplicateFinder>(
-                new Orchestration::DuplicateFinder(config_manager_, *database_manager_));
+                new Orchestration::DuplicateFinder(config_manager_, *database_manager_, tpm_));
             if (!duplicate_finder_->initialize())
             {
                 logger.error("Failed to initialize DuplicateFinder");
