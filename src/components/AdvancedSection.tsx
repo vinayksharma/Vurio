@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus } from '../utils/api';
+import React, { useState, useEffect } from 'react';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -10,13 +10,25 @@ const AdvancedSection: React.FC = () => {
   const [isPurgingEjectedErrored, setIsPurgingEjectedErrored] = useState(false);
   const [isIntegrityCheckRunning, setIsIntegrityCheckRunning] = useState(false);
   const [integrityStatus, setIntegrityStatus] = useState<IntegrityCheckStatus | null>(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [lastBackupPath, setLastBackupPath] = useState<string | null>(null);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const setDebugOverlayEnabled = useUIStore((state) => state.setDebugOverlayEnabled);
 
-  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning;
+  useEffect(() => {
+    let mounted = true;
+    getLatestBackup().then(res => {
+      if (mounted && res.success && res.backup_path) {
+        setLastBackupPath(res.backup_path);
+      }
+    }).catch(console.error);
+    return () => { mounted = false; };
+  }, []);
+
+  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp;
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -176,6 +188,43 @@ const AdvancedSection: React.FC = () => {
     }
   };
 
+  const handleBackupDatabase = async () => {
+    if (!confirm('Are you sure you want to backup the database?\n\nA copy of the current database will be securely created alongside the original file, even if it is currently in use.')) {
+      return;
+    }
+    setIsBackingUp(true);
+    setLastBackupPath(null);
+    try {
+      const res = await backupDatabase();
+      if (res.success) {
+        setLastBackupPath(res.backup_path || null);
+        alert(`Successfully backed up the database to:\n${res.backup_path}`);
+      } else {
+        alert(`Failed to backup database. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to backup database: ' + err.message);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleShowBackupInFinder = async () => {
+    if (!lastBackupPath) return;
+    try {
+      const win = window as any;
+      if (win.electronAPI?.showItemInFolder) {
+        await win.electronAPI.showItemInFolder(lastBackupPath);
+      } else {
+        alert('Electron API not available to open folder.');
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to open folder: ' + err.message);
+    }
+  };
+
   const handleStartScrollTest = async () => {
     if (isScrollTestRunning) {
       if (window.stopScrollTest) {
@@ -244,6 +293,7 @@ const AdvancedSection: React.FC = () => {
           </button>
         </div>
       </div>
+
       <div className="action-row">
         <div className="action-details">
           <h3>Reset Duplicates</h3>
@@ -293,6 +343,32 @@ const AdvancedSection: React.FC = () => {
             ? (integrityStatus ? `Running... ${integrityStatus.progress}%` : 'Starting...') 
             : 'Run Integrity Check'}
         </button>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Backup Database</h3>
+          <p>Create a secure, transactionally consistent snapshot of the current database. This is useful before performing large file operations.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', width: '180px' }}>
+          <button
+            id="backup-database-btn"
+            className="ghost"
+            style={{ flex: 1, padding: '0 8px' }}
+            onClick={handleBackupDatabase}
+            disabled={isAnyActionRunning}
+          >
+            {isBackingUp ? 'Backing up...' : 'Backup Database'}
+          </button>
+          <button
+            className="ghost"
+            style={{ flex: '0 0 36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={handleShowBackupInFinder}
+            disabled={!lastBackupPath || isAnyActionRunning}
+            title={lastBackupPath ? "Open folder containing the latest backup" : "No backups found"}
+          >
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          </button>
+        </div>
       </div>
       <div className="action-row">
         <div className="action-details">

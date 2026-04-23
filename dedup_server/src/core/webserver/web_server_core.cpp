@@ -191,6 +191,10 @@ namespace MediaDedup
             return new MediaDedupServer::Core::UndoEjectDuplicatesHandler(database_manager_);
         if (path == "/api/settings/purge-ejected-errored" && method == "POST")
             return new MediaDedupServer::Core::PurgeEjectedErroredHandler(database_manager_, config_manager_);
+        if (path == "/api/settings/backup-database" && method == "POST")
+            return new MediaDedupServer::Core::BackupDatabaseHandler(database_manager_);
+        if (path == "/api/settings/latest-backup" && method == "GET")
+            return new MediaDedupServer::Core::GetLatestBackupHandler(database_manager_);
         if (path.find("/api/settings/database-integrity-check") == 0)
             return new MediaDedupServer::Core::DatabaseIntegrityCheckHandler(database_manager_, config_manager_, scheduler_service_, tpm_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")

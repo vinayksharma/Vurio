@@ -220,7 +220,15 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp)
     endif()
     if(${test_name} STREQUAL "test_database_service")
-        target_sources(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp)
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
+        )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_user_settings_service")
         target_sources(${test_name} PRIVATE 

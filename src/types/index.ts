@@ -6,6 +6,7 @@ export interface ElectronAPI {
   toggleDevTools: () => Promise<void>;
   exportErrorLog: () => Promise<{ ok: boolean; path?: string; error?: string }>;
   openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  showItemInFolder: (path: string) => Promise<{ ok: boolean; error?: string }>;
   openViewer: (options: { filePath: string; details: string }) => Promise<{ ok: boolean; error?: string }>;
   onSuspend?: (callback: () => void) => void;
   onResume?: (callback: () => void) => void;

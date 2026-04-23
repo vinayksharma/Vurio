@@ -284,3 +284,15 @@ export async function purgeEjectedAndErrored(): Promise<{ success: boolean; succ
     method: 'POST',
   }) as Promise<any>;
 }
+
+export async function backupDatabase(): Promise<{ success: boolean; backup_path?: string; error?: string }> {
+  return safeFetch('/api/settings/backup-database', {
+    method: 'POST',
+  }) as Promise<any>;
+}
+
+export async function getLatestBackup(): Promise<{ success: boolean; backup_path?: string | null; error?: string }> {
+  return safeFetch('/api/settings/latest-backup', {
+    method: 'GET',
+  }) as Promise<any>;
+}

@@ -155,6 +155,12 @@ namespace MediaDedup
          */
         bool backupDatabase(const std::string &backup_path);
 
+        /**
+         * @brief Get database file path
+         * @return Database file path
+         */
+        std::string getDatabasePath() const;
+
         // Session pool tuning
         void setSessionAcquireTimeoutMs(int ms);
         void setSessionAcquireBackoffMs(int ms);
