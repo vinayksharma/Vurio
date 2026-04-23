@@ -48,6 +48,8 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 950,
+    minHeight: 650,
     backgroundColor: '#0b132b',
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -177,6 +179,8 @@ async function createViewerWindow(filePath: string, details: string) {
   const viewerWindow = new BrowserWindow({
     width: 900,
     height: 700,
+    minWidth: 600,
+    minHeight: 400,
     backgroundColor: '#0b132b',
     webPreferences: {
       preload: PRELOAD_PATH,
