@@ -85,14 +85,43 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
   const displayId = groupIndex !== undefined ? groupIndex + 1 : group.id;
   const header = `Group #${displayId} • ${totalFileCount} files`;
 
-  // Limit displayed members if not showing all
-  const INITIAL_LIMIT = 20;
-  const hasMore = sortedMembers.length > INITIAL_LIMIT;
+  // Limit displayed members if not showing all dynamically
+  const [dynamicLimit, setDynamicLimit] = useState(20);
+  const hasMore = sortedMembers.length > dynamicLimit && !showAll;
   const displayedMembers = useMemo(
-    () => showAll ? sortedMembers : sortedMembers.slice(0, INITIAL_LIMIT),
-    [showAll, sortedMembers]
+    () => showAll ? sortedMembers : sortedMembers.slice(0, dynamicLimit),
+    [showAll, sortedMembers, dynamicLimit]
   );
-  const remainingCount = sortedMembers.length - INITIAL_LIMIT;
+  const remainingCount = sortedMembers.length - dynamicLimit;
+
+  // Calculate dynamic limit based on container width
+  useEffect(() => {
+    if (!horizontalScrollRef.current || showAll) return;
+    
+    const calculateLimit = (width: number) => {
+       // First thumbnail: ~72px (width+border+margin) + 12px gap = 84px
+       // Other thumbnails: 64px width + 12px gap = 76px
+       let maxItems = Math.floor((width - 84) / 76) + 1;
+       if (maxItems < 1) maxItems = 1;
+       
+       if (sortedMembers.length > maxItems) {
+         setDynamicLimit(Math.max(1, maxItems - 1));
+       } else {
+         setDynamicLimit(sortedMembers.length);
+       }
+    };
+    
+    calculateLimit(horizontalScrollRef.current.clientWidth);
+
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        calculateLimit(entry.contentRect.width);
+      }
+    });
+    
+    observer.observe(horizontalScrollRef.current);
+    return () => observer.disconnect();
+  }, [sortedMembers.length, showAll]);
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (e.deltaY !== 0) {
@@ -994,7 +1023,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
           className="thumbnail-scroll-container"
           style={{
             flex: 1,
-            overflowX: 'auto',
+            overflowX: showAll ? 'auto' : 'hidden',
             overflowY: 'hidden',
             scrollBehavior: 'smooth',
             minWidth: 0,
