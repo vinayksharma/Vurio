@@ -177,6 +177,32 @@ namespace MediaDedup
             Statement del_thumbs(sess);
             del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
+            // Delete physical cached previews
+            Statement sel_previews(sess);
+            sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+            RecordSet rs_previews(sel_previews);
+            bool more_previews = rs_previews.moveFirst();
+            int deleted_previews = 0;
+            while (more_previews)
+            {
+                std::string cached_path = rs_previews[0].convert<std::string>();
+                try
+                {
+                    if (std::filesystem::exists(cached_path))
+                    {
+                        std::filesystem::remove(cached_path);
+                        deleted_previews++;
+                    }
+                }
+                catch (...) {}
+                more_previews = rs_previews.moveNext();
+            }
+            if (deleted_previews > 0)
+                Poco::Logger::get("ScannedFilesOps").information("Deleted %d physical preview files for location key: %s", deleted_previews, location_key);
+
+            Statement del_previews(sess);
+            del_previews << "DELETE FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
+
             Statement del_ejected(sess);
             del_ejected << "DELETE FROM ejected_files_history WHERE original_location_key=?", Keywords::use(key), Keywords::now;
 
@@ -225,23 +251,45 @@ namespace MediaDedup
             del_errors << "DELETE FROM processing_errors WHERE file_path=?", Keywords::use(file_path);
             del_errors.execute();
 
-            // 3. Delete physical cached thumbnail & thumbnail_cache row
+            // 3. Delete physical cached thumbnails & thumbnail_cache rows
             Statement sel_thumbs(sess);
             sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
-            RecordSet rs(sel_thumbs);
-            if (rs.moveFirst())
+            RecordSet rs_thumbs(sel_thumbs);
+            bool more_thumbs = rs_thumbs.moveFirst();
+            while (more_thumbs)
             {
-                std::string cached_path = rs[0].convert<std::string>();
+                std::string cached_path = rs_thumbs[0].convert<std::string>();
                 try {
                     if (std::filesystem::exists(cached_path)) {
                         std::filesystem::remove(cached_path);
                     }
                 } catch (...) {}
+                more_thumbs = rs_thumbs.moveNext();
             }
 
             Statement del_thumbs(sess);
             del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
             del_thumbs.execute();
+
+            // 3.5 Delete physical cached previews & preview_cache rows
+            Statement sel_previews(sess);
+            sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
+            RecordSet rs_previews(sel_previews);
+            bool more_previews = rs_previews.moveFirst();
+            while (more_previews)
+            {
+                std::string cached_path = rs_previews[0].convert<std::string>();
+                try {
+                    if (std::filesystem::exists(cached_path)) {
+                        std::filesystem::remove(cached_path);
+                    }
+                } catch (...) {}
+                more_previews = rs_previews.moveNext();
+            }
+
+            Statement del_previews(sess);
+            del_previews << "DELETE FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
+            del_previews.execute();
 
             // 4. Delete the scanned_file row itself
             // This will CASCADE DELETE to:
@@ -1349,6 +1397,42 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("ScannedFilesOps").error("Error updating file path in thumbnail_cache: " + std::string(e.what()));
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInPreviewCache(DatabaseManager &db,
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            return updateFilePathInPreviewCache(lease.get(), old_path, new_path);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    int ScannedFilesOps::updateFilePathInPreviewCache(Session &sess,
+                                                        const std::string &old_path,
+                                                        const std::string &new_path)
+    {
+        try
+        {
+            Statement stmt(sess);
+            std::string new_p = new_path;
+            std::string old_p = old_path;
+            stmt << std::string(SQL::kUpdatePreviewCacheSourcePath),
+                Keywords::use(new_p),
+                Keywords::use(old_p);
+            return stmt.execute();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("Error updating file path in preview_cache: " + std::string(e.what()));
             return 0;
         }
     }

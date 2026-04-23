@@ -562,13 +562,14 @@ TEST(ScannedFilesOpsTest, RemoveByLocationKeyCascade)
     {
         auto lease = dbm.acquireSessionLease();
         Poco::Data::Session &sess = lease.get();
-        Poco::Data::Statement stmt1(sess), stmt2(sess), stmt3(sess), stmt4(sess), stmt5(sess), stmt6(sess);
+        Poco::Data::Statement stmt1(sess), stmt2(sess), stmt3(sess), stmt4(sess), stmt5(sess), stmt6(sess), stmt7(sess);
         stmt1 << std::string(MediaDedup::SQL::kCreateDuplicateGroupsTable), Poco::Data::Keywords::now;
         stmt2 << std::string(MediaDedup::SQL::kCreateDuplicateMembersTable), Poco::Data::Keywords::now;
         stmt3 << std::string(MediaDedup::SQL::kCreateThumbnailCacheTable), Poco::Data::Keywords::now;
         stmt4 << std::string(MediaDedup::SQL::kCreateProcessingErrorsTable), Poco::Data::Keywords::now;
         stmt5 << std::string(MediaDedup::SQL::kCreateImageArtifactsTable), Poco::Data::Keywords::now;
         stmt6 << std::string(MediaDedup::SQL::kCreateEjectedFilesHistoryTable), Poco::Data::Keywords::now;
+        stmt7 << std::string(MediaDedup::SQL::kCreatePreviewCacheTable), Poco::Data::Keywords::now;
     }
 
     // Let's create scanned files first:
