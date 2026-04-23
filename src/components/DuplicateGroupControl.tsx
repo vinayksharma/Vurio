@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import type { DuplicateGroup, DuplicateGroupMember } from '../types';
 import { API_BASE, ejectDuplicates, undoEjectDuplicates } from '../utils/api';
 import { remapEventEmitter, type RemapEvent } from '../utils/remapEvents';
@@ -295,108 +295,109 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
     (img as any)._uiRetryInterval = interval;
   };
 
-  // Group-level IntersectionObserver: when group is visible, load all thumbnails
-  useEffect(() => {
-    const scrollContainer = document.getElementById('duplicates-stack');
+  // Setup individual thumbnail observers for lazy loading horizontally
+  const setupThumbnailObservers = useCallback(() => {
+    const scrollContainer = horizontalScrollRef.current;
     if (!scrollContainer || !containerRef.current) return;
 
-    // Clean up old observer if it exists
-    if (groupObserverRef.current) {
-      groupObserverRef.current.disconnect();
-      groupObserverRef.current = null;
-    }
+    // Clean up old observers
+    thumbnailObserversRef.current.forEach((observer) => observer.disconnect());
+    thumbnailObserversRef.current.clear();
 
-    // Load all thumbnails function - now uses queue
-    const loadAllThumbnails = () => {
-      if (!containerRef.current) return;
-
-      try {
-        // Get all displayed members from DOM (in case displayedMembers changed)
-        const memberElements = containerRef.current.querySelectorAll('.duplicate-thumbnail');
-        const activeRequestCount = getActiveRequestCount();
-
-        // Log if we're about to create many requests
-        if (memberElements.length > 20) {
-          console.warn(`[DuplicateGroupControl] Queueing ${memberElements.length} thumbnails for group ${group.id}, active requests: ${activeRequestCount}`);
-        }
-
-        const urlsToQueue: string[] = [];
-
-        memberElements.forEach((thumbnailDiv, index) => {
-          try {
-            const img = thumbnailDiv.querySelector('img[data-src]') as HTMLImageElement;
-            if (!img || !img.dataset.src) return;
-
-            const src = img.dataset.src;
-
-            // Skip if already loaded
-            if (loadedImagesRef.current.has(src)) return;
-
-            // Track URL for cancellation later
-            urlsToQueue.push(src);
-            queuedUrlsRef.current.add(src);
-
-            // Push to queue (LIFO - newest requests get priority)
-            thumbnailQueue.push(
-              src,
-              img,
-              thumbnailDiv as HTMLElement,
-              {
-                onLoad: (url: string) => {
-                  // Successfully loaded
-                  loadedImagesRef.current.add(url);
-                  imageSrcRef.current.set(url, url);
-                  queuedUrlsRef.current.delete(url);
-                },
-                onError: (url: string, error: Error) => {
-                  // Failed to load
-                  errorLogger.logThumbnailError(url, error, {
-                    groupId: group.id,
-                    memberIndex: index,
-                    activeRequests: getActiveRequestCount(),
-                    elementExists: !!img,
-                    dataSrc: img.dataset.src,
-                  });
-                  queuedUrlsRef.current.delete(url);
-                  startUIBackoff(thumbnailDiv as HTMLElement, img, url, index);
-                },
-              },
-              {
-                groupId: group.id,
-                memberIndex: index,
-              }
-            );
-          } catch (err) {
-            const error = err instanceof Error ? err : new Error(String(err));
-            errorLogger.logThumbnailError('unknown', error, {
-              groupId: group.id,
-              memberIndex: index,
-              phase: 'setup',
-              activeRequests: getActiveRequestCount(),
-            });
-          }
-        });
-
-        if (urlsToQueue.length > 0) {
-          console.log(`[DuplicateGroupControl] Queued ${urlsToQueue.length} thumbnails for group ${group.id}`);
-        }
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        errorLogger.logError({
-          type: 'thumbnail',
-          message: `Error in loadAllThumbnails for group ${group.id}: ${error.message}`,
-          stack: error.stack,
-          context: {
-            groupId: group.id,
-            activeRequests: getActiveRequestCount(),
-          },
-        });
-      }
+    const memberElements = containerRef.current.querySelectorAll('.duplicate-thumbnail');
+    
+    const observerOptions = {
+      root: scrollContainer,
+      rootMargin: '50px', // Start loading slightly before fully visible
+      threshold: 0.01,
     };
 
-    // Unload all thumbnails function - also cancel pending queue requests
-    const unloadAllThumbnails = () => {
+    memberElements.forEach((thumbnailDiv) => {
+      const img = thumbnailDiv.querySelector('img[data-src]') as HTMLImageElement;
+      if (!img || !img.dataset.src) return;
+
+      const src = img.dataset.src;
+
+      // Handle elements that were already loaded previously but re-mounted
+      if (loadedImagesRef.current.has(src)) {
+        if (img.hasAttribute('data-src')) {
+          const actualSrc = imageSrcRef.current.get(src) || src;
+          img.src = actualSrc;
+          img.removeAttribute('data-src');
+          img.style.display = '';
+          
+          const placeholder = thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
+          if (placeholder) placeholder.style.display = 'none';
+          
+          const errorIndicator = thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+          if (errorIndicator) errorIndicator.style.display = 'none';
+        }
+        return; // Already loaded, no need to observe
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const thumbnailElement = entry.target as HTMLElement;
+              const imgElement = thumbnailElement.querySelector('img[data-src]') as HTMLImageElement;
+              if (!imgElement || !imgElement.dataset.src) return;
+
+              const thumbnailSrc = imgElement.dataset.src;
+
+              if (loadedImagesRef.current.has(thumbnailSrc)) {
+                observer.disconnect();
+                thumbnailObserversRef.current.delete(thumbnailElement);
+                return;
+              }
+
+              if (!queuedUrlsRef.current.has(thumbnailSrc)) {
+                queuedUrlsRef.current.add(thumbnailSrc);
+                thumbnailQueue.push(
+                  thumbnailSrc,
+                  imgElement,
+                  thumbnailElement,
+                  {
+                    onLoad: (url: string) => {
+                      loadedImagesRef.current.add(url);
+                      imageSrcRef.current.set(url, url);
+                      queuedUrlsRef.current.delete(url);
+                      observer.disconnect();
+                      thumbnailObserversRef.current.delete(thumbnailElement);
+                    },
+                    onError: (url: string, error: Error) => {
+                      errorLogger.logThumbnailError(url, error, {
+                        groupId: group.id,
+                        memberIndex: -1,
+                        activeRequests: getActiveRequestCount(),
+                        elementExists: !!imgElement,
+                        dataSrc: imgElement.dataset.src,
+                      });
+                      queuedUrlsRef.current.delete(url);
+                      startUIBackoff(thumbnailElement, imgElement, url, -1);
+                    },
+                  },
+                  { groupId: group.id, memberIndex: -1 }
+                );
+              }
+            }
+          });
+        },
+        observerOptions
+      );
+
+      observer.observe(thumbnailDiv);
+      thumbnailObserversRef.current.set(thumbnailDiv as HTMLElement, observer);
+    });
+  }, [group.id]);
+
+  // Unload all thumbnails function - also cancel pending queue requests
+  const unloadAllThumbnails = useCallback(() => {
       if (!containerRef.current) return;
+
+      // Clean up individual thumbnail observers
+      thumbnailObserversRef.current.forEach((observer) => observer.disconnect());
+      thumbnailObserversRef.current.clear();
 
       // Collect URLs that were loaded/unloaded
       const urlsToClear: string[] = [];
@@ -442,21 +443,29 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
 
       // Clear tracking maps
       imageSrcRef.current.clear();
-    };
+  }, []);
+
+  // Group-level IntersectionObserver: when group is visible, load all thumbnails
+  useEffect(() => {
+    const scrollContainer = document.getElementById('duplicates-stack');
+    if (!scrollContainer || !containerRef.current) return;
+
+    // Clean up old observer if it exists
+    if (groupObserverRef.current) {
+      groupObserverRef.current.disconnect();
+      groupObserverRef.current = null;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            // Group is visible - load all thumbnails and set up individual observers
+            // Group is visible - load all thumbnails
             if (!isGroupVisibleRef.current) {
               isGroupVisibleRef.current = true;
               // Small delay to ensure DOM is ready
               setTimeout(() => {
-                loadAllThumbnails();
-                // Trigger thumbnail observer setup by forcing a re-render
-                // The thumbnail observer effect will check isGroupVisibleRef.current
-                setRemapKey(prev => prev + 1);
+                setupThumbnailObservers();
               }, 0);
             }
           } else {
@@ -482,12 +491,16 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
     const rect = containerRef.current.getBoundingClientRect();
     const containerRect = scrollContainer.getBoundingClientRect();
     if (rect.bottom > containerRect.top && rect.top < containerRect.bottom) {
-      isGroupVisibleRef.current = true;
-      setTimeout(() => {
-        loadAllThumbnails();
-        // Trigger thumbnail observer setup
-        setRemapKey(prev => prev + 1);
-      }, 0);
+      if (!isGroupVisibleRef.current) {
+        isGroupVisibleRef.current = true;
+        setTimeout(() => {
+          setupThumbnailObservers();
+        }, 0);
+      } else {
+        setTimeout(() => {
+          setupThumbnailObservers();
+        }, 0);
+      }
     }
 
     return () => {
@@ -496,119 +509,18 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
         groupObserverRef.current = null;
       }
     };
-  }, [group.id, remapKey, displayedMembers, showAll]);
+  }, [group.id, setupThumbnailObservers, unloadAllThumbnails]);
 
-  // Use IntersectionObserver for each thumbnail to detect when it comes into view
-  // This works regardless of how it comes into view (scrolling, expanding list, etc.)
+  // Whenever the displayed members change or a remap occurs, load them if the group is already visible
   useEffect(() => {
-    const scrollContainer = horizontalScrollRef.current;
-    if (!scrollContainer) return;
-
-    // Only set up observers if group is visible
-    if (!isGroupVisibleRef.current) {
-      // Clean up any existing observers
-      thumbnailObserversRef.current.forEach((observer) => {
-        observer.disconnect();
-      });
-      thumbnailObserversRef.current.clear();
-      return;
+    if (isGroupVisibleRef.current) {
+      setTimeout(() => {
+        setupThumbnailObservers();
+      }, 0);
     }
+  }, [displayedMembers, remapKey, setupThumbnailObservers]);
 
-    // Clean up old observers
-    thumbnailObserversRef.current.forEach((observer) => {
-      observer.disconnect();
-    });
-    thumbnailObserversRef.current.clear();
 
-    // Set up IntersectionObserver for each thumbnail
-    const memberElements = containerRef.current?.querySelectorAll('.duplicate-thumbnail');
-    if (!memberElements) return;
-
-    const observerOptions = {
-      root: scrollContainer,
-      rootMargin: '50px', // Start loading slightly before fully visible
-      threshold: 0.01, // Trigger when any part becomes visible
-    };
-
-    memberElements.forEach((thumbnailDiv) => {
-      const img = thumbnailDiv.querySelector('img[data-src]') as HTMLImageElement;
-      if (!img || !img.dataset.src) return;
-
-      const src = img.dataset.src;
-
-      // Skip if already loaded
-      if (loadedImagesRef.current.has(src)) return;
-
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              // Thumbnail is now visible - queue it for loading
-              const thumbnailElement = entry.target as HTMLElement;
-              const imgElement = thumbnailElement.querySelector('img[data-src]') as HTMLImageElement;
-              if (!imgElement || !imgElement.dataset.src) return;
-
-              const thumbnailSrc = imgElement.dataset.src;
-
-              // Skip if already loaded
-              if (loadedImagesRef.current.has(thumbnailSrc)) {
-                observer.disconnect();
-                thumbnailObserversRef.current.delete(thumbnailElement);
-                return;
-              }
-
-              // Queue the thumbnail
-              if (!queuedUrlsRef.current.has(thumbnailSrc)) {
-                queuedUrlsRef.current.add(thumbnailSrc);
-                thumbnailQueue.push(
-                  thumbnailSrc,
-                  imgElement,
-                  thumbnailElement,
-                  {
-                    onLoad: (url: string) => {
-                      loadedImagesRef.current.add(url);
-                      imageSrcRef.current.set(url, url);
-                      queuedUrlsRef.current.delete(url);
-                      // Disconnect observer once loaded
-                      observer.disconnect();
-                      thumbnailObserversRef.current.delete(thumbnailElement);
-                    },
-                    onError: (url: string, error: Error) => {
-                      errorLogger.logThumbnailError(url, error, {
-                        groupId: group.id,
-                        memberIndex: -1,
-                        activeRequests: getActiveRequestCount(),
-                        elementExists: !!imgElement,
-                        dataSrc: imgElement.dataset.src,
-                      });
-                      queuedUrlsRef.current.delete(url);
-                      startUIBackoff(thumbnailElement, imgElement, url, -1);
-                    },
-                  },
-                  {
-                    groupId: group.id,
-                    memberIndex: -1,
-                  }
-                );
-              }
-            }
-          });
-        },
-        observerOptions
-      );
-
-      observer.observe(thumbnailDiv as HTMLElement);
-      thumbnailObserversRef.current.set(thumbnailDiv as HTMLElement, observer);
-    });
-
-    return () => {
-      // Clean up observers
-      thumbnailObserversRef.current.forEach((observer) => {
-        observer.disconnect();
-      });
-      thumbnailObserversRef.current.clear();
-    };
-  }, [group.id, displayedMembers, showAll, remapKey]);
 
   // Measure actual positions of perfect match thumbnails for accurate bracket positioning
   // Uses scrollContentRef (inner wrapper) so bracket coordinates are relative to scrollable content
