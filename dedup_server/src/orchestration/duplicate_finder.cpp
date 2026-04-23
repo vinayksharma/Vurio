@@ -149,6 +149,14 @@ namespace MediaDedup
                 logger.information("Duplicate detection run completed: processed %d files in %d batches",
                                    total_processed, batch_count);
 
+                // Perform cross-group checking exactly ONCE at the end of the run
+                double threshold_max = getThresholdMax(mode_str);
+                int cross_group_moves = performCrossGroupChecking(mode_str, threshold_max);
+                if (cross_group_moves > 0)
+                {
+                    logger.information("Cross-group optimization completed: moved %d files to better-matching groups", cross_group_moves);
+                }
+
                 // Log current statistics
                 auto stats = getStats();
                 logger.information("Current stats: %d groups, %d total files in groups, %d distinct duplicates",
@@ -773,13 +781,8 @@ namespace MediaDedup
                     logger.warning("Failed to update checkpoint for mode %s", mode);
                 }
 
-                // STEP 3: Cross-group similarity checking for low-similarity files
-                // Files with similarity scores below max threshold may be better matched elsewhere
-                double threshold_max = getThresholdMax(mode);
-                int cross_group_moves = performCrossGroupChecking(mode, threshold_max);
-
-                logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d, cross_group_moves=%d",
-                                   files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load(), cross_group_moves);
+                logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
+                                   files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load());
 
                 return static_cast<int>(file_ids.size());
             }
@@ -1499,7 +1502,7 @@ namespace MediaDedup
         int DuplicateFinder::performCrossGroupChecking(const std::string &mode, double threshold_max)
         {
             Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
-            int files_moved = 0;
+            std::atomic<int> files_moved = 0;
 
             try
             {
@@ -1525,6 +1528,12 @@ namespace MediaDedup
                     }
                 }
 
+                struct CheckTask {
+                    int original_group_id;
+                    DuplicateMemberRecord member;
+                };
+                std::vector<CheckTask> tasks;
+
                 // For each group, find members with low similarity scores
                 for (const auto &group : groups)
                 {
@@ -1539,108 +1548,133 @@ namespace MediaDedup
                         // Check if this member has low similarity score
                         if (member.similarity_score >= threshold_max)
                             continue;
+                            
+                        tasks.push_back({group.id, member});
+                    }
+                }
+                
+                if (tasks.empty())
+                {
+                    return 0;
+                }
 
-                        logger.debug("Found low-similarity member: file_id %d in group %d (score=%.3f < %.3f)",
-                                     member.file_id, group.id, member.similarity_score, threshold_max);
+                logger.information("Found %zu low-similarity members to check concurrently", tasks.size());
 
-                        // Load artifacts for this member
-                        FileArtifact member_artifact;
-                        if (!loadFileArtifacts(member.file_id, mode, member_artifact))
+                std::mutex latch_mutex;
+                int pending_tasks = tasks.size();
+                std::condition_variable latch_cv;
+                std::shared_mutex local_rw_mutex; // Protects DB writes during checking
+
+                for (const auto &task_data : tasks)
+                {
+                    auto task = [this, task_data, mode, &group_representatives, &local_rw_mutex, &files_moved, &latch_mutex, &pending_tasks, &latch_cv]() {
+                        try
                         {
-                            logger.warning("Failed to load artifacts for member file_id %d, skipping cross-group check",
-                                           member.file_id);
-                            continue;
-                        }
-
-                        // Check against representatives of other groups
-                        int best_other_group = -1;
-                        double best_other_similarity = 0.0;
-
-                        for (const auto &[other_group_id, other_rep] : group_representatives)
-                        {
-                            // Skip same group
-                            if (other_group_id == group.id)
-                                continue;
-
-                            // Skip if metadata incompatible
-                            if (!areMetadataCompatible(member_artifact, other_rep))
-                                continue;
-
-                            // Check similarity
-                            double sim = computeSimilarity(member_artifact, other_rep, mode);
-                            if (sim > best_other_similarity)
+                            // Load artifacts for this member
+                            FileArtifact member_artifact;
+                            if (!loadFileArtifacts(task_data.member.file_id, mode, member_artifact))
                             {
-                                best_other_similarity = sim;
-                                best_other_group = other_group_id;
+                                goto task_end;
                             }
-                        }
 
-                        // If we found a better match, move the file
-                        if (best_other_group > 0 && best_other_similarity > member.similarity_score)
-                        {
-                            logger.information("Moving file_id %d from group %d (score=%.3f) to group %d (score=%.3f)",
-                                               member.file_id, group.id, member.similarity_score,
-                                               best_other_group, best_other_similarity);
+                            // Check against representatives of other groups
+                            int best_other_group = -1;
+                            double best_other_similarity = 0.0;
 
-                            // Remove from current group
-                            if (DuplicateGroupsOps::removeMember(db_, group.id, member.file_id))
+                            for (const auto &[other_group_id, other_rep] : group_representatives)
                             {
-                                // Add to new group
-                                if (addToGroup(best_other_group, member_artifact, mode, best_other_similarity))
-                                {
-                                    files_moved++;
+                                // Skip same group
+                                if (other_group_id == task_data.original_group_id)
+                                    continue;
 
-                                    int new_count = group.member_count - 1;
-                                    if (new_count <= 1)
-                                    {
-                                        // Empty or single-member group: delete so the key can re-match
-                                        DuplicateGroupsOps::deleteGroup(db_, group.id);
-                                        group_representatives.erase(group.id);
-                                        logger.information("Deleted group %d (1 member left after cross-group move)",
-                                                           group.id);
-                                    }
-                                    else
-                                    {
-                                        DuplicateGroupsOps::updateGroupMemberCount(db_, group.id, new_count);
-                                    }
+                                // Skip if metadata incompatible
+                                if (!areMetadataCompatible(member_artifact, other_rep))
+                                    continue;
 
-                                    auto other_group_opt = DuplicateGroupsOps::getGroupById(db_, best_other_group);
-                                    if (other_group_opt.has_value())
-                                    {
-                                        DuplicateGroupsOps::updateGroupMemberCount(db_, best_other_group,
-                                                                                   other_group_opt->member_count + 1);
-                                    }
-                                }
-                                else
+                                // Check similarity
+                                double sim = computeSimilarity(member_artifact, other_rep, mode);
+                                if (sim > best_other_similarity)
                                 {
-                                    // Failed to add to new group, restore to original
-                                    logger.error("Failed to add file_id %d to group %d, restoring to group %d",
-                                                 member.file_id, best_other_group, group.id);
-                                    DuplicateGroupsOps::addMember(db_, group.id, member.file_id, member.file_path,
-                                                                  member.similarity_score, member.file_size,
-                                                                  member.created_date, member.is_representative);
+                                    best_other_similarity = sim;
+                                    best_other_group = other_group_id;
                                 }
                             }
-                            else
+
+                            // If we found a better match, move the file
+                            if (best_other_group > 0 && best_other_similarity > task_data.member.similarity_score)
                             {
-                                logger.error("Failed to remove file_id %d from group %d", member.file_id, group.id);
+                                std::unique_lock<std::shared_mutex> w_lock(local_rw_mutex);
+                                
+                                auto old_group_opt = DuplicateGroupsOps::getGroupById(db_, task_data.original_group_id);
+                                auto new_group_opt = DuplicateGroupsOps::getGroupById(db_, best_other_group);
+
+                                if (old_group_opt.has_value() && new_group_opt.has_value())
+                                {
+                                    // Remove from current group
+                                    if (DuplicateGroupsOps::removeMember(db_, task_data.original_group_id, task_data.member.file_id))
+                                    {
+                                        // Add to new group
+                                        if (addToGroup(best_other_group, member_artifact, mode, best_other_similarity))
+                                        {
+                                            files_moved++;
+
+                                            int new_count = old_group_opt->member_count - 1;
+                                            if (new_count <= 1)
+                                            {
+                                                // Empty or single-member group: delete so the key can re-match
+                                                DuplicateGroupsOps::deleteGroup(db_, task_data.original_group_id);
+                                                // Note: we do NOT erase from group_representatives because it is read concurrently by other threads.
+                                                // The DB delete prevents real grouping, and group_representatives is transient.
+                                            }
+                                            else
+                                            {
+                                                DuplicateGroupsOps::updateGroupMemberCount(db_, task_data.original_group_id, new_count);
+                                            }
+
+                                            DuplicateGroupsOps::updateGroupMemberCount(db_, best_other_group, new_group_opt->member_count + 1);
+                                        }
+                                        else
+                                        {
+                                            // Failed to add to new group, restore to original
+                                            DuplicateGroupsOps::addMember(db_, task_data.original_group_id, task_data.member.file_id, task_data.member.file_path,
+                                                                          task_data.member.similarity_score, task_data.member.file_size,
+                                                                          task_data.member.created_date, task_data.member.is_representative);
+                                        }
+                                    }
+                                }
                             }
                         }
+                        catch (...) {}
+
+                    task_end:
+                        std::lock_guard<std::mutex> lk(latch_mutex);
+                        pending_tasks--;
+                        if (pending_tasks == 0) latch_cv.notify_one();
+                    };
+
+                    if (tpm_) {
+                        tpm_->submit("duplicate_finder", task);
+                    } else {
+                        task(); // Fallback
                     }
                 }
 
-                logger.information("Cross-group checking complete: moved %d files", files_moved);
-                return files_moved;
+                // Wait for all cross-group check tasks to finish
+                std::unique_lock<std::mutex> wait_lk(latch_mutex);
+                latch_cv.wait(wait_lk, [&]() { return pending_tasks == 0; });
+
+                logger.information("Cross-group checking complete: moved %d files", files_moved.load());
+                return files_moved.load();
             }
             catch (const std::exception &e)
             {
                 logger.error("Exception in performCrossGroupChecking: %s", std::string(e.what()));
-                return files_moved; // Return partial count
+                return files_moved.load();
             }
             catch (...)
             {
                 logger.error("Unknown exception in performCrossGroupChecking");
-                return files_moved; // Return partial count
+                return files_moved.load();
             }
         }
     } // namespace Orchestration
