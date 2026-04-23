@@ -145,6 +145,14 @@ const ImagePopup: React.FC = () => {
       if (e.key === 'ArrowRight') handleNext();
       if (e.key === 'ArrowUp') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: -1, currentFilePath: filePath });
       if (e.key === 'ArrowDown') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: 1, currentFilePath: filePath });
+      if (e.key === 'PageUp') {
+        e.preventDefault();
+        bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', jumpType: 'page', direction: -1, currentFilePath: filePath });
+      }
+      if (e.key === 'PageDown') {
+        e.preventDefault();
+        bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', jumpType: 'page', direction: 1, currentFilePath: filePath });
+      }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         const currentImage = groupImages[currentIndex];
         const isRepresentative = currentIndex === 0;
