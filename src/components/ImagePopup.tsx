@@ -134,16 +134,31 @@ const ImagePopup: React.FC = () => {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // In a standalone window, Escape should probably just close the window
       if (e.key === 'Escape') handleClose();
       if (e.key === '=' || e.key === '+') setScale(s => Math.min(s * 1.5, 10));
       if (e.key === '-') setScale(s => Math.max(s / 1.5, 0.1));
-      if (e.key === 'r') setRotation(r => r + 90);
-      if (e.key === 'R') setRotation(r => r - 90);
+      if (e.key === '0') { setScale(1); setOffset({x: 0, y: 0}); }
+      if (e.key === ']') setRotation(r => r + 90);
+      if (e.key === '[') setRotation(r => r - 90);
       if (e.key === 'ArrowLeft') handlePrev();
       if (e.key === 'ArrowRight') handleNext();
       if (e.key === 'ArrowUp') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: -1, currentFilePath: filePath });
       if (e.key === 'ArrowDown') bcRef.current?.postMessage({ type: 'NAVIGATE_GROUP', direction: 1, currentFilePath: filePath });
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        const currentImage = groupImages[currentIndex];
+        const isRepresentative = currentIndex === 0;
+        const isEjected = currentImage?.is_ejected || false;
+        if (!isRepresentative && groupImages.length > 0) {
+          isEjected ? handleRestore() : handleEject();
+        }
+      }
+      if ((e.key === 'c' || e.key === 'C') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        copyImageToClipboard();
+      } else if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey) {
+        copyPath();
+      }
+      if (e.key === 'i' || e.key === 'I') setShowDetails(prev => !prev);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -249,6 +264,33 @@ const ImagePopup: React.FC = () => {
 
   const copyPath = () => {
     if (filePath) navigator.clipboard.writeText(filePath);
+  };
+
+  const copyImageToClipboard = () => {
+    if (!filePath) return;
+    try {
+      const url = nativeUrl || buildImageUrl(filePath);
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(blob => {
+          if (blob) {
+            navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]).catch(console.error);
+          }
+        }, 'image/png');
+      };
+      img.src = url;
+    } catch (e) {
+      console.error('Failed to copy image', e);
+    }
   };
 
   const currentImage = groupImages[currentIndex];
@@ -422,7 +464,7 @@ const ImagePopup: React.FC = () => {
               <button 
                 className="details-toggle-btn" 
                 onClick={() => setShowDetails(!showDetails)}
-                title={showDetails ? "Hide metadata" : "Show metadata"}
+                title={showDetails ? "Hide metadata (I)" : "Show metadata (I)"}
                 style={{ background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
               >
                 {showDetails ? '▼ Hide Info' : '▲ Show Info'}
@@ -447,30 +489,30 @@ const ImagePopup: React.FC = () => {
           <IconButton onClick={() => setScale(s => Math.max(s / 1.5, 0.1))} title="Zoom Out (-)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
           </IconButton>
-          <IconButton onClick={() => { setScale(1); setOffset({x:0, y:0}); }} title="Reset Zoom">
+          <IconButton onClick={() => { setScale(1); setOffset({x:0, y:0}); }} title="Reset Zoom (0)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
           </IconButton>
           <IconButton onClick={() => setScale(s => Math.min(s * 1.5, 10))} title="Zoom In (+)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
           </IconButton>
           <div className="toolbar-divider" style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)', margin: '0 4px' }}></div>
-          <IconButton onClick={() => setRotation(r => r - 90)} title="Rotate Left (Shift+R)">
+          <IconButton onClick={() => setRotation(r => r - 90)} title="Rotate Left ([)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
           </IconButton>
-          <IconButton onClick={() => setRotation(r => r + 90)} title="Rotate Right (R)">
+          <IconButton onClick={() => setRotation(r => r + 90)} title="Rotate Right (])">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
           </IconButton>
           <div className="toolbar-divider" style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)', margin: '0 4px' }}></div>
           {groupImages.length > 0 && !isRepresentative && (
             <>
               {isEjected ? (
-                 <IconButton onClick={handleRestore} title="Restore Image">
+                 <IconButton onClick={handleRestore} title="Restore Image (Delete/Backspace)">
                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                      <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 3v12M8 11l4 4 4-4"/>
                    </svg>
                  </IconButton>
               ) : (
-                 <IconButton onClick={handleEject} title="Eject Image">
+                 <IconButton onClick={handleEject} title="Eject Image (Delete/Backspace)">
                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                      <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 15V3l-4 4m4-4l4 4"/>
                    </svg>
@@ -479,7 +521,7 @@ const ImagePopup: React.FC = () => {
               <div className="toolbar-divider" style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)', margin: '0 4px' }}></div>
             </>
           )}
-          <IconButton onClick={copyPath} title="Copy Path">
+          <IconButton onClick={copyPath} title="Copy Path (C)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </IconButton>
         </div>
