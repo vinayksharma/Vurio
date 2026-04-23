@@ -343,10 +343,10 @@ const ImagePopup: React.FC = () => {
               left: '50%',
               maxWidth: Math.abs(rotation % 180) === 90 ? '100vh' : '100%',
               maxHeight: Math.abs(rotation % 180) === 90 ? '100vw' : '100%',
+              width: '100%',
+              height: '100%',
               objectFit: 'contain',
               boxSizing: 'border-box',
-              outline: (currentIndex === 0 && !isLoading) ? '4px solid rgba(255, 140, 0, 0.7)' : 'none',
-              outlineOffset: '-4px',
             }}
             onDragStart={(e) => e.preventDefault()}
             onLoad={() => setIsLoading(false)}
@@ -357,6 +357,8 @@ const ImagePopup: React.FC = () => {
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); handlePrev(); }}
+                onMouseUp={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 style={{
                   position: 'absolute',
                   left: '20px',
@@ -384,6 +386,8 @@ const ImagePopup: React.FC = () => {
               
               <button
                 onClick={(e) => { e.stopPropagation(); handleNext(); }}
+                onMouseUp={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 style={{
                   position: 'absolute',
                   right: '20px',
@@ -480,6 +484,21 @@ const ImagePopup: React.FC = () => {
           </IconButton>
         </div>
       </div>
+      
+      {/* Representative Image Border Overlay */}
+      {currentIndex === 0 && !isLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          border: '4px solid rgba(255, 140, 0, 0.7)',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          boxSizing: 'border-box'
+        }} />
+      )}
     </div>
   );
 };

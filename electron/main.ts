@@ -12,6 +12,7 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 let mainWindow: BrowserWindow | null = null;
+const viewerWindows = new Set<BrowserWindow>();
 
 const UI_HOST = process.env.UI_HOST || '127.0.0.1';
 const UI_PORT = parseInt(process.env.UI_PORT || '5173', 10);
@@ -189,6 +190,19 @@ async function createViewerWindow(filePath: string, details: string) {
   });
 
   viewerWindow.setMenu(null); // No menu for viewer windows
+  viewerWindows.add(viewerWindow);
+
+  viewerWindow.on('closed', () => {
+    viewerWindows.delete(viewerWindow);
+    // Close all other viewer windows when one is closed
+    const remaining = Array.from(viewerWindows);
+    viewerWindows.clear();
+    for (const win of remaining) {
+      if (!win.isDestroyed()) {
+        win.close();
+      }
+    }
+  });
 
   const session = viewerWindow.webContents.session;
   session.setPermissionRequestHandler((webContents, permission, callback) => callback(true));
