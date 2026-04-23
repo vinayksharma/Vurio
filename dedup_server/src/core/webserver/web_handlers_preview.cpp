@@ -73,7 +73,26 @@ namespace MediaDedup
 
             int64_t source_modified = source_file.getLastModified().epochTime();
 
-            // Check if we have a valid preview in the database
+            if (size_param == "full")
+            {
+                logger.information("Generating full-size preview on demand for: %s", source_path);
+                Magick::Blob blob;
+                // size=0 gives native full resolution, quality 95
+                if (ThumbnailGenerator::generateToBlob(source_path, 0, blob, 95))
+                {
+                    logger.debug("Successfully generated full size dynamically for: %s", source_path);
+                    streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);
+                    return;
+                }
+                else
+                {
+                    logger.error("Failed to generate full size dynamically for: %s", source_path);
+                    sendErrorResponse(response, "Failed to generate full-size preview", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                    return;
+                }
+            }
+
+            // Check if we have a valid preview in the database (this cache will be QHD)
             auto preview_record = PreviewCacheOps::getPreview(*database_manager_, source_path);
 
             if (preview_record)
@@ -95,21 +114,6 @@ namespace MediaDedup
                     // Update access time asynchronously (fire and forget)
                     Poco::Timestamp now;
                     PreviewCacheOps::updateAccessTime(*database_manager_, source_path, now.epochTime());
-
-                    if (size_param == "qhd")
-                    {
-                        Magick::Blob blob;
-                        if (ThumbnailGenerator::generateToBlob(preview_record->cached_path, 2560, blob, 85))
-                        {
-                            logger.debug("Generated QHD preview dynamically from cache for: %s", source_path);
-                            streamData(static_cast<const char*>(blob.data()), blob.length(), response, preview_record->source_modified_at);
-                            return;
-                        }
-                        else
-                        {
-                            logger.warning("Failed to generate QHD blob from cache, streaming full size");
-                        }
-                    }
 
                     streamPreviewFile(preview_record->cached_path, response, preview_record->source_modified_at);
                     return;
@@ -144,16 +148,6 @@ namespace MediaDedup
                         new_record.cached_path = generated_path;
                         PreviewCacheOps::upsertPreview(*database_manager_, new_record);
                         
-                        if (size_param == "qhd")
-                        {
-                            Magick::Blob blob;
-                            if (ThumbnailGenerator::generateToBlob(generated_path, 2560, blob, 85))
-                            {
-                                logger.debug("Generated QHD preview dynamically from freshly transcoded cache for: %s", source_path);
-                                streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);
-                                return;
-                            }
-                        }
                         streamPreviewFile(generated_path, response, source_modified);
                         return;
                     }
@@ -174,17 +168,6 @@ namespace MediaDedup
             else
             {
                 // File does not need transcoding (e.g., standard JPEG/PNG)
-                if (size_param == "qhd")
-                {
-                    Magick::Blob blob;
-                    if (ThumbnailGenerator::generateToBlob(source_path, 2560, blob, 85))
-                    {
-                        logger.debug("Generated QHD preview dynamically from original file: %s", source_path);
-                        streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);
-                        return;
-                    }
-                }
-                
                 logger.debug("Streaming original file directly: %s", source_path);
                 streamPreviewFile(source_path, response, source_modified);
                 return;

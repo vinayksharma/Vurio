@@ -244,6 +244,20 @@ namespace MediaDedup
                 image.colorSpace(Magick::RGBColorspace);
                 logger_.debug("Converted image to RGB colorspace");
             }
+
+            // Resize if the image is excessively large (e.g., > 2560 on longest edge)
+            // to optimize preview loading times in the UI and save disk space.
+            const size_t MAX_DIMENSION = 2560; // QHD resolution limit for fast web previews
+            size_t width = image.columns();
+            size_t height = image.rows();
+            
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION)
+            {
+                Magick::Geometry new_size(MAX_DIMENSION, MAX_DIMENSION);
+                new_size.aspect(true); // maintain aspect ratio
+                image.resize(new_size);
+                logger_.information("Resized image from %zux%zu to %zux%zu for optimal preview streaming", width, height, image.columns(), image.rows());
+            }
         }
         catch (const Magick::Exception &e)
         {
@@ -267,8 +281,8 @@ namespace MediaDedup
         try
         {
             image.magick("JPEG");
-            // Use quality 95 for near-lossless compression with excellent size reduction
-            image.quality(95);
+            // Use quality 85 for fast web streaming with good visual quality
+            image.quality(85);
             // Ensure 8-bit depth for OpenCV compatibility
             image.depth(8);
             // Set colorspace to RGB for better compatibility
