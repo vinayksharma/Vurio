@@ -3,6 +3,8 @@
 #include "database/preview_cache_ops.hpp"
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "config/unified_observable_config.hpp"
+#include "utils/thumbnail_generator.hpp"
+#include <Magick++.h>
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/URI.h>
 #include <Poco/File.h>
@@ -41,12 +43,16 @@ namespace MediaDedup
             Poco::URI::QueryParameters params = uri.getQueryParameters();
 
             std::string source_path;
+            std::string size_param;
             for (const auto &param : params)
             {
                 if (param.first == "path")
                 {
                     source_path = param.second;
-                    break;
+                }
+                else if (param.first == "size")
+                {
+                    size_param = param.second;
                 }
             }
 
@@ -90,6 +96,21 @@ namespace MediaDedup
                     Poco::Timestamp now;
                     PreviewCacheOps::updateAccessTime(*database_manager_, source_path, now.epochTime());
 
+                    if (size_param == "qhd")
+                    {
+                        Magick::Blob blob;
+                        if (ThumbnailGenerator::generateToBlob(preview_record->cached_path, 2560, blob, 85))
+                        {
+                            logger.debug("Generated QHD preview dynamically from cache for: %s", source_path);
+                            streamData(static_cast<const char*>(blob.data()), blob.length(), response, preview_record->source_modified_at);
+                            return;
+                        }
+                        else
+                        {
+                            logger.warning("Failed to generate QHD blob from cache, streaming full size");
+                        }
+                    }
+
                     streamPreviewFile(preview_record->cached_path, response, preview_record->source_modified_at);
                     return;
                 }
@@ -123,6 +144,16 @@ namespace MediaDedup
                         new_record.cached_path = generated_path;
                         PreviewCacheOps::upsertPreview(*database_manager_, new_record);
                         
+                        if (size_param == "qhd")
+                        {
+                            Magick::Blob blob;
+                            if (ThumbnailGenerator::generateToBlob(generated_path, 2560, blob, 85))
+                            {
+                                logger.debug("Generated QHD preview dynamically from freshly transcoded cache for: %s", source_path);
+                                streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);
+                                return;
+                            }
+                        }
                         streamPreviewFile(generated_path, response, source_modified);
                         return;
                     }
@@ -143,8 +174,18 @@ namespace MediaDedup
             else
             {
                 // File does not need transcoding (e.g., standard JPEG/PNG)
-                // We can just stream the original file directly instead of failing.
-                logger.debug("File is not a RAW image, streaming original file directly: %s", source_path);
+                if (size_param == "qhd")
+                {
+                    Magick::Blob blob;
+                    if (ThumbnailGenerator::generateToBlob(source_path, 2560, blob, 85))
+                    {
+                        logger.debug("Generated QHD preview dynamically from original file: %s", source_path);
+                        streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);
+                        return;
+                    }
+                }
+                
+                logger.debug("Streaming original file directly: %s", source_path);
                 streamPreviewFile(source_path, response, source_modified);
                 return;
             }
@@ -194,6 +235,34 @@ namespace MediaDedup
             if (!response.sent())
             {
                 sendErrorResponse(response, "Error reading file", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    void PreviewHandler::streamData(const char* data, size_t length,
+                                    Poco::Net::HTTPServerResponse &response,
+                                    int64_t source_modified_at)
+    {
+        try
+        {
+            Poco::Timestamp modified_ts = Poco::Timestamp::fromEpochTime(source_modified_at);
+            std::string last_modified = Poco::DateTimeFormatter::format(modified_ts, Poco::DateTimeFormat::HTTP_FORMAT);
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("image/jpeg");
+            response.set("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
+            response.set("Last-Modified", last_modified);
+            response.setContentLength(length);
+
+            std::ostream& out = response.send();
+            out.write(data, length);
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("PreviewHandler").error("Failed to stream preview data: %s", std::string(e.what()));
+            if (!response.sent())
+            {
+                sendErrorResponse(response, "Error writing data", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
             }
         }
     }
