@@ -4,6 +4,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
 #include "database/ejected_files_ops.hpp"
+#include "orchestration/duplicate_finder.hpp"
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
@@ -734,6 +735,99 @@ namespace MediaDedupServer
             catch (const std::exception &e)
             {
                 logger.error("Exception in UndoEjectDuplicatesHandler: %s", std::string(e.what()));
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                response.setContentType("application/json");
+
+                Poco::JSON::Object error_obj;
+                error_obj.set("success", false);
+                error_obj.set("error", std::string(e.what()));
+
+                std::ostringstream oss;
+                error_obj.stringify(oss);
+                response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+        }
+
+        PurgeEjectedErroredHandler::PurgeEjectedErroredHandler(std::shared_ptr<MediaDedup::DatabaseManager> db, std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg)
+            : database_manager_(db), config_manager_(cfg)
+        {
+        }
+
+        void PurgeEjectedErroredHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                       Poco::Net::HTTPServerResponse &response)
+        {
+            Poco::Logger &logger = Poco::Logger::get("PurgeEjectedErroredHandler");
+
+            try
+            {
+                if (request.getMethod() != "POST")
+                {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+                    response.send();
+                    return;
+                }
+
+                auto all_histories = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
+                int success_count = 0;
+                int failure_count = 0;
+
+                std::string purity_str = config_manager_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
+
+                for (const auto& hist : all_histories)
+                {
+                    if (hist.ejected_path.find("_ejected") != std::string::npos ||
+                        hist.ejected_path.find("_errored") != std::string::npos)
+                    {
+                        // Check if it's a representative of any group
+                        auto groups = MediaDedup::DuplicateGroupsOps::getGroupsForFile(*database_manager_, hist.file_id, "EMBEDDING");
+                        for (const auto& g : groups) {
+                            if (g.representative_file_id == hist.file_id) {
+                                // It's a representative, promote another member!
+                                MediaDedup::Orchestration::DuplicateFinder::promoteNextBestRepresentative(
+                                    *database_manager_, g.id, hist.file_id, purity_str
+                                );
+                            }
+                        }
+
+                        // Completely wipe the file from the database
+                        if (MediaDedup::ScannedFilesOps::completelyRemoveById(*database_manager_, hist.file_id)) {
+                            success_count++;
+                            logger.information("Successfully purged file ID %d (%s) from the database.", hist.file_id, hist.ejected_path);
+                            
+                            // Check the remaining size of the groups the file belonged to
+                            for (const auto& g : groups) {
+                                auto members = MediaDedup::DuplicateGroupsOps::getMembersByGroup(*database_manager_, g.id);
+                                if (members.size() <= 1) {
+                                    MediaDedup::DuplicateGroupsOps::deleteGroup(*database_manager_, g.id);
+                                    logger.information("Deleted duplicate group %d as it no longer has enough members.", g.id);
+                                } else {
+                                    MediaDedup::DuplicateGroupsOps::updateGroupMemberCount(*database_manager_, g.id, members.size());
+                                    logger.information("Updated member count for duplicate group %d to %zu.", g.id, members.size());
+                                }
+                            }
+                        } else {
+                            failure_count++;
+                            logger.error("Failed to purge file ID %d from the database.", hist.file_id);
+                        }
+                    }
+                }
+
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                response.setContentType("application/json");
+
+                Poco::JSON::Object result_obj;
+                result_obj.set("success", true);
+                result_obj.set("success_count", success_count);
+                result_obj.set("failure_count", failure_count);
+
+                std::ostringstream oss;
+                result_obj.stringify(oss);
+                response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in PurgeEjectedErroredHandler: %s", std::string(e.what()));
 
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                 response.setContentType("application/json");

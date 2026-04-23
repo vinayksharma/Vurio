@@ -37,6 +37,15 @@ namespace MediaDedup
         static bool upsert(DatabaseManager &db, const ScannedFileRow &row);
         static bool removeByPath(DatabaseManager &db, const std::string &file_path);
         static bool removeByLocationKey(DatabaseManager &db, const std::string &location_key);
+        
+        /**
+         * @brief Completely removes a file from the database, including all its associated
+         * metadata (thumbnails, artifacts, errors, duplicates, ejected history).
+         * 
+         * Note: This does NOT automatically promote a duplicate group representative if the file
+         * is one. The caller must handle representative promotion prior to calling this.
+         */
+        static bool completelyRemoveById(DatabaseManager &db, int file_id);
         static std::optional<ScannedFileRow> getByPath(DatabaseManager &db, const std::string &file_path);
         static std::vector<ScannedFileRow> listAll(DatabaseManager &db);
         static int count(DatabaseManager &db);

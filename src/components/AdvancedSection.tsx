@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -7,6 +7,7 @@ const AdvancedSection: React.FC = () => {
   const [isEjectingErrors, setIsEjectingErrors] = useState(false);
   const [isRestoringErrors, setIsRestoringErrors] = useState(false);
   const [isResettingDuplicates, setIsResettingDuplicates] = useState(false);
+  const [isPurgingEjectedErrored, setIsPurgingEjectedErrored] = useState(false);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
@@ -79,6 +80,26 @@ const AdvancedSection: React.FC = () => {
       alert('Failed to reset duplicates: ' + err.message);
     } finally {
       setIsResettingDuplicates(false);
+    }
+  };
+
+  const handlePurgeEjectedErrored = async () => {
+    if (!confirm('Are you sure you want to purge all ejected and errored files? This permanently removes them from the database and you will lose the ability to undo their ejection. No source files will be deleted from your disk.')) {
+      return;
+    }
+    setIsPurgingEjectedErrored(true);
+    try {
+      const res = await purgeEjectedAndErrored();
+      if (res.success || res.success_count > 0) {
+        alert(`Successfully purged ${res.success_count} files from the database.`);
+      } else {
+        alert(`Failed to purge files. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to purge ejected and errored files: ' + err.message);
+    } finally {
+      setIsPurgingEjectedErrored(false);
     }
   };
 
@@ -190,9 +211,23 @@ const AdvancedSection: React.FC = () => {
           id="reset-duplicates-btn"
           className="ghost danger"
           onClick={handleResetDuplicates}
-          disabled={isResettingDuplicates}
+          disabled={isResettingDuplicates || isPurgingEjectedErrored}
         >
           {isResettingDuplicates ? 'Resetting...' : 'Reset Duplicates'}
+        </button>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Purge Ejected and Errored</h3>
+          <p>Permanently remove files in the '_ejected' and '_errored' folders from the database. You will lose the ability to undo their ejection, but no actual source files will be deleted.</p>
+        </div>
+        <button
+          id="purge-ejected-errored-btn"
+          className="ghost danger"
+          onClick={handlePurgeEjectedErrored}
+          disabled={isResettingDuplicates || isPurgingEjectedErrored}
+        >
+          {isPurgingEjectedErrored ? 'Purging...' : 'Purge Ejected & Errored'}
         </button>
       </div>
       <div className="action-row">

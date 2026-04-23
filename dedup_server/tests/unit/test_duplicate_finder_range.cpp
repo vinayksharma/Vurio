@@ -302,3 +302,61 @@ TEST_F(DuplicateFinderRangeTest, InvalidThresholdRangeRevertsToDefaults)
     double duplicate = finder.getDuplicateThreshold("EMBEDDING");
     EXPECT_GT(duplicate, similarity);
 }
+
+/**
+ * Test static representative comparison logic
+ */
+TEST_F(DuplicateFinderRangeTest, IsBetterRepresentativeStatic)
+{
+    DuplicateFinder::RepresentativeInfo a;
+    a.file_id = 1;
+    a.file_path = "/test/a.jpg";
+    a.file_size = 1000;
+    a.has_exif_date = false;
+
+    DuplicateFinder::RepresentativeInfo b;
+    b.file_id = 2;
+    b.file_path = "/test/b.jpg";
+    b.file_size = 2000;
+    b.has_exif_date = true;
+
+    auto order = parsePurityOrder("EXIF_CAPTURE_DATE, FILE_SIZE");
+    
+    // b has EXIF, a doesn't, so b should be better
+    EXPECT_FALSE(DuplicateFinder::isBetterRepresentativeStatic(a, b, order));
+    EXPECT_TRUE(DuplicateFinder::isBetterRepresentativeStatic(b, a, order));
+    
+    // Test file size priority
+    auto order_size = parsePurityOrder("FILE_SIZE");
+    EXPECT_FALSE(DuplicateFinder::isBetterRepresentativeStatic(a, b, order_size));
+    EXPECT_TRUE(DuplicateFinder::isBetterRepresentativeStatic(b, a, order_size));
+}
+
+/**
+ * Test static representative promotion logic
+ */
+TEST_F(DuplicateFinderRangeTest, PromoteNextBestRepresentative)
+{
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+
+    int id_rep = mockScannedFile("/test/rep.jpg");
+    int id_mem1 = mockScannedFile("/test/mem1.jpg"); // Biggest file size
+    int id_mem2 = mockScannedFile("/test/mem2.jpg");
+
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_manager_, "EMBEDDING", id_rep, "/test/rep.jpg", 1000, "2025-01-01", 0.96);
+    
+    DuplicateGroupsOps::addMember(*db_manager_, group_id, id_rep, "/test/rep.jpg", 1.0, 1000, "2025-01-01", true);
+    DuplicateGroupsOps::addMember(*db_manager_, group_id, id_mem1, "/test/mem1.jpg", 0.95, 5000, "2025-01-01", false);
+    DuplicateGroupsOps::addMember(*db_manager_, group_id, id_mem2, "/test/mem2.jpg", 0.95, 2000, "2025-01-01", false);
+
+    // Promote using FILE_SIZE purity (mem1 should win because 5000 > 2000 > 1000)
+    // We pass id_rep as the file to exclude (because it's being deleted)
+    bool promoted = DuplicateFinder::promoteNextBestRepresentative(*db_manager_, group_id, id_rep, "FILE_SIZE");
+    EXPECT_TRUE(promoted);
+
+    auto group = DuplicateGroupsOps::getGroupById(*db_manager_, group_id);
+    ASSERT_TRUE(group.has_value());
+    EXPECT_EQ(id_mem1, group->representative_file_id); // mem1 successfully promoted
+    EXPECT_EQ(2, group->member_count); // Decreased by 1
+}

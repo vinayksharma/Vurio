@@ -4,6 +4,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <memory>
+#include "config/unified_observable_config.hpp"
 
 namespace MediaDedup
 {
@@ -126,6 +127,24 @@ namespace MediaDedupServer
 
         private:
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+        };
+
+        /**
+         * @brief Handler for POST /api/v1/duplicates/purge-ejected-errored
+         *
+         * Completely removes all ejected and errored files from the database while preserving duplicate groups.
+         */
+        class PurgeEjectedErroredHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit PurgeEjectedErroredHandler(std::shared_ptr<MediaDedup::DatabaseManager> db, std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+            std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> config_manager_;
         };
 
     } // namespace Core

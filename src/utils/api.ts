@@ -253,3 +253,9 @@ export async function undoEjectErrors(): Promise<{ success: boolean; success_cou
     method: 'POST',
   }) as Promise<any>;
 }
+
+export async function purgeEjectedAndErrored(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/settings/purge-ejected-errored', {
+    method: 'POST',
+  }) as Promise<any>;
+}

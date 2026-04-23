@@ -62,6 +62,7 @@ set(UNIT_TEST_SOURCES
     unit/test_onnx_session_manager.cpp
     unit/test_phash_quality.cpp
     unit/test_duplicate_finder_range.cpp
+    unit/test_purge_ejected_errored.cpp
     unit/test_duplicates_reset_api.cpp
     unit/test_files_service_change_path.cpp
 )
@@ -157,6 +158,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_duplicates_reset_api")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DuplicatesResetAPITest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_purge_ejected_errored")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PurgeEjectedErroredTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -362,6 +370,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
         target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
@@ -548,6 +559,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_stderr_capture" AND
       NOT ${test_name} STREQUAL "test_phash_quality" AND
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
+      NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
@@ -563,6 +575,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_files_service_change_path" AND
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
        NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
+       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"

@@ -964,7 +964,12 @@ namespace MediaDedup
 
         bool DuplicateFinder::isBetterRepresentative(const RepresentativeInfo &a, const RepresentativeInfo &b)
         {
-            for (auto criterion : purity_order_)
+            return isBetterRepresentativeStatic(a, b, purity_order_);
+        }
+
+        bool DuplicateFinder::isBetterRepresentativeStatic(const RepresentativeInfo &a, const RepresentativeInfo &b, const std::vector<PurityCriterion> &order)
+        {
+            for (auto criterion : order)
             {
                 switch (criterion)
                 {
@@ -1001,6 +1006,61 @@ namespace MediaDedup
             
             // If completely identical structurally, fallback to deterministic characteristic
             return a.file_id < b.file_id;
+        }
+
+        bool DuplicateFinder::promoteNextBestRepresentative(DatabaseManager &db, int group_id, int file_id_to_exclude, const std::string &purity_str)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            
+            auto members = DuplicateGroupsOps::getMembersByGroup(db, group_id);
+            if (members.empty()) return false;
+            
+            auto order = parsePurityOrder(purity_str);
+            
+            std::vector<RepresentativeInfo> candidates;
+            for (const auto& member : members) {
+                if (member.file_id == file_id_to_exclude) continue;
+                
+                RepresentativeInfo info;
+                info.file_id = member.file_id;
+                info.file_path = member.file_path;
+                info.file_size = member.file_size;
+                info.created_date = member.created_date;
+                
+                // Fetch has_exif_date
+                try {
+                    auto lease = db.acquireSessionLease();
+                    Poco::Data::Session &sess = lease.get();
+                    int has_exif_count = 0;
+                    int m_file_id = member.file_id;
+                    Poco::Data::Statement stmt(sess);
+                    stmt << "SELECT COUNT(*) FROM scanned_files WHERE id = ? AND exif_datetime IS NOT NULL AND exif_datetime != ''",
+                            Poco::Data::Keywords::into(has_exif_count),
+                            Poco::Data::Keywords::use(m_file_id),
+                            Poco::Data::Keywords::now;
+                    info.has_exif_date = (has_exif_count > 0);
+                } catch (...) {
+                    info.has_exif_date = false;
+                }
+                
+                candidates.push_back(info);
+            }
+            
+            if (candidates.empty()) return false;
+            
+            RepresentativeInfo best = candidates[0];
+            for (size_t i = 1; i < candidates.size(); ++i) {
+                if (isBetterRepresentativeStatic(candidates[i], best, order)) {
+                    best = candidates[i];
+                }
+            }
+            
+            // Update group representative
+            DuplicateGroupsOps::updateGroupRepresentative(db, group_id, best.file_id, best.file_path, best.file_size, best.created_date, members.size() - 1);
+            DuplicateGroupsOps::updateMemberRepresentativeFlag(db, group_id, best.file_id, true);
+            
+            logger.information("Promoted file_id %d to representative for group %d", best.file_id, group_id);
+            return true;
         }
 
         int DuplicateFinder::createDuplicateGroup(const std::vector<FileArtifact> &files,

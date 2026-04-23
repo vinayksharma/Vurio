@@ -198,6 +198,73 @@ namespace MediaDedup
         }
     }
 
+    bool ScannedFilesOps::completelyRemoveById(DatabaseManager &db, int file_id)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            sess.begin();
+
+            std::string file_path;
+            Statement sel_path(sess);
+            sel_path << "SELECT file_path FROM scanned_files WHERE id=?", Keywords::into(file_path), Keywords::use(file_id);
+            
+            if (sel_path.execute() == 0 || file_path.empty()) {
+                sess.rollback();
+                return false; // File doesn't exist
+            }
+
+            // 1. Delete image artifacts
+            Statement del_artifacts(sess);
+            del_artifacts << "DELETE FROM image_artifacts WHERE file_path=?", Keywords::use(file_path);
+            del_artifacts.execute();
+
+            // 2. Delete processing errors
+            Statement del_errors(sess);
+            del_errors << "DELETE FROM processing_errors WHERE file_path=?", Keywords::use(file_path);
+            del_errors.execute();
+
+            // 3. Delete physical cached thumbnail & thumbnail_cache row
+            Statement sel_thumbs(sess);
+            sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
+            RecordSet rs(sel_thumbs);
+            if (rs.moveFirst())
+            {
+                std::string cached_path = rs[0].convert<std::string>();
+                try {
+                    if (std::filesystem::exists(cached_path)) {
+                        std::filesystem::remove(cached_path);
+                    }
+                } catch (...) {}
+            }
+
+            Statement del_thumbs(sess);
+            del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
+            del_thumbs.execute();
+
+            // 4. Delete the scanned_file row itself
+            // This will CASCADE DELETE to:
+            // - duplicate_members
+            // - ejected_files_history
+            Statement del_file(sess);
+            del_file << "DELETE FROM scanned_files WHERE id=?", Keywords::use(file_id);
+            del_file.execute();
+
+            sess.commit();
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            try { 
+                auto lease = db.acquireSessionLease();
+                lease.get().rollback(); 
+            } catch(...) {}
+            Poco::Logger::get("ScannedFilesOps").error("Failed to completely remove by id %d: %s", file_id, std::string(e.what()));
+            return false;
+        }
+    }
+
     std::optional<ScannedFileRow> ScannedFilesOps::getByPath(DatabaseManager &db, const std::string &file_path)
     {
         try
