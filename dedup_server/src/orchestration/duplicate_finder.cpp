@@ -149,12 +149,17 @@ namespace MediaDedup
                 logger.information("Duplicate detection run completed: processed %d files in %d batches",
                                    total_processed, batch_count);
 
-                // Perform cross-group checking exactly ONCE at the end of the run
-                double threshold_max = getThresholdMax(mode_str);
-                int cross_group_moves = performCrossGroupChecking(mode_str, threshold_max);
-                if (cross_group_moves > 0)
+                // Perform cross-group checking exactly ONCE at the end of the run,
+                // but ONLY if new files were actually processed. If no new files were added,
+                // no new groups were created, so re-running the check will yield 0 moves.
+                if (total_processed > 0)
                 {
-                    logger.information("Cross-group optimization completed: moved %d files to better-matching groups", cross_group_moves);
+                    double threshold_max = getThresholdMax(mode_str);
+                    int cross_group_moves = performCrossGroupChecking(mode_str, threshold_max);
+                    if (cross_group_moves > 0)
+                    {
+                        logger.information("Cross-group optimization completed: moved %d files to better-matching groups", cross_group_moves);
+                    }
                 }
 
                 // Log current statistics
