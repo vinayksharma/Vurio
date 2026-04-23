@@ -194,14 +194,6 @@ async function createViewerWindow(filePath: string, details: string) {
 
   viewerWindow.on('closed', () => {
     viewerWindows.delete(viewerWindow);
-    // Close all other viewer windows when one is closed
-    const remaining = Array.from(viewerWindows);
-    viewerWindows.clear();
-    for (const win of remaining) {
-      if (!win.isDestroyed()) {
-        win.close();
-      }
-    }
   });
 
   const session = viewerWindow.webContents.session;
@@ -218,6 +210,14 @@ async function createViewerWindow(filePath: string, details: string) {
 
 ipcMain.handle('window:openViewer', async (_event, options: { filePath: string; details: string }) => {
   try {
+    const remaining = Array.from(viewerWindows);
+    viewerWindows.clear();
+    for (const win of remaining) {
+      if (!win.isDestroyed()) {
+        win.close();
+      }
+    }
+
     await createViewerWindow(options.filePath, options.details);
     return { ok: true };
   } catch (err) {

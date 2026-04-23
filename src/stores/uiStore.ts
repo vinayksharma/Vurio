@@ -18,6 +18,8 @@ interface UIState {
   setDebugOverlayEnabled: (enabled: boolean) => void;
   duplicateTightness: number;
   setDuplicateTightness: (tightness: number) => void;
+  activeViewerGroupId: number | null;
+  setActiveViewerGroupId: (id: number | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -40,6 +42,8 @@ export const useUIStore = create<UIState>()(
         setDebugOverlayEnabled: (enabled) => set({ debugOverlayEnabled: enabled }, false, 'ui/setDebugOverlayEnabled'),
         duplicateTightness: 0.0,
         setDuplicateTightness: (tightness) => set({ duplicateTightness: tightness }, false, 'ui/setDuplicateTightness'),
+        activeViewerGroupId: null,
+        setActiveViewerGroupId: (id) => set({ activeViewerGroupId: id }, false, 'ui/setActiveViewerGroupId'),
       }),
       {
         name: 'vurio-ui-storage',
