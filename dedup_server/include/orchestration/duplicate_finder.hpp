@@ -5,9 +5,12 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <shared_mutex>
+#include <condition_variable>
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "config/config_enums.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 
 namespace MediaDedup
 {
@@ -28,7 +31,8 @@ namespace MediaDedup
         {
         public:
             explicit DuplicateFinder(std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                                     DatabaseManager &db);
+                                     DatabaseManager &db,
+                                     std::shared_ptr<ThreadPoolManager> tpm = nullptr);
             ~DuplicateFinder();
 
             /**
@@ -308,6 +312,7 @@ namespace MediaDedup
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             DatabaseManager &db_;
+            std::shared_ptr<ThreadPoolManager> tpm_;
 
             std::atomic<bool> running_{false};
             mutable std::mutex mutex_;

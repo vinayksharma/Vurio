@@ -29,8 +29,9 @@ namespace MediaDedup
         using Poco::Data::Keywords::use;
 
         DuplicateFinder::DuplicateFinder(std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                                         DatabaseManager &db)
-            : cfg_(std::move(cfg)), db_(db)
+                                         DatabaseManager &db,
+                                         std::shared_ptr<ThreadPoolManager> tpm)
+            : cfg_(std::move(cfg)), db_(db), tpm_(std::move(tpm))
         {
         }
 
@@ -52,6 +53,12 @@ namespace MediaDedup
             enabled_ = cfg_->getPropertyValue<bool>("duplicates.finder.enabled", true);
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
             max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
+
+            // Configure ThreadPoolManager share
+            if (tpm_) {
+                double duplicate_finder_share = cfg_->getPropertyValue<double>("tpm.types.duplicate_finder.share", 1.0);
+                tpm_->setShare("duplicate_finder", duplicate_finder_share);
+            }
 
             // Two-tier thresholds: similarity (min to consider) and duplicate (true duplicate tier)
             embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity",
@@ -412,143 +419,200 @@ namespace MediaDedup
                     logger.information("Duplicate finder batch: using full scan (vector index %s, knnK=%d)",
                                       (vix && vix->isReady()) ? "ready" : "unavailable", knn_k);
 
-                // Process each new file
-                int files_checked = 0;
-                int duplicates_found = 0;
-                int groups_created = 0;
-                int groups_updated = 0;
-                int new_last_processed_id = last_processed_id;
+                // Process each new file concurrently using ThreadPoolManager
+                std::atomic<int> files_checked{0};
+                std::atomic<int> duplicates_found{0};
+                std::atomic<int> groups_created{0};
+                std::atomic<int> groups_updated{0};
+                std::atomic<int> new_last_processed_id{last_processed_id};
+
+                std::shared_mutex rw_mutex;
+                std::mutex latch_mutex;
+                std::condition_variable latch_cv;
+                std::atomic<int> pending_tasks(static_cast<int>(file_ids.size()));
 
                 for (size_t i = 0; i < file_ids.size(); ++i)
                 {
-                    FileArtifact new_file;
-                    if (!loadFileArtifacts(file_ids[i], mode, new_file))
-                    {
-                        logger.warning("Failed to load artifacts for file_id %d, skipping", file_ids[i]);
-                        new_last_processed_id = file_ids[i];
-                        continue;
-                    }
+                    int current_file_id = file_ids[i];
 
-                    files_checked++;
-
-                    // Check if already in a group (added earlier in this batch)
-                    auto existing_group_opt = getGroupIdForFile(new_file.file_id, mode);
-                    if (existing_group_opt.has_value())
-                    {
-                        logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
-                        new_last_processed_id = file_ids[i];
-                        continue;
-                    }
-
-                    double threshold_min = getThresholdMin(mode);
-                    double threshold_max = getThresholdMax(mode);
-
-                    // STEP 1: Compare against group representatives (or KNN candidates when vector index is enabled)
-                    int best_group_id = -1;
-                    double best_similarity = 0.0;
-                    int metadata_filtered_count = 0;
-
-                    const std::map<int, FileArtifact> *reps_to_use = &group_representatives;
-                    std::map<int, FileArtifact> candidate_representatives;
-                    if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
-                    {
-                        auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
-                        std::set<int> knn_ids;
-                        for (const auto &p : knn)
-                            knn_ids.insert(p.first);
-                        for (const auto &[gid, rep] : group_representatives)
-                            if (knn_ids.count(rep.file_id))
-                                candidate_representatives[gid] = rep;
-                        if (!candidate_representatives.empty())
-                            reps_to_use = &candidate_representatives;
-                    }
-
-                    for (const auto &[group_id, representative] : *reps_to_use)
-                    {
-                        // Metadata pre-filtering: Skip if files are incompatible
-                        if (!areMetadataCompatible(new_file, representative))
+                    auto task = [this, current_file_id, mode, &files_checked, &duplicates_found, &groups_created, &groups_updated, &new_last_processed_id, &batch_ungrouped_files, &group_representatives, &ungrouped_files, &rw_mutex, &latch_mutex, &latch_cv, &pending_tasks, &logger, last_processed_id, knn_k, vix]() {
+                        try
                         {
-                            metadata_filtered_count++;
-                            continue;
-                        }
-
-                        double sim = computeSimilarity(new_file, representative, mode);
-                        if (sim >= threshold_min && sim > best_similarity)
-                        {
-                            best_group_id = group_id;
-                            best_similarity = sim;
-                        }
-                    }
-
-                    if (metadata_filtered_count > 0)
-                    {
-                        logger.trace("Metadata filtering skipped %d/%zu group comparisons for file_id %d",
-                                     metadata_filtered_count, reps_to_use->size(), new_file.file_id);
-                    }
-
-                    if (best_group_id > 0)
-                    {
-                        // Two-tier logic: duplicate (>= threshold_max) or similar [threshold_min, threshold_max)
-                        if (best_similarity >= threshold_max)
-                        {
-                            // Duplicate tier: add directly (no all-members check)
-                            if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                            FileArtifact new_file;
+                            if (!loadFileArtifacts(current_file_id, mode, new_file))
                             {
-                                duplicates_found++;
-                                groups_updated++;
-                                logger.information("Added file_id %d to group %d (duplicate tier, similarity=%.3f)",
-                                                   new_file.file_id, best_group_id, best_similarity);
+                                logger.warning("Failed to load artifacts for file_id %d, skipping", current_file_id);
+                                int current_max = new_last_processed_id.load();
+                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
+                                goto task_end;
+                            }
 
-                                auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
-                                if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
+                            files_checked++;
+
+                            // Check if already in a group (added earlier in this batch)
+                            auto existing_group_opt = getGroupIdForFile(new_file.file_id, mode);
+                            if (existing_group_opt.has_value())
+                            {
+                                logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
+                                int current_max = new_last_processed_id.load();
+                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
+                                goto task_end;
+                            }
+
+                            double threshold_min = getThresholdMin(mode);
+                            double threshold_max = getThresholdMax(mode);
+
+                            // STEP 1: Compare against group representatives (or KNN candidates when vector index is enabled)
+                            int best_group_id = -1;
+                            double best_similarity = 0.0;
+                            int metadata_filtered_count = 0;
+
+                            {
+                                std::shared_lock<std::shared_mutex> r_lock(rw_mutex);
+
+                                const std::map<int, FileArtifact> *reps_to_use = &group_representatives;
+                                std::map<int, FileArtifact> candidate_representatives;
+                                if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
                                 {
-                                    group_representatives[best_group_id] = new_file;
-                                    logger.information("Group %d representative swapped to file_id %d (larger/older)",
-                                                       best_group_id, new_file.file_id);
+                                    auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
+                                    std::set<int> knn_ids;
+                                    for (const auto &p : knn)
+                                        knn_ids.insert(p.first);
+                                    for (const auto &[gid, rep] : group_representatives)
+                                        if (knn_ids.count(rep.file_id))
+                                            candidate_representatives[gid] = rep;
+                                    if (!candidate_representatives.empty())
+                                        reps_to_use = &candidate_representatives;
                                 }
-                            }
-                        }
-                        else
-                        {
-                            // Similar tier: try split when new_file crosses duplicate threshold with a similar member
-                            if (trySplitAndRedistribute(best_group_id, new_file, best_similarity, mode,
-                                                       group_representatives, duplicates_found,
-                                                       groups_created, groups_updated))
-                            {
-                                logger.information("Split and redistributed: file_id %d triggered new group from group %d",
-                                                   new_file.file_id, best_group_id);
-                            }
-                            else
-                            {
-                                // No split: add to similar list of best group
-                                if (addToGroup(best_group_id, new_file, mode, best_similarity))
+
+                                for (const auto &[group_id, representative] : *reps_to_use)
                                 {
-                                    duplicates_found++;
-                                    groups_updated++;
-                                    logger.information("Added file_id %d to group %d (similar tier, similarity=%.3f)",
-                                                       new_file.file_id, best_group_id, best_similarity);
+                                    // Metadata pre-filtering: Skip if files are incompatible
+                                    if (!areMetadataCompatible(new_file, representative))
+                                    {
+                                        metadata_filtered_count++;
+                                        continue;
+                                    }
+
+                                    double sim = computeSimilarity(new_file, representative, mode);
+                                    if (sim >= threshold_min && sim > best_similarity)
+                                    {
+                                        best_group_id = group_id;
+                                        best_similarity = sim;
+                                    }
                                 }
+                            } // Read lock released
+
+                            if (metadata_filtered_count > 0)
+                            {
+                                logger.trace("Metadata filtering skipped %d group comparisons for file_id %d",
+                                             metadata_filtered_count, new_file.file_id);
                             }
-                        }
-                    }
-                    else
-                    {
-                        // No group match - try cross-batch comparison against previously ungrouped files
-                        // This enables finding duplicates across different processing batches
-                        int cross_batch_group_id = tryCrossBatchGrouping(
-                            new_file, ungrouped_files, last_processed_id, mode, threshold_min,
-                            group_representatives, duplicates_found, groups_created);
 
-                        if (cross_batch_group_id < 0)
+                            // Write phase
+                            {
+                                std::unique_lock<std::shared_mutex> w_lock(rw_mutex);
+
+                                int current_max = new_last_processed_id.load();
+                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
+
+                                if (best_group_id > 0)
+                                {
+                                    // Two-tier logic: duplicate (>= threshold_max) or similar [threshold_min, threshold_max)
+                                    if (best_similarity >= threshold_max)
+                                    {
+                                        // Duplicate tier: add directly (no all-members check)
+                                        if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                                        {
+                                            duplicates_found++;
+                                            groups_updated++;
+                                            logger.information("Added file_id %d to group %d (duplicate tier, similarity=%.3f)",
+                                                               new_file.file_id, best_group_id, best_similarity);
+
+                                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
+                                            if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
+                                            {
+                                                group_representatives[best_group_id] = new_file;
+                                                logger.information("Group %d representative swapped to file_id %d (larger/older)",
+                                                                   best_group_id, new_file.file_id);
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Similar tier: try split when new_file crosses duplicate threshold with a similar member
+                                        int local_dups = 0, local_created = 0, local_updated = 0;
+                                        if (trySplitAndRedistribute(best_group_id, new_file, best_similarity, mode,
+                                                                   group_representatives, local_dups,
+                                                                   local_created, local_updated))
+                                        {
+                                            duplicates_found += local_dups;
+                                            groups_created += local_created;
+                                            groups_updated += local_updated;
+                                            logger.information("Split and redistributed: file_id %d triggered new group from group %d",
+                                                               new_file.file_id, best_group_id);
+                                        }
+                                        else
+                                        {
+                                            // No split: add to similar list of best group
+                                            if (addToGroup(best_group_id, new_file, mode, best_similarity))
+                                            {
+                                                duplicates_found++;
+                                                groups_updated++;
+                                                logger.information("Added file_id %d to group %d (similar tier, similarity=%.3f)",
+                                                                   new_file.file_id, best_group_id, best_similarity);
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    // No group match - try cross-batch comparison against previously ungrouped files
+                                    int local_dups = 0, local_created = 0;
+                                    int cross_batch_group_id = tryCrossBatchGrouping(
+                                        new_file, ungrouped_files, last_processed_id, mode, threshold_min,
+                                        group_representatives, local_dups, local_created);
+
+                                    if (cross_batch_group_id > 0) {
+                                        duplicates_found += local_dups;
+                                        groups_created += local_created;
+                                    }
+                                    else
+                                    {
+                                        // No cross-batch match found - add to batch ungrouped for within-batch grouping
+                                        batch_ungrouped_files.push_back(new_file);
+                                        logger.trace("File_id %d doesn't match any representative or ungrouped file, marked as batch-ungrouped",
+                                                     new_file.file_id);
+                                    }
+                                }
+                            } // Write lock released
+                        }
+                        catch (const std::exception &e)
                         {
-                            // No cross-batch match found - add to batch ungrouped for within-batch grouping
-                            batch_ungrouped_files.push_back(new_file);
-                            logger.trace("File_id %d doesn't match any representative or ungrouped file, marked as batch-ungrouped",
-                                         new_file.file_id);
+                            logger.error("Exception in file processing task for file_id %d: %s", current_file_id, std::string(e.what()));
                         }
-                    }
+                        catch (...)
+                        {
+                            logger.error("Unknown exception in file processing task for file_id %d", current_file_id);
+                        }
 
-                    new_last_processed_id = file_ids[i];
+                    task_end:
+                        std::lock_guard<std::mutex> lk(latch_mutex);
+                        pending_tasks--;
+                        if (pending_tasks == 0) latch_cv.notify_one();
+                    };
+
+                    if (tpm_) {
+                        tpm_->submit("duplicate_finder", task);
+                    } else {
+                        task(); // Fallback if TPM is missing
+                    }
+                }
+
+                // Wait for all concurrent tasks to finish
+                {
+                    std::unique_lock<std::mutex> lk(latch_mutex);
+                    latch_cv.wait(lk, [&]{ return pending_tasks == 0; });
                 }
 
                 // STEP 2: Create new groups from batch ungrouped files (2+ similar files required)
@@ -649,8 +713,8 @@ namespace MediaDedup
 
                 // Update checkpoint
                 bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
-                    db_, mode, new_last_processed_id, files_checked, duplicates_found,
-                    groups_created, groups_updated);
+                    db_, mode, new_last_processed_id.load(), files_checked.load(), duplicates_found.load(),
+                    groups_created.load(), groups_updated.load());
 
                 if (!checkpoint_updated)
                 {
@@ -663,7 +727,7 @@ namespace MediaDedup
                 int cross_group_moves = performCrossGroupChecking(mode, threshold_max);
 
                 logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d, cross_group_moves=%d",
-                                   files_checked, duplicates_found, groups_created, groups_updated, cross_group_moves);
+                                   files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load(), cross_group_moves);
 
                 return static_cast<int>(file_ids.size());
             }
