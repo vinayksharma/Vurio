@@ -263,6 +263,15 @@ namespace MediaDedup
                 return false;
             }
 
+            // Apply EXIF rotation to ensure correct orientation
+            image.autoOrient();
+
+            // Convert to sRGB to ensure proper colors (RAW files often default to linear RGB or CMYK)
+            if (image.colorSpace() != Magick::sRGBColorspace)
+            {
+                image.colorSpace(Magick::sRGBColorspace);
+            }
+
             size_t orig_w = image.columns();
             size_t orig_h = image.rows();
 
@@ -272,30 +281,11 @@ namespace MediaDedup
                 return false;
             }
 
-            size_t new_w = orig_w, new_h = orig_h;
             if (size > 0)
             {
-                // Calculate new dimensions maintaining aspect ratio
-                if (orig_w > orig_h)
-                {
-                    new_w = size;
-                    new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
-                }
-                else
-                {
-                    new_h = size;
-                    new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
-                }
-
-                // Ensure minimum dimensions
-                if (new_w == 0)
-                    new_w = 1;
-                if (new_h == 0)
-                    new_h = 1;
-
-                // Resize image with high-quality filter
-                std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
-                image.resize(Magick::Geometry(geometry));
+                // Let ImageMagick handle the aspect ratio perfectly
+                Magick::Geometry geom(size, size);
+                image.resize(geom);
             }
 
             // Set JPEG quality (0-100)
@@ -303,6 +293,8 @@ namespace MediaDedup
 
             // Set output format to JPEG explicitly
             image.magick("JPEG");
+            // Set depth to 8-bit for web compatibility
+            image.depth(8);
 
             // Write thumbnail to blob
             image.write(&blob);
@@ -314,7 +306,7 @@ namespace MediaDedup
             }
 
             logger.debug("Generated thumbnail to blob: %s (%zux%zu) -> blob (%zux%zu, %zu bytes)",
-                         source_path, orig_w, orig_h, new_w, new_h, blob.length());
+                         source_path, orig_w, orig_h, image.columns(), image.rows(), blob.length());
 
             return true;
         }
