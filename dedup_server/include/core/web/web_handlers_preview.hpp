@@ -41,6 +41,10 @@ namespace MediaDedup
                                Poco::Net::HTTPServerResponse &response,
                                int64_t source_modified_at);
 
+        void streamData(const char* data, size_t length,
+                        Poco::Net::HTTPServerResponse &response,
+                        int64_t source_modified_at);
+
         void sendErrorResponse(Poco::Net::HTTPServerResponse &response,
                                const std::string &error_message,
                                int status_code);
