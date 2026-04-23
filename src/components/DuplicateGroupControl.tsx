@@ -103,6 +103,7 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
   };
 
   const handleImageClick = (filePath: string, tooltip: string) => {
+    useUIStore.getState().setActiveViewerGroupId(group.id);
     if (window.imagePopup) {
       const groupImages = sortedMembers.map((member, index) => {
         const isFirst = index === 0;
@@ -951,8 +952,24 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
     .filter((member, index) => (1 - (member.similarity_score ?? 0)) <= duplicateTightness && index > 0);
   const allPerfectMatchesEjected = perfectMatches.length > 0 && perfectMatches.every(m => m.is_ejected);
 
+  const activeViewerGroupId = useUIStore(state => state.activeViewerGroupId);
+  const isActiveViewerGroup = activeViewerGroupId === group.id;
+
   return (
-    <div className="card duplicate-group-card" ref={containerRef} style={{ height: '100%', maxHeight: '100%', minHeight: 0 }}>
+    <div 
+      className={`card duplicate-group-card ${isActiveViewerGroup ? 'active-viewer-group' : ''}`} 
+      ref={containerRef} 
+      style={{ 
+        height: '100%', 
+        maxHeight: '100%', 
+        minHeight: 0,
+        boxSizing: 'border-box',
+        ...(isActiveViewerGroup ? { 
+          border: '2px solid rgba(255, 140, 0, 0.8)', 
+          boxShadow: '0 0 10px rgba(255, 140, 0, 0.3)' 
+        } : {})
+      }}
+    >
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
         <div
           className="duplicate-group-header"

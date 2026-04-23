@@ -57,6 +57,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const loadGroupsFromAPIRef = useRef<typeof loadGroupsFromAPI | null>(null);
   const isInitializedRef = useRef(false);
   const lastRemapTimestampRef = useRef<number>(0);
+  const refreshVisibleRangeRef = useRef<() => void>(() => {});
   const [thumbnailReloadKey, setThumbnailReloadKey] = useState<number>(0);
   const scrollStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scrollPercent, setScrollPercent] = useState<number>(0);
@@ -96,20 +97,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     if (!isActive || !isOnline) return;
 
     const fetchVisible = () => {
-      const total = totalGroupsRef.current;
-      if (total === 0 || !loadGroupsFromAPIRef.current) return;
-      
-      const { start, end } = visibleRangeRef.current;
-      if (start === 0 && end === 0 && total === 0) return;
-      
-      const safeEnd = Math.min(end, total - 1);
-      const count = Math.max(0, safeEnd - start + 1);
-      
-      if (count > 0) {
-        loadGroupsFromAPIRef.current(start, count).catch(err => {
-          console.error('Error during periodic visible range polling:', err);
-        });
-      }
+      refreshVisibleRangeRef.current();
     };
 
     // Immediate fetch to refresh stale cache when returning to the view
@@ -298,15 +286,82 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
   }, []);
 
-  // Refresh visible range without changing scroll
-  const refreshVisibleRange = useCallback(() => {
+  // Refresh visible range without changing scroll, using Scroll Anchoring to prevent jumps
+  const refreshVisibleRange = useCallback(async () => {
     if (!cardStackRef.current || !isActive || !isOnline || isLoadingRef.current) return;
     const container = cardStackRef.current;
     const range = calculateVisibleRange(container);
     const rangeSize = range.end - range.start + 1;
-    const count = Math.min(BATCH_SIZE * 2, Math.max(1, rangeSize));
-    loadGroupsFromAPI(range.start, count);
-  }, [calculateVisibleRange, loadGroupsFromAPI, isActive, isOnline]);
+    
+    // Fetch a wider window to find the anchor if it shifted
+    const fetchStart = Math.max(0, range.start - 20);
+    const fetchCount = rangeSize + 40;
+    
+    // Identify anchor
+    const anchorIndex = range.start;
+    const anchorGroup = groupsCacheRef.current.get(anchorIndex);
+    const anchorId = anchorGroup?.id;
+    const anchorRep = anchorGroup?.representative;
+    
+    isLoadingRef.current = true;
+    try {
+      const data = await fetchDuplicateGroups(fetchStart, fetchCount, null);
+      
+      const total = data.total_count ?? data.total ?? 0;
+      if (total !== totalGroupsRef.current && total > 0) {
+        setTotalGroups(total);
+        totalGroupsRef.current = total;
+      }
+      
+      if (!data.groups || !Array.isArray(data.groups)) return;
+      
+      let delta = 0;
+      if (anchorId !== undefined || anchorRep !== undefined) {
+        let newIndex = -1;
+        for (let i = 0; i < data.groups.length; i++) {
+          const g = data.groups[i];
+          if ((anchorId !== undefined && g.id === anchorId) || 
+              (anchorRep !== undefined && g.representative === anchorRep)) {
+            newIndex = fetchStart + i;
+            break;
+          }
+        }
+        
+        if (newIndex !== -1 && newIndex !== anchorIndex) {
+          delta = newIndex - anchorIndex;
+          console.log(`[Anchoring] Group shifted from ${anchorIndex} to ${newIndex}. Delta: ${delta}`);
+          
+          const newCache = new Map<number, DuplicateGroup>();
+          for (const [k, v] of groupsCacheRef.current.entries()) {
+            newCache.set(k + delta, v);
+          }
+          groupsCacheRef.current = newCache;
+          
+          container.scrollTop += delta * ITEM_HEIGHT;
+          setVisibleRange(calculateVisibleRange(container));
+        }
+      }
+      
+      let hasChanges = false;
+      data.groups.forEach((group, idx) => {
+        const key = fetchStart + idx;
+        if (!groupsCacheRef.current.has(key)) hasChanges = true;
+        groupsCacheRef.current.set(key, group);
+      });
+      
+      if (hasChanges || data.groups.length > 0 || delta !== 0) {
+        setCacheVersion(v => v + 1);
+      }
+    } catch (e) {
+      console.error('Anchored fetch failed:', e);
+    } finally {
+      isLoadingRef.current = false;
+    }
+  }, [calculateVisibleRange, isActive, isOnline, ITEM_HEIGHT]);
+
+  useEffect(() => {
+    refreshVisibleRangeRef.current = refreshVisibleRange;
+  }, [refreshVisibleRange]);
 
   // Handle scroll events
   const handleScroll = useCallback(() => {
@@ -470,6 +525,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
            }
            
            if (targetGroup) {
+              useUIStore.getState().setActiveViewerGroupId(targetGroup.id);
               let sortedMembers: DuplicateGroupMember[] = [];
               if (targetGroup.members && targetGroup.members.length > 0) {
                 sortedMembers = [...targetGroup.members].sort((a, b) => {
@@ -513,6 +569,8 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
               });
            }
         }
+      } else if (e.data.type === 'VIEWER_CLOSED') {
+        useUIStore.getState().setActiveViewerGroupId(null);
       }
     };
     return () => bc.close();

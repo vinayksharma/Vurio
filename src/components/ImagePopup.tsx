@@ -78,6 +78,7 @@ const ImagePopup: React.FC = () => {
       }
     };
     return () => {
+      bcRef.current?.postMessage({ type: 'VIEWER_CLOSED' });
       bcRef.current?.close();
     };
   }, []);
