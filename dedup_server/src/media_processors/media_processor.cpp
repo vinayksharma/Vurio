@@ -12,6 +12,7 @@
 #include "database/processing_errors_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "orchestration/thread_pool_manager.hpp"
+#include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
 #include <algorithm>
@@ -259,13 +260,11 @@ namespace MediaDedup
                     {
                         Poco::Logger::get("MediaProcessor").information("Raw file detected, checking preview cache: %s", file_path_copy);
                         
-                        // Helper to get mtime safely
+                        // Helper to get mtime safely, matching PreviewHandler's logic exactly
                         int64_t source_mtime = 0;
                         try {
-                            auto ftime = std::filesystem::last_write_time(file_path_copy);
-                            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-                            source_mtime = std::chrono::system_clock::to_time_t(sctp);
+                            Poco::File f(file_path_copy);
+                            source_mtime = f.getLastModified().epochTime();
                         } catch (...) {}
 
                         auto existing_preview = PreviewCacheOps::getPreview(*db_manager, file_path_copy);
