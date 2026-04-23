@@ -36,6 +36,8 @@ namespace MediaDedup
 
             void start();
             void stop();
+            void pause();
+            void resume();
 
             void registerJob(const std::string &jobId,
                              std::chrono::milliseconds interval,
@@ -68,6 +70,9 @@ namespace MediaDedup
 
             // Set shutdown callback (called when max failures reached)
             void setShutdownCallback(std::function<void()> callback);
+
+            // Set pause callback (called when scheduler is paused)
+            void setPauseCallback(std::function<void()> callback);
 
         private:
             struct Job
@@ -107,7 +112,9 @@ namespace MediaDedup
             std::unordered_map<std::string, std::unique_ptr<Job>> jobs_;
 
             std::atomic<bool> running_{false};
+            std::atomic<bool> paused_{false};
             std::function<void()> shutdownCallback_;
+            std::function<void()> pauseCallback_;
         };
     } // namespace Orchestration
 } // namespace MediaDedup

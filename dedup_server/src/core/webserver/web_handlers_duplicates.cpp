@@ -943,8 +943,8 @@ namespace MediaDedupServer
                     std::lock_guard<std::mutex> lock(state_mutex_);
                     state_.current_phase = "Halting background threads and draining queues...";
                 }
-                logger.information("Stopping scheduler service...");
-                scheduler->stop();
+                logger.information("Pausing scheduler service to prevent concurrent DB changes...");
+                scheduler->pause();
 
                 logger.information("Clearing ThreadPoolManager queues...");
                 tpm->clearQueues();
@@ -1100,6 +1100,25 @@ namespace MediaDedupServer
                     if (errors_removed > 0) logger.information("Removed %d orphaned errors.", errors_removed);
                 }
 
+                // Phase 5: Reclaim Database Space
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Reclaiming database space (VACUUM)...";
+                    state_.progress = 95;
+                }
+                {
+                    try {
+                        auto lease = db->acquireSessionLease();
+                        Poco::Data::Session &sess = lease.get();
+                        Poco::Data::Statement vac(sess);
+                        vac << "VACUUM";
+                        vac.execute();
+                        logger.information("Database vacuumed successfully to reclaim space.");
+                    } catch (const std::exception& e) {
+                        logger.warning("Database vacuum failed: %s", std::string(e.what()));
+                    }
+                }
+
                 // Finish
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1107,8 +1126,8 @@ namespace MediaDedupServer
                     state_.progress = 100;
                 }
 
-                logger.information("Restarting scheduler service...");
-                scheduler->start();
+                logger.information("Resuming scheduler service...");
+                scheduler->resume();
 
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1173,6 +1192,16 @@ namespace MediaDedupServer
 
                 if (success)
                 {
+                    std::string zip_path = backup_dir.string() + ".zip";
+                    std::string cmd = "cd \"" + p.parent_path().string() + "\" && zip -r -q \"" + backup_dir_name + ".zip\" \"" + backup_dir_name + "\" && rm -rf \"" + backup_dir_name + "\"";
+                    int result = std::system(cmd.c_str());
+                    
+                    if (result == 0) {
+                        backup_path = p.parent_path() / (backup_dir_name + ".zip");
+                    } else {
+                        Poco::Logger::get("BackupDatabaseHandler").warning("Compression failed, keeping uncompressed directory.");
+                    }
+
                     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                     std::ostream &out = response.send();
                     out << "{\"success\": true, \"backup_path\": \"" << backup_path.string() << "\"}";
@@ -1220,13 +1249,21 @@ namespace MediaDedupServer
 
                 if (std::filesystem::exists(parent) && std::filesystem::is_directory(parent)) {
                     for (const auto& entry : std::filesystem::directory_iterator(parent)) {
-                        if (entry.is_directory() && entry.path().filename().string().find(prefix) == 0) {
-                            std::filesystem::path backup_file = entry.path() / p.filename();
-                            if (std::filesystem::exists(backup_file)) {
-                                std::string dir_name = entry.path().filename().string();
+                        std::string filename = entry.path().filename().string();
+                        if (filename.find(prefix) == 0) {
+                            if (entry.is_directory()) {
+                                std::filesystem::path backup_file = entry.path() / p.filename();
+                                if (std::filesystem::exists(backup_file)) {
+                                    if (latest_dir_name.empty() || filename > latest_dir_name) {
+                                        latest_dir_name = filename;
+                                        latest_backup_file = backup_file.string();
+                                    }
+                                }
+                            } else if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".zip") {
+                                std::string dir_name = filename.substr(0, filename.size() - 4);
                                 if (latest_dir_name.empty() || dir_name > latest_dir_name) {
                                     latest_dir_name = dir_name;
-                                    latest_backup_file = backup_file.string();
+                                    latest_backup_file = entry.path().string();
                                 }
                             }
                         }

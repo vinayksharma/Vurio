@@ -443,12 +443,39 @@ namespace MediaDedup
                 std::mutex latch_mutex;
                 std::condition_variable latch_cv;
                 std::atomic<int> pending_tasks(static_cast<int>(file_ids.size()));
+                std::atomic<bool> any_dropped(false);
+
+                struct TaskCompletionNotifier {
+                    std::mutex& latch_mutex;
+                    std::condition_variable& latch_cv;
+                    std::atomic<int>& pending_tasks;
+                    std::atomic<bool>& any_dropped;
+                    bool completed_normally = false;
+
+                    TaskCompletionNotifier(std::mutex& m, std::condition_variable& cv, std::atomic<int>& p, std::atomic<bool>& ad) 
+                        : latch_mutex(m), latch_cv(cv), pending_tasks(p), any_dropped(ad) {}
+                    
+                    void notify(bool normal) {
+                        if (!completed_normally) {
+                            completed_normally = true;
+                            if (!normal) any_dropped = true;
+                            std::lock_guard<std::mutex> lk(latch_mutex);
+                            pending_tasks--;
+                            if (pending_tasks == 0) latch_cv.notify_one();
+                        }
+                    }
+
+                    ~TaskCompletionNotifier() {
+                        notify(false); // If destroyed without normal completion, it was dropped
+                    }
+                };
 
                 for (size_t i = 0; i < file_ids.size(); ++i)
                 {
                     int current_file_id = file_ids[i];
+                    auto notifier = std::make_shared<TaskCompletionNotifier>(latch_mutex, latch_cv, pending_tasks, any_dropped);
 
-                    auto task = [this, current_file_id, mode, &files_checked, &duplicates_found, &groups_created, &groups_updated, &new_last_processed_id, &batch_ungrouped_files, &group_representatives, &ungrouped_files, &rw_mutex, &latch_mutex, &latch_cv, &pending_tasks, &logger, last_processed_id, knn_k, vix]() {
+                    auto task = [this, current_file_id, mode, &files_checked, &duplicates_found, &groups_created, &groups_updated, &new_last_processed_id, &batch_ungrouped_files, &group_representatives, &ungrouped_files, &rw_mutex, &latch_mutex, &latch_cv, &pending_tasks, &logger, last_processed_id, knn_k, vix, notifier]() {
                         try
                         {
                             FileArtifact new_file;
@@ -662,9 +689,7 @@ namespace MediaDedup
                         }
 
                     task_end:
-                        std::lock_guard<std::mutex> lk(latch_mutex);
-                        pending_tasks--;
-                        if (pending_tasks == 0) latch_cv.notify_one();
+                        notifier->notify(true);
                     };
 
                     if (tpm_) {
@@ -776,14 +801,18 @@ namespace MediaDedup
                     }
                 }
 
-                // Update checkpoint
-                bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
-                    db_, mode, new_last_processed_id.load(), files_checked.load(), duplicates_found.load(),
-                    groups_created.load(), groups_updated.load());
+                // Update checkpoint only if no tasks were dropped
+                if (!any_dropped.load()) {
+                    bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
+                        db_, mode, new_last_processed_id.load(), files_checked.load(), duplicates_found.load(),
+                        groups_created.load(), groups_updated.load());
 
-                if (!checkpoint_updated)
-                {
-                    logger.warning("Failed to update checkpoint for mode %s", mode);
+                    if (!checkpoint_updated)
+                    {
+                        logger.warning("Failed to update checkpoint for mode %s", mode);
+                    }
+                } else {
+                    logger.warning("Tasks were dropped (e.g. queue cleared). Checkpoint will not be updated this run.");
                 }
 
                 logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
@@ -1626,13 +1655,40 @@ namespace MediaDedup
                 logger.information("Found %zu low-similarity members to check concurrently", tasks.size());
 
                 std::mutex latch_mutex;
-                int pending_tasks = tasks.size();
                 std::condition_variable latch_cv;
+                std::atomic<int> pending_tasks(static_cast<int>(tasks.size()));
                 std::shared_mutex local_rw_mutex; // Protects DB writes during checking
+                std::atomic<bool> any_dropped(false);
+
+                struct TaskCompletionNotifier {
+                    std::mutex& latch_mutex;
+                    std::condition_variable& latch_cv;
+                    std::atomic<int>& pending_tasks;
+                    std::atomic<bool>& any_dropped;
+                    bool completed_normally = false;
+
+                    TaskCompletionNotifier(std::mutex& m, std::condition_variable& cv, std::atomic<int>& p, std::atomic<bool>& ad) 
+                        : latch_mutex(m), latch_cv(cv), pending_tasks(p), any_dropped(ad) {}
+                    
+                    void notify(bool normal) {
+                        if (!completed_normally) {
+                            completed_normally = true;
+                            if (!normal) any_dropped = true;
+                            std::lock_guard<std::mutex> lk(latch_mutex);
+                            pending_tasks--;
+                            if (pending_tasks == 0) latch_cv.notify_one();
+                        }
+                    }
+
+                    ~TaskCompletionNotifier() {
+                        notify(false);
+                    }
+                };
 
                 for (const auto &task_data : tasks)
                 {
-                    auto task = [this, task_data, mode, &group_representatives, &local_rw_mutex, &files_moved, &latch_mutex, &pending_tasks, &latch_cv]() {
+                    auto notifier = std::make_shared<TaskCompletionNotifier>(latch_mutex, latch_cv, pending_tasks, any_dropped);
+                    auto task = [this, task_data, mode, &group_representatives, &local_rw_mutex, &files_moved, notifier]() {
                         try
                         {
                             // Load artifacts for this member
@@ -1712,9 +1768,7 @@ namespace MediaDedup
                         catch (...) {}
 
                     task_end:
-                        std::lock_guard<std::mutex> lk(latch_mutex);
-                        pending_tasks--;
-                        if (pending_tasks == 0) latch_cv.notify_one();
+                        notifier->notify(true);
                     };
 
                     if (tpm_) {

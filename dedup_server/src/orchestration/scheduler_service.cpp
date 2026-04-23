@@ -54,6 +54,23 @@ namespace MediaDedup::Orchestration
         logger.information("SchedulerService stopped successfully");
     }
 
+    void SchedulerService::pause()
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        logger.information("Pausing SchedulerService...");
+        paused_.store(true, std::memory_order_relaxed);
+        if (pauseCallback_) {
+            pauseCallback_();
+        }
+    }
+
+    void SchedulerService::resume()
+    {
+        Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+        logger.information("Resuming SchedulerService...");
+        paused_.store(false, std::memory_order_relaxed);
+    }
+
     void SchedulerService::registerJob(const std::string &jobId,
                                        milliseconds interval,
                                        const std::string &typeKey,
@@ -102,6 +119,13 @@ namespace MediaDedup::Orchestration
                                              {
                                                  std::this_thread::sleep_for(step);
                                                  slept += step;
+                                             }
+                                             if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
+
+                                             // wait if paused
+                                             while (paused_.load(std::memory_order_relaxed) && running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
+                                             {
+                                                 std::this_thread::sleep_for(step);
                                              }
                                              if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
 
@@ -345,6 +369,11 @@ namespace MediaDedup::Orchestration
     void SchedulerService::setShutdownCallback(std::function<void()> callback)
     {
         shutdownCallback_ = std::move(callback);
+    }
+
+    void SchedulerService::setPauseCallback(std::function<void()> callback)
+    {
+        pauseCallback_ = std::move(callback);
     }
 
     void SchedulerService::executeJob(Job &job, const std::string &triggerType)
