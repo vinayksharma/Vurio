@@ -190,6 +190,8 @@ namespace MediaDedup
             return new MediaDedupServer::Core::UndoEjectDuplicatesHandler(database_manager_);
         if (path == "/api/settings/purge-ejected-errored" && method == "POST")
             return new MediaDedupServer::Core::PurgeEjectedErroredHandler(database_manager_, config_manager_);
+        if (path.find("/api/settings/database-integrity-check") == 0)
+            return new MediaDedupServer::Core::DatabaseIntegrityCheckHandler(database_manager_, config_manager_, scheduler_service_, tpm_);
         if (path == "/api/v1/config/restart-webserver" && method == "POST")
             return new RestartWebServerHandler(config_manager_, web_server_);
 

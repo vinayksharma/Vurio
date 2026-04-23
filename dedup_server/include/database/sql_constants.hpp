@@ -399,12 +399,11 @@ namespace MediaDedup
             "is_representative, added_at FROM duplicate_members WHERE group_id=? ORDER BY similarity_score DESC";
 
         inline constexpr std::string_view kSelectDuplicateGroupsForFile =
-            "SELECT dg.id, dg.mode, dg.representative_file_id, dg.representative_file_path, "
-            "dg.representative_file_size, dg.representative_created_date, dg.similarity_threshold, "
-            "dg.member_count, dg.created_at, dg.updated_at "
-            "FROM duplicate_groups dg "
-            "JOIN duplicate_members dm ON dg.id = dm.group_id "
-            "WHERE dm.file_id=? AND dg.mode=?";
+            "SELECT id, mode, representative_file_id, representative_file_path, "
+            "representative_file_size, representative_created_date, similarity_threshold, "
+            "member_count, created_at, updated_at "
+            "FROM duplicate_groups "
+            "WHERE (representative_file_id=? OR id IN (SELECT group_id FROM duplicate_members WHERE file_id=?)) AND mode=?";
 
         inline constexpr std::string_view kDeleteDuplicateGroup =
             "DELETE FROM duplicate_groups WHERE id=?";

@@ -448,6 +448,20 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     }
   }, [isActive, isOnline]);
 
+  // Listen to forced cache reset signals (e.g. from AdvancedSection's integrity check)
+  useEffect(() => {
+    const handleForceRefresh = () => {
+      console.log('[DuplicatesPanel] Force refresh requested, clearing cache');
+      groupsCacheRef.current.clear();
+      setCacheVersion(v => v + 1);
+      lastStatusDrivenRefreshRef.current = 0; // reset cooldown
+      refreshVisibleRangeRef.current();
+    };
+
+    window.addEventListener('duplicatesForceRefresh', handleForceRefresh);
+    return () => window.removeEventListener('duplicatesForceRefresh', handleForceRefresh);
+  }, []);
+
   useEffect(() => {
     const container = cardStackRef.current;
     if (container) {

@@ -5,6 +5,8 @@
 #include "database/duplicate_groups_ops.hpp"
 #include "database/ejected_files_ops.hpp"
 #include "orchestration/duplicate_finder.hpp"
+#include "orchestration/scheduler_service.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
@@ -795,16 +797,9 @@ namespace MediaDedupServer
                             success_count++;
                             logger.information("Successfully purged file ID %d (%s) from the database.", hist.file_id, hist.ejected_path);
                             
-                            // Check the remaining size of the groups the file belonged to
+                            // Check the remaining size of the groups the file belonged to and sync them
                             for (const auto& g : groups) {
-                                auto members = MediaDedup::DuplicateGroupsOps::getMembersByGroup(*database_manager_, g.id);
-                                if (members.size() <= 1) {
-                                    MediaDedup::DuplicateGroupsOps::deleteGroup(*database_manager_, g.id);
-                                    logger.information("Deleted duplicate group %d as it no longer has enough members.", g.id);
-                                } else {
-                                    MediaDedup::DuplicateGroupsOps::updateGroupMemberCount(*database_manager_, g.id, members.size());
-                                    logger.information("Updated member count for duplicate group %d to %zu.", g.id, members.size());
-                                }
+                                MediaDedup::DuplicateGroupsOps::syncGroupMemberCount(*database_manager_, g.id);
                             }
                         } else {
                             failure_count++;
@@ -839,6 +834,299 @@ namespace MediaDedupServer
                 std::ostringstream oss;
                 error_obj.stringify(oss);
                 response.sendBuffer(oss.str().data(), oss.str().length());
+            }
+        }
+
+        // --- DatabaseIntegrityCheckHandler ---
+
+        IntegrityCheckState DatabaseIntegrityCheckHandler::state_;
+        std::mutex DatabaseIntegrityCheckHandler::state_mutex_;
+
+        DatabaseIntegrityCheckHandler::DatabaseIntegrityCheckHandler(
+            std::shared_ptr<MediaDedup::DatabaseManager> db, 
+            std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+            std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+            std::shared_ptr<MediaDedup::ThreadPoolManager> tpm)
+            : database_manager_(db), config_manager_(cfg), scheduler_service_(scheduler), tpm_(tpm)
+        {
+        }
+
+        void DatabaseIntegrityCheckHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                          Poco::Net::HTTPServerResponse &response)
+        {
+            if (request.getURI().find("/start") != std::string::npos && request.getMethod() == "POST") {
+                handleStart(response);
+            } else if (request.getURI().find("/status") != std::string::npos && request.getMethod() == "GET") {
+                handleStatus(response);
+            } else {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+                response.send();
+            }
+        }
+
+        void DatabaseIntegrityCheckHandler::handleStart(Poco::Net::HTTPServerResponse &response)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DatabaseIntegrityCheckHandler");
+
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                if (state_.is_running) {
+                    response.setStatus(Poco::Net::HTTPResponse::HTTP_CONFLICT);
+                    response.setContentType("application/json");
+                    std::string err = R"({"success":false,"error":"An integrity check is already running"})";
+                    response.sendBuffer(err.data(), err.length());
+                    return;
+                }
+                
+                // Reset state
+                state_.is_running = true;
+                state_.progress = 0;
+                state_.total_files = 0;
+                state_.processed_files = 0;
+                state_.files_removed = 0;
+                state_.groups_removed = 0;
+                state_.thumbnails_removed = 0;
+                state_.artifacts_removed = 0;
+                state_.errors_removed = 0;
+                state_.current_phase = "Initializing...";
+            }
+
+            logger.information("Starting background database integrity check.");
+
+            // Launch detached thread
+            std::thread t(performIntegrityCheck, database_manager_, config_manager_, scheduler_service_, tpm_);
+            t.detach();
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("application/json");
+            std::string res = R"({"success":true,"message":"Integrity check started"})";
+            response.sendBuffer(res.data(), res.length());
+        }
+
+        void DatabaseIntegrityCheckHandler::handleStatus(Poco::Net::HTTPServerResponse &response)
+        {
+            Poco::JSON::Object result_obj;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                result_obj.set("running", (bool)state_.is_running);
+                result_obj.set("progress", (int)state_.progress);
+                result_obj.set("total_files", (int)state_.total_files);
+                result_obj.set("processed_files", (int)state_.processed_files);
+                result_obj.set("files_removed", (int)state_.files_removed);
+                result_obj.set("groups_removed", (int)state_.groups_removed);
+                result_obj.set("thumbnails_removed", (int)state_.thumbnails_removed);
+                result_obj.set("artifacts_removed", (int)state_.artifacts_removed);
+                result_obj.set("errors_removed", (int)state_.errors_removed);
+                result_obj.set("current_phase", state_.current_phase);
+            }
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.setContentType("application/json");
+            std::ostringstream oss;
+            result_obj.stringify(oss);
+            response.sendBuffer(oss.str().data(), oss.str().length());
+        }
+
+        void DatabaseIntegrityCheckHandler::performIntegrityCheck(
+            std::shared_ptr<MediaDedup::DatabaseManager> db,
+            std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+            std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+            std::shared_ptr<MediaDedup::ThreadPoolManager> tpm)
+        {
+            Poco::Logger &logger = Poco::Logger::get("DatabaseIntegrityCheckTask");
+
+            try {
+                // Phase 1: Graceful Drain & Halt
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Halting background threads and draining queues...";
+                }
+                logger.information("Stopping scheduler service...");
+                scheduler->stop();
+
+                logger.information("Clearing ThreadPoolManager queues...");
+                tpm->clearQueues();
+
+                logger.information("Waiting for ThreadPoolManager to drain running tasks...");
+                while (tpm->getStatus().runningTotal > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+                logger.information("All background threads halted successfully.");
+
+                // Phase 2: Sweep Scanned Files
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Checking physical file existence...";
+                }
+                logger.information("Fetching all scanned files...");
+                auto all_files = MediaDedup::ScannedFilesOps::listAll(*db);
+                
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.total_files = all_files.size();
+                }
+
+                std::string purity_str = cfg->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
+
+                for (size_t i = 0; i < all_files.size(); ++i) {
+                    const auto& file = all_files[i];
+
+                    if (!std::filesystem::exists(file.file_path)) {
+                        logger.information("File physically missing, removing from DB: %s", file.file_path);
+                        
+                        // Promote if representative
+                        auto groups = MediaDedup::DuplicateGroupsOps::getGroupsForFile(*db, file.id, "EMBEDDING");
+                        for (const auto& g : groups) {
+                            if (g.representative_file_id == file.id) {
+                                MediaDedup::Orchestration::DuplicateFinder::promoteNextBestRepresentative(*db, g.id, file.id, purity_str);
+                            }
+                        }
+
+                        // Completely wipe
+                        if (MediaDedup::ScannedFilesOps::completelyRemoveById(*db, file.id)) {
+                            std::lock_guard<std::mutex> lock(state_mutex_);
+                            state_.files_removed++;
+                        }
+
+                        // Check remaining groups size and sync them
+                        for (const auto& g : groups) {
+                            int actual_count = MediaDedup::DuplicateGroupsOps::syncGroupMemberCount(*db, g.id);
+                            if (actual_count <= 1) {
+                                std::lock_guard<std::mutex> lock(state_mutex_);
+                                state_.groups_removed++;
+                            }
+                        }
+                    }
+
+                    // Update progress periodically to avoid lock contention
+                    if (i % 50 == 0) {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        state_.processed_files = i + 1;
+                        state_.progress = (int)(((float)(i + 1) / all_files.size()) * 70.0f); // files check is 70% of total
+                    }
+                }
+
+                // Phase 3: Cleanup Orphaned Groups
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Cleaning orphaned groups...";
+                    state_.progress = 75;
+                }
+                {
+                    auto lease = db->acquireSessionLease();
+                    Poco::Data::Session &sess = lease.get();
+                    
+                    // First, fix member counts by syncing with actual distinct files
+                    Poco::Data::Statement update_counts(sess);
+                    update_counts << "UPDATE duplicate_groups SET member_count = ("
+                                     "  SELECT COUNT(DISTINCT file_id) FROM ("
+                                     "    SELECT file_id FROM duplicate_members dm WHERE dm.group_id = duplicate_groups.id "
+                                     "    UNION "
+                                     "    SELECT representative_file_id FROM duplicate_groups dg WHERE dg.id = duplicate_groups.id"
+                                     "  )"
+                                     ") WHERE member_count != ("
+                                     "  SELECT COUNT(DISTINCT file_id) FROM ("
+                                     "    SELECT file_id FROM duplicate_members dm WHERE dm.group_id = duplicate_groups.id "
+                                     "    UNION "
+                                     "    SELECT representative_file_id FROM duplicate_groups dg WHERE dg.id = duplicate_groups.id"
+                                     "  )"
+                                     ")";
+                    int synced = update_counts.execute();
+                    if (synced > 0) {
+                        logger.information("Synchronized member_count for %d duplicate groups.", synced);
+                    }
+
+                    // Delete groups with 0 or 1 members left
+                    Poco::Data::Statement del_groups(sess);
+                    del_groups << "DELETE FROM duplicate_groups WHERE member_count <= 1";
+                    int removed = del_groups.execute();
+                    if (removed > 0) {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        state_.groups_removed += removed;
+                        logger.information("Removed %d orphaned duplicate groups.", removed);
+                    }
+                }
+
+                // Phase 4: Cleanup Metadata (Thumbnails, Artifacts, Errors)
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Cleaning orphaned metadata...";
+                    state_.progress = 85;
+                }
+                {
+                    auto lease = db->acquireSessionLease();
+                    Poco::Data::Session &sess = lease.get();
+
+                    // For thumbnails, we should delete the physical file too
+                    Poco::Data::Statement sel_thumbs(sess);
+                    sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path NOT IN (SELECT file_path FROM scanned_files)";
+                    Poco::Data::RecordSet rs(sel_thumbs);
+                    int thumbs_removed = 0;
+                    bool more = rs.moveFirst();
+                    while (more) {
+                        std::string cached_path = rs[0].convert<std::string>();
+                        try {
+                            if (std::filesystem::exists(cached_path)) {
+                                std::filesystem::remove(cached_path);
+                            }
+                        } catch (...) {}
+                        thumbs_removed++;
+                        more = rs.moveNext();
+                    }
+
+                    Poco::Data::Statement del_thumbs(sess);
+                    del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path NOT IN (SELECT file_path FROM scanned_files)";
+                    del_thumbs.execute();
+                    
+                    Poco::Data::Statement del_artifacts(sess);
+                    del_artifacts << "DELETE FROM image_artifacts WHERE file_path NOT IN (SELECT file_path FROM scanned_files)";
+                    int artifacts_removed = del_artifacts.execute();
+
+                    Poco::Data::Statement del_errors(sess);
+                    del_errors << "DELETE FROM processing_errors WHERE file_path NOT IN (SELECT file_path FROM scanned_files)";
+                    int errors_removed = del_errors.execute();
+
+                    {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        state_.thumbnails_removed += thumbs_removed;
+                        state_.artifacts_removed += artifacts_removed;
+                        state_.errors_removed += errors_removed;
+                    }
+                    
+                    if (thumbs_removed > 0) logger.information("Removed %d orphaned thumbnails.", thumbs_removed);
+                    if (artifacts_removed > 0) logger.information("Removed %d orphaned artifacts.", artifacts_removed);
+                    if (errors_removed > 0) logger.information("Removed %d orphaned errors.", errors_removed);
+                }
+
+                // Finish
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Resuming background services...";
+                    state_.progress = 100;
+                }
+
+                logger.information("Restarting scheduler service...");
+                scheduler->start();
+
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    state_.current_phase = "Complete";
+                    state_.is_running = false;
+                }
+
+                logger.information("Database Integrity Check completed successfully.");
+
+            } catch (const std::exception &e) {
+                logger.error("Exception during database integrity check: %s", std::string(e.what()));
+                
+                // Attempt to resume scheduler on failure
+                try {
+                    scheduler->start();
+                } catch(...) {}
+
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                state_.is_running = false;
+                state_.current_phase = "Failed: " + std::string(e.what());
             }
         }
 

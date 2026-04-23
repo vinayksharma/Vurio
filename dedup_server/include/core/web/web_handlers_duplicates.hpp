@@ -9,6 +9,11 @@
 namespace MediaDedup
 {
     class DatabaseManager;
+    class UnifiedObservableConfigManager;
+    class ThreadPoolManager;
+    namespace Orchestration {
+        class SchedulerService;
+    }
 }
 
 namespace MediaDedupServer
@@ -145,6 +150,52 @@ namespace MediaDedupServer
         private:
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
             std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> config_manager_;
+        };
+
+        struct IntegrityCheckState {
+            std::atomic<bool> is_running{false};
+            std::atomic<int> progress{0};
+            std::atomic<int> total_files{0};
+            std::atomic<int> processed_files{0};
+            std::atomic<int> files_removed{0};
+            std::atomic<int> groups_removed{0};
+            std::atomic<int> thumbnails_removed{0};
+            std::atomic<int> artifacts_removed{0};
+            std::atomic<int> errors_removed{0};
+            std::string current_phase;
+        };
+
+        class DatabaseIntegrityCheckHandler : public Poco::Net::HTTPRequestHandler
+        {
+        public:
+            explicit DatabaseIntegrityCheckHandler(
+                std::shared_ptr<MediaDedup::DatabaseManager> db, 
+                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
+
+            void handleRequest(Poco::Net::HTTPServerRequest &request,
+                               Poco::Net::HTTPServerResponse &response) override;
+
+        private:
+            std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+            std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> config_manager_;
+            std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_service_;
+            std::shared_ptr<MediaDedup::ThreadPoolManager> tpm_;
+
+            // Global state for the async operation (shared across all requests)
+            static IntegrityCheckState state_;
+            static std::mutex state_mutex_;
+
+            void handleStart(Poco::Net::HTTPServerResponse &response);
+            void handleStatus(Poco::Net::HTTPServerResponse &response);
+            
+            // The actual background task
+            static void performIntegrityCheck(
+                std::shared_ptr<MediaDedup::DatabaseManager> db,
+                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
         };
 
     } // namespace Core

@@ -355,10 +355,11 @@ namespace MediaDedup
             Session &sess = lease.get();
 
             int fid = file_id;
+            int fid2 = file_id;
             std::string mode_str = mode;
 
             // Use RecordSet for more robust extraction
-            Statement stmt = (sess << std::string(SQL::kSelectDuplicateGroupsForFile), use(fid), use(mode_str));
+            Statement stmt = (sess << std::string(SQL::kSelectDuplicateGroupsForFile), use(fid), use(fid2), use(mode_str));
             stmt.execute();
 
             Poco::Data::RecordSet rs(stmt);
@@ -590,6 +591,55 @@ namespace MediaDedup
         {
             Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in updateGroupMemberCount");
             return false;
+        }
+    }
+
+    int DuplicateGroupsOps::syncGroupMemberCount(DatabaseManager &db, int group_id)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            int gid = group_id;
+
+            // Calculate true distinct count using UNION of members and representative
+            int actual_count = 0;
+            Statement count_stmt(sess);
+            count_stmt << "SELECT COUNT(DISTINCT file_id) FROM ("
+                          "  SELECT file_id FROM duplicate_members dm WHERE dm.group_id = ? "
+                          "  UNION "
+                          "  SELECT representative_file_id FROM duplicate_groups dg WHERE dg.id = ?"
+                          ")",
+                into(actual_count), use(gid), use(gid);
+            count_stmt.execute();
+
+            if (actual_count <= 1)
+            {
+                Poco::Logger::get("DuplicateGroupsOps").information("Group %d has true member count %d. Purging group.", group_id, actual_count);
+                deleteGroup(db, group_id);
+                return actual_count; // The group is gone
+            }
+            else
+            {
+                // Synchronize the DB field
+                Statement update_stmt(sess);
+                update_stmt << "UPDATE duplicate_groups SET member_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    use(actual_count), use(gid), now;
+                update_stmt.execute();
+                
+                Poco::Logger::get("DuplicateGroupsOps").debug("Synchronized group %d member count to %d", group_id, actual_count);
+                return actual_count;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in syncGroupMemberCount: %s", std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in syncGroupMemberCount");
+            return 0;
         }
     }
 

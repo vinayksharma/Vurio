@@ -124,6 +124,10 @@ namespace MediaDedup
 
         static bool updateGroupMemberCount(DatabaseManager &db, int group_id, int member_count);
 
+        // Accurately recalculates the true member count and synchronizes the DB, returning the true count.
+        // If the true count is <= 1, it safely purges the orphaned group entirely.
+        static int syncGroupMemberCount(DatabaseManager &db, int group_id);
+
         static std::vector<DuplicateMemberRecord> getMembersByGroup(DatabaseManager &db, int group_id);
 
         // Statistics
