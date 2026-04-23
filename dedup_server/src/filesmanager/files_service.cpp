@@ -137,6 +137,7 @@ namespace MediaDedup
                                     ScannedFilesOps::updateFilePathInDuplicateGroups(db_manager_, file.file_path, new_file_path);
                                     ScannedFilesOps::updateFilePathInDuplicateMembers(db_manager_, file.file_path, new_file_path);
                                     ScannedFilesOps::updateFilePathInThumbnailCache(db_manager_, file.file_path, new_file_path);
+                                    ScannedFilesOps::updateFilePathInPreviewCache(db_manager_, file.file_path, new_file_path);
                                 }
                                 else
                                 {
@@ -794,6 +795,9 @@ namespace MediaDedup
                 {
                     thumbnail_cache_failed++;
                 }
+
+                // Also update preview cache (errors are logged internally, we don't track failure stats separately here since it's identical mapping)
+                ScannedFilesOps::updateFilePathInPreviewCache(db_manager_, file.file_path, new_file_path);
             }
 
             // Move to next batch

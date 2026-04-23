@@ -50,7 +50,8 @@ namespace MediaDedup
         static bool generateThumbnail(const std::string &file_path,
                                       DatabaseManager &db,
                                       DiskCache &thumbnail_cache,
-                                      UnifiedObservableConfigManager &config_manager);
+                                      UnifiedObservableConfigManager &config_manager,
+                                      const std::string &transcoded_path = "");
 
     private:
         /**

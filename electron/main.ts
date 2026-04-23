@@ -51,6 +51,7 @@ async function createWindow() {
     minWidth: 950,
     minHeight: 650,
     backgroundColor: '#0b132b',
+    show: false, // Prevent blank screen bug on macOS by waiting until ready
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
@@ -60,6 +61,10 @@ async function createWindow() {
       allowRunningInsecureContent: true,
     },
     titleBarStyle: 'hiddenInset',
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
   });
 
   // Configure session to allow connections to localhost
@@ -182,6 +187,7 @@ async function createViewerWindow(filePath: string, details: string) {
     minWidth: 600,
     minHeight: 400,
     backgroundColor: '#0b132b',
+    show: false, // Prevent blank screen bug on macOS by waiting until ready
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
@@ -191,6 +197,10 @@ async function createViewerWindow(filePath: string, details: string) {
       allowRunningInsecureContent: true,
     },
     // Standard OS titlebar instead of hiddenInset
+  });
+
+  viewerWindow.once('ready-to-show', () => {
+    viewerWindow.show();
   });
 
   viewerWindow.setMenu(null); // No menu for viewer windows

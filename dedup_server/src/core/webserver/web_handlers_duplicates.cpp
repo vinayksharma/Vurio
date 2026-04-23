@@ -499,6 +499,7 @@ namespace MediaDedupServer
                                 MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
                                 MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
                                 MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
+                                MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, file_path, new_file_path);
 
                                 sess.commit();
                             } catch (...) {
@@ -673,6 +674,7 @@ namespace MediaDedupServer
                                 MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
                                 MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
                                 MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
+                                MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, ejected_path, dest_path_str);
 
                                 MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
 

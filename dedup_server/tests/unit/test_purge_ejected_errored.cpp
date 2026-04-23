@@ -8,6 +8,7 @@
 #include "database/image_artifacts_ops.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "database/thumbnail_cache_ops.hpp"
+#include "database/preview_cache_ops.hpp"
 #include "config/unified_observable_config.hpp"
 #include "config/config_manager_factory.hpp"
 #include "orchestration/duplicate_finder.hpp"
@@ -39,6 +40,7 @@ protected:
         ImageArtifactsOps::ensureTable(*db_manager);
         ProcessingErrorsOps::ensureTable(*db_manager);
         ThumbnailCacheOps::ensureTable(*db_manager);
+        PreviewCacheOps::ensureTable(*db_manager);
     }
 
     void TearDown() override

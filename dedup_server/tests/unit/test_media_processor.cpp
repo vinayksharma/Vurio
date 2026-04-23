@@ -206,6 +206,47 @@ TEST_F(MediaProcessorTest, RouteToProcessor_EmbeddingMode_Works)
     EXPECT_TRUE(result);
 }
 
+#include "database/preview_cache_ops.hpp"
+
+TEST_F(MediaProcessorTest, RouteToProcessor_RawImage_UsesPreviewCache)
+{
+    // Ensure table
+    ASSERT_TRUE(PreviewCacheOps::ensureTable(*database_manager_));
+
+    std::string raw_file = "/tmp/test_media_processor_files/image.cr2";
+    std::string fake_cached_path = "/tmp/test_media_processor_files/cached.jpg";
+
+    // Create dummy raw file
+    std::ofstream raw_out(raw_file);
+    raw_out << "dummy content";
+    raw_out.close();
+
+    // Create dummy cached file
+    std::ofstream cache_out(fake_cached_path);
+    cache_out << "dummy cache content";
+    cache_out.close();
+
+    // Pre-populate the cache manually to simulate a cache hit
+    PreviewCacheRecord record;
+    record.source_path = raw_file;
+    record.cached_path = fake_cached_path;
+    ASSERT_TRUE(PreviewCacheOps::upsertPreview(*database_manager_, record));
+
+    // Disable actual transcoding so we don't accidentally do it
+    config_manager_->setPropertyValue("media.image.transcoding.enabled", false);
+
+    // Route it
+    bool result = media_processor_->RouteToProcessor(raw_file);
+    
+    // It should return true. Since transcoding is disabled, if it returned true, it means it bypassed transcoding and used the cache!
+    EXPECT_TRUE(result);
+    
+    // Let's verify the record is still in cache
+    auto cache_result = PreviewCacheOps::getPreview(*database_manager_, raw_file);
+    ASSERT_TRUE(cache_result.has_value());
+    EXPECT_EQ(cache_result->cached_path, fake_cached_path);
+}
+
 TEST_F(MediaProcessorTest, RouteToProcessor_ThreadSafety_Works)
 {
     std::string test_file = "/path/to/test/image.jpg";

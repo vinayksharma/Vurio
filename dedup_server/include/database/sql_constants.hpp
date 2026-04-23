@@ -197,6 +197,9 @@ namespace MediaDedup
         inline constexpr std::string_view kUpdateThumbnailCacheSourcePath =
             "UPDATE thumbnail_cache SET source_path=? WHERE source_path=?";
 
+        inline constexpr std::string_view kUpdatePreviewCacheSourcePath =
+            "UPDATE preview_cache SET source_path=? WHERE source_path=?";
+
         inline constexpr std::string_view kCountProcessingFiles =
             "SELECT COUNT(*) FROM scanned_files WHERE processed=1";
 
@@ -320,6 +323,18 @@ namespace MediaDedup
             "    UNIQUE(source_path, thumbnail_size)\n"
             ");";
 
+        // Preview cache table (full resolution transcoded caches)
+        inline constexpr std::string_view kCreatePreviewCacheTable =
+            "CREATE TABLE IF NOT EXISTS preview_cache (\n"
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+            "    source_path TEXT NOT NULL UNIQUE,\n"
+            "    cached_path TEXT NOT NULL,\n"
+            "    file_size_bytes INTEGER NOT NULL,\n"
+            "    source_modified_at INTEGER NOT NULL,\n"
+            "    created_at INTEGER NOT NULL,\n"
+            "    last_accessed_at INTEGER NOT NULL\n"
+            ");";
+
         inline constexpr std::string_view kCreateThumbnailCacheIndexSourcePath =
             "CREATE INDEX IF NOT EXISTS idx_thumbnail_source_path ON thumbnail_cache(source_path);";
 
@@ -328,6 +343,15 @@ namespace MediaDedup
 
         inline constexpr std::string_view kCreateThumbnailCacheIndexLastAccessed =
             "CREATE INDEX IF NOT EXISTS idx_thumbnail_last_accessed ON thumbnail_cache(last_accessed_at);";
+
+        inline constexpr std::string_view kCreatePreviewCacheIndexSourcePath =
+            "CREATE INDEX IF NOT EXISTS idx_preview_source_path ON preview_cache(source_path);";
+
+        inline constexpr std::string_view kCreatePreviewCacheIndexSourceModified =
+            "CREATE INDEX IF NOT EXISTS idx_preview_source_modified ON preview_cache(source_modified_at);";
+
+        inline constexpr std::string_view kCreatePreviewCacheIndexLastAccessed =
+            "CREATE INDEX IF NOT EXISTS idx_preview_last_accessed ON preview_cache(last_accessed_at);";
 
         inline constexpr std::string_view kCreateDuplicateGroupsIndexMode =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_mode ON duplicate_groups(mode);";
@@ -461,6 +485,31 @@ namespace MediaDedup
 
         inline constexpr std::string_view kCountThumbnailCache =
             "SELECT COUNT(*) FROM thumbnail_cache";
+
+        // Preview cache operations
+        inline constexpr std::string_view kUpsertPreviewCache =
+            "INSERT INTO preview_cache(source_path, cached_path, file_size_bytes, "
+            "source_modified_at, created_at, last_accessed_at) VALUES(?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(source_path) DO UPDATE SET "
+            "cached_path=excluded.cached_path, file_size_bytes=excluded.file_size_bytes, "
+            "source_modified_at=excluded.source_modified_at, created_at=excluded.created_at, "
+            "last_accessed_at=excluded.last_accessed_at";
+
+        inline constexpr std::string_view kSelectPreviewByPath =
+            "SELECT id, source_path, cached_path, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM preview_cache WHERE source_path=?";
+
+        inline constexpr std::string_view kUpdatePreviewAccessTime =
+            "UPDATE preview_cache SET last_accessed_at=? WHERE source_path=?";
+
+        inline constexpr std::string_view kDeletePreviewByPath =
+            "DELETE FROM preview_cache WHERE source_path=?";
+
+        inline constexpr std::string_view kSelectStalePreviews =
+            "SELECT id, source_path, cached_path FROM preview_cache WHERE source_modified_at < ?";
+
+        inline constexpr std::string_view kCountPreviewCache =
+            "SELECT COUNT(*) FROM preview_cache";
 
         // Ejected Files History operations
         inline constexpr std::string_view kInsertEjectedFileHistory =

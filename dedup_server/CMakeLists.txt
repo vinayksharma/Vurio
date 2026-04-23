@@ -204,6 +204,7 @@ add_executable(media_dedup_server
     src/core/webserver/web_handlers_websocket.cpp
     src/core/webserver/web_handlers_reset_errors.cpp
     src/core/webserver/web_handlers_thumbnail.cpp
+    src/core/webserver/web_handlers_preview.cpp
     src/core/webserver/web_handlers_duplicates.cpp
     src/core/webserver/web_handlers_cache.cpp
     src/core/server_static_file_handler.cpp
@@ -244,6 +245,7 @@ add_executable(media_dedup_server
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp
     src/database/thumbnail_cache_ops.cpp
+    src/database/preview_cache_ops.cpp
     src/database/ejected_files_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
     src/media_processors/audio_processor.cpp

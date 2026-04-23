@@ -10,6 +10,7 @@
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/processing_errors_ops.hpp"
+#include "database/preview_cache_ops.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include <Poco/Logger.h>
 #include <Poco/LogStream.h>
@@ -246,171 +247,145 @@ namespace MediaDedup
                         }
                     }
 
-                    // Copy file to cache
-                        std::string cached_path;
-                        if (!disk_cache->copyToCache(file_path_copy, cached_path))
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Failed to copy file to cache: " + file_path_copy);
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -6); // Cache operation error
-                            return;
-                        }
+                    // We no longer copy files to the cache before processing!
+                    std::string processing_file_path = file_path_copy;
+                    std::string transcoded_preview_path; // Track if we created a permanent preview
+                    bool is_temporary_transcode = false; // Track if we need to delete processing_file_path
 
-                        // Check if file needs transcoding
-                        std::string processing_file_path = cached_path;
-                        bool needs_transcoding = RawFileDetector::IsRawFile(cached_path);
+                    // Check if file needs transcoding
+                    bool needs_transcoding = RawFileDetector::IsRawFile(file_path_copy);
+                    
+                    if (needs_transcoding)
+                    {
+                        Poco::Logger::get("MediaProcessor").information("Raw file detected, checking preview cache: %s", file_path_copy);
                         
-                        if (needs_transcoding)
+                        // Helper to get mtime safely
+                        int64_t source_mtime = 0;
+                        try {
+                            auto ftime = std::filesystem::last_write_time(file_path_copy);
+                            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+                            source_mtime = std::chrono::system_clock::to_time_t(sctp);
+                        } catch (...) {}
+
+                        auto existing_preview = PreviewCacheOps::getPreview(*db_manager, file_path_copy);
+
+                        if (existing_preview && existing_preview->source_modified_at == source_mtime && std::filesystem::exists(existing_preview->cached_path))
                         {
-                            Poco::Logger::get("MediaProcessor").information("Raw file detected, transcoding in cache: %s", cached_path);
-                            
-                            // Log memory usage before transcoding
-                            struct rusage usage;
-                            if (getrusage(RUSAGE_SELF, &usage) == 0)
-                            {
-                                Poco::Logger::get("MediaProcessor").debug("Memory usage before transcoding: %ld KB", usage.ru_maxrss);
-                            }
-                            
+                            Poco::Logger::get("MediaProcessor").information("Using existing preview cache for RAW file: %s", existing_preview->cached_path);
+                            processing_file_path = existing_preview->cached_path;
+                            transcoded_preview_path = existing_preview->cached_path;
+                        }
+                        else
+                        {
                             // Transcode to a new file in cache
-                            // Capture stderr to get detailed ImageMagick error messages
                             std::string transcoded_filename;
                             TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
                             
-                            // Get cache directory from disk_cache for transcoding
                             std::string cache_directory = disk_cache->getCacheLocation();
-                            bool transcode_success = TranscodingPipeline::TranscodeToFile(cached_path, transcoded_filename, transcode_config, cache_directory);
+                            bool transcode_success = TranscodingPipeline::TranscodeToFile(file_path_copy, transcoded_filename, transcode_config, cache_directory);
                             
-                            if (transcode_success)
+                            if (transcode_success && std::filesystem::exists(transcoded_filename) && std::filesystem::file_size(transcoded_filename) > 0)
                             {
-                                // Validate transcoded file exists and has content
-                                if (!std::filesystem::exists(transcoded_filename))
-                                {
-                                    Poco::Logger::get("MediaProcessor").error("Transcoded file was not created: %s", transcoded_filename);
-                                    ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Transcoded file was not created: " + transcoded_filename, "ImageMagick");
-                                    ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
-                                    disk_cache->deleteFromCacheImmediately(cached_path);
-                                    return;
-                                }
-
-                                auto transcoded_size = std::filesystem::file_size(transcoded_filename);
-                                if (transcoded_size == 0)
-                                {
-                                    Poco::Logger::get("MediaProcessor").error("Transcoded file is empty: %s", transcoded_filename);
-                                    ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Transcoded file is empty: " + transcoded_filename, "ImageMagick");
-                                    std::filesystem::remove(transcoded_filename);
-                                    ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
-                                    disk_cache->deleteFromCacheImmediately(cached_path);
-                                    return;
-                                }
-
-                                Poco::Logger::get("MediaProcessor").debug("Transcoded file created successfully - size: %zu bytes", transcoded_size);
-
-                                // Log memory usage after transcoding
-                                struct rusage usage_after;
-                                if (getrusage(RUSAGE_SELF, &usage_after) == 0)
-                                {
-                                    Poco::Logger::get("MediaProcessor").debug("Memory usage after transcoding: %ld KB", usage_after.ru_maxrss);
-                                }
-
-                                // Transcoded file is already in cache directory, no need to copy
-                                Poco::Logger::get("MediaProcessor").information("Successfully transcoded file: %s -> %s", cached_path, transcoded_filename);
+                                // Save to preview cache
+                                PreviewCacheRecord preview_record;
+                                preview_record.source_path = file_path_copy;
+                                preview_record.cached_path = transcoded_filename;
+                                preview_record.file_size_bytes = std::filesystem::file_size(transcoded_filename);
+                                preview_record.source_modified_at = source_mtime;
+                                int64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                                preview_record.created_at = current_time;
+                                preview_record.last_accessed_at = current_time;
                                 
-                                // Delete original RAW file from cache
-                                disk_cache->deleteFromCacheImmediately(cached_path);
+                                PreviewCacheOps::upsertPreview(*db_manager, preview_record);
                                 
-                                // Use transcoded file for processing (already in cache)
                                 processing_file_path = transcoded_filename;
+                                transcoded_preview_path = transcoded_filename;
+                                Poco::Logger::get("MediaProcessor").information("Successfully transcoded RAW and saved to preview cache: %s", transcoded_filename);
                             }
                             else
                             {
-                                Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s (this may be due to unsupported RAW format or corrupted file)", cached_path);
-                                
-                                // Log error to processing_errors table
-                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, 
-                                    "Failed to transcode raw file (unsupported RAW format or corrupted file)", "ImageMagick");
-                                // Mark as processing error since RAW files cannot be processed without transcoding
+                                Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", file_path_copy);
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to transcode raw file (unsupported or corrupted)", "ImageMagick");
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
-                                // Clean up the original cached file
-                                disk_cache->deleteFromCacheImmediately(cached_path);
+                                if (std::filesystem::exists(transcoded_filename)) std::filesystem::remove(transcoded_filename);
                                 return;
                             }
                         }
-                        else if (TranscodingPipeline::NeedsTranscodingForEmbedding(cached_path, config_manager))
+                    }
+                    else if (TranscodingPipeline::NeedsTranscodingForEmbedding(file_path_copy, config_manager))
+                    {
+                        // Non-RAW formats (e.g. BMP) that OpenCV may not read reliably:
+                        // transcode to JPEG via ImageMagick so the embedding pipeline gets a format it can read
+                        std::string transcoded_filename;
+                        std::string cache_directory = disk_cache->getCacheLocation();
+                        if (TranscodingPipeline::TranscodeNonRawToFile(file_path_copy, transcoded_filename, cache_directory))
                         {
-                            // Non-RAW formats (e.g. BMP) that OpenCV may not read reliably:
-                            // transcode to JPEG via ImageMagick so the embedding pipeline gets a format it can read
-                            std::string transcoded_filename;
-                            std::string cache_directory = disk_cache->getCacheLocation();
-                            if (TranscodingPipeline::TranscodeNonRawToFile(cached_path, transcoded_filename, cache_directory))
-                            {
-                                processing_file_path = transcoded_filename;
-                                disk_cache->deleteFromCacheImmediately(cached_path);
-                                Poco::Logger::get("MediaProcessor").information("Transcoded image for embedding: %s -> %s", cached_path, transcoded_filename);
-                            }
-                            else
-                            {
-                                Poco::Logger::get("MediaProcessor").error("Failed to transcode image for embedding (e.g. ImageMagick failed): %s", cached_path);
-                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1,
-                                    "Failed to transcode image to JPEG for embedding (ImageMagick)", "ImageMagick");
-                                ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
-                                disk_cache->deleteFromCacheImmediately(cached_path);
-                                return;
-                            }
+                            processing_file_path = transcoded_filename;
+                            is_temporary_transcode = true;
+                            disk_cache->markFileInUse(processing_file_path);
+                            Poco::Logger::get("MediaProcessor").information("Transcoded image for embedding: %s -> %s", file_path_copy, transcoded_filename);
                         }
+                        else
+                        {
+                            Poco::Logger::get("MediaProcessor").error("Failed to transcode image for embedding: %s", file_path_copy);
+                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to transcode image to JPEG for embedding", "ImageMagick");
+                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
+                            return;
+                        }
+                    }
 
-                        // Mark file as in use
-                        disk_cache->markFileInUse(processing_file_path);
+                    Poco::Logger::get("MediaProcessor").trace("About to process file - processing_path: %s, original_path: %s", processing_file_path, file_path_copy);
+                    
+                    try
+                    {
+                        ImageProcessor image_processor;
+                        bool processing_success = false;
 
-                        Poco::Logger::get("MediaProcessor").trace("About to process file - processing_path: %s, original_path: %s", processing_file_path, file_path_copy);
+                        Poco::Logger::get("MediaProcessor").trace("Calling image_processor.Process with processing_path: %s", processing_file_path);
                         
-                        try
+                        // Process image
+                        processing_success = image_processor.Process(processing_file_path, file_path_copy, *db_manager, config_manager);
+                        
+                        Poco::Logger::get("MediaProcessor").trace("image_processor.Process returned: %s", processing_success ? "true" : "false");
+
+                        // Update database status within the lambda using connection pool
+                        if (processing_success)
                         {
-                            ImageProcessor image_processor;
-                            bool processing_success = false;
+                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 2);
+                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
 
-                            Poco::Logger::get("MediaProcessor").trace("Calling image_processor.Process with processing_path: %s", processing_file_path);
-                            
-                            // Process image using cached file
-                            // Pass both processing file path and original source file path
-                            processing_success = image_processor.Process(processing_file_path, file_path_copy, *db_manager, config_manager);
-                            
-                            Poco::Logger::get("MediaProcessor").trace("image_processor.Process returned: %s", processing_success ? "true" : "false");
-
-                            // Update database status within the lambda using connection pool
-                            if (processing_success)
+                            // Generate thumbnail after successful processing (non-blocking)
+                            // Provide transcoded_preview_path so ThumbnailGenerator doesn't decode RAW again
+                            if (thumbnail_cache)
                             {
-                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 2);
-                                Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
-
-                                // Generate thumbnail after successful processing (non-blocking)
-                                // Use original file path for thumbnail generation
-                                if (thumbnail_cache)
+                                bool thumb_success = PipelineThumbnailHelper::generateThumbnail(
+                                    file_path_copy, *db_manager, *thumbnail_cache, *config_manager, transcoded_preview_path);
+                                if (!thumb_success)
                                 {
-                                    bool thumb_success = PipelineThumbnailHelper::generateThumbnail(
-                                        file_path_copy, *db_manager, *thumbnail_cache, *config_manager);
-                                    if (!thumb_success)
-                                    {
-                                        Poco::Logger::get("MediaProcessor").debug(
-                                            "Pipeline thumbnail generation failed (non-critical): " + file_path_copy);
-                                    }
+                                    Poco::Logger::get("MediaProcessor").debug(
+                                        "Pipeline thumbnail generation failed (non-critical): " + file_path_copy);
                                 }
                             }
-                            else
-                            {
-                                // Pipeline already logged specific error, just mark as failed
-                                ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General processing error
-                                Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
-                            }
                         }
-                        catch (...)
+                        else
                         {
-                            // Don't delete file here - leave it for debugging if ONNX failed
-                            throw;
+                            // Pipeline already logged specific error, just mark as failed
+                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General processing error
+                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
                         }
+                    }
+                    catch (...)
+                    {
+                        throw;
+                    }
 
-                        // Cleanup: Mark file as not in use and delete it after processing
-                        // This happens here, not in RAII, because we need processing to complete first
+                    // Cleanup: Delete temporary transcodes (but NOT permanent preview_cache items or original files)
+                    if (is_temporary_transcode)
+                    {
                         disk_cache->markFileNotInUse(processing_file_path);
                         disk_cache->deleteFromCacheImmediately(processing_file_path);
+                    }
                     }
                     catch (const std::bad_alloc& e)
                     {

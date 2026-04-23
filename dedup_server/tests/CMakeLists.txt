@@ -41,6 +41,8 @@ set(UNIT_TEST_SOURCES
     unit/test_database_service.cpp
     unit/test_user_settings_service.cpp
     unit/test_scanned_files_ops.cpp
+    unit/test_preview_cache_ops.cpp
+    unit/test_web_handlers_preview.cpp
     unit/test_image_artifacts_ops.cpp
     unit/test_processing_errors_ops.cpp
     unit/test_stderr_capture.cpp
@@ -197,6 +199,20 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_preview_cache_ops")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewCacheOpsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_web_handlers_preview")
+        # Skip creating standalone executable for this test
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewHandlerTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     else()
     add_executable(${test_name} ${test_source})
     # Add extra sources for specific tests
@@ -327,6 +343,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
@@ -364,6 +381,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
@@ -416,6 +434,7 @@ target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
 target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
@@ -428,6 +447,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
@@ -560,6 +580,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_phash_quality" AND
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
+      NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
+      NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
@@ -576,6 +598,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_scheduled_jobs_independence" AND
        NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
        NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
+       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
+       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"

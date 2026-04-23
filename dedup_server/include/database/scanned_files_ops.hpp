@@ -189,6 +189,17 @@ namespace MediaDedup
             const std::string &new_path
         );
 
+        static int updateFilePathInPreviewCache(
+            DatabaseManager &db,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+        static int updateFilePathInPreviewCache(
+            Poco::Data::Session &sess,
+            const std::string &old_path,
+            const std::string &new_path
+        );
+
     private:
         // Helper function to execute filtered count queries
         static int executeFilteredCount(DatabaseManager &db, const std::string &base_query);

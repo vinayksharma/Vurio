@@ -1,0 +1,62 @@
+#pragma once
+
+#include <string>
+#include <optional>
+#include <cstdint>
+
+namespace MediaDedup
+{
+    class DatabaseManager;
+
+    struct PreviewCacheRecord
+    {
+        int id{0};
+        std::string source_path;
+        std::string cached_path;
+        int64_t file_size_bytes{0};
+        int64_t source_modified_at{0};
+        int64_t created_at{0};
+        int64_t last_accessed_at{0};
+    };
+
+    class PreviewCacheOps
+    {
+    public:
+        /**
+         * @brief Ensure the preview_cache table exists
+         */
+        static bool ensureTable(DatabaseManager &db);
+
+        /**
+         * @brief Get a preview by source path
+         */
+        static std::optional<PreviewCacheRecord> getPreview(DatabaseManager &db, const std::string &source_path);
+
+        /**
+         * @brief Insert or update a preview record
+         */
+        static bool upsertPreview(DatabaseManager &db, const PreviewCacheRecord &record);
+
+        /**
+         * @brief Update the last_accessed_at timestamp for a preview
+         */
+        static bool updateAccessTime(DatabaseManager &db, const std::string &source_path, int64_t timestamp);
+
+        /**
+         * @brief Delete a preview record
+         */
+        static bool deletePreview(DatabaseManager &db, const std::string &source_path);
+
+        /**
+         * @brief Delete entries whose source_modified_at is older than the given timestamp
+         * @return Number of deleted rows
+         */
+        static int deleteStaleEntries(DatabaseManager &db, int64_t before_timestamp);
+
+        /**
+         * @brief Get total number of cached previews
+         */
+        static int getCount(DatabaseManager &db);
+    };
+
+} // namespace MediaDedup

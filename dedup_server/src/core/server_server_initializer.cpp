@@ -6,6 +6,7 @@
 #include "database/user_settings_service.hpp"
 #include "database/scanned_files_service.hpp"
 #include "database/thumbnail_cache_ops.hpp"
+#include "database/preview_cache_ops.hpp"
 #include "database/ejected_files_ops.hpp"
 #include "core/web/web_server.hpp"
 #include "filesmanager/files_service.hpp"
@@ -271,6 +272,14 @@ namespace MediaDedup
                 return false;
             }
             logger.information("Thumbnail cache table ensured");
+
+            // Ensure preview_cache database table exists
+            if (!PreviewCacheOps::ensureTable(*database_manager_))
+            {
+                logger.error("Failed to ensure preview_cache table");
+                return false;
+            }
+            logger.information("Preview cache table ensured");
 
             // Ensure ejected_files_history database table exists
             if (!EjectedFilesOps::ensureTable(*database_manager_))

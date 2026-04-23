@@ -16,7 +16,8 @@ namespace MediaDedup
     bool PipelineThumbnailHelper::generateThumbnail(const std::string &file_path,
                                                     DatabaseManager &db,
                                                     DiskCache &thumbnail_cache,
-                                                    UnifiedObservableConfigManager &config_manager)
+                                                    UnifiedObservableConfigManager &config_manager,
+                                                    const std::string &transcoded_path)
     {
         Poco::Logger &logger = Poco::Logger::get("PipelineThumbnailHelper");
 
@@ -81,7 +82,8 @@ namespace MediaDedup
 
             // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
             Magick::Blob blob;
-            if (!ThumbnailGenerator::generateToBlob(file_path, size, blob, quality))
+            std::string source_for_generation = transcoded_path.empty() ? file_path : transcoded_path;
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;
