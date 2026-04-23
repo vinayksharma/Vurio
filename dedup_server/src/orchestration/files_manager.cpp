@@ -1,5 +1,7 @@
 #include "orchestration/files_manager.hpp"
+#include "orchestration/duplicate_finder.hpp"
 #include "database/processing_errors_ops.hpp"
+#include "database/duplicate_groups_ops.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -209,16 +211,36 @@ namespace MediaDedup::Orchestration
             {
                 // New file - reset processing status to 0
                 row.processed = 0;
+                ScannedFilesOps::upsert(*db_, row);
             }
             else
             {
-                // Significant change (like file size change) - reset processing status to 0
-                // This ensures files are re-processed if their content actually changed
+                // Significant change: use the "Hard Approach" to force Duplicate Finder re-evaluation
+                
+                // 1. Check if it's a representative of any duplicate group
+                auto groups = DuplicateGroupsOps::getGroupsForFile(*db_, found->id, "EMBEDDING");
+                for (const auto& group : groups) {
+                    if (group.representative_file_id == found->id) {
+                        if (group.member_count > 2) {
+                            // Group has > 2 members: Promote next best representative so the group survives
+                            std::string purity_str = cfg_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
+                            DuplicateFinder::promoteNextBestRepresentative(*db_, group.id, found->id, purity_str);
+                        } else {
+                            // Group has exactly 2 members: Do nothing.
+                            // The ON DELETE CASCADE will destroy the group, causing the single remaining
+                            // member to gracefully revert to an "ungrouped file" state, ready to be paired again.
+                            logger.information("File %d is representative of 2-member group %d. Group will be intentionally destroyed.", found->id, group.id);
+                        }
+                    }
+                }
+                
+                // 2. Completely delete the existing record (cascades to duplicate_members/groups)
+                ScannedFilesOps::removeByPath(*db_, rec.fullPath);
+                
+                // 3. Re-insert as a brand new record (gets a new ID > last_processed_id)
                 row.processed = 0;
+                ScannedFilesOps::upsert(*db_, row);
             }
-
-            // Perform upsert for new or significantly changed files
-            ScannedFilesOps::upsert(*db_, row);
         }
         else
         {

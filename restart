@@ -5,6 +5,21 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="${APP_DIR}/dedup_server"
 
+DO_REBUILD=false
+
+# Parse arguments
+while getopts "b" opt; do
+  case $opt in
+    b)
+      DO_REBUILD=true
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+  esac
+done
+
 echo "Stopping current instances..."
 # Stop backend gracefully if possible
 if [ -d "$BACKEND_DIR" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
@@ -18,6 +33,15 @@ pkill -f "electron.*main.js" 2>/dev/null || true
 
 # Give it a moment to fully stop
 sleep 1
+
+if [ "$DO_REBUILD" = true ]; then
+  echo "Rebuilding backend (-b flag provided)..."
+  if [ -x "${BACKEND_DIR}/scripts/rebuild" ]; then
+    (cd "${BACKEND_DIR}/scripts" && ./rebuild -c -t)
+  else
+    echo "Warning: rebuild script not found or not executable at ${BACKEND_DIR}/scripts/rebuild"
+  fi
+fi
 
 echo "Building application..."
 cd "$APP_DIR"

@@ -122,6 +122,7 @@ namespace MediaDedup
                 int embedding_dim = 0;
             };
 
+        public:
             struct RepresentativeInfo
             {
                 int file_id = 0;
@@ -130,6 +131,8 @@ namespace MediaDedup
                 std::string created_date;
                 bool has_exif_date = false;
             };
+
+        private:
 
             /**
              * @brief Process a batch of files for duplicate detection
@@ -216,6 +219,23 @@ namespace MediaDedup
              * @return True if A should be representative over B
              */
             bool isBetterRepresentative(const RepresentativeInfo &a, const RepresentativeInfo &b);
+
+        public:
+            /**
+             * @brief Check if file A is better representative than file B using a specific order
+             */
+            static bool isBetterRepresentativeStatic(const RepresentativeInfo &a, const RepresentativeInfo &b, const std::vector<PurityCriterion> &order);
+
+            /**
+             * @brief Gracefully promote the next best representative in a group before deleting a file
+             * 
+             * @param db DatabaseManager instance
+             * @param group_id ID of the duplicate group
+             * @param file_id_to_exclude The file ID that is being deleted
+             * @param purity_str The configuration string for purity order
+             * @return True if a new representative was successfully promoted
+             */
+            static bool promoteNextBestRepresentative(DatabaseManager& db, int group_id, int file_id_to_exclude, const std::string& purity_str);
 
             /**
              * @brief Create a new duplicate group
