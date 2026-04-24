@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -11,6 +11,7 @@ const AdvancedSection: React.FC = () => {
   const [isIntegrityCheckRunning, setIsIntegrityCheckRunning] = useState(false);
   const [integrityStatus, setIntegrityStatus] = useState<IntegrityCheckStatus | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isClearingCaches, setIsClearingCaches] = useState(false);
   const [lastBackupPath, setLastBackupPath] = useState<string | null>(null);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -28,7 +29,7 @@ const AdvancedSection: React.FC = () => {
     return () => { mounted = false; };
   }, []);
 
-  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp;
+  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp || isClearingCaches;
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -225,6 +226,26 @@ const AdvancedSection: React.FC = () => {
     }
   };
 
+  const handleClearCaches = async () => {
+    if (!confirm('Are you sure you want to clear all thumbnail and preview caches? This will safely delete all generated images. The system will regenerate them automatically as needed.')) {
+      return;
+    }
+    setIsClearingCaches(true);
+    try {
+      const res = await clearAllCaches();
+      if (res.success) {
+        alert('Caches cleared successfully!');
+      } else {
+        alert(`Failed to clear caches. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to clear caches: ' + err.message);
+    } finally {
+      setIsClearingCaches(false);
+    }
+  };
+
   const handleStartScrollTest = async () => {
     if (isScrollTestRunning) {
       if (window.stopScrollTest) {
@@ -369,6 +390,20 @@ const AdvancedSection: React.FC = () => {
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
           </button>
         </div>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Clear Caches</h3>
+          <p>Delete all generated thumbnails and QHD previews. Useful for forcing the system to regenerate images after testing new generation logic.</p>
+        </div>
+        <button
+          id="clear-caches-btn"
+          className="ghost warning"
+          onClick={handleClearCaches}
+          disabled={isAnyActionRunning}
+        >
+          {isClearingCaches ? 'Clearing...' : 'Clear All Caches'}
+        </button>
       </div>
       <div className="action-row">
         <div className="action-details">

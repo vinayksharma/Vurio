@@ -4,6 +4,8 @@
 #include <Poco/URI.h>
 #include <sstream>
 #include <regex>
+#include "database/database_manager.hpp"
+#include <Poco/Data/Session.h>
 
 namespace MediaDedup
 {
@@ -129,5 +131,91 @@ namespace MediaDedup
         response.setContentLength(ss.str().length());
         response.send() << ss.str();
     }
+
+    // AdminClearCachesHandler Implementation
+    AdminClearCachesHandler::AdminClearCachesHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                     std::shared_ptr<DatabaseManager> database_manager,
+                                                     std::shared_ptr<DiskCache> thumbnail_cache,
+                                                     std::shared_ptr<DiskCache> transcoding_cache)
+        : config_manager_(std::move(config_manager)),
+          database_manager_(std::move(database_manager)),
+          thumbnail_cache_(std::move(thumbnail_cache)),
+          transcoding_cache_(std::move(transcoding_cache))
+    {
+    }
+
+    void AdminClearCachesHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger &logger = Poco::Logger::get("AdminClearCachesHandler");
+
+        if (request.getMethod() != "DELETE")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+
+        try
+        {
+            logger.information("Admin requested to clear all caches");
+
+            bool thumb_success = thumbnail_cache_->clearCache();
+            bool transcode_success = transcoding_cache_->clearCache();
+
+            // Also clear the database tables
+            try {
+                auto lease = database_manager_->acquireSessionLease();
+                auto &sess = lease.get();
+                sess << "DELETE FROM thumbnail_cache", Poco::Data::Keywords::now;
+                sess << "DELETE FROM preview_cache", Poco::Data::Keywords::now;
+                logger.information("Cleared cache tracking tables from database.");
+            } catch (const std::exception &e) {
+                logger.error("Failed to clear cache tracking tables: %s", std::string(e.what()));
+                // We don't fail the request if the DB wipe fails, since physical files were deleted
+            }
+
+            Poco::JSON::Object result;
+            result.set("success", thumb_success && transcode_success);
+            result.set("thumbnail_cache_cleared", thumb_success);
+            result.set("disk_cache_cleared", transcode_success);
+
+            std::stringstream ss;
+            result.stringify(ss);
+
+            sendJsonResponse(response, ss.str(), 200);
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception in AdminClearCachesHandler: %s", std::string(e.what()));
+            sendErrorResponse(response, "Internal server error", 500);
+        }
+    }
+
+    void AdminClearCachesHandler::sendJsonResponse(Poco::Net::HTTPServerResponse &response,
+                                                   const std::string &json_data,
+                                                   int status_code)
+    {
+        response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(status_code));
+        response.setContentType("application/json; charset=utf-8");
+        response.setContentLength(json_data.length());
+        response.send() << json_data;
+    }
+
+    void AdminClearCachesHandler::sendErrorResponse(Poco::Net::HTTPServerResponse &response,
+                                                    const std::string &error_message,
+                                                    int status_code)
+    {
+        Poco::JSON::Object error_obj;
+        error_obj.set("error", error_message);
+
+        std::stringstream ss;
+        error_obj.stringify(ss);
+
+        response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(status_code));
+        response.setContentType("application/json; charset=utf-8");
+        response.setContentLength(ss.str().length());
+        response.send() << ss.str();
+    }
+
 
 } // namespace MediaDedup
