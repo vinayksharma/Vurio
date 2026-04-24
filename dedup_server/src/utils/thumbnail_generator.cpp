@@ -15,7 +15,8 @@ namespace MediaDedup
                                       const std::string &output_path,
                                       int size,
                                       int quality,
-                                      int timeout_ms)
+                                      int timeout_ms,
+                                      bool crop_to_square)
     {
         try
         {
@@ -172,7 +173,8 @@ namespace MediaDedup
     bool ThumbnailGenerator::generateToBlob(const std::string &source_path,
                                              int size,
                                              Magick::Blob &blob,
-                                             int quality)
+                                             int quality,
+                                             bool crop_to_square)
     {
         try
         {
@@ -283,9 +285,40 @@ namespace MediaDedup
 
             if (size > 0)
             {
-                // Let ImageMagick handle the aspect ratio perfectly
-                Magick::Geometry geom(size, size);
-                image.resize(geom);
+                if (crop_to_square)
+                {
+                    size_t new_w, new_h;
+                    if (orig_w > orig_h)
+                    {
+                        // Landscape: height becomes size, width is scaled proportionally
+                        new_h = size;
+                        new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
+                    }
+                    else
+                    {
+                        // Portrait/Square: width becomes size, height is scaled proportionally
+                        new_w = size;
+                        new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
+                    }
+
+                    // Resize using "!" to force exact calculated dimensions
+                    std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
+                    image.resize(Magick::Geometry(geometry));
+
+                    // Crop center
+                    size_t x_offset = (new_w > (size_t)size) ? (new_w - size) / 2 : 0;
+                    size_t y_offset = (new_h > (size_t)size) ? (new_h - size) / 2 : 0;
+                    
+                    image.repage();
+                    image.crop(Magick::Geometry(size, size, x_offset, y_offset));
+                    image.repage();
+                }
+                else
+                {
+                    // Let ImageMagick handle the aspect ratio perfectly
+                    Magick::Geometry geom(size, size);
+                    image.resize(geom);
+                }
             }
 
             // Set JPEG quality (0-100)
