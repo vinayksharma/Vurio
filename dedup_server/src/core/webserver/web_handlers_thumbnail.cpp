@@ -388,8 +388,8 @@ namespace MediaDedup
 
             cached_path = final_cached_path;
             releaseGenerationLock(lock_key);
-            logger.information("Successfully generated and cached thumbnail: %s (size: %d, %lld bytes)",
-                               source_path, size, file_size);
+            logger.information("Successfully generated and cached thumbnail: %s (size: %d, %s bytes)",
+                               source_path, size, std::to_string(file_size));
             return true;
         }
         catch (const std::exception &e)

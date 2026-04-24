@@ -149,8 +149,8 @@ namespace MediaDedup
             {
                 logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path.c_str());
                 image_.read(file_path);
-                logger_.debug("Successfully read image file: %s (size: %zux%zu, depth: %zu)",
-                              file_path, image_.columns(), image_.rows(), image_.depth());
+                logger_.debug("Successfully read image file: %s (size: %sx%s, depth: %s)",
+                              file_path, std::to_string(image_.columns()), std::to_string(image_.rows()), std::to_string(image_.depth()));
             }
             catch (const Magick::Exception &e)
             {
@@ -204,7 +204,7 @@ namespace MediaDedup
             size_t data_size = blob.length();
             jpeg_data.assign(data, data + data_size);
 
-            logger_.information("Successfully transcoded image: %s, size: %zu bytes", file_path, data_size);
+            logger_.information("Successfully transcoded image: %s, size: %s bytes", file_path, std::to_string(data_size));
             return true;
         }
         catch (const Magick::Exception &e)
@@ -261,7 +261,7 @@ namespace MediaDedup
                 Magick::Geometry new_size(MAX_DIMENSION, MAX_DIMENSION);
                 // new_size.aspect(true) ignores aspect ratio and forces exact dimension. We do not want that.
                 image.resize(new_size);
-                logger_.information("Resized image from %zux%zu to %zux%zu for optimal preview streaming", width, height, image.columns(), image.rows());
+                logger_.information("Resized image from %sx%s to %sx%s for optimal preview streaming", std::to_string(width), std::to_string(height), std::to_string(image.columns()), std::to_string(image.rows()));
             }
         }
         catch (const Magick::Exception &e)
