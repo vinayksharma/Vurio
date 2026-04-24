@@ -120,6 +120,18 @@ namespace MediaDedup
             size_t new_w = orig_w, new_h = orig_h;
             if (size > 0)
             {
+                // If this is a thumbnail request (<= 512px), perform a center square crop first
+                if (size <= 512 && orig_w != orig_h)
+                {
+                    size_t min_dim = std::min(orig_w, orig_h);
+                    ssize_t x_off = (orig_w - min_dim) / 2;
+                    ssize_t y_off = (orig_h - min_dim) / 2;
+                    image.crop(Magick::Geometry(min_dim, min_dim, x_off, y_off));
+                    
+                    // Reset the page offset after crop
+                    image.page(Magick::Geometry(0, 0, 0, 0));
+                }
+
                 Magick::Geometry geom(size, size);
                 image.resize(geom);
             }
@@ -264,7 +276,18 @@ namespace MediaDedup
 
             if (size > 0)
             {
-                // Let ImageMagick handle the aspect ratio perfectly
+                // If this is a thumbnail request (<= 512px), perform a center square crop first
+                if (size <= 512 && orig_w != orig_h)
+                {
+                    size_t min_dim = std::min(orig_w, orig_h);
+                    ssize_t x_off = (orig_w - min_dim) / 2;
+                    ssize_t y_off = (orig_h - min_dim) / 2;
+                    image.crop(Magick::Geometry(min_dim, min_dim, x_off, y_off));
+                    
+                    // Reset the page offset after crop (important for some formats)
+                    image.page(Magick::Geometry(0, 0, 0, 0));
+                }
+
                 Magick::Geometry geom(size, size);
                 image.resize(geom);
             }
