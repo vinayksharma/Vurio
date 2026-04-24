@@ -106,6 +106,8 @@ namespace MediaDedup
                 return false;
             }
 
+            image.autoOrient();
+
             size_t orig_w = image.columns();
             size_t orig_h = image.rows();
 
@@ -118,29 +120,8 @@ namespace MediaDedup
             size_t new_w = orig_w, new_h = orig_h;
             if (size > 0)
             {
-                // Calculate new dimensions maintaining aspect ratio
-                if (orig_w > orig_h)
-                {
-                    new_w = size;
-                    new_h = static_cast<size_t>((static_cast<double>(orig_h) / orig_w) * size);
-                }
-                else
-                {
-                    new_h = size;
-                    new_w = static_cast<size_t>((static_cast<double>(orig_w) / orig_h) * size);
-                }
-
-                // Ensure minimum dimensions
-                if (new_w == 0)
-                    new_w = 1;
-                if (new_h == 0)
-                    new_h = 1;
-
-                // Resize image with high-quality filter
-                // Geometry syntax: "WIDTHxHEIGHT!" where ! means ignore aspect ratio
-                // But we already calculated correct aspect ratio above
-                std::string geometry = std::to_string(new_w) + "x" + std::to_string(new_h) + "!";
-                image.resize(Magick::Geometry(geometry));
+                Magick::Geometry geom(size, size);
+                image.resize(geom);
             }
 
             // Set JPEG quality (0-100)
