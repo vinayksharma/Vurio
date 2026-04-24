@@ -13,6 +13,7 @@ class ThumbnailRequestQueue {
   private processorInterval: ReturnType<typeof setInterval> | null = null;
   private lock = false; // Simple lock to prevent concurrent modifications
   private visibilityCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private readyTimestamps = new Map<string, number>(); // Track media_ready timestamps by path
 
   // Retry configuration
   private readonly MAX_RETRIES = 3;
@@ -39,6 +40,9 @@ class ThumbnailRequestQueue {
    */
   public refreshByPath(sourcePath: string): void {
     const encodedPath = encodeURIComponent(sourcePath);
+    const timestamp = Date.now();
+    this.readyTimestamps.set(encodedPath, timestamp);
+
     const images = document.querySelectorAll(`img[src*="${encodedPath}"], img[data-src*="${encodedPath}"]`);
     
     images.forEach(element => {
@@ -99,6 +103,22 @@ class ThumbnailRequestQueue {
     callbacks?: RequestCallbacks,
     context?: { groupId?: number; memberIndex?: number }
   ): void {
+    // If a media_ready event previously fired for this path, append the timestamp
+    // This prevents the browser from using a cached 1x1 placeholder when scrolling back
+    try {
+      const urlObj = new URL(url);
+      const pathParam = urlObj.searchParams.get('path');
+      if (pathParam) {
+        const encodedPath = encodeURIComponent(pathParam);
+        const readyTs = this.readyTimestamps.get(encodedPath);
+        if (readyTs && !url.includes('&_t=')) {
+          url = `${url}&_t=${readyTs}`;
+        }
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+
     // Don't add if currently active
     if (this.activeRequests.has(url)) {
       return;
