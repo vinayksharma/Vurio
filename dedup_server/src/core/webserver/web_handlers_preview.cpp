@@ -205,7 +205,7 @@ namespace MediaDedup
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             response.setContentType("image/jpeg");
-            response.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            response.set("Cache-Control", "public, max-age=31536000, immutable");
             response.set("Last-Modified", last_modified);
             response.setContentLength(file.getSize());
 
@@ -233,7 +233,7 @@ namespace MediaDedup
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             response.setContentType("image/jpeg");
-            response.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            response.set("Cache-Control", "public, max-age=31536000, immutable");
             response.set("Last-Modified", last_modified);
             response.setContentLength(length);
 
