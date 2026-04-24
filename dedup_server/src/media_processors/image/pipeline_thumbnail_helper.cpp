@@ -83,7 +83,7 @@ namespace MediaDedup
             // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
             Magick::Blob blob;
             std::string source_for_generation = transcoded_path.empty() ? file_path : transcoded_path;
-            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality))
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, true))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;
