@@ -42,9 +42,21 @@ class ThumbnailRequestQueue {
     // If already completed, check if element still needs loading
     // (element might have been unloaded or remapped)
     if (this.completedRequests.has(url)) {
-      // If element has data-src, it needs loading again - clear completed flag
       if (imgElement && imgElement.hasAttribute('data-src')) {
-        this.completedRequests.delete(url);
+        // Fast-track: It's in the browser cache, so bypass the queue limits entirely!
+        imgElement.src = url;
+        imgElement.removeAttribute('data-src');
+        imgElement.style.display = '';
+        if (thumbnailDiv) {
+          const placeholder = thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
+          if (placeholder) placeholder.style.display = 'none';
+          const errorIndicator = thumbnailDiv.querySelector('.thumbnail-error') as HTMLElement;
+          if (errorIndicator) errorIndicator.style.display = 'none';
+        }
+        if (callbacks?.onLoad) {
+          callbacks.onLoad(url);
+        }
+        return;
       } else {
         // Element already loaded and doesn't need reloading
         return;
