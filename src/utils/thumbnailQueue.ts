@@ -464,14 +464,14 @@ class ThumbnailRequestQueue {
     const preloadImg = new Image();
     let completed = false;
 
-    const cleanup = (success: boolean) => {
+    const cleanup = (success: boolean, isAsyncPlaceholder = false) => {
       if (completed) return;
       completed = true;
 
       // Remove from active requests
       this.activeRequests.delete(request.url);
 
-      if (success) {
+      if (success && !isAsyncPlaceholder) {
         // Mark as completed for deduplication
         this.completedRequests.add(request.url);
 
@@ -490,13 +490,14 @@ class ThumbnailRequestQueue {
 
     preloadImg.onload = () => {
       // Preload successful
+      const isPreloadPlaceholder = preloadImg.naturalWidth === 1 && preloadImg.naturalHeight === 1;
 
       // If this is a "fire and forget" request, just mark as completed and cleanup
       // The server has cached it, which is all we need
       if (request.fireAndForget) {
         // Server has cached the thumbnail - mark as completed for deduplication
         // When user scrolls back, it will load from cache quickly
-        cleanup(true);
+        cleanup(true, isPreloadPlaceholder);
         return;
       }
 
@@ -527,7 +528,7 @@ class ThumbnailRequestQueue {
             }
           }
 
-          cleanup(true);
+          cleanup(true, isAsyncPlaceholder);
         };
 
         img.onerror = () => {
