@@ -59,10 +59,12 @@ const ImagePopup: React.FC = () => {
     const handleMediaReady = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && customEvent.detail.file_path === filePath) {
-        setCacheBuster(Date.now());
+        console.log('[ImagePopup] media_ready received for:', filePath);
+        setCacheBuster(prev => Date.now() + Math.random());
         // Reset the native fetch lock so that if the user is zoomed in,
         // it triggers another fetch to get the now-ready full resolution image.
         if (fetchingNativePathRef.current === filePath) {
+          console.log('[ImagePopup] Resetting fetchingNativePathRef to null');
           fetchingNativePathRef.current = null;
         }
       }
@@ -202,6 +204,8 @@ const ImagePopup: React.FC = () => {
   // Track native fetch to prevent scroll-wheel spam
   const fetchingNativePathRef = useRef<string | null>(null);
   const [isFetchingNative, setIsFetchingNative] = useState(false);
+  // Keep strong reference to prevent Safari from GCing the Image object before onload
+  const loadingImgRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     // Reset our fetch lock when the image changes entirely
@@ -210,32 +214,44 @@ const ImagePopup: React.FC = () => {
     }
 
     if (scale > 1.2 && filePath && !nativeUrl && fetchingNativePathRef.current !== filePath) {
+      console.log('[ImagePopup] Initiating native fetch for:', filePath, 'cacheBuster:', cacheBuster);
       fetchingNativePathRef.current = filePath;
       setIsFetchingNative(true);
       const activeFilePath = filePath;
       const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(filePath)}&size=0`;
       
       const img = new window.Image();
+      loadingImgRef.current = img; // Prevent GC
+      
       img.onload = () => {
+         console.log('[ImagePopup] img.onload fired! dimensions:', img.naturalWidth, img.naturalHeight);
          if (fetchingNativePathRef.current === activeFilePath) {
            if (img.naturalWidth === 1 && img.naturalHeight === 1) {
+             console.log('[ImagePopup] 1x1 placeholder detected. Waiting for media_ready.');
              // It's the async placeholder. Keep isFetchingNative = true.
              // Do NOT set nativeUrl yet, so we don't blink out the preview!
            } else {
+             console.log('[ImagePopup] High res image loaded successfully!');
              setNativeUrl(url);
              setIsFetchingNative(false);
+             loadingImgRef.current = null;
            }
+         } else {
+             console.log('[ImagePopup] ignoring onload because path changed');
          }
       };
       img.onerror = () => {
+         console.log('[ImagePopup] img.onerror fired!');
          if (fetchingNativePathRef.current === activeFilePath) {
            // Allow retry on next zoom
            fetchingNativePathRef.current = null;
            setIsFetchingNative(false);
+           loadingImgRef.current = null;
          }
       };
       // Append cache buster so we fetch the real image after media_ready!
       const finalUrl = cacheBuster ? `${url}&_t=${cacheBuster}` : url;
+      console.log('[ImagePopup] Setting img.src to:', finalUrl);
       img.src = finalUrl;
     }
   }, [scale, filePath, nativeUrl, cacheBuster]);
