@@ -128,8 +128,8 @@ namespace MediaDedup
                 return false;
             }
 
-            logger.information("Successfully generated pipeline thumbnail: %s (size: %d, %zu bytes)",
-                               file_path, size, thumb_size_bytes);
+            logger.information("Successfully generated pipeline thumbnail: %s (size: %d, %s bytes)",
+                               file_path, size, std::to_string(thumb_size_bytes));
 
             // Broadcast media_ready event for the UI to pick up the new thumbnail
             Poco::JSON::Object msg;
