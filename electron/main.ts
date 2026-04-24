@@ -277,6 +277,17 @@ ipcMain.handle('utils:toggleDevTools', () => {
   if (mainWindow) mainWindow.webContents.toggleDevTools();
 });
 
+ipcMain.handle('utils:clearWebCache', async () => {
+  try {
+    if (mainWindow) {
+      await mainWindow.webContents.session.clearCache();
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('utils:exportErrorLog', async () => {
   if (!mainWindow) {
     return { ok: false, error: 'No main window' };

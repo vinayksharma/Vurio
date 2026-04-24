@@ -5,6 +5,7 @@ export interface ElectronAPI {
   revealLog: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
   toggleDevTools: () => Promise<void>;
   exportErrorLog: () => Promise<{ ok: boolean; path?: string; error?: string }>;
+  clearWebCache: () => Promise<{ ok: boolean }>;
   openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
   showItemInFolder: (path: string) => Promise<{ ok: boolean; error?: string }>;
   openViewer: (options: { filePath: string; details: string }) => Promise<{ ok: boolean; error?: string }>;
