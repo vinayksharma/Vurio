@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('utils:showItemInFolder', filePath),
   toggleDevTools: () => ipcRenderer.invoke('utils:toggleDevTools'),
   exportErrorLog: () => ipcRenderer.invoke('utils:exportErrorLog'),
+  clearWebCache: () => ipcRenderer.invoke('utils:clearWebCache'),
   openViewer: (options: { filePath: string; details: string }) => ipcRenderer.invoke('window:openViewer', options),
   onSuspend: (callback: () => void) => ipcRenderer.on('app:suspend', () => callback()),
   onResume: (callback: () => void) => ipcRenderer.on('app:resume', () => callback())

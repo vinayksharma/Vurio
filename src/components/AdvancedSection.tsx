@@ -234,7 +234,11 @@ const AdvancedSection: React.FC = () => {
     try {
       const res = await clearAllCaches();
       if (res.success) {
-        alert('Caches cleared successfully!');
+        if (window.electronAPI?.clearWebCache) {
+          await window.electronAPI.clearWebCache();
+        }
+        alert('Caches cleared successfully! The application will now reload to flush the UI image cache.');
+        window.location.reload();
       } else {
         alert(`Failed to clear caches. ${res.error || ''}`);
       }
