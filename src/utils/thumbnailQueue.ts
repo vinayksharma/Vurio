@@ -105,24 +105,6 @@ class ThumbnailRequestQueue {
   ): void {
     // If a media_ready event previously fired for this path, append the timestamp
     // This prevents the browser from using a cached 1x1 placeholder when scrolling back
-    try {
-      const urlObj = new URL(url);
-      const pathParam = urlObj.searchParams.get('path');
-      if (pathParam) {
-        const encodedPath = encodeURIComponent(pathParam);
-        const readyTs = this.readyTimestamps.get(encodedPath);
-        if (readyTs && !url.includes('&_t=')) {
-          url = `${url}&_t=${readyTs}`;
-          // Ensure the imgElement's data-src matches the new url so the preload check passes
-          if (imgElement && imgElement.hasAttribute('data-src')) {
-            imgElement.setAttribute('data-src', url);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore URL parsing errors
-    }
-
     // Don't add if currently active
     if (this.activeRequests.has(url)) {
       return;
@@ -481,6 +463,22 @@ class ThumbnailRequestQueue {
    * Start an actual HTTP request for a thumbnail
    */
   private startRequest(request: ThumbnailRequest): void {
+    // Append cache buster if media_ready was received while unmounted
+    let fetchUrl = request.url;
+    try {
+      const urlObj = new URL(request.url);
+      const pathParam = urlObj.searchParams.get('path');
+      if (pathParam) {
+        const encodedPath = encodeURIComponent(pathParam);
+        const readyTs = this.readyTimestamps.get(encodedPath);
+        if (readyTs && !fetchUrl.includes('&_t=')) {
+          fetchUrl = `${fetchUrl}&_t=${readyTs}`;
+        }
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+
     // Mark as active
     this.activeRequests.set(request.url, request);
 
@@ -583,7 +581,7 @@ class ThumbnailRequestQueue {
         };
 
         // Set src to trigger load
-        img.src = request.url;
+        img.src = fetchUrl;
         img.removeAttribute('data-src');
         img.style.display = '';
 
@@ -650,7 +648,7 @@ class ThumbnailRequestQueue {
 
     // Start loading
     try {
-      preloadImg.src = request.url;
+      preloadImg.src = fetchUrl;
     } catch (err) {
       // Immediate failure (invalid URL, etc.)
       const error = err instanceof Error ? err : new Error(String(err));
