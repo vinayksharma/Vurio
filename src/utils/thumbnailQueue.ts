@@ -27,7 +27,7 @@ class ThumbnailRequestQueue {
     if (typeof window !== 'undefined') {
       window.addEventListener('media_ready', (e: Event) => {
         const customEvent = e as CustomEvent;
-        if (customEvent.detail && customEvent.detail.file_path) {
+        if (customEvent.detail && customEvent.detail.file_path && customEvent.detail.media_type === 'thumbnail') {
           this.refreshByPath(customEvent.detail.file_path);
         }
       });
