@@ -489,7 +489,7 @@ namespace MediaDedup
             response.setContentLength(file.getSize());
 
             // Cache headers
-            response.set("Cache-Control", "public, max-age=31536000, immutable");
+            response.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
 
             // ETag
             std::string etag = generateETag(file_path, source_modified_at, 0);

@@ -394,8 +394,8 @@ const ImagePopup: React.FC = () => {
               left: '50%',
               maxWidth: Math.abs(rotation % 180) === 90 ? '100vh' : '100%',
               maxHeight: Math.abs(rotation % 180) === 90 ? '100vw' : '100%',
-              width: '100%',
-              height: '100%',
+              width: 'auto',
+              height: 'auto',
               objectFit: 'contain',
               boxSizing: 'border-box',
             }}

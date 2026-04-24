@@ -11,6 +11,7 @@ const PurityOrderSection: React.FC = () => {
   const [showWarning, setShowWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   useEffect(() => {
     loadConfig();
@@ -77,11 +78,22 @@ const PurityOrderSection: React.FC = () => {
   };
 
   return (
-    <div className="config-group">
-      <div className="config-group-header" style={{ cursor: 'default' }}>
-        <h3 className="config-group-title">Duplicate Purity Rules</h3>
-      </div>
-      <div className="config-group-properties">
+    <section className="panel settings-panel">
+      <h2 
+        className="panel-title" 
+        onClick={() => setIsCollapsed(!isCollapsed)} 
+        style={{ cursor: 'pointer' }}
+      >
+        <span>Duplicate Purity Rules</span>
+        <span 
+          className="config-group-toggle" 
+          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+          aria-expanded={!isCollapsed}
+        >
+          ▼
+        </span>
+      </h2>
+      <div className={`collapsible ${isCollapsed ? '' : 'open'}`}>
         <p className="helper-text">
           Customize the rules the detection engine uses to determine which file in a duplicate group should be retained as the original representation. 
           The top-most rule is evaluated first.
@@ -142,7 +154,7 @@ const PurityOrderSection: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };
 

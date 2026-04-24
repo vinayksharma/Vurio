@@ -39,12 +39,25 @@ const UISettingsSection: React.FC = () => {
     }
   };
 
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
   return (
     <section className="panel settings-panel">
-      <div className="panel-title split">
+      <h2 
+        className="panel-title" 
+        onClick={() => setIsCollapsed(!isCollapsed)} 
+        style={{ cursor: 'pointer' }}
+      >
         <span>UI Settings</span>
-      </div>
-      <div>
+        <span 
+          className="config-group-toggle" 
+          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}
+          aria-expanded={!isCollapsed}
+        >
+          ▼
+        </span>
+      </h2>
+      <div className={`collapsible ${isCollapsed ? '' : 'open'}`}>
         <p className="helper-text" style={{ marginBottom: '16px' }}>
           Customize the appearance of VURIO to match your preferences.
         </p>
