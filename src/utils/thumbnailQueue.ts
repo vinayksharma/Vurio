@@ -66,11 +66,14 @@ class ThumbnailRequestQueue {
         if (img.hasAttribute('src')) {
           img.onload = () => {
             img.onload = null;
-            if (img.parentElement) {
-              const placeholder = img.parentElement.querySelector('.thumbnail-placeholder') as HTMLElement;
-              if (placeholder) placeholder.style.display = 'none';
-              const errorIndicator = img.parentElement.querySelector('.thumbnail-error') as HTMLElement;
-              if (errorIndicator) errorIndicator.style.display = 'none';
+            // Only hide the placeholder if it's the real image, not the 1x1 transparent fallback
+            if (img.naturalWidth !== 1 || img.naturalHeight !== 1) {
+              if (img.parentElement) {
+                const placeholder = img.parentElement.querySelector('.thumbnail-placeholder') as HTMLElement;
+                if (placeholder) placeholder.style.display = 'none';
+                const errorIndicator = img.parentElement.querySelector('.thumbnail-error') as HTMLElement;
+                if (errorIndicator) errorIndicator.style.display = 'none';
+              }
             }
           };
           img.src = newUrl;
@@ -509,7 +512,11 @@ class ThumbnailRequestQueue {
 
           // Mark as loaded
           img.setAttribute('data-loaded-at', Date.now().toString());
-          if (request.thumbnailDiv) {
+          
+          // Check if this is the async transparent placeholder pixel
+          const isAsyncPlaceholder = img.naturalWidth === 1 && img.naturalHeight === 1;
+
+          if (request.thumbnailDiv && !isAsyncPlaceholder) {
             const placeholder = request.thumbnailDiv.querySelector('.thumbnail-placeholder') as HTMLElement;
             if (placeholder) {
               placeholder.style.display = 'none';
