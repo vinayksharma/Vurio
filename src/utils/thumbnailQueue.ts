@@ -113,6 +113,10 @@ class ThumbnailRequestQueue {
         const readyTs = this.readyTimestamps.get(encodedPath);
         if (readyTs && !url.includes('&_t=')) {
           url = `${url}&_t=${readyTs}`;
+          // Ensure the imgElement's data-src matches the new url so the preload check passes
+          if (imgElement && imgElement.hasAttribute('data-src')) {
+            imgElement.setAttribute('data-src', url);
+          }
         }
       }
     } catch (e) {
