@@ -14,7 +14,7 @@ const AdvancedSection: React.FC = () => {
   const [isClearingCaches, setIsClearingCaches] = useState(false);
   const [lastBackupPath, setLastBackupPath] = useState<string | null>(null);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const setDebugOverlayEnabled = useUIStore((state) => state.setDebugOverlayEnabled);

@@ -13,7 +13,7 @@ const MediaLocationsSection: React.FC = () => {
   const [message, setMessage] = useState('');
   const locations = useServerStatusStore((state) => state.registeredDirs);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
   const [deregisteringPath, setDeregisteringPath] = useState<string | null>(null);
   const openStatusPopup = useStatusPopupStore((state) => state.open);
@@ -98,6 +98,7 @@ const MediaLocationsSection: React.FC = () => {
       setMessage('Deregistering location and wiping database gracefully. This may take several seconds, please do not click away...');
       await deregisterLocation(path);
       setMessage('Location deregistered successfully');
+      window.dispatchEvent(new Event('duplicatesForceRefresh'));
       setSelectedLocation(null);
       await refreshLocations();
     } catch (error) {

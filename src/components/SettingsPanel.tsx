@@ -16,7 +16,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
   const [modifiedProperties, setModifiedProperties] = useState<Set<string>>(new Set());
   const [validationErrors, setValidationErrors] = useState<Map<string, string>>(new Map());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [configSectionCollapsed, setConfigSectionCollapsed] = useState(false);
+  const [configSectionCollapsed, setConfigSectionCollapsed] = useState(true);
 
   useEffect(() => {
     if (isActive) {
