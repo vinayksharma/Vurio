@@ -9,6 +9,8 @@
 
 namespace MediaDedup
 {
+    class DatabaseManager;
+
     /**
      * @brief Handler for DELETE /api/v1/cache/{cache_name}/invalidate
      *
@@ -49,6 +51,27 @@ namespace MediaDedup
         void sendErrorResponse(Poco::Net::HTTPServerResponse &response,
                                const std::string &error_message,
                                int status_code);
+    };
+
+    class AdminClearCachesHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        AdminClearCachesHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                std::shared_ptr<DatabaseManager> database_manager,
+                                std::shared_ptr<DiskCache> thumbnail_cache,
+                                std::shared_ptr<DiskCache> transcoding_cache);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        std::shared_ptr<DatabaseManager> database_manager_;
+        std::shared_ptr<DiskCache> thumbnail_cache_;
+        std::shared_ptr<DiskCache> transcoding_cache_;
+
+        void sendJsonResponse(Poco::Net::HTTPServerResponse &response, const std::string &json_data, int status_code);
+        void sendErrorResponse(Poco::Net::HTTPServerResponse &response, const std::string &error_message, int status_code);
     };
 
 } // namespace MediaDedup

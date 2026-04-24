@@ -254,6 +254,8 @@ namespace MediaDedup
         // Cache management endpoints
         if (path.find("/api/v1/cache/") == 0 && path.find("/invalidate") != std::string::npos && method == "DELETE")
             return new CacheInvalidationHandler(config_manager_, thumbnail_cache_, transcoding_cache_);
+        if (path == "/api/v1/admin/clear-caches" && method == "DELETE")
+            return new AdminClearCachesHandler(config_manager_, database_manager_, thumbnail_cache_, transcoding_cache_);
 
         // Static API responses served as files
         if (path == "/api/openapi.json" && method == "GET")

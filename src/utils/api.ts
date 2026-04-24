@@ -296,3 +296,9 @@ export async function getLatestBackup(): Promise<{ success: boolean; backup_path
     method: 'GET',
   }) as Promise<any>;
 }
+
+export async function clearAllCaches(): Promise<{ success: boolean; thumbnail_cache_cleared: boolean; disk_cache_cleared: boolean; error?: string }> {
+  return safeFetch('/api/v1/admin/clear-caches', {
+    method: 'DELETE',
+  }) as Promise<any>;
+}
