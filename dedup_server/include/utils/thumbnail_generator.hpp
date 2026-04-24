@@ -29,8 +29,7 @@ namespace MediaDedup
         static bool generateToBlob(const std::string &source_path,
                                     int size,
                                     Magick::Blob &blob,
-                                    int quality = 85,
-                                    bool crop_to_square = false);
+                                    int quality = 85);
 
         /**
          * @brief Generate a thumbnail for an image file (synchronous)
@@ -46,8 +45,7 @@ namespace MediaDedup
                              const std::string &output_path,
                              int size,
                              int quality = 85,
-                             int timeout_ms = 5000,
-                             bool crop_to_square = false);
+                             int timeout_ms = 5000);
 
         /**
          * @brief Validate if a size is supported

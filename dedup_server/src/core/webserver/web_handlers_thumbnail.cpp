@@ -274,7 +274,7 @@ namespace MediaDedup
 
             // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
             Magick::Blob blob;
-            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, true))
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality))
             {
                 logger.error("ThumbnailGenerator::generateToBlob failed for: %s (check ThumbnailGenerator logs for details)", source_path);
                 releaseGenerationLock(lock_key);
