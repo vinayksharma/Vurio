@@ -7,6 +7,7 @@
 #include <Poco/File.h>
 
 #include "core/web/web_handlers_preview.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/preview_cache_ops.hpp"
@@ -87,7 +88,8 @@ protected:
         jpeg << "fake jpeg content";
         jpeg.close();
         
-        handler_ = std::make_unique<PreviewHandler>(config_manager_, db_manager_);
+        auto tpm = std::make_shared<ThreadPoolManager>(config_manager_);
+        handler_ = std::make_unique<PreviewHandler>(config_manager_, db_manager_, tpm);
     }
     
     void TearDown() override {
@@ -130,9 +132,9 @@ TEST_F(PreviewHandlerTest, HandleRequest_WithMissingPreviewForRaw_TranscodesAndS
     
     handler_->handleRequest(request, response);
     
-    // Because it's a fake raw file, transcoding fails and returns 500
-    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-    EXPECT_TRUE(response.os_.str().find("Failed to generate preview") != std::string::npos);
+    // Because we dispatch an async task, we instantly return 200 OK with a transparent pixel
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+    EXPECT_TRUE(response.os_.str().length() > 0);
 }
 
 #ifndef ALL_UNIT_TESTS

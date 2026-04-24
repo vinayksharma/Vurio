@@ -22,6 +22,68 @@ class ThumbnailRequestQueue {
   constructor() {
     this.startProcessor();
     this.startVisibilityChecker();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('media_ready', (e: Event) => {
+        const customEvent = e as CustomEvent;
+        if (customEvent.detail && customEvent.detail.file_path) {
+          this.refreshByPath(customEvent.detail.file_path);
+        }
+      });
+    }
+  }
+
+  /**
+   * Refreshes images matching the source path by appending a timestamp to bypass browser caching.
+   * This is triggered by WebSocket 'media_ready' events.
+   */
+  public refreshByPath(sourcePath: string): void {
+    const encodedPath = encodeURIComponent(sourcePath);
+    const images = document.querySelectorAll(`img[src*="${encodedPath}"], img[data-src*="${encodedPath}"]`);
+    
+    images.forEach(element => {
+      const img = element as HTMLImageElement;
+      const currentSrc = img.getAttribute('src') || img.getAttribute('data-src');
+      
+      if (currentSrc) {
+        const urlBase = currentSrc.split('&_t=')[0];
+        
+        // Remove from completed and active tracking
+        const keysToDelete: string[] = [];
+        this.completedRequests.forEach(url => {
+          if (url.includes(encodedPath)) keysToDelete.push(url);
+        });
+        keysToDelete.forEach(k => this.completedRequests.delete(k));
+        
+        const activeKeys: string[] = [];
+        this.activeRequests.forEach((_, url) => {
+          if (url.includes(encodedPath)) activeKeys.push(url);
+        });
+        activeKeys.forEach(k => this.activeRequests.delete(k));
+        
+        const newUrl = `${urlBase}&_t=${Date.now()}`;
+        
+        if (img.hasAttribute('src')) {
+          img.onload = () => {
+            img.onload = null;
+            if (img.parentElement) {
+              const placeholder = img.parentElement.querySelector('.thumbnail-placeholder') as HTMLElement;
+              if (placeholder) placeholder.style.display = 'none';
+              const errorIndicator = img.parentElement.querySelector('.thumbnail-error') as HTMLElement;
+              if (errorIndicator) errorIndicator.style.display = 'none';
+            }
+          };
+          img.src = newUrl;
+        } else if (img.hasAttribute('data-src')) {
+          img.setAttribute('data-src', newUrl);
+          
+          const pendingReq = this.pendingStack.find(r => r.url.includes(encodedPath));
+          if (pendingReq) {
+            pendingReq.url = newUrl;
+          }
+        }
+      }
+    });
   }
 
   /**

@@ -15,14 +15,17 @@
 #include <Poco/DateTimeFormat.h>
 #include <Poco/Timestamp.h>
 #include <Poco/Exception.h>
+#include "core/web/web_handlers_websocket.hpp"
 
 namespace MediaDedup
 {
 
     PreviewHandler::PreviewHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                                   std::shared_ptr<DatabaseManager> database_manager)
+                                   std::shared_ptr<DatabaseManager> database_manager,
+                                   std::shared_ptr<ThreadPoolManager> tpm)
         : config_manager_(std::move(config_manager)),
-          database_manager_(std::move(database_manager))
+          database_manager_(std::move(database_manager)),
+          tpm_(std::move(tpm))
     {
     }
 
@@ -135,27 +138,76 @@ namespace MediaDedup
                 TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager_);
                 if (transcode_config.enabled)
                 {
-                    std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
-                    std::string generated_path;
-                    
-                    if (TranscodingPipeline::TranscodeToFile(source_path, generated_path, transcode_config, cache_dir))
+                    if (tpm_)
                     {
-                        logger.information("Successfully generated on-demand preview at: %s", generated_path);
+                        auto config_copy = config_manager_;
+                        auto db_copy = database_manager_;
+                        std::string path_copy = source_path;
+                        std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
                         
-                        // Upsert the new record
-                        PreviewCacheRecord new_record;
-                        new_record.source_path = source_path;
-                        new_record.cached_path = generated_path;
-                        PreviewCacheOps::upsertPreview(*database_manager_, new_record);
+                        tpm_->submit("preview_generator", [config_copy, db_copy, path_copy, cache_dir, transcode_config]() {
+                            std::string generated_path;
+                            if (TranscodingPipeline::TranscodeToFile(path_copy, generated_path, transcode_config, cache_dir))
+                            {
+                                PreviewCacheRecord new_record;
+                                new_record.source_path = path_copy;
+                                new_record.cached_path = generated_path;
+                                PreviewCacheOps::upsertPreview(*db_copy, new_record);
+                                
+                                Poco::JSON::Object msg;
+                                msg.set("type", "media_ready");
+                                msg.set("media_type", "preview");
+                                msg.set("file_path", path_copy);
+                                
+                                std::stringstream ss;
+                                msg.stringify(ss);
+                                WebSocketStatusHandler::broadcastMessage(ss.str());
+                            }
+                        }, source_path);
                         
-                        streamPreviewFile(generated_path, response, source_modified);
+                        // Return a 1x1 transparent PNG to prevent browser errors and free the socket
+                        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                        response.setContentType("image/png");
+                        response.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                        
+                        static const unsigned char transparent_png[] = {
+                            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+                            0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                            0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+                            0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+                            0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+                            0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+                        };
+                        
+                        response.setContentLength(sizeof(transparent_png));
+                        std::ostream& out = response.send();
+                        out.write(reinterpret_cast<const char*>(transparent_png), sizeof(transparent_png));
                         return;
                     }
                     else
                     {
-                        logger.error("Failed to generate on-demand preview for: %s", source_path);
-                        sendErrorResponse(response, "Failed to generate preview", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-                        return;
+                        std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
+                        std::string generated_path;
+                        
+                        if (TranscodingPipeline::TranscodeToFile(source_path, generated_path, transcode_config, cache_dir))
+                        {
+                            logger.information("Successfully generated on-demand preview at: %s", generated_path);
+                            
+                            // Upsert the new record
+                            PreviewCacheRecord new_record;
+                            new_record.source_path = source_path;
+                            new_record.cached_path = generated_path;
+                            PreviewCacheOps::upsertPreview(*database_manager_, new_record);
+                            
+                            streamPreviewFile(generated_path, response, source_modified);
+                            return;
+                        }
+                        else
+                        {
+                            logger.error("Failed to generate on-demand preview for: %s", source_path);
+                            sendErrorResponse(response, "Failed to generate preview", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                            return;
+                        }
                     }
                 }
                 else
