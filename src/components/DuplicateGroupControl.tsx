@@ -436,10 +436,9 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
         }
       });
 
-      // Clear completed status in queue so these can be re-queued when scrolled back
-      if (urlsToClear.length > 0) {
-        thumbnailQueue.clearCompleted(urlsToClear);
-      }
+      // Do not clear completed status in queue!
+      // Keeping them in the completed list allows the ThumbnailQueue to fast-track
+      // them instantly from the browser cache when scrolled back into view.
 
       // Clear tracking maps
       imageSrcRef.current.clear();
