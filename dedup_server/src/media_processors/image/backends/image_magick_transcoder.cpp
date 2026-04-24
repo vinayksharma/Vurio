@@ -259,7 +259,7 @@ namespace MediaDedup
             if (width > MAX_DIMENSION || height > MAX_DIMENSION)
             {
                 Magick::Geometry new_size(MAX_DIMENSION, MAX_DIMENSION);
-                new_size.aspect(true); // maintain aspect ratio
+                // new_size.aspect(true) ignores aspect ratio and forces exact dimension. We do not want that.
                 image.resize(new_size);
                 logger_.information("Resized image from %zux%zu to %zux%zu for optimal preview streaming", width, height, image.columns(), image.rows());
             }
