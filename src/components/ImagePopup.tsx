@@ -60,6 +60,11 @@ const ImagePopup: React.FC = () => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && customEvent.detail.file_path === filePath) {
         setCacheBuster(Date.now());
+        // Reset the native fetch lock so that if the user is zoomed in,
+        // it triggers another fetch to get the now-ready full resolution image.
+        if (fetchingNativePathRef.current === filePath) {
+          fetchingNativePathRef.current = null;
+        }
       }
     };
     window.addEventListener('media_ready', handleMediaReady);
@@ -209,11 +214,17 @@ const ImagePopup: React.FC = () => {
       setIsFetchingNative(true);
       const activeFilePath = filePath;
       const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(filePath)}&size=0`;
+      
       const img = new window.Image();
       img.onload = () => {
          if (fetchingNativePathRef.current === activeFilePath) {
-           setNativeUrl(url);
-           setIsFetchingNative(false);
+           if (img.naturalWidth === 1 && img.naturalHeight === 1) {
+             // It's the async placeholder. Keep isFetchingNative = true.
+             // Do NOT set nativeUrl yet, so we don't blink out the preview!
+           } else {
+             setNativeUrl(url);
+             setIsFetchingNative(false);
+           }
          }
       };
       img.onerror = () => {
@@ -223,9 +234,11 @@ const ImagePopup: React.FC = () => {
            setIsFetchingNative(false);
          }
       };
-      img.src = url;
+      // Append cache buster so we fetch the real image after media_ready!
+      const finalUrl = cacheBuster ? `${url}&_t=${cacheBuster}` : url;
+      img.src = finalUrl;
     }
-  }, [scale, filePath, nativeUrl]);
+  }, [scale, filePath, nativeUrl, cacheBuster]);
 
   const buildImageUrl = (path: string): string => {
     // Request a larger thumbnail image for zooming (backend max size is 1024)
