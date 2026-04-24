@@ -12,6 +12,7 @@
 namespace MediaDedup
 {
     class DatabaseManager;
+    class ThreadPoolManager;
 
     /**
      * @brief Handler for GET /api/v1/thumbnails
@@ -37,7 +38,8 @@ namespace MediaDedup
         ThumbnailHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                          std::shared_ptr<DatabaseManager> database_manager,
                          std::shared_ptr<DiskCache> thumbnail_cache,
-                         std::shared_ptr<DiskCache> transcoding_cache);
+                         std::shared_ptr<DiskCache> transcoding_cache,
+                         std::shared_ptr<ThreadPoolManager> tpm);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
@@ -47,6 +49,7 @@ namespace MediaDedup
         std::shared_ptr<DatabaseManager> database_manager_;
         std::shared_ptr<DiskCache> thumbnail_cache_;
         std::shared_ptr<DiskCache> transcoding_cache_;
+        std::shared_ptr<ThreadPoolManager> tpm_;
 
         // Per-path generation locks to prevent duplicate work
         static std::map<std::string, std::shared_ptr<std::mutex>> generation_locks_;

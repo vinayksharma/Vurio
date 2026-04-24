@@ -130,7 +130,14 @@ export const useServerStatusStore = create<ServerStatusState>((set, get) => ({
 
       statusWebSocket.onmessage = (event) => {
         try {
-          const serverStatus: ServerStatus = JSON.parse(event.data);
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'media_ready') {
+            window.dispatchEvent(new CustomEvent('media_ready', { detail: data }));
+            return;
+          }
+
+          const serverStatus: ServerStatus = data;
           set({
             isOnline: true,
             status: serverStatus,

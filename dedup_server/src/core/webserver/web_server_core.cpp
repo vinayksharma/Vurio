@@ -243,13 +243,13 @@ namespace MediaDedup
 
         // Thumbnail endpoints
         if (path == "/api/v1/thumbnails" && method == "GET")
-            return new ThumbnailHandler(config_manager_, database_manager_, thumbnail_cache_, transcoding_cache_);
+            return new ThumbnailHandler(config_manager_, database_manager_, thumbnail_cache_, transcoding_cache_, tpm_);
         if (path == "/api/v1/thumbnails/cleanup" && method == "DELETE")
             return new ThumbnailCleanupHandler(config_manager_, database_manager_, thumbnail_cache_);
 
         // Preview endpoints
         if (path == "/api/v1/preview" && method == "GET")
-            return new PreviewHandler(config_manager_, database_manager_);
+            return new PreviewHandler(config_manager_, database_manager_, tpm_);
 
         // Cache management endpoints
         if (path.find("/api/v1/cache/") == 0 && path.find("/invalidate") != std::string::npos && method == "DELETE")

@@ -13,6 +13,9 @@
 namespace MediaDedup
 {
 
+    std::set<Poco::Net::WebSocket*> WebSocketStatusHandler::active_sockets_;
+    std::mutex WebSocketStatusHandler::sockets_mutex_;
+
     WebSocketStatusHandler::WebSocketStatusHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                                    std::shared_ptr<FilesService> files_service,
                                                    std::shared_ptr<ScannedFilesService> scanned_files_service,
@@ -41,6 +44,11 @@ namespace MediaDedup
 
             ws.setReceiveTimeout(Poco::Timespan(2, 0)); // 2 seconds timeout for status updates
 
+            {
+                std::lock_guard<std::mutex> lock(sockets_mutex_);
+                active_sockets_.insert(&ws);
+            }
+
             do
             {
                 // Send current status
@@ -66,6 +74,11 @@ namespace MediaDedup
                     break;
                 }
             } while (n > 0);
+
+            {
+                std::lock_guard<std::mutex> lock(sockets_mutex_);
+                active_sockets_.erase(&ws);
+            }
 
             logger.information("WebSocket connection closed");
         }
@@ -202,6 +215,22 @@ namespace MediaDedup
         std::stringstream ss;
         status_obj.stringify(ss);
         return ss.str();
+    }
+
+    void WebSocketStatusHandler::broadcastMessage(const std::string& message)
+    {
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        for (auto* ws : active_sockets_)
+        {
+            try
+            {
+                ws->sendFrame(message.data(), static_cast<int>(message.size()), Poco::Net::WebSocket::FRAME_TEXT);
+            }
+            catch (const std::exception& e)
+            {
+                Poco::Logger::get("WebSocketStatusHandler").warning("Failed to broadcast message to a client: %s", std::string(e.what()));
+            }
+        }
     }
 
 } // namespace MediaDedup

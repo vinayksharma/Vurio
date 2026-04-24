@@ -32,6 +32,8 @@ namespace MediaDedup
 
         void handleRequest(Poco::Net::HTTPServerRequest &request, Poco::Net::HTTPServerResponse &response) override;
 
+        static void broadcastMessage(const std::string& message);
+
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<FilesService> files_service_;
@@ -41,6 +43,10 @@ namespace MediaDedup
 
         void sendStatus(Poco::Net::WebSocket &ws);
         std::string getStatusJson();
+
+        // Global registry of active websockets for broadcasting
+        static std::set<Poco::Net::WebSocket*> active_sockets_;
+        static std::mutex sockets_mutex_;
     };
 
 } // namespace MediaDedup

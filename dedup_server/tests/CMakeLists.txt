@@ -443,6 +443,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp

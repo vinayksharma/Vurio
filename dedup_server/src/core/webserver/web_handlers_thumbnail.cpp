@@ -6,6 +6,7 @@
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/URI.h>
+#include "core/web/web_handlers_websocket.hpp"
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
@@ -58,11 +59,13 @@ namespace MediaDedup
     ThumbnailHandler::ThumbnailHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                        std::shared_ptr<DatabaseManager> database_manager,
                                        std::shared_ptr<DiskCache> thumbnail_cache,
-                                       std::shared_ptr<DiskCache> transcoding_cache)
+                                       std::shared_ptr<DiskCache> transcoding_cache,
+                                       std::shared_ptr<ThreadPoolManager> tpm)
         : config_manager_(std::move(config_manager)),
           database_manager_(std::move(database_manager)),
           thumbnail_cache_(std::move(thumbnail_cache)),
-          transcoding_cache_(std::move(transcoding_cache))
+          transcoding_cache_(std::move(transcoding_cache)),
+          tpm_(std::move(tpm))
     {
     }
 
@@ -160,19 +163,67 @@ namespace MediaDedup
                 }
             }
 
-            // Cache miss or stale - generate thumbnail
-            logger.debug("Cache miss for: %s (size: %d), generating...", source_path, size);
+            // Cache miss or stale - generate thumbnail asynchronously
+            logger.debug("Cache miss for: %s (size: %d), dispatching async task...", source_path, size);
 
-            std::string cached_path;
-            if (!generateAndCacheThumbnail(source_path, size, cached_path))
+            if (tpm_)
             {
-                logger.error("Failed to generate thumbnail for: %s", source_path);
-                sendErrorResponse(response, "Failed to generate thumbnail", 500);
+                auto config_copy = config_manager_;
+                auto db_copy = database_manager_;
+                auto tcache_copy = thumbnail_cache_;
+                auto xcache_copy = transcoding_cache_;
+                auto tpm_copy = tpm_;
+                std::string path_copy = source_path;
+                int size_copy = size;
+                
+                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
+                    ThumbnailHandler temp_handler(config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy);
+                    std::string cached_path;
+                    if (temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
+                        Poco::JSON::Object msg;
+                        msg.set("type", "media_ready");
+                        msg.set("media_type", "thumbnail");
+                        msg.set("file_path", path_copy);
+                        
+                        std::stringstream ss;
+                        msg.stringify(ss);
+                        WebSocketStatusHandler::broadcastMessage(ss.str());
+                    }
+                }, source_path);
+
+                // Return a 1x1 transparent PNG to prevent browser errors and free the socket
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                response.setContentType("image/png");
+                response.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                
+                // 1x1 transparent PNG base64 decoded
+                static const unsigned char transparent_png[] = {
+                    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+                    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+                    0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+                    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+                    0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+                };
+                
+                response.setContentLength(sizeof(transparent_png));
+                std::ostream& out = response.send();
+                out.write(reinterpret_cast<const char*>(transparent_png), sizeof(transparent_png));
                 return;
             }
+            else
+            {
+                std::string cached_path;
+                if (!generateAndCacheThumbnail(source_path, size, cached_path))
+                {
+                    logger.error("Failed to generate thumbnail for: %s", source_path);
+                    sendErrorResponse(response, "Failed to generate thumbnail", 500);
+                    return;
+                }
 
-            // Stream the newly generated thumbnail
-            streamThumbnailFile(cached_path, response, source_mtime);
+                // Stream the newly generated thumbnail
+                streamThumbnailFile(cached_path, response, source_mtime);
+            }
         }
         catch (const std::exception &e)
         {
