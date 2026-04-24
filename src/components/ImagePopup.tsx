@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { API_BASE, ejectDuplicates, undoEjectDuplicates } from '../utils/api';
+import { useServerStatusStore } from '../stores';
 
 const IconButton = ({ onClick, title, children }: { onClick: () => void, title: string, children: React.ReactNode }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -45,6 +46,25 @@ const ImagePopup: React.FC = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isEjecting, setIsEjecting] = useState(false);
+  const [cacheBuster, setCacheBuster] = useState<number>(0);
+  
+  const { startRealtimeStatus, stopRealtimeStatus } = useServerStatusStore();
+
+  useEffect(() => {
+    startRealtimeStatus();
+    return () => stopRealtimeStatus();
+  }, [startRealtimeStatus, stopRealtimeStatus]);
+
+  useEffect(() => {
+    const handleMediaReady = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.file_path === filePath) {
+        setCacheBuster(Date.now());
+      }
+    };
+    window.addEventListener('media_ready', handleMediaReady);
+    return () => window.removeEventListener('media_ready', handleMediaReady);
+  }, [filePath]);
   
   const [groupImages, setGroupImages] = useState<{filePath: string, details: string, is_ejected?: boolean}[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -127,6 +147,7 @@ const ImagePopup: React.FC = () => {
     setFilePath(groupImages[newIndex].filePath);
     setDetails(groupImages[newIndex].details);
     setIsLoading(true);
+    setCacheBuster(0);
   };
 
   const handlePrev = () => navigateTo(currentIndex - 1);
@@ -364,6 +385,18 @@ const ImagePopup: React.FC = () => {
 
   if (!filePath) return <div style={{ color: 'white', padding: 20 }}>Loading...</div>;
 
+  const currentSrc = nativeUrl || buildImageUrl(filePath);
+  const srcWithCacheBuster = cacheBuster ? `${currentSrc}&_t=${cacheBuster}` : currentSrc;
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (img.naturalWidth === 1 && img.naturalHeight === 1) {
+      // Async placeholder pixel - keep loading spinner
+      return;
+    }
+    setIsLoading(false);
+  };
+
   return (
     <div className="standalone-viewer-container" style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f172a', overflow: 'hidden' }}>
       
@@ -383,7 +416,7 @@ const ImagePopup: React.FC = () => {
           )}
           <img
             className="image-preview-image"
-            src={nativeUrl || buildImageUrl(filePath)}
+            src={srcWithCacheBuster}
             alt="Preview"
             style={{
               transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale}) rotate(${rotation}deg)`,
@@ -400,7 +433,7 @@ const ImagePopup: React.FC = () => {
               boxSizing: 'border-box',
             }}
             onDragStart={(e) => e.preventDefault()}
-            onLoad={() => setIsLoading(false)}
+            onLoad={handleImageLoad}
             onError={() => setIsLoading(false)}
           />
           
