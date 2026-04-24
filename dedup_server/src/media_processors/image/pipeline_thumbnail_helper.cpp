@@ -5,6 +5,8 @@
 #include "config/unified_observable_config.hpp"
 #include "utils/thumbnail_generator.hpp"
 #include <Poco/Logger.h>
+#include <Poco/JSON/Object.h>
+#include "core/web/web_handlers_websocket.hpp"
 #include <Magick++.h>
 #include <filesystem>
 #include <chrono>
@@ -128,6 +130,17 @@ namespace MediaDedup
 
             logger.information("Successfully generated pipeline thumbnail: %s (size: %d, %zu bytes)",
                                file_path, size, thumb_size_bytes);
+
+            // Broadcast media_ready event for the UI to pick up the new thumbnail
+            Poco::JSON::Object msg;
+            msg.set("type", "media_ready");
+            msg.set("media_type", "thumbnail");
+            msg.set("file_path", file_path);
+            
+            std::stringstream msg_ss;
+            msg.stringify(msg_ss);
+            WebSocketStatusHandler::broadcastMessage(msg_ss.str());
+
             return true;
         }
         catch (const std::exception &e)
