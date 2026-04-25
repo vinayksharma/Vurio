@@ -74,4 +74,21 @@ namespace MediaDedup
         void sendErrorResponse(Poco::Net::HTTPServerResponse &response, const std::string &error_message, int status_code);
     };
 
+    class CacheLocationsHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        CacheLocationsHandler(std::shared_ptr<DiskCache> thumbnail_cache,
+                              std::shared_ptr<DiskCache> transcoding_cache);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<DiskCache> thumbnail_cache_;
+        std::shared_ptr<DiskCache> transcoding_cache_;
+
+        void sendJsonResponse(Poco::Net::HTTPServerResponse &response, const std::string &json_data, int status_code);
+        void sendErrorResponse(Poco::Net::HTTPServerResponse &response, const std::string &error_message, int status_code);
+    };
+
 } // namespace MediaDedup

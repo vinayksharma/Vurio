@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches, fetchCacheLocations } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -289,6 +289,30 @@ const AdvancedSection: React.FC = () => {
     }
   };
 
+  const handleShowCachesInFinder = async () => {
+    try {
+      const res = await fetchCacheLocations();
+      if (!res.thumbnail_cache && !res.disk_cache) {
+        alert('Could not find cache locations.');
+        return;
+      }
+      
+      const win = window as any;
+      if (win.electronAPI?.openPath) {
+        // Open the parent directory containing the caches if they are in the same parent dir,
+        // or simply open the thumbnail cache since they are usually sibling folders.
+        // Opening thumbnail cache will reveal the cache folder.
+        const pathToOpen = res.thumbnail_cache;
+        await win.electronAPI.openPath(pathToOpen);
+      } else {
+        alert('Electron API not available to open folder.');
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to get cache locations: ' + err.message);
+    }
+  };
+
   const handleStartScrollTest = async () => {
     if (isScrollTestRunning) {
       if (window.stopScrollTest) {
@@ -470,14 +494,26 @@ const AdvancedSection: React.FC = () => {
           <h3>Clear Caches</h3>
           <p>Delete all generated thumbnails and QHD previews. Useful for forcing the system to regenerate images after testing new generation logic.</p>
         </div>
-        <button
-          id="clear-caches-btn"
-          className="ghost warning"
-          onClick={handleClearCaches}
-          disabled={isAnyActionRunning}
-        >
-          {isClearingCaches ? 'Clearing...' : 'Clear All Caches'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', width: '180px' }}>
+          <button
+            id="clear-caches-btn"
+            className="ghost warning"
+            style={{ flex: 1, padding: '0 8px' }}
+            onClick={handleClearCaches}
+            disabled={isAnyActionRunning}
+          >
+            {isClearingCaches ? 'Clearing...' : 'Clear All Caches'}
+          </button>
+          <button
+            className="ghost"
+            style={{ flex: '0 0 36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={handleShowCachesInFinder}
+            disabled={isAnyActionRunning}
+            title="Open folder containing the caches"
+          >
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          </button>
+        </div>
       </div>
       <div className="action-row">
         <div className="action-details">

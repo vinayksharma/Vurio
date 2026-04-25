@@ -267,6 +267,16 @@ export async function configurePurityOrder(purityOrderString: string): Promise<{
   }) as Promise<any>;
 }
 
+export async function clearAllCaches(): Promise<{ success: boolean; thumbnail_cache_cleared: boolean; disk_cache_cleared: boolean; error?: string }> {
+  return safeFetch('/api/v1/admin/clear-caches', {
+    method: 'DELETE',
+  }) as Promise<any>;
+}
+
+export async function fetchCacheLocations(): Promise<{ thumbnail_cache: string; disk_cache: string }> {
+  return safeFetch('/api/v1/cache/locations') as Promise<any>;
+}
+
 export async function ejectErrors(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
   return safeFetch('/api/v1/files/eject-errors', {
     method: 'POST',
@@ -309,8 +319,4 @@ export async function getLatestBackup(): Promise<{ success: boolean; backup_path
   }) as Promise<any>;
 }
 
-export async function clearAllCaches(): Promise<{ success: boolean; thumbnail_cache_cleared: boolean; disk_cache_cleared: boolean; error?: string }> {
-  return safeFetch('/api/v1/admin/clear-caches', {
-    method: 'DELETE',
-  }) as Promise<any>;
-}
+
