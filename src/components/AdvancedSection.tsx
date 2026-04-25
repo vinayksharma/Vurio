@@ -334,6 +334,7 @@ const AdvancedSection: React.FC = () => {
           <button
             id="reset-errors-btn"
             className="ghost"
+            style={{ width: '120px' }}
             onClick={handleResetErrors}
             disabled={isAnyActionRunning}
           >
@@ -342,6 +343,7 @@ const AdvancedSection: React.FC = () => {
           <button
             id="eject-errors-btn"
             className="ghost danger"
+            style={{ width: '130px' }}
             onClick={handleEjectErrors}
             disabled={isAnyActionRunning}
           >
@@ -350,6 +352,7 @@ const AdvancedSection: React.FC = () => {
           <button
             id="restore-errors-btn"
             className="ghost"
+            style={{ width: '140px' }}
             onClick={handleRestoreErrors}
             disabled={isAnyActionRunning}
           >
@@ -364,9 +367,11 @@ const AdvancedSection: React.FC = () => {
           <p>Eject files that were skipped due to size or quality thresholds, or restore previously ejected ignored files back to their original locations.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ width: '120px' }}></div>
           <button
             id="eject-ignored-btn"
             className="ghost danger"
+            style={{ width: '130px' }}
             onClick={handleEjectIgnored}
             disabled={isAnyActionRunning}
           >
@@ -375,6 +380,7 @@ const AdvancedSection: React.FC = () => {
           <button
             id="restore-ignored-btn"
             className="ghost"
+            style={{ width: '140px' }}
             onClick={handleRestoreIgnored}
             disabled={isAnyActionRunning}
           >
