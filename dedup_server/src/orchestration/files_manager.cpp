@@ -139,6 +139,19 @@ namespace MediaDedup::Orchestration
         row.is_network_file = rec.isShareMapped;                      // best-effort
         row.location_key = filesService_->makeMediaLocationKey(root); // Full user_settings.key format
 
+        bool is_ignored = false;
+        std::string ignore_reason;
+
+        if (cfg_->getPropertyValue<bool>("media.filter.enabled", true)) {
+            int min_kb = cfg_->getPropertyValue<int>("media.filter.min_file_size_kb", 10);
+            if (rec.fileSizeBytes < static_cast<uint64_t>(min_kb) * 1024) {
+                is_ignored = true;
+                ignore_reason = "File size (" + std::to_string(rec.fileSizeBytes / 1024) + " KB) is below minimum threshold (" + std::to_string(min_kb) + " KB)";
+                row.processed = 3;
+                row.ignore_reason = ignore_reason;
+            }
+        }
+
         // Use database query instead of in-memory index lookup (precheck)
         auto found = ScannedFilesOps::getByPath(*db_, rec.fullPath);
         const bool exists = found.has_value();
@@ -156,9 +169,11 @@ namespace MediaDedup::Orchestration
                 // 1. File size
                 // 2. Creation date (only if both are non-zero - actual file timestamps)
                 // 3. Modification date (only if both are non-zero - actual file timestamps)
+                // 4. Ignored status (if a file was previously ignored and now shouldn't be, or vice-versa)
                 bool size_changed = false;
                 bool creation_changed = false;
                 bool modification_changed = false;
+                bool ignore_status_changed = (found->processed == 3) != is_ignored;
 
                 if (existing_meta.contains("sizeBytes") && new_meta.contains("sizeBytes"))
                 {
@@ -187,7 +202,7 @@ namespace MediaDedup::Orchestration
                     }
                 }
 
-                significant_change = size_changed || creation_changed || modification_changed;
+                significant_change = size_changed || creation_changed || modification_changed || ignore_status_changed;
             }
             catch (...)
             {
@@ -209,8 +224,8 @@ namespace MediaDedup::Orchestration
 
             if (!exists)
             {
-                // New file - reset processing status to 0
-                row.processed = 0;
+                // New file - reset processing status to 0, or 3 if ignored
+                row.processed = is_ignored ? 3 : 0;
                 ScannedFilesOps::upsert(*db_, row);
             }
             else
@@ -238,7 +253,7 @@ namespace MediaDedup::Orchestration
                 ScannedFilesOps::removeByPath(*db_, rec.fullPath);
                 
                 // 3. Re-insert as a brand new record (gets a new ID > last_processed_id)
-                row.processed = 0;
+                row.processed = is_ignored ? 3 : 0;
                 ScannedFilesOps::upsert(*db_, row);
             }
         }

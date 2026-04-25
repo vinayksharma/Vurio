@@ -57,6 +57,36 @@ namespace MediaDedup
                 ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res, exif_blob);
                 Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s, Blob=%zu bytes", 
                     original_file_path, exif_dt, exif_camera, exif_res, exif_blob.size());
+
+                // Tier 2 Filter logic: Resolution & Date
+                if (config_manager && config_manager->getPropertyValue<bool>("media.filter.enabled", true)) {
+                    int min_w = config_manager->getPropertyValue<int>("media.filter.low_res.min_width", 600);
+                    int min_h = config_manager->getPropertyValue<int>("media.filter.low_res.min_height", 600);
+                    std::string apply_after_date = config_manager->getPropertyValue<std::string>("media.filter.low_res.apply_after_date", "2005-01-01");
+
+                    bool is_low_res = (static_cast<int>(image.columns()) < min_w || static_cast<int>(image.rows()) < min_h);
+                    
+                    // Check date to see if we should exempt it (historical photos)
+                    bool is_after_date = true; // default to true if no valid date
+                    if (!exif_dt.empty()) {
+                        // EXIF date format is usually "YYYY:MM:DD HH:MM:SS"
+                        // convert apply_after_date "YYYY-MM-DD" to "YYYY:MM:DD" for simple string comparison
+                        std::string target_date = apply_after_date;
+                        std::replace(target_date.begin(), target_date.end(), '-', ':');
+                        if (exif_dt < target_date) {
+                            is_after_date = false;
+                        }
+                    }
+
+                    if (is_low_res && is_after_date) {
+                        std::string reason = "Image resolution (" + std::to_string(image.columns()) + "x" + std::to_string(image.rows()) + 
+                                             ") is below minimum threshold (" + std::to_string(min_w) + "x" + std::to_string(min_h) + ")";
+                        ScannedFilesOps::markIgnored(db, original_file_path, reason);
+                        Poco::Logger::get("ImageProcessor").information("Ignored %s: %s", original_file_path, reason);
+                        return true; // We successfully "processed" it by ignoring it
+                    }
+                }
+
             } catch (const std::exception& e) {
                 Poco::Logger::get("ImageProcessor").warning("Failed to extract EXIF for %s: %s", original_file_path, std::string(e.what()));
             } catch (...) {

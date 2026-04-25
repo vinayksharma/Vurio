@@ -181,6 +181,10 @@ namespace MediaDedup
             return new EjectErrorsHandler(database_manager_);
         if (path == "/api/v1/files/undo-eject-errors" && method == "POST")
             return new UndoEjectErrorsHandler(database_manager_);
+        if (path == "/api/v1/files/eject-ignored" && method == "POST")
+            return new EjectIgnoredHandler(database_manager_);
+        if (path == "/api/v1/files/undo-eject-ignored" && method == "POST")
+            return new UndoEjectIgnoredHandler(database_manager_);
         if (path == "/api/v1/duplicates/groups" && method == "GET")
             return new MediaDedupServer::Core::DuplicateGroupsHandler(database_manager_);
         if (path == "/api/v1/duplicates/reset" && method == "DELETE")

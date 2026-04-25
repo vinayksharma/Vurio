@@ -409,6 +409,13 @@ namespace MediaDedup
         manager->createProperty<double>("tpm.types.thumbnail_generator.share", 1.0, "Thread pool share for thumbnail generation");
 
 
+        // Create default filter properties
+        manager->createProperty<bool>("media.filter.enabled", true, "Enable media filtering");
+        manager->createProperty<int>("media.filter.min_file_size_kb", 10, "Minimum file size in KB");
+        manager->createProperty<int>("media.filter.low_res.min_width", 600, "Minimum image width");
+        manager->createProperty<int>("media.filter.low_res.min_height", 600, "Minimum image height");
+        manager->createProperty<std::string>("media.filter.low_res.apply_after_date", "2005-01-01", "Only apply low resolution filter to photos taken after this date (YYYY-MM-DD)");
+
 
         // Create default media category properties
         // Images

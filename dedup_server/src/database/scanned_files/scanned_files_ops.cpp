@@ -18,6 +18,17 @@ namespace MediaDedup
             return false;
         }
 
+        // Ensure ignore_reason column exists (migration)
+        try {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << "ALTER TABLE scanned_files ADD COLUMN ignore_reason TEXT", Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").information("Added ignore_reason column to scanned_files table.");
+        } catch (const std::exception &) {
+            // Column likely already exists, ignore
+        }
+
         // Create indexes for efficient lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try
@@ -62,6 +73,7 @@ namespace MediaDedup
         if (r.exif_blob.has_value() && !r.exif_blob->empty()) {
             blob_obj.assignRaw(r.exif_blob->data(), r.exif_blob->size());
         }
+        std::string ignore_reason = r.ignore_reason.value_or("");
 
         stmt << std::string(SQL::kUpsertScannedFile),
             Keywords::use(file_path),
@@ -77,6 +89,7 @@ namespace MediaDedup
             Keywords::use(exif_cam),
             Keywords::use(exif_res),
             Keywords::use(blob_obj),
+            Keywords::use(ignore_reason),
             Keywords::now;
     }
 
@@ -340,6 +353,7 @@ namespace MediaDedup
             if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
             if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
             if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
             // Note: exif_blob is intentionally excluded from this SELECT query to save memory
             return r;
         }
@@ -377,6 +391,7 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -477,6 +492,26 @@ namespace MediaDedup
         catch (...)
         {
             Poco::Logger::get("ScannedFilesOps").error("Failed to mark file " + file_path + " with state " + std::to_string(state) + ": unknown error");
+            return false;
+        }
+    }
+
+    bool ScannedFilesOps::markIgnored(DatabaseManager &db, const std::string &file_path, const std::string &reason)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            int state = 3; // Ignored
+            std::string p = file_path;
+            std::string r = reason;
+            stmt << "UPDATE scanned_files SET processed=?, ignore_reason=? WHERE file_path=?", 
+                Keywords::use(state), Keywords::use(r), Keywords::use(p), Keywords::now;
+            return true;
+        }
+        catch (...)
+        {
             return false;
         }
     }
@@ -639,6 +674,7 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -679,6 +715,48 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
+                out.emplace_back(std::move(r));
+                more = rs.moveNext();
+            }
+        }
+        catch (...)
+        {
+        }
+        return out;
+    }
+
+    std::vector<ScannedFileRow> ScannedFilesOps::listIgnoredFiles(DatabaseManager &db)
+    {
+        std::vector<ScannedFileRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            // Select all files where processed = 3
+            stmt << "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason FROM scanned_files WHERE processed = 3";
+            stmt.execute();
+            RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                ScannedFileRow r;
+                r.id = rs[0].convert<int>();
+                r.file_path = rs[1].convert<std::string>();
+                r.relative_path = rs[2].convert<std::string>();
+                r.share_name = rs[3].convert<std::string>();
+                r.file_name = rs[4].convert<std::string>();
+                r.file_metadata = rs[5].convert<std::string>();
+                r.processed = rs[6].convert<int>();
+                r.links = rs[7].convert<std::string>();
+                r.is_network_file = rs[8].convert<int>() != 0;
+                r.location_key = rs[9].convert<std::string>();
+                r.created_at = rs[10].convert<std::string>();
+                if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
+                if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
+                if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -1047,6 +1125,7 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -1093,6 +1172,7 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 more = rs.moveNext();
             }
@@ -1139,6 +1219,7 @@ namespace MediaDedup
                 if (!rs[11].isEmpty()) r.exif_datetime = rs[11].convert<std::string>();
                 if (!rs[12].isEmpty()) r.exif_camera = rs[12].convert<std::string>();
                 if (!rs[13].isEmpty()) r.exif_resolution = rs[13].convert<std::string>();
+                if (rs.columnCount() > 14 && !rs[14].isEmpty()) r.ignore_reason = rs[14].convert<std::string>();
                 out.emplace_back(std::move(r));
                 count++;
                 if (count % 10000 == 0)

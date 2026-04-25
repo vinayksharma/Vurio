@@ -279,6 +279,18 @@ export async function undoEjectErrors(): Promise<{ success: boolean; success_cou
   }) as Promise<any>;
 }
 
+export async function ejectIgnored(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/files/eject-ignored', {
+    method: 'POST',
+  }) as Promise<any>;
+}
+
+export async function undoEjectIgnored(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
+  return safeFetch('/api/v1/files/undo-eject-ignored', {
+    method: 'POST',
+  }) as Promise<any>;
+}
+
 export async function purgeEjectedAndErrored(): Promise<{ success: boolean; success_count: number; failure_count: number; error?: string }> {
   return safeFetch('/api/settings/purge-ejected-errored', {
     method: 'POST',

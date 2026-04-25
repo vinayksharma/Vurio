@@ -19,7 +19,8 @@ namespace MediaDedup
         std::string share_name;
         std::string file_name;
         std::string file_metadata;
-        int processed = 0; // 0=unprocessed, 1=in-progress, 2=completed, <0=error codes
+        int processed = 0; // 0=unprocessed, 1=in-progress, 2=completed, 3=ignored, <0=error codes
+        std::optional<std::string> ignore_reason;
         std::string links;
         bool is_network_file = false;
         std::string location_key; // Full user_settings.key format (e.g., "mediaLocation:abc123")
@@ -65,12 +66,14 @@ namespace MediaDedup
 
         // Processing state management
         static bool markProcessed(DatabaseManager &db, const std::string &file_path, int state);
+        static bool markIgnored(DatabaseManager &db, const std::string &file_path, const std::string &reason);
         static bool markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, int state);
         static bool setLinks(DatabaseManager &db, const std::string &file_path, const std::vector<int> &link_ids);
         static std::vector<int> getLinks(DatabaseManager &db, const std::string &file_path);
         static std::vector<ScannedFileRow> listUnprocessed(DatabaseManager &db, int limit = -1);
         static std::vector<ScannedFileRow> listUnprocessedAll(DatabaseManager &db, int limit = -1);
         static std::vector<ScannedFileRow> listErroredFiles(DatabaseManager &db);
+        static std::vector<ScannedFileRow> listIgnoredFiles(DatabaseManager &db);
 
         // Reset all errors to unprocessed (0)
         static int resetAllErrors(DatabaseManager &db);
