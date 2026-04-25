@@ -218,4 +218,67 @@ namespace MediaDedup
     }
 
 
+    // CacheLocationsHandler Implementation
+    CacheLocationsHandler::CacheLocationsHandler(std::shared_ptr<DiskCache> thumbnail_cache,
+                                                 std::shared_ptr<DiskCache> transcoding_cache)
+        : thumbnail_cache_(std::move(thumbnail_cache)),
+          transcoding_cache_(std::move(transcoding_cache))
+    {
+    }
+
+    void CacheLocationsHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                              Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger &logger = Poco::Logger::get("CacheLocationsHandler");
+
+        if (request.getMethod() != "GET")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+
+        try
+        {
+            Poco::JSON::Object result;
+            result.set("thumbnail_cache", thumbnail_cache_->getCacheLocation());
+            result.set("disk_cache", transcoding_cache_->getCacheLocation());
+
+            std::stringstream ss;
+            result.stringify(ss);
+
+            sendJsonResponse(response, ss.str(), 200);
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception in CacheLocationsHandler: %s", std::string(e.what()));
+            sendErrorResponse(response, "Internal server error", 500);
+        }
+    }
+
+    void CacheLocationsHandler::sendJsonResponse(Poco::Net::HTTPServerResponse &response,
+                                                 const std::string &json_data,
+                                                 int status_code)
+    {
+        response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(status_code));
+        response.setContentType("application/json; charset=utf-8");
+        response.setContentLength(json_data.length());
+        response.send() << json_data;
+    }
+
+    void CacheLocationsHandler::sendErrorResponse(Poco::Net::HTTPServerResponse &response,
+                                                  const std::string &error_message,
+                                                  int status_code)
+    {
+        Poco::JSON::Object error_obj;
+        error_obj.set("error", error_message);
+
+        std::stringstream ss;
+        error_obj.stringify(ss);
+
+        response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(status_code));
+        response.setContentType("application/json; charset=utf-8");
+        response.setContentLength(ss.str().length());
+        response.send() << ss.str();
+    }
+
 } // namespace MediaDedup
