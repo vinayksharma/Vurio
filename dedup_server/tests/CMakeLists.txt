@@ -48,6 +48,7 @@ set(UNIT_TEST_SOURCES
     unit/test_stderr_capture.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
+    unit/test_media_filtering.cpp
     unit/test_disk_cache.cpp
     unit/test_scheduler_service.cpp
     unit/test_files_manager_scheduler.cpp
@@ -209,6 +210,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_web_handlers_preview")
         # Skip creating standalone executable for this test
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewHandlerTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_media_filtering")
+        # Skip creating standalone executable for this test
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MediaFilteringTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -591,6 +599,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
+      NOT ${test_name} STREQUAL "test_media_filtering" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
@@ -609,6 +618,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
        NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
        NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
+       NOT ${test_name} STREQUAL "test_media_filtering" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"

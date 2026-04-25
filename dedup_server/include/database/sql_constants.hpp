@@ -48,7 +48,8 @@ namespace MediaDedup
             "    exif_datetime TEXT,\n"
             "    exif_camera TEXT,\n"
             "    exif_resolution TEXT,\n"
-            "    exif_blob BLOB\n"
+            "    exif_blob BLOB,\n"
+            "    ignore_reason TEXT\n"
             ");";
 
         // Index for efficient file_path lookups during scan operations
@@ -118,8 +119,8 @@ namespace MediaDedup
 
         inline constexpr std::string_view kUpsertScannedFile =
             "INSERT INTO scanned_files (file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, exif_datetime, exif_camera, exif_resolution, exif_blob)\n"
-            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
+            " processed, links, is_network_file, location_key, exif_datetime, exif_camera, exif_resolution, exif_blob, ignore_reason)\n"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
             " ON CONFLICT(file_path) DO UPDATE SET\n"
             "   relative_path=excluded.relative_path,\n"
             "   share_name=excluded.share_name,\n"
@@ -132,7 +133,8 @@ namespace MediaDedup
             "   exif_datetime=excluded.exif_datetime,\n"
             "   exif_camera=excluded.exif_camera,\n"
             "   exif_resolution=excluded.exif_resolution,\n"
-            "   exif_blob=excluded.exif_blob";
+            "   exif_blob=excluded.exif_blob,\n"
+            "   ignore_reason=excluded.ignore_reason";
 
         inline constexpr std::string_view kDeleteScannedFile =
             "DELETE FROM scanned_files WHERE file_path=?";
@@ -142,12 +144,12 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectScannedFileByPath =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE file_path=?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKey =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE location_key=?";
 
         inline constexpr std::string_view kCountScannedFilesByLocationKey =
@@ -155,22 +157,22 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectRandomScannedFilesByLocationKey =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE location_key=? ORDER BY RANDOM() LIMIT ?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKeyWithLimit =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE location_key=? LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectScannedFilesByLocationKeyAndIdWithLimit =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE location_key=? AND id > ? ORDER BY id ASC LIMIT ?";
 
         inline constexpr std::string_view kListScannedFiles =
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            " processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files";
 
         inline constexpr std::string_view kCountScannedFiles =
@@ -249,7 +251,7 @@ namespace MediaDedup
             "SELECT EXISTS(SELECT 1 FROM scanned_files WHERE file_path=? LIMIT 1)";
 
         inline constexpr std::string_view kListUnprocessed =
-            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution\n"
+            "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0)";
 
         inline constexpr std::string_view kUpdateExifMetadata =

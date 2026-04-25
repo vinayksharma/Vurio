@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
   const [isResettingErrors, setIsResettingErrors] = useState(false);
   const [isEjectingErrors, setIsEjectingErrors] = useState(false);
   const [isRestoringErrors, setIsRestoringErrors] = useState(false);
+  const [isEjectingIgnored, setIsEjectingIgnored] = useState(false);
+  const [isRestoringIgnored, setIsRestoringIgnored] = useState(false);
   const [isResettingDuplicates, setIsResettingDuplicates] = useState(false);
   const [isPurgingEjectedErrored, setIsPurgingEjectedErrored] = useState(false);
   const [isIntegrityCheckRunning, setIsIntegrityCheckRunning] = useState(false);
@@ -29,7 +31,7 @@ const AdvancedSection: React.FC = () => {
     return () => { mounted = false; };
   }, []);
 
-  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp || isClearingCaches;
+  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isEjectingIgnored || isRestoringIgnored || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp || isClearingCaches;
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -81,6 +83,43 @@ const AdvancedSection: React.FC = () => {
       alert('Failed to restore errors: ' + err.message);
     } finally {
       setIsRestoringErrors(false);
+    }
+  };
+
+  const handleEjectIgnored = async () => {
+    if (!confirm('WARNING: Are you sure you want to eject all ignored files? They will be moved to a unique \'_ignored\' folder.\n\nThese are files that were skipped because they did not meet the size or quality requirements.')) {
+      return;
+    }
+    setIsEjectingIgnored(true);
+    try {
+      const res = await ejectIgnored();
+      if (res.success || res.success_count > 0) {
+        alert(`Successfully ejected ${res.success_count} ignored files. ${res.failure_count > 0 ? `Failed to eject ${res.failure_count} files.` : ''}`);
+      } else {
+        alert(`Failed to eject ignored files. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to eject ignored files: ' + err.message);
+    } finally {
+      setIsEjectingIgnored(false);
+    }
+  };
+
+  const handleRestoreIgnored = async () => {
+    setIsRestoringIgnored(true);
+    try {
+      const res = await undoEjectIgnored();
+      if (res.success || res.success_count > 0) {
+        alert(`Successfully restored ${res.success_count} ignored files. They have now been placed back into the processing queue. ${res.failure_count > 0 ? `Failed to restore ${res.failure_count} files.` : ''}`);
+      } else {
+        alert(`Failed to restore ignored files. ${res.error || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert('Failed to restore ignored files: ' + err.message);
+    } finally {
+      setIsRestoringIgnored(false);
     }
   };
 
@@ -315,6 +354,31 @@ const AdvancedSection: React.FC = () => {
             disabled={isAnyActionRunning}
           >
             {isRestoringErrors ? 'Restoring...' : 'Restore Errored'}
+          </button>
+        </div>
+      </div>
+
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Manage Ignored Files</h3>
+          <p>Eject files that were skipped due to size or quality thresholds, or restore previously ejected ignored files back to their original locations.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            id="eject-ignored-btn"
+            className="ghost danger"
+            onClick={handleEjectIgnored}
+            disabled={isAnyActionRunning}
+          >
+            {isEjectingIgnored ? 'Ejecting...' : 'Eject Ignored'}
+          </button>
+          <button
+            id="restore-ignored-btn"
+            className="ghost"
+            onClick={handleRestoreIgnored}
+            disabled={isAnyActionRunning}
+          >
+            {isRestoringIgnored ? 'Restoring...' : 'Restore Ignored'}
           </button>
         </div>
       </div>

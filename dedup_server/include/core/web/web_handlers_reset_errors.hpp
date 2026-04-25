@@ -48,4 +48,28 @@ namespace MediaDedup
         std::shared_ptr<DatabaseManager> database_manager_;
     };
 
+    class EjectIgnoredHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        EjectIgnoredHandler(std::shared_ptr<DatabaseManager> db);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<DatabaseManager> database_manager_;
+    };
+
+    class UndoEjectIgnoredHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        UndoEjectIgnoredHandler(std::shared_ptr<DatabaseManager> db);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<DatabaseManager> database_manager_;
+    };
+
 } // namespace MediaDedup
