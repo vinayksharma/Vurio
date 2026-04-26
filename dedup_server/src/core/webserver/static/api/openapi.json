@@ -1076,7 +1076,7 @@
     "/api/v1/assets/jpeg": {
       "get": {
         "summary": "Return a JPEG for a given asset path (served from cache)",
-        "description": "Always serves from cache. If not cached or stale, generates a JPEG from the source (including RAW) and stores it under cache.assetPreview.location. No CORS/auth for now (same-machine).",
+        "description": "Always serves from cache. If not cached or stale, generates a JPEG from the source (including RAW) and stores it under cache.disk.location. No CORS/auth for now (same-machine).",
         "parameters": [
           {
             "name": "path",

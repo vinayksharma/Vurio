@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches, fetchCacheLocations } from '../utils/api';
+import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches, fetchCacheLocations, relocateCache } from '../utils/api';
 import { useUIStore } from '../stores';
 
 const AdvancedSection: React.FC = () => {
@@ -15,6 +15,7 @@ const AdvancedSection: React.FC = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isClearingCaches, setIsClearingCaches] = useState(false);
   const [lastBackupPath, setLastBackupPath] = useState<string | null>(null);
+  const [isRelocatingCache, setIsRelocatingCache] = useState(false);
   const [isScrollTestRunning, setIsScrollTestRunning] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
@@ -31,7 +32,7 @@ const AdvancedSection: React.FC = () => {
     return () => { mounted = false; };
   }, []);
 
-  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isEjectingIgnored || isRestoringIgnored || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp || isClearingCaches;
+  const isAnyActionRunning = isResettingErrors || isEjectingErrors || isRestoringErrors || isEjectingIgnored || isRestoringIgnored || isResettingDuplicates || isPurgingEjectedErrored || isIntegrityCheckRunning || isScrollTestRunning || isBackingUp || isClearingCaches || isRelocatingCache;
 
   const handleResetErrors = async () => {
     if (!confirm('Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.')) {
@@ -298,18 +299,76 @@ const AdvancedSection: React.FC = () => {
       }
       
       const win = window as any;
-      if (win.electronAPI?.openPath) {
-        // Open the parent directory containing the caches if they are in the same parent dir,
-        // or simply open the thumbnail cache since they are usually sibling folders.
-        // Opening thumbnail cache will reveal the cache folder.
+      if (win.electronAPI?.showItemInFolder) {
+        // showItemInFolder will open the parent directory and highlight the thumbnail cache folder
         const pathToOpen = res.thumbnail_cache;
-        await win.electronAPI.openPath(pathToOpen);
+        await win.electronAPI.showItemInFolder(pathToOpen);
       } else {
         alert('Electron API not available to open folder.');
       }
     } catch (error) {
       const err = error as Error;
       alert('Failed to get cache locations: ' + err.message);
+    }
+  };
+
+  const handleRelocateCache = async (cacheType: 'thumbnail_cache' | 'disk_cache', title: string) => {
+    try {
+      const win = window as any;
+      if (!win.electronAPI?.selectDirectory) {
+        alert('Electron API not available to select folder.');
+        return;
+      }
+      
+      let startPath = undefined;
+      let cacheLocs: any = null;
+      try {
+        cacheLocs = await fetchCacheLocations();
+        if (cacheType === 'thumbnail_cache' && cacheLocs.thumbnail_cache) {
+          startPath = cacheLocs.thumbnail_cache;
+        } else if (cacheType === 'disk_cache' && cacheLocs.disk_cache) {
+          startPath = cacheLocs.disk_cache;
+        }
+      } catch (e) {
+        // ignore errors fetching start path
+      }
+
+      const selectedPath = await win.electronAPI.selectDirectory(startPath);
+      if (!selectedPath) {
+        return; // User canceled
+      }
+
+      // Validation: Prevent selecting the same directory for both caches
+      if (cacheLocs) {
+        const normalizePath = (p: string) => p.replace(/\/$/, ''); // Remove trailing slash if any
+        const normalizedSelected = normalizePath(selectedPath);
+        
+        if (cacheType === 'thumbnail_cache' && cacheLocs.disk_cache && normalizePath(cacheLocs.disk_cache) === normalizedSelected) {
+          alert('Cannot use the same directory for both Thumbnails and Previews caches to prevent conflicts. Please select a distinct directory.');
+          return;
+        } else if (cacheType === 'disk_cache' && cacheLocs.thumbnail_cache && normalizePath(cacheLocs.thumbnail_cache) === normalizedSelected) {
+          alert('Cannot use the same directory for both Thumbnails and Previews caches to prevent conflicts. Please select a distinct directory.');
+          return;
+        }
+      }
+
+      if (!confirm(`Are you sure you want to move the ${title} to:\n${selectedPath}\n\nThis might take a while if your cache is large. Please wait for the operation to complete.`)) {
+        return;
+      }
+
+      setIsRelocatingCache(true);
+      const res = await relocateCache(cacheType, selectedPath);
+      
+      if (res.success) {
+        alert(`${title} relocated successfully to:\n${selectedPath}`);
+      } else {
+        alert(`Failed to relocate ${title}. ${res.error || res.message || ''}`);
+      }
+    } catch (error) {
+      const err = error as Error;
+      alert(`Failed to relocate ${title}: ` + err.message);
+    } finally {
+      setIsRelocatingCache(false);
     }
   };
 
@@ -504,14 +563,33 @@ const AdvancedSection: React.FC = () => {
           >
             {isClearingCaches ? 'Clearing...' : 'Clear All Caches'}
           </button>
+        </div>
+      </div>
+      <div className="action-row">
+        <div className="action-details">
+          <h3>Cache Locations</h3>
+          <p>Change the directories where thumbnails and QHD previews are stored. This will safely move all existing cache files to the new location. Please wait for the operation to complete.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', width: '300px' }}>
           <button
-            className="ghost"
-            style={{ flex: '0 0 36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onClick={handleShowCachesInFinder}
+            id="relocate-thumbnail-cache-btn"
+            className="ghost warning"
+            style={{ flex: 1, padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            onClick={() => handleRelocateCache('thumbnail_cache', 'Thumbnails Cache')}
             disabled={isAnyActionRunning}
-            title="Open folder containing the caches"
           >
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            Thumbnails
+          </button>
+          <button
+            id="relocate-preview-cache-btn"
+            className="ghost warning"
+            style={{ flex: 1, padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            onClick={() => handleRelocateCache('disk_cache', 'Previews Cache')}
+            disabled={isAnyActionRunning}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            Previews
           </button>
         </div>
       </div>

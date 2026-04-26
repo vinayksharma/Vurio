@@ -281,6 +281,16 @@ namespace MediaDedup
             }
             logger.information("Preview cache table ensured");
 
+            // Clear cache tables if configured to clear physical caches on startup
+            if (config_manager_->getPropertyValue<bool>("cache.thumbnail.clearOnStartup", false))
+            {
+                ThumbnailCacheOps::clearCache(*database_manager_);
+            }
+            if (config_manager_->getPropertyValue<bool>("cache.disk.clearOnStartup", false))
+            {
+                PreviewCacheOps::clearCache(*database_manager_);
+            }
+
             // Ensure ejected_files_history database table exists
             if (!EjectedFilesOps::ensureTable(*database_manager_))
             {

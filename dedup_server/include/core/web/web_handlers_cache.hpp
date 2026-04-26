@@ -91,4 +91,32 @@ namespace MediaDedup
         void sendErrorResponse(Poco::Net::HTTPServerResponse &response, const std::string &error_message, int status_code);
     };
 
+    namespace Orchestration { class SchedulerService; }
+    class ThreadPoolManager;
+
+    class RelocateCacheHandler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        RelocateCacheHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                             std::shared_ptr<DatabaseManager> database_manager,
+                             std::shared_ptr<DiskCache> thumbnail_cache,
+                             std::shared_ptr<DiskCache> transcoding_cache,
+                             std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+                             std::shared_ptr<ThreadPoolManager> tpm);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        std::shared_ptr<DatabaseManager> database_manager_;
+        std::shared_ptr<DiskCache> thumbnail_cache_;
+        std::shared_ptr<DiskCache> transcoding_cache_;
+        std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
+        std::shared_ptr<ThreadPoolManager> tpm_;
+
+        void sendJsonResponse(Poco::Net::HTTPServerResponse &response, const std::string &json_data, int status_code);
+        void sendErrorResponse(Poco::Net::HTTPServerResponse &response, const std::string &error_message, int status_code);
+    };
+
 } // namespace MediaDedup

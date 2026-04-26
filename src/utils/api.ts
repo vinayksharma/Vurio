@@ -319,4 +319,9 @@ export async function getLatestBackup(): Promise<{ success: boolean; backup_path
   }) as Promise<any>;
 }
 
-
+export async function relocateCache(cacheType: string, location: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  return safeFetch('/api/v1/cache/relocate', {
+    method: 'POST',
+    body: JSON.stringify({ type: cacheType, location }),
+  }) as Promise<any>;
+}

@@ -23,24 +23,22 @@ namespace MediaDedup
             return false;
         }
 
-        if (!NeedsTranscoding(file_path))
-        {
-            logger.debug("File does not need transcoding: %s", file_path);
-            return false;
-        }
-
-        logger.information("Starting transcoding for raw file: %s", file_path);
+        bool is_raw = NeedsTranscoding(file_path);
+        
+        logger.information("Starting transcoding for file: %s (RAW: %s)", file_path, is_raw ? "yes" : "no");
 
         // Validate RAW file before attempting transcoding to catch unsupported/corrupted files early
-        auto validation_result = RawValidator::validate(file_path);
-        if (!validation_result.is_valid)
-        {
-            logger.warning("RAW validation failed for %s: %s (code: %d)",
-                           file_path, validation_result.error_message, validation_result.error_code);
-            jpeg_data.clear();
-            return false;
+        if (is_raw) {
+            auto validation_result = RawValidator::validate(file_path);
+            if (!validation_result.is_valid)
+            {
+                logger.warning("RAW validation failed for %s: %s (code: %d)",
+                               file_path, validation_result.error_message, validation_result.error_code);
+                jpeg_data.clear();
+                return false;
+            }
+            logger.debug("RAW validation passed for %s (format: %s)", file_path, validation_result.format_name);
         }
-        logger.debug("RAW validation passed for %s (format: %s)", file_path, validation_result.format_name);
 
         // Log file properties for debugging
         try
@@ -99,6 +97,37 @@ namespace MediaDedup
     bool TranscodingPipeline::NeedsTranscoding(const std::string &file_path)
     {
         return RawFileDetector::IsRawFile(file_path);
+    }
+
+    bool TranscodingPipeline::NeedsQhdPreviewCache(const std::string &file_path, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    {
+        if (file_path.empty())
+            return false;
+            
+        if (RawFileDetector::IsRawFile(file_path))
+            return true;
+
+        if (!config_manager)
+            return false;
+
+        double threshold_mb = config_manager->getPropertyValue<double>("thumbnail.qhd_preview.threshold_mb", 5.0);
+        if (threshold_mb <= 0)
+            return false;
+
+        try {
+            std::error_code ec;
+            auto size_bytes = std::filesystem::file_size(file_path, ec);
+            if (!ec) {
+                double size_mb = static_cast<double>(size_bytes) / (1024.0 * 1024.0);
+                if (size_mb > threshold_mb) {
+                    return true;
+                }
+            }
+        } catch (...) {
+            // Ignore file system errors
+        }
+        
+        return false;
     }
 
     bool TranscodingPipeline::NeedsTranscodingForEmbedding(const std::string &file_path,
@@ -301,6 +330,11 @@ namespace MediaDedup
             // Generate unique filename for transcoded file only after successful transcoding
             transcoded_file_path = GenerateUniqueFilename(source_file_path, ".jpg", base_directory);
             logger.debug("Generated transcoded file path: %s", transcoded_file_path);
+
+            // Ensure base directory exists
+            if (!std::filesystem::exists(base_directory)) {
+                std::filesystem::create_directories(base_directory);
+            }
 
             // Write transcoded data to file
             std::ofstream out_file(transcoded_file_path, std::ios::binary);

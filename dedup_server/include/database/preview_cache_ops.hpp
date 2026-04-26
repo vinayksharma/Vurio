@@ -57,6 +57,22 @@ namespace MediaDedup
          * @brief Get total number of cached previews
          */
         static int getCount(DatabaseManager &db);
+
+        /**
+         * @brief Clears all entries from the preview cache
+         * @param db Database manager
+         * @return true if successful, false otherwise
+         */
+        static bool clearCache(DatabaseManager &db);
+
+        /**
+         * @brief Update the base path for all cached previews (used when moving cache location)
+         * @param db Database manager
+         * @param old_base_path Old absolute base path
+         * @param new_base_path New absolute base path
+         * @return true if successful, false otherwise
+         */
+        static bool updateCacheLocation(DatabaseManager &db, const std::string &old_base_path, const std::string &new_base_path);
     };
 
 } // namespace MediaDedup

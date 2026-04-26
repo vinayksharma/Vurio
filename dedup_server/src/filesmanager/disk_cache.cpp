@@ -13,7 +13,8 @@
 
 namespace MediaDedup
 {
-    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager, const std::string &config_prefix)
+    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager, 
+                         const std::string &config_prefix)
         : config_manager_(config_manager),
           cache_location_(DEFAULT_CACHE_LOCATION),
           size_limit_bytes_(DEFAULT_CACHE_SIZE_LIMIT_MB * 1024ULL * 1024ULL),
@@ -22,8 +23,8 @@ namespace MediaDedup
           config_prefix_(config_prefix)
     {
         // Construct config keys from prefix
-        config_key_location_ = config_prefix_ + ".location";
         config_key_size_limit_ = config_prefix_ + ".size_limit_mb";
+        config_key_clear_on_startup_ = config_prefix_ + ".clearOnStartup";
     }
 
     DiskCache::~DiskCache()
@@ -44,11 +45,15 @@ namespace MediaDedup
         try
         {
             // Get cache location from config
-            std::string location = config_manager_->getPropertyValue<std::string>(
-                config_key_location_, DEFAULT_CACHE_LOCATION);
+            std::string config_key_location = config_prefix_ + ".location";
+            std::string location = config_manager_->getPropertyValue<std::string>(config_key_location, "./" + config_prefix_);
+            
+            std::filesystem::path base_path(location);
+            if (!base_path.is_absolute()) {
+                base_path = std::filesystem::current_path() / base_path;
+            }
 
-            // Make it relative to working directory root
-            cache_location_ = std::filesystem::current_path() / location;
+            cache_location_ = base_path;
 
             // Get size limit from config
             int size_limit_mb = config_manager_->getPropertyValue<int>(
@@ -59,8 +64,7 @@ namespace MediaDedup
             if (std::filesystem::exists(cache_location_))
             {
                 // Check if cache should be cleared on startup (configurable per cache type)
-                std::string clear_key = config_prefix_ + ".clearOnStartup";
-                bool clear_on_startup = config_manager_->getPropertyValue<bool>(clear_key, false);
+                bool clear_on_startup = config_manager_->getPropertyValue<bool>(config_key_clear_on_startup_, false);
 
                 if (clear_on_startup)
                 {
@@ -94,6 +98,12 @@ namespace MediaDedup
                     Poco::Logger::get("DiskCache").information("Using existing cache directory: " + cache_location_.string());
                 }
             }
+            else
+            {
+                // Create directory if it doesn't exist so the user can easily find it
+                Poco::Logger::get("DiskCache").information("Creating cache directory on initialization: " + cache_location_.string());
+                std::filesystem::create_directories(cache_location_);
+            }
 
             // Calculate current cache size
             current_size_bytes_ = calculateCacheSize();
@@ -103,7 +113,8 @@ namespace MediaDedup
             // Subscribe to configuration changes
             config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                                       {
-                if (event.key == this->config_key_location_)
+                std::string config_key_location = this->config_prefix_ + ".location";
+                if (event.key == config_key_location)
                 {
                     try {
                         std::string new_location = std::any_cast<std::string>(event.new_value);
@@ -628,8 +639,13 @@ namespace MediaDedup
 
         try
         {
+            std::filesystem::path base_path(new_location);
+            if (!base_path.is_absolute()) {
+                base_path = std::filesystem::current_path() / base_path;
+            }
+
             // Update location
-            cache_location_ = std::filesystem::current_path() / new_location;
+            cache_location_ = base_path;
 
             // Create new directory
             if (!std::filesystem::exists(cache_location_))

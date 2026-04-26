@@ -258,6 +258,8 @@ namespace MediaDedup
         // Cache management endpoints
         if (path == "/api/v1/cache/locations" && method == "GET")
             return new CacheLocationsHandler(thumbnail_cache_, transcoding_cache_);
+        if (path == "/api/v1/cache/relocate" && method == "POST")
+            return new RelocateCacheHandler(config_manager_, database_manager_, thumbnail_cache_, transcoding_cache_, scheduler_service_, tpm_);
         if (path.find("/api/v1/cache/") == 0 && path.find("/invalidate") != std::string::npos && method == "DELETE")
             return new CacheInvalidationHandler(config_manager_, thumbnail_cache_, transcoding_cache_);
         if (path == "/api/v1/admin/clear-caches" && method == "DELETE")

@@ -395,15 +395,17 @@ namespace MediaDedup
         manager->createProperty<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE",
                                              "Priority rules for selecting the master representative image in a Duplicate Group");
 
-        // Thumbnail cache configuration
-        manager->createProperty<std::string>("cache.thumbnail.location", "cache/thumbnails", "Thumbnail cache directory");
+        manager->createProperty<std::string>("cache.thumbnail.location", "./thumbnails_cache", "Directory for thumbnails cache");
+        manager->createProperty<std::string>("cache.disk.location", "./previews", "Directory for previews cache");
         manager->createProperty<int>("cache.thumbnail.size_limit_mb", 512, "Thumbnail cache size limit in MB");
+        manager->createProperty<int>("cache.disk.size_limit_mb", 2048, "Preview/Transcoding cache size limit in MB");
 
         // Thumbnail generation configuration
         manager->createProperty<int>("thumbnail.default.size", 256, "Default thumbnail size (128, 256, 512, or 1024)");
         manager->createProperty<std::string>("thumbnail.allowed.sizes", "128,256,512,1024", "Allowed thumbnail sizes");
         manager->createProperty<int>("thumbnail.generation.timeoutMs", 5000, "Thumbnail generation timeout in milliseconds");
         manager->createProperty<int>("thumbnail.jpeg.quality", 85, "JPEG quality for thumbnails (0-100)");
+        manager->createProperty<double>("thumbnail.qhd_preview.threshold_mb", 5.0, "File size threshold (in MB) above which non-RAW images get a cached QHD preview");
 
         // TPM share for thumbnail generation
         manager->createProperty<double>("tpm.types.thumbnail_generator.share", 1.0, "Thread pool share for thumbnail generation");

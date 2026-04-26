@@ -72,6 +72,15 @@ namespace MediaDedup
         static bool NeedsTranscoding(const std::string &file_path);
 
         /**
+         * @brief Check if a file should get a cached QHD preview (either it's RAW or it's a large image)
+         * 
+         * @param file_path The path to the file to check
+         * @param config_manager Config manager to read threshold
+         * @return true if the file should get a QHD preview cache
+         */
+        static bool NeedsQhdPreviewCache(const std::string &file_path, std::shared_ptr<UnifiedObservableConfigManager> config_manager);
+
+        /**
          * @brief Check if a non-RAW file should be transcoded to JPEG for embedding.
          * Uses config media.images.<extension>.transcode (e.g. media.images.bmp.transcode).
          * When true, ImageMagick converts to JPEG before the ONNX pipeline so OpenCV reads reliably.
