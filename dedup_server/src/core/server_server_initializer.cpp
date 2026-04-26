@@ -196,17 +196,14 @@ namespace MediaDedup
                 logger.warning("ThumbnailCache is null - not setting on web server");
             }
 
-            // Set transcoding cache on web server for thumbnail API
-            // Reuse the same disk cache as media processor for transcoding
-            auto transcoding_cache = std::make_shared<DiskCache>(config_manager_, "cache.disk");
-            if (transcoding_cache->initialize())
+            if (transcoding_disk_cache_)
             {
-                web_server_->setTranscodingCache(transcoding_cache);
+                web_server_->setTranscodingCache(transcoding_disk_cache_);
                 logger.information("TranscodingCache set on web server for thumbnail API");
             }
             else
             {
-                logger.warning("Failed to initialize transcoding cache for thumbnail API");
+                logger.warning("Transcoding cache is null - not setting on web server");
             }
 
             // Start the web server
@@ -265,6 +262,15 @@ namespace MediaDedup
             }
             logger.information("Thumbnail disk cache initialized successfully");
 
+            // Initialize transcoding disk cache
+            transcoding_disk_cache_ = std::make_shared<DiskCache>(config_manager_, "cache.disk");
+            if (!transcoding_disk_cache_->initialize())
+            {
+                logger.error("Failed to initialize transcoding disk cache");
+                return false;
+            }
+            logger.information("Transcoding disk cache initialized successfully");
+
             // Ensure thumbnail_cache database table exists
             if (!ThumbnailCacheOps::ensureTable(*database_manager_))
             {
@@ -305,7 +311,7 @@ namespace MediaDedup
 
             // Initialize MediaProcessor first (needed by FilesManager)
             auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
-            media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_, thumbnail_disk_cache_);
+            media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_, thumbnail_disk_cache_, transcoding_disk_cache_);
             if (!media_processor_->initialize())
             {
                 logger.error("Failed to initialize MediaProcessor");

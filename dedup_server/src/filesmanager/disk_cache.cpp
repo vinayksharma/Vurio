@@ -240,6 +240,86 @@ namespace MediaDedup
         }
     }
 
+    bool DiskCache::moveToCache(const std::string &source_path, std::string &cached_path)
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+
+        if (!initialized_)
+        {
+            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
+            return false;
+        }
+
+        try
+        {
+            // Check if source file exists
+            if (!std::filesystem::exists(source_path))
+            {
+                Poco::Logger::get("DiskCache").error("Source file not found: " + source_path);
+                return false;
+            }
+
+            // Get file size
+            size_t file_size = std::filesystem::file_size(source_path);
+
+            if (file_size > size_limit_bytes_)
+            {
+                Poco::Logger::get("DiskCache").warning("File size exceeds total cache limit. Refusing to cache.");
+                return false;
+            }
+
+            // Enforce size limit
+            enforceSizeLimit(file_size);
+
+            // Generate cache filename
+            std::string cache_filename = generateCacheFilename(source_path);
+            
+            if (!std::filesystem::exists(cache_location_)) {
+                std::filesystem::create_directories(cache_location_);
+            }
+            
+            std::filesystem::path dest_path = cache_location_ / cache_filename;
+            std::string dest_path_str = dest_path.string();
+
+            // Check if file is currently in use
+            if (files_in_use_.find(dest_path_str) != files_in_use_.end())
+            {
+                Poco::Logger::get("DiskCache").warning("Cannot overwrite file currently in use: " + dest_path_str);
+                return false;
+            }
+
+            // Remove existing file if it exists to prevent rename issues
+            if (std::filesystem::exists(dest_path))
+            {
+                try
+                {
+                    std::filesystem::remove(dest_path);
+                }
+                catch (const std::exception &e)
+                {
+                    Poco::Logger::get("DiskCache").warning("Failed to remove existing file %s: %s", dest_path_str, e.what());
+                }
+            }
+
+            // Move file
+            std::filesystem::rename(source_path, dest_path);
+
+            // Update cache size
+            current_size_bytes_ += file_size;
+
+            cached_path = dest_path.string();
+
+            Poco::Logger::get("DiskCache").debug("Moved to cache: " + source_path + " -> " + cached_path);
+
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DiskCache").error("Failed to move to cache: " + std::string(e.what()));
+            return false;
+        }
+    }
+
     bool DiskCache::saveStreamToCache(std::istream &stream, const std::string &filename, std::string &cached_path)
     {
         std::lock_guard<std::mutex> lock(cache_mutex_);
@@ -644,6 +724,8 @@ namespace MediaDedup
                 base_path = std::filesystem::current_path() / base_path;
             }
 
+            std::filesystem::path old_location = cache_location_;
+
             // Update location
             cache_location_ = base_path;
 
@@ -651,6 +733,33 @@ namespace MediaDedup
             if (!std::filesystem::exists(cache_location_))
             {
                 std::filesystem::create_directories(cache_location_);
+            }
+
+            // Move contents from old location to new location
+            if (!old_location.empty() && old_location != cache_location_ && std::filesystem::exists(old_location))
+            {
+                Poco::Logger::get("DiskCache").information("Moving cache contents from " + old_location.string() + " to " + cache_location_.string());
+                
+                for (const auto& entry : std::filesystem::directory_iterator(old_location))
+                {
+                    if (entry.is_regular_file())
+                    {
+                        try {
+                            std::filesystem::rename(entry.path(), cache_location_ / entry.path().filename());
+                        } catch (const std::exception& e) {
+                            Poco::Logger::get("DiskCache").warning("Failed to move file " + entry.path().string() + ": " + e.what());
+                        }
+                    }
+                }
+                
+                // Try to remove old directory if empty
+                try {
+                    if (std::filesystem::is_empty(old_location)) {
+                        std::filesystem::remove(old_location);
+                    }
+                } catch (const std::exception& e) {
+                    Poco::Logger::get("DiskCache").warning("Failed to remove old cache directory: " + std::string(e.what()));
+                }
             }
 
             // Recalculate cache size for new location

@@ -26,12 +26,17 @@ namespace MediaDedup
     MediaProcessor::MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                    std::shared_ptr<DatabaseManager> database_manager,
                                    std::shared_ptr<ThreadPoolManager> thread_pool_manager,
-                                   std::shared_ptr<DiskCache> thumbnail_cache)
+                                   std::shared_ptr<DiskCache> thumbnail_cache,
+                                   std::shared_ptr<DiskCache> transcoding_cache)
         : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager), thumbnail_cache_(thumbnail_cache)
     {
         // Extension mapping will be initialized lazily when first needed
         // Initialize disk cache (for previews/transcoding)
-        disk_cache_ = std::make_shared<DiskCache>(config_manager, "cache.disk");
+        if (transcoding_cache) {
+            disk_cache_ = transcoding_cache;
+        } else {
+            disk_cache_ = std::make_shared<DiskCache>(config_manager, "cache.disk");
+        }
     }
 
     MediaProcessor::~MediaProcessor()
@@ -278,36 +283,45 @@ namespace MediaDedup
                         else
                         {
                             // Transcode to a new file in cache
-                            std::string transcoded_filename;
+                            std::string temp_dir = std::filesystem::temp_directory_path().string();
+                            std::string temp_filename;
                             TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager);
                             
-                            std::string cache_directory = disk_cache->getCacheLocation();
-                            bool transcode_success = TranscodingPipeline::TranscodeToFile(file_path_copy, transcoded_filename, transcode_config, cache_directory);
+                            bool transcode_success = TranscodingPipeline::TranscodeToFile(file_path_copy, temp_filename, transcode_config, temp_dir);
                             
-                            if (transcode_success && std::filesystem::exists(transcoded_filename) && std::filesystem::file_size(transcoded_filename) > 0)
+                            if (transcode_success && std::filesystem::exists(temp_filename) && std::filesystem::file_size(temp_filename) > 0)
                             {
-                                // Save to preview cache
-                                PreviewCacheRecord preview_record;
-                                preview_record.source_path = file_path_copy;
-                                preview_record.cached_path = transcoded_filename;
-                                preview_record.file_size_bytes = std::filesystem::file_size(transcoded_filename);
-                                preview_record.source_modified_at = source_mtime;
-                                int64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                                preview_record.created_at = current_time;
-                                preview_record.last_accessed_at = current_time;
-                                
-                                PreviewCacheOps::upsertPreview(*db_manager, preview_record);
-                                
-                                processing_file_path = transcoded_filename;
-                                transcoded_preview_path = transcoded_filename;
-                                Poco::Logger::get("MediaProcessor").information("Successfully transcoded RAW and saved to preview cache: %s", transcoded_filename);
+                                std::string final_cached_path;
+                                if (disk_cache->moveToCache(temp_filename, final_cached_path)) {
+                                    // Save to preview cache
+                                    PreviewCacheRecord preview_record;
+                                    preview_record.source_path = file_path_copy;
+                                    preview_record.cached_path = final_cached_path;
+                                    preview_record.file_size_bytes = std::filesystem::file_size(final_cached_path);
+                                    preview_record.source_modified_at = source_mtime;
+                                    int64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                                    preview_record.created_at = current_time;
+                                    preview_record.last_accessed_at = current_time;
+                                    
+                                    PreviewCacheOps::upsertPreview(*db_manager, preview_record);
+                                    
+                                    processing_file_path = final_cached_path;
+                                    transcoded_preview_path = final_cached_path;
+                                    Poco::Logger::get("MediaProcessor").information("Successfully transcoded RAW and saved to preview cache: %s", final_cached_path);
+                                } else {
+                                    Poco::Logger::get("MediaProcessor").error("Failed to move transcoded file to cache for: %s", file_path_copy);
+                                    ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to cache transcoded file", "DiskCache");
+                                    ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
+                                    if (std::filesystem::exists(temp_filename)) std::filesystem::remove(temp_filename);
+                                    return;
+                                }
                             }
                             else
                             {
                                 Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", file_path_copy);
                                 ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to transcode raw file (unsupported or corrupted)", "ImageMagick");
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
-                                if (std::filesystem::exists(transcoded_filename)) std::filesystem::remove(transcoded_filename);
+                                if (std::filesystem::exists(temp_filename)) std::filesystem::remove(temp_filename);
                                 return;
                             }
                         }
@@ -316,14 +330,23 @@ namespace MediaDedup
                     {
                         // Non-RAW formats (e.g. BMP) that OpenCV may not read reliably:
                         // transcode to JPEG via ImageMagick so the embedding pipeline gets a format it can read
-                        std::string transcoded_filename;
-                        std::string cache_directory = disk_cache->getCacheLocation();
-                        if (TranscodingPipeline::TranscodeNonRawToFile(file_path_copy, transcoded_filename, cache_directory))
+                        std::string temp_dir = std::filesystem::temp_directory_path().string();
+                        std::string temp_filename;
+                        if (TranscodingPipeline::TranscodeNonRawToFile(file_path_copy, temp_filename, temp_dir))
                         {
-                            processing_file_path = transcoded_filename;
-                            is_temporary_transcode = true;
-                            disk_cache->markFileInUse(processing_file_path);
-                            Poco::Logger::get("MediaProcessor").information("Transcoded image for embedding: %s -> %s", file_path_copy, transcoded_filename);
+                            std::string final_cached_path;
+                            if (disk_cache->moveToCache(temp_filename, final_cached_path)) {
+                                processing_file_path = final_cached_path;
+                                is_temporary_transcode = true;
+                                disk_cache->markFileInUse(processing_file_path);
+                                Poco::Logger::get("MediaProcessor").information("Transcoded image for embedding: %s -> %s", file_path_copy, final_cached_path);
+                            } else {
+                                Poco::Logger::get("MediaProcessor").error("Failed to move transcoded image to cache for embedding: %s", file_path_copy);
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to cache transcoded image", "DiskCache");
+                                ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
+                                if (std::filesystem::exists(temp_filename)) std::filesystem::remove(temp_filename);
+                                return;
+                            }
                         }
                         else
                         {

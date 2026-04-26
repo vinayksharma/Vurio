@@ -10,6 +10,7 @@ namespace MediaDedup
 {
     class DatabaseManager;
     class ThreadPoolManager;
+    class DiskCache;
 
     /**
      * @brief Handler for GET /api/v1/preview
@@ -30,7 +31,8 @@ namespace MediaDedup
     public:
         PreviewHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                        std::shared_ptr<DatabaseManager> database_manager,
-                       std::shared_ptr<ThreadPoolManager> tpm);
+                       std::shared_ptr<ThreadPoolManager> tpm,
+                       std::shared_ptr<DiskCache> transcoding_cache);
 
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
@@ -39,6 +41,7 @@ namespace MediaDedup
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<DatabaseManager> database_manager_;
         std::shared_ptr<ThreadPoolManager> tpm_;
+        std::shared_ptr<DiskCache> transcoding_cache_;
 
         void streamPreviewFile(const std::string &file_path,
                                Poco::Net::HTTPServerResponse &response,

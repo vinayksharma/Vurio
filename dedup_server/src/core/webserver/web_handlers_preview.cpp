@@ -3,6 +3,7 @@
 #include "database/preview_cache_ops.hpp"
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "config/unified_observable_config.hpp"
+#include "filesmanager/disk_cache.hpp"
 #include "utils/thumbnail_generator.hpp"
 #include <Magick++.h>
 #include <Poco/Net/HTMLForm.h>
@@ -22,10 +23,12 @@ namespace MediaDedup
 
     PreviewHandler::PreviewHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                    std::shared_ptr<DatabaseManager> database_manager,
-                                   std::shared_ptr<ThreadPoolManager> tpm)
+                                   std::shared_ptr<ThreadPoolManager> tpm,
+                                   std::shared_ptr<DiskCache> transcoding_cache)
         : config_manager_(std::move(config_manager)),
           database_manager_(std::move(database_manager)),
-          tpm_(std::move(tpm))
+          tpm_(std::move(tpm)),
+          transcoding_cache_(std::move(transcoding_cache))
     {
     }
 
@@ -140,28 +143,34 @@ namespace MediaDedup
                 {
                     if (tpm_)
                     {
+                        auto cache_instance = transcoding_cache_;
                         auto config_copy = config_manager_;
                         auto db_copy = database_manager_;
                         std::string path_copy = source_path;
-                        std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
                         
-                        tpm_->submit("preview_generator", [config_copy, db_copy, path_copy, cache_dir, transcode_config]() {
-                            std::string generated_path;
-                            if (TranscodingPipeline::TranscodeToFile(path_copy, generated_path, transcode_config, cache_dir))
+                        tpm_->submit("preview_generator", [config_copy, db_copy, path_copy, transcode_config, cache_instance]() {
+                            std::string temp_dir = std::filesystem::temp_directory_path().string();
+                            std::string temp_path;
+                            if (TranscodingPipeline::TranscodeToFile(path_copy, temp_path, transcode_config, temp_dir))
                             {
-                                PreviewCacheRecord new_record;
-                                new_record.source_path = path_copy;
-                                new_record.cached_path = generated_path;
-                                PreviewCacheOps::upsertPreview(*db_copy, new_record);
-                                
-                                Poco::JSON::Object msg;
-                                msg.set("type", "media_ready");
-                                msg.set("media_type", "preview");
-                                msg.set("file_path", path_copy);
-                                
-                                std::stringstream ss;
-                                msg.stringify(ss);
-                                WebSocketStatusHandler::broadcastMessage(ss.str());
+                                std::string final_path;
+                                if (cache_instance && cache_instance->moveToCache(temp_path, final_path)) {
+                                    PreviewCacheRecord new_record;
+                                    new_record.source_path = path_copy;
+                                    new_record.cached_path = final_path;
+                                    PreviewCacheOps::upsertPreview(*db_copy, new_record);
+                                    
+                                    Poco::JSON::Object msg;
+                                    msg.set("type", "media_ready");
+                                    msg.set("media_type", "preview");
+                                    msg.set("file_path", path_copy);
+                                    
+                                    std::stringstream ss;
+                                    msg.stringify(ss);
+                                    WebSocketStatusHandler::broadcastMessage(ss.str());
+                                } else {
+                                    std::filesystem::remove(temp_path);
+                                }
                             }
                         }, source_path);
                         
@@ -186,21 +195,29 @@ namespace MediaDedup
                     }
                     else
                     {
-                        std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
-                        std::string generated_path;
+                        std::string temp_dir = std::filesystem::temp_directory_path().string();
+                        std::string temp_path;
                         
-                        if (TranscodingPipeline::TranscodeToFile(source_path, generated_path, transcode_config, cache_dir))
+                        if (TranscodingPipeline::TranscodeToFile(source_path, temp_path, transcode_config, temp_dir))
                         {
-                            logger.information("Successfully generated on-demand preview at: %s", generated_path);
-                            
-                            // Upsert the new record
-                            PreviewCacheRecord new_record;
-                            new_record.source_path = source_path;
-                            new_record.cached_path = generated_path;
-                            PreviewCacheOps::upsertPreview(*database_manager_, new_record);
-                            
-                            streamPreviewFile(generated_path, response, source_modified);
-                            return;
+                            std::string final_path;
+                            if (transcoding_cache_ && transcoding_cache_->moveToCache(temp_path, final_path)) {
+                                logger.information("Successfully generated on-demand preview at: %s", final_path);
+                                
+                                // Upsert the new record
+                                PreviewCacheRecord new_record;
+                                new_record.source_path = source_path;
+                                new_record.cached_path = final_path;
+                                PreviewCacheOps::upsertPreview(*database_manager_, new_record);
+                                
+                                streamPreviewFile(final_path, response, source_modified);
+                                return;
+                            } else {
+                                std::filesystem::remove(temp_path);
+                                logger.error("Failed to move transcoded file to cache for: %s", source_path);
+                                sendErrorResponse(response, "Failed to cache preview", Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                                return;
+                            }
                         }
                         else
                         {

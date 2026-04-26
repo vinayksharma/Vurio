@@ -61,6 +61,14 @@ namespace MediaDedup
         bool copyToCache(const std::string &source_path, std::string &cached_path);
 
         /**
+         * @brief Move a file to the cache (more efficient than copy)
+         * @param source_path Path to the source file
+         * @param cached_path Output parameter - path to the cached file
+         * @return true if move successful, false otherwise
+         */
+        bool moveToCache(const std::string &source_path, std::string &cached_path);
+
+        /**
          * @brief Mark a file as in use (prevents deletion)
          * @param cached_path Path to the cached file
          */
