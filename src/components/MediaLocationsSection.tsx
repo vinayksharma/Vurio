@@ -276,6 +276,20 @@ const MediaLocationsSection: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {deregisteringPath && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--bg-panel, #252526)', padding: '24px', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+            <svg viewBox="0 0 50 50" style={{ width: '40px', height: '40px', animation: 'thumbnail-spin 0.8s linear infinite', color: 'var(--accent, #007acc)' }}>
+              <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+            </svg>
+            <h3 style={{ margin: 0, color: 'var(--text-normal, #cccccc)' }}>Deregistering Location</h3>
+            <p style={{ margin: 0, color: 'var(--text-muted, #888888)', textAlign: 'center', maxWidth: '350px', lineHeight: '1.4' }}>
+              Wiping database indexes gracefully and stopping background tasks. This may take several seconds...
+            </p>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
