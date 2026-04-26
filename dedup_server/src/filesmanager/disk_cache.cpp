@@ -110,6 +110,14 @@ namespace MediaDedup
 
             Poco::Logger::get("DiskCache").information("DiskCache initialized at: " + cache_location_.string() + " (Size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB / " + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB)");
 
+            // Enforce limit on startup if cache is already overgrown
+            if (current_size_bytes_ > size_limit_bytes_)
+            {
+                size_t bytes_to_free = current_size_bytes_ - size_limit_bytes_;
+                Poco::Logger::get("DiskCache").information("Startup check: Cache size exceeds limit. Freeing " + std::to_string(bytes_to_free / (1024 * 1024)) + " MB");
+                removeOldestFiles(bytes_to_free);
+            }
+
             // Subscribe to configuration changes
             config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                                       {
