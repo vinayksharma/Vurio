@@ -218,7 +218,7 @@ const ImagePopup: React.FC = () => {
       fetchingNativePathRef.current = filePath;
       setIsFetchingNative(true);
       const activeFilePath = filePath;
-      const url = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(filePath)}&size=0`;
+      const url = `${API_BASE}/api/v1/preview?path=${encodeURIComponent(filePath)}&size=full`;
       
       const img = new window.Image();
       loadingImgRef.current = img; // Prevent GC
