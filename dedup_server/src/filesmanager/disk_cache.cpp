@@ -587,14 +587,12 @@ namespace MediaDedup
             return;
         }
 
-        // Calculate space needed
-        size_t available_space = (current_size_bytes_ < size_limit_bytes_)
-                                     ? (size_limit_bytes_ - current_size_bytes_)
-                                     : 0;
+        // Calculate space needed to ensure the new size stays within the limit
+        size_t projected_size = current_size_bytes_ + required_space_bytes;
 
-        if (required_space_bytes > available_space)
+        if (projected_size > size_limit_bytes_)
         {
-            size_t bytes_to_free = required_space_bytes - available_space;
+            size_t bytes_to_free = projected_size - size_limit_bytes_;
             removeOldestFiles(bytes_to_free);
         }
     }
