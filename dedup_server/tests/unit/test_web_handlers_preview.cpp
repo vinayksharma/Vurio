@@ -89,7 +89,7 @@ protected:
         jpeg.close();
         
         auto tpm = std::make_shared<ThreadPoolManager>(config_manager_);
-        handler_ = std::make_unique<PreviewHandler>(config_manager_, db_manager_, tpm);
+        handler_ = std::make_unique<PreviewHandler>(config_manager_, db_manager_, tpm, std::shared_ptr<DiskCache>(nullptr));
     }
     
     void TearDown() override {

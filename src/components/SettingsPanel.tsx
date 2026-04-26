@@ -75,6 +75,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
       return false;
     }
     
+    if (key === 'cache.disk.location' || key === 'cache.thumbnail.location') {
+      const otherKey = key === 'cache.disk.location' ? 'cache.thumbnail.location' : 'cache.disk.location';
+      if (String(value).trim() !== '' && String(value).trim() === String(config[otherKey]).trim()) {
+        setValidationErrors((prev) => new Map(prev).set(key, 'Thumbnail and Preview caches must use different directories'));
+        return false;
+      } else {
+        // Clear error on the other key if it was showing this error
+        setValidationErrors((prev) => {
+          const next = new Map(prev);
+          if (next.get(otherKey) === 'Thumbnail and Preview caches must use different directories') {
+            next.delete(otherKey);
+          }
+          return next;
+        });
+      }
+    }
+    
     setValidationErrors((prev) => {
       const next = new Map(prev);
       next.delete(key);
@@ -294,6 +311,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
                     const type = getPropertyType(value);
                     const isModified = modifiedProperties.has(key);
                     const error = validationErrors.get(key);
+                    const isReadOnly = key === 'cache.disk.location' || key === 'cache.thumbnail.location';
                     
                     return (
                       <div
@@ -312,6 +330,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
                                 handlePropertyChange(key, e.target.checked);
                                 setConfig((prev) => (prev ? { ...prev, [key]: e.target.checked } : null));
                               }}
+                              disabled={isReadOnly}
+                              title={isReadOnly ? "Please use the Advanced tab to relocate caches safely" : undefined}
                             />
                           ) : (
                             <input
@@ -324,6 +344,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
                                 setConfig((prev) => (prev ? { ...prev, [key]: newValue } : null));
                               }}
                               onBlur={(e) => validateProperty(key, e.target.value)}
+                              disabled={isReadOnly}
+                              title={isReadOnly ? "Please use the Advanced section to relocate caches safely" : undefined}
                             />
                           )}
                         </div>

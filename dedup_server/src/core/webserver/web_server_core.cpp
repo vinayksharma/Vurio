@@ -253,7 +253,7 @@ namespace MediaDedup
 
         // Preview endpoints
         if (path == "/api/v1/preview" && method == "GET")
-            return new PreviewHandler(config_manager_, database_manager_, tpm_);
+            return new PreviewHandler(config_manager_, database_manager_, tpm_, transcoding_cache_);
 
         // Cache management endpoints
         if (path == "/api/v1/cache/locations" && method == "GET")

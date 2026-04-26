@@ -300,19 +300,24 @@ namespace MediaDedup
                     TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager_);
                     if (transcode_config.enabled)
                     {
-                        std::string cache_dir = config_manager_->getPropertyValue<std::string>("cache.disk.location", "cache");
-                        std::string generated_path;
+                        std::string temp_dir = std::filesystem::temp_directory_path().string();
+                        std::string temp_path;
                         
-                        if (TranscodingPipeline::TranscodeToFile(source_path, generated_path, transcode_config, cache_dir))
+                        if (TranscodingPipeline::TranscodeToFile(source_path, temp_path, transcode_config, temp_dir))
                         {
-                            // Upsert the new preview record so PreviewHandler can find it instantly
-                            PreviewCacheRecord new_record;
-                            new_record.source_path = source_path;
-                            new_record.cached_path = generated_path;
-                            PreviewCacheOps::upsertPreview(*database_manager_, new_record);
-                            
-                            // Use the generated QHD cache as the source for the thumbnail to save time!
-                            source_for_generation = generated_path;
+                            std::string final_path;
+                            if (transcoding_cache_ && transcoding_cache_->moveToCache(temp_path, final_path)) {
+                                // Upsert the new preview record so PreviewHandler can find it instantly
+                                PreviewCacheRecord new_record;
+                                new_record.source_path = source_path;
+                                new_record.cached_path = final_path;
+                                PreviewCacheOps::upsertPreview(*database_manager_, new_record);
+                                
+                                // Use the generated QHD cache as the source for the thumbnail to save time!
+                                source_for_generation = final_path;
+                            } else {
+                                std::filesystem::remove(temp_path);
+                            }
                         }
                     }
                 }

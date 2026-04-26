@@ -97,6 +97,7 @@ namespace MediaDedup
         std::shared_ptr<class ScannedFilesService> scanned_files_service_;
         std::shared_ptr<class MediaProcessor> media_processor_;
         std::shared_ptr<class DiskCache> thumbnail_disk_cache_;
+        std::shared_ptr<class DiskCache> transcoding_disk_cache_;
 
         /**
          * @brief Setup request handlers for web server

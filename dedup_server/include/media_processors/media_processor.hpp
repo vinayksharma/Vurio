@@ -36,7 +36,8 @@ namespace MediaDedup
         explicit MediaProcessor(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                 std::shared_ptr<DatabaseManager> database_manager,
                                 std::shared_ptr<ThreadPoolManager> thread_pool_manager,
-                                std::shared_ptr<DiskCache> thumbnail_cache = nullptr);
+                                std::shared_ptr<DiskCache> thumbnail_cache = nullptr,
+                                std::shared_ptr<DiskCache> transcoding_cache = nullptr);
 
         /**
          * @brief Destructor
