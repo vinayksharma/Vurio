@@ -131,9 +131,9 @@ namespace MediaDedup
 
             // Fallback logic: Preview not found in cache (or was stale/missing)
             
-            if (TranscodingPipeline::NeedsTranscoding(source_path))
+            if (TranscodingPipeline::NeedsQhdPreviewCache(source_path, config_manager_))
             {
-                logger.information("Preview cache miss for RAW file. Attempting on-demand transcoding: %s", source_path);
+                logger.information("Preview cache miss for RAW or large file. Attempting on-demand transcoding: %s", source_path);
                 
                 TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager_);
                 if (transcode_config.enabled)

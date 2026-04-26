@@ -151,6 +151,51 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
     return filePath.startsWith(oldPath + '/') || filePath === oldPath;
   };
 
+  // Listen for media_ready events from WebSockets
+  useEffect(() => {
+    const handleMediaReady = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (!customEvent.detail || !customEvent.detail.file_path) return;
+      
+      const readyPath = customEvent.detail.file_path;
+      const currentGroup = groupRef.current;
+      
+      const allPaths = [
+        currentGroup.representative,
+        ...(currentGroup.members?.map(m => m.file_path) || []),
+        ...(currentGroup.candidates || []),
+      ];
+      
+      if (allPaths.includes(readyPath)) {
+        console.log(`[DuplicateGroupControl] media_ready received for: ${readyPath}`);
+        
+        // Find the specific thumbnail URL to invalidate
+        const urlObj = new URL(API_BASE + '/api/v1/thumbnails');
+        urlObj.searchParams.set('path', readyPath);
+        urlObj.searchParams.set('size', '256');
+        const urlBase = urlObj.toString();
+        
+        // Clear from queue tracking
+        thumbnailQueue.clearCompleted([urlBase]);
+        
+        // Remove from loaded images tracking
+        Array.from(loadedImagesRef.current).forEach(url => {
+          if (url.includes(encodeURIComponent(readyPath))) {
+            loadedImagesRef.current.delete(url);
+          }
+        });
+        
+        // Force re-render to trigger IntersectionObserver again
+        setRemapKey(prev => prev + 1);
+      }
+    };
+
+    window.addEventListener('media_ready', handleMediaReady);
+    return () => {
+      window.removeEventListener('media_ready', handleMediaReady);
+    };
+  }, [group.id]);
+
   // Listen for remap events and invalidate affected thumbnails
   useEffect(() => {
     const handleRemap = (event: RemapEvent) => {
@@ -725,7 +770,11 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
     const rankText = isFirst ? 'Highest Similarity' : `Rank #${memberIndex + 1}`;
     const tooltip = `Group #${displayId} - ${rankText}\nPath: ${member.file_path}\nSimilarity: ${member.similarity_score != null ? member.similarity_score.toFixed(4) : 'N/A'}\nFile Size: ${member.file_size ? (member.file_size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\nDate Taken: ${member.created_date ? new Date(member.created_date).toLocaleString() : 'Unknown'}\nAdded: ${member.added_at ? new Date(member.added_at).toLocaleString() : 'Unknown'}\nRepresentative: ${member.is_representative ? 'Yes' : 'No'}`;
 
-    const thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=256&_c=2`;
+    let thumbnailUrl = `${API_BASE}/api/v1/thumbnails?path=${encodeURIComponent(member.file_path)}&size=256&_c=2`;
+    const readyTimestamp = thumbnailQueue.getReadyTimestamp(member.file_path);
+    if (readyTimestamp) {
+      thumbnailUrl += `&_t=${readyTimestamp}`;
+    }
 
     const thumbnailStyle: React.CSSProperties = isFirst
       ? { border: '2px solid #FF8C00', flexShrink: 0, marginLeft: '4px' }

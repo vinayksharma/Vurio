@@ -5,7 +5,13 @@
 #include <sstream>
 #include <regex>
 #include "database/database_manager.hpp"
+#include "database/thumbnail_cache_ops.hpp"
+#include "database/preview_cache_ops.hpp"
 #include <Poco/Data/Session.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/StreamCopier.h>
+#include "orchestration/scheduler_service.hpp"
+#include "orchestration/thread_pool_manager.hpp"
 
 namespace MediaDedup
 {
@@ -164,10 +170,8 @@ namespace MediaDedup
 
             // Also clear the database tables
             try {
-                auto lease = database_manager_->acquireSessionLease();
-                auto &sess = lease.get();
-                sess << "DELETE FROM thumbnail_cache", Poco::Data::Keywords::now;
-                sess << "DELETE FROM preview_cache", Poco::Data::Keywords::now;
+                ThumbnailCacheOps::clearCache(*database_manager_);
+                PreviewCacheOps::clearCache(*database_manager_);
                 logger.information("Cleared cache tracking tables from database.");
             } catch (const std::exception &e) {
                 logger.error("Failed to clear cache tracking tables: %s", std::string(e.what()));
@@ -279,6 +283,193 @@ namespace MediaDedup
         response.setContentType("application/json; charset=utf-8");
         response.setContentLength(ss.str().length());
         response.send() << ss.str();
+    }
+
+    // RelocateCacheHandler Implementation
+    RelocateCacheHandler::RelocateCacheHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                               std::shared_ptr<DatabaseManager> database_manager,
+                                               std::shared_ptr<DiskCache> thumbnail_cache,
+                                               std::shared_ptr<DiskCache> transcoding_cache,
+                                               std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+                                               std::shared_ptr<ThreadPoolManager> tpm)
+        : config_manager_(std::move(config_manager)),
+          database_manager_(std::move(database_manager)),
+          thumbnail_cache_(std::move(thumbnail_cache)),
+          transcoding_cache_(std::move(transcoding_cache)),
+          scheduler_service_(std::move(scheduler_service)),
+          tpm_(std::move(tpm))
+    {
+    }
+
+    void RelocateCacheHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                             Poco::Net::HTTPServerResponse &response)
+    {
+        Poco::Logger &logger = Poco::Logger::get("RelocateCacheHandler");
+
+        if (request.getMethod() != "POST")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+
+        try
+        {
+            // Parse JSON body
+            std::string body;
+            Poco::StreamCopier::copyToString(request.stream(), body);
+
+            Poco::JSON::Parser parser;
+            auto json_obj = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+
+            if (!json_obj->has("location") || !json_obj->has("type"))
+            {
+                sendErrorResponse(response, "Missing 'location' or 'type' parameter", 400);
+                return;
+            }
+
+            std::string new_location = json_obj->get("location").toString();
+            std::string cache_type = json_obj->get("type").toString();
+            
+            std::shared_ptr<DiskCache> target_cache;
+            std::string config_key;
+            
+            if (cache_type == "thumbnail_cache") {
+                target_cache = thumbnail_cache_;
+                config_key = "cache.thumbnail.location";
+            } else if (cache_type == "disk_cache") {
+                target_cache = transcoding_cache_;
+                config_key = "cache.disk.location";
+            } else {
+                sendErrorResponse(response, "Invalid cache type", 400);
+                return;
+            }
+
+            std::string old_location = target_cache->getCacheLocation();
+
+            std::filesystem::path old_base(old_location);
+            if (!old_base.is_absolute()) {
+                old_base = std::filesystem::current_path() / old_base;
+            }
+
+            std::filesystem::path new_base(new_location);
+            if (!new_base.is_absolute()) {
+                new_base = std::filesystem::current_path() / new_base;
+            }
+
+            if (std::filesystem::equivalent(old_base, new_base)) {
+                Poco::JSON::Object result;
+                result.set("success", true);
+                result.set("message", "Location unchanged");
+                std::stringstream ss;
+                result.stringify(ss);
+                sendJsonResponse(response, ss.str(), 200);
+                return;
+            }
+
+            // Pause scheduling and drain active threads to prevent race conditions
+            if (scheduler_service_) {
+                logger.information("Pausing scheduler for cache relocation...");
+                scheduler_service_->pause();
+            }
+            
+            if (tpm_) {
+                logger.information("Clearing thread pool queues...");
+                tpm_->clearQueues();
+                
+                logger.information("Waiting for active threads to complete...");
+                int max_wait_ms = 15000;
+                int waited = 0;
+                while (tpm_->getStatus().runningTotal > 0 && waited < max_wait_ms) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    waited += 100;
+                }
+                
+                if (tpm_->getStatus().runningTotal > 0) {
+                    logger.warning("Timeout waiting for active threads to complete. Relocation aborted.");
+                    if (scheduler_service_) scheduler_service_->resume();
+                    sendErrorResponse(response, "System is busy processing files. Please try again when background tasks complete.", 409);
+                    return;
+                }
+                logger.information("All active threads completed.");
+            }
+
+            logger.information("Relocating %s from %s to %s", cache_type, old_base.string(), new_base.string());
+
+            // Ensure new base directory exists parent
+            std::filesystem::create_directories(new_base.parent_path());
+
+            if (std::filesystem::exists(old_base)) {
+                try {
+                    std::filesystem::rename(old_base, new_base);
+                } catch (const std::filesystem::filesystem_error& e) {
+                    // Cross-device link error, use copy and delete
+                    std::filesystem::create_directories(new_base);
+                    std::filesystem::copy(old_base, new_base, std::filesystem::copy_options::recursive);
+                    std::filesystem::remove_all(old_base);
+                }
+            } else {
+                std::filesystem::create_directories(new_base);
+            }
+
+            // Update Database
+            if (cache_type == "thumbnail_cache") {
+                ThumbnailCacheOps::updateCacheLocation(*database_manager_, old_base.string(), new_base.string());
+            } else {
+                PreviewCacheOps::updateCacheLocation(*database_manager_, old_base.string(), new_base.string());
+            }
+
+            // Update configuration property (triggering event to DiskCache instances)
+            if (!config_manager_->hasProperty(config_key)) {
+                config_manager_->createProperty<std::string>(config_key, new_location, "Cache location");
+            }
+            config_manager_->setPropertyValue<std::string>(config_key, new_location);
+            config_manager_->triggerSave();
+
+            if (scheduler_service_) {
+                logger.information("Resuming scheduler after successful cache relocation.");
+                scheduler_service_->resume();
+            }
+
+            Poco::JSON::Object result;
+            result.set("success", true);
+            result.set("message", "Cache relocated successfully");
+            std::stringstream ss;
+            result.stringify(ss);
+            sendJsonResponse(response, ss.str(), 200);
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception in RelocateCacheHandler: %s", std::string(e.what()));
+            
+            if (scheduler_service_) {
+                logger.information("Resuming scheduler after failed cache relocation.");
+                scheduler_service_->resume();
+            }
+            
+            sendErrorResponse(response, "Internal server error: " + std::string(e.what()), 500);
+        }
+    }
+
+    void RelocateCacheHandler::sendJsonResponse(Poco::Net::HTTPServerResponse &response,
+                                                const std::string &json_data,
+                                                int status_code)
+    {
+        response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(status_code));
+        response.setContentType("application/json; charset=utf-8");
+        response.setContentLength(json_data.length());
+        std::ostream &out = response.send();
+        out << json_data;
+    }
+
+    void RelocateCacheHandler::sendErrorResponse(Poco::Net::HTTPServerResponse &response,
+                                                 const std::string &error_message,
+                                                 int status_code)
+    {
+        Poco::JSON::Object error_obj;
+        error_obj.set("error", error_message);
+        std::stringstream ss;
+        error_obj.stringify(ss);
+        sendJsonResponse(response, ss.str(), status_code);
     }
 
 } // namespace MediaDedup

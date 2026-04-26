@@ -229,4 +229,55 @@ namespace MediaDedup
         }
     }
 
+    bool ThumbnailCacheOps::clearCache(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            sess << "DELETE FROM thumbnail_cache", now;
+            
+            Poco::Logger::get("ThumbnailCacheOps").information("Cleared all entries from thumbnail cache");
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("Exception in clearCache: %s", std::string(e.what()));
+            return false;
+        }
+    }
+
+    bool ThumbnailCacheOps::updateCacheLocation(DatabaseManager &db, const std::string &old_base_path, const std::string &new_base_path)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string old_path = old_base_path;
+            std::string new_path = new_base_path;
+            
+            // Ensure paths end with a separator so we don't accidentally match partial paths
+            // e.g. /data/cache vs /data/cache_old
+            if (!old_path.empty() && old_path.back() != '/' && old_path.back() != '\\') old_path += '/';
+            if (!new_path.empty() && new_path.back() != '/' && new_path.back() != '\\') new_path += '/';
+
+            stmt << std::string(SQL::kUpdateThumbnailCacheLocation), 
+                Poco::Data::Keywords::use(old_path), 
+                Poco::Data::Keywords::use(new_path), 
+                Poco::Data::Keywords::use(old_path),
+                Poco::Data::Keywords::now;
+
+            Poco::Logger::get("ThumbnailCacheOps").information("Updated thumbnail cache locations from %s to %s", old_base_path, new_base_path);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("Exception in updateCacheLocation: %s", std::string(e.what()));
+            return false;
+        }
+    }
+
 } // namespace MediaDedup

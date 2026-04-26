@@ -35,6 +35,14 @@ class ThumbnailRequestQueue {
   }
 
   /**
+   * Get the timestamp for a path that has received a media_ready event.
+   * Useful for React components to append to URLs during re-renders.
+   */
+  public getReadyTimestamp(sourcePath: string): number | undefined {
+    return this.readyTimestamps.get(encodeURIComponent(sourcePath));
+  }
+
+  /**
    * Refreshes images matching the source path by appending a timestamp to bypass browser caching.
    * This is triggered by WebSocket 'media_ready' events.
    */

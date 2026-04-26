@@ -30,8 +30,8 @@ namespace MediaDedup
         : config_manager_(config_manager), database_manager_(database_manager), thread_pool_manager_(thread_pool_manager), thumbnail_cache_(thumbnail_cache)
     {
         // Extension mapping will be initialized lazily when first needed
-        // Initialize disk cache
-        disk_cache_ = std::make_shared<DiskCache>(config_manager);
+        // Initialize disk cache (for previews/transcoding)
+        disk_cache_ = std::make_shared<DiskCache>(config_manager, "cache.disk");
     }
 
     MediaProcessor::~MediaProcessor()
@@ -253,12 +253,12 @@ namespace MediaDedup
                     std::string transcoded_preview_path; // Track if we created a permanent preview
                     bool is_temporary_transcode = false; // Track if we need to delete processing_file_path
 
-                    // Check if file needs transcoding
-                    bool needs_transcoding = RawFileDetector::IsRawFile(file_path_copy);
+                    // Check if file needs QHD preview cache (RAW or large JPEG)
+                    bool needs_qhd_cache = TranscodingPipeline::NeedsQhdPreviewCache(file_path_copy, config_manager);
                     
-                    if (needs_transcoding)
+                    if (needs_qhd_cache)
                     {
-                        Poco::Logger::get("MediaProcessor").information("Raw file detected, checking preview cache: %s", file_path_copy);
+                        Poco::Logger::get("MediaProcessor").information("File requires QHD preview cache, checking cache: %s", file_path_copy);
                         
                         // Helper to get mtime safely, matching PreviewHandler's logic exactly
                         int64_t source_mtime = 0;

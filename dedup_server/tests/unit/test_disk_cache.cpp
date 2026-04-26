@@ -39,7 +39,7 @@ protected:
         std::filesystem::create_directories(test_files_dir_);
 
         // Create disk cache instance
-        disk_cache_ = std::make_unique<DiskCache>(config_manager_);
+        disk_cache_ = std::make_unique<DiskCache>(config_manager_, "cache.disk");
     }
 
     void TearDown() override
@@ -453,7 +453,7 @@ TEST_F(DiskCacheTest, CacheClearedOnRestart)
 
     // Shutdown and recreate cache with clearOnStartup=true
     disk_cache_->shutdown();
-    disk_cache_ = std::make_unique<DiskCache>(config_manager_);
+    disk_cache_ = std::make_unique<DiskCache>(config_manager_, "cache.disk");
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Cache should be cleared on restart when clearOnStartup=true
@@ -482,7 +482,7 @@ TEST_F(DiskCacheTest, CachePreservedOnRestart)
 
     // Shutdown and recreate cache with clearOnStartup=false
     disk_cache_->shutdown();
-    disk_cache_ = std::make_unique<DiskCache>(config_manager_);
+    disk_cache_ = std::make_unique<DiskCache>(config_manager_, "cache.disk");
     ASSERT_TRUE(disk_cache_->initialize());
 
     // Cache should be preserved on restart when clearOnStartup=false

@@ -487,6 +487,9 @@ namespace MediaDedup
 
         inline constexpr std::string_view kCountThumbnailCache =
             "SELECT COUNT(*) FROM thumbnail_cache";
+            
+        inline constexpr std::string_view kUpdateThumbnailCacheLocation =
+            "UPDATE thumbnail_cache SET cached_path = REPLACE(cached_path, ?, ?) WHERE cached_path LIKE ? || '%'";
 
         // Preview cache operations
         inline constexpr std::string_view kUpsertPreviewCache =
@@ -512,6 +515,9 @@ namespace MediaDedup
 
         inline constexpr std::string_view kCountPreviewCache =
             "SELECT COUNT(*) FROM preview_cache";
+            
+        inline constexpr std::string_view kUpdatePreviewCacheLocation =
+            "UPDATE preview_cache SET cached_path = REPLACE(cached_path, ?, ?) WHERE cached_path LIKE ? || '%'";
 
         // Ejected Files History operations
         inline constexpr std::string_view kInsertEjectedFileHistory =
