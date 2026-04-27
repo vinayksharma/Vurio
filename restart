@@ -4,17 +4,25 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="${APP_DIR}/dedup_server"
+SWIFT_UI_DIR="${APP_DIR}/swift_ui"
+WEB_UI_DIR="${APP_DIR}/web_ui"
 
 DO_REBUILD=false
+START_WEB=false
 
-# Parse arguments
-while getopts "b" opt; do
-  case $opt in
-    b)
+# Parse arguments using a while loop for long arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -b)
       DO_REBUILD=true
+      shift
       ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
+    -web)
+      START_WEB=true
+      shift
+      ;;
+    *)
+      echo "Invalid option: $1" >&2
       exit 1
       ;;
   esac
@@ -26,10 +34,11 @@ if [ -d "$BACKEND_DIR" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
   (cd "$BACKEND_DIR" && ./scripts/run.sh stop 2>/dev/null || true)
 fi
 
-# Find and kill Electron processes for this app
+# Find and kill Electron/Swift UI processes for this app
 pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
 pkill -f "electron.*vurio" 2>/dev/null || true
 pkill -f "electron.*main.js" 2>/dev/null || true
+pkill -f "VURIO" 2>/dev/null || true
 
 # Give it a moment to fully stop
 sleep 1
@@ -41,31 +50,39 @@ if [ "$DO_REBUILD" = true ]; then
   else
     echo "Warning: rebuild script not found or not executable at ${BACKEND_DIR}/scripts/rebuild"
   fi
+  
+  if [ "$START_WEB" = true ]; then
+    echo "Rebuilding web frontend..."
+    if command -v bun &> /dev/null; then
+      (cd "$WEB_UI_DIR" && bun run bun:build)
+    else
+      (cd "$WEB_UI_DIR" && npm run npm:build)
+    fi
+  else
+    echo "Rebuilding Swift UI and running unit tests..."
+    (cd "$SWIFT_UI_DIR" && swift build)
+    (cd "$SWIFT_UI_DIR" && swift test)
+  fi
 fi
 
-echo "Building application..."
-cd "$APP_DIR"
-
-# Build and run using Bun (priority) or npm
-if command -v bun &> /dev/null; then
-  echo "Using Bun..."
-  # Clean build and typecheck
-  (cd web_ui && bun run bun:build)
-  
-  echo "Starting Backend..."
+if [ "$START_WEB" = true ]; then
+  echo "--- Launching Legacy Web UI ---"
+  echo "Starting Backend with Web Server..."
   (cd "$BACKEND_DIR" && ./scripts/run.sh server -web)
   
   echo "Starting Electron..."
   sleep 2
-  (cd web_ui && NODE_ENV=production bun run electron)
+  if command -v bun &> /dev/null; then
+    (cd "$WEB_UI_DIR" && NODE_ENV=production bun run electron)
+  else
+    (cd "$WEB_UI_DIR" && NODE_ENV=production npm run electron)
+  fi
 else
-  echo "Using npm..."
-  (cd web_ui && npm run npm:build)
+  echo "--- Launching Native Swift UI ---"
+  echo "Starting Backend (gRPC only)..."
+  (cd "$BACKEND_DIR" && ./scripts/run.sh server)
   
-  echo "Starting Backend..."
-  (cd "$BACKEND_DIR" && ./scripts/run.sh server -web)
-  
-  echo "Starting Electron..."
+  echo "Starting Swift UI..."
   sleep 2
-  (cd web_ui && NODE_ENV=production npm run electron)
+  (cd "$SWIFT_UI_DIR" && swift run VURIO)
 fi

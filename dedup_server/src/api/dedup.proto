@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package vurio.dedup;
+
+// ---------------------------------------------------------
+// Config & Settings Services
+// ---------------------------------------------------------
+service ConfigService {
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse);
+}
+
+message GetConfigRequest {
+  string key = 1; // empty for all
+}
+
+message GetConfigResponse {
+  string json_payload = 1;
+}
+
+message UpdateConfigRequest {
+  string key = 1;
+  string value_json = 2;
+}
+
+message UpdateConfigResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// ---------------------------------------------------------
+// Media Locations Service
+// ---------------------------------------------------------
+service MediaLocationsService {
+  rpc RegisterLocation(RegisterLocationRequest) returns (RegisterLocationResponse);
+  rpc DeregisterLocation(DeregisterLocationRequest) returns (DeregisterLocationResponse);
+  rpc ChangePath(ChangePathRequest) returns (ChangePathResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message RegisterLocationRequest {
+  string path = 1;
+}
+
+message RegisterLocationResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message DeregisterLocationRequest {
+  string path = 1;
+}
+
+message DeregisterLocationResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message ChangePathRequest {
+  string old_path = 1;
+  string new_path = 2;
+}
+
+message ChangePathResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 files_updated = 3;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  repeated string registered_dirs = 1;
+  // Can add task statuses here later
+}
+
+// ---------------------------------------------------------
+// Duplicates Service
+// ---------------------------------------------------------
+service DuplicatesService {
+  rpc GetDuplicateGroups(GetGroupsRequest) returns (GetGroupsResponse);
+}
+
+message GetGroupsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message DuplicateFile {
+  string id = 1;
+  string file_path = 2;
+  int64 size_bytes = 3;
+  string resolution = 4;
+  bool is_representative = 5;
+}
+
+message DuplicateGroup {
+  string group_id = 1;
+  repeated DuplicateFile files = 2;
+}
+
+message GetGroupsResponse {
+  repeated DuplicateGroup groups = 1;
+  int32 total_groups = 2;
+}

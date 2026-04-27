@@ -37,6 +37,8 @@ namespace MediaDedup
 
             void abortCurrentScan();
 
+            std::shared_ptr<FilesService> getFilesService() const { return filesService_; }
+
         private:
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<DatabaseManager> db_;

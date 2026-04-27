@@ -17,6 +17,7 @@
 #include "database/database_manager.hpp"
 #include "core/web/web_server.hpp"
 #include "core/console_input_manager.hpp"
+#include "core/grpc_server/grpc_server_core.hpp"
 #include "filesmanager/files_service.hpp"
 // Files orchestration
 #include "orchestration/files_manager.hpp"
@@ -102,6 +103,7 @@ namespace MediaDedup
 
         // Server components
         std::unique_ptr<WebServer> web_server_;
+        std::unique_ptr<::MediaDedup::Core::GrpcServerCore> grpc_server_;
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::shared_ptr<Orchestration::FilesManager> files_manager_;

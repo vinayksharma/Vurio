@@ -44,3 +44,6 @@ coverage/
 
 # Electron
 *.asar
+
+# C++ Cache
+dedup_server/.cache/
