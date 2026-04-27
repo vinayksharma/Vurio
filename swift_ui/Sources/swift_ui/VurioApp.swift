@@ -30,7 +30,7 @@ class AppState: ObservableObject {
             let request = Vurio_Dedup_GetConfigRequest()
             if let client = VurioGrpcClient.shared.config {
                 let response = try await client.getConfig(request)
-                self.configStatus = "Config loaded: \(response.jsonPayload.prefix(20))..."
+                self.configStatus = response.jsonPayload
             }
         } catch {
             self.configStatus = "Failed: \(error.localizedDescription)"
@@ -83,11 +83,29 @@ struct ContentView: View {
             case .locations:
                 MediaLocationsView()
             case .settings:
-                VStack {
-                    Text("Backend Status: \(appState.configStatus)")
-                    Button("Ping Config Backend") {
-                        Task { await appState.fetchConfig() }
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Backend Configuration")
+                            .font(.headline)
+                        Spacer()
+                        Button("Refresh") {
+                            Task { await appState.fetchConfig() }
+                        }
                     }
+                    .padding()
+                    
+                    ScrollView {
+                        Text(appState.configStatus)
+                            .font(.system(.body, design: .monospaced))
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(8)
+                    .padding([.horizontal, .bottom])
+                }
+                .onAppear {
+                    Task { await appState.fetchConfig() }
                 }
             case .none:
                 Text("Select an item")

@@ -6,6 +6,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "orchestration/files_manager.hpp"
+#include <nlohmann/json.hpp>
 
 namespace MediaDedup {
 namespace Core {
@@ -16,8 +17,14 @@ public:
     explicit ConfigServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> c) : config_(std::move(c)) {}
     grpc::Status GetConfig(grpc::ServerContext* context, const vurio::dedup::GetConfigRequest* request,
                            vurio::dedup::GetConfigResponse* reply) override {
-        // Here we would use config_->getAllPropertiesJson()
-        reply->set_json_payload("{\"status\":\"ok\"}");
+        nlohmann::json json_config;
+        for (const auto& key : config_->getAllPropertyKeys()) {
+            auto property = config_->getProperty<int>(key); // Template parameter is unused in getProperty
+            if (property) {
+                json_config[key] = property->getValueAsString();
+            }
+        }
+        reply->set_json_payload(json_config.dump(4));
         return grpc::Status::OK;
     }
 };
