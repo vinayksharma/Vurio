@@ -33,6 +33,44 @@ class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsServi
     std::shared_ptr<FilesService> files_;
 public:
     explicit MediaLocationsServiceImpl(std::shared_ptr<FilesService> f) : files_(std::move(f)) {}
+
+    grpc::Status GetStatus(grpc::ServerContext* context, const vurio::dedup::GetStatusRequest* request,
+                           vurio::dedup::GetStatusResponse* reply) override {
+        auto locations = files_->listMediaLocations();
+        for (const auto& pair : locations) {
+            reply->add_registered_dirs(pair.second);
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status RegisterLocation(grpc::ServerContext* context, const vurio::dedup::RegisterLocationRequest* request,
+                                  vurio::dedup::RegisterLocationResponse* reply) override {
+        bool success = files_->registerMediaLocation(request->path());
+        reply->set_success(success);
+        if (!success) {
+            reply->set_error_message("Failed to register location.");
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status DeregisterLocation(grpc::ServerContext* context, const vurio::dedup::DeregisterLocationRequest* request,
+                                    vurio::dedup::DeregisterLocationResponse* reply) override {
+        bool success = files_->deregisterMediaLocation(request->path());
+        reply->set_success(success);
+        if (!success) {
+            reply->set_error_message("Failed to deregister location.");
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ChangePath(grpc::ServerContext* context, const vurio::dedup::ChangePathRequest* request,
+                            vurio::dedup::ChangePathResponse* reply) override {
+        auto result = files_->changeMediaLocationPath(request->old_path(), request->new_path());
+        reply->set_success(result.success);
+        reply->set_error_message(result.error_message);
+        reply->set_files_updated(result.files_updated);
+        return grpc::Status::OK;
+    }
 };
 
 class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Service {

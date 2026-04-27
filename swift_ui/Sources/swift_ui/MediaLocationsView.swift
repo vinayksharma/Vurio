@@ -7,24 +7,37 @@ struct MediaLocationsView: View {
     @State private var statusMessage: String = ""
     @State private var isRemapping: Bool = false
     @State private var remappingPath: String? = nil
+    @State private var selectedRegisteredLocation: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Media Locations")
-                .font(.title)
-                .fontWeight(.bold)
+            HStack {
+                Text("Media Locations")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Image(systemName: "arrowtriangle.down.fill")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+            }
             
             Text("Register and manage the folders you want the deduplication service to scan.")
                 .foregroundColor(.secondary)
+                .font(.subheadline)
             
-            HStack {
+            HStack(spacing: 12) {
                 TextField("Select a directory...", text: $selectedDirectory)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .disabled(true) // Should use browse button
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .cornerRadius(6)
+                    .disabled(true)
                 
                 Button("Browse") {
                     browseDirectory()
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
                 
                 Button("Register") {
                     Task {
@@ -32,6 +45,7 @@ struct MediaLocationsView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.blue)
                 .disabled(selectedDirectory.isEmpty)
             }
             
@@ -41,47 +55,77 @@ struct MediaLocationsView: View {
                     .font(.caption)
             }
             
-            Divider()
+            Spacer().frame(height: 10)
             
             Text("Registered Locations")
-                .font(.headline)
+                .font(.title3)
+                .fontWeight(.bold)
             
-            List {
-                ForEach(appState.registeredDirs, id: \.self) { location in
-                    HStack {
-                        Text(location)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        
-                        Spacer()
-                        
-                        if isRemapping && remappingPath == location {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Button("Remap") {
-                                remapLocation(oldPath: location)
+            Text("Choose a folder below to manage or deregister it.")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+            
+            // Custom List Container
+            VStack(spacing: 0) {
+                if appState.registeredDirs.isEmpty {
+                    Text("No locations registered.")
+                        .foregroundColor(.secondary)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(appState.registeredDirs, id: \.self) { location in
+                        HStack {
+                            Text(location)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                            
+                            if isRemapping && remappingPath == location {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Button("Remap") {
+                                    remapLocation(oldPath: location)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.blue)
                             }
-                            .buttonStyle(.bordered)
+                        }
+                        .padding()
+                        .background(selectedRegisteredLocation == location ? Color.white.opacity(0.1) : Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedRegisteredLocation = location
                         }
                         
-                        Button("Deregister") {
-                            Task {
-                                await deregisterLocation(path: location)
-                            }
+                        if location != appState.registeredDirs.last {
+                            Divider().background(Color.gray.opacity(0.3))
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
                     }
-                    .padding(.vertical, 4)
                 }
             }
-            .listStyle(PlainListStyle())
-            .frame(minHeight: 200)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+            
+            Button("Deregister Selected") {
+                if let location = selectedRegisteredLocation {
+                    Task {
+                        await deregisterLocation(path: location)
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedRegisteredLocation == nil)
             
             Spacer()
         }
-        .padding()
+        .padding(30)
         .onAppear {
             Task {
                 await appState.fetchStatus()
@@ -136,6 +180,9 @@ struct MediaLocationsView: View {
                 let response = try await client.deregisterLocation(request)
                 if response.success {
                     statusMessage = "Location deregistered successfully."
+                    if selectedRegisteredLocation == path {
+                        selectedRegisteredLocation = nil
+                    }
                     await appState.fetchStatus()
                 } else {
                     statusMessage = "Failed: \(response.errorMessage)"
