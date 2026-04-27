@@ -68,11 +68,17 @@ namespace MediaDedup
                 .required(false)
                 .repeatable(false)
                 .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleDebug)));
+
+        options.addOption(
+            Poco::Util::Option("web", "w", "Start web server")
+                .required(false)
+                .repeatable(false)
+                .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleWeb)));
     }
 
     void MediaDedupServer::handleOption(const std::string &name, const std::string &value)
     {
-        // No-op for now
+        Poco::Util::ServerApplication::handleOption(name, value);
     }
 
     void MediaDedupServer::handleHelp(const std::string &name, const std::string &value)
@@ -94,6 +100,11 @@ namespace MediaDedup
     void MediaDedupServer::handleDebug(const std::string &name, const std::string &value)
     {
         // For now, this is just parsed to avoid exception.
+    }
+
+    void MediaDedupServer::handleWeb(const std::string &name, const std::string &value)
+    {
+        start_web_server_ = true;
     }
 
     int MediaDedupServer::main(const std::vector<std::string> &args)
@@ -168,10 +179,17 @@ namespace MediaDedup
             }
 
             // Initialize and start web server (after all services are ready)
-            if (!initializer.initializeWebServer())
+            if (start_web_server_)
             {
-                logger_.error("Failed to initialize web server");
-                return Application::EXIT_CONFIG;
+                if (!initializer.initializeWebServer())
+                {
+                    logger_.error("Failed to initialize web server");
+                    return Application::EXIT_CONFIG;
+                }
+            }
+            else
+            {
+                logger_.information("Web server not started (no -web parameter provided)");
             }
 
             // Setup configuration change callback

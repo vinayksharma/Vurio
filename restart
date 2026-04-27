@@ -50,22 +50,22 @@ cd "$APP_DIR"
 if command -v bun &> /dev/null; then
   echo "Using Bun..."
   # Clean build and typecheck
-  bun run bun:build
+  (cd web_ui && bun run bun:build)
   
   echo "Starting Backend..."
-  (cd "$BACKEND_DIR" && ./scripts/run.sh server)
+  (cd "$BACKEND_DIR" && ./scripts/run.sh server -web)
   
   echo "Starting Electron..."
   sleep 2
-  NODE_ENV=production bun run electron
+  (cd web_ui && NODE_ENV=production bun run electron)
 else
   echo "Using npm..."
-  npm run npm:build
+  (cd web_ui && npm run npm:build)
   
   echo "Starting Backend..."
-  (cd "$BACKEND_DIR" && ./scripts/run.sh server)
+  (cd "$BACKEND_DIR" && ./scripts/run.sh server -web)
   
   echo "Starting Electron..."
   sleep 2
-  NODE_ENV=production npm run electron
+  (cd web_ui && NODE_ENV=production npm run electron)
 fi

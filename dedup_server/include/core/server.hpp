@@ -87,6 +87,7 @@ namespace MediaDedup
 
         void handleConfig(const std::string &name, const std::string &value);
         void handleDebug(const std::string &name, const std::string &value);
+        void handleWeb(const std::string &name, const std::string &value);
 
         /**
          * @brief Main application logic
@@ -119,6 +120,7 @@ namespace MediaDedup
         std::string server_mode_;
         bool help_requested_;
         bool daemon_mode_;
+        bool start_web_server_ = false;
 
         // Logging
         Poco::Logger &logger_;
