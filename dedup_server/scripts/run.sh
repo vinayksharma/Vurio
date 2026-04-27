@@ -280,12 +280,17 @@ start_web_server() {
     print_status "  GET  /api/openapi.json - OpenAPI specification"
     echo
     
+    local EXTRA_ARGS=""
+    if [ "$START_WEB_SERVER" = true ]; then
+        EXTRA_ARGS="--web"
+    fi
+
     # Run server in foreground
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Running in debug mode..."
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug $EXTRA_ARGS
     else
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE"
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" $EXTRA_ARGS
     fi
 }
 
@@ -317,12 +322,17 @@ run_server() {
     # Set non-interactive mode to prevent immediate exit on EOF when running in background
     export DEDUP_NON_INTERACTIVE=1
     
+    local EXTRA_ARGS=""
+    if [ "$START_WEB_SERVER" = true ]; then
+        EXTRA_ARGS="--web"
+    fi
+
     # Run server in background
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Running in debug mode..."
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug $EXTRA_ARGS &
     else
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" $EXTRA_ARGS &
     fi
     
     local server_pid=$!
@@ -567,6 +577,7 @@ main() {
     DEBUG_MODE=false
     SKIP_BUILD=false
     CLEAN_BUILD=false
+    START_WEB_SERVER=false
     CONFIG_FILE="$CONFIG_DIR/config.yaml"
     
     # Parse command line arguments
@@ -587,6 +598,10 @@ main() {
             -c|--config)
                 CONFIG_FILE="$2"
                 shift 2
+                ;;
+            -w|--web|-web)
+                START_WEB_SERVER=true
+                shift
                 ;;
             --no-build)
                 SKIP_BUILD=true
