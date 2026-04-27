@@ -43,6 +43,34 @@ if(APPLE)
     endif()
 endif()
 
+# Find gRPC and Protobuf
+pkg_check_modules(GRPC REQUIRED grpc++)
+pkg_check_modules(PROTOBUF REQUIRED protobuf)
+
+find_program(PROTOC_EXECUTABLE protoc)
+find_program(GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
+
+if(NOT PROTOC_EXECUTABLE OR NOT GRPC_CPP_PLUGIN_EXECUTABLE)
+    message(FATAL_ERROR "protoc or grpc_cpp_plugin not found!")
+endif()
+
+set(PROTO_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/api)
+set(PROTO_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${PROTO_BUILD_DIR})
+
+add_custom_command(
+    OUTPUT ${PROTO_BUILD_DIR}/dedup.pb.cc ${PROTO_BUILD_DIR}/dedup.pb.h
+           ${PROTO_BUILD_DIR}/dedup.grpc.pb.cc ${PROTO_BUILD_DIR}/dedup.grpc.pb.h
+    COMMAND ${PROTOC_EXECUTABLE}
+    ARGS --cpp_out=${PROTO_BUILD_DIR}
+         --grpc_out=${PROTO_BUILD_DIR}
+         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
+         -I ${PROTO_SRC_DIR}
+         ${PROTO_SRC_DIR}/dedup.proto
+    DEPENDS ${PROTO_SRC_DIR}/dedup.proto
+)
+include_directories(${PROTO_BUILD_DIR})
+
 # Find yaml-cpp
 find_package(yaml-cpp REQUIRED)
 
@@ -250,6 +278,9 @@ add_executable(media_dedup_server
     src/media_processors/similarity/similarity_calculator.cpp
     src/media_processors/audio_processor.cpp
     src/media_processors/video_processor.cpp
+    src/core/grpc_server/grpc_server_core.cpp
+    ${PROTO_BUILD_DIR}/dedup.pb.cc
+    ${PROTO_BUILD_DIR}/dedup.grpc.pb.cc
 )
 
 # Add model download dependency if ONNX Runtime is available
@@ -269,6 +300,8 @@ target_link_libraries(media_dedup_server
     ${SQLITE3_LIBRARIES}
     unified_config_lib
     yaml-cpp::yaml-cpp
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
@@ -281,10 +314,14 @@ target_include_directories(media_dedup_server PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
     ${SQLITE3_INCLUDE_DIRS}
+    ${GRPC_INCLUDE_DIRS}
+    ${PROTOBUF_INCLUDE_DIRS}
 )
 target_link_directories(media_dedup_server PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
     ${LIBTIFF_LIBRARY_DIRS}
+    ${GRPC_LIBRARY_DIRS}
+    ${PROTOBUF_LIBRARY_DIRS}
 )
 
 # Set compile definitions (SQLITE_ENABLE_LOAD_EXTENSION for vector_index / sqlite-vec)
