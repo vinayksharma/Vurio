@@ -7,8 +7,17 @@ set -e
 
 echo "Stopping all Media Deduplication Server instances..."
 
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+
 # Find all processes matching media_dedup_server
 PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+
+# Stop frontend processes
+echo "Stopping frontends..."
+pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
+pkill -f "electron.*vurio" 2>/dev/null || true
+pkill -f "electron.*main.js" 2>/dev/null || true
+pkill -f "VURIO" 2>/dev/null || true
 
 if [ -z "$PIDS" ]; then
     echo "No Media Deduplication Server instances found running."

@@ -192,10 +192,7 @@ namespace MediaDedup
                 logger_.information("Web server not started (no -web parameter provided)");
             }
 
-            // Always start the gRPC server
-            logger_.information("Starting gRPC Server on /tmp/vurio_dedup.sock...");
-            grpc_server_ = std::make_unique<::MediaDedup::Core::GrpcServerCore>();
-            grpc_server_->start("/tmp/vurio_dedup.sock", config_manager_, database_manager_.get(), files_manager_);
+
 
             // Setup configuration change callback
             initializer.setupConfigChangeCallback([this, &initializer](const std::string &file_path)
@@ -265,6 +262,11 @@ namespace MediaDedup
             scheduler_service_ = initializer.getSchedulerService();
             files_manager_ = initializer.getFilesManager();
             media_processor_ = initializer.getMediaProcessor();
+
+            // Always start the gRPC server
+            logger_.information("Starting gRPC Server on /tmp/vurio_dedup.sock...");
+            grpc_server_ = std::make_unique<::MediaDedup::Core::GrpcServerCore>();
+            grpc_server_->start("/tmp/vurio_dedup.sock", config_manager_, database_manager_.get(), files_manager_);
 
             // Set shutdown callback for scheduler service
             if (scheduler_service_)
