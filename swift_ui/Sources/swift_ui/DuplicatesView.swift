@@ -17,31 +17,102 @@ struct DuplicatesView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Duplicate Groups")
-                        .font(.title)
-                        .fontWeight(.bold)
-                    Text("Review similar media files and take action directly from the list.")
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                
-                Button(action: {
-                    Task {
-                        await refresh()
-                    }
-                }) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(isLoading)
+            // Header
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Duplicate Groups")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("Review similar media files grouped by similarity and take action directly from the list.")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
             }
-            .padding()
+            .padding([.top, .horizontal], 30)
+            .padding(.bottom, 20)
             
+            // Top Control Bar
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Live Duplicate Feed")
+                        .font(.headline)
+                    Spacer()
+                    Text("\(totalGroups) groups")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                }
+                .padding()
+                
+                Divider().background(Color.gray.opacity(0.3))
+                
+                HStack {
+                    Text("IDENTICAL")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    // Mock slider
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(height: 4)
+                        
+                        Circle()
+                            .fill(Color(red: 0.9, green: 0.4, blue: 0.4))
+                            .frame(width: 20, height: 20)
+                            .overlay(Text("<>").font(.system(size: 8)).foregroundColor(.white))
+                            .offset(x: 20)
+                    }
+                    .frame(width: 300)
+                    .padding(.horizontal, 10)
+                    
+                    Text("SIMILAR")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.up.square")
+                            Text("Eject")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.down.square")
+                            Text("Restore")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "folder")
+                            Text("Ejected")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                }
+                .padding()
+            }
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 30)
+            .padding(.bottom, 20)
+            
+            // List
             if let error = errorMessage {
                 Text(error)
                     .foregroundColor(.red)
-                    .padding()
+                    .padding(.horizontal, 30)
             }
             
             if groups.isEmpty && !isLoading {
@@ -54,9 +125,9 @@ struct DuplicatesView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(groups, id: \.groupID) { group in
-                            DuplicateGroupCard(group: group)
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(groups.enumerated()), id: \.element.groupID) { index, group in
+                            DuplicateGroupCard(group: group, index: index + 1)
                                 .onTapGesture {
                                     selectedGroup = group
                                     showingPopup = true
@@ -70,7 +141,7 @@ struct DuplicatesView: View {
                                 }
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 30)
                     
                     if isLoading {
                         ProgressView()
@@ -134,48 +205,45 @@ struct DuplicatesView: View {
 
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
+    let index: Int
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Group ID: \(group.groupID)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 6) {
+                Text("Group #\(index) • \(group.files.count) files")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("ID: \(group.groupID)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(group.files, id: \.filePath) { file in
-                        VStack(alignment: .leading) {
-                            ThumbnailView(filePath: file.filePath, size: CGSize(width: 150, height: 150))
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(file.isRepresentative ? Color.green : Color.clear, lineWidth: 3)
-                                )
-                            
-                            Text(URL(fileURLWithPath: file.filePath).lastPathComponent)
-                                .font(.caption)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(width: 150, alignment: .leading)
-                            
-                            Text(formatBytes(file.sizeBytes))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
+                HStack(spacing: 12) {
+                    ForEach(Array(group.files.enumerated()), id: \.element.filePath) { fileIndex, file in
+                        ThumbnailView(filePath: file.filePath, size: CGSize(width: 80, height: 80))
+                            .frame(width: 80, height: 80)
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(fileIndex == 0 ? Color.orange : Color.gray.opacity(0.4), lineWidth: fileIndex == 0 ? 2 : 1)
+                            )
                     }
                 }
             }
         }
         .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-    }
-    
-    private func formatBytes(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+        )
+        // Draw bottom border to simulate stacked list if it's not the last element, or just rely on the VStack spacing.
+        // We removed LazyVGrid and used LazyVStack, so the cards are stacked.
+        // We will just add a corner radius and a border to each card for the distinct "list item" look from the screenshot.
+        .cornerRadius(8)
+        .padding(.bottom, 8)
     }
 }
