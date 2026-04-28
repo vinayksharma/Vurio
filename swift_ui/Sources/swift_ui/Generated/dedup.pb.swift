@@ -170,8 +170,19 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Can add task statuses here later
   var registeredDirs: [String] = []
+
+  var scannedFilesCount: Int32 = 0
+
+  var processedFilesCount: Int32 = 0
+
+  var errorFilesCount: Int32 = 0
+
+  var threadCount: Int32 = 0
+
+  var maxThreads: Int32 = 0
+
+  var duplicateGroupsCount: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -207,6 +218,10 @@ struct Vurio_Dedup_DuplicateFile: Sendable {
 
   var isRepresentative: Bool = false
 
+  var similarityScore: Double = 0
+
+  var isEjected: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -234,6 +249,68 @@ struct Vurio_Dedup_GetGroupsResponse: Sendable {
   var groups: [Vurio_Dedup_DuplicateGroup] = []
 
   var totalGroups: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_EjectDuplicatesRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePaths: [String] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_EjectDuplicatesResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var success: Bool = false
+
+  var successCount: Int32 = 0
+
+  var failureCount: Int32 = 0
+
+  var errorMessage: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_UndoEjectDuplicatesRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePaths: [String] = []
+
+  var undoAll: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_UndoEjectDuplicatesResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var success: Bool = false
+
+  var successCount: Int32 = 0
+
+  var failureCount: Int32 = 0
+
+  var errorMessage: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -600,7 +677,7 @@ extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -609,6 +686,12 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedStringField(value: &self.registeredDirs) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.scannedFilesCount) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.processedFilesCount) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.errorFilesCount) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.threadCount) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.maxThreads) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.duplicateGroupsCount) }()
       default: break
       }
     }
@@ -618,11 +701,35 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.registeredDirs.isEmpty {
       try visitor.visitRepeatedStringField(value: self.registeredDirs, fieldNumber: 1)
     }
+    if self.scannedFilesCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.scannedFilesCount, fieldNumber: 2)
+    }
+    if self.processedFilesCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.processedFilesCount, fieldNumber: 3)
+    }
+    if self.errorFilesCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.errorFilesCount, fieldNumber: 4)
+    }
+    if self.threadCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.threadCount, fieldNumber: 5)
+    }
+    if self.maxThreads != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxThreads, fieldNumber: 6)
+    }
+    if self.duplicateGroupsCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.duplicateGroupsCount, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_GetStatusResponse, rhs: Vurio_Dedup_GetStatusResponse) -> Bool {
     if lhs.registeredDirs != rhs.registeredDirs {return false}
+    if lhs.scannedFilesCount != rhs.scannedFilesCount {return false}
+    if lhs.processedFilesCount != rhs.processedFilesCount {return false}
+    if lhs.errorFilesCount != rhs.errorFilesCount {return false}
+    if lhs.threadCount != rhs.threadCount {return false}
+    if lhs.maxThreads != rhs.maxThreads {return false}
+    if lhs.duplicateGroupsCount != rhs.duplicateGroupsCount {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -665,7 +772,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -678,6 +785,8 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.sizeBytes) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.resolution) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.isRepresentative) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.isEjected) }()
       default: break
       }
     }
@@ -699,6 +808,12 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if self.isRepresentative != false {
       try visitor.visitSingularBoolField(value: self.isRepresentative, fieldNumber: 5)
     }
+    if self.similarityScore.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.similarityScore, fieldNumber: 6)
+    }
+    if self.isEjected != false {
+      try visitor.visitSingularBoolField(value: self.isEjected, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -708,6 +823,8 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.sizeBytes != rhs.sizeBytes {return false}
     if lhs.resolution != rhs.resolution {return false}
     if lhs.isRepresentative != rhs.isRepresentative {return false}
+    if lhs.similarityScore != rhs.similarityScore {return false}
+    if lhs.isEjected != rhs.isEjected {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -778,6 +895,161 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
   static func ==(lhs: Vurio_Dedup_GetGroupsResponse, rhs: Vurio_Dedup_GetGroupsResponse) -> Bool {
     if lhs.groups != rhs.groups {return false}
     if lhs.totalGroups != rhs.totalGroups {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_EjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedStringField(value: &self.filePaths) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePaths.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.filePaths, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_EjectDuplicatesRequest, rhs: Vurio_Dedup_EjectDuplicatesRequest) -> Bool {
+    if lhs.filePaths != rhs.filePaths {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.successCount) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.failureCount) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.success != false {
+      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
+    }
+    if self.successCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.successCount, fieldNumber: 2)
+    }
+    if self.failureCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.failureCount, fieldNumber: 3)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_EjectDuplicatesResponse, rhs: Vurio_Dedup_EjectDuplicatesResponse) -> Bool {
+    if lhs.success != rhs.success {return false}
+    if lhs.successCount != rhs.successCount {return false}
+    if lhs.failureCount != rhs.failureCount {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0\u{3}undo_all\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedStringField(value: &self.filePaths) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.undoAll) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePaths.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.filePaths, fieldNumber: 1)
+    }
+    if self.undoAll != false {
+      try visitor.visitSingularBoolField(value: self.undoAll, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesRequest, rhs: Vurio_Dedup_UndoEjectDuplicatesRequest) -> Bool {
+    if lhs.filePaths != rhs.filePaths {return false}
+    if lhs.undoAll != rhs.undoAll {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.successCount) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.failureCount) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.success != false {
+      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
+    }
+    if self.successCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.successCount, fieldNumber: 2)
+    }
+    if self.failureCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.failureCount, fieldNumber: 3)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesResponse, rhs: Vurio_Dedup_UndoEjectDuplicatesResponse) -> Bool {
+    if lhs.success != rhs.success {return false}
+    if lhs.successCount != rhs.successCount {return false}
+    if lhs.failureCount != rhs.failureCount {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

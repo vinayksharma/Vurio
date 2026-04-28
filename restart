@@ -10,6 +10,16 @@ WEB_UI_DIR="${APP_DIR}/web_ui"
 DO_REBUILD=false
 START_WEB=false
 
+cleanup() {
+  echo -e "\n[restart] Caught shutdown signal. Running stopall to clean up..."
+  if [ -x "${BACKEND_DIR}/scripts/stopall" ]; then
+    "${BACKEND_DIR}/scripts/stopall"
+  fi
+  exit 1
+}
+
+trap cleanup INT TERM
+
 # Parse arguments using a while loop for long arguments
 while [[ $# -gt 0 ]]; do
   case $1 in

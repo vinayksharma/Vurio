@@ -9,6 +9,14 @@ struct DuplicatesView: View {
     @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
     @State private var showingPopup = false
     
+    // Config and Eject State
+    @State private var duplicateTightness: Double = 0.008
+    @State private var sliderValue: Double = 200 // Math.cbrt(duplicateTightness) * 1000
+    @State private var isEjecting = false
+    
+    @EnvironmentObject var appState: AppState
+
+    
     let pageSize: Int32 = 30
     
     let columns = [
@@ -49,18 +57,16 @@ struct DuplicatesView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.secondary)
                     
-                    // Mock slider
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(height: 4)
-                        
-                        Circle()
-                            .fill(Color(red: 0.9, green: 0.4, blue: 0.4))
-                            .frame(width: 20, height: 20)
-                            .overlay(Text("<>").font(.system(size: 8)).foregroundColor(.white))
-                            .offset(x: 20)
-                    }
+                    // Slider
+                    Slider(value: Binding(
+                        get: { sliderValue },
+                        set: { newValue in
+                            sliderValue = newValue
+                            let t = pow(newValue / 1000.0, 3.0)
+                            duplicateTightness = t
+                            Task { await saveTightness(t) }
+                        }
+                    ), in: 0...1000)
                     .frame(width: 300)
                     .padding(.horizontal, 10)
                     
@@ -71,24 +77,36 @@ struct DuplicatesView: View {
                     
                     Spacer()
                     
-                    Button(action: {}) {
+                    Button(action: {
+                        Task { await handleBulkEject() }
+                    }) {
                         HStack {
-                            Image(systemName: "arrow.up.square")
+                            if isEjecting {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.up.square")
+                            }
                             Text("Eject")
                         }
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
+                    .disabled(isEjecting)
                     
-                    Button(action: {}) {
+                    Button(action: {
+                        Task { await handleRestore() }
+                    }) {
                         HStack {
                             Image(systemName: "arrow.down.square")
                             Text("Restore")
                         }
                     }
                     .buttonStyle(.bordered)
+                    .disabled(isEjecting)
                     
-                    Button(action: {}) {
+                    Button(action: {
+                        Task { await openEjectedFolders() }
+                    }) {
                         HStack {
                             Image(systemName: "folder")
                             Text("Ejected")
@@ -108,11 +126,14 @@ struct DuplicatesView: View {
             .padding(.horizontal, 30)
             .padding(.bottom, 20)
             
+            Divider().background(Color.gray.opacity(0.3))
+            
             // List
             if let error = errorMessage {
                 Text(error)
                     .foregroundColor(.red)
                     .padding(.horizontal, 30)
+                    .padding(.top, 20)
             }
             
             if groups.isEmpty && !isLoading {
@@ -142,6 +163,7 @@ struct DuplicatesView: View {
                         }
                     }
                     .padding(.horizontal, 30)
+                    .padding(.top, 20)
                     
                     if isLoading {
                         ProgressView()
@@ -149,6 +171,9 @@ struct DuplicatesView: View {
                     }
                 }
             }
+            
+            
+
         }
         .sheet(isPresented: $showingPopup) {
             if let group = selectedGroup {
@@ -156,12 +181,124 @@ struct DuplicatesView: View {
             }
         }
         .task {
+            await fetchSettings()
             if groups.isEmpty {
                 await refresh()
             }
         }
+        .onChange(of: appState.duplicateGroupsCount) { newCount in
+            if totalGroups != newCount {
+                totalGroups = newCount
+            }
+            if groups.isEmpty && newCount > 0 && !isLoading {
+                Task { await refresh() }
+            }
+        }
     }
     
+    private func fetchSettings() async {
+        do {
+            let req = Vurio_Dedup_GetConfigRequest.with { $0.key = "duplicate_tightness" }
+            if let client = VurioGrpcClient.shared.config {
+                let res = try await client.getConfig(req)
+                if let data = res.jsonPayload.data(using: .utf8),
+                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let valStr = json["duplicate_tightness"] as? String,
+                   let val = Double(valStr) {
+                    await MainActor.run {
+                        self.duplicateTightness = val
+                        self.sliderValue = pow(val, 1.0/3.0) * 1000.0
+                    }
+                }
+            }
+        } catch {
+            print("Failed to fetch duplicate_tightness: \(error)")
+        }
+    }
+    
+    private func saveTightness(_ val: Double) async {
+        do {
+            let req = Vurio_Dedup_UpdateConfigRequest.with { 
+                $0.key = "duplicate_tightness"
+                $0.valueJson = String(val)
+            }
+            _ = try await VurioGrpcClient.shared.config?.updateConfig(req)
+        } catch {
+            print("Failed to save tightness: \(error)")
+        }
+    }
+    
+    
+
+    
+    private func handleBulkEject() async {
+        guard !isEjecting else { return }
+        isEjecting = true
+        defer { isEjecting = false }
+        
+        var toEject: [String] = []
+        for group in groups {
+            for file in group.files {
+                if !file.isEjected && !file.isRepresentative {
+                    let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                    if (1.0 - score) <= duplicateTightness {
+                        toEject.append(file.filePath)
+                    }
+                }
+            }
+        }
+        
+        if toEject.isEmpty {
+            self.errorMessage = "No eligible duplicates found to eject."
+            return
+        }
+        
+        do {
+            let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = toEject }
+            if let client = VurioGrpcClient.shared.duplicates {
+                let res = try await client.ejectDuplicates(req)
+                if res.success {
+                    self.errorMessage = "Successfully ejected \(res.successCount) files."
+                    await refresh()
+                } else {
+                    self.errorMessage = "Eject failed: \(res.errorMessage)"
+                }
+            }
+        } catch {
+            self.errorMessage = "Eject error: \(error.localizedDescription)"
+        }
+    }
+    
+    private func handleRestore() async {
+        guard !isEjecting else { return }
+        isEjecting = true
+        defer { isEjecting = false }
+        
+        do {
+            let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.undoAll = true }
+            if let client = VurioGrpcClient.shared.duplicates {
+                let res = try await client.undoEjectDuplicates(req)
+                if res.success {
+                    self.errorMessage = "Successfully restored \(res.successCount) files."
+                    await refresh()
+                } else {
+                    self.errorMessage = "Restore failed: \(res.errorMessage)"
+                }
+            }
+        } catch {
+            self.errorMessage = "Restore error: \(error.localizedDescription)"
+        }
+    }
+    
+    private func openEjectedFolders() async {
+        // macOS open path functionality can be handled via NSWorkspace
+        if let url = URL(string: "file:///") {
+            // Ejected folders are stored in user defaults or queried from DB.
+            // Since we don't have the explicit paths easily via gRPC without a new endpoint, 
+            // for now we'll just show an alert or open the base directory.
+            self.errorMessage = "System path launching not fully implemented in UI layer yet."
+        }
+    }
     private func refresh() async {
         page = 0
         groups = []
@@ -222,13 +359,7 @@ struct DuplicateGroupCard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(Array(group.files.enumerated()), id: \.element.filePath) { fileIndex, file in
-                        ThumbnailView(filePath: file.filePath, size: CGSize(width: 80, height: 80))
-                            .frame(width: 80, height: 80)
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(fileIndex == 0 ? Color.orange : Color.gray.opacity(0.4), lineWidth: fileIndex == 0 ? 2 : 1)
-                            )
+                        DuplicateMemberView(file: file)
                     }
                 }
             }
@@ -240,10 +371,43 @@ struct DuplicateGroupCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
         )
-        // Draw bottom border to simulate stacked list if it's not the last element, or just rely on the VStack spacing.
-        // We removed LazyVGrid and used LazyVStack, so the cards are stacked.
-        // We will just add a corner radius and a border to each card for the distinct "list item" look from the screenshot.
         .cornerRadius(8)
         .padding(.bottom, 8)
+    }
+}
+
+struct DuplicateMemberView: View {
+    let file: Vurio_Dedup_DuplicateFile
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                ThumbnailView(filePath: file.filePath, size: CGSize(width: 80, height: 80))
+                    .frame(width: 80, height: 80)
+                    .cornerRadius(8)
+                    .opacity(file.isEjected ? 0.3 : 1.0)
+                
+                if file.isEjected {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .background(Circle().fill(Color.white))
+                        .offset(x: 5, y: -5)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(file.isRepresentative ? Color.orange : Color.gray.opacity(0.4), lineWidth: file.isRepresentative ? 2 : 1)
+            )
+            
+            if file.isRepresentative {
+                Text("Highest Similarity")
+                    .font(.system(size: 8))
+                    .foregroundColor(.orange)
+            } else {
+                Text("\(String(format: "%.4f", file.similarityScore))")
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }
