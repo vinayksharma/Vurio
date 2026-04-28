@@ -147,35 +147,11 @@ struct ContentView: View {
 
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
+    @State private var gradientPhase: CGFloat = 0.0
     
     var body: some View {
         VStack(spacing: 0) {
             Divider().background(Color.gray.opacity(0.3))
-            
-            HStack {
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(Color(NSColor.windowBackgroundColor))
-                            .frame(height: 4)
-                        
-                        if appState.scannedFilesCount > 0 {
-                            let completedPercent = min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
-                            let errorPercent = min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
-                            
-                            Rectangle()
-                                .fill(Color.blue)
-                                .frame(width: max(0, geometry.size.width * CGFloat(completedPercent / 100.0)), height: 4)
-                            
-                            Rectangle()
-                                .fill(Color.red)
-                                .frame(width: max(0, geometry.size.width * CGFloat(errorPercent / 100.0)), height: 4)
-                                .offset(x: max(0, geometry.size.width * CGFloat(completedPercent / 100.0)))
-                        }
-                    }
-                }
-                .frame(height: 4)
-            }
             
             HStack {
                 let defaultColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
@@ -206,9 +182,72 @@ struct StatusBarView: View {
                     .frame(width: 8, height: 8)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 2)
+            .padding(.top, 6)
             .padding(.bottom, 6)
         }
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background {
+            ZStack(alignment: .leading) {
+                Color(NSColor.controlBackgroundColor).opacity(0.5)
+                
+                GeometryReader { geometry in
+                    if appState.scannedFilesCount > 0 {
+                        let completedPercent = min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                        let errorPercent = min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                        
+                        let completedWidth = max(0, geometry.size.width * CGFloat(completedPercent / 100.0))
+                        let errorWidth = max(0, geometry.size.width * CGFloat(errorPercent / 100.0))
+                        
+                        let blueGradient = LinearGradient(
+                            stops: [
+                                Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 0),
+                                Gradient.Stop(color: Color(red: 124/255.0, green: 142/255.0, blue: 246/255.0).opacity(0.7), location: 0.5),
+                                Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 1)
+                            ],
+                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
+                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
+                        )
+                        
+                        let redGradient = LinearGradient(
+                            stops: [
+                                Gradient.Stop(color: Color(red: 244/255.0, green: 135/255.0, blue: 113/255.0).opacity(0.4), location: 0),
+                                Gradient.Stop(color: Color(red: 251/255.0, green: 113/255.0, blue: 133/255.0).opacity(0.7), location: 0.5),
+                                Gradient.Stop(color: Color(red: 244/255.0, green: 135/255.0, blue: 113/255.0).opacity(0.4), location: 1)
+                            ],
+                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
+                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
+                        )
+                        
+                        ZStack(alignment: .leading) {
+                            blueGradient
+                                .frame(width: geometry.size.width)
+                                .mask(
+                                    HStack(spacing: 0) {
+                                        Rectangle().frame(width: completedWidth)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
+                                )
+                            
+                            redGradient
+                                .frame(width: geometry.size.width)
+                                .mask(
+                                    HStack(spacing: 0) {
+                                        Spacer().frame(width: completedWidth)
+                                        Rectangle().frame(width: errorWidth)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
+                                    .animation(.easeInOut(duration: 0.3), value: errorWidth)
+                                )
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
+                gradientPhase = 2.0
+            }
+        }
     }
 }
