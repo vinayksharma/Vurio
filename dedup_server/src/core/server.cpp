@@ -266,7 +266,7 @@ namespace MediaDedup
             // Always start the gRPC server
             logger_.information("Starting gRPC Server on /tmp/vurio_dedup.sock...");
             grpc_server_ = std::make_unique<::MediaDedup::Core::GrpcServerCore>();
-            grpc_server_->start("/tmp/vurio_dedup.sock", config_manager_, database_manager_.get(), files_manager_);
+            grpc_server_->start("/tmp/vurio_dedup.sock", config_manager_, database_manager_.get(), files_manager_, tpm_);
 
             // Set shutdown callback for scheduler service
             if (scheduler_service_)

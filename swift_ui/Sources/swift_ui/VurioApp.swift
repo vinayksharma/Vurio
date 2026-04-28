@@ -24,6 +24,15 @@ class AppState: ObservableObject {
     @Published var configStatus: String = "Connecting..."
     @Published var registeredDirs: [String] = []
     
+    // Status State
+    @Published var scannedFilesCount: Int32 = 0
+    @Published var processedFilesCount: Int32 = 0
+    @Published var threadCount: Int32 = 0
+    @Published var maxThreads: Int32 = 0
+    @Published var errorFilesCount: Int32 = 0
+    @Published var duplicateGroupsCount: Int32 = 0
+    @Published var isOnline: Bool = true
+    
     @MainActor
     func fetchConfig() async {
         do {
@@ -43,9 +52,17 @@ class AppState: ObservableObject {
             let request = Vurio_Dedup_GetStatusRequest()
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.getStatus(request)
+                self.isOnline = true
                 self.registeredDirs = response.registeredDirs
+                self.scannedFilesCount = response.scannedFilesCount
+                self.processedFilesCount = response.processedFilesCount
+                self.threadCount = response.threadCount
+                self.maxThreads = response.maxThreads
+                self.errorFilesCount = response.errorFilesCount
+                self.duplicateGroupsCount = response.duplicateGroupsCount
             }
         } catch {
+            self.isOnline = false
             print("Failed to fetch status: \(error)")
         }
     }
@@ -112,8 +129,86 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        .safeAreaInset(edge: .bottom) {
+            StatusBarView()
+        }
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
+        .task {
+            // Background status poller
+            while !Task.isCancelled {
+                await appState.fetchStatus()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+}
+
+struct StatusBarView: View {
+    @EnvironmentObject var appState: AppState
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider().background(Color.gray.opacity(0.3))
+            
+            HStack {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(Color(NSColor.windowBackgroundColor))
+                            .frame(height: 4)
+                        
+                        if appState.scannedFilesCount > 0 {
+                            let completedPercent = min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                            let errorPercent = min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                            
+                            Rectangle()
+                                .fill(Color.blue)
+                                .frame(width: max(0, geometry.size.width * CGFloat(completedPercent / 100.0)), height: 4)
+                            
+                            Rectangle()
+                                .fill(Color.red)
+                                .frame(width: max(0, geometry.size.width * CGFloat(errorPercent / 100.0)), height: 4)
+                                .offset(x: max(0, geometry.size.width * CGFloat(completedPercent / 100.0)))
+                        }
+                    }
+                }
+                .frame(height: 4)
+            }
+            
+            HStack {
+                let defaultColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
+                    appearance.name == .darkAqua ? NSColor(calibratedRed: 160/255.0, green: 160/255.0, blue: 160/255.0, alpha: 1.0) : NSColor.secondaryLabelColor
+                }))
+                let errorColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
+                    appearance.name == .darkAqua ? NSColor(calibratedRed: 244/255.0, green: 135/255.0, blue: 113/255.0, alpha: 1.0) : NSColor.systemRed
+                }))
+                let dupesColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
+                    appearance.name == .darkAqua ? NSColor(calibratedRed: 220/255.0, green: 220/255.0, blue: 170/255.0, alpha: 1.0) : NSColor.systemOrange
+                }))
+                
+                (Text("SCANNED \(appState.scannedFilesCount) • PROCESSED \(appState.processedFilesCount) • THREADS \(appState.threadCount)/\(appState.maxThreads) • ")
+                    .foregroundColor(defaultColor) +
+                Text("ERRORS \(appState.errorFilesCount)")
+                    .foregroundColor(appState.errorFilesCount > 0 ? errorColor : defaultColor) +
+                Text(" • DUPLICATE CANDIDATES \(appState.duplicateGroupsCount)")
+                    .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
+                Text(" • REGISTERED PATHS \(appState.registeredDirs.count)")
+                    .foregroundColor(defaultColor))
+                .font(.custom("Menlo", size: 9))
+                .tracking(0.5)
+                
+                Spacer()
+                
+                Circle()
+                    .fill(appState.isOnline ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
+        }
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 }

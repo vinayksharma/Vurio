@@ -8,6 +8,7 @@ struct MediaLocationsView: View {
     @State private var isRemapping: Bool = false
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
+    @State private var isDeregistering: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -131,6 +132,31 @@ struct MediaLocationsView: View {
                 await appState.fetchStatus()
             }
         }
+        .overlay(
+            Group {
+                if isDeregistering {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                        
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .controlSize(.regular)
+                            Text("Deregistering location...")
+                                .font(.headline)
+                            Text("Please wait while the location is removed.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(30)
+                        .background(Color(NSColor.windowBackgroundColor))
+                        .cornerRadius(12)
+                        .shadow(radius: 10)
+                    }
+                }
+            }
+        )
+        .disabled(isDeregistering)
     }
     
     private func browseDirectory() {
@@ -171,6 +197,7 @@ struct MediaLocationsView: View {
     }
     
     private func deregisterLocation(path: String) async {
+        isDeregistering = true
         do {
             let request = Vurio_Dedup_DeregisterLocationRequest.with {
                 $0.path = path
@@ -191,6 +218,7 @@ struct MediaLocationsView: View {
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"
         }
+        isDeregistering = false
     }
     
     private func remapLocation(oldPath: String) {

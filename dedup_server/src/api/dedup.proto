@@ -71,7 +71,12 @@ message GetStatusRequest {}
 
 message GetStatusResponse {
   repeated string registered_dirs = 1;
-  // Can add task statuses here later
+  int32 scanned_files_count = 2;
+  int32 processed_files_count = 3;
+  int32 error_files_count = 4;
+  int32 thread_count = 5;
+  int32 max_threads = 6;
+  int32 duplicate_groups_count = 7;
 }
 
 // ---------------------------------------------------------
@@ -79,6 +84,8 @@ message GetStatusResponse {
 // ---------------------------------------------------------
 service DuplicatesService {
   rpc GetDuplicateGroups(GetGroupsRequest) returns (GetGroupsResponse);
+  rpc EjectDuplicates(EjectDuplicatesRequest) returns (EjectDuplicatesResponse);
+  rpc UndoEjectDuplicates(UndoEjectDuplicatesRequest) returns (UndoEjectDuplicatesResponse);
 }
 
 message GetGroupsRequest {
@@ -92,6 +99,8 @@ message DuplicateFile {
   int64 size_bytes = 3;
   string resolution = 4;
   bool is_representative = 5;
+  double similarity_score = 6;
+  bool is_ejected = 7;
 }
 
 message DuplicateGroup {
@@ -102,4 +111,27 @@ message DuplicateGroup {
 message GetGroupsResponse {
   repeated DuplicateGroup groups = 1;
   int32 total_groups = 2;
+}
+
+message EjectDuplicatesRequest {
+  repeated string file_paths = 1;
+}
+
+message EjectDuplicatesResponse {
+  bool success = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+  string error_message = 4;
+}
+
+message UndoEjectDuplicatesRequest {
+  repeated string file_paths = 1;
+  bool undo_all = 2;
+}
+
+message UndoEjectDuplicatesResponse {
+  bool success = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+  string error_message = 4;
 }

@@ -15,6 +15,7 @@ class DatabaseManager;
 namespace Orchestration {
     class FilesManager;
 }
+class ThreadPoolManager;
 } // namespace MediaDedup
 
 namespace MediaDedup {
@@ -28,7 +29,8 @@ public:
     void start(const std::string& socket_path,
                std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                DatabaseManager* database_manager,
-               std::shared_ptr<Orchestration::FilesManager> files_manager);
+               std::shared_ptr<Orchestration::FilesManager> files_manager,
+               std::shared_ptr<ThreadPoolManager> thread_pool_manager);
     void stop();
 
 private:
