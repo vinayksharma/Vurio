@@ -344,69 +344,99 @@ struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
     let index: Int
     
+    var representative: Vurio_Dedup_DuplicateFile? {
+        group.files.first(where: { $0.isRepresentative }) ?? group.files.first
+    }
+    
+    var candidates: [Vurio_Dedup_DuplicateFile] {
+        if group.files.contains(where: { $0.isRepresentative }) {
+            return group.files.filter { !$0.isRepresentative }
+        } else {
+            return Array(group.files.dropFirst())
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text("Group #\(index) • \(group.files.count) files")
-                    .font(.subheadline)
+                    .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
                 Text("ID: \(group.groupID)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .foregroundColor(Color.gray.opacity(0.6))
+                    .fontDesign(.monospaced)
             }
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(Array(group.files.enumerated()), id: \.element.filePath) { fileIndex, file in
-                        DuplicateMemberView(file: file)
+            HStack(spacing: 20) {
+                if let rep = representative {
+                    DuplicateMemberView(file: rep, isRep: true)
+                }
+                
+                if !candidates.isEmpty {
+                    Divider()
+                        .frame(height: 70)
+                        .background(Color.gray.opacity(0.5))
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(candidates, id: \.filePath) { file in
+                            DuplicateMemberView(file: file, isRep: false)
+                        }
                     }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 4)
                 }
             }
         }
-        .padding()
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
         )
-        .cornerRadius(8)
-        .padding(.bottom, 8)
+        .cornerRadius(12)
+        .padding(.bottom, 12)
+        .contentShape(Rectangle())
     }
 }
 
 struct DuplicateMemberView: View {
     let file: Vurio_Dedup_DuplicateFile
+    let isRep: Bool
+    
+    @State private var isHovered = false
     
     var body: some View {
-        VStack(spacing: 4) {
-            ZStack(alignment: .topTrailing) {
-                ThumbnailView(filePath: file.filePath, size: CGSize(width: 80, height: 80))
-                    .frame(width: 80, height: 80)
-                    .cornerRadius(8)
-                    .opacity(file.isEjected ? 0.3 : 1.0)
-                
-                if file.isEjected {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                        .background(Circle().fill(Color.white))
-                        .offset(x: 5, y: -5)
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(file.isRepresentative ? Color.orange : Color.gray.opacity(0.4), lineWidth: file.isRepresentative ? 2 : 1)
-            )
+        let size: CGFloat = isRep ? 80 : 70
+        let cornerRadius: CGFloat = 8
+        
+        ZStack(alignment: .topTrailing) {
+            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size))
+                .frame(width: size, height: size)
+                .cornerRadius(cornerRadius)
+                .opacity(file.isEjected ? 0.3 : 1.0)
             
-            if file.isRepresentative {
-                Text("Highest Similarity")
-                    .font(.system(size: 8))
-                    .foregroundColor(.orange)
-            } else {
-                Text("\(String(format: "%.4f", file.similarityScore))")
-                    .font(.system(size: 8))
-                    .foregroundColor(.secondary)
+            if file.isEjected {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+                    .background(Circle().fill(Color.white))
+                    .offset(x: 5, y: -5)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(isRep ? Color.orange : (isHovered ? Color.primary.opacity(0.8) : Color.gray.opacity(0.4)), lineWidth: isRep ? 2 : 1)
+        )
+        .scaleEffect(isHovered && !isRep ? 1.05 : 1.0)
+        .shadow(color: isHovered && !isRep ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
+        .onHover { hovering in
+            if !isRep {
+                isHovered = hovering
             }
         }
     }
