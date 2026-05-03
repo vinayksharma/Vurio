@@ -431,13 +431,11 @@ struct DuplicateMemberView: View {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(isRep ? Color.orange : (isHovered ? Color.primary.opacity(0.8) : Color.gray.opacity(0.4)), lineWidth: isRep ? 2 : 1)
         )
-        .scaleEffect(isHovered && !isRep ? 1.05 : 1.0)
-        .shadow(color: isHovered && !isRep ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .shadow(color: isHovered ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
         .onHover { hovering in
-            if !isRep {
-                isHovered = hovering
-            }
+            isHovered = hovering
         }
     }
 }
