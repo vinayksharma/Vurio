@@ -206,7 +206,7 @@ namespace MediaDedup
             "SELECT COUNT(*) FROM scanned_files WHERE processed=1";
 
         inline constexpr std::string_view kCountProcessedFiles =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed=2";
+            "SELECT COUNT(*) FROM scanned_files WHERE processed=2 OR processed=3";
 
         // Error count query (excludes backpressure -2 and queued -99)
         inline constexpr std::string_view kCountErrorFiles =
@@ -219,7 +219,7 @@ namespace MediaDedup
         inline constexpr std::string_view kCountScannedFilesFiltered =
             "SELECT COUNT(*) FROM scanned_files WHERE location_key IN (?)";
         inline constexpr std::string_view kCountProcessedFilesFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed=2 AND location_key IN (?)";
+            "SELECT COUNT(*) FROM scanned_files WHERE (processed=2 OR processed=3) AND location_key IN (?)";
         inline constexpr std::string_view kCountErrorFilesFiltered =
             "SELECT COUNT(*) FROM scanned_files WHERE processed < 0 AND processed != -2 AND processed != -99 AND location_key IN (?)";
         inline constexpr std::string_view kCountQueuedFilesFiltered =

@@ -16,6 +16,7 @@ struct VurioApp: App {
         WindowGroup("VURIO") {
             ContentView()
                 .environmentObject(appState)
+                .preferredColorScheme(.dark)
         }
     }
 }
@@ -23,6 +24,7 @@ struct VurioApp: App {
 class AppState: ObservableObject {
     @Published var configStatus: String = "Connecting..."
     @Published var registeredDirs: [String] = []
+    @Published var ejectedDirs: [String] = []
     
     // Status State
     @Published var scannedFilesCount: Int32 = 0
@@ -31,6 +33,7 @@ class AppState: ObservableObject {
     @Published var maxThreads: Int32 = 0
     @Published var errorFilesCount: Int32 = 0
     @Published var duplicateGroupsCount: Int32 = 0
+    @Published var duplicateFilesCount: Int32 = 0
     @Published var isOnline: Bool = true
     
     @MainActor
@@ -54,12 +57,14 @@ class AppState: ObservableObject {
                 let response = try await client.getStatus(request)
                 self.isOnline = true
                 self.registeredDirs = response.registeredDirs
+                self.ejectedDirs = response.ejectedDirs
                 self.scannedFilesCount = response.scannedFilesCount
                 self.processedFilesCount = response.processedFilesCount
                 self.threadCount = response.threadCount
                 self.maxThreads = response.maxThreads
                 self.errorFilesCount = response.errorFilesCount
                 self.duplicateGroupsCount = response.duplicateGroupsCount
+                self.duplicateFilesCount = response.duplicateFilesCount
             }
         } catch {
             self.isOnline = false
@@ -70,7 +75,7 @@ class AppState: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @State private var selection: SidebarItem? = .locations
+    @State private var selection: SidebarItem? = .duplicates
     
     enum SidebarItem: Hashable {
         case duplicates
@@ -79,59 +84,60 @@ struct ContentView: View {
     }
     
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                NavigationLink(value: SidebarItem.duplicates) {
-                    Label("Duplicates", systemImage: "photo.on.rectangle.angled")
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                List(selection: $selection) {
+                    NavigationLink(value: SidebarItem.duplicates) {
+                        Label("Duplicates", systemImage: "photo.on.rectangle.angled")
+                    }
+                    NavigationLink(value: SidebarItem.locations) {
+                        Label("Locations", systemImage: "folder")
+                    }
+                    NavigationLink(value: SidebarItem.settings) {
+                        Label("Settings", systemImage: "gear")
+                    }
                 }
-                NavigationLink(value: SidebarItem.locations) {
-                    Label("Locations", systemImage: "folder")
-                }
-                NavigationLink(value: SidebarItem.settings) {
-                    Label("Settings", systemImage: "gear")
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 250)
-            .listStyle(SidebarListStyle())
-        } detail: {
-            switch selection {
-            case .duplicates:
-                DuplicatesView()
-            case .locations:
-                MediaLocationsView()
-            case .settings:
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("Backend Configuration")
-                            .font(.headline)
-                        Spacer()
-                        Button("Refresh") {
-                            Task { await appState.fetchConfig() }
+                .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 250)
+                .listStyle(SidebarListStyle())
+            } detail: {
+                switch selection {
+                case .duplicates:
+                    DuplicatesView()
+                case .locations:
+                    MediaLocationsView()
+                case .settings:
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("Backend Configuration")
+                                .font(.headline)
+                            Spacer()
+                            Button("Refresh") {
+                                Task { await appState.fetchConfig() }
+                            }
                         }
+                        .padding()
+                        
+                        ScrollView {
+                            Text(appState.configStatus)
+                                .font(.system(.body, design: .monospaced))
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .background(Color(NSColor.textBackgroundColor))
+                        .cornerRadius(8)
+                        .padding([.horizontal, .bottom])
                     }
-                    .padding()
-                    
-                    ScrollView {
-                        Text(appState.configStatus)
-                            .font(.system(.body, design: .monospaced))
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    .onAppear {
+                        Task { await appState.fetchConfig() }
                     }
-                    .background(Color(NSColor.textBackgroundColor))
-                    .cornerRadius(8)
-                    .padding([.horizontal, .bottom])
+                case .none:
+                    Text("Select an item")
                 }
-                .onAppear {
-                    Task { await appState.fetchConfig() }
-                }
-            case .none:
-                Text("Select an item")
             }
-        }
-        .frame(minWidth: 800, minHeight: 600)
-        .safeAreaInset(edge: .bottom) {
+            
             StatusBarView()
         }
+        .frame(minWidth: 800, minHeight: 600)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -161,17 +167,17 @@ struct StatusBarView: View {
                     appearance.name == .darkAqua ? NSColor(calibratedRed: 244/255.0, green: 135/255.0, blue: 113/255.0, alpha: 1.0) : NSColor.systemRed
                 }))
                 let dupesColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
-                    appearance.name == .darkAqua ? NSColor(calibratedRed: 220/255.0, green: 220/255.0, blue: 170/255.0, alpha: 1.0) : NSColor.systemOrange
+                    appearance.name == .darkAqua ? NSColor(calibratedRed: 150/255.0, green: 220/255.0, blue: 150/255.0, alpha: 1.0) : NSColor.systemGreen
                 }))
                 
-                (Text("SCANNED \(appState.scannedFilesCount) • PROCESSED \(appState.processedFilesCount) • THREADS \(appState.threadCount)/\(appState.maxThreads) • ")
+                (Text("SCANNED \(appState.scannedFilesCount) • PROCESSED \(appState.processedFilesCount)")
+                    .foregroundColor(defaultColor) +
+                Text(" • GROUPS \(appState.duplicateGroupsCount)")
+                    .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
+                Text(" • PATHS \(appState.registeredDirs.count) • THREADS \(appState.threadCount)/\(appState.maxThreads) • ")
                     .foregroundColor(defaultColor) +
                 Text("ERRORS \(appState.errorFilesCount)")
-                    .foregroundColor(appState.errorFilesCount > 0 ? errorColor : defaultColor) +
-                Text(" • DUPLICATE CANDIDATES \(appState.duplicateGroupsCount)")
-                    .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
-                Text(" • REGISTERED PATHS \(appState.registeredDirs.count)")
-                    .foregroundColor(defaultColor))
+                    .foregroundColor(appState.errorFilesCount > 0 ? errorColor : defaultColor))
                 .font(.custom("Menlo", size: 9))
                 .tracking(0.5)
                 
@@ -192,9 +198,11 @@ struct StatusBarView: View {
                 GeometryReader { geometry in
                     if appState.scannedFilesCount > 0 {
                         let completedPercent = min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                        let duplicatePercent = min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
                         let errorPercent = min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
                         
                         let completedWidth = max(0, geometry.size.width * CGFloat(completedPercent / 100.0))
+                        let duplicateWidth = max(0, geometry.size.width * CGFloat(duplicatePercent / 100.0))
                         let errorWidth = max(0, geometry.size.width * CGFloat(errorPercent / 100.0))
                         
                         let blueGradient = LinearGradient(
@@ -202,6 +210,16 @@ struct StatusBarView: View {
                                 Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 0),
                                 Gradient.Stop(color: Color(red: 124/255.0, green: 142/255.0, blue: 246/255.0).opacity(0.7), location: 0.5),
                                 Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 1)
+                            ],
+                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
+                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
+                        )
+                        
+                        let greenGradient = LinearGradient(
+                            stops: [
+                                Gradient.Stop(color: Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0).opacity(0.4), location: 0),
+                                Gradient.Stop(color: Color(red: 170/255.0, green: 240/255.0, blue: 170/255.0).opacity(0.7), location: 0.5),
+                                Gradient.Stop(color: Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0).opacity(0.4), location: 1)
                             ],
                             startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
                             endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
@@ -226,6 +244,18 @@ struct StatusBarView: View {
                                         Spacer(minLength: 0)
                                     }
                                     .animation(.easeInOut(duration: 0.3), value: completedWidth)
+                                )
+                            
+                            greenGradient
+                                .frame(width: geometry.size.width)
+                                .mask(
+                                    HStack(spacing: 0) {
+                                        Spacer().frame(width: max(0, completedWidth - duplicateWidth))
+                                        Rectangle().frame(width: duplicateWidth)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
+                                    .animation(.easeInOut(duration: 0.3), value: duplicateWidth)
                                 )
                             
                             redGradient

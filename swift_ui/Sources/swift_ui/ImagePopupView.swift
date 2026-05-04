@@ -1,12 +1,15 @@
 import SwiftUI
 
 struct ImagePopupView: View {
-    let group: Vurio_Dedup_DuplicateGroup
+    @State var group: Vurio_Dedup_DuplicateGroup
     @Binding var isPresented: Bool
+    var initialIndex: Int = 0
+    var onEjectStatusChanged: ((String, Bool) -> Void)?
     
     @State private var selectedIndex: Int = 0
     @State private var scale: CGFloat = 1.0
     @State private var rotation: Double = 0
+    @State private var isEjecting: Bool = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -94,11 +97,114 @@ struct ImagePopupView: View {
                 
                 Button(action: { rotation -= 90 }) { Image(systemName: "rotate.left") }
                 Button(action: { rotation += 90 }) { Image(systemName: "rotate.right") }
+                
+                if group.files.indices.contains(selectedIndex) {
+                    let currentFile = group.files[selectedIndex]
+                    if !currentFile.isRepresentative {
+                        Divider().frame(height: 20)
+                        
+                        if currentFile.isEjected {
+                            Button(action: {
+                                Task { await handleRestore() }
+                            }) {
+                                Image(systemName: "arrow.uturn.backward.circle")
+                                    .foregroundColor(.green)
+                            }
+                            .disabled(isEjecting)
+                            .help("Restore Image (Delete/Backspace)")
+                        } else {
+                            Button(action: {
+                                Task { await handleEject() }
+                            }) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                            .disabled(isEjecting)
+                            .help("Eject Image (Delete/Backspace)")
+                        }
+                    }
+                }
             }
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
         .frame(minWidth: 800, minHeight: 600)
+        .background(
+            // Hidden buttons for keyboard shortcuts
+            Group {
+                if group.files.indices.contains(selectedIndex) {
+                    let currentFile = group.files[selectedIndex]
+                    if !currentFile.isRepresentative {
+                        Button("") {
+                            if currentFile.isEjected {
+                                Task { await handleRestore() }
+                            } else {
+                                Task { await handleEject() }
+                            }
+                        }
+                        .keyboardShortcut(.delete, modifiers: [])
+                        .hidden()
+                        
+                        Button("") {
+                            if currentFile.isEjected {
+                                Task { await handleRestore() }
+                            } else {
+                                Task { await handleEject() }
+                            }
+                        }
+                        .keyboardShortcut(.deleteForward, modifiers: [])
+                        .hidden()
+                    }
+                }
+            }
+        )
+        .onAppear {
+            selectedIndex = initialIndex
+        }
+    }
+    
+    private func handleEject() async {
+        guard group.files.indices.contains(selectedIndex) else { return }
+        let file = group.files[selectedIndex]
+        guard !file.isRepresentative && !file.isEjected && !isEjecting else { return }
+        
+        isEjecting = true
+        defer { isEjecting = false }
+        
+        do {
+            let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = [file.filePath] }
+            if let client = VurioGrpcClient.shared.duplicates {
+                let res = try await client.ejectDuplicates(req)
+                if res.success {
+                    group.files[selectedIndex].isEjected = true
+                    onEjectStatusChanged?(file.filePath, true)
+                }
+            }
+        } catch {
+            print("Eject error: \(error)")
+        }
+    }
+    
+    private func handleRestore() async {
+        guard group.files.indices.contains(selectedIndex) else { return }
+        let file = group.files[selectedIndex]
+        guard !file.isRepresentative && file.isEjected && !isEjecting else { return }
+        
+        isEjecting = true
+        defer { isEjecting = false }
+        
+        do {
+            let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.filePaths = [file.filePath] }
+            if let client = VurioGrpcClient.shared.duplicates {
+                let res = try await client.undoEjectDuplicates(req)
+                if res.success {
+                    group.files[selectedIndex].isEjected = false
+                    onEjectStatusChanged?(file.filePath, false)
+                }
+            }
+        } catch {
+            print("Restore error: \(error)")
+        }
     }
     
     private func resetTransform() {
