@@ -60,7 +60,16 @@ public:
             reply->set_scanned_files_count(MediaDedup::ScannedFilesOps::count(*db_));
             reply->set_processed_files_count(MediaDedup::ScannedFilesOps::countProcessed(*db_));
             reply->set_error_files_count(MediaDedup::ScannedFilesOps::countError(*db_));
-            reply->set_duplicate_groups_count(MediaDedup::DuplicateGroupsOps::countGroupsByMode(*db_, "EMBEDDING"));
+            auto stats = MediaDedup::DuplicateGroupsOps::getStats(*db_, "EMBEDDING");
+            reply->set_duplicate_groups_count(stats.total_groups);
+            reply->set_duplicate_files_count(stats.total_duplicates);
+            
+            auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
+            for (const auto& kv : user_settings) {
+                if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                    reply->add_ejected_dirs(kv.second);
+                }
+            }
         }
         if (tpm_) {
             auto tpm_status = tpm_->getStatus();

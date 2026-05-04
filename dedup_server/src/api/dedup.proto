@@ -77,6 +77,8 @@ message GetStatusResponse {
   int32 thread_count = 5;
   int32 max_threads = 6;
   int32 duplicate_groups_count = 7;
+  repeated string ejected_dirs = 8;
+  int32 duplicate_files_count = 9;
 }
 
 // ---------------------------------------------------------

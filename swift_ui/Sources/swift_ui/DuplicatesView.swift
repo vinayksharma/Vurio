@@ -1,12 +1,13 @@
 import SwiftUI
 
 struct DuplicatesView: View {
-    @State private var groups: [Vurio_Dedup_DuplicateGroup] = []
+    @State private var groups: [Vurio_Dedup_DuplicateGroup?] = []
+    @State private var loadingPages: Set<Int32> = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var totalGroups: Int32 = 0
-    @State private var page: Int32 = 0
     @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
+    @State private var selectedFileIndex: Int = 0
     @State private var showingPopup = false
     
     // Config and Eject State
@@ -145,31 +146,38 @@ struct DuplicatesView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(groups.enumerated()), id: \.element.groupID) { index, group in
-                            DuplicateGroupCard(group: group, index: index + 1)
-                                .onTapGesture {
-                                    selectedGroup = group
-                                    showingPopup = true
-                                }
+                List(0..<Int(totalGroups), id: \.self) { index in
+                    if index < groups.count {
+                        if let group = groups[index] {
+                            DuplicateGroupCard(group: group, index: index + 1) { fileIndex in
+                                selectedGroup = group
+                                selectedFileIndex = fileIndex
+                                showingPopup = true
+                            }
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
+                                .listRowBackground(Color.clear)
+                        } else {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 150)
+                                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                .cornerRadius(12)
+                                .padding(.bottom, 12)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
+                                .listRowBackground(Color.clear)
                                 .onAppear {
-                                    if group == groups.last && groups.count < totalGroups {
-                                        Task {
-                                            await loadNextPage()
-                                        }
+                                    let pageIndex = Int32(index) / pageSize
+                                    Task {
+                                        await loadPage(pageIndex: pageIndex)
                                     }
                                 }
                         }
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 20)
-                    
-                    if isLoading {
-                        ProgressView()
-                            .padding()
-                    }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .padding(.top, 20)
             }
             
             
@@ -177,20 +185,34 @@ struct DuplicatesView: View {
         }
         .sheet(isPresented: $showingPopup) {
             if let group = selectedGroup {
-                ImagePopupView(group: group, isPresented: $showingPopup)
+                ImagePopupView(group: group, isPresented: $showingPopup, initialIndex: selectedFileIndex) { filePath, isEjected in
+                    if let index = groups.firstIndex(where: { $0?.groupID == group.groupID }) {
+                        if let fileIndex = groups[index]?.files.firstIndex(where: { $0.filePath == filePath }) {
+                            groups[index]?.files[fileIndex].isEjected = isEjected
+                        }
+                    }
+                    if let fileIndex = selectedGroup?.files.firstIndex(where: { $0.filePath == filePath }) {
+                        selectedGroup?.files[fileIndex].isEjected = isEjected
+                    }
+                }
             }
         }
         .task {
             await fetchSettings()
-            if groups.isEmpty {
+            if totalGroups != appState.duplicateGroupsCount {
+                totalGroups = appState.duplicateGroupsCount
+            }
+            if groups.isEmpty || groups.count != totalGroups {
                 await refresh()
             }
         }
         .onChange(of: appState.duplicateGroupsCount) { newCount in
             if totalGroups != newCount {
                 totalGroups = newCount
-            }
-            if groups.isEmpty && newCount > 0 && !isLoading {
+                if !isLoading {
+                    Task { await refresh() }
+                }
+            } else if groups.isEmpty && newCount > 0 && !isLoading {
                 Task { await refresh() }
             }
         }
@@ -237,7 +259,7 @@ struct DuplicatesView: View {
         defer { isEjecting = false }
         
         var toEject: [String] = []
-        for group in groups {
+        for group in groups.compactMap({ $0 }) {
             for file in group.files {
                 if !file.isEjected && !file.isRepresentative {
                     let score = file.similarityScore > 0 ? file.similarityScore : 1.0
@@ -291,50 +313,59 @@ struct DuplicatesView: View {
     }
     
     private func openEjectedFolders() async {
-        // macOS open path functionality can be handled via NSWorkspace
-        if let url = URL(string: "file:///") {
-            // Ejected folders are stored in user defaults or queried from DB.
-            // Since we don't have the explicit paths easily via gRPC without a new endpoint, 
-            // for now we'll just show an alert or open the base directory.
-            self.errorMessage = "System path launching not fully implemented in UI layer yet."
+        let ejectedDirs = appState.ejectedDirs
+        if ejectedDirs.isEmpty {
+            self.errorMessage = "No ejection folders have been created yet."
+            return
+        }
+        
+        var openedCount = 0
+        for dir in ejectedDirs {
+            let url = URL(fileURLWithPath: dir)
+            if NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) {
+                openedCount += 1
+            } else if NSWorkspace.shared.open(url) {
+                openedCount += 1
+            }
+        }
+        
+        if openedCount == 0 {
+            self.errorMessage = "Could not find any ejected image folders. They may have been fully restored, deleted, or moved manually."
+        } else {
+            self.errorMessage = nil
         }
     }
     private func refresh() async {
-        page = 0
-        groups = []
-        await loadNextPage()
+        groups = Array<Vurio_Dedup_DuplicateGroup?>(repeating: nil, count: Int(totalGroups))
+        loadingPages.removeAll()
+        errorMessage = nil
     }
     
-    private func loadNextPage() async {
-        guard !isLoading else { return }
-        
-        isLoading = true
-        errorMessage = nil
+    private func loadPage(pageIndex: Int32) async {
+        guard !loadingPages.contains(pageIndex) else { return }
+        loadingPages.insert(pageIndex)
         
         do {
             let request = Vurio_Dedup_GetGroupsRequest.with {
                 $0.limit = pageSize
-                $0.offset = page * pageSize
+                $0.offset = pageIndex * pageSize
             }
-            
             if let client = VurioGrpcClient.shared.duplicates {
                 let response = try await client.getDuplicateGroups(request)
-                
                 await MainActor.run {
-                    if page == 0 {
-                        self.groups = response.groups
-                    } else {
-                        self.groups.append(contentsOf: response.groups)
+                    for (i, group) in response.groups.enumerated() {
+                        let globalIndex = Int(pageIndex * pageSize) + i
+                        if globalIndex < groups.count {
+                            groups[globalIndex] = group
+                        }
                     }
-                    self.totalGroups = response.totalGroups
-                    self.page += 1
-                    self.isLoading = false
+                    loadingPages.remove(pageIndex)
                 }
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to load duplicates: \(error.localizedDescription)"
-                self.isLoading = false
+                self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
+                loadingPages.remove(pageIndex)
             }
         }
     }
@@ -343,6 +374,7 @@ struct DuplicatesView: View {
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
     let index: Int
+    var onThumbnailTapped: (Int) -> Void
     
     var representative: Vurio_Dedup_DuplicateFile? {
         group.files.first(where: { $0.isRepresentative }) ?? group.files.first
@@ -372,6 +404,11 @@ struct DuplicateGroupCard: View {
             HStack(spacing: 20) {
                 if let rep = representative {
                     DuplicateMemberView(file: rep, isRep: true)
+                        .onTapGesture {
+                            if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
+                                onThumbnailTapped(idx)
+                            }
+                        }
                 }
                 
                 if !candidates.isEmpty {
@@ -380,14 +417,21 @@ struct DuplicateGroupCard: View {
                         .background(Color.gray.opacity(0.5))
                 }
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(candidates, id: \.filePath) { file in
-                            DuplicateMemberView(file: file, isRep: false)
+                VerticalScrollingFixView {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(candidates, id: \.filePath) { file in
+                                DuplicateMemberView(file: file, isRep: false)
+                                    .onTapGesture {
+                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                            onThumbnailTapped(idx)
+                                        }
+                                    }
+                            }
                         }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 4)
                 }
             }
         }
@@ -400,7 +444,6 @@ struct DuplicateGroupCard: View {
         )
         .cornerRadius(12)
         .padding(.bottom, 12)
-        .contentShape(Rectangle())
     }
 }
 
