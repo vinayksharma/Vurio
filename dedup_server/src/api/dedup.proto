@@ -79,6 +79,8 @@ message GetStatusResponse {
   int32 duplicate_groups_count = 7;
   repeated string ejected_dirs = 8;
   int32 duplicate_files_count = 9;
+  int32 duplicate_finding_total = 10;
+  int32 duplicate_finding_completed = 11;
 }
 
 // ---------------------------------------------------------

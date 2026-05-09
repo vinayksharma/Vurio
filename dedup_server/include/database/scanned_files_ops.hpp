@@ -51,6 +51,7 @@ namespace MediaDedup
         static std::vector<ScannedFileRow> listAll(DatabaseManager &db);
         static int count(DatabaseManager &db);
         static int countProcessed(DatabaseManager &db);
+        static int countProcessedUpTo(DatabaseManager &db, int max_id);
         static int countError(DatabaseManager &db);
         static int countQueued(DatabaseManager &db);
 
