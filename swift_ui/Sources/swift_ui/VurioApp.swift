@@ -34,6 +34,8 @@ class AppState: ObservableObject {
     @Published var errorFilesCount: Int32 = 0
     @Published var duplicateGroupsCount: Int32 = 0
     @Published var duplicateFilesCount: Int32 = 0
+    @Published var duplicateFindingTotal: Int32 = 0
+    @Published var duplicateFindingCompleted: Int32 = 0
     @Published var isOnline: Bool = true
     
     @MainActor
@@ -65,6 +67,8 @@ class AppState: ObservableObject {
                 self.errorFilesCount = response.errorFilesCount
                 self.duplicateGroupsCount = response.duplicateGroupsCount
                 self.duplicateFilesCount = response.duplicateFilesCount
+                self.duplicateFindingTotal = response.duplicateFindingTotal
+                self.duplicateFindingCompleted = response.duplicateFindingCompleted
             }
         } catch {
             self.isOnline = false
@@ -271,6 +275,21 @@ struct StatusBarView: View {
                                 )
                         }
                     }
+                }
+                
+                if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                    let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
+                    GeometryReader { geometry in
+                        let findingWidth = max(0, geometry.size.width * CGFloat(findingPercent / 100.0))
+                        Rectangle()
+                            .fill(Color(NSColor.systemOrange))
+                            .frame(width: findingWidth)
+                            .animation(.easeInOut(duration: 0.3), value: findingWidth)
+                    }
+                    .frame(height: 2)
+                    .offset(y: 12)
+                } else {
+                    Spacer().frame(height: 2)
                 }
             }
         }

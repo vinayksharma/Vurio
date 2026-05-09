@@ -64,6 +64,11 @@ public:
             reply->set_duplicate_groups_count(stats.total_groups);
             reply->set_duplicate_files_count(stats.total_duplicates);
             
+            auto checkpoint = MediaDedup::DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
+            int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
+            reply->set_duplicate_finding_total(reply->processed_files_count());
+            reply->set_duplicate_finding_completed(MediaDedup::ScannedFilesOps::countProcessedUpTo(*db_, last_processed_id));
+            
             auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
             for (const auto& kv : user_settings) {
                 if (kv.first.rfind("ejectionPath:", 0) == 0) {

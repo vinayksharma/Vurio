@@ -188,6 +188,10 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
 
   var duplicateFilesCount: Int32 = 0
 
+  var duplicateFindingTotal: Int32 = 0
+
+  var duplicateFindingCompleted: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -681,7 +685,7 @@ extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -698,6 +702,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       case 7: try { try decoder.decodeSingularInt32Field(value: &self.duplicateGroupsCount) }()
       case 8: try { try decoder.decodeRepeatedStringField(value: &self.ejectedDirs) }()
       case 9: try { try decoder.decodeSingularInt32Field(value: &self.duplicateFilesCount) }()
+      case 10: try { try decoder.decodeSingularInt32Field(value: &self.duplicateFindingTotal) }()
+      case 11: try { try decoder.decodeSingularInt32Field(value: &self.duplicateFindingCompleted) }()
       default: break
       }
     }
@@ -731,6 +737,12 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if self.duplicateFilesCount != 0 {
       try visitor.visitSingularInt32Field(value: self.duplicateFilesCount, fieldNumber: 9)
     }
+    if self.duplicateFindingTotal != 0 {
+      try visitor.visitSingularInt32Field(value: self.duplicateFindingTotal, fieldNumber: 10)
+    }
+    if self.duplicateFindingCompleted != 0 {
+      try visitor.visitSingularInt32Field(value: self.duplicateFindingCompleted, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -744,6 +756,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.duplicateGroupsCount != rhs.duplicateGroupsCount {return false}
     if lhs.ejectedDirs != rhs.ejectedDirs {return false}
     if lhs.duplicateFilesCount != rhs.duplicateFilesCount {return false}
+    if lhs.duplicateFindingTotal != rhs.duplicateFindingTotal {return false}
+    if lhs.duplicateFindingCompleted != rhs.duplicateFindingCompleted {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
