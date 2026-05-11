@@ -951,6 +951,1063 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
 }
 
 /// ---------------------------------------------------------
+/// Advanced Settings Service
+/// ---------------------------------------------------------
+///
+/// Usage: instantiate `Vurio_Dedup_AdvancedSettingsServiceClient`, then call methods of this protocol to make API calls.
+internal protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? { get }
+
+  func resetErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func ejectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func undoEjectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func ejectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func undoEjectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func purgeEjectedAndErrored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func resetDuplicates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func startDatabaseIntegrityCheck(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func getDatabaseIntegrityCheckStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>
+
+  func backupDatabase(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
+
+  func getLatestBackup(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
+
+  func clearAllCaches(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>
+
+  func configurePurityOrder(
+    _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse>
+
+  func getUserTheme(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse>
+
+  func setUserTheme(
+    _ request: Vurio_Dedup_SetUserThemeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>
+}
+
+extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
+  internal var serviceName: String {
+    return "vurio.dedup.AdvancedSettingsService"
+  }
+
+  /// Unary call to ResetErrors
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ResetErrors.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func resetErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to EjectErrors
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to EjectErrors.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func ejectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to UndoEjectErrors
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UndoEjectErrors.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func undoEjectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to EjectIgnored
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to EjectIgnored.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func ejectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to UndoEjectIgnored
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UndoEjectIgnored.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func undoEjectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to PurgeEjectedAndErrored
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to PurgeEjectedAndErrored.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func purgeEjectedAndErrored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.purgeEjectedAndErrored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ResetDuplicates
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ResetDuplicates.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func resetDuplicates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetDuplicates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to StartDatabaseIntegrityCheck
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to StartDatabaseIntegrityCheck.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func startDatabaseIntegrityCheck(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetDatabaseIntegrityCheckStatus
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetDatabaseIntegrityCheckStatus.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getDatabaseIntegrityCheckStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getDatabaseIntegrityCheckStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to BackupDatabase
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to BackupDatabase.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func backupDatabase(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetLatestBackup
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetLatestBackup.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getLatestBackup(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ClearAllCaches
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ClearAllCaches.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func clearAllCaches(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllCaches.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ConfigurePurityOrder
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ConfigurePurityOrder.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func configurePurityOrder(
+    _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.configurePurityOrder.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetUserTheme
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetUserTheme.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getUserTheme(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to SetUserTheme
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetUserTheme.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setUserTheme(
+    _ request: Vurio_Dedup_SetUserThemeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.setUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Vurio_Dedup_AdvancedSettingsServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_AdvancedSettingsServiceNIOClient")
+internal final class Vurio_Dedup_AdvancedSettingsServiceClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.AdvancedSettingsService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Vurio_Dedup_AdvancedSettingsServiceNIOClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.AdvancedSettingsService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// ---------------------------------------------------------
+/// Advanced Settings Service
+/// ---------------------------------------------------------
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? { get }
+
+  func makeResetErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeEjectErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeUndoEjectErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeEjectIgnoredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeUndoEjectIgnoredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makePurgeEjectedAndErroredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeResetDuplicatesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeStartDatabaseIntegrityCheckCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeGetDatabaseIntegrityCheckStatusCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>
+
+  func makeBackupDatabaseCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
+
+  func makeGetLatestBackupCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
+
+  func makeClearAllCachesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>
+
+  func makeConfigurePurityOrderCall(
+    _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse>
+
+  func makeGetUserThemeCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse>
+
+  func makeSetUserThemeCall(
+    _ request: Vurio_Dedup_SetUserThemeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_AdvancedSettingsServiceClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeResetErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func makeEjectErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func makeUndoEjectErrorsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func makeEjectIgnoredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  internal func makeUndoEjectIgnoredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  internal func makePurgeEjectedAndErroredCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.purgeEjectedAndErrored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? []
+    )
+  }
+
+  internal func makeResetDuplicatesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetDuplicates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? []
+    )
+  }
+
+  internal func makeStartDatabaseIntegrityCheckCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetDatabaseIntegrityCheckStatusCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getDatabaseIntegrityCheckStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? []
+    )
+  }
+
+  internal func makeBackupDatabaseCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetLatestBackupCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
+    )
+  }
+
+  internal func makeClearAllCachesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllCaches.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? []
+    )
+  }
+
+  internal func makeConfigurePurityOrderCall(
+    _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.configurePurityOrder.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetUserThemeCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetUserThemeCall(
+    _ request: Vurio_Dedup_SetUserThemeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.setUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
+  internal func resetErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func ejectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func undoEjectErrors(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectErrors.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? []
+    )
+  }
+
+  internal func ejectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  internal func undoEjectIgnored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectIgnored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? []
+    )
+  }
+
+  internal func purgeEjectedAndErrored(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.purgeEjectedAndErrored.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? []
+    )
+  }
+
+  internal func resetDuplicates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetDuplicates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? []
+    )
+  }
+
+  internal func startDatabaseIntegrityCheck(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? []
+    )
+  }
+
+  internal func getDatabaseIntegrityCheckStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_IntegrityCheckStatusResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getDatabaseIntegrityCheckStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? []
+    )
+  }
+
+  internal func backupDatabase(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
+    )
+  }
+
+  internal func getLatestBackup(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
+    )
+  }
+
+  internal func clearAllCaches(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ClearCachesResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllCaches.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? []
+    )
+  }
+
+  internal func configurePurityOrder(
+    _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.configurePurityOrder.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? []
+    )
+  }
+
+  internal func getUserTheme(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_GetUserThemeResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? []
+    )
+  }
+
+  internal func setUserTheme(
+    _ request: Vurio_Dedup_SetUserThemeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.setUserTheme.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Vurio_Dedup_AdvancedSettingsServiceAsyncClient: Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'resetErrors'.
+  func makeResetErrorsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'ejectErrors'.
+  func makeEjectErrorsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'undoEjectErrors'.
+  func makeUndoEjectErrorsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'ejectIgnored'.
+  func makeEjectIgnoredInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'undoEjectIgnored'.
+  func makeUndoEjectIgnoredInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'purgeEjectedAndErrored'.
+  func makePurgeEjectedAndErroredInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'resetDuplicates'.
+  func makeResetDuplicatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'startDatabaseIntegrityCheck'.
+  func makeStartDatabaseIntegrityCheckInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getDatabaseIntegrityCheckStatus'.
+  func makeGetDatabaseIntegrityCheckStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'backupDatabase'.
+  func makeBackupDatabaseInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getLatestBackup'.
+  func makeGetLatestBackupInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'clearAllCaches'.
+  func makeClearAllCachesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'configurePurityOrder'.
+  func makeConfigurePurityOrderInterceptors() -> [ClientInterceptor<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getUserTheme'.
+  func makeGetUserThemeInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'setUserTheme'.
+  func makeSetUserThemeInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>]
+}
+
+internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "AdvancedSettingsService",
+    fullName: "vurio.dedup.AdvancedSettingsService",
+    methods: [
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetErrors,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectErrors,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectErrors,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.ejectIgnored,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectIgnored,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.purgeEjectedAndErrored,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetDuplicates,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getDatabaseIntegrityCheckStatus,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllCaches,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.configurePurityOrder,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getUserTheme,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.setUserTheme,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let resetErrors = GRPCMethodDescriptor(
+      name: "ResetErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/ResetErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let ejectErrors = GRPCMethodDescriptor(
+      name: "EjectErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/EjectErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let undoEjectErrors = GRPCMethodDescriptor(
+      name: "UndoEjectErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let ejectIgnored = GRPCMethodDescriptor(
+      name: "EjectIgnored",
+      path: "/vurio.dedup.AdvancedSettingsService/EjectIgnored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let undoEjectIgnored = GRPCMethodDescriptor(
+      name: "UndoEjectIgnored",
+      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectIgnored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let purgeEjectedAndErrored = GRPCMethodDescriptor(
+      name: "PurgeEjectedAndErrored",
+      path: "/vurio.dedup.AdvancedSettingsService/PurgeEjectedAndErrored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let resetDuplicates = GRPCMethodDescriptor(
+      name: "ResetDuplicates",
+      path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
+      name: "StartDatabaseIntegrityCheck",
+      path: "/vurio.dedup.AdvancedSettingsService/StartDatabaseIntegrityCheck",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
+      name: "GetDatabaseIntegrityCheckStatus",
+      path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let backupDatabase = GRPCMethodDescriptor(
+      name: "BackupDatabase",
+      path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getLatestBackup = GRPCMethodDescriptor(
+      name: "GetLatestBackup",
+      path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearAllCaches = GRPCMethodDescriptor(
+      name: "ClearAllCaches",
+      path: "/vurio.dedup.AdvancedSettingsService/ClearAllCaches",
+      type: GRPCCallType.unary
+    )
+
+    internal static let configurePurityOrder = GRPCMethodDescriptor(
+      name: "ConfigurePurityOrder",
+      path: "/vurio.dedup.AdvancedSettingsService/ConfigurePurityOrder",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getUserTheme = GRPCMethodDescriptor(
+      name: "GetUserTheme",
+      path: "/vurio.dedup.AdvancedSettingsService/GetUserTheme",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setUserTheme = GRPCMethodDescriptor(
+      name: "SetUserTheme",
+      path: "/vurio.dedup.AdvancedSettingsService/SetUserTheme",
+      type: GRPCCallType.unary
+    )
+  }
+}
+
+/// ---------------------------------------------------------
 /// Config & Settings Services
 /// ---------------------------------------------------------
 ///
@@ -1498,6 +2555,622 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     internal static let undoEjectDuplicates = GRPCMethodDescriptor(
       name: "UndoEjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
+      type: GRPCCallType.unary
+    )
+  }
+}
+/// ---------------------------------------------------------
+/// Advanced Settings Service
+/// ---------------------------------------------------------
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvider {
+  var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
+
+  func resetErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func ejectErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func undoEjectErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func ejectIgnored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func undoEjectIgnored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func purgeEjectedAndErrored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func resetDuplicates(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func startDatabaseIntegrityCheck(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func getDatabaseIntegrityCheckStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_IntegrityCheckStatusResponse>
+
+  func backupDatabase(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
+
+  func getLatestBackup(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
+
+  func clearAllCaches(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ClearCachesResponse>
+
+  func configurePurityOrder(request: Vurio_Dedup_ConfigurePurityOrderRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
+  func getUserTheme(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetUserThemeResponse>
+
+  func setUserTheme(request: Vurio_Dedup_SetUserThemeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+}
+
+extension Vurio_Dedup_AdvancedSettingsServiceProvider {
+  internal var serviceName: Substring {
+    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "ResetErrors":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? [],
+        userFunction: self.resetErrors(request:context:)
+      )
+
+    case "EjectErrors":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? [],
+        userFunction: self.ejectErrors(request:context:)
+      )
+
+    case "UndoEjectErrors":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? [],
+        userFunction: self.undoEjectErrors(request:context:)
+      )
+
+    case "EjectIgnored":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? [],
+        userFunction: self.ejectIgnored(request:context:)
+      )
+
+    case "UndoEjectIgnored":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? [],
+        userFunction: self.undoEjectIgnored(request:context:)
+      )
+
+    case "PurgeEjectedAndErrored":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? [],
+        userFunction: self.purgeEjectedAndErrored(request:context:)
+      )
+
+    case "ResetDuplicates":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? [],
+        userFunction: self.resetDuplicates(request:context:)
+      )
+
+    case "StartDatabaseIntegrityCheck":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? [],
+        userFunction: self.startDatabaseIntegrityCheck(request:context:)
+      )
+
+    case "GetDatabaseIntegrityCheckStatus":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_IntegrityCheckStatusResponse>(),
+        interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? [],
+        userFunction: self.getDatabaseIntegrityCheckStatus(request:context:)
+      )
+
+    case "BackupDatabase":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
+        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
+        userFunction: self.backupDatabase(request:context:)
+      )
+
+    case "GetLatestBackup":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
+        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
+        userFunction: self.getLatestBackup(request:context:)
+      )
+
+    case "ClearAllCaches":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ClearCachesResponse>(),
+        interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? [],
+        userFunction: self.clearAllCaches(request:context:)
+      )
+
+    case "ConfigurePurityOrder":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ConfigurePurityOrderRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? [],
+        userFunction: self.configurePurityOrder(request:context:)
+      )
+
+    case "GetUserTheme":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetUserThemeResponse>(),
+        interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? [],
+        userFunction: self.getUserTheme(request:context:)
+      )
+
+    case "SetUserTheme":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetUserThemeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? [],
+        userFunction: self.setUserTheme(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// ---------------------------------------------------------
+/// Advanced Settings Service
+/// ---------------------------------------------------------
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
+
+  func resetErrors(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func ejectErrors(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func undoEjectErrors(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func ejectIgnored(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func undoEjectIgnored(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func purgeEjectedAndErrored(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func resetDuplicates(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func startDatabaseIntegrityCheck(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func getDatabaseIntegrityCheckStatus(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_IntegrityCheckStatusResponse
+
+  func backupDatabase(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
+
+  func getLatestBackup(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
+
+  func clearAllCaches(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ClearCachesResponse
+
+  func configurePurityOrder(
+    request: Vurio_Dedup_ConfigurePurityOrderRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  func getUserTheme(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_GetUserThemeResponse
+
+  func setUserTheme(
+    request: Vurio_Dedup_SetUserThemeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "ResetErrors":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? [],
+        wrapping: { try await self.resetErrors(request: $0, context: $1) }
+      )
+
+    case "EjectErrors":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? [],
+        wrapping: { try await self.ejectErrors(request: $0, context: $1) }
+      )
+
+    case "UndoEjectErrors":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? [],
+        wrapping: { try await self.undoEjectErrors(request: $0, context: $1) }
+      )
+
+    case "EjectIgnored":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? [],
+        wrapping: { try await self.ejectIgnored(request: $0, context: $1) }
+      )
+
+    case "UndoEjectIgnored":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? [],
+        wrapping: { try await self.undoEjectIgnored(request: $0, context: $1) }
+      )
+
+    case "PurgeEjectedAndErrored":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? [],
+        wrapping: { try await self.purgeEjectedAndErrored(request: $0, context: $1) }
+      )
+
+    case "ResetDuplicates":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? [],
+        wrapping: { try await self.resetDuplicates(request: $0, context: $1) }
+      )
+
+    case "StartDatabaseIntegrityCheck":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? [],
+        wrapping: { try await self.startDatabaseIntegrityCheck(request: $0, context: $1) }
+      )
+
+    case "GetDatabaseIntegrityCheckStatus":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_IntegrityCheckStatusResponse>(),
+        interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? [],
+        wrapping: { try await self.getDatabaseIntegrityCheckStatus(request: $0, context: $1) }
+      )
+
+    case "BackupDatabase":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
+        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
+        wrapping: { try await self.backupDatabase(request: $0, context: $1) }
+      )
+
+    case "GetLatestBackup":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
+        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
+        wrapping: { try await self.getLatestBackup(request: $0, context: $1) }
+      )
+
+    case "ClearAllCaches":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ClearCachesResponse>(),
+        interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? [],
+        wrapping: { try await self.clearAllCaches(request: $0, context: $1) }
+      )
+
+    case "ConfigurePurityOrder":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ConfigurePurityOrderRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? [],
+        wrapping: { try await self.configurePurityOrder(request: $0, context: $1) }
+      )
+
+    case "GetUserTheme":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetUserThemeResponse>(),
+        interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? [],
+        wrapping: { try await self.getUserTheme(request: $0, context: $1) }
+      )
+
+    case "SetUserTheme":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetUserThemeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? [],
+        wrapping: { try await self.setUserTheme(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'resetErrors'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeResetErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'ejectErrors'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeEjectErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'undoEjectErrors'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUndoEjectErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'ejectIgnored'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeEjectIgnoredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'undoEjectIgnored'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUndoEjectIgnoredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'purgeEjectedAndErrored'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makePurgeEjectedAndErroredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'resetDuplicates'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeResetDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'startDatabaseIntegrityCheck'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeStartDatabaseIntegrityCheckInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getDatabaseIntegrityCheckStatus'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetDatabaseIntegrityCheckStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>]
+
+  /// - Returns: Interceptors to use when handling 'backupDatabase'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeBackupDatabaseInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getLatestBackup'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetLatestBackupInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
+
+  /// - Returns: Interceptors to use when handling 'clearAllCaches'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeClearAllCachesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>]
+
+  /// - Returns: Interceptors to use when handling 'configurePurityOrder'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeConfigurePurityOrderInterceptors() -> [ServerInterceptor<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getUserTheme'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetUserThemeInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse>]
+
+  /// - Returns: Interceptors to use when handling 'setUserTheme'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetUserThemeInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>]
+}
+
+internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "AdvancedSettingsService",
+    fullName: "vurio.dedup.AdvancedSettingsService",
+    methods: [
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resetErrors,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.ejectErrors,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.undoEjectErrors,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.ejectIgnored,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.undoEjectIgnored,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.purgeEjectedAndErrored,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resetDuplicates,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.startDatabaseIntegrityCheck,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getDatabaseIntegrityCheckStatus,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.backupDatabase,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getLatestBackup,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.clearAllCaches,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.configurePurityOrder,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getUserTheme,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.setUserTheme,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let resetErrors = GRPCMethodDescriptor(
+      name: "ResetErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/ResetErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let ejectErrors = GRPCMethodDescriptor(
+      name: "EjectErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/EjectErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let undoEjectErrors = GRPCMethodDescriptor(
+      name: "UndoEjectErrors",
+      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectErrors",
+      type: GRPCCallType.unary
+    )
+
+    internal static let ejectIgnored = GRPCMethodDescriptor(
+      name: "EjectIgnored",
+      path: "/vurio.dedup.AdvancedSettingsService/EjectIgnored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let undoEjectIgnored = GRPCMethodDescriptor(
+      name: "UndoEjectIgnored",
+      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectIgnored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let purgeEjectedAndErrored = GRPCMethodDescriptor(
+      name: "PurgeEjectedAndErrored",
+      path: "/vurio.dedup.AdvancedSettingsService/PurgeEjectedAndErrored",
+      type: GRPCCallType.unary
+    )
+
+    internal static let resetDuplicates = GRPCMethodDescriptor(
+      name: "ResetDuplicates",
+      path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
+      name: "StartDatabaseIntegrityCheck",
+      path: "/vurio.dedup.AdvancedSettingsService/StartDatabaseIntegrityCheck",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
+      name: "GetDatabaseIntegrityCheckStatus",
+      path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let backupDatabase = GRPCMethodDescriptor(
+      name: "BackupDatabase",
+      path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getLatestBackup = GRPCMethodDescriptor(
+      name: "GetLatestBackup",
+      path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearAllCaches = GRPCMethodDescriptor(
+      name: "ClearAllCaches",
+      path: "/vurio.dedup.AdvancedSettingsService/ClearAllCaches",
+      type: GRPCCallType.unary
+    )
+
+    internal static let configurePurityOrder = GRPCMethodDescriptor(
+      name: "ConfigurePurityOrder",
+      path: "/vurio.dedup.AdvancedSettingsService/ConfigurePurityOrder",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getUserTheme = GRPCMethodDescriptor(
+      name: "GetUserTheme",
+      path: "/vurio.dedup.AdvancedSettingsService/GetUserTheme",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setUserTheme = GRPCMethodDescriptor(
+      name: "SetUserTheme",
+      path: "/vurio.dedup.AdvancedSettingsService/SetUserTheme",
       type: GRPCCallType.unary
     )
   }

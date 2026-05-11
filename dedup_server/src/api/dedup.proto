@@ -139,3 +139,78 @@ message UndoEjectDuplicatesResponse {
   int32 failure_count = 3;
   string error_message = 4;
 }
+
+// ---------------------------------------------------------
+// Advanced Settings Service
+// ---------------------------------------------------------
+service AdvancedSettingsService {
+  rpc ResetErrors(Empty) returns (AdvancedActionResponse);
+  rpc EjectErrors(Empty) returns (AdvancedActionResponse);
+  rpc UndoEjectErrors(Empty) returns (AdvancedActionResponse);
+  
+  rpc EjectIgnored(Empty) returns (AdvancedActionResponse);
+  rpc UndoEjectIgnored(Empty) returns (AdvancedActionResponse);
+  
+  rpc PurgeEjectedAndErrored(Empty) returns (AdvancedActionResponse);
+  rpc ResetDuplicates(Empty) returns (AdvancedActionResponse);
+  
+  rpc StartDatabaseIntegrityCheck(Empty) returns (AdvancedActionResponse);
+  rpc GetDatabaseIntegrityCheckStatus(Empty) returns (IntegrityCheckStatusResponse);
+  
+  rpc BackupDatabase(Empty) returns (BackupDatabaseResponse);
+  rpc GetLatestBackup(Empty) returns (BackupDatabaseResponse);
+  
+  rpc ClearAllCaches(Empty) returns (ClearCachesResponse);
+  
+  rpc ConfigurePurityOrder(ConfigurePurityOrderRequest) returns (AdvancedActionResponse);
+  
+  rpc GetUserTheme(Empty) returns (GetUserThemeResponse);
+  rpc SetUserTheme(SetUserThemeRequest) returns (AdvancedActionResponse);
+}
+
+message Empty {}
+
+message AdvancedActionResponse {
+  bool success = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+  string error_message = 4;
+}
+
+message IntegrityCheckStatusResponse {
+  bool running = 1;
+  int32 progress = 2;
+  int32 total_files = 3;
+  int32 processed_files = 4;
+  int32 files_removed = 5;
+  int32 groups_removed = 6;
+  int32 thumbnails_removed = 7;
+  int32 artifacts_removed = 8;
+  int32 errors_removed = 9;
+  string current_phase = 10;
+}
+
+message BackupDatabaseResponse {
+  bool success = 1;
+  string backup_path = 2;
+  string error_message = 3;
+}
+
+message ClearCachesResponse {
+  bool success = 1;
+  bool thumbnail_cache_cleared = 2;
+  bool disk_cache_cleared = 3;
+  string error_message = 4;
+}
+
+message ConfigurePurityOrderRequest {
+  string purity_order = 1;
+}
+
+message GetUserThemeResponse {
+  string theme = 1;
+}
+
+message SetUserThemeRequest {
+  string theme = 1;
+}
