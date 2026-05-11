@@ -89,13 +89,14 @@ namespace MediaDedupServer
         class ResetDuplicatesHandler : public Poco::Net::HTTPRequestHandler
         {
         public:
-            explicit ResetDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db);
+            explicit ResetDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db, std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_service);
 
             void handleRequest(Poco::Net::HTTPServerRequest &request,
                                Poco::Net::HTTPServerResponse &response) override;
 
         private:
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
+            std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_service_;
         };
 
         /**

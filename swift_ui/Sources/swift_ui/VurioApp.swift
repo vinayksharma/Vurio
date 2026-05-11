@@ -13,11 +13,12 @@ struct VurioApp: App {
     }
     
     var body: some Scene {
-        WindowGroup("VURIO") {
+        WindowGroup {
             ContentView()
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }
 
@@ -103,6 +104,14 @@ struct ContentView: View {
                 }
                 .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 250)
                 .listStyle(SidebarListStyle())
+                .safeAreaInset(edge: .top) {
+                    AnimatedLogoView()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
+                }
+                .navigationTitle("")
             } detail: {
                 switch selection {
                 case .duplicates:

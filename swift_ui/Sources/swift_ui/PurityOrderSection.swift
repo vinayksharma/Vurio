@@ -33,7 +33,7 @@ struct PurityOrderSection: View {
                 }
                 .onMove(perform: move)
             }
-            .frame(height: 250)
+            .frame(height: 160)
             .cornerRadius(8)
             .listStyle(PlainListStyle())
             

@@ -188,7 +188,7 @@ namespace MediaDedup
         if (path == "/api/v1/duplicates/groups" && method == "GET")
             return new MediaDedupServer::Core::DuplicateGroupsHandler(database_manager_);
         if (path == "/api/v1/duplicates/reset" && method == "DELETE")
-            return new MediaDedupServer::Core::ResetDuplicatesHandler(database_manager_);
+            return new MediaDedupServer::Core::ResetDuplicatesHandler(database_manager_, scheduler_service_);
         if (path == "/api/v1/duplicates/eject" && method == "POST")
             return new MediaDedupServer::Core::EjectDuplicatesHandler(database_manager_);
         if (path == "/api/v1/duplicates/undo-eject" && method == "POST")
