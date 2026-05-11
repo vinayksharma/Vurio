@@ -46,6 +46,7 @@ namespace MediaDedup
 
             sess << std::string(SQL::kCreateDuplicateGroupsIndexMode), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexCreatedAt), now;
+            sess << std::string(SQL::kCreateDuplicateGroupsIndexRepDate), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFile), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
 
@@ -666,6 +667,34 @@ namespace MediaDedup
         catch (...)
         {
             Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in countGroupsByMode");
+            return 0;
+        }
+    }
+
+    int DuplicateGroupsOps::getDuplicateGroupsCountOlderThan(DatabaseManager &db, const std::string &mode, const std::string &date)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string mode_str = mode;
+            std::string date_str = date;
+            int count = 0;
+
+            stmt << std::string(SQL::kSelectDuplicateGroupsCountOlderThan), into(count), use(mode_str), use(date_str), now;
+
+            return count;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in getDuplicateGroupsCountOlderThan: %s", std::string(e.what()));
+            return 0;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in getDuplicateGroupsCountOlderThan");
             return 0;
         }
     }

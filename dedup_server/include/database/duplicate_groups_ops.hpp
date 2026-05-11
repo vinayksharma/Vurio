@@ -132,6 +132,8 @@ namespace MediaDedup
 
         // Statistics
         static int countGroupsByMode(DatabaseManager &db, const std::string &mode);
+        
+        static int getDuplicateGroupsCountOlderThan(DatabaseManager &db, const std::string &mode, const std::string &date);
 
         static int countMembersByGroup(DatabaseManager &db, int group_id);
 

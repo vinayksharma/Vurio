@@ -154,7 +154,7 @@ struct StatusBarView: View {
                     appearance.name == .darkAqua ? NSColor(calibratedRed: 160/255.0, green: 160/255.0, blue: 160/255.0, alpha: 1.0) : NSColor.secondaryLabelColor
                 }))
                 let errorColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
-                    appearance.name == .darkAqua ? NSColor(calibratedRed: 244/255.0, green: 135/255.0, blue: 113/255.0, alpha: 1.0) : NSColor.systemRed
+                    appearance.name == .darkAqua ? NSColor.systemRed : NSColor.systemRed
                 }))
                 let dupesColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
                     appearance.name == .darkAqua ? NSColor(calibratedRed: 150/255.0, green: 220/255.0, blue: 150/255.0, alpha: 1.0) : NSColor.systemGreen
@@ -228,9 +228,9 @@ struct StatusBarView: View {
                         
                         let redGradient = LinearGradient(
                             stops: [
-                                Gradient.Stop(color: Color(red: 244/255.0, green: 135/255.0, blue: 113/255.0).opacity(0.4), location: 0),
-                                Gradient.Stop(color: Color(red: 251/255.0, green: 113/255.0, blue: 133/255.0).opacity(0.7), location: 0.5),
-                                Gradient.Stop(color: Color(red: 244/255.0, green: 135/255.0, blue: 113/255.0).opacity(0.4), location: 1)
+                                Gradient.Stop(color: Color.red.opacity(0.4), location: 0),
+                                Gradient.Stop(color: Color.red.opacity(0.7), location: 0.5),
+                                Gradient.Stop(color: Color.red.opacity(0.4), location: 1)
                             ],
                             startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
                             endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)

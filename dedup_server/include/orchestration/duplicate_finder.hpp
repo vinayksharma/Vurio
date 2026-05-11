@@ -47,6 +47,17 @@ namespace MediaDedup
             bool initialize();
 
             /**
+             * @brief Callback type for when a duplicate group is created or updated
+             * Passed the group_id and a boolean indicating if it is a newly created group (true) or an updated one (false)
+             */
+            using GroupEventCallback = std::function<void(int group_id, bool is_new)>;
+
+            /**
+             * @brief Set the callback for duplicate group events
+             */
+            void setGroupEventCallback(GroupEventCallback cb) { group_event_cb_ = cb; }
+
+            /**
              * @brief Main duplicate finding operation (called by scheduler)
              *
              * This is the entry point for the scheduled job. It:
@@ -326,6 +337,7 @@ namespace MediaDedup
 
             std::atomic<bool> running_{false};
             mutable std::mutex mutex_;
+            GroupEventCallback group_event_cb_;
 
             // Configuration cache
             bool enabled_ = true;
