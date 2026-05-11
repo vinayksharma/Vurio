@@ -83,6 +83,8 @@ namespace MediaDedup
         std::shared_ptr<Orchestration::FilesManager> &getFilesManager() { return files_manager_; }
         std::shared_ptr<MediaProcessor> &getMediaProcessor() { return media_processor_; }
         std::shared_ptr<Orchestration::DuplicateFinder> &getDuplicateFinder() { return duplicate_finder_; }
+        std::shared_ptr<class DiskCache> &getThumbnailCache() { return thumbnail_disk_cache_; }
+        std::shared_ptr<class DiskCache> &getTranscodingCache() { return transcoding_disk_cache_; }
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;

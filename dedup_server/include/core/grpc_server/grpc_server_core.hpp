@@ -12,6 +12,7 @@ namespace grpc {
 namespace MediaDedup {
 class UnifiedObservableConfigManager;
 class DatabaseManager;
+class DiskCache;
 namespace Orchestration {
     class FilesManager;
 }
@@ -30,7 +31,9 @@ public:
                std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                DatabaseManager* database_manager,
                std::shared_ptr<Orchestration::FilesManager> files_manager,
-               std::shared_ptr<ThreadPoolManager> thread_pool_manager);
+               std::shared_ptr<ThreadPoolManager> thread_pool_manager,
+               std::shared_ptr<DiskCache> thumbnail_cache,
+               std::shared_ptr<DiskCache> transcoding_cache);
     void stop();
 
 private:

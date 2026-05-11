@@ -110,30 +110,7 @@ struct ContentView: View {
                 case .locations:
                     MediaLocationsView()
                 case .settings:
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text("Backend Configuration")
-                                .font(.headline)
-                            Spacer()
-                            Button("Refresh") {
-                                Task { await appState.fetchConfig() }
-                            }
-                        }
-                        .padding()
-                        
-                        ScrollView {
-                            Text(appState.configStatus)
-                                .font(.system(.body, design: .monospaced))
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(8)
-                        .padding([.horizontal, .bottom])
-                    }
-                    .onAppear {
-                        Task { await appState.fetchConfig() }
-                    }
+                    SettingsView()
                 case .none:
                     Text("Select an item")
                 }
