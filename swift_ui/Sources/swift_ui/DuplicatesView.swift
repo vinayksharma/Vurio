@@ -14,6 +14,7 @@ struct DuplicatesView: View {
     @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
     @State private var selectedFileIndex: Int = 0
     @State private var showingPopup = false
+    @State private var scrolledID: UUID?
     
     // Config and Eject State
     @State private var duplicateTightness: Double = 0.008
@@ -151,36 +152,39 @@ struct DuplicatesView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                List(Array(groups.enumerated()), id: \.element.id) { index, slot in
-                    if let group = slot.group {
-                        DuplicateGroupCard(group: group, index: index + 1) { fileIndex in
-                            selectedGroup = group
-                            selectedFileIndex = fileIndex
-                            showingPopup = true
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
-                        .listRowBackground(Color.clear)
-                    } else {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, minHeight: 150)
-                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                            .cornerRadius(12)
-                            .padding(.bottom, 12)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
-                            .listRowBackground(Color.clear)
-                            .onAppear {
-                                let pageIndex = Int32(index) / pageSize
-                                Task {
-                                    await loadPage(pageIndex: pageIndex)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, slot in
+                            if let group = slot.group {
+                                DuplicateGroupCard(group: group) { fileIndex in
+                                    selectedGroup = group
+                                    selectedFileIndex = fileIndex
+                                    showingPopup = true
                                 }
+                                .padding(.horizontal, 30)
+                                .frame(height: 180)
+                            } else {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity, minHeight: 150)
+                                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                    .cornerRadius(12)
+                                    .padding(.bottom, 12)
+                                    .padding(.horizontal, 30)
+                                    .frame(height: 180)
+                                    .onAppear {
+                                        let pageIndex = Int32(index) / pageSize
+                                        Task {
+                                            await loadPage(pageIndex: pageIndex)
+                                        }
+                                    }
                             }
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(.top, 20)
                 }
-                .listStyle(.plain)
+                .scrollPosition(id: $scrolledID, anchor: .top)
                 .scrollContentBackground(.hidden)
-                .padding(.top, 20)
             }
             
             
@@ -416,7 +420,6 @@ struct DuplicatesView: View {
 
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
-    let index: Int
     var onThumbnailTapped: (Int) -> Void
     
     var representative: Vurio_Dedup_DuplicateFile? {
@@ -434,7 +437,7 @@ struct DuplicateGroupCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Text("Group #\(index) • \(group.files.count) files")
+                Text("Duplicate Group • \(group.files.count) files")
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
