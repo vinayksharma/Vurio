@@ -1149,6 +1149,11 @@ namespace MediaDedup
                                                               rep.file_size, rep.created_date, static_cast<int>(files.size()));
             }
 
+            if (group_event_cb_)
+            {
+                group_event_cb_(group_id, true);
+            }
+
             return group_id;
         }
 
@@ -1225,6 +1230,12 @@ namespace MediaDedup
                 DuplicateGroupsOps::updateGroupRepresentative(db_, group_id, current_rep.file_id,
                                                               current_rep.file_path, current_rep.file_size,
                                                               current_rep.created_date, group.member_count + 1);
+            }
+
+            if (group_event_cb_)
+            {
+                // Since this was an addition, we trigger an UPDATE event
+                group_event_cb_(group_id, false);
             }
 
             return true;

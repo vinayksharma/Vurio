@@ -16,7 +16,7 @@ import SwiftProtobuf
 /// ---------------------------------------------------------
 ///
 /// Usage: instantiate `Vurio_Dedup_ConfigServiceClient`, then call methods of this protocol to make API calls.
-internal protocol Vurio_Dedup_ConfigServiceClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_ConfigServiceClientProtocol: GRPCClient {
   var serviceName: String { get }
   var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? { get }
 
@@ -32,7 +32,7 @@ internal protocol Vurio_Dedup_ConfigServiceClientProtocol: GRPCClient {
 }
 
 extension Vurio_Dedup_ConfigServiceClientProtocol {
-  internal var serviceName: String {
+  public var serviceName: String {
     return "vurio.dedup.ConfigService"
   }
 
@@ -42,7 +42,7 @@ extension Vurio_Dedup_ConfigServiceClientProtocol {
   ///   - request: Request to send to GetConfig.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getConfig(
+  public func getConfig(
     _ request: Vurio_Dedup_GetConfigRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_GetConfigRequest, Vurio_Dedup_GetConfigResponse> {
@@ -60,7 +60,7 @@ extension Vurio_Dedup_ConfigServiceClientProtocol {
   ///   - request: Request to send to UpdateConfig.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func updateConfig(
+  public func updateConfig(
     _ request: Vurio_Dedup_UpdateConfigRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_UpdateConfigRequest, Vurio_Dedup_UpdateConfigResponse> {
@@ -77,16 +77,16 @@ extension Vurio_Dedup_ConfigServiceClientProtocol {
 extension Vurio_Dedup_ConfigServiceClient: @unchecked Sendable {}
 
 @available(*, deprecated, renamed: "Vurio_Dedup_ConfigServiceNIOClient")
-internal final class Vurio_Dedup_ConfigServiceClient: Vurio_Dedup_ConfigServiceClientProtocol {
+public final class Vurio_Dedup_ConfigServiceClient: Vurio_Dedup_ConfigServiceClientProtocol {
   private let lock = Lock()
   private var _defaultCallOptions: CallOptions
   private var _interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol?
-  internal let channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions {
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
     get { self.lock.withLock { return self._defaultCallOptions } }
     set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
   }
-  internal var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? {
     get { self.lock.withLock { return self._interceptors } }
     set { self.lock.withLockVoid { self._interceptors = newValue } }
   }
@@ -97,7 +97,7 @@ internal final class Vurio_Dedup_ConfigServiceClient: Vurio_Dedup_ConfigServiceC
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? = nil
@@ -108,10 +108,10 @@ internal final class Vurio_Dedup_ConfigServiceClient: Vurio_Dedup_ConfigServiceC
   }
 }
 
-internal struct Vurio_Dedup_ConfigServiceNIOClient: Vurio_Dedup_ConfigServiceClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_ConfigServiceNIOClient: Vurio_Dedup_ConfigServiceClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol?
 
   /// Creates a client for the vurio.dedup.ConfigService service.
   ///
@@ -119,7 +119,7 @@ internal struct Vurio_Dedup_ConfigServiceNIOClient: Vurio_Dedup_ConfigServiceCli
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? = nil
@@ -134,7 +134,7 @@ internal struct Vurio_Dedup_ConfigServiceNIOClient: Vurio_Dedup_ConfigServiceCli
 /// Config & Settings Services
 /// ---------------------------------------------------------
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_ConfigServiceAsyncClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_ConfigServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? { get }
 
@@ -151,15 +151,15 @@ internal protocol Vurio_Dedup_ConfigServiceAsyncClientProtocol: GRPCClient {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_ConfigServiceClientMetadata.serviceDescriptor
   }
 
-  internal var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func makeGetConfigCall(
+  public func makeGetConfigCall(
     _ request: Vurio_Dedup_GetConfigRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetConfigRequest, Vurio_Dedup_GetConfigResponse> {
@@ -171,7 +171,7 @@ extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeUpdateConfigCall(
+  public func makeUpdateConfigCall(
     _ request: Vurio_Dedup_UpdateConfigRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UpdateConfigRequest, Vurio_Dedup_UpdateConfigResponse> {
@@ -186,7 +186,7 @@ extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
-  internal func getConfig(
+  public func getConfig(
     _ request: Vurio_Dedup_GetConfigRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_GetConfigResponse {
@@ -198,7 +198,7 @@ extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
     )
   }
 
-  internal func updateConfig(
+  public func updateConfig(
     _ request: Vurio_Dedup_UpdateConfigRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_UpdateConfigResponse {
@@ -212,12 +212,12 @@ extension Vurio_Dedup_ConfigServiceAsyncClientProtocol {
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal struct Vurio_Dedup_ConfigServiceAsyncClient: Vurio_Dedup_ConfigServiceAsyncClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_ConfigServiceAsyncClient: Vurio_Dedup_ConfigServiceAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol?
 
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol? = nil
@@ -228,7 +228,7 @@ internal struct Vurio_Dedup_ConfigServiceAsyncClient: Vurio_Dedup_ConfigServiceA
   }
 }
 
-internal protocol Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'getConfig'.
   func makeGetConfigInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetConfigRequest, Vurio_Dedup_GetConfigResponse>]
@@ -237,8 +237,8 @@ internal protocol Vurio_Dedup_ConfigServiceClientInterceptorFactoryProtocol: Sen
   func makeUpdateConfigInterceptors() -> [ClientInterceptor<Vurio_Dedup_UpdateConfigRequest, Vurio_Dedup_UpdateConfigResponse>]
 }
 
-internal enum Vurio_Dedup_ConfigServiceClientMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_ConfigServiceClientMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "ConfigService",
     fullName: "vurio.dedup.ConfigService",
     methods: [
@@ -247,14 +247,14 @@ internal enum Vurio_Dedup_ConfigServiceClientMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let getConfig = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let getConfig = GRPCMethodDescriptor(
       name: "GetConfig",
       path: "/vurio.dedup.ConfigService/GetConfig",
       type: GRPCCallType.unary
     )
 
-    internal static let updateConfig = GRPCMethodDescriptor(
+    public static let updateConfig = GRPCMethodDescriptor(
       name: "UpdateConfig",
       path: "/vurio.dedup.ConfigService/UpdateConfig",
       type: GRPCCallType.unary
@@ -267,7 +267,7 @@ internal enum Vurio_Dedup_ConfigServiceClientMetadata {
 /// ---------------------------------------------------------
 ///
 /// Usage: instantiate `Vurio_Dedup_MediaLocationsServiceClient`, then call methods of this protocol to make API calls.
-internal protocol Vurio_Dedup_MediaLocationsServiceClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_MediaLocationsServiceClientProtocol: GRPCClient {
   var serviceName: String { get }
   var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? { get }
 
@@ -293,7 +293,7 @@ internal protocol Vurio_Dedup_MediaLocationsServiceClientProtocol: GRPCClient {
 }
 
 extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
-  internal var serviceName: String {
+  public var serviceName: String {
     return "vurio.dedup.MediaLocationsService"
   }
 
@@ -303,7 +303,7 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
   ///   - request: Request to send to RegisterLocation.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func registerLocation(
+  public func registerLocation(
     _ request: Vurio_Dedup_RegisterLocationRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_RegisterLocationRequest, Vurio_Dedup_RegisterLocationResponse> {
@@ -321,7 +321,7 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
   ///   - request: Request to send to DeregisterLocation.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func deregisterLocation(
+  public func deregisterLocation(
     _ request: Vurio_Dedup_DeregisterLocationRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_DeregisterLocationRequest, Vurio_Dedup_DeregisterLocationResponse> {
@@ -339,7 +339,7 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
   ///   - request: Request to send to ChangePath.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func changePath(
+  public func changePath(
     _ request: Vurio_Dedup_ChangePathRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_ChangePathRequest, Vurio_Dedup_ChangePathResponse> {
@@ -357,7 +357,7 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
   ///   - request: Request to send to GetStatus.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getStatus(
+  public func getStatus(
     _ request: Vurio_Dedup_GetStatusRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse> {
@@ -374,16 +374,16 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
 extension Vurio_Dedup_MediaLocationsServiceClient: @unchecked Sendable {}
 
 @available(*, deprecated, renamed: "Vurio_Dedup_MediaLocationsServiceNIOClient")
-internal final class Vurio_Dedup_MediaLocationsServiceClient: Vurio_Dedup_MediaLocationsServiceClientProtocol {
+public final class Vurio_Dedup_MediaLocationsServiceClient: Vurio_Dedup_MediaLocationsServiceClientProtocol {
   private let lock = Lock()
   private var _defaultCallOptions: CallOptions
   private var _interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol?
-  internal let channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions {
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
     get { self.lock.withLock { return self._defaultCallOptions } }
     set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
   }
-  internal var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? {
     get { self.lock.withLock { return self._interceptors } }
     set { self.lock.withLockVoid { self._interceptors = newValue } }
   }
@@ -394,7 +394,7 @@ internal final class Vurio_Dedup_MediaLocationsServiceClient: Vurio_Dedup_MediaL
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? = nil
@@ -405,10 +405,10 @@ internal final class Vurio_Dedup_MediaLocationsServiceClient: Vurio_Dedup_MediaL
   }
 }
 
-internal struct Vurio_Dedup_MediaLocationsServiceNIOClient: Vurio_Dedup_MediaLocationsServiceClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_MediaLocationsServiceNIOClient: Vurio_Dedup_MediaLocationsServiceClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol?
 
   /// Creates a client for the vurio.dedup.MediaLocationsService service.
   ///
@@ -416,7 +416,7 @@ internal struct Vurio_Dedup_MediaLocationsServiceNIOClient: Vurio_Dedup_MediaLoc
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? = nil
@@ -431,7 +431,7 @@ internal struct Vurio_Dedup_MediaLocationsServiceNIOClient: Vurio_Dedup_MediaLoc
 /// Media Locations Service
 /// ---------------------------------------------------------
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? { get }
 
@@ -458,15 +458,15 @@ internal protocol Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol: GRPCClie
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_MediaLocationsServiceClientMetadata.serviceDescriptor
   }
 
-  internal var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func makeRegisterLocationCall(
+  public func makeRegisterLocationCall(
     _ request: Vurio_Dedup_RegisterLocationRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RegisterLocationRequest, Vurio_Dedup_RegisterLocationResponse> {
@@ -478,7 +478,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeDeregisterLocationCall(
+  public func makeDeregisterLocationCall(
     _ request: Vurio_Dedup_DeregisterLocationRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_DeregisterLocationRequest, Vurio_Dedup_DeregisterLocationResponse> {
@@ -490,7 +490,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeChangePathCall(
+  public func makeChangePathCall(
     _ request: Vurio_Dedup_ChangePathRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ChangePathRequest, Vurio_Dedup_ChangePathResponse> {
@@ -502,7 +502,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeGetStatusCall(
+  public func makeGetStatusCall(
     _ request: Vurio_Dedup_GetStatusRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse> {
@@ -517,7 +517,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
-  internal func registerLocation(
+  public func registerLocation(
     _ request: Vurio_Dedup_RegisterLocationRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_RegisterLocationResponse {
@@ -529,7 +529,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func deregisterLocation(
+  public func deregisterLocation(
     _ request: Vurio_Dedup_DeregisterLocationRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_DeregisterLocationResponse {
@@ -541,7 +541,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func changePath(
+  public func changePath(
     _ request: Vurio_Dedup_ChangePathRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_ChangePathResponse {
@@ -553,7 +553,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
     )
   }
 
-  internal func getStatus(
+  public func getStatus(
     _ request: Vurio_Dedup_GetStatusRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_GetStatusResponse {
@@ -567,12 +567,12 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal struct Vurio_Dedup_MediaLocationsServiceAsyncClient: Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_MediaLocationsServiceAsyncClient: Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol?
 
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol? = nil
@@ -583,7 +583,7 @@ internal struct Vurio_Dedup_MediaLocationsServiceAsyncClient: Vurio_Dedup_MediaL
   }
 }
 
-internal protocol Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'registerLocation'.
   func makeRegisterLocationInterceptors() -> [ClientInterceptor<Vurio_Dedup_RegisterLocationRequest, Vurio_Dedup_RegisterLocationResponse>]
@@ -598,8 +598,8 @@ internal protocol Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProto
   func makeGetStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>]
 }
 
-internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "MediaLocationsService",
     fullName: "vurio.dedup.MediaLocationsService",
     methods: [
@@ -610,26 +610,26 @@ internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let registerLocation = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let registerLocation = GRPCMethodDescriptor(
       name: "RegisterLocation",
       path: "/vurio.dedup.MediaLocationsService/RegisterLocation",
       type: GRPCCallType.unary
     )
 
-    internal static let deregisterLocation = GRPCMethodDescriptor(
+    public static let deregisterLocation = GRPCMethodDescriptor(
       name: "DeregisterLocation",
       path: "/vurio.dedup.MediaLocationsService/DeregisterLocation",
       type: GRPCCallType.unary
     )
 
-    internal static let changePath = GRPCMethodDescriptor(
+    public static let changePath = GRPCMethodDescriptor(
       name: "ChangePath",
       path: "/vurio.dedup.MediaLocationsService/ChangePath",
       type: GRPCCallType.unary
     )
 
-    internal static let getStatus = GRPCMethodDescriptor(
+    public static let getStatus = GRPCMethodDescriptor(
       name: "GetStatus",
       path: "/vurio.dedup.MediaLocationsService/GetStatus",
       type: GRPCCallType.unary
@@ -642,7 +642,7 @@ internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
 /// ---------------------------------------------------------
 ///
 /// Usage: instantiate `Vurio_Dedup_DuplicatesServiceClient`, then call methods of this protocol to make API calls.
-internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
   var serviceName: String { get }
   var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? { get }
 
@@ -660,10 +660,16 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>
+
+  func subscribeToDuplicateUpdates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?,
+    handler: @escaping (Vurio_Dedup_DuplicateGroupUpdate) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>
 }
 
 extension Vurio_Dedup_DuplicatesServiceClientProtocol {
-  internal var serviceName: String {
+  public var serviceName: String {
     return "vurio.dedup.DuplicatesService"
   }
 
@@ -673,7 +679,7 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
   ///   - request: Request to send to GetDuplicateGroups.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getDuplicateGroups(
+  public func getDuplicateGroups(
     _ request: Vurio_Dedup_GetGroupsRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_GetGroupsRequest, Vurio_Dedup_GetGroupsResponse> {
@@ -691,7 +697,7 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
   ///   - request: Request to send to EjectDuplicates.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func ejectDuplicates(
+  public func ejectDuplicates(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_EjectDuplicatesRequest, Vurio_Dedup_EjectDuplicatesResponse> {
@@ -709,7 +715,7 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
   ///   - request: Request to send to UndoEjectDuplicates.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func undoEjectDuplicates(
+  public func undoEjectDuplicates(
     _ request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse> {
@@ -720,22 +726,43 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? []
     )
   }
+
+  /// Server streaming call to SubscribeToDuplicateUpdates
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SubscribeToDuplicateUpdates.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  public func subscribeToDuplicateUpdates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Vurio_Dedup_DuplicateGroupUpdate) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate> {
+    return self.makeServerStreamingCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? [],
+      handler: handler
+    )
+  }
 }
 
 @available(*, deprecated)
 extension Vurio_Dedup_DuplicatesServiceClient: @unchecked Sendable {}
 
 @available(*, deprecated, renamed: "Vurio_Dedup_DuplicatesServiceNIOClient")
-internal final class Vurio_Dedup_DuplicatesServiceClient: Vurio_Dedup_DuplicatesServiceClientProtocol {
+public final class Vurio_Dedup_DuplicatesServiceClient: Vurio_Dedup_DuplicatesServiceClientProtocol {
   private let lock = Lock()
   private var _defaultCallOptions: CallOptions
   private var _interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol?
-  internal let channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions {
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
     get { self.lock.withLock { return self._defaultCallOptions } }
     set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
   }
-  internal var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? {
     get { self.lock.withLock { return self._interceptors } }
     set { self.lock.withLockVoid { self._interceptors = newValue } }
   }
@@ -746,7 +773,7 @@ internal final class Vurio_Dedup_DuplicatesServiceClient: Vurio_Dedup_Duplicates
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? = nil
@@ -757,10 +784,10 @@ internal final class Vurio_Dedup_DuplicatesServiceClient: Vurio_Dedup_Duplicates
   }
 }
 
-internal struct Vurio_Dedup_DuplicatesServiceNIOClient: Vurio_Dedup_DuplicatesServiceClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_DuplicatesServiceNIOClient: Vurio_Dedup_DuplicatesServiceClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol?
 
   /// Creates a client for the vurio.dedup.DuplicatesService service.
   ///
@@ -768,7 +795,7 @@ internal struct Vurio_Dedup_DuplicatesServiceNIOClient: Vurio_Dedup_DuplicatesSe
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? = nil
@@ -783,7 +810,7 @@ internal struct Vurio_Dedup_DuplicatesServiceNIOClient: Vurio_Dedup_DuplicatesSe
 /// Duplicates Service
 /// ---------------------------------------------------------
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? { get }
 
@@ -801,19 +828,24 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>
+
+  func makeSubscribeToDuplicateUpdatesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_DuplicatesServiceClientMetadata.serviceDescriptor
   }
 
-  internal var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func makeGetDuplicateGroupsCall(
+  public func makeGetDuplicateGroupsCall(
     _ request: Vurio_Dedup_GetGroupsRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetGroupsRequest, Vurio_Dedup_GetGroupsResponse> {
@@ -825,7 +857,7 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeEjectDuplicatesCall(
+  public func makeEjectDuplicatesCall(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_EjectDuplicatesRequest, Vurio_Dedup_EjectDuplicatesResponse> {
@@ -837,7 +869,7 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeUndoEjectDuplicatesCall(
+  public func makeUndoEjectDuplicatesCall(
     _ request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse> {
@@ -848,11 +880,23 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? []
     )
   }
+
+  public func makeSubscribeToDuplicateUpdatesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate> {
+    return self.makeAsyncServerStreamingCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
-  internal func getDuplicateGroups(
+  public func getDuplicateGroups(
     _ request: Vurio_Dedup_GetGroupsRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_GetGroupsResponse {
@@ -864,7 +908,7 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
-  internal func ejectDuplicates(
+  public func ejectDuplicates(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_EjectDuplicatesResponse {
@@ -876,7 +920,7 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
-  internal func undoEjectDuplicates(
+  public func undoEjectDuplicates(
     _ request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_UndoEjectDuplicatesResponse {
@@ -887,15 +931,27 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? []
     )
   }
+
+  public func subscribeToDuplicateUpdates(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Vurio_Dedup_DuplicateGroupUpdate> {
+    return self.performAsyncServerStreamingCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal struct Vurio_Dedup_DuplicatesServiceAsyncClient: Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_DuplicatesServiceAsyncClient: Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol?
 
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol? = nil
@@ -906,7 +962,7 @@ internal struct Vurio_Dedup_DuplicatesServiceAsyncClient: Vurio_Dedup_Duplicates
   }
 }
 
-internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'getDuplicateGroups'.
   func makeGetDuplicateGroupsInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetGroupsRequest, Vurio_Dedup_GetGroupsResponse>]
@@ -916,36 +972,46 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
 
   /// - Returns: Interceptors to use when invoking 'undoEjectDuplicates'.
   func makeUndoEjectDuplicatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'subscribeToDuplicateUpdates'.
+  func makeSubscribeToDuplicateUpdatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
 }
 
-internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_DuplicatesServiceClientMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "DuplicatesService",
     fullName: "vurio.dedup.DuplicatesService",
     methods: [
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.undoEjectDuplicates,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates,
     ]
   )
 
-  internal enum Methods {
-    internal static let getDuplicateGroups = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let getDuplicateGroups = GRPCMethodDescriptor(
       name: "GetDuplicateGroups",
       path: "/vurio.dedup.DuplicatesService/GetDuplicateGroups",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectDuplicates = GRPCMethodDescriptor(
+    public static let ejectDuplicates = GRPCMethodDescriptor(
       name: "EjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/EjectDuplicates",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectDuplicates = GRPCMethodDescriptor(
+    public static let undoEjectDuplicates = GRPCMethodDescriptor(
       name: "UndoEjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
       type: GRPCCallType.unary
+    )
+
+    public static let subscribeToDuplicateUpdates = GRPCMethodDescriptor(
+      name: "SubscribeToDuplicateUpdates",
+      path: "/vurio.dedup.DuplicatesService/SubscribeToDuplicateUpdates",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
@@ -955,7 +1021,7 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
 /// ---------------------------------------------------------
 ///
 /// Usage: instantiate `Vurio_Dedup_AdvancedSettingsServiceClient`, then call methods of this protocol to make API calls.
-internal protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient {
   var serviceName: String { get }
   var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? { get }
 
@@ -1036,7 +1102,7 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient 
 }
 
 extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
-  internal var serviceName: String {
+  public var serviceName: String {
     return "vurio.dedup.AdvancedSettingsService"
   }
 
@@ -1046,7 +1112,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to ResetErrors.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func resetErrors(
+  public func resetErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1064,7 +1130,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to EjectErrors.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func ejectErrors(
+  public func ejectErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1082,7 +1148,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to UndoEjectErrors.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func undoEjectErrors(
+  public func undoEjectErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1100,7 +1166,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to EjectIgnored.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func ejectIgnored(
+  public func ejectIgnored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1118,7 +1184,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to UndoEjectIgnored.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func undoEjectIgnored(
+  public func undoEjectIgnored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1136,7 +1202,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to PurgeEjectedAndErrored.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func purgeEjectedAndErrored(
+  public func purgeEjectedAndErrored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1154,7 +1220,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to ResetDuplicates.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func resetDuplicates(
+  public func resetDuplicates(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1172,7 +1238,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to StartDatabaseIntegrityCheck.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func startDatabaseIntegrityCheck(
+  public func startDatabaseIntegrityCheck(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1190,7 +1256,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to GetDatabaseIntegrityCheckStatus.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getDatabaseIntegrityCheckStatus(
+  public func getDatabaseIntegrityCheckStatus(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse> {
@@ -1208,7 +1274,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to BackupDatabase.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func backupDatabase(
+  public func backupDatabase(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
@@ -1226,7 +1292,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to GetLatestBackup.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getLatestBackup(
+  public func getLatestBackup(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
@@ -1244,7 +1310,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to ClearAllCaches.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func clearAllCaches(
+  public func clearAllCaches(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse> {
@@ -1262,7 +1328,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to ConfigurePurityOrder.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func configurePurityOrder(
+  public func configurePurityOrder(
     _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse> {
@@ -1280,7 +1346,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to GetUserTheme.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getUserTheme(
+  public func getUserTheme(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse> {
@@ -1298,7 +1364,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   ///   - request: Request to send to SetUserTheme.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func setUserTheme(
+  public func setUserTheme(
     _ request: Vurio_Dedup_SetUserThemeRequest,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse> {
@@ -1315,16 +1381,16 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
 extension Vurio_Dedup_AdvancedSettingsServiceClient: @unchecked Sendable {}
 
 @available(*, deprecated, renamed: "Vurio_Dedup_AdvancedSettingsServiceNIOClient")
-internal final class Vurio_Dedup_AdvancedSettingsServiceClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
+public final class Vurio_Dedup_AdvancedSettingsServiceClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
   private let lock = Lock()
   private var _defaultCallOptions: CallOptions
   private var _interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
-  internal let channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions {
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
     get { self.lock.withLock { return self._defaultCallOptions } }
     set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
   }
-  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
     get { self.lock.withLock { return self._interceptors } }
     set { self.lock.withLockVoid { self._interceptors = newValue } }
   }
@@ -1335,7 +1401,7 @@ internal final class Vurio_Dedup_AdvancedSettingsServiceClient: Vurio_Dedup_Adva
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
@@ -1346,10 +1412,10 @@ internal final class Vurio_Dedup_AdvancedSettingsServiceClient: Vurio_Dedup_Adva
   }
 }
 
-internal struct Vurio_Dedup_AdvancedSettingsServiceNIOClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_AdvancedSettingsServiceNIOClient: Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
 
   /// Creates a client for the vurio.dedup.AdvancedSettingsService service.
   ///
@@ -1357,7 +1423,7 @@ internal struct Vurio_Dedup_AdvancedSettingsServiceNIOClient: Vurio_Dedup_Advanc
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
@@ -1372,7 +1438,7 @@ internal struct Vurio_Dedup_AdvancedSettingsServiceNIOClient: Vurio_Dedup_Advanc
 /// Advanced Settings Service
 /// ---------------------------------------------------------
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCClient {
+public protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? { get }
 
@@ -1454,15 +1520,15 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCCl
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_AdvancedSettingsServiceClientMetadata.serviceDescriptor
   }
 
-  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func makeResetErrorsCall(
+  public func makeResetErrorsCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1474,7 +1540,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeEjectErrorsCall(
+  public func makeEjectErrorsCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1486,7 +1552,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeUndoEjectErrorsCall(
+  public func makeUndoEjectErrorsCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1498,7 +1564,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeEjectIgnoredCall(
+  public func makeEjectIgnoredCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1510,7 +1576,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeUndoEjectIgnoredCall(
+  public func makeUndoEjectIgnoredCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1522,7 +1588,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makePurgeEjectedAndErroredCall(
+  public func makePurgeEjectedAndErroredCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1534,7 +1600,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeResetDuplicatesCall(
+  public func makeResetDuplicatesCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1546,7 +1612,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeStartDatabaseIntegrityCheckCall(
+  public func makeStartDatabaseIntegrityCheckCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
@@ -1558,7 +1624,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeGetDatabaseIntegrityCheckStatusCall(
+  public func makeGetDatabaseIntegrityCheckStatusCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse> {
@@ -1570,7 +1636,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeBackupDatabaseCall(
+  public func makeBackupDatabaseCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
@@ -1582,7 +1648,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeGetLatestBackupCall(
+  public func makeGetLatestBackupCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
@@ -1594,7 +1660,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeClearAllCachesCall(
+  public func makeClearAllCachesCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse> {
@@ -1606,7 +1672,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeConfigurePurityOrderCall(
+  public func makeConfigurePurityOrderCall(
     _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse> {
@@ -1618,7 +1684,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeGetUserThemeCall(
+  public func makeGetUserThemeCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse> {
@@ -1630,7 +1696,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeSetUserThemeCall(
+  public func makeSetUserThemeCall(
     _ request: Vurio_Dedup_SetUserThemeRequest,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse> {
@@ -1645,7 +1711,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
-  internal func resetErrors(
+  public func resetErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1657,7 +1723,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func ejectErrors(
+  public func ejectErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1669,7 +1735,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func undoEjectErrors(
+  public func undoEjectErrors(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1681,7 +1747,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func ejectIgnored(
+  public func ejectIgnored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1693,7 +1759,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func undoEjectIgnored(
+  public func undoEjectIgnored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1705,7 +1771,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func purgeEjectedAndErrored(
+  public func purgeEjectedAndErrored(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1717,7 +1783,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func resetDuplicates(
+  public func resetDuplicates(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1729,7 +1795,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func startDatabaseIntegrityCheck(
+  public func startDatabaseIntegrityCheck(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1741,7 +1807,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func getDatabaseIntegrityCheckStatus(
+  public func getDatabaseIntegrityCheckStatus(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_IntegrityCheckStatusResponse {
@@ -1753,7 +1819,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func backupDatabase(
+  public func backupDatabase(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
@@ -1765,7 +1831,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func getLatestBackup(
+  public func getLatestBackup(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
@@ -1777,7 +1843,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func clearAllCaches(
+  public func clearAllCaches(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_ClearCachesResponse {
@@ -1789,7 +1855,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func configurePurityOrder(
+  public func configurePurityOrder(
     _ request: Vurio_Dedup_ConfigurePurityOrderRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1801,7 +1867,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func getUserTheme(
+  public func getUserTheme(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_GetUserThemeResponse {
@@ -1813,7 +1879,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func setUserTheme(
+  public func setUserTheme(
     _ request: Vurio_Dedup_SetUserThemeRequest,
     callOptions: CallOptions? = nil
   ) async throws -> Vurio_Dedup_AdvancedActionResponse {
@@ -1827,12 +1893,12 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal struct Vurio_Dedup_AdvancedSettingsServiceAsyncClient: Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
+public struct Vurio_Dedup_AdvancedSettingsServiceAsyncClient: Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol?
 
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol? = nil
@@ -1843,7 +1909,7 @@ internal struct Vurio_Dedup_AdvancedSettingsServiceAsyncClient: Vurio_Dedup_Adva
   }
 }
 
-internal protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'resetErrors'.
   func makeResetErrorsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
@@ -1891,8 +1957,8 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryPro
   func makeSetUserThemeInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>]
 }
 
-internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "AdvancedSettingsService",
     fullName: "vurio.dedup.AdvancedSettingsService",
     methods: [
@@ -1914,92 +1980,92 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let resetErrors = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let resetErrors = GRPCMethodDescriptor(
       name: "ResetErrors",
       path: "/vurio.dedup.AdvancedSettingsService/ResetErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectErrors = GRPCMethodDescriptor(
+    public static let ejectErrors = GRPCMethodDescriptor(
       name: "EjectErrors",
       path: "/vurio.dedup.AdvancedSettingsService/EjectErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectErrors = GRPCMethodDescriptor(
+    public static let undoEjectErrors = GRPCMethodDescriptor(
       name: "UndoEjectErrors",
       path: "/vurio.dedup.AdvancedSettingsService/UndoEjectErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectIgnored = GRPCMethodDescriptor(
+    public static let ejectIgnored = GRPCMethodDescriptor(
       name: "EjectIgnored",
       path: "/vurio.dedup.AdvancedSettingsService/EjectIgnored",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectIgnored = GRPCMethodDescriptor(
+    public static let undoEjectIgnored = GRPCMethodDescriptor(
       name: "UndoEjectIgnored",
       path: "/vurio.dedup.AdvancedSettingsService/UndoEjectIgnored",
       type: GRPCCallType.unary
     )
 
-    internal static let purgeEjectedAndErrored = GRPCMethodDescriptor(
+    public static let purgeEjectedAndErrored = GRPCMethodDescriptor(
       name: "PurgeEjectedAndErrored",
       path: "/vurio.dedup.AdvancedSettingsService/PurgeEjectedAndErrored",
       type: GRPCCallType.unary
     )
 
-    internal static let resetDuplicates = GRPCMethodDescriptor(
+    public static let resetDuplicates = GRPCMethodDescriptor(
       name: "ResetDuplicates",
       path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
       type: GRPCCallType.unary
     )
 
-    internal static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
+    public static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
       name: "StartDatabaseIntegrityCheck",
       path: "/vurio.dedup.AdvancedSettingsService/StartDatabaseIntegrityCheck",
       type: GRPCCallType.unary
     )
 
-    internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
+    public static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
       name: "GetDatabaseIntegrityCheckStatus",
       path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
       type: GRPCCallType.unary
     )
 
-    internal static let backupDatabase = GRPCMethodDescriptor(
+    public static let backupDatabase = GRPCMethodDescriptor(
       name: "BackupDatabase",
       path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
       type: GRPCCallType.unary
     )
 
-    internal static let getLatestBackup = GRPCMethodDescriptor(
+    public static let getLatestBackup = GRPCMethodDescriptor(
       name: "GetLatestBackup",
       path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
       type: GRPCCallType.unary
     )
 
-    internal static let clearAllCaches = GRPCMethodDescriptor(
+    public static let clearAllCaches = GRPCMethodDescriptor(
       name: "ClearAllCaches",
       path: "/vurio.dedup.AdvancedSettingsService/ClearAllCaches",
       type: GRPCCallType.unary
     )
 
-    internal static let configurePurityOrder = GRPCMethodDescriptor(
+    public static let configurePurityOrder = GRPCMethodDescriptor(
       name: "ConfigurePurityOrder",
       path: "/vurio.dedup.AdvancedSettingsService/ConfigurePurityOrder",
       type: GRPCCallType.unary
     )
 
-    internal static let getUserTheme = GRPCMethodDescriptor(
+    public static let getUserTheme = GRPCMethodDescriptor(
       name: "GetUserTheme",
       path: "/vurio.dedup.AdvancedSettingsService/GetUserTheme",
       type: GRPCCallType.unary
     )
 
-    internal static let setUserTheme = GRPCMethodDescriptor(
+    public static let setUserTheme = GRPCMethodDescriptor(
       name: "SetUserTheme",
       path: "/vurio.dedup.AdvancedSettingsService/SetUserTheme",
       type: GRPCCallType.unary
@@ -2012,7 +2078,7 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
 /// ---------------------------------------------------------
 ///
 /// To build a server, implement a class that conforms to this protocol.
-internal protocol Vurio_Dedup_ConfigServiceProvider: CallHandlerProvider {
+public protocol Vurio_Dedup_ConfigServiceProvider: CallHandlerProvider {
   var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? { get }
 
   func getConfig(request: Vurio_Dedup_GetConfigRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetConfigResponse>
@@ -2021,13 +2087,13 @@ internal protocol Vurio_Dedup_ConfigServiceProvider: CallHandlerProvider {
 }
 
 extension Vurio_Dedup_ConfigServiceProvider {
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
   /// Determines, calls and returns the appropriate request handler, depending on the request's method.
   /// Returns nil for methods not handled by this service.
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2062,7 +2128,7 @@ extension Vurio_Dedup_ConfigServiceProvider {
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_ConfigServiceAsyncProvider: CallHandlerProvider, Sendable {
+public protocol Vurio_Dedup_ConfigServiceAsyncProvider: CallHandlerProvider, Sendable {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? { get }
 
@@ -2079,19 +2145,19 @@ internal protocol Vurio_Dedup_ConfigServiceAsyncProvider: CallHandlerProvider, S
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_ConfigServiceAsyncProvider {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor
   }
 
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
-  internal var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2120,7 +2186,7 @@ extension Vurio_Dedup_ConfigServiceAsyncProvider {
   }
 }
 
-internal protocol Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when handling 'getConfig'.
   ///   Defaults to calling `self.makeInterceptors()`.
@@ -2131,8 +2197,8 @@ internal protocol Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol: Sen
   func makeUpdateConfigInterceptors() -> [ServerInterceptor<Vurio_Dedup_UpdateConfigRequest, Vurio_Dedup_UpdateConfigResponse>]
 }
 
-internal enum Vurio_Dedup_ConfigServiceServerMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_ConfigServiceServerMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "ConfigService",
     fullName: "vurio.dedup.ConfigService",
     methods: [
@@ -2141,14 +2207,14 @@ internal enum Vurio_Dedup_ConfigServiceServerMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let getConfig = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let getConfig = GRPCMethodDescriptor(
       name: "GetConfig",
       path: "/vurio.dedup.ConfigService/GetConfig",
       type: GRPCCallType.unary
     )
 
-    internal static let updateConfig = GRPCMethodDescriptor(
+    public static let updateConfig = GRPCMethodDescriptor(
       name: "UpdateConfig",
       path: "/vurio.dedup.ConfigService/UpdateConfig",
       type: GRPCCallType.unary
@@ -2160,7 +2226,7 @@ internal enum Vurio_Dedup_ConfigServiceServerMetadata {
 /// ---------------------------------------------------------
 ///
 /// To build a server, implement a class that conforms to this protocol.
-internal protocol Vurio_Dedup_MediaLocationsServiceProvider: CallHandlerProvider {
+public protocol Vurio_Dedup_MediaLocationsServiceProvider: CallHandlerProvider {
   var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? { get }
 
   func registerLocation(request: Vurio_Dedup_RegisterLocationRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RegisterLocationResponse>
@@ -2173,13 +2239,13 @@ internal protocol Vurio_Dedup_MediaLocationsServiceProvider: CallHandlerProvider
 }
 
 extension Vurio_Dedup_MediaLocationsServiceProvider {
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
   /// Determines, calls and returns the appropriate request handler, depending on the request's method.
   /// Returns nil for methods not handled by this service.
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2232,7 +2298,7 @@ extension Vurio_Dedup_MediaLocationsServiceProvider {
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_MediaLocationsServiceAsyncProvider: CallHandlerProvider, Sendable {
+public protocol Vurio_Dedup_MediaLocationsServiceAsyncProvider: CallHandlerProvider, Sendable {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? { get }
 
@@ -2259,19 +2325,19 @@ internal protocol Vurio_Dedup_MediaLocationsServiceAsyncProvider: CallHandlerPro
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_MediaLocationsServiceAsyncProvider {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor
   }
 
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
-  internal var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2318,7 +2384,7 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncProvider {
   }
 }
 
-internal protocol Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when handling 'registerLocation'.
   ///   Defaults to calling `self.makeInterceptors()`.
@@ -2337,8 +2403,8 @@ internal protocol Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProto
   func makeGetStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>]
 }
 
-internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "MediaLocationsService",
     fullName: "vurio.dedup.MediaLocationsService",
     methods: [
@@ -2349,26 +2415,26 @@ internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let registerLocation = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let registerLocation = GRPCMethodDescriptor(
       name: "RegisterLocation",
       path: "/vurio.dedup.MediaLocationsService/RegisterLocation",
       type: GRPCCallType.unary
     )
 
-    internal static let deregisterLocation = GRPCMethodDescriptor(
+    public static let deregisterLocation = GRPCMethodDescriptor(
       name: "DeregisterLocation",
       path: "/vurio.dedup.MediaLocationsService/DeregisterLocation",
       type: GRPCCallType.unary
     )
 
-    internal static let changePath = GRPCMethodDescriptor(
+    public static let changePath = GRPCMethodDescriptor(
       name: "ChangePath",
       path: "/vurio.dedup.MediaLocationsService/ChangePath",
       type: GRPCCallType.unary
     )
 
-    internal static let getStatus = GRPCMethodDescriptor(
+    public static let getStatus = GRPCMethodDescriptor(
       name: "GetStatus",
       path: "/vurio.dedup.MediaLocationsService/GetStatus",
       type: GRPCCallType.unary
@@ -2380,7 +2446,7 @@ internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
 /// ---------------------------------------------------------
 ///
 /// To build a server, implement a class that conforms to this protocol.
-internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
+public protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
   var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? { get }
 
   func getDuplicateGroups(request: Vurio_Dedup_GetGroupsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetGroupsResponse>
@@ -2388,16 +2454,18 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
   func ejectDuplicates(request: Vurio_Dedup_EjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_EjectDuplicatesResponse>
 
   func undoEjectDuplicates(request: Vurio_Dedup_UndoEjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_UndoEjectDuplicatesResponse>
+
+  func subscribeToDuplicateUpdates(request: Vurio_Dedup_Empty, context: StreamingResponseCallContext<Vurio_Dedup_DuplicateGroupUpdate>) -> EventLoopFuture<GRPCStatus>
 }
 
 extension Vurio_Dedup_DuplicatesServiceProvider {
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
   /// Determines, calls and returns the appropriate request handler, depending on the request's method.
   /// Returns nil for methods not handled by this service.
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2429,6 +2497,15 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         userFunction: self.undoEjectDuplicates(request:context:)
       )
 
+    case "SubscribeToDuplicateUpdates":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicateGroupUpdate>(),
+        interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? [],
+        userFunction: self.subscribeToDuplicateUpdates(request:context:)
+      )
+
     default:
       return nil
     }
@@ -2441,7 +2518,7 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvider, Sendable {
+public protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvider, Sendable {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? { get }
 
@@ -2459,23 +2536,29 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
     request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_UndoEjectDuplicatesResponse
+
+  func subscribeToDuplicateUpdates(
+    request: Vurio_Dedup_Empty,
+    responseStream: GRPCAsyncResponseStreamWriter<Vurio_Dedup_DuplicateGroupUpdate>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor
   }
 
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
-  internal var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2507,13 +2590,22 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.undoEjectDuplicates(request: $0, context: $1) }
       )
 
+    case "SubscribeToDuplicateUpdates":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicateGroupUpdate>(),
+        interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? [],
+        wrapping: { try await self.subscribeToDuplicateUpdates(request: $0, responseStream: $1, context: $2) }
+      )
+
     default:
       return nil
     }
   }
 }
 
-internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when handling 'getDuplicateGroups'.
   ///   Defaults to calling `self.makeInterceptors()`.
@@ -2526,36 +2618,47 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when handling 'undoEjectDuplicates'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeUndoEjectDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>]
+
+  /// - Returns: Interceptors to use when handling 'subscribeToDuplicateUpdates'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSubscribeToDuplicateUpdatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
 }
 
-internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_DuplicatesServiceServerMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "DuplicatesService",
     fullName: "vurio.dedup.DuplicatesService",
     methods: [
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.subscribeToDuplicateUpdates,
     ]
   )
 
-  internal enum Methods {
-    internal static let getDuplicateGroups = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let getDuplicateGroups = GRPCMethodDescriptor(
       name: "GetDuplicateGroups",
       path: "/vurio.dedup.DuplicatesService/GetDuplicateGroups",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectDuplicates = GRPCMethodDescriptor(
+    public static let ejectDuplicates = GRPCMethodDescriptor(
       name: "EjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/EjectDuplicates",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectDuplicates = GRPCMethodDescriptor(
+    public static let undoEjectDuplicates = GRPCMethodDescriptor(
       name: "UndoEjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
       type: GRPCCallType.unary
+    )
+
+    public static let subscribeToDuplicateUpdates = GRPCMethodDescriptor(
+      name: "SubscribeToDuplicateUpdates",
+      path: "/vurio.dedup.DuplicatesService/SubscribeToDuplicateUpdates",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
@@ -2564,7 +2667,7 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
 /// ---------------------------------------------------------
 ///
 /// To build a server, implement a class that conforms to this protocol.
-internal protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvider {
+public protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvider {
   var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
 
   func resetErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
@@ -2599,13 +2702,13 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvid
 }
 
 extension Vurio_Dedup_AdvancedSettingsServiceProvider {
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
   /// Determines, calls and returns the appropriate request handler, depending on the request's method.
   /// Returns nil for methods not handled by this service.
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2757,7 +2860,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceProvider {
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerProvider, Sendable {
+public protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerProvider, Sendable {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
 
@@ -2839,19 +2942,19 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerP
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor
   }
 
-  internal var serviceName: Substring {
+  public var serviceName: Substring {
     return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
   }
 
-  internal var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func handle(
+  public func handle(
     method name: Substring,
     context: CallHandlerContext
   ) -> GRPCServerHandlerProtocol? {
@@ -2997,7 +3100,7 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
   }
 }
 
-internal protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol: Sendable {
+public protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when handling 'resetErrors'.
   ///   Defaults to calling `self.makeInterceptors()`.
@@ -3060,8 +3163,8 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryPro
   func makeSetUserThemeInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>]
 }
 
-internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "AdvancedSettingsService",
     fullName: "vurio.dedup.AdvancedSettingsService",
     methods: [
@@ -3083,92 +3186,92 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let resetErrors = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let resetErrors = GRPCMethodDescriptor(
       name: "ResetErrors",
       path: "/vurio.dedup.AdvancedSettingsService/ResetErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectErrors = GRPCMethodDescriptor(
+    public static let ejectErrors = GRPCMethodDescriptor(
       name: "EjectErrors",
       path: "/vurio.dedup.AdvancedSettingsService/EjectErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectErrors = GRPCMethodDescriptor(
+    public static let undoEjectErrors = GRPCMethodDescriptor(
       name: "UndoEjectErrors",
       path: "/vurio.dedup.AdvancedSettingsService/UndoEjectErrors",
       type: GRPCCallType.unary
     )
 
-    internal static let ejectIgnored = GRPCMethodDescriptor(
+    public static let ejectIgnored = GRPCMethodDescriptor(
       name: "EjectIgnored",
       path: "/vurio.dedup.AdvancedSettingsService/EjectIgnored",
       type: GRPCCallType.unary
     )
 
-    internal static let undoEjectIgnored = GRPCMethodDescriptor(
+    public static let undoEjectIgnored = GRPCMethodDescriptor(
       name: "UndoEjectIgnored",
       path: "/vurio.dedup.AdvancedSettingsService/UndoEjectIgnored",
       type: GRPCCallType.unary
     )
 
-    internal static let purgeEjectedAndErrored = GRPCMethodDescriptor(
+    public static let purgeEjectedAndErrored = GRPCMethodDescriptor(
       name: "PurgeEjectedAndErrored",
       path: "/vurio.dedup.AdvancedSettingsService/PurgeEjectedAndErrored",
       type: GRPCCallType.unary
     )
 
-    internal static let resetDuplicates = GRPCMethodDescriptor(
+    public static let resetDuplicates = GRPCMethodDescriptor(
       name: "ResetDuplicates",
       path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
       type: GRPCCallType.unary
     )
 
-    internal static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
+    public static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
       name: "StartDatabaseIntegrityCheck",
       path: "/vurio.dedup.AdvancedSettingsService/StartDatabaseIntegrityCheck",
       type: GRPCCallType.unary
     )
 
-    internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
+    public static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
       name: "GetDatabaseIntegrityCheckStatus",
       path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
       type: GRPCCallType.unary
     )
 
-    internal static let backupDatabase = GRPCMethodDescriptor(
+    public static let backupDatabase = GRPCMethodDescriptor(
       name: "BackupDatabase",
       path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
       type: GRPCCallType.unary
     )
 
-    internal static let getLatestBackup = GRPCMethodDescriptor(
+    public static let getLatestBackup = GRPCMethodDescriptor(
       name: "GetLatestBackup",
       path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
       type: GRPCCallType.unary
     )
 
-    internal static let clearAllCaches = GRPCMethodDescriptor(
+    public static let clearAllCaches = GRPCMethodDescriptor(
       name: "ClearAllCaches",
       path: "/vurio.dedup.AdvancedSettingsService/ClearAllCaches",
       type: GRPCCallType.unary
     )
 
-    internal static let configurePurityOrder = GRPCMethodDescriptor(
+    public static let configurePurityOrder = GRPCMethodDescriptor(
       name: "ConfigurePurityOrder",
       path: "/vurio.dedup.AdvancedSettingsService/ConfigurePurityOrder",
       type: GRPCCallType.unary
     )
 
-    internal static let getUserTheme = GRPCMethodDescriptor(
+    public static let getUserTheme = GRPCMethodDescriptor(
       name: "GetUserTheme",
       path: "/vurio.dedup.AdvancedSettingsService/GetUserTheme",
       type: GRPCCallType.unary
     )
 
-    internal static let setUserTheme = GRPCMethodDescriptor(
+    public static let setUserTheme = GRPCMethodDescriptor(
       name: "SetUserTheme",
       path: "/vurio.dedup.AdvancedSettingsService/SetUserTheme",
       type: GRPCCallType.unary

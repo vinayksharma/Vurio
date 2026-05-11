@@ -120,6 +120,15 @@ public:
 class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Service {
     DatabaseManager* db_;
 
+    struct StreamQueue {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::queue<vurio::dedup::DuplicateGroupUpdate> updates;
+        bool active = true;
+    };
+    std::mutex streams_mutex_;
+    std::vector<std::shared_ptr<StreamQueue>> streams_;
+
     static std::string calculateFileSHA1(const std::string& path) {
         Poco::SHA1Engine sha1;
         Poco::DigestOutputStream dos(sha1);
@@ -131,6 +140,60 @@ class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Serv
 
 public:
     explicit DuplicatesServiceImpl(DatabaseManager* db) : db_(db) {}
+
+    void OnDuplicateGroupEvent(int group_id, bool is_new) {
+        if (!db_) return;
+        
+        auto group_opt = MediaDedup::DuplicateGroupsOps::getGroupById(*db_, group_id);
+        if (!group_opt.has_value()) return;
+        
+        int index = MediaDedup::DuplicateGroupsOps::getDuplicateGroupsCountOlderThan(*db_, "EMBEDDING", group_opt->representative_created_date);
+
+        vurio::dedup::DuplicateGroupUpdate update;
+        update.set_type(is_new ? vurio::dedup::DuplicateGroupUpdate::ADDED : vurio::dedup::DuplicateGroupUpdate::UPDATED);
+        update.set_index(index);
+        
+        auto* proto_group = update.mutable_group();
+        proto_group->set_group_id(std::to_string(group_id));
+        
+        auto members = MediaDedup::DuplicateGroupsOps::getMembersByGroup(*db_, group_id);
+        
+        auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
+        std::vector<std::string> ejection_paths;
+        for (const auto& kv : user_settings) {
+            if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                std::string ep = kv.second;
+                std::replace(ep.begin(), ep.end(), '\\', '/');
+                ejection_paths.push_back(ep);
+            }
+        }
+
+        for (const auto& member : members) {
+            auto* proto_file = proto_group->add_files();
+            proto_file->set_file_path(member.file_path);
+            proto_file->set_size_bytes(member.file_size);
+            proto_file->set_is_representative(member.is_representative);
+            proto_file->set_similarity_score(member.similarity_score);
+            
+            bool is_ejected = false;
+            std::string normalized_path = member.file_path;
+            std::replace(normalized_path.begin(), normalized_path.end(), '\\', '/');
+            for (const auto& ep : ejection_paths) {
+                if (normalized_path.find(ep) == 0) {
+                    is_ejected = true;
+                    break;
+                }
+            }
+            proto_file->set_is_ejected(is_ejected);
+        }
+
+        std::lock_guard<std::mutex> lock(streams_mutex_);
+        for (auto& queue : streams_) {
+            std::lock_guard<std::mutex> q_lock(queue->mutex);
+            queue->updates.push(update);
+            queue->cv.notify_one();
+        }
+    }
 
     grpc::Status GetDuplicateGroups(grpc::ServerContext* context, const vurio::dedup::GetGroupsRequest* request,
                                     vurio::dedup::GetGroupsResponse* reply) override {
@@ -395,6 +458,47 @@ public:
         reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
         reply->set_success_count(success_count);
         reply->set_failure_count(failure_count);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SubscribeToDuplicateUpdates(grpc::ServerContext* context, const vurio::dedup::Empty* request,
+                                             grpc::ServerWriter<vurio::dedup::DuplicateGroupUpdate>* writer) override {
+        auto queue = std::make_shared<StreamQueue>();
+        {
+            std::lock_guard<std::mutex> lock(streams_mutex_);
+            streams_.push_back(queue);
+        }
+
+        while (!context->IsCancelled()) {
+            vurio::dedup::DuplicateGroupUpdate update;
+            {
+                std::unique_lock<std::mutex> lock(queue->mutex);
+                queue->cv.wait_for(lock, std::chrono::seconds(1), [&queue, context]{
+                    return !queue->updates.empty() || context->IsCancelled();
+                });
+
+                if (context->IsCancelled()) {
+                    break;
+                }
+
+                if (queue->updates.empty()) {
+                    continue; // Timeout, loop and check cancelled again
+                }
+
+                update = queue->updates.front();
+                queue->updates.pop();
+            }
+
+            if (!writer->Write(update)) {
+                break; // Connection closed
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(streams_mutex_);
+            streams_.erase(std::remove(streams_.begin(), streams_.end(), queue), streams_.end());
+        }
+
         return grpc::Status::OK;
     }
 };
@@ -1027,7 +1131,8 @@ void GrpcServerCore::start(const std::string& socket_path,
                            std::shared_ptr<Orchestration::FilesManager> files_manager,
                            std::shared_ptr<ThreadPoolManager> thread_pool_manager,
                            std::shared_ptr<DiskCache> thumbnail_cache,
-                           std::shared_ptr<DiskCache> transcoding_cache) {
+                           std::shared_ptr<DiskCache> transcoding_cache,
+                           std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder) {
     socket_path_ = socket_path;
     
     // Ensure socket directory exists
@@ -1046,6 +1151,15 @@ void GrpcServerCore::start(const std::string& socket_path,
     auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_manager->getFilesService(), thread_pool_manager, database_manager);
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager);
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache);
+
+    if (duplicate_finder) {
+        // We use a raw pointer to the service because it's managed by services_ below,
+        // and its lifetime is tied to the gRPC server which lives alongside DuplicateFinder
+        DuplicatesServiceImpl* dup_svc = duplicates_service.get();
+        duplicate_finder->setGroupEventCallback([dup_svc](int group_id, bool is_new) {
+            dup_svc->OnDuplicateGroupEvent(group_id, is_new);
+        });
+    }
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());

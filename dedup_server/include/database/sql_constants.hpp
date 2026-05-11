@@ -361,6 +361,9 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateGroupsIndexCreatedAt =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_created_at ON duplicate_groups(created_at);";
 
+        inline constexpr std::string_view kCreateDuplicateGroupsIndexRepDate =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_rep_date ON duplicate_groups(representative_created_date);";
+
         inline constexpr std::string_view kCreateDuplicateMembersIndexFile =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_id ON duplicate_members(file_id);";
 
@@ -415,6 +418,9 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectDuplicateGroupsCountByMode =
             "SELECT COUNT(*) FROM duplicate_groups WHERE mode=?";
+
+        inline constexpr std::string_view kSelectDuplicateGroupsCountOlderThan =
+            "SELECT COUNT(*) FROM duplicate_groups WHERE mode=? AND representative_created_date > ?";
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
             "SELECT file_id, file_path, similarity_score, file_size, created_date, is_representative, added_at "

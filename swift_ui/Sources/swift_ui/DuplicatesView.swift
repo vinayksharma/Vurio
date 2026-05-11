@@ -1,7 +1,12 @@
 import SwiftUI
 
+struct GroupSlot: Identifiable {
+    let id = UUID()
+    var group: Vurio_Dedup_DuplicateGroup?
+}
+
 struct DuplicatesView: View {
-    @State private var groups: [Vurio_Dedup_DuplicateGroup?] = []
+    @State private var groups: [GroupSlot] = []
     @State private var loadingPages: Set<Int32> = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -146,33 +151,31 @@ struct DuplicatesView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                List(0..<Int(totalGroups), id: \.self) { index in
-                    if index < groups.count {
-                        if let group = groups[index] {
-                            DuplicateGroupCard(group: group, index: index + 1) { fileIndex in
-                                selectedGroup = group
-                                selectedFileIndex = fileIndex
-                                showingPopup = true
-                            }
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
-                                .listRowBackground(Color.clear)
-                        } else {
-                            ProgressView()
-                                .frame(maxWidth: .infinity, minHeight: 150)
-                                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                                .cornerRadius(12)
-                                .padding(.bottom, 12)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
-                                .listRowBackground(Color.clear)
-                                .onAppear {
-                                    let pageIndex = Int32(index) / pageSize
-                                    Task {
-                                        await loadPage(pageIndex: pageIndex)
-                                    }
-                                }
+                List(Array(groups.enumerated()), id: \.element.id) { index, slot in
+                    if let group = slot.group {
+                        DuplicateGroupCard(group: group, index: index + 1) { fileIndex in
+                            selectedGroup = group
+                            selectedFileIndex = fileIndex
+                            showingPopup = true
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
+                        .listRowBackground(Color.clear)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 150)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            .cornerRadius(12)
+                            .padding(.bottom, 12)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 30, bottom: 0, trailing: 30))
+                            .listRowBackground(Color.clear)
+                            .onAppear {
+                                let pageIndex = Int32(index) / pageSize
+                                Task {
+                                    await loadPage(pageIndex: pageIndex)
+                                }
+                            }
                     }
                 }
                 .listStyle(.plain)
@@ -186,9 +189,9 @@ struct DuplicatesView: View {
         .sheet(isPresented: $showingPopup) {
             if let group = selectedGroup {
                 ImagePopupView(group: group, isPresented: $showingPopup, initialIndex: selectedFileIndex) { filePath, isEjected in
-                    if let index = groups.firstIndex(where: { $0?.groupID == group.groupID }) {
-                        if let fileIndex = groups[index]?.files.firstIndex(where: { $0.filePath == filePath }) {
-                            groups[index]?.files[fileIndex].isEjected = isEjected
+                    if let index = groups.firstIndex(where: { $0.group?.groupID == group.groupID }) {
+                        if let fileIndex = groups[index].group?.files.firstIndex(where: { $0.filePath == filePath }) {
+                            groups[index].group?.files[fileIndex].isEjected = isEjected
                         }
                     }
                     if let fileIndex = selectedGroup?.files.firstIndex(where: { $0.filePath == filePath }) {
@@ -205,14 +208,13 @@ struct DuplicatesView: View {
             if groups.isEmpty || groups.count != totalGroups {
                 await refresh()
             }
+            await listenForUpdates()
         }
         .onChange(of: appState.duplicateGroupsCount) { newCount in
-            if totalGroups != newCount {
+            // Only refresh if we are currently empty (e.g. going from 0 to >0)
+            // Otherwise, we rely on the streaming updates for fine-grained insertions.
+            if groups.isEmpty && newCount > 0 && !isLoading {
                 totalGroups = newCount
-                if !isLoading {
-                    Task { await refresh() }
-                }
-            } else if groups.isEmpty && newCount > 0 && !isLoading {
                 Task { await refresh() }
             }
         }
@@ -259,7 +261,8 @@ struct DuplicatesView: View {
         defer { isEjecting = false }
         
         var toEject: [String] = []
-        for group in groups.compactMap({ $0 }) {
+        for slot in groups {
+            guard let group = slot.group else { continue }
             for file in group.files {
                 if !file.isEjected && !file.isRepresentative {
                     let score = file.similarityScore > 0 ? file.similarityScore : 1.0
@@ -336,7 +339,7 @@ struct DuplicatesView: View {
         }
     }
     private func refresh() async {
-        groups = Array<Vurio_Dedup_DuplicateGroup?>(repeating: nil, count: Int(totalGroups))
+        groups = (0..<totalGroups).map { _ in GroupSlot(group: nil) }
         loadingPages.removeAll()
         errorMessage = nil
     }
@@ -356,7 +359,7 @@ struct DuplicatesView: View {
                     for (i, group) in response.groups.enumerated() {
                         let globalIndex = Int(pageIndex * pageSize) + i
                         if globalIndex < groups.count {
-                            groups[globalIndex] = group
+                            groups[globalIndex].group = group
                         }
                     }
                     loadingPages.remove(pageIndex)
@@ -367,6 +370,46 @@ struct DuplicatesView: View {
                 self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
                 loadingPages.remove(pageIndex)
             }
+        }
+    }
+    
+    private func listenForUpdates() async {
+        guard let client = VurioGrpcClient.shared.duplicates else { return }
+        let req = Vurio_Dedup_Empty()
+        let call = client.makeSubscribeToDuplicateUpdatesCall(req)
+        
+        do {
+            for try await update in call.responseStream {
+                await handleUpdate(update)
+            }
+        } catch {
+            print("Duplicate updates stream error: \(error)")
+        }
+    }
+    
+    @MainActor
+    private func handleUpdate(_ update: Vurio_Dedup_DuplicateGroupUpdate) {
+        let index = Int(update.index)
+        
+        switch update.type {
+        case .added:
+            if index <= groups.count {
+                groups.insert(GroupSlot(group: update.group), at: index)
+                totalGroups = Int32(groups.count)
+            }
+        case .updated:
+            if let existingIdx = groups.firstIndex(where: { $0.group?.groupID == update.group.groupID }) {
+                groups[existingIdx].group = update.group
+            } else if index < groups.count {
+                groups[index].group = update.group
+            }
+        case .deleted:
+            if let existingIdx = groups.firstIndex(where: { $0.group?.groupID == update.group.groupID }) {
+                groups.remove(at: existingIdx)
+                totalGroups = Int32(groups.count)
+            }
+        case .UNRECOGNIZED(_):
+            break
         }
     }
 }

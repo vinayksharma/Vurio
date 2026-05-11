@@ -90,6 +90,7 @@ service DuplicatesService {
   rpc GetDuplicateGroups(GetGroupsRequest) returns (GetGroupsResponse);
   rpc EjectDuplicates(EjectDuplicatesRequest) returns (EjectDuplicatesResponse);
   rpc UndoEjectDuplicates(UndoEjectDuplicatesRequest) returns (UndoEjectDuplicatesResponse);
+  rpc SubscribeToDuplicateUpdates(Empty) returns (stream DuplicateGroupUpdate);
 }
 
 message GetGroupsRequest {
@@ -138,6 +139,17 @@ message UndoEjectDuplicatesResponse {
   int32 success_count = 2;
   int32 failure_count = 3;
   string error_message = 4;
+}
+
+message DuplicateGroupUpdate {
+  enum UpdateType {
+    ADDED = 0;
+    UPDATED = 1;
+    DELETED = 2;
+  }
+  UpdateType type = 1;
+  int32 index = 2;
+  DuplicateGroup group = 3;
 }
 
 // ---------------------------------------------------------
