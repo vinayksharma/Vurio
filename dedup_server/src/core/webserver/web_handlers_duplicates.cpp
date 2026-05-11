@@ -205,8 +205,8 @@ namespace MediaDedupServer
             }
         }
 
-        ResetDuplicatesHandler::ResetDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
-            : database_manager_(db)
+        ResetDuplicatesHandler::ResetDuplicatesHandler(std::shared_ptr<MediaDedup::DatabaseManager> db, std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_service)
+            : database_manager_(db), scheduler_service_(scheduler_service)
         {
         }
 
@@ -300,6 +300,12 @@ namespace MediaDedupServer
                 if (success)
                 {
                     logger.information("Duplicate reset completed successfully for %zu mode(s)", modes_to_reset.size());
+
+                    if (scheduler_service_)
+                    {
+                        logger.information("Triggering duplicate finder out of turn");
+                        scheduler_service_->triggerJob("duplicateFinder");
+                    }
 
                     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                     response.setContentType("application/json");

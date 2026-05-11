@@ -4,11 +4,39 @@ import Combine
 @MainActor
 class SettingsViewModel: ObservableObject {
     @Published var config: [String: String] = [:]
+    @Published var originalConfig: [String: String] = [:]
     @Published var isLoadingConfig = false
     @Published var modifiedProperties: Set<String> = []
     
     // Advanced UI States
     @Published var isAnyActionRunning = false
+    
+    var groupedConfigKeys: [(String, [String])] {
+        var groups: [String: [String]] = [:]
+        
+        for key in config.keys {
+            let parts = key.split(separator: ".")
+            let section: String
+            
+            if parts.isEmpty {
+                section = "General"
+            } else {
+                let first = String(parts[0])
+                if first == "media" && parts.count > 1 {
+                    let second = String(parts[1])
+                    section = "Media - \(second.capitalized)"
+                } else if first.lowercased() == "tpm" {
+                    section = "TPM"
+                } else {
+                    section = first.capitalized
+                }
+            }
+            
+            groups[section, default: []].append(key)
+        }
+        
+        return groups.keys.sorted().map { ($0, groups[$0]!.sorted()) }
+    }
     
     func loadConfig() async {
         isLoadingConfig = true
@@ -21,6 +49,7 @@ class SettingsViewModel: ObservableObject {
                 if let data = response.jsonPayload.data(using: .utf8),
                    let dict = try JSONSerialization.jsonObject(with: data) as? [String: String] {
                     self.config = dict
+                    self.originalConfig = dict
                     self.modifiedProperties.removeAll()
                 }
             }

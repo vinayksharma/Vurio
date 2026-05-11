@@ -19,23 +19,7 @@ struct SettingsView: View {
                 
                 // Add MediaLocationsSection here if needed, but the user excluded it from this task since it already exists elsewhere in the Swift app.
                 
-                // UISettings
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("UI Settings")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Picker("Theme", selection: .constant("os")) {
-                        Text("OS Default").tag("os")
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                    .disabled(true) // Currently forced to Dark Mode natively
-                }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(10)
+
                 
                 PurityOrderSection(viewModel: viewModel)
                 
@@ -81,18 +65,53 @@ struct SettingsView: View {
                             if viewModel.isLoadingConfig {
                                 ProgressView("Loading configuration...")
                             } else {
-                                ForEach(Array(viewModel.config.keys.sorted()), id: \.self) { key in
-                                    HStack {
-                                        Text(key)
-                                            .frame(width: 250, alignment: .leading)
-                                        TextField("", text: Binding(
-                                            get: { viewModel.config[key] ?? "" },
-                                            set: { newValue in
-                                                viewModel.config[key] = newValue
-                                                viewModel.modifiedProperties.insert(key)
+                                ForEach(viewModel.groupedConfigKeys, id: \.0) { sectionName, keys in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text(sectionName)
+                                            .font(.headline)
+                                            .foregroundColor(.secondary)
+                                            .padding(.top, 10)
+                                        
+                                        ForEach(keys, id: \.self) { key in
+                                            HStack {
+                                                Text(key)
+                                                    .frame(width: 250, alignment: .leading)
+                                                
+                                                let originalValue = viewModel.originalConfig[key] ?? ""
+                                                if originalValue == "true" || originalValue == "false" {
+                                                    Toggle("", isOn: Binding(
+                                                        get: { (viewModel.config[key] ?? "") == "true" },
+                                                        set: { newValue in
+                                                            viewModel.config[key] = newValue ? "true" : "false"
+                                                            viewModel.modifiedProperties.insert(key)
+                                                        }
+                                                    ))
+                                                    .labelsHidden()
+                                                } else if Double(originalValue) != nil || Int(originalValue) != nil {
+                                                    TextField("", text: Binding(
+                                                        get: { viewModel.config[key] ?? "" },
+                                                        set: { newValue in
+                                                            let filtered = newValue.filter { "0123456789.-".contains($0) }
+                                                            viewModel.config[key] = filtered
+                                                            viewModel.modifiedProperties.insert(key)
+                                                        }
+                                                    ))
+                                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                                } else {
+                                                    TextField("", text: Binding(
+                                                        get: { viewModel.config[key] ?? "" },
+                                                        set: { newValue in
+                                                            viewModel.config[key] = newValue
+                                                            viewModel.modifiedProperties.insert(key)
+                                                        }
+                                                    ))
+                                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                                }
                                             }
-                                        ))
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        }
+                                        
+                                        Divider()
+                                            .padding(.vertical, 5)
                                     }
                                 }
                             }
