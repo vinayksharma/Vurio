@@ -39,6 +39,7 @@ struct SettingsView: View {
                             Image(systemName: configSectionCollapsed ? "chevron.right" : "chevron.down")
                                 .foregroundColor(.secondary)
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(PlainButtonStyle())
                     .padding()

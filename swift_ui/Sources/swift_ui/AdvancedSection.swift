@@ -20,6 +20,7 @@ struct AdvancedSection: View {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .foregroundColor(.secondary)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
             .padding()

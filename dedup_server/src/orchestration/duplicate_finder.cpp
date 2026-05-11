@@ -140,7 +140,7 @@ namespace MediaDedup
 
                     total_processed += processed;
                     batch_count++;
-                    last_processed_id += processed; // Advance checkpoint
+                    // last_processed_id is updated by reference inside processBatch
 
                     logger.debug("Processed batch %d: %d files (total: %d)",
                                  batch_count, processed, total_processed);
@@ -265,7 +265,7 @@ namespace MediaDedup
             return true;
         }
 
-        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int last_processed_id)
+        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id)
         {
             Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
 
@@ -482,8 +482,6 @@ namespace MediaDedup
                             if (!loadFileArtifacts(current_file_id, mode, new_file))
                             {
                                 logger.warning("Failed to load artifacts for file_id %d, skipping", current_file_id);
-                                int current_max = new_last_processed_id.load();
-                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
                                 goto task_end;
                             }
 
@@ -494,8 +492,6 @@ namespace MediaDedup
                             if (existing_group_opt.has_value())
                             {
                                 logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
-                                int current_max = new_last_processed_id.load();
-                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
                                 goto task_end;
                             }
 
@@ -559,9 +555,6 @@ namespace MediaDedup
                             // Write phase
                             {
                                 std::unique_lock<std::shared_mutex> w_lock(rw_mutex);
-
-                                int current_max = new_last_processed_id.load();
-                                while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
 
                                 if (best_group_id > 0)
                                 {
@@ -689,6 +682,10 @@ namespace MediaDedup
                         }
 
                     task_end:
+                        {
+                            int current_max = new_last_processed_id.load();
+                            while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
+                        }
                         notifier->notify(true);
                     };
 
@@ -803,22 +800,24 @@ namespace MediaDedup
 
                 // Update checkpoint only if no tasks were dropped
                 if (!any_dropped.load()) {
+                    last_processed_id = new_last_processed_id.load();
                     bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
-                        db_, mode, new_last_processed_id.load(), files_checked.load(), duplicates_found.load(),
+                        db_, mode, last_processed_id, files_checked.load(), duplicates_found.load(),
                         groups_created.load(), groups_updated.load());
 
                     if (!checkpoint_updated)
                     {
                         logger.warning("Failed to update checkpoint for mode %s", mode);
                     }
+                    
+                    logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
+                                       files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load());
+
+                    return static_cast<int>(file_ids.size());
                 } else {
                     logger.warning("Tasks were dropped (e.g. queue cleared). Checkpoint will not be updated this run.");
+                    return 0; // Return 0 to stop findDuplicates from spinning
                 }
-
-                logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
-                                   files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load());
-
-                return static_cast<int>(file_ids.size());
             }
             catch (const std::exception &e)
             {

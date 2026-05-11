@@ -159,11 +159,22 @@ struct StatusBarView: View {
                 let dupesColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
                     appearance.name == .darkAqua ? NSColor(calibratedRed: 150/255.0, green: 220/255.0, blue: 150/255.0, alpha: 1.0) : NSColor.systemGreen
                 }))
+                let orangeColor = Color(NSColor.systemOrange)
+                
+                let findingText: Text = {
+                    if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                        let percent = Int((Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
+                        return Text(" (\(percent)% scanned)").foregroundColor(orangeColor)
+                    } else {
+                        return Text("")
+                    }
+                }()
                 
                 (Text("SCANNED \(appState.scannedFilesCount) • PROCESSED \(appState.processedFilesCount)")
                     .foregroundColor(defaultColor) +
                 Text(" • GROUPS \(appState.duplicateGroupsCount)")
                     .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
+                findingText +
                 Text(" • PATHS \(appState.registeredDirs.count) • THREADS \(appState.threadCount)/\(appState.maxThreads) • ")
                     .foregroundColor(defaultColor) +
                 Text("ERRORS \(appState.errorFilesCount)")
