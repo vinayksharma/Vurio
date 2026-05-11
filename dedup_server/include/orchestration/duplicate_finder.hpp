@@ -142,7 +142,7 @@ namespace MediaDedup
              * @param last_processed_id Start processing from this ID + 1
              * @return Number of files processed
              */
-            int processBatch(const std::string &mode, int batch_size, int last_processed_id);
+            int processBatch(const std::string &mode, int batch_size, int &last_processed_id);
 
             /**
              * @brief Load artifacts for a single file
