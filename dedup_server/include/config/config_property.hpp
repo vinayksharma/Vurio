@@ -24,7 +24,8 @@ namespace MediaDedup
          */
         ConfigProperty(const std::string &key, const std::any &default_value,
                        const std::string &description = "",
-                       const std::string &long_description = "");
+                       const std::string &long_description = "",
+                       const std::string &options = "");
 
         // Getters
         const std::string &getKey() const { return key_; }
@@ -32,6 +33,7 @@ namespace MediaDedup
         const std::any &getDefaultValue() const { return default_value_; }
         const std::string &getDescription() const { return description_; }
         const std::string &getLongDescription() const { return long_description_; }
+        const std::string &getOptions() const { return options_; }
         bool isModified() const { return modified_; }
 
         // Value type checking and conversion
@@ -72,6 +74,7 @@ namespace MediaDedup
         std::any default_value_;
         std::string description_;
         std::string long_description_;
+        std::string options_;
         bool modified_;
 
         // Helper method for value setting (without event emission)
