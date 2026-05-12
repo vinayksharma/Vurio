@@ -128,7 +128,20 @@ struct ConfigRowView: View {
                 .help(viewModel.configDescriptions[key] ?? "")
             
             let originalValue = viewModel.originalConfig[key] ?? ""
-            if originalValue == "true" || originalValue == "false" {
+            if let options = viewModel.configOptions[key], !options.isEmpty {
+                Picker("", selection: Binding(
+                    get: { viewModel.config[key] ?? "" },
+                    set: { newValue in
+                        viewModel.config[key] = newValue
+                        viewModel.modifiedProperties.insert(key)
+                    }
+                )) {
+                    ForEach(options, id: \.self) { option in
+                        Text(option).tag(option)
+                    }
+                }
+                .labelsHidden()
+            } else if originalValue == "true" || originalValue == "false" {
                 Toggle("", isOn: Binding(
                     get: { (viewModel.config[key] ?? "") == "true" },
                     set: { newValue in

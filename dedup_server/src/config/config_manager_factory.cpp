@@ -333,6 +333,14 @@ namespace MediaDedup
             return "Detailed information for " + key;
         };
 
+        auto getOptions = [&descriptions](const std::string& key) -> std::string {
+            std::string options_key = key + ".options";
+            if (descriptions.contains(options_key) && descriptions[options_key].is_string()) {
+                return descriptions[options_key].get<std::string>();
+            }
+            return "";
+        };
+
         // Create default server properties (matching CONFIGURATION_REFERENCE.md)
         manager->createProperty<std::string>("server.host", "0.0.0.0", getDesc("server.host"), getLongDesc("server.host"));
         manager->createProperty<int>("server.port", 8080, getDesc("server.port"), getLongDesc("server.port"));
@@ -354,10 +362,10 @@ namespace MediaDedup
         manager->createProperty<bool>("database.vector.enabled", false, getDesc("database.vector.enabled"), getLongDesc("database.vector.enabled"));
         manager->createProperty<std::string>("database.vector.extensionPath", "", getDesc("database.vector.extensionPath"), getLongDesc("database.vector.extensionPath"));
         manager->createProperty<int>("database.sqlite.cacheSize", 1000, getDesc("database.sqlite.cacheSize"), getLongDesc("database.sqlite.cacheSize"));
-        manager->createProperty<std::string>("database.sqlite.tempStore", "memory", getDesc("database.sqlite.tempStore"), getLongDesc("database.sqlite.tempStore"));
+        manager->createProperty<std::string>("database.sqlite.tempStore", "memory", getDesc("database.sqlite.tempStore"), getLongDesc("database.sqlite.tempStore"), getOptions("database.sqlite.tempStore"));
 
         // Create default logging properties
-        manager->createProperty<std::string>("logging.level", config.log_level, getDesc("logging.level"), getLongDesc("logging.level"));
+        manager->createProperty<std::string>("logging.level", config.log_level, getDesc("logging.level"), getLongDesc("logging.level"), getOptions("logging.level"));
         manager->createProperty<bool>("logging.enable_console", true, getDesc("logging.enable_console"), getLongDesc("logging.enable_console"));
         manager->createProperty<bool>("logging.enable_file", false, getDesc("logging.enable_file"), getLongDesc("logging.enable_file"));
 
@@ -371,7 +379,7 @@ namespace MediaDedup
         // Create default scheduler properties
         manager->createProperty<bool>("scheduler.jitter.enabled", false, getDesc("scheduler.jitter.enabled"), getLongDesc("scheduler.jitter.enabled"));
         manager->createProperty<int>("scheduler.jitter.percent", 0, getDesc("scheduler.jitter.percent"), getLongDesc("scheduler.jitter.percent"));
-        manager->createProperty<std::string>("scheduler.drift.mode", "anchored", getDesc("scheduler.drift.mode"), getLongDesc("scheduler.drift.mode"));
+        manager->createProperty<std::string>("scheduler.drift.mode", "anchored", getDesc("scheduler.drift.mode"), getLongDesc("scheduler.drift.mode"), getOptions("scheduler.drift.mode"));
         manager->createProperty<int>("scheduler.drift.maxDriftMs", 60000, getDesc("scheduler.drift.maxDriftMs"), getLongDesc("scheduler.drift.maxDriftMs"));
         manager->createProperty<bool>("scheduler.backoff.enabled", true, getDesc("scheduler.backoff.enabled"), getLongDesc("scheduler.backoff.enabled"));
         manager->createProperty<int>("scheduler.backoff.initialMs", 1000, getDesc("scheduler.backoff.initialMs"), getLongDesc("scheduler.backoff.initialMs"));

@@ -7,6 +7,7 @@ class SettingsViewModel: ObservableObject {
     @Published var originalConfig: [String: String] = [:]
     @Published var configDescriptions: [String: String] = [:]
     @Published var configLongDescriptions: [String: String] = [:]
+    @Published var configOptions: [String: [String]] = [:]
     @Published var isLoadingConfig = false
     @Published var modifiedProperties: Set<String> = []
     
@@ -53,6 +54,7 @@ class SettingsViewModel: ObservableObject {
                     var parsedConfig: [String: String] = [:]
                     var parsedDescriptions: [String: String] = [:]
                     var parsedLongDescriptions: [String: String] = [:]
+                    var parsedOptions: [String: [String]] = [:]
                     
                     for (key, value) in dict {
                         if let strValue = value as? String {
@@ -67,6 +69,9 @@ class SettingsViewModel: ObservableObject {
                             if let propLongDesc = objValue["longDescription"] as? String {
                                 parsedLongDescriptions[key] = propLongDesc
                             }
+                            if let propOptions = objValue["options"] as? String, !propOptions.isEmpty {
+                                parsedOptions[key] = propOptions.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                            }
                         }
                     }
                     
@@ -74,6 +79,7 @@ class SettingsViewModel: ObservableObject {
                     self.originalConfig = parsedConfig
                     self.configDescriptions = parsedDescriptions
                     self.configLongDescriptions = parsedLongDescriptions
+                    self.configOptions = parsedOptions
                     self.modifiedProperties.removeAll()
                 }
             }

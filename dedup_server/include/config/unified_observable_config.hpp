@@ -38,8 +38,9 @@ namespace MediaDedup
 
         ObservableConfigProperty(const std::string &key, const std::any &default_value,
                                  const std::string &description = "",
-                                 const std::string &long_description = "")
-            : ConfigProperty(key, default_value, description, long_description) {}
+                                 const std::string &long_description = "",
+                                 const std::string &options = "")
+            : ConfigProperty(key, default_value, description, long_description, options) {}
 
         // Value setting with validation and event emission
         bool setValue(const std::any &new_value, const std::string &source = "programmatic");
@@ -108,9 +109,10 @@ namespace MediaDedup
         std::shared_ptr<ObservableConfigProperty> createProperty(const std::string &key,
                                                                  const T &default_value,
                                                                  const std::string &description = "",
-                                                                 const std::string &long_description = "")
+                                                                 const std::string &long_description = "",
+                                                                 const std::string &options = "")
         {
-            auto property = property_manager_.createProperty<T>(key, default_value, description, long_description);
+            auto property = property_manager_.createProperty<T>(key, default_value, description, long_description, options);
 
             // Set up change callback to emit events
             property->setChangeCallback([this](const ConfigChangeEvent &event)

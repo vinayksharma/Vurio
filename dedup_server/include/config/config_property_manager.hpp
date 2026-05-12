@@ -73,11 +73,12 @@ namespace MediaDedup
         std::shared_ptr<ObservableConfigProperty> createProperty(const std::string &key,
                                                                  const T &default_value,
                                                                  const std::string &description = "",
-                                                                 const std::string &long_description = "")
+                                                                 const std::string &long_description = "",
+                                                                 const std::string &options = "")
         {
             std::lock_guard<std::mutex> lock(properties_mutex_);
 
-            auto property = std::make_shared<ObservableConfigProperty>(key, default_value, description, long_description);
+            auto property = std::make_shared<ObservableConfigProperty>(key, default_value, description, long_description, options);
             properties_[key] = property;
             return property;
         }

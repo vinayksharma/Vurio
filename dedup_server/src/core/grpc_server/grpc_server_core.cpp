@@ -39,6 +39,7 @@ public:
                 prop_json["value"] = property->getValueAsString();
                 prop_json["description"] = property->getDescription();
                 prop_json["longDescription"] = property->getLongDescription();
+                prop_json["options"] = property->getOptions();
                 json_config[key] = prop_json;
             }
         }
