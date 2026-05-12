@@ -6,9 +6,10 @@ namespace MediaDedup
 {
 
     ConfigProperty::ConfigProperty(const std::string &key, const std::any &default_value,
-                                   const std::string &description)
+                                   const std::string &description,
+                                   const std::string &long_description)
         : key_(key), value_(default_value), default_value_(default_value),
-          description_(description), modified_(false)
+          description_(description), long_description_(long_description), modified_(false)
     {
     }
 

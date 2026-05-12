@@ -6,6 +6,7 @@ class SettingsViewModel: ObservableObject {
     @Published var config: [String: String] = [:]
     @Published var originalConfig: [String: String] = [:]
     @Published var configDescriptions: [String: String] = [:]
+    @Published var configLongDescriptions: [String: String] = [:]
     @Published var isLoadingConfig = false
     @Published var modifiedProperties: Set<String> = []
     
@@ -51,6 +52,7 @@ class SettingsViewModel: ObservableObject {
                    let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     var parsedConfig: [String: String] = [:]
                     var parsedDescriptions: [String: String] = [:]
+                    var parsedLongDescriptions: [String: String] = [:]
                     
                     for (key, value) in dict {
                         if let strValue = value as? String {
@@ -62,12 +64,16 @@ class SettingsViewModel: ObservableObject {
                             if let propDesc = objValue["description"] as? String {
                                 parsedDescriptions[key] = propDesc
                             }
+                            if let propLongDesc = objValue["longDescription"] as? String {
+                                parsedLongDescriptions[key] = propLongDesc
+                            }
                         }
                     }
                     
                     self.config = parsedConfig
                     self.originalConfig = parsedConfig
                     self.configDescriptions = parsedDescriptions
+                    self.configLongDescriptions = parsedLongDescriptions
                     self.modifiedProperties.removeAll()
                 }
             }
