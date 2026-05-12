@@ -13,6 +13,7 @@
 #include "core/logging_setup.hpp"
 #include "core/instance_checker.hpp"
 #include "core/config_manager.hpp"
+#include "config/config_manager_factory.hpp"
 #include "core/server_initializer.hpp"
 #include "core/server_shutdown.hpp"
 #include "core/console_input_manager.hpp"
@@ -133,7 +134,7 @@ namespace MediaDedup
                 config_path = "dedup_server/config/config.yaml";
             }
             logger_.information("Using config file: " + config_path);
-            config_manager_ = std::make_shared<UnifiedObservableConfigManager>(config_path);
+            config_manager_ = ConfigManagerFactory::createForProduction(config_path, true);
             ServerInitializer initializer(config_manager_);
 
             if (!initializer.initializeConfiguration())

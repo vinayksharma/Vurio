@@ -5,6 +5,7 @@ import Combine
 class SettingsViewModel: ObservableObject {
     @Published var config: [String: String] = [:]
     @Published var originalConfig: [String: String] = [:]
+    @Published var configDescriptions: [String: String] = [:]
     @Published var isLoadingConfig = false
     @Published var modifiedProperties: Set<String> = []
     
@@ -47,9 +48,26 @@ class SettingsViewModel: ObservableObject {
             if let response = try await VurioGrpcClient.shared.config?.getConfig(request) {
                 // The response is JSON string, parse it
                 if let data = response.jsonPayload.data(using: .utf8),
-                   let dict = try JSONSerialization.jsonObject(with: data) as? [String: String] {
-                    self.config = dict
-                    self.originalConfig = dict
+                   let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    var parsedConfig: [String: String] = [:]
+                    var parsedDescriptions: [String: String] = [:]
+                    
+                    for (key, value) in dict {
+                        if let strValue = value as? String {
+                            // Backwards compatibility
+                            parsedConfig[key] = strValue
+                        } else if let objValue = value as? [String: Any],
+                                  let propValue = objValue["value"] as? String {
+                            parsedConfig[key] = propValue
+                            if let propDesc = objValue["description"] as? String {
+                                parsedDescriptions[key] = propDesc
+                            }
+                        }
+                    }
+                    
+                    self.config = parsedConfig
+                    self.originalConfig = parsedConfig
+                    self.configDescriptions = parsedDescriptions
                     self.modifiedProperties.removeAll()
                 }
             }

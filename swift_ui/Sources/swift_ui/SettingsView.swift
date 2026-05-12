@@ -117,7 +117,7 @@ struct ConfigRowView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .popover(isPresented: $showPopover, arrowEdge: .trailing) {
-                Text(ConfigurationTooltips.tooltip(for: key) ?? "Configuration setting")
+                Text(viewModel.configDescriptions[key] ?? "Configuration setting")
                     .fixedSize(horizontal: false, vertical: true)
                     .padding()
                     .frame(width: 300)
@@ -125,7 +125,7 @@ struct ConfigRowView: View {
             
             Text(key)
                 .frame(width: 350, alignment: .leading)
-                .help(ConfigurationTooltips.tooltip(for: key) ?? "")
+                .help(viewModel.configDescriptions[key] ?? "")
             
             let originalValue = viewModel.originalConfig[key] ?? ""
             if originalValue == "true" || originalValue == "false" {

@@ -35,7 +35,10 @@ public:
         for (const auto& key : config_->getAllPropertyKeys()) {
             auto property = config_->getProperty<int>(key); // Template parameter is unused in getProperty
             if (property) {
-                json_config[key] = property->getValueAsString();
+                nlohmann::json prop_json;
+                prop_json["value"] = property->getValueAsString();
+                prop_json["description"] = property->getDescription();
+                json_config[key] = prop_json;
             }
         }
         reply->set_json_payload(json_config.dump(4));
