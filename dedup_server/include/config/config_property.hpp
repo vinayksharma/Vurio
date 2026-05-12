@@ -23,13 +23,15 @@ namespace MediaDedup
          * @param description Human-readable description of the property
          */
         ConfigProperty(const std::string &key, const std::any &default_value,
-                       const std::string &description = "");
+                       const std::string &description = "",
+                       const std::string &long_description = "");
 
         // Getters
         const std::string &getKey() const { return key_; }
         const std::any &getValue() const { return value_; }
         const std::any &getDefaultValue() const { return default_value_; }
         const std::string &getDescription() const { return description_; }
+        const std::string &getLongDescription() const { return long_description_; }
         bool isModified() const { return modified_; }
 
         // Value type checking and conversion
@@ -69,6 +71,7 @@ namespace MediaDedup
         std::any value_;
         std::any default_value_;
         std::string description_;
+        std::string long_description_;
         bool modified_;
 
         // Helper method for value setting (without event emission)

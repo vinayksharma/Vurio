@@ -38,6 +38,7 @@ public:
                 nlohmann::json prop_json;
                 prop_json["value"] = property->getValueAsString();
                 prop_json["description"] = property->getDescription();
+                prop_json["longDescription"] = property->getLongDescription();
                 json_config[key] = prop_json;
             }
         }

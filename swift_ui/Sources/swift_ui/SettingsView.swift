@@ -117,7 +117,7 @@ struct ConfigRowView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .popover(isPresented: $showPopover, arrowEdge: .trailing) {
-                Text(viewModel.configDescriptions[key] ?? "Configuration setting")
+                Text(viewModel.configLongDescriptions[key] ?? viewModel.configDescriptions[key] ?? "Configuration setting")
                     .fixedSize(horizontal: false, vertical: true)
                     .padding()
                     .frame(width: 300)
