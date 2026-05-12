@@ -342,6 +342,8 @@ namespace MediaDedup
         manager->createProperty<int>("server.instanceCheck.bufferSize", 128, getDesc("server.instanceCheck.bufferSize"), getLongDesc("server.instanceCheck.bufferSize"));
         manager->createProperty<int>("server.max_connections", 100, getDesc("server.max_connections"), getLongDesc("server.max_connections"));
         manager->createProperty<double>("server.timeout", 30.0, getDesc("server.timeout"), getLongDesc("server.timeout"));
+        manager->createProperty<std::string>("server.http.threadPool.maxThreads", "auto", getDesc("server.http.threadPool.maxThreads"), getLongDesc("server.http.threadPool.maxThreads"));
+        manager->createProperty<int>("server.http.threadPool.maxQueued", 50, getDesc("server.http.threadPool.maxQueued"), getLongDesc("server.http.threadPool.maxQueued"));
 
         // Create default database properties
         manager->createProperty<std::string>("database.path", "data/dedup_server.db", getDesc("database.path"), getLongDesc("database.path"));
@@ -351,6 +353,8 @@ namespace MediaDedup
         manager->createProperty<int>("database.session.poolMax", 20, getDesc("database.session.poolMax"), getLongDesc("database.session.poolMax"));
         manager->createProperty<bool>("database.vector.enabled", false, getDesc("database.vector.enabled"), getLongDesc("database.vector.enabled"));
         manager->createProperty<std::string>("database.vector.extensionPath", "", getDesc("database.vector.extensionPath"), getLongDesc("database.vector.extensionPath"));
+        manager->createProperty<int>("database.sqlite.cacheSize", 1000, getDesc("database.sqlite.cacheSize"), getLongDesc("database.sqlite.cacheSize"));
+        manager->createProperty<std::string>("database.sqlite.tempStore", "memory", getDesc("database.sqlite.tempStore"), getLongDesc("database.sqlite.tempStore"));
 
         // Create default logging properties
         manager->createProperty<std::string>("logging.level", config.log_level, getDesc("logging.level"), getLongDesc("logging.level"));
@@ -360,6 +364,9 @@ namespace MediaDedup
         // Create default files manager properties
         manager->createProperty<bool>("files.manager.enabled", true, getDesc("files.manager.enabled"), getLongDesc("files.manager.enabled"));
         manager->createProperty<int>("files.manager.scan.intervalMs", 500, getDesc("files.manager.scan.intervalMs"), getLongDesc("files.manager.scan.intervalMs"));
+        manager->createProperty<bool>("files.manager.useInMemoryIndex", false, getDesc("files.manager.useInMemoryIndex"), getLongDesc("files.manager.useInMemoryIndex"));
+        manager->createProperty<bool>("files.service.immediateJobTrigger.enabled", true, getDesc("files.service.immediateJobTrigger.enabled"), getLongDesc("files.service.immediateJobTrigger.enabled"));
+        manager->createProperty<int>("files.service.immediateJobTrigger.timeoutMs", 30000, getDesc("files.service.immediateJobTrigger.timeoutMs"), getLongDesc("files.service.immediateJobTrigger.timeoutMs"));
 
         // Create default scheduler properties
         manager->createProperty<bool>("scheduler.jitter.enabled", false, getDesc("scheduler.jitter.enabled"), getLongDesc("scheduler.jitter.enabled"));
@@ -371,16 +378,20 @@ namespace MediaDedup
         manager->createProperty<double>("scheduler.backoff.multiplier", 2.0, getDesc("scheduler.backoff.multiplier"), getLongDesc("scheduler.backoff.multiplier"));
         manager->createProperty<int>("scheduler.backoff.maxMs", 30000, getDesc("scheduler.backoff.maxMs"), getLongDesc("scheduler.backoff.maxMs"));
         manager->createProperty<int>("scheduler.backoff.jitterPercent", 10, getDesc("scheduler.backoff.jitterPercent"), getLongDesc("scheduler.backoff.jitterPercent"));
+        manager->createProperty<std::string>("scheduler.jobs", "", getDesc("scheduler.jobs"), getLongDesc("scheduler.jobs"));
+        manager->createProperty<int>("scheduler.maxConsecutiveFailures", 5, getDesc("scheduler.maxConsecutiveFailures"), getLongDesc("scheduler.maxConsecutiveFailures"));
 
         // Create default TPM properties
         manager->createProperty<std::string>("tpm.pool.max", "auto", getDesc("tpm.pool.max"), getLongDesc("tpm.pool.max"));
         manager->createProperty<int>("tpm.killTimeoutMs", 10000, getDesc("tpm.killTimeoutMs"), getLongDesc("tpm.killTimeoutMs"));
         manager->createProperty<int>("tpm.thread.idleTimeoutSeconds", 120, getDesc("tpm.thread.idleTimeoutSeconds"), getLongDesc("tpm.thread.idleTimeoutSeconds"));
+        manager->createProperty<int>("tpm.thread.stackSizeKB", 1024, getDesc("tpm.thread.stackSizeKB"), getLongDesc("tpm.thread.stackSizeKB"));
         manager->createProperty<double>("tpm.types.fileScan.share", 1.0, getDesc("tpm.types.fileScan.share"), getLongDesc("tpm.types.fileScan.share"));
 
         // Create default media processor properties
         manager->createProperty<bool>("media.processor.enabled", true, getDesc("media.processor.enabled"), getLongDesc("media.processor.enabled"));
         manager->createProperty<int>("media.processor.intervalMs", 30000, getDesc("media.processor.intervalMs"), getLongDesc("media.processor.intervalMs"));
+        manager->createProperty<int>("media.processor.maxQueueSize", 1000, getDesc("media.processor.maxQueueSize"), getLongDesc("media.processor.maxQueueSize"));
 
         // TPM thread type shares for media processing (consolidated naming: tpm.types.<type>.share)
         manager->createProperty<double>("tpm.types.media_processor.share", 1.0, getDesc("tpm.types.media_processor.share"), getLongDesc("tpm.types.media_processor.share"));
@@ -399,6 +410,9 @@ namespace MediaDedup
         manager->createProperty<bool>("media.image.onnx.sessionCache.enabled", true, getDesc("media.image.onnx.sessionCache.enabled"), getLongDesc("media.image.onnx.sessionCache.enabled"));
         manager->createProperty<int>("media.image.onnx.sessionCache.maxSessions", 4, getDesc("media.image.onnx.sessionCache.maxSessions"), getLongDesc("media.image.onnx.sessionCache.maxSessions"));
         manager->createProperty<int>("media.image.embeddingDim", 512, getDesc("media.image.embeddingDim"), getLongDesc("media.image.embeddingDim"));
+        manager->createProperty<bool>("media.image.transcoding.enabled", true, getDesc("media.image.transcoding.enabled"), getLongDesc("media.image.transcoding.enabled"));
+        manager->createProperty<int>("media.image.transcoding.timeoutMs", 120000, getDesc("media.image.transcoding.timeoutMs"), getLongDesc("media.image.transcoding.timeoutMs"));
+        manager->createProperty<bool>("media.image.transcoding.preserveMetadata", true, getDesc("media.image.transcoding.preserveMetadata"), getLongDesc("media.image.transcoding.preserveMetadata"));
 
         // Create default debug properties
         manager->createProperty<bool>("debug.enabled", false, getDesc("debug.enabled"), getLongDesc("debug.enabled"));
@@ -418,6 +432,12 @@ namespace MediaDedup
         manager->createProperty<int>("duplicates.finder.batchSize", 1000, getDesc("duplicates.finder.batchSize"), getLongDesc("duplicates.finder.batchSize"));
         manager->createProperty<int>("duplicates.finder.maxGroupSize", 100, getDesc("duplicates.finder.maxGroupSize"), getLongDesc("duplicates.finder.maxGroupSize"));
         manager->createProperty<int>("duplicates.finder.knnK", 200, getDesc("duplicates.finder.knnK"), getLongDesc("duplicates.finder.knnK"));
+        manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age", getDesc("duplicates.representative.strategy"), getLongDesc("duplicates.representative.strategy"));
+        manager->createProperty<bool>("duplicates.metadata.filtering.enabled", false, getDesc("duplicates.metadata.filtering.enabled"), getLongDesc("duplicates.metadata.filtering.enabled"));
+        manager->createProperty<double>("duplicates.metadata.fileSizeTolerance", 0.20000000000000001, getDesc("duplicates.metadata.fileSizeTolerance"), getLongDesc("duplicates.metadata.fileSizeTolerance"));
+        manager->createProperty<double>("duplicates.metadata.dimensionTolerance", 0.10000000000000001, getDesc("duplicates.metadata.dimensionTolerance"), getLongDesc("duplicates.metadata.dimensionTolerance"));
+        manager->createProperty<double>("duplicates.metadata.aspectRatioTolerance", 0.050000000000000003, getDesc("duplicates.metadata.aspectRatioTolerance"), getLongDesc("duplicates.metadata.aspectRatioTolerance"));
+        manager->createProperty<bool>("duplicates.metadata.requireSameFormat", false, getDesc("duplicates.metadata.requireSameFormat"), getLongDesc("duplicates.metadata.requireSameFormat"));
 
         // TPM share for duplicate finder
         manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, getDesc("tpm.types.duplicate_finder.share"), getLongDesc("tpm.types.duplicate_finder.share"));
@@ -437,6 +457,7 @@ namespace MediaDedup
         manager->createProperty<std::string>("cache.disk.location", "./previews", getDesc("cache.disk.location"), getLongDesc("cache.disk.location"));
         manager->createProperty<int>("cache.thumbnail.size_limit_mb", 512, getDesc("cache.thumbnail.size_limit_mb"), getLongDesc("cache.thumbnail.size_limit_mb"));
         manager->createProperty<int>("cache.disk.size_limit_mb", 2048, getDesc("cache.disk.size_limit_mb"), getLongDesc("cache.disk.size_limit_mb"));
+        manager->createProperty<bool>("cache.thumbnail.clearOnStartup", false, getDesc("cache.thumbnail.clearOnStartup"), getLongDesc("cache.thumbnail.clearOnStartup"));
 
         // Thumbnail generation configuration
         manager->createProperty<int>("thumbnail.default.size", 256, getDesc("thumbnail.default.size"), getLongDesc("thumbnail.default.size"));
@@ -444,6 +465,9 @@ namespace MediaDedup
         manager->createProperty<int>("thumbnail.generation.timeoutMs", 5000, getDesc("thumbnail.generation.timeoutMs"), getLongDesc("thumbnail.generation.timeoutMs"));
         manager->createProperty<int>("thumbnail.jpeg.quality", 85, getDesc("thumbnail.jpeg.quality"), getLongDesc("thumbnail.jpeg.quality"));
         manager->createProperty<double>("thumbnail.qhd_preview.threshold_mb", 5.0, getDesc("thumbnail.qhd_preview.threshold_mb"), getLongDesc("thumbnail.qhd_preview.threshold_mb"));
+        manager->createProperty<bool>("thumbnail.pipeline.enabled", true, getDesc("thumbnail.pipeline.enabled"), getLongDesc("thumbnail.pipeline.enabled"));
+        manager->createProperty<bool>("thumbnail.pipeline.onlyIfMissing", true, getDesc("thumbnail.pipeline.onlyIfMissing"), getLongDesc("thumbnail.pipeline.onlyIfMissing"));
+        manager->createProperty<int>("thumbnail.pipeline.size", 256, getDesc("thumbnail.pipeline.size"), getLongDesc("thumbnail.pipeline.size"));
 
         // TPM share for thumbnail generation
         manager->createProperty<double>("tpm.types.thumbnail_generator.share", 1.0, getDesc("tpm.types.thumbnail_generator.share"), getLongDesc("tpm.types.thumbnail_generator.share"));
@@ -465,6 +489,7 @@ namespace MediaDedup
         manager->createProperty<bool>("media.images.bmp", true, getDesc("media.images.bmp"), getLongDesc("media.images.bmp"));
         manager->createProperty<bool>("media.images.gif", true, getDesc("media.images.gif"), getLongDesc("media.images.gif"));
         manager->createProperty<bool>("media.images.tiff", true, getDesc("media.images.tiff"), getLongDesc("media.images.tiff"));
+        manager->createProperty<bool>("media.images.tif", true, getDesc("media.images.tif"), getLongDesc("media.images.tif"));
         manager->createProperty<bool>("media.images.webp", true, getDesc("media.images.webp"), getLongDesc("media.images.webp"));
         manager->createProperty<bool>("media.images.jp2", true, getDesc("media.images.jp2"), getLongDesc("media.images.jp2"));
         manager->createProperty<bool>("media.images.ppm", true, getDesc("media.images.ppm"), getLongDesc("media.images.ppm"));
