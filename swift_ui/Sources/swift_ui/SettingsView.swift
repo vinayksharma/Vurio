@@ -74,41 +74,7 @@ struct SettingsView: View {
                                             .padding(.top, 10)
                                         
                                         ForEach(keys, id: \.self) { key in
-                                            HStack {
-                                                Text(key)
-                                                    .frame(width: 250, alignment: .leading)
-                                                
-                                                let originalValue = viewModel.originalConfig[key] ?? ""
-                                                if originalValue == "true" || originalValue == "false" {
-                                                    Toggle("", isOn: Binding(
-                                                        get: { (viewModel.config[key] ?? "") == "true" },
-                                                        set: { newValue in
-                                                            viewModel.config[key] = newValue ? "true" : "false"
-                                                            viewModel.modifiedProperties.insert(key)
-                                                        }
-                                                    ))
-                                                    .labelsHidden()
-                                                } else if Double(originalValue) != nil || Int(originalValue) != nil {
-                                                    TextField("", text: Binding(
-                                                        get: { viewModel.config[key] ?? "" },
-                                                        set: { newValue in
-                                                            let filtered = newValue.filter { "0123456789.-".contains($0) }
-                                                            viewModel.config[key] = filtered
-                                                            viewModel.modifiedProperties.insert(key)
-                                                        }
-                                                    ))
-                                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                                } else {
-                                                    TextField("", text: Binding(
-                                                        get: { viewModel.config[key] ?? "" },
-                                                        set: { newValue in
-                                                            viewModel.config[key] = newValue
-                                                            viewModel.modifiedProperties.insert(key)
-                                                        }
-                                                    ))
-                                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                                }
-                                            }
+                                            ConfigRowView(key: key, viewModel: viewModel)
                                         }
                                         
                                         Divider()
@@ -135,3 +101,63 @@ struct SettingsView: View {
         }
     }
 }
+
+struct ConfigRowView: View {
+    let key: String
+    @ObservedObject var viewModel: SettingsViewModel
+    @State private var showPopover = false
+    
+    var body: some View {
+        HStack {
+            Button(action: {
+                showPopover.toggle()
+            }) {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .popover(isPresented: $showPopover, arrowEdge: .trailing) {
+                Text(ConfigurationTooltips.tooltip(for: key) ?? "Configuration setting")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding()
+                    .frame(width: 300)
+            }
+            
+            Text(key)
+                .frame(width: 350, alignment: .leading)
+                .help(ConfigurationTooltips.tooltip(for: key) ?? "")
+            
+            let originalValue = viewModel.originalConfig[key] ?? ""
+            if originalValue == "true" || originalValue == "false" {
+                Toggle("", isOn: Binding(
+                    get: { (viewModel.config[key] ?? "") == "true" },
+                    set: { newValue in
+                        viewModel.config[key] = newValue ? "true" : "false"
+                        viewModel.modifiedProperties.insert(key)
+                    }
+                ))
+                .labelsHidden()
+            } else if Double(originalValue) != nil || Int(originalValue) != nil {
+                TextField("", text: Binding(
+                    get: { viewModel.config[key] ?? "" },
+                    set: { newValue in
+                        let filtered = newValue.filter { "0123456789.-".contains($0) }
+                        viewModel.config[key] = filtered
+                        viewModel.modifiedProperties.insert(key)
+                    }
+                ))
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            } else {
+                TextField("", text: Binding(
+                    get: { viewModel.config[key] ?? "" },
+                    set: { newValue in
+                        viewModel.config[key] = newValue
+                        viewModel.modifiedProperties.insert(key)
+                    }
+                ))
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            }
+        }
+    }
+}
+
