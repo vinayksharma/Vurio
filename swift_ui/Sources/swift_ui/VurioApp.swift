@@ -164,7 +164,7 @@ struct StatusBarView: View {
                 let findingText: Text = {
                     if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
                         let percent = Int((Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
-                        return Text(" (\(percent)% scanned)").foregroundColor(orangeColor)
+                        return Text(" (\(percent)% SCANNED)").foregroundColor(orangeColor)
                     } else {
                         return Text("")
                     }
@@ -283,10 +283,10 @@ struct StatusBarView: View {
                             .frame(width: findingWidth)
                             .animation(.easeInOut(duration: 0.3), value: findingWidth)
                     }
-                    .frame(height: 2)
+                    .frame(height: 4)
                     .offset(y: 12)
                 } else {
-                    Spacer().frame(height: 2)
+                    Spacer().frame(height: 4)
                 }
             }
         }
