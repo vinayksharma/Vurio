@@ -17,7 +17,12 @@ class SettingsViewModel: ObservableObject {
     var groupedConfigKeys: [(String, [String])] {
         var groups: [String: [String]] = [:]
         
-        for key in config.keys {
+        let excludedKeys: Set<String> = [
+            "duplicates.threshold.duplicate",
+            "duplicates.threshold.similarity"
+        ]
+        
+        for key in config.keys where !excludedKeys.contains(key) {
             let parts = key.split(separator: ".")
             let section: String
             

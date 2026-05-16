@@ -23,6 +23,8 @@ struct SettingsView: View {
                 
                 PurityOrderSection(viewModel: viewModel)
                 
+                MatchScoreSliderSection(viewModel: viewModel)
+                
                 // Configuration Section
                 VStack(alignment: .leading, spacing: 0) {
                     Button(action: {
