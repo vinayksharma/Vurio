@@ -33,18 +33,7 @@ struct MatchScoreSliderSection: View {
                 similarValue: $similarDistance,
                 range: 0.0...maxDistance
             )
-            .frame(height: 120)
-            .padding(.vertical, 10)
-            
-            HStack {
-                Text("Exact Duplicate Distance: \(String(format: "%.4f", duplicateDistance))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("Similar Image Distance: \(String(format: "%.4f", similarDistance))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            .frame(height: 42)
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
@@ -97,6 +86,9 @@ struct DualSlider: View {
     @Binding var similarValue: Double
     let range: ClosedRange<Double>
     
+    @State private var isHoveringSimilar = false
+    @State private var isHoveringDuplicate = false
+    
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
@@ -111,127 +103,73 @@ struct DualSlider: View {
                     .frame(width: width, height: 6)
                     .offset(y: centerY - 3)
                 
-                // Similar Images Range Track (Light Blue)
+                // Similar Images Range Track (Muted Green)
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.blue.opacity(0.3))
+                    .fill(Color.green.opacity(0.5))
                     .frame(width: max(0, xPosition(for: similarValue, in: width)), height: 6)
                     .offset(y: centerY - 3)
                 
-                // Duplicates Range Track (Solid Blue)
+                // Duplicates Range Track (Red)
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.blue)
+                    .fill(Color.red)
                     .frame(width: max(0, xPosition(for: duplicateValue, in: width)), height: 6)
                     .offset(y: centerY - 3)
                 
-                // Top Bracket for Similar Images
-                Path { path in
-                    let endX = max(0, xPosition(for: similarValue, in: width))
-                    let startY = centerY - 22
-                    let midY = centerY - 30
-                    let topY = centerY - 38
-                    
-                    if endX > 10 {
-                        path.move(to: CGPoint(x: 0, y: startY))
-                        path.addLine(to: CGPoint(x: 0, y: midY))
-                        path.addLine(to: CGPoint(x: endX/2 - 5, y: midY))
-                        path.addLine(to: CGPoint(x: endX/2, y: topY))
-                        path.addLine(to: CGPoint(x: endX/2 + 5, y: midY))
-                        path.addLine(to: CGPoint(x: endX, y: midY))
-                        path.addLine(to: CGPoint(x: endX, y: startY))
-                    }
-                }
-                .stroke(Color.secondary, lineWidth: 1)
-                
-                Text("Similar Images")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .position(x: max(0, xPosition(for: similarValue, in: width)) / 2, y: centerY - 48)
-                
-                // Bottom Bracket for Duplicates
-                Path { path in
-                    let endX = max(0, xPosition(for: duplicateValue, in: width))
-                    let startY = centerY + 22
-                    let midY = centerY + 30
-                    let bottomY = centerY + 38
-                    
-                    if endX > 10 {
-                        path.move(to: CGPoint(x: 0, y: startY))
-                        path.addLine(to: CGPoint(x: 0, y: midY))
-                        path.addLine(to: CGPoint(x: endX/2 - 5, y: midY))
-                        path.addLine(to: CGPoint(x: endX/2, y: bottomY))
-                        path.addLine(to: CGPoint(x: endX/2 + 5, y: midY))
-                        path.addLine(to: CGPoint(x: endX, y: midY))
-                        path.addLine(to: CGPoint(x: endX, y: startY))
-                    }
-                }
-                .stroke(Color.secondary, lineWidth: 1)
-                
-                Text("Duplicates")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .position(x: max(0, xPosition(for: duplicateValue, in: width)) / 2, y: centerY + 48)
-                
                 // Similar Images Thumb (Pointing Down)
-                Path { path in
-                    path.move(to: CGPoint(x: 0, y: 0))
-                    path.addLine(to: CGPoint(x: thumbSize, y: 0))
-                    path.addLine(to: CGPoint(x: thumbSize/2, y: thumbSize))
-                    path.closeSubpath()
-                }
-                .fill(Color.white)
-                .overlay(
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: 0))
-                        path.addLine(to: CGPoint(x: thumbSize, y: 0))
-                        path.addLine(to: CGPoint(x: thumbSize/2, y: thumbSize))
-                        path.closeSubpath()
-                    }
-                    .stroke(Color.gray, lineWidth: 1)
-                )
-                .shadow(radius: 1)
-                .frame(width: thumbSize, height: thumbSize)
-                .offset(x: xPosition(for: similarValue, in: width) - thumbSize/2, y: centerY - thumbSize - 2)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            let newValue = valueFor(x: value.location.x, in: width)
-                            similarValue = min(max(range.lowerBound, newValue), range.upperBound)
-                            if similarValue < duplicateValue {
-                                duplicateValue = similarValue
-                            }
+                TriangleDown()
+                    .fill(Color.white.opacity(0.2))
+                    .background(.ultraThinMaterial, in: TriangleDown())
+                    .overlay(
+                        TriangleDown()
+                            .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    )
+                    .shadow(color: isHoveringSimilar ? .green : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: xPosition(for: similarValue, in: width) - thumbSize/2, y: centerY - thumbSize - 2)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHoveringSimilar = hovering
                         }
-                )
+                    }
+                    .help("Adjust the Similar Images threshold. Determines the maximum distance to consider images as part of a group.")
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let newValue = valueFor(x: value.location.x, in: width)
+                                similarValue = min(max(range.lowerBound, newValue), range.upperBound)
+                                if similarValue < duplicateValue {
+                                    duplicateValue = similarValue
+                                }
+                            }
+                    )
                 
                 // Duplicates Thumb (Pointing Up)
-                Path { path in
-                    path.move(to: CGPoint(x: thumbSize/2, y: 0))
-                    path.addLine(to: CGPoint(x: thumbSize, y: thumbSize))
-                    path.addLine(to: CGPoint(x: 0, y: thumbSize))
-                    path.closeSubpath()
-                }
-                .fill(Color.white)
-                .overlay(
-                    Path { path in
-                        path.move(to: CGPoint(x: thumbSize/2, y: 0))
-                        path.addLine(to: CGPoint(x: thumbSize, y: thumbSize))
-                        path.addLine(to: CGPoint(x: 0, y: thumbSize))
-                        path.closeSubpath()
-                    }
-                    .stroke(Color.gray, lineWidth: 1)
-                )
-                .shadow(radius: 1)
-                .frame(width: thumbSize, height: thumbSize)
-                .offset(x: xPosition(for: duplicateValue, in: width) - thumbSize/2, y: centerY + 2)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            let newValue = valueFor(x: value.location.x, in: width)
-                            duplicateValue = min(max(range.lowerBound, newValue), range.upperBound)
-                            if duplicateValue > similarValue {
-                                similarValue = duplicateValue
-                            }
+                TriangleUp()
+                    .fill(Color.white.opacity(0.2))
+                    .background(.ultraThinMaterial, in: TriangleUp())
+                    .overlay(
+                        TriangleUp()
+                            .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    )
+                    .shadow(color: isHoveringDuplicate ? .red : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: xPosition(for: duplicateValue, in: width) - thumbSize/2, y: centerY + 2)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHoveringDuplicate = hovering
                         }
-                )
+                    }
+                    .help("Adjust the Exact Duplicates threshold. Determines the maximum distance to consider images as identical.")
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let newValue = valueFor(x: value.location.x, in: width)
+                                duplicateValue = min(max(range.lowerBound, newValue), range.upperBound)
+                                if duplicateValue > similarValue {
+                                    similarValue = duplicateValue
+                                }
+                            }
+                    )
             }
         }
     }
@@ -244,5 +182,27 @@ struct DualSlider: View {
     private func valueFor(x: CGFloat, in width: CGFloat) -> Double {
         let percentage = Double(x / width)
         return range.lowerBound + percentage * (range.upperBound - range.lowerBound)
+    }
+}
+
+struct TriangleDown: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct TriangleUp: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
