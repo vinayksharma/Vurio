@@ -19,6 +19,7 @@ struct DuplicatesView: View {
     // Config and Eject State
     @State private var duplicateTightness: Double = 0.008
     @State private var sliderValue: Double = 200 // Math.cbrt(duplicateTightness) * 1000
+    @State private var similarSliderValue: Double = 1000.0
     @State private var isEjecting = false
     
     @EnvironmentObject var appState: AppState
@@ -64,17 +65,21 @@ struct DuplicatesView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.secondary)
                     
-                    // Slider
-                    Slider(value: Binding(
-                        get: { sliderValue },
-                        set: { newValue in
-                            sliderValue = newValue
-                            let t = pow(newValue / 1000.0, 3.0)
-                            duplicateTightness = t
-                            Task { await saveTightness(t) }
-                        }
-                    ), in: 0...1000)
-                    .frame(width: 300)
+                    // Dual Slider
+                    DualSlider(
+                        duplicateValue: Binding(
+                            get: { sliderValue },
+                            set: { newValue in
+                                sliderValue = newValue
+                                let t = pow(newValue / 1000.0, 3.0)
+                                duplicateTightness = t
+                                Task { await saveTightness(t) }
+                            }
+                        ),
+                        similarValue: $similarSliderValue,
+                        range: 0.0...1000.0
+                    )
+                    .frame(width: 300, height: 42)
                     .padding(.horizontal, 10)
                     
                     Text("SIMILAR")
