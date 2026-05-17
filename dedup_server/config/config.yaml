@@ -53,7 +53,6 @@ files.manager.useInMemoryIndex: false
 logging.level: .inf
 media.images.raw.raw: true
 scheduler.backoff.jitterPercent: 10
-duplicates.threshold.max: 0.97999999999999998
 files.manager.enabled: true
 media.images.jpeg: true
 files.manager.scan.intervalMs: 900000
@@ -148,7 +147,6 @@ duplicates.metadata.requireSameFormat: false
 scheduler.jobs: ""
 scheduler.jitter.percent: 0
 cache.thumbnail.location: /Users/vinaysharma/developer/vurio/dedup_server/data/cache.thumbnails
-duplicates.threshold.min: 0.90000000000000002
 media.video.webm: true
 media.images.gif.transcode: true
 media.audio.m4a: true

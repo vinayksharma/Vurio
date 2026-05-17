@@ -31,7 +31,8 @@ struct MatchScoreSliderSection: View {
             DualSlider(
                 duplicateValue: $duplicateDistance,
                 similarValue: $similarDistance,
-                range: 0.0...maxDistance
+                range: 0.0...maxDistance,
+                formatValue: { val in String(format: "%.3f", 1.0 - val) }
             )
             .frame(height: 42)
         }
@@ -85,9 +86,11 @@ struct DualSlider: View {
     @Binding var duplicateValue: Double
     @Binding var similarValue: Double
     let range: ClosedRange<Double>
+    var formatValue: ((Double) -> String)? = nil
     
     @State private var isHoveringSimilar = false
     @State private var isHoveringDuplicate = false
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -170,6 +173,26 @@ struct DualSlider: View {
                                 }
                             }
                     )
+                
+                if advancedOverlayEnabled, let format = formatValue {
+                    let mutedGreen = Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)
+                    
+                    let simX = xPosition(for: similarValue, in: width)
+                    let simShowRight = simX < width - 40
+                    Text(format(similarValue))
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(mutedGreen)
+                        .frame(width: 40, alignment: simShowRight ? .leading : .trailing)
+                        .offset(x: simShowRight ? simX + thumbSize/2 + 4 : simX - thumbSize/2 - 44, y: centerY - thumbSize + 2)
+                    
+                    let dupX = xPosition(for: duplicateValue, in: width)
+                    let dupShowRight = dupX < width - 40
+                    Text(format(duplicateValue))
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(mutedGreen)
+                        .frame(width: 40, alignment: dupShowRight ? .leading : .trailing)
+                        .offset(x: dupShowRight ? dupX + thumbSize/2 + 4 : dupX - thumbSize/2 - 44, y: centerY + 4)
+                }
             }
         }
     }

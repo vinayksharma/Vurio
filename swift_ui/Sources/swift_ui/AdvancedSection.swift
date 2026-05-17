@@ -3,6 +3,7 @@ import SwiftUI
 struct AdvancedSection: View {
     @ObservedObject var viewModel: SettingsViewModel
     @State private var isCollapsed = true
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,6 +69,30 @@ struct AdvancedSection: View {
                             ActionButton(title: "Purge Ejected & Errored", role: .destructive, action: { Task { await viewModel.purgeEjectedAndErrored() } })
                         ],
                         isRunning: viewModel.isAnyActionRunning
+                    )
+                    
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Advanced Overlay")
+                                .font(.headline)
+                            Text("An option to show various technical overlays on existing UI elements or adds new to gain more insight into the inner working of the system.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        
+                        Spacer(minLength: 20)
+                        
+                        Toggle("", isOn: $advancedOverlayEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                    .padding(.vertical, 8)
+                    .overlay(
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(Color(NSColor.separatorColor)),
+                        alignment: .bottom
                     )
                 }
                 .padding()

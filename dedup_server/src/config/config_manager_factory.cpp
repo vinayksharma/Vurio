@@ -455,8 +455,6 @@ namespace MediaDedup
         manager->createProperty<double>("duplicates.threshold.duplicate", 0.96, getDesc("duplicates.threshold.duplicate"), getLongDesc("duplicates.threshold.duplicate"));
 
         // Deprecated: kept for backward compatibility, map to similarity/duplicate
-        manager->createProperty<double>("duplicates.threshold.min", 0.92, getDesc("duplicates.threshold.min"), getLongDesc("duplicates.threshold.min"));
-        manager->createProperty<double>("duplicates.threshold.max", 0.96, getDesc("duplicates.threshold.max"), getLongDesc("duplicates.threshold.max"));
 
         // Purity order criteria
         manager->createProperty<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE", getDesc("duplicates.purity.order"), getLongDesc("duplicates.purity.order"));
