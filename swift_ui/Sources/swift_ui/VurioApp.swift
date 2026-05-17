@@ -19,6 +19,7 @@ struct VurioApp: App {
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
     }
 }
 
@@ -127,7 +128,7 @@ struct ContentView: View {
             
             StatusBarView()
         }
-        .frame(minWidth: 800, minHeight: 600)
+        .frame(minWidth: 1027, minHeight: 800)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
