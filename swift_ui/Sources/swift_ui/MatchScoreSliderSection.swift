@@ -4,28 +4,42 @@ struct MatchScoreSliderSection: View {
     @ObservedObject var viewModel: SettingsViewModel
     
     // Values representing DISTANCE (1.0 - similarity)
-    @State private var duplicateDistance: Double = 0.02
-    @State private var similarDistance: Double = 0.10
+    @State private var duplicateDistance: Double = 0.0
+    @State private var similarDistance: Double = 0.20
     
     // Max distance on the slider scale
     let maxDistance: Double = 0.20
+    @State private var showPopover = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                Text("Match Score Thresholds")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
                 Button(action: {
-                    // Placeholder for popover if needed
+                    showPopover.toggle()
                 }) {
                     Image(systemName: "info.circle")
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(PlainButtonStyle())
-                .help("Adjust the strictness for grouping images and identifying exact duplicates. A lower score requires a closer match.")
+                .popover(isPresented: $showPopover, arrowEdge: .trailing) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("This dual slider controls two key properties that define how images are grouped:")
+                            .font(.headline)
+                        
+                        Text("**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together.")
+                        
+                        Text("**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate.")
+                        
+                        Text("**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject.")
+                    }
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding()
+                    .frame(width: 350)
+                }
+                
+                Text("Match Score Thresholds")
+                    .frame(width: 350, alignment: .leading)
             }
             
             DualSlider(
@@ -36,9 +50,6 @@ struct MatchScoreSliderSection: View {
             )
             .frame(height: 42)
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(10)
         .onAppear {
             loadValues()
         }

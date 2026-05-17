@@ -17,9 +17,10 @@ struct DuplicatesView: View {
     @State private var scrolledID: UUID?
     
     // Config and Eject State
-    @State private var duplicateTightness: Double = 0.008
-    @State private var sliderValue: Double = 200 // Math.cbrt(duplicateTightness) * 1000
-    @State private var similarSliderValue: Double = 1000.0
+    @State private var duplicateTightness: Double = 0.0
+    @State private var sliderValue: Double = 0.0
+    @State private var similarSliderValue: Double = 0.20
+    @State private var maxDistance: Double = 0.20
     @State private var isEjecting = false
     
     @EnvironmentObject var appState: AppState
@@ -71,16 +72,13 @@ struct DuplicatesView: View {
                             get: { sliderValue },
                             set: { newValue in
                                 sliderValue = newValue
-                                let t = pow(newValue / 1000.0, 3.0)
-                                duplicateTightness = t
-                                Task { await saveTightness(t) }
+                                duplicateTightness = newValue
                             }
                         ),
                         similarValue: $similarSliderValue,
-                        range: 0.0...1000.0,
+                        range: 0.0...maxDistance,
                         formatValue: { val in
-                            let t = pow(val / 1000.0, 3.0)
-                            return String(format: "%.3f", 1.0 - t)
+                            return String(format: "%.3f", 1.0 - val)
                         }
                     )
                     .frame(maxWidth: .infinity)
@@ -234,37 +232,54 @@ struct DuplicatesView: View {
                 Task { await refresh() }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ConfigSaved"))) { _ in
+            Task {
+                await fetchSettings()
+            }
+        }
     }
     
     private func fetchSettings() async {
         do {
-            let req = Vurio_Dedup_GetConfigRequest.with { $0.key = "duplicate_tightness" }
+            let req = Vurio_Dedup_GetConfigRequest()
             if let client = VurioGrpcClient.shared.config {
                 let res = try await client.getConfig(req)
                 if let data = res.jsonPayload.data(using: .utf8),
-                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let valStr = json["duplicate_tightness"] as? String,
-                   let val = Double(valStr) {
-                    await MainActor.run {
-                        self.duplicateTightness = val
-                        self.sliderValue = pow(val, 1.0/3.0) * 1000.0
-                    }
+                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                   
+                   var exactThreshold = 0.98
+                   if let obj = json["duplicates.threshold.duplicate"] as? [String: Any],
+                      let valStr = obj["value"] as? String, let val = Double(valStr) {
+                       exactThreshold = val
+                   } else if let valStr = json["duplicates.threshold.duplicate"] as? String, let val = Double(valStr) {
+                       exactThreshold = val
+                   } else if let valNum = json["duplicates.threshold.duplicate"] as? Double {
+                       exactThreshold = valNum
+                   }
+                   
+                   var simThreshold = 0.90
+                   if let obj = json["duplicates.threshold.similarity"] as? [String: Any],
+                      let valStr = obj["value"] as? String, let val = Double(valStr) {
+                       simThreshold = val
+                   } else if let valStr = json["duplicates.threshold.similarity"] as? String, let val = Double(valStr) {
+                       simThreshold = val
+                   } else if let valNum = json["duplicates.threshold.similarity"] as? Double {
+                       simThreshold = valNum
+                   }
+                   
+                   let initialDistance = 1.0 - exactThreshold
+                   let calculatedMaxDistance = 1.0 - simThreshold
+                   
+                   await MainActor.run {
+                       self.maxDistance = max(calculatedMaxDistance, 0.01)
+                       self.similarSliderValue = self.maxDistance
+                       self.sliderValue = min(initialDistance, self.maxDistance)
+                       self.duplicateTightness = self.sliderValue
+                   }
                 }
             }
         } catch {
-            print("Failed to fetch duplicate_tightness: \(error)")
-        }
-    }
-    
-    private func saveTightness(_ val: Double) async {
-        do {
-            let req = Vurio_Dedup_UpdateConfigRequest.with { 
-                $0.key = "duplicate_tightness"
-                $0.valueJson = String(val)
-            }
-            _ = try await VurioGrpcClient.shared.config?.updateConfig(req)
-        } catch {
-            print("Failed to save tightness: \(error)")
+            print("Failed to fetch settings: \(error)")
         }
     }
     
