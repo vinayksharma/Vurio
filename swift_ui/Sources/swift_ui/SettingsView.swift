@@ -81,8 +81,6 @@ struct SettingsView: View {
                                         
                                         if sectionName == "Duplicates" {
                                             MatchScoreSliderSection(viewModel: viewModel)
-                                                .padding(.top, 5)
-                                                .padding(.bottom, 5)
                                         }
                                         
                                         Divider()

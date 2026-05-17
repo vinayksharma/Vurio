@@ -113,6 +113,7 @@ class SettingsViewModel: ObservableObject {
             }
         }
         await loadConfig()
+        NotificationCenter.default.post(name: Notification.Name("ConfigSaved"), object: nil)
     }
     
     // Advanced Actions
