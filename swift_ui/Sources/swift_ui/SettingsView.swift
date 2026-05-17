@@ -23,8 +23,8 @@ struct SettingsView: View {
                 
                 PurityOrderSection(viewModel: viewModel)
                 
-                MatchScoreSliderSection(viewModel: viewModel)
                 
+
                 // Configuration Section
                 VStack(alignment: .leading, spacing: 0) {
                     Button(action: {
@@ -77,6 +77,12 @@ struct SettingsView: View {
                                         
                                         ForEach(keys, id: \.self) { key in
                                             ConfigRowView(key: key, viewModel: viewModel)
+                                        }
+                                        
+                                        if sectionName == "Duplicates" {
+                                            MatchScoreSliderSection(viewModel: viewModel)
+                                                .padding(.top, 5)
+                                                .padding(.bottom, 5)
                                         }
                                         
                                         Divider()

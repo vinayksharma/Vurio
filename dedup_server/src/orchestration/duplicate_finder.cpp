@@ -61,10 +61,8 @@ namespace MediaDedup
             }
 
             // Two-tier thresholds: similarity (min to consider) and duplicate (true duplicate tier)
-            embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity",
-                                                                           cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92));
-            embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate",
-                                                                             cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.97));
+            embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity", 0.92);
+            embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate", 0.97);
 
             if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
             {
@@ -1500,16 +1498,13 @@ namespace MediaDedup
                 batch_size_ = cfg_->getPropertyValue<int>(event.key, 1000);
                 Poco::Logger::get("DuplicateFinder").information("Updated batch_size: %d", batch_size_);
             }
-            else if (event.key == "duplicates.threshold.similarity" || event.key == "duplicates.threshold.duplicate" ||
-                     event.key == "duplicates.threshold.min" || event.key == "duplicates.threshold.max")
+            else if (event.key == "duplicates.threshold.similarity" || event.key == "duplicates.threshold.duplicate")
             {
                 double old_similarity = embedding_threshold_similarity_;
                 double old_duplicate = embedding_threshold_duplicate_;
-
-                embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity",
-                                                                                 cfg_->getPropertyValue<double>("duplicates.threshold.min", 0.92));
-                embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate",
-                                                                                cfg_->getPropertyValue<double>("duplicates.threshold.max", 0.97));
+                
+                embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity", 0.92);
+                embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate", 0.97);
 
                 if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
                 {

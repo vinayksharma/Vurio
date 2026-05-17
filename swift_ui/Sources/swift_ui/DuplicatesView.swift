@@ -77,17 +77,21 @@ struct DuplicatesView: View {
                             }
                         ),
                         similarValue: $similarSliderValue,
-                        range: 0.0...1000.0
+                        range: 0.0...1000.0,
+                        formatValue: { val in
+                            let t = pow(val / 1000.0, 3.0)
+                            return String(format: "%.3f", 1.0 - t)
+                        }
                     )
-                    .frame(width: 300, height: 42)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
                     .padding(.horizontal, 10)
                     
                     Text("SIMILAR")
                         .font(.caption)
                         .fontWeight(.bold)
                         .foregroundColor(.secondary)
-                    
-                    Spacer()
+                        .padding(.trailing, 16)
                     
                     Button(action: {
                         Task { await handleBulkEject() }
@@ -96,10 +100,11 @@ struct DuplicatesView: View {
                             if isEjecting {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Image(systemName: "arrow.up.square")
+                                Image(systemName: "square.and.arrow.up")
                             }
                             Text("Eject")
                         }
+                        .frame(width: 95)
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -109,9 +114,10 @@ struct DuplicatesView: View {
                         Task { await handleRestore() }
                     }) {
                         HStack {
-                            Image(systemName: "arrow.down.square")
+                            Image(systemName: "square.and.arrow.down")
                             Text("Restore")
                         }
+                        .frame(width: 95)
                     }
                     .buttonStyle(.bordered)
                     .disabled(isEjecting)
@@ -123,6 +129,7 @@ struct DuplicatesView: View {
                             Image(systemName: "folder")
                             Text("Ejected")
                         }
+                        .frame(width: 95)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
