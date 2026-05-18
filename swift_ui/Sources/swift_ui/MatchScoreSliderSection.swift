@@ -22,20 +22,11 @@ struct MatchScoreSliderSection: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .popover(isPresented: $showPopover, arrowEdge: .trailing) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("This dual slider controls two key properties that define how images are grouped:")
-                            .font(.headline)
-                        
-                        Text("**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together.")
-                        
-                        Text("**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate.")
-                        
-                        Text("**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject.")
-                    }
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding()
-                    .frame(width: 350)
+                    ASTPopoverContent(textContent: viewModel.configLongDescriptions["duplicates.threshold.duplicate"] ?? "[]")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding()
+                        .frame(width: 350)
                 }
                 
                 Text("Match Score Thresholds")
@@ -46,7 +37,9 @@ struct MatchScoreSliderSection: View {
                 duplicateValue: $duplicateDistance,
                 similarValue: $similarDistance,
                 range: 0.0...maxDistance,
-                formatValue: { val in String(format: "%.3f", 1.0 - val) }
+                formatValue: { val in String(format: "%.3f", 1.0 - val) },
+                duplicateHelpText: viewModel.configDescriptions["duplicates.threshold.duplicate"] ?? "Adjust exact duplicates threshold",
+                similarHelpText: viewModel.configDescriptions["duplicates.threshold.similarity"] ?? "Adjust similar images threshold"
             )
             .frame(height: 42)
         }
@@ -100,6 +93,8 @@ struct VurioSlider: View {
     var formatValue: ((Double) -> String)? = nil
     var showDuplicateThumb: Bool = true
     var showSimilarThumb: Bool = true
+    var duplicateHelpText: String = "Adjust exact duplicates threshold"
+    var similarHelpText: String = "Adjust similar images threshold"
     
     @State private var isHoveringSimilar = false
     @State private var isHoveringDuplicate = false
@@ -152,7 +147,7 @@ struct VurioSlider: View {
                                 isHoveringSimilar = hovering
                             }
                         }
-                        .help("Adjust the Similar Images threshold. Determines the maximum distance to consider images as part of a group.")
+                        .help(similarHelpText)
                         .gesture(
                             DragGesture()
                                 .onChanged { value in
@@ -182,7 +177,7 @@ struct VurioSlider: View {
                                 isHoveringDuplicate = hovering
                             }
                         }
-                        .help("Adjust the Exact Duplicates threshold. Determines the maximum distance to consider images as identical.")
+                        .help(duplicateHelpText)
                         .gesture(
                             DragGesture()
                                 .onChanged { value in

@@ -123,13 +123,13 @@ struct ConfigRowView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .popover(isPresented: $showPopover, arrowEdge: .trailing) {
-                Text(viewModel.configLongDescriptions[key] ?? viewModel.configDescriptions[key] ?? "Configuration setting")
+                ASTPopoverContent(textContent: viewModel.configLongDescriptions[key] ?? viewModel.configDescriptions[key] ?? "Configuration setting")
                     .fixedSize(horizontal: false, vertical: true)
                     .padding()
                     .frame(width: 300)
             }
             
-            Text(key)
+            Text(viewModel.configDescriptions[key] ?? key)
                 .frame(width: 350, alignment: .leading)
                 .help(viewModel.configDescriptions[key] ?? "")
             
@@ -180,3 +180,36 @@ struct ConfigRowView: View {
     }
 }
 
+struct ASTNode: Codable, Hashable {
+    let type: String
+    let text: String
+}
+
+struct ASTPopoverContent: View {
+    let textContent: String
+    
+    var nodes: [ASTNode]? {
+        guard let data = textContent.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([ASTNode].self, from: data) else {
+            return nil
+        }
+        return decoded
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let parsedNodes = nodes, !parsedNodes.isEmpty {
+                ForEach(parsedNodes, id: \.self) { node in
+                    if node.type == "headline" {
+                        Text(.init(node.text))
+                            .font(.headline)
+                    } else {
+                        Text(.init(node.text))
+                    }
+                }
+            } else {
+                Text(.init(textContent))
+            }
+        }
+    }
+}
