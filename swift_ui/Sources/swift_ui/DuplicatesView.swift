@@ -167,11 +167,20 @@ struct DuplicatesView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, slot in
                             if let group = slot.group {
-                                DuplicateGroupCard(group: group) { fileIndex in
-                                    selectedGroup = group
-                                    selectedFileIndex = fileIndex
-                                    showingPopup = true
-                                }
+                                DuplicateGroupCard(
+                                    group: group,
+                                    duplicateTightness: duplicateTightness,
+                                    onThumbnailTapped: { fileIndex in
+                                        selectedGroup = group
+                                        selectedFileIndex = fileIndex
+                                        showingPopup = true
+                                    },
+                                    onEjectSet: { paths in
+                                        Task {
+                                            await ejectGroupFiles(paths, for: group.groupID)
+                                        }
+                                    }
+                                )
                                 .padding(.horizontal, 30)
                                 .frame(height: 180)
                             } else {
@@ -326,6 +335,34 @@ struct DuplicatesView: View {
         }
     }
     
+    private func ejectGroupFiles(_ filePaths: [String], for groupID: String) async {
+        guard !isEjecting else { return }
+        isEjecting = true
+        defer { isEjecting = false }
+        
+        do {
+            let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = filePaths }
+            if let client = VurioGrpcClient.shared.duplicates {
+                let res = try await client.ejectDuplicates(req)
+                if res.success {
+                    await MainActor.run {
+                        if let index = groups.firstIndex(where: { $0.group?.groupID == groupID }) {
+                            for path in filePaths {
+                                if let fileIndex = groups[index].group?.files.firstIndex(where: { $0.filePath == path }) {
+                                    groups[index].group?.files[fileIndex].isEjected = true
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    await MainActor.run { self.errorMessage = "Eject failed: \(res.errorMessage)" }
+                }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = "Eject error: \(error.localizedDescription)" }
+        }
+    }
+    
     private func handleRestore() async {
         guard !isEjecting else { return }
         isEjecting = true
@@ -448,7 +485,9 @@ struct DuplicatesView: View {
 
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
+    var duplicateTightness: Double
     var onThumbnailTapped: (Int) -> Void
+    var onEjectSet: ([String]) -> Void
     
     var representative: Vurio_Dedup_DuplicateFile? {
         group.files.first(where: { $0.isRepresentative }) ?? group.files.first
@@ -475,7 +514,7 @@ struct DuplicateGroupCard: View {
                     .fontDesign(.monospaced)
             }
             
-            HStack(spacing: 20) {
+            HStack(alignment: .top, spacing: 20) {
                 if let rep = representative {
                     DuplicateMemberView(file: rep, isRep: true)
                         .onTapGesture {
@@ -489,6 +528,7 @@ struct DuplicateGroupCard: View {
                     Divider()
                         .frame(height: 70)
                         .background(Color.gray.opacity(0.5))
+                        .padding(.top, 5)
                 }
                 
                 VerticalScrollingFixView {
@@ -503,8 +543,33 @@ struct DuplicateGroupCard: View {
                                     }
                             }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.top, 5)
+                        .padding(.bottom, 22)
                         .padding(.horizontal, 4)
+                        .overlay(alignment: .bottomLeading) {
+                            let indices = candidates.enumerated().compactMap { index, file in
+                                let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                                return (1.0 - score) <= duplicateTightness ? index : nil
+                            }
+                            
+                            if let first = indices.first, let last = indices.last {
+                                let count = last - first + 1
+                                let leftOffset = CGFloat(first) * (70 + 12)
+                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12
+                                
+                                BracketView(
+                                    width: width,
+                                    onEject: {
+                                        let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
+                                        if !toEject.isEmpty {
+                                            onEjectSet(toEject)
+                                        }
+                                    }
+                                )
+                                .padding(.leading, leftOffset + 4)
+                                .padding(.bottom, 2)
+                            }
+                        }
                     }
                 }
             }
@@ -554,5 +619,43 @@ struct DuplicateMemberView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+
+struct BracketView: View {
+    var width: CGFloat
+    var onEject: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 0))
+                path.addLine(to: CGPoint(x: 0, y: 6))
+                path.addLine(to: CGPoint(x: width, y: 6))
+                path.addLine(to: CGPoint(x: width, y: 0))
+            }
+            .stroke(Color.red.opacity(0.8), lineWidth: 1.5)
+            .frame(width: width, height: 6)
+            
+            Button(action: onEject) {
+                Image(systemName: "tray.and.arrow.up.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Color.red)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+            }
+            .buttonStyle(.plain)
+            .offset(y: -6)
+            .scaleEffect(isHovering ? 1.1 : 1.0)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    isHovering = hovering
+                }
+            }
+        }
+        .frame(width: width, height: 18)
     }
 }
