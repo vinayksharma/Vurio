@@ -145,6 +145,7 @@ struct ContentView: View {
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
     @State private var gradientPhase: CGFloat = 0.0
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -176,8 +177,9 @@ struct StatusBarView: View {
                 Text(" • GROUPS \(appState.duplicateGroupsCount)")
                     .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
                 findingText +
-                Text(" • PATHS \(appState.registeredDirs.count) • THREADS \(appState.threadCount)/\(appState.maxThreads) • ")
+                Text(" • PATHS \(appState.registeredDirs.count) • ")
                     .foregroundColor(defaultColor) +
+                (advancedOverlayEnabled ? Text("THREADS \(appState.threadCount)/\(appState.maxThreads) • ").foregroundColor(Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)) : Text("")) +
                 Text("ERRORS \(appState.errorFilesCount)")
                     .foregroundColor(appState.errorFilesCount > 0 ? errorColor : defaultColor))
                 .font(.custom("Menlo", size: 9))

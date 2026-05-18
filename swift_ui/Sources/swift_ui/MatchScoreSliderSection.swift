@@ -42,7 +42,7 @@ struct MatchScoreSliderSection: View {
                     .frame(width: 350, alignment: .leading)
             }
             
-            DualSlider(
+            VurioSlider(
                 duplicateValue: $duplicateDistance,
                 similarValue: $similarDistance,
                 range: 0.0...maxDistance,
@@ -93,11 +93,13 @@ struct MatchScoreSliderSection: View {
     }
 }
 
-struct DualSlider: View {
+struct VurioSlider: View {
     @Binding var duplicateValue: Double
     @Binding var similarValue: Double
     let range: ClosedRange<Double>
     var formatValue: ((Double) -> String)? = nil
+    var showDuplicateThumb: Bool = true
+    var showSimilarThumb: Bool = true
     
     @State private var isHoveringSimilar = false
     @State private var isHoveringDuplicate = false
@@ -118,91 +120,103 @@ struct DualSlider: View {
                     .offset(y: centerY - 3)
                 
                 // Similar Images Range Track (Muted Green)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.green.opacity(0.5))
-                    .frame(width: max(0, xPosition(for: similarValue, in: width)), height: 6)
-                    .offset(y: centerY - 3)
+                if showSimilarThumb {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.green.opacity(0.5))
+                        .frame(width: max(0, xPosition(for: similarValue, in: width)), height: 6)
+                        .offset(y: centerY - 3)
+                }
                 
                 // Duplicates Range Track (Red)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.red)
-                    .frame(width: max(0, xPosition(for: duplicateValue, in: width)), height: 6)
-                    .offset(y: centerY - 3)
+                if showDuplicateThumb {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.red)
+                        .frame(width: max(0, xPosition(for: duplicateValue, in: width)), height: 6)
+                        .offset(y: centerY - 3)
+                }
                 
                 // Similar Images Thumb (Pointing Down)
-                TriangleDown()
-                    .fill(Color.white.opacity(0.2))
-                    .background(.ultraThinMaterial, in: TriangleDown())
-                    .overlay(
-                        TriangleDown()
-                            .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-                    )
-                    .shadow(color: isHoveringSimilar ? .green : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
-                    .frame(width: thumbSize, height: thumbSize)
-                    .offset(x: xPosition(for: similarValue, in: width) - thumbSize/2, y: centerY - thumbSize - 2)
-                    .onHover { hovering in
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            isHoveringSimilar = hovering
-                        }
-                    }
-                    .help("Adjust the Similar Images threshold. Determines the maximum distance to consider images as part of a group.")
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newValue = valueFor(x: value.location.x, in: width)
-                                similarValue = min(max(range.lowerBound, newValue), range.upperBound)
-                                if similarValue < duplicateValue {
-                                    duplicateValue = similarValue
-                                }
+                if showSimilarThumb {
+                    TriangleDown()
+                        .fill(Color.white.opacity(0.2))
+                        .background(.ultraThinMaterial, in: TriangleDown())
+                        .overlay(
+                            TriangleDown()
+                                .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                        )
+                        .shadow(color: isHoveringSimilar ? .green : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .offset(x: xPosition(for: similarValue, in: width) - thumbSize/2, y: centerY - thumbSize - 2)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isHoveringSimilar = hovering
                             }
-                    )
+                        }
+                        .help("Adjust the Similar Images threshold. Determines the maximum distance to consider images as part of a group.")
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let newValue = valueFor(x: value.location.x, in: width)
+                                    similarValue = min(max(range.lowerBound, newValue), range.upperBound)
+                                    if similarValue < duplicateValue {
+                                        duplicateValue = similarValue
+                                    }
+                                }
+                        )
+                }
                 
                 // Duplicates Thumb (Pointing Up)
-                TriangleUp()
-                    .fill(Color.white.opacity(0.2))
-                    .background(.ultraThinMaterial, in: TriangleUp())
-                    .overlay(
-                        TriangleUp()
-                            .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-                    )
-                    .shadow(color: isHoveringDuplicate ? .red : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
-                    .frame(width: thumbSize, height: thumbSize)
-                    .offset(x: xPosition(for: duplicateValue, in: width) - thumbSize/2, y: centerY + 2)
-                    .onHover { hovering in
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            isHoveringDuplicate = hovering
-                        }
-                    }
-                    .help("Adjust the Exact Duplicates threshold. Determines the maximum distance to consider images as identical.")
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newValue = valueFor(x: value.location.x, in: width)
-                                duplicateValue = min(max(range.lowerBound, newValue), range.upperBound)
-                                if duplicateValue > similarValue {
-                                    similarValue = duplicateValue
-                                }
+                if showDuplicateThumb {
+                    TriangleUp()
+                        .fill(Color.white.opacity(0.2))
+                        .background(.ultraThinMaterial, in: TriangleUp())
+                        .overlay(
+                            TriangleUp()
+                                .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                        )
+                        .shadow(color: isHoveringDuplicate ? .red : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .offset(x: xPosition(for: duplicateValue, in: width) - thumbSize/2, y: centerY + 2)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isHoveringDuplicate = hovering
                             }
-                    )
+                        }
+                        .help("Adjust the Exact Duplicates threshold. Determines the maximum distance to consider images as identical.")
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let newValue = valueFor(x: value.location.x, in: width)
+                                    duplicateValue = min(max(range.lowerBound, newValue), range.upperBound)
+                                    if duplicateValue > similarValue {
+                                        similarValue = duplicateValue
+                                    }
+                                }
+                        )
+                }
                 
                 if advancedOverlayEnabled, let format = formatValue {
                     let mutedGreen = Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)
                     
-                    let simX = xPosition(for: similarValue, in: width)
-                    let simShowRight = simX < width - 40
-                    Text(format(similarValue))
-                        .font(.custom("Menlo", size: 9))
-                        .foregroundColor(mutedGreen)
-                        .frame(width: 40, alignment: simShowRight ? .leading : .trailing)
-                        .offset(x: simShowRight ? simX + thumbSize/2 + 4 : simX - thumbSize/2 - 44, y: centerY - thumbSize + 2)
+                    if showSimilarThumb {
+                        let simX = xPosition(for: similarValue, in: width)
+                        let simShowRight = simX < width - 40
+                        Text(format(similarValue))
+                            .font(.custom("Menlo", size: 9))
+                            .foregroundColor(mutedGreen)
+                            .frame(width: 40, alignment: simShowRight ? .leading : .trailing)
+                            .offset(x: simShowRight ? simX + thumbSize/2 + 4 : simX - thumbSize/2 - 44, y: centerY - thumbSize + 2)
+                    }
                     
-                    let dupX = xPosition(for: duplicateValue, in: width)
-                    let dupShowRight = dupX < width - 40
-                    Text(format(duplicateValue))
-                        .font(.custom("Menlo", size: 9))
-                        .foregroundColor(mutedGreen)
-                        .frame(width: 40, alignment: dupShowRight ? .leading : .trailing)
-                        .offset(x: dupShowRight ? dupX + thumbSize/2 + 4 : dupX - thumbSize/2 - 44, y: centerY + 4)
+                    if showDuplicateThumb {
+                        let dupX = xPosition(for: duplicateValue, in: width)
+                        let dupShowRight = dupX < width - 40
+                        Text(format(duplicateValue))
+                            .font(.custom("Menlo", size: 9))
+                            .foregroundColor(mutedGreen)
+                            .frame(width: 40, alignment: dupShowRight ? .leading : .trailing)
+                            .offset(x: dupShowRight ? dupX + thumbSize/2 + 4 : dupX - thumbSize/2 - 44, y: centerY + 4)
+                    }
                 }
             }
         }
