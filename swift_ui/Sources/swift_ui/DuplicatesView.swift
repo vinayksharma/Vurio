@@ -66,8 +66,8 @@ struct DuplicatesView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.secondary)
                     
-                    // Dual Slider
-                    DualSlider(
+                    // Vurio Slider
+                    VurioSlider(
                         duplicateValue: Binding(
                             get: { sliderValue },
                             set: { newValue in
@@ -79,7 +79,8 @@ struct DuplicatesView: View {
                         range: 0.0...maxDistance,
                         formatValue: { val in
                             return String(format: "%.3f", 1.0 - val)
-                        }
+                        },
+                        showSimilarThumb: false
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 42)
