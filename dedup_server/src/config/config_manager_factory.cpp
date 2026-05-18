@@ -327,8 +327,12 @@ namespace MediaDedup
 
         auto getLongDesc = [&descriptions](const std::string& key) -> std::string {
             std::string long_key = key + ".long";
-            if (descriptions.contains(long_key) && descriptions[long_key].is_string()) {
-                return descriptions[long_key].get<std::string>();
+            if (descriptions.contains(long_key)) {
+                if (descriptions[long_key].is_string()) {
+                    return descriptions[long_key].get<std::string>();
+                } else {
+                    return descriptions[long_key].dump();
+                }
             }
             return "Detailed information for " + key;
         };
