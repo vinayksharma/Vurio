@@ -99,7 +99,9 @@ struct DuplicatesView: View {
                             if isEjecting {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Image(systemName: "square.and.arrow.up")
+                                CustomEjectShape()
+                                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 14, height: 14)
                             }
                             Text("Eject")
                         }
@@ -113,7 +115,9 @@ struct DuplicatesView: View {
                         Task { await handleRestore() }
                     }) {
                         HStack {
-                            Image(systemName: "square.and.arrow.down")
+                            CustomRestoreShape()
+                                .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                .frame(width: 14, height: 14)
                             Text("Restore")
                         }
                         .frame(width: 95)
@@ -555,7 +559,7 @@ struct DuplicateGroupCard: View {
                             if let first = indices.first, let last = indices.last {
                                 let count = last - first + 1
                                 let leftOffset = CGFloat(first) * (70 + 12)
-                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12
+                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
                                 
                                 BracketView(
                                     width: width,
@@ -566,8 +570,10 @@ struct DuplicateGroupCard: View {
                                         }
                                     }
                                 )
-                                .padding(.leading, leftOffset + 4)
+                                .padding(.leading, leftOffset)
                                 .padding(.bottom, 2)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
                             }
                         }
                     }
@@ -622,6 +628,23 @@ struct DuplicateMemberView: View {
     }
 }
 
+struct BracketShape: Shape {
+    var cornerRadius: CGFloat = 8
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let r = min(cornerRadius, rect.height)
+        
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - r))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - r), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        
+        return path
+    }
+}
+
 struct BracketView: View {
     var width: CGFloat
     var onEject: () -> Void
@@ -629,26 +652,22 @@ struct BracketView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: 0))
-                path.addLine(to: CGPoint(x: 0, y: 6))
-                path.addLine(to: CGPoint(x: width, y: 6))
-                path.addLine(to: CGPoint(x: width, y: 0))
-            }
-            .stroke(Color.red.opacity(0.8), lineWidth: 1.5)
-            .frame(width: width, height: 6)
+            BracketShape()
+                .stroke(Color.red.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .frame(width: width, height: 8)
             
             Button(action: onEject) {
-                Image(systemName: "tray.and.arrow.up.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
+                CustomEjectShape()
+                    .stroke(style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    .frame(width: 12, height: 12)
                     .frame(width: 24, height: 24)
-                    .background(Color.red)
+                    .foregroundColor(.white)
+                    .background(isHovering ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
                     .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
             }
             .buttonStyle(.plain)
-            .offset(y: -6)
+            .offset(y: -4)
             .scaleEffect(isHovering ? 1.1 : 1.0)
             .onHover { hovering in
                 withAnimation(.easeInOut(duration: 0.1)) {
@@ -656,6 +675,50 @@ struct BracketView: View {
                 }
             }
         }
-        .frame(width: width, height: 18)
+        .frame(width: width, height: 20)
+    }
+}
+
+struct CustomEjectShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 24.0
+        var path = Path()
+        path.move(to: CGPoint(x: 12 * scale, y: 2 * scale))
+        path.addLine(to: CGPoint(x: 12 * scale, y: 12 * scale))
+        
+        path.move(to: CGPoint(x: 12 * scale, y: 2 * scale))
+        path.addLine(to: CGPoint(x: 9 * scale, y: 5 * scale))
+        path.move(to: CGPoint(x: 12 * scale, y: 2 * scale))
+        path.addLine(to: CGPoint(x: 15 * scale, y: 5 * scale))
+        
+        path.move(to: CGPoint(x: 4 * scale, y: 14 * scale))
+        path.addLine(to: CGPoint(x: 4 * scale, y: 18 * scale))
+        path.addQuadCurve(to: CGPoint(x: 6 * scale, y: 20 * scale), control: CGPoint(x: 4 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 18 * scale, y: 20 * scale))
+        path.addQuadCurve(to: CGPoint(x: 20 * scale, y: 18 * scale), control: CGPoint(x: 20 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 20 * scale, y: 14 * scale))
+        return path
+    }
+}
+
+struct CustomRestoreShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 24.0
+        var path = Path()
+        path.move(to: CGPoint(x: 12 * scale, y: 3 * scale))
+        path.addLine(to: CGPoint(x: 12 * scale, y: 15 * scale))
+        
+        path.move(to: CGPoint(x: 8 * scale, y: 11 * scale))
+        path.addLine(to: CGPoint(x: 12 * scale, y: 15 * scale))
+        path.move(to: CGPoint(x: 16 * scale, y: 11 * scale))
+        path.addLine(to: CGPoint(x: 12 * scale, y: 15 * scale))
+        
+        path.move(to: CGPoint(x: 4 * scale, y: 14 * scale))
+        path.addLine(to: CGPoint(x: 4 * scale, y: 18 * scale))
+        path.addQuadCurve(to: CGPoint(x: 6 * scale, y: 20 * scale), control: CGPoint(x: 4 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 18 * scale, y: 20 * scale))
+        path.addQuadCurve(to: CGPoint(x: 20 * scale, y: 18 * scale), control: CGPoint(x: 20 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 20 * scale, y: 14 * scale))
+        return path
     }
 }
