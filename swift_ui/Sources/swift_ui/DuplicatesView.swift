@@ -16,6 +16,10 @@ struct DuplicatesView: View {
     @State private var showingPopup = false
     @State private var scrolledID: UUID?
     
+    @State private var showingBulkEjectConfirmation = false
+    @State private var totalEjectingCount: Int = 0
+    @State private var ejectingRemainingCount: Int = 0
+    
     // Config and Eject State
     @State private var duplicateTightness: Double = 0.0
     @State private var sliderValue: Double = 0.0
@@ -103,19 +107,29 @@ struct DuplicatesView: View {
                         .padding(.trailing, 16)
                     
                     Button(action: {
-                        Task { await handleBulkEject() }
+                        showingBulkEjectConfirmation = true
                     }) {
                         HStack {
                             if isEjecting {
                                 ProgressView().controlSize(.small)
                             } else {
                                 CustomEjectShape()
-                                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                                     .frame(width: 14, height: 14)
                             }
-                            Text("Eject")
+                            if isEjecting && totalEjectingCount > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Ejecting")
+                                        .font(.system(size: 13))
+                                    Text("\(ejectingRemainingCount) remaining")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                }
+                            } else {
+                                Text("Eject")
+                            }
                         }
-                        .frame(width: 95)
+                        .frame(width: (isEjecting && totalEjectingCount > 0) ? 120 : 95)
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -130,7 +144,7 @@ struct DuplicatesView: View {
                     }) {
                         HStack {
                             CustomRestoreShape()
-                                .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                                 .frame(width: 14, height: 14)
                             Text("Restore")
                         }
@@ -234,9 +248,6 @@ struct DuplicatesView: View {
                 .scrollPosition(id: $scrolledID, anchor: .top)
                 .scrollContentBackground(.hidden)
             }
-            
-            
-
         }
         .sheet(isPresented: $showingPopup) {
             if let group = selectedGroup {
@@ -251,6 +262,14 @@ struct DuplicatesView: View {
                     }
                 }
             }
+        }
+        .alert("Eject Duplicates", isPresented: $showingBulkEjectConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Eject", role: .destructive) {
+                Task { await handleBulkEject() }
+            }
+        } message: {
+            Text("All images identified as duplicates will be ejected. Do you want to proceed?")
         }
         .task {
             await fetchSettings()
@@ -324,44 +343,86 @@ struct DuplicatesView: View {
     
 
     
+    private func fetchAllEligibleDuplicates() async -> [String] {
+        var toEject: [String] = []
+        let limit: Int32 = 100
+        var offset: Int32 = 0
+        var hasMore = true
+        
+        guard let client = VurioGrpcClient.shared.duplicates else { return [] }
+        
+        while hasMore {
+            let request = Vurio_Dedup_GetGroupsRequest.with {
+                $0.limit = limit
+                $0.offset = offset
+            }
+            do {
+                let response = try await client.getDuplicateGroups(request)
+                if response.groups.isEmpty {
+                    hasMore = false
+                }
+                for group in response.groups {
+                    for file in group.files {
+                        if !file.isRepresentative && !file.isEjected {
+                            let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                            if (1.0 - score) <= duplicateTightness {
+                                toEject.append(file.filePath)
+                            }
+                        }
+                    }
+                }
+                offset += limit
+            } catch {
+                hasMore = false
+            }
+        }
+        return toEject
+    }
+
     private func handleBulkEject() async {
         guard !isEjecting else { return }
         isEjecting = true
         defer { isEjecting = false }
         
-        var toEject: [String] = []
-        for slot in groups {
-            guard let group = slot.group else { continue }
-            for file in group.files {
-                if !file.isEjected && !file.isRepresentative {
-                    let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-                    if (1.0 - score) <= duplicateTightness {
-                        toEject.append(file.filePath)
-                    }
-                }
-            }
-        }
+        let toEject = await fetchAllEligibleDuplicates()
         
         if toEject.isEmpty {
             self.errorMessage = "No eligible duplicates found to eject."
             return
         }
         
-        do {
-            let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = toEject }
-            if let client = VurioGrpcClient.shared.duplicates {
+        await MainActor.run {
+            self.totalEjectingCount = toEject.count
+            self.ejectingRemainingCount = toEject.count
+        }
+        
+        guard let client = VurioGrpcClient.shared.duplicates else { return }
+        
+        let chunkSize = 50
+        for i in stride(from: 0, to: toEject.count, by: chunkSize) {
+            let chunk = Array(toEject[i..<min(i + chunkSize, toEject.count)])
+            let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = chunk }
+            do {
                 let res = try await client.ejectDuplicates(req)
-                if res.success {
-                    self.errorMessage = "Successfully ejected \(res.successCount) files."
-                    await refresh()
-                    await appState.fetchStatus()
-                } else {
+                if !res.success && res.successCount == 0 {
                     self.errorMessage = "Eject failed: \(res.errorMessage)"
                 }
+                
+                await MainActor.run {
+                    self.ejectingRemainingCount -= chunk.count
+                }
+            } catch {
+                self.errorMessage = "Eject error: \(error.localizedDescription)"
             }
-        } catch {
-            self.errorMessage = "Eject error: \(error.localizedDescription)"
         }
+        
+        await MainActor.run {
+            self.totalEjectingCount = 0
+            self.ejectingRemainingCount = 0
+        }
+        
+        await refresh()
+        await appState.fetchStatus()
     }
     
     private func ejectGroupFiles(_ filePaths: [String], for groupID: String) async {
@@ -687,13 +748,14 @@ struct DuplicateMemberView: View {
                     onRestore?()
                 }) {
                     CustomRestoreShape()
-                        .stroke(style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 16, height: 16)
                         .frame(width: 40, height: 40)
                         .foregroundColor(.white)
                         .background(isButtonHovered ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
                         .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
+                        .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -702,36 +764,35 @@ struct DuplicateMemberView: View {
                     }
                 }
             }
-            
-            if !file.isEjected && isHovered {
-                VStack {
-                    Spacer()
-                    Button(action: {
-                        onEject?()
-                    }) {
-                        CustomEjectShape()
-                            .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                            .frame(width: 12, height: 12)
-                            .frame(width: 28, height: 28)
-                            .foregroundColor(.white)
-                            .background(isButtonHovered ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 4)
-                    .onHover { hovering in
-                        withAnimation(.easeInOut(duration: 0.1)) {
-                            isButtonHovered = hovering
-                        }
-                    }
-                }
-            }
         }
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(file.isEjected ? Color.red.opacity(0.6) : (isRep ? Color.orange : (isHovered ? Color.primary.opacity(0.8) : Color.gray.opacity(0.4))), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
         )
+        .overlay(alignment: .topTrailing) {
+            if !file.isEjected && isHovered {
+                Button(action: {
+                    onEject?()
+                }) {
+                    CustomEjectShape()
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                        .frame(width: 10, height: 10)
+                        .frame(width: 20, height: 20)
+                        .foregroundColor(.white)
+                        .background(isButtonHovered ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 8, y: -8)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isButtonHovered = hovering
+                    }
+                }
+            }
+        }
         .scaleEffect(isHovered && !file.isEjected ? 1.05 : 1.0)
         .shadow(color: isHovered ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
@@ -749,9 +810,9 @@ struct BracketShape: Shape {
         
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - r))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX + r, y: rect.maxY), radius: r)
         path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - r), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.maxX, y: rect.maxY - r), radius: r)
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
         
         return path
@@ -773,22 +834,24 @@ struct BracketView: View {
             Button(action: action) {
                 if isRestoreMode {
                     CustomRestoreShape()
-                        .stroke(style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(.white)
                         .background(isHovering ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
                         .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
+                        .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 } else {
                     CustomEjectShape()
-                        .stroke(style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(.white)
                         .background(isHovering ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
                         .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
+                        .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
             }
             .buttonStyle(.plain)
