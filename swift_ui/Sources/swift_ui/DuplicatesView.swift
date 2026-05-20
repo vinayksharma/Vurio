@@ -26,6 +26,9 @@ struct DuplicatesView: View {
     @State private var similarSliderValue: Double = 0.20
     @State private var maxDistance: Double = 0.20
     @State private var isEjecting = false
+    @State private var isRestoring = false
+    
+    private var isProcessing: Bool { isEjecting || isRestoring }
     
     @EnvironmentObject var appState: AppState
 
@@ -137,26 +140,40 @@ struct DuplicatesView: View {
                         RoundedRectangle(cornerRadius: 5)
                             .stroke(Color.red.opacity(0.5), lineWidth: 1)
                     )
-                    .disabled(isEjecting)
+                    .disabled(isProcessing)
                     
                     Button(action: {
                         Task { await handleRestore() }
                     }) {
                         HStack {
-                            CustomRestoreShape()
-                                .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                                .frame(width: 14, height: 14)
-                            Text("Restore")
+                            if isRestoring {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                CustomRestoreShape()
+                                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 14, height: 14)
+                            }
+                            if isRestoring {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Restoring")
+                                        .font(.system(size: 13))
+                                    Text("Please wait")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                }
+                            } else {
+                                Text("Restore")
+                            }
                         }
-                        .frame(width: 95)
+                        .frame(width: isRestoring ? 120 : 95)
                     }
                     .buttonStyle(.bordered)
-                    .tint(canRestore && !isEjecting ? .green : nil)
+                    .tint(canRestore && !isProcessing ? .green : nil)
                     .overlay(
                         RoundedRectangle(cornerRadius: 5)
-                            .stroke(canRestore && !isEjecting ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(canRestore && !isProcessing ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                    .disabled(isEjecting || !canRestore)
+                    .disabled(isProcessing || !canRestore)
                     
                     Button(action: {
                         Task { await openEjectedFolders() }
@@ -169,6 +186,7 @@ struct DuplicatesView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
+                    .disabled(isProcessing)
                 }
                 .padding()
             }
@@ -207,6 +225,7 @@ struct DuplicatesView: View {
                                 DuplicateGroupCard(
                                     group: group,
                                     duplicateTightness: duplicateTightness,
+                                    isEjecting: isProcessing,
                                     onThumbnailTapped: { fileIndex in
                                         selectedGroup = group
                                         selectedFileIndex = fileIndex
@@ -380,7 +399,7 @@ struct DuplicatesView: View {
     }
 
     private func handleBulkEject() async {
-        guard !isEjecting else { return }
+        guard !isProcessing else { return }
         isEjecting = true
         defer { isEjecting = false }
         
@@ -426,7 +445,7 @@ struct DuplicatesView: View {
     }
     
     private func ejectGroupFiles(_ filePaths: [String], for groupID: String) async {
-        guard !isEjecting else { return }
+        guard !isProcessing else { return }
         isEjecting = true
         defer { isEjecting = false }
         
@@ -455,9 +474,9 @@ struct DuplicatesView: View {
     }
     
     private func restoreGroupFiles(_ filePaths: [String], for groupID: String) async {
-        guard !isEjecting else { return }
-        isEjecting = true
-        defer { isEjecting = false }
+        guard !isProcessing else { return }
+        isRestoring = true
+        defer { isRestoring = false }
         
         do {
             let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.filePaths = filePaths }
@@ -484,9 +503,9 @@ struct DuplicatesView: View {
     }
     
     private func handleRestore() async {
-        guard !isEjecting else { return }
-        isEjecting = true
-        defer { isEjecting = false }
+        guard !isProcessing else { return }
+        isRestoring = true
+        defer { isRestoring = false }
         
         do {
             let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.undoAll = true }
@@ -607,6 +626,7 @@ struct DuplicatesView: View {
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
     var duplicateTightness: Double
+    var isEjecting: Bool
     var onThumbnailTapped: (Int) -> Void
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
@@ -638,14 +658,16 @@ struct DuplicateGroupCard: View {
             
             HStack(alignment: .top, spacing: 20) {
                 if let rep = representative {
-                    DuplicateMemberView(file: rep, isRep: true, onRestore: {
+                    DuplicateMemberView(file: rep, isRep: true, isEjecting: isEjecting, onRestore: {
                         onRestoreSet([rep.filePath])
                     }, onEject: {
                         onEjectSet([rep.filePath])
                     })
                         .onTapGesture {
-                            if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
-                                onThumbnailTapped(idx)
+                            if !isEjecting {
+                                if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
+                                    onThumbnailTapped(idx)
+                                }
                             }
                         }
                 }
@@ -661,14 +683,16 @@ struct DuplicateGroupCard: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(candidates, id: \.filePath) { file in
-                                DuplicateMemberView(file: file, isRep: false, onRestore: {
+                                DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
                                     onRestoreSet([file.filePath])
                                 }, onEject: {
                                     onEjectSet([file.filePath])
                                 })
                                     .onTapGesture {
-                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                            onThumbnailTapped(idx)
+                                        if !isEjecting {
+                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                                onThumbnailTapped(idx)
+                                            }
                                         }
                                     }
                             }
@@ -694,6 +718,7 @@ struct DuplicateGroupCard: View {
                                 BracketView(
                                     width: width,
                                     isRestoreMode: isRestoreMode,
+                                    isEjecting: isEjecting,
                                     action: {
                                         if isRestoreMode {
                                             onRestoreSet(toRestore)
@@ -727,6 +752,7 @@ struct DuplicateGroupCard: View {
 struct DuplicateMemberView: View {
     let file: Vurio_Dedup_DuplicateFile
     let isRep: Bool
+    var isEjecting: Bool = false
     var onRestore: (() -> Void)? = nil
     var onEject: (() -> Void)? = nil
     
@@ -752,12 +778,14 @@ struct DuplicateMemberView: View {
                         .frame(width: 16, height: 16)
                         .frame(width: 40, height: 40)
                         .foregroundColor(.white)
-                        .background(isButtonHovered ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
+                        .background(isButtonHovered && !isEjecting ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
+                .disabled(isEjecting)
+                .opacity(isEjecting ? 0.5 : 1.0)
                 .onHover { hovering in
                     withAnimation(.easeInOut(duration: 0.1)) {
                         isButtonHovered = hovering
@@ -770,7 +798,7 @@ struct DuplicateMemberView: View {
                 .stroke(file.isEjected ? Color.red.opacity(0.6) : (isRep ? Color.orange : (isHovered ? Color.primary.opacity(0.8) : Color.gray.opacity(0.4))), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
         )
         .overlay(alignment: .topTrailing) {
-            if !file.isEjected && isHovered {
+            if !file.isEjected && isHovered && !isEjecting {
                 Button(action: {
                     onEject?()
                 }) {
@@ -822,6 +850,7 @@ struct BracketShape: Shape {
 struct BracketView: View {
     var width: CGFloat
     var isRestoreMode: Bool
+    var isEjecting: Bool = false
     var action: () -> Void
     @State private var isHovering = false
 
@@ -838,7 +867,7 @@ struct BracketView: View {
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(.white)
-                        .background(isHovering ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
+                        .background(isHovering && !isEjecting ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
@@ -848,15 +877,17 @@ struct BracketView: View {
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(.white)
-                        .background(isHovering ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
+                        .background(isHovering && !isEjecting ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
             }
             .buttonStyle(.plain)
+            .disabled(isEjecting)
+            .opacity(isEjecting ? 0.5 : 1.0)
             .offset(y: -4)
-            .scaleEffect(isHovering ? 1.1 : 1.0)
+            .scaleEffect(isHovering && !isEjecting ? 1.1 : 1.0)
             .onHover { hovering in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     isHovering = hovering
