@@ -43,8 +43,12 @@ namespace MediaDedup
             : ConfigProperty(key, default_value, description, long_description, options) {}
 
         // Value setting with validation and event emission
-        bool setValue(const std::any &new_value, const std::string &source = "programmatic");
-        bool setValueFromFile(const std::any &new_value);
+        virtual bool setValue(const std::any &new_value) override;
+        bool setValue(const std::any &new_value, const std::string &source);
+        virtual bool setValueFromFile(const std::any &new_value) override;
+        
+        // Override to ensure string setting triggers our setValue and emits events
+        virtual bool setValueFromString(const std::string &value) override;
 
         // Reset to default (override to emit events)
         void resetToDefault();

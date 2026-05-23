@@ -1,10 +1,9 @@
 #include <iostream>
-#include <Poco/Format.h>
-#include <string>
+#include <Poco/JSON/Parser.h>
 
-int main()
-{
-    const char* sqlite_err = "database is locked";
-    std::cout << Poco::format("VectorIndex::insert step: %s", sqlite_err) << std::endl;
+int main() {
+    Poco::JSON::Parser parser;
+    auto json_obj = parser.parse("{\"value\": 0.94}").extract<Poco::JSON::Object::Ptr>();
+    std::cout << "Value: " << json_obj->get("value").toString() << std::endl;
     return 0;
 }

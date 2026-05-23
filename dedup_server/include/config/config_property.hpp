@@ -52,11 +52,11 @@ namespace MediaDedup
 
         // String conversion for file storage
         std::string getValueAsString() const;
-        bool setValueFromString(const std::string &value);
+        virtual bool setValueFromString(const std::string &value);
 
         // Value setting
-        bool setValue(const std::any &new_value);
-        bool setValueFromFile(const std::any &new_value);
+        virtual bool setValue(const std::any &new_value);
+        virtual bool setValueFromFile(const std::any &new_value);
 
         // Reset to default
         void resetToDefault();
