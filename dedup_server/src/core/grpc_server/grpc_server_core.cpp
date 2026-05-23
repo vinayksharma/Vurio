@@ -46,6 +46,27 @@ public:
         reply->set_json_payload(json_config.dump(4));
         return grpc::Status::OK;
     }
+
+    grpc::Status UpdateConfig(grpc::ServerContext* context, const vurio::dedup::UpdateConfigRequest* request,
+                              vurio::dedup::UpdateConfigResponse* reply) override {
+        const std::string& key = request->key();
+        const std::string& value_json = request->value_json();
+        
+        bool success = false;
+        auto property = config_->getProperty<int>(key); // Template parameter is unused in getProperty
+        if (property) {
+            success = property->setValueFromString(value_json);
+        }
+        
+        reply->set_success(success);
+        if (success) {
+            config_->triggerSave();
+        } else {
+            reply->set_error_message("Failed to parse or set configuration value for key: " + key);
+        }
+        
+        return grpc::Status::OK;
+    }
 };
 
 class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsService::Service {
