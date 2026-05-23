@@ -300,7 +300,7 @@ struct DuplicatesView: View {
             }
             await listenForUpdates()
         }
-        .onChange(of: appState.duplicateGroupsCount) { newCount in
+        .onChange(of: appState.duplicateGroupsCount) { old, newCount in
             // Only refresh if we are currently empty (e.g. going from 0 to >0)
             // Otherwise, we rely on the streaming updates for fine-grained insertions.
             if groups.isEmpty && newCount > 0 && !isLoading {
@@ -589,7 +589,7 @@ struct DuplicatesView: View {
         
         do {
             for try await update in call.responseStream {
-                await handleUpdate(update)
+                handleUpdate(update)
             }
         } catch {
             print("Duplicate updates stream error: \(error)")

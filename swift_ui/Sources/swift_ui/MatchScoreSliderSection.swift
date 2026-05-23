@@ -46,10 +46,10 @@ struct MatchScoreSliderSection: View {
         .onAppear {
             loadValues()
         }
-        .onChange(of: duplicateDistance) { _ in saveValues() }
-        .onChange(of: similarDistance) { _ in saveValues() }
-        .onChange(of: viewModel.config["duplicates.threshold.duplicate"]) { _ in loadValues() }
-        .onChange(of: viewModel.config["duplicates.threshold.similarity"]) { _ in loadValues() }
+        .onChange(of: duplicateDistance) { _, _ in saveValues() }
+        .onChange(of: similarDistance) { _, _ in saveValues() }
+        .onChange(of: viewModel.config["duplicates.threshold.duplicate"]) { _, _ in loadValues() }
+        .onChange(of: viewModel.config["duplicates.threshold.similarity"]) { _, _ in loadValues() }
     }
     
     private func loadValues() {
