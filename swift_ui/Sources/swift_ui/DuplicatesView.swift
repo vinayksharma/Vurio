@@ -631,6 +631,8 @@ struct DuplicateGroupCard: View {
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
     
+    @State private var isRepEjectHovered = false
+    
     var representative: Vurio_Dedup_DuplicateFile? {
         group.files.first(where: { $0.isRepresentative }) ?? group.files.first
     }
@@ -659,9 +661,15 @@ struct DuplicateGroupCard: View {
             HStack(alignment: .top, spacing: 20) {
                 if let rep = representative {
                     DuplicateMemberView(file: rep, isRep: true, isEjecting: isEjecting, onRestore: {
-                        onRestoreSet([rep.filePath])
+                        let allPaths = group.files.map { $0.filePath }
+                        onRestoreSet(allPaths)
                     }, onEject: {
-                        onEjectSet([rep.filePath])
+                        let allPaths = group.files.map { $0.filePath }
+                        onEjectSet(allPaths)
+                    }, onEjectHoverChanged: { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isRepEjectHovered = hovering
+                        }
                     })
                         .onTapGesture {
                             if !isEjecting {
@@ -744,7 +752,7 @@ struct DuplicateGroupCard: View {
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(isRepEjectHovered ? Color.red.opacity(0.8) : Color.gray.opacity(0.2), lineWidth: isRepEjectHovered ? 2 : 1)
         )
         .cornerRadius(12)
         .padding(.bottom, 12)
@@ -757,6 +765,7 @@ struct DuplicateMemberView: View {
     var isEjecting: Bool = false
     var onRestore: (() -> Void)? = nil
     var onEject: (() -> Void)? = nil
+    var onEjectHoverChanged: ((Bool) -> Void)? = nil
     
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -820,6 +829,7 @@ struct DuplicateMemberView: View {
                     withAnimation(.easeInOut(duration: 0.1)) {
                         isButtonHovered = hovering
                     }
+                    onEjectHoverChanged?(hovering)
                 }
             }
         }

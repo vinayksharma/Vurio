@@ -8,6 +8,11 @@ namespace MediaDedup
 
     // ObservableConfigProperty implementation
 
+    bool ObservableConfigProperty::setValue(const std::any &new_value)
+    {
+        return setValue(new_value, "programmatic");
+    }
+
     bool ObservableConfigProperty::setValue(const std::any &new_value, const std::string &source)
     {
         // Validate if validation callback is set
@@ -29,6 +34,45 @@ namespace MediaDedup
         emitChangeEvent(old_value, new_value, source, false);
 
         return true;
+    }
+
+    bool ObservableConfigProperty::setValueFromString(const std::string &value)
+    {
+        try
+        {
+            // First we need to get the strongly typed value
+            std::any new_value;
+            if (default_value_.type() == typeid(std::string))
+                new_value = ConfigTypeConverter::fromString<std::string>(value);
+            else if (default_value_.type() == typeid(int))
+                new_value = ConfigTypeConverter::fromString<int>(value);
+            else if (default_value_.type() == typeid(double))
+                new_value = ConfigTypeConverter::fromString<double>(value);
+            else if (default_value_.type() == typeid(bool))
+                new_value = ConfigTypeConverter::fromString<bool>(value);
+            else if (default_value_.type() == typeid(float))
+                new_value = ConfigTypeConverter::fromString<float>(value);
+            else if (default_value_.type() == typeid(long))
+                new_value = ConfigTypeConverter::fromString<long>(value);
+            else if (default_value_.type() == typeid(long long))
+                new_value = ConfigTypeConverter::fromString<long long>(value);
+            else if (default_value_.type() == typeid(unsigned int))
+                new_value = ConfigTypeConverter::fromString<unsigned int>(value);
+            else if (default_value_.type() == typeid(unsigned long))
+                new_value = ConfigTypeConverter::fromString<unsigned long>(value);
+            else if (default_value_.type() == typeid(unsigned long long))
+                new_value = ConfigTypeConverter::fromString<unsigned long long>(value);
+            else
+                return false;
+
+            // Then pass it to OUR setValue to trigger validation and events
+            return setValue(new_value);
+        }
+        catch (const TypeConversionError &)
+        {
+            return false;
+        }
+        return false;
     }
 
     bool ObservableConfigProperty::setValueFromFile(const std::any &new_value)
