@@ -670,13 +670,14 @@ struct DuplicateGroupCard: View {
                                 }
                             }
                         }
+                        .padding(.top, 10)
                 }
                 
                 if !candidates.isEmpty {
                     Divider()
                         .frame(height: 70)
                         .background(Color.gray.opacity(0.5))
-                        .padding(.top, 5)
+                        .padding(.top, 15)
                 }
                 
                 VerticalScrollingFixView {
@@ -697,9 +698,10 @@ struct DuplicateGroupCard: View {
                                     }
                             }
                         }
-                        .padding(.top, 5)
+                        .padding(.top, 15)
                         .padding(.bottom, 22)
-                        .padding(.horizontal, 4)
+                        .padding(.leading, 4)
+                        .padding(.trailing, 12)
                         .overlay(alignment: .bottomLeading) {
                             let indices = candidates.enumerated().compactMap { index, file in
                                 let score = file.similarityScore > 0 ? file.similarityScore : 1.0
@@ -713,7 +715,7 @@ struct DuplicateGroupCard: View {
                                 
                                 let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
                                 let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
-                                let isRestoreMode = !toRestore.isEmpty
+                                let isRestoreMode = toEject.isEmpty
                                 
                                 BracketView(
                                     width: width,
@@ -827,6 +829,7 @@ struct DuplicateMemberView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .zIndex(isHovered ? 1 : 0)
     }
 }
 
