@@ -125,7 +125,7 @@ namespace MediaDedup
                     }
                     Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                     std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / (uuid.toString() + "_errored");
+                    std::filesystem::path ejected = root / ("errored_" + uuid.toString());
                     ejection_path = ejected.string();
                     std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                     
@@ -191,13 +191,23 @@ namespace MediaDedup
                         history.original_relative_path = file_opt.relative_path;
                         history.original_location_key = location_key;
 
+                        auto existing = ScannedFilesOps::getByPath(*database_manager_, new_file_path);
+                        if (existing) {
+                            ScannedFilesOps::completelyRemoveById(*database_manager_, existing->id);
+                        }
+
                         try {
                             auto lease = database_manager_->acquireSessionLease();
                             Poco::Data::Session& sess = lease.get();
                             sess.begin();
 
-                            EjectedFilesOps::insert(sess, history);
-                            ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key);
+                            EjectedFilesOps::deleteByEjectedPath(sess, new_file_path);
+                            if (!EjectedFilesOps::insert(sess, history)) {
+                                throw std::runtime_error("Failed to insert ejected file history");
+                            }
+                            if (!ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key)) {
+                                throw std::runtime_error("Failed to update file path");
+                            }
                             ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
                             ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
                             ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
@@ -260,7 +270,7 @@ namespace MediaDedup
             auto all_histories = EjectedFilesOps::getAll(*database_manager_);
             std::vector<EjectedFileHistory> histories;
             for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("_errored") != std::string::npos) {
+                if (hist.ejected_path.find("/errored_") != std::string::npos) {
                     histories.push_back(hist);
                 }
             }
@@ -300,7 +310,9 @@ namespace MediaDedup
                             Poco::Data::Session& sess = lease.get();
                             sess.begin();
 
-                            ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
+                            if (!ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key)) {
+                                throw std::runtime_error("Failed to update file path during undo eject");
+                            }
                             ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
                             ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
                             ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
@@ -405,7 +417,7 @@ namespace MediaDedup
                     }
                     Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                     std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / (uuid.toString() + "_ignored");
+                    std::filesystem::path ejected = root / ("ignored_" + uuid.toString());
                     ejection_path = ejected.string();
                     std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                     
@@ -471,13 +483,23 @@ namespace MediaDedup
                         history.original_relative_path = file_opt.relative_path;
                         history.original_location_key = location_key;
 
+                        auto existing = ScannedFilesOps::getByPath(*database_manager_, new_file_path);
+                        if (existing) {
+                            ScannedFilesOps::completelyRemoveById(*database_manager_, existing->id);
+                        }
+
                         try {
                             auto lease = database_manager_->acquireSessionLease();
                             Poco::Data::Session& sess = lease.get();
                             sess.begin();
 
-                            EjectedFilesOps::insert(sess, history);
-                            ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key);
+                            EjectedFilesOps::deleteByEjectedPath(sess, new_file_path);
+                            if (!EjectedFilesOps::insert(sess, history)) {
+                                throw std::runtime_error("Failed to insert ejected file history");
+                            }
+                            if (!ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key)) {
+                                throw std::runtime_error("Failed to update file path");
+                            }
                             ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
                             ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
                             ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
@@ -540,7 +562,7 @@ namespace MediaDedup
             auto all_histories = EjectedFilesOps::getAll(*database_manager_);
             std::vector<EjectedFileHistory> histories;
             for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("_ignored") != std::string::npos) {
+                if (hist.ejected_path.find("/ignored_") != std::string::npos) {
                     histories.push_back(hist);
                 }
             }
@@ -580,7 +602,9 @@ namespace MediaDedup
                             Poco::Data::Session& sess = lease.get();
                             sess.begin();
 
-                            ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
+                            if (!ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key)) {
+                                throw std::runtime_error("Failed to update file path during undo eject");
+                            }
                             ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
                             ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
                             ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);

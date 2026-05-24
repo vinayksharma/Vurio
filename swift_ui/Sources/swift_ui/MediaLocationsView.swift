@@ -9,6 +9,7 @@ struct MediaLocationsView: View {
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
     @State private var isDeregistering: Bool = false
+    @State private var ejectionPaths: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -34,20 +35,26 @@ struct MediaLocationsView: View {
                     .cornerRadius(6)
                     .disabled(true)
                 
-                Button("Browse") {
+                Button(action: {
                     browseDirectory()
+                }) {
+                    Text("Browse").frame(width: 140)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
+                .help("Browse and select a folder to register")
                 
-                Button("Register") {
+                Button(action: {
                     Task {
                         await registerLocation()
                     }
+                }) {
+                    Text("Register").frame(width: 140)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
                 .disabled(selectedDirectory.isEmpty)
+                .help("Register the selected folder for deduplication scanning")
             }
             
             if !statusMessage.isEmpty {
@@ -87,11 +94,27 @@ struct MediaLocationsView: View {
                                 ProgressView()
                                     .controlSize(.small)
                             } else {
-                                Button("Remap") {
+                                Button(action: {
                                     remapLocation(oldPath: location)
+                                }) {
+                                    Text("Remap").frame(width: 140)
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.blue)
+                                .help("Remap this location to a different path")
+                                
+                                Button(action: {
+                                    openEjectedFolder(for: location)
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "folder")
+                                        Text("Ejected")
+                                    }
+                                    .frame(width: 140)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(ejectionPaths[location] == nil)
+                                .help("Open Ejected Folder in OS")
                             }
                         }
                         .padding()
@@ -114,15 +137,18 @@ struct MediaLocationsView: View {
                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
             
-            Button("Deregister Selected") {
+            Button(action: {
                 if let location = selectedRegisteredLocation {
                     Task {
                         await deregisterLocation(path: location)
                     }
                 }
+            }) {
+                Text("Deregister Selected").frame(width: 140)
             }
             .buttonStyle(.bordered)
             .disabled(selectedRegisteredLocation == nil)
+            .help("Deregister and stop scanning the selected location")
             
             Spacer()
         }
@@ -130,6 +156,7 @@ struct MediaLocationsView: View {
         .onAppear {
             Task {
                 await appState.fetchStatus()
+                await fetchEjectionPaths()
             }
         }
         .overlay(
@@ -262,6 +289,37 @@ struct MediaLocationsView: View {
                     remappingPath = nil
                 }
             }
+        }
+    }
+    
+    private func fetchEjectionPaths() async {
+        var paths: [String: String] = [:]
+        for location in appState.registeredDirs {
+            if let matched = appState.ejectedDirs.first(where: { $0.hasPrefix(location) }) {
+                paths[location] = matched
+            }
+        }
+        await MainActor.run {
+            self.ejectionPaths = paths
+        }
+    }
+    
+    private func openEjectedFolder(for location: String) {
+        guard let path = ejectionPaths[location] else {
+            statusMessage = "No ejected folder found for this location."
+            return
+        }
+        
+        let url = URL(fileURLWithPath: path)
+        var opened = NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+        if !opened {
+            opened = NSWorkspace.shared.open(url)
+        }
+        
+        if !opened {
+            statusMessage = "Failed to open ejected folder."
+        } else {
+            statusMessage = ""
         }
     }
 }

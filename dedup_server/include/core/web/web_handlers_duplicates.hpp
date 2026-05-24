@@ -102,7 +102,7 @@ namespace MediaDedupServer
         /**
          * @brief Handler for POST /api/v1/duplicates/eject
          *
-         * Ejects duplicates by copying them to an <uuid>_ejected folder at their registered root location,
+         * Ejects duplicates by copying them to an ejected_<uuid> folder at their registered root location,
          * verified via SHA1 checksum, and then explicitly replacing their original path in the DB
          * while deleting the original source file.
          */
