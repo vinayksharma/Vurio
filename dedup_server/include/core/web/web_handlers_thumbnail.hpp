@@ -44,6 +44,12 @@ namespace MediaDedup
         void handleRequest(Poco::Net::HTTPServerRequest &request,
                            Poco::Net::HTTPServerResponse &response) override;
 
+        bool generateAndCacheThumbnail(const std::string &source_path,
+                                       int size,
+                                       std::string &cached_path);
+
+        bool getOrCreateErrorThumbnail(int size, std::string &cached_path);
+
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
         std::shared_ptr<DatabaseManager> database_manager_;
@@ -57,12 +63,6 @@ namespace MediaDedup
 
         std::shared_ptr<std::mutex> getGenerationLock(const std::string &key);
         void releaseGenerationLock(const std::string &key);
-
-        bool generateAndCacheThumbnail(const std::string &source_path,
-                                       int size,
-                                       std::string &cached_path);
-
-        bool getOrCreateErrorThumbnail(int size, std::string &cached_path);
 
         void streamThumbnailFile(const std::string &file_path,
                                  Poco::Net::HTTPServerResponse &response,

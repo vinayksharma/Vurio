@@ -226,3 +226,20 @@ message GetUserThemeResponse {
 message SetUserThemeRequest {
   string theme = 1;
 }
+
+// ---------------------------------------------------------
+// Media Service
+// ---------------------------------------------------------
+service MediaService {
+  rpc GetThumbnail(GetMediaRequest) returns (stream MediaChunk);
+  rpc GetPreview(GetMediaRequest) returns (stream MediaChunk);
+}
+
+message GetMediaRequest {
+  string file_path = 1;
+  string size = 2;
+}
+
+message MediaChunk {
+  bytes chunk_data = 1;
+}

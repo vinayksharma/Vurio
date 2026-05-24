@@ -47,6 +47,10 @@ namespace MediaDedup
                                                                 const std::string &source_path,
                                                                 int size);
 
+        static std::optional<ThumbnailCacheRecord> getBestFitThumbnail(DatabaseManager &db,
+                                                                       const std::string &source_path,
+                                                                       int min_size);
+
         /**
          * @brief Insert or update a thumbnail cache record
          * @param db Database manager

@@ -106,7 +106,7 @@ tpm.types.video_processor.share: 1
 duplicates.finder.batchSize: 1000
 duplicates.finder.knnK: 200
 media.image.transcoding.enabled: true
-thumbnail.pipeline.size: 256
+thumbnail.pipeline.size: 128
 scheduler.maxConsecutiveFailures: 5
 scheduler.backoff.maxMs: 30000
 media.video.flv: true

@@ -39,16 +39,10 @@ struct ThumbnailView: View {
     }
     
     private func generateThumbnail() async {
-        let url = URL(fileURLWithPath: filePath)
-        let request = QLThumbnailGenerator.Request(fileAt: url,
-                                                   size: size,
-                                                   scale: NSScreen.main?.backingScaleFactor ?? 1.0,
-                                                   representationTypes: .thumbnail)
-        
         do {
-            let representation = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width))
             await MainActor.run {
-                self.thumbnail = representation.nsImage
+                self.thumbnail = image
                 self.isLoading = false
             }
         } catch {

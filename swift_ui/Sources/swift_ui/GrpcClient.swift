@@ -13,9 +13,10 @@ final class VurioGrpcClient {
     var media: Vurio_Dedup_MediaLocationsServiceAsyncClient?
     var duplicates: Vurio_Dedup_DuplicatesServiceAsyncClient?
     var advanced: Vurio_Dedup_AdvancedSettingsServiceAsyncClient?
+    var mediaStreaming: Vurio_Dedup_MediaServiceAsyncClient?
     
     private init() {
-        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 4)
     }
     
     func connect(socketPath: String = "/tmp/vurio_dedup.sock") {
@@ -30,6 +31,7 @@ final class VurioGrpcClient {
             self.media = Vurio_Dedup_MediaLocationsServiceAsyncClient(channel: self.channel!)
             self.duplicates = Vurio_Dedup_DuplicatesServiceAsyncClient(channel: self.channel!)
             self.advanced = Vurio_Dedup_AdvancedSettingsServiceAsyncClient(channel: self.channel!)
+            self.mediaStreaming = Vurio_Dedup_MediaServiceAsyncClient(channel: self.channel!)
             
             print("Connected to gRPC server at \(socketPath)")
         } catch {

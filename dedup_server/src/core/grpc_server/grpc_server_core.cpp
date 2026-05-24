@@ -21,7 +21,9 @@
 #include <algorithm>
 #include "orchestration/duplicate_finder.hpp"
 #include "filesmanager/disk_cache.hpp"
-
+#include "core/web/web_handlers_thumbnail.hpp"
+#include "database/thumbnail_cache_ops.hpp"
+#include "database/preview_cache_ops.hpp"
 namespace MediaDedup {
 namespace Core {
 
@@ -125,6 +127,10 @@ public:
 
     grpc::Status DeregisterLocation(grpc::ServerContext* context, const vurio::dedup::DeregisterLocationRequest* request,
                                     vurio::dedup::DeregisterLocationResponse* reply) override {
+        if (tpm_) {
+            Poco::Logger::get("DedupServiceImpl").information("Clearing thread pool queues prior to deregistering a path.");
+            tpm_->clearQueues();
+        }
         bool success = files_->deregisterMediaLocation(request->path());
         reply->set_success(success);
         if (!success) {
@@ -1145,6 +1151,97 @@ public:
     }
 };
 
+class MediaServiceImpl final : public vurio::dedup::MediaService::Service {
+    std::shared_ptr<UnifiedObservableConfigManager> config_;
+    DatabaseManager* db_;
+    std::shared_ptr<DiskCache> thumbnail_cache_;
+    std::shared_ptr<DiskCache> transcoding_cache_;
+    std::shared_ptr<ThreadPoolManager> tpm_;
+
+    grpc::Status streamFileContents(const std::string& path, grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) {
+        Poco::FileInputStream fis(path);
+        if (!fis.good()) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        
+        char buffer[65536];
+        while (fis.good()) {
+            fis.read(buffer, sizeof(buffer));
+            std::streamsize bytesRead = fis.gcount();
+            if (bytesRead > 0) {
+                vurio::dedup::MediaChunk chunk;
+                chunk.set_chunk_data(buffer, bytesRead);
+                if (!writer->Write(chunk)) {
+                    break;
+                }
+            }
+        }
+        return grpc::Status::OK;
+    }
+
+public:
+    MediaServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> config, 
+                     DatabaseManager* db, 
+                     std::shared_ptr<DiskCache> thumb_cache, 
+                     std::shared_ptr<DiskCache> trans_cache, 
+                     std::shared_ptr<ThreadPoolManager> tpm)
+        : config_(config), db_(db), thumbnail_cache_(thumb_cache), transcoding_cache_(trans_cache), tpm_(tpm) {}
+
+    grpc::Status GetThumbnail(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
+                              grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) override {
+        std::string file_path = request->file_path();
+        int size = 80;
+        try { size = std::stoi(request->size()); } catch (...) {}
+        
+        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, size);
+        if (cached && std::filesystem::exists(cached->cached_path)) {
+            return streamFileContents(cached->cached_path, writer);
+        } else {
+            if (tpm_) {
+                auto config_copy = config_;
+                auto db_copy = db_;
+                auto tcache_copy = thumbnail_cache_;
+                auto xcache_copy = transcoding_cache_;
+                auto tpm_copy = tpm_;
+                std::string path_copy = file_path;
+                int size_copy = size;
+                
+                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
+                    MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
+                    std::string cached_path;
+                    temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path);
+                }, file_path);
+            }
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail generating");
+        }
+    }
+
+    grpc::Status GetPreview(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
+                            grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) override {
+        std::string file_path = request->file_path();
+        
+        auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_, file_path);
+        if (cached && std::filesystem::exists(cached->cached_path)) {
+            return streamFileContents(cached->cached_path, writer);
+        } else {
+            if (tpm_) {
+                auto config_copy = config_;
+                auto db_copy = db_;
+                auto tcache_copy = thumbnail_cache_;
+                auto xcache_copy = transcoding_cache_;
+                auto tpm_copy = tpm_;
+                std::string path_copy = file_path;
+                
+                tpm_->submit("preview_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy]() {
+                    // For preview, we invoke ThumbnailHandler just to generate the QHD cache proactively
+                    MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
+                    std::string cached_path;
+                    temp_handler.generateAndCacheThumbnail(path_copy, 256, cached_path);
+                }, file_path);
+            }
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Preview generating");
+        }
+    }
+};
+
 GrpcServerCore::GrpcServerCore() {}
 
 GrpcServerCore::~GrpcServerCore() {
@@ -1177,6 +1274,7 @@ void GrpcServerCore::start(const std::string& socket_path,
     auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_manager->getFilesService(), thread_pool_manager, database_manager);
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager);
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache);
+    auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
 
     if (duplicate_finder) {
         // We use a raw pointer to the service because it's managed by services_ below,
@@ -1193,11 +1291,13 @@ void GrpcServerCore::start(const std::string& socket_path,
     builder.RegisterService(media_service.get());
     builder.RegisterService(duplicates_service.get());
     builder.RegisterService(advanced_settings_service.get());
+    builder.RegisterService(media_streaming_service.get());
     
     services_.push_back(std::move(config_service));
     services_.push_back(std::move(media_service));
     services_.push_back(std::move(duplicates_service));
     services_.push_back(std::move(advanced_settings_service));
+    services_.push_back(std::move(media_streaming_service));
 
     server_ = builder.BuildAndStart();
     Poco::Logger::get("GrpcServerCore").information("gRPC Server listening on " + server_address);
