@@ -134,7 +134,7 @@ namespace MediaDedup
             int64_t source_mtime = getFileModifiedTime(source_path);
 
             // Check database for cached thumbnail
-            auto cached = ThumbnailCacheOps::getThumbnail(*database_manager_, source_path, size);
+            auto cached = ThumbnailCacheOps::getBestFitThumbnail(*database_manager_, source_path, size);
 
             if (cached.has_value())
             {
@@ -265,7 +265,7 @@ namespace MediaDedup
         try
         {
             // Double-check cache after acquiring lock (another thread might have generated it)
-            auto cached = ThumbnailCacheOps::getThumbnail(*database_manager_, source_path, size);
+            auto cached = ThumbnailCacheOps::getBestFitThumbnail(*database_manager_, source_path, size);
             int64_t source_mtime = getFileModifiedTime(source_path);
 
             if (cached.has_value() && cached->source_modified_at == source_mtime &&

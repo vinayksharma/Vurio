@@ -479,6 +479,11 @@ namespace MediaDedup
             "SELECT id, source_path, cached_path, thumbnail_size, file_size_bytes, source_modified_at, "
             "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=?";
 
+        inline constexpr std::string_view kSelectBestFitThumbnail =
+            "SELECT id, source_path, cached_path, thumbnail_size, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=? AND thumbnail_size>=? "
+            "ORDER BY thumbnail_size ASC LIMIT 1";
+
         inline constexpr std::string_view kUpdateThumbnailAccessTime =
             "UPDATE thumbnail_cache SET last_accessed_at=? WHERE source_path=? AND thumbnail_size=?";
 

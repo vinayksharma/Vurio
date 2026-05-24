@@ -79,6 +79,47 @@ namespace MediaDedup
         }
     }
 
+    std::optional<ThumbnailCacheRecord> ThumbnailCacheOps::getBestFitThumbnail(DatabaseManager &db,
+                                                                        const std::string &source_path,
+                                                                        int min_size)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            ThumbnailCacheRecord record;
+            std::string src = source_path;
+            int sz = min_size;
+
+            stmt << std::string(SQL::kSelectBestFitThumbnail),
+                into(record.id),
+                into(record.source_path),
+                into(record.cached_path),
+                into(record.thumbnail_size),
+                into(record.file_size_bytes),
+                into(record.source_modified_at),
+                into(record.created_at),
+                into(record.last_accessed_at),
+                use(src),
+                use(sz);
+
+            if (stmt.execute() > 0)
+            {
+                Poco::Logger::get("ThumbnailCacheOps").debug("Found best fit thumbnail for: %s (requested min_size: %d, actual: %d)", source_path, min_size, record.thumbnail_size);
+                return record;
+            }
+
+            return std::nullopt;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("Exception in getBestFitThumbnail: %s", std::string(e.what()));
+            return std::nullopt;
+        }
+    }
+
     bool ThumbnailCacheOps::upsertThumbnail(DatabaseManager &db, const ThumbnailCacheRecord &record)
     {
         try

@@ -10,6 +10,8 @@ struct ImagePopupView: View {
     @State private var scale: CGFloat = 1.0
     @State private var rotation: Double = 0
     @State private var isEjecting: Bool = false
+    @State private var currentImage: NSImage? = nil
+    @State private var isLoadingImage: Bool = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -30,9 +32,7 @@ struct ImagePopupView: View {
                     Color.black.ignoresSafeArea()
                     
                     if group.files.indices.contains(selectedIndex) {
-                        let file = group.files[selectedIndex]
-                        
-                        if let image = NSImage(contentsOfFile: file.filePath) {
+                        if let image = currentImage {
                             Image(nsImage: image)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
@@ -46,6 +46,9 @@ struct ImagePopupView: View {
                                             scale = value.magnitude
                                         }
                                 )
+                        } else if isLoadingImage {
+                            ProgressView()
+                                .controlSize(.large)
                         } else {
                             VStack {
                                 Image(systemName: "photo.badge.exclamationmark")
@@ -160,6 +163,42 @@ struct ImagePopupView: View {
         )
         .onAppear {
             selectedIndex = initialIndex
+            Task {
+                await loadImage()
+            }
+        }
+        .onChange(of: selectedIndex) { _ in
+            Task {
+                await loadImage()
+            }
+        }
+    }
+    
+    private func loadImage() async {
+        guard group.files.indices.contains(selectedIndex) else { return }
+        let file = group.files[selectedIndex]
+        
+        isLoadingImage = true
+        currentImage = nil
+        
+        do {
+            let image = try await ServerImageLoader.shared.loadPreview(filePath: file.filePath)
+            await MainActor.run {
+                self.currentImage = image
+                self.isLoadingImage = false
+            }
+        } catch {
+            // Fallback
+            if let image = NSImage(contentsOfFile: file.filePath) {
+                await MainActor.run {
+                    self.currentImage = image
+                    self.isLoadingImage = false
+                }
+            } else {
+                await MainActor.run {
+                    self.isLoadingImage = false
+                }
+            }
         }
     }
     

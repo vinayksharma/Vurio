@@ -2074,1207 +2074,261 @@ public enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
 }
 
 /// ---------------------------------------------------------
-/// Config & Settings Services
+/// Media Service
 /// ---------------------------------------------------------
 ///
-/// To build a server, implement a class that conforms to this protocol.
-public protocol Vurio_Dedup_ConfigServiceProvider: CallHandlerProvider {
-  var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? { get }
+/// Usage: instantiate `Vurio_Dedup_MediaServiceClient`, then call methods of this protocol to make API calls.
+public protocol Vurio_Dedup_MediaServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? { get }
 
-  func getConfig(request: Vurio_Dedup_GetConfigRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetConfigResponse>
+  func getThumbnail(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Vurio_Dedup_MediaChunk) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>
 
-  func updateConfig(request: Vurio_Dedup_UpdateConfigRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_UpdateConfigResponse>
+  func getPreview(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Vurio_Dedup_MediaChunk) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>
 }
 
-extension Vurio_Dedup_ConfigServiceProvider {
-  public var serviceName: Substring {
-    return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor.fullName[...]
+extension Vurio_Dedup_MediaServiceClientProtocol {
+  public var serviceName: String {
+    return "vurio.dedup.MediaService"
   }
 
-  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
-  /// Returns nil for methods not handled by this service.
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "GetConfig":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetConfigRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetConfigResponse>(),
-        interceptors: self.interceptors?.makeGetConfigInterceptors() ?? [],
-        userFunction: self.getConfig(request:context:)
-      )
+  /// Server streaming call to GetThumbnail
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetThumbnail.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  public func getThumbnail(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Vurio_Dedup_MediaChunk) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk> {
+    return self.makeServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getThumbnail.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetThumbnailInterceptors() ?? [],
+      handler: handler
+    )
+  }
 
-    case "UpdateConfig":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UpdateConfigRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_UpdateConfigResponse>(),
-        interceptors: self.interceptors?.makeUpdateConfigInterceptors() ?? [],
-        userFunction: self.updateConfig(request:context:)
-      )
+  /// Server streaming call to GetPreview
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetPreview.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  public func getPreview(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Vurio_Dedup_MediaChunk) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk> {
+    return self.makeServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPreviewInterceptors() ?? [],
+      handler: handler
+    )
+  }
+}
 
-    default:
-      return nil
-    }
+@available(*, deprecated)
+extension Vurio_Dedup_MediaServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_MediaServiceNIOClient")
+public final class Vurio_Dedup_MediaServiceClient: Vurio_Dedup_MediaServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol?
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  public var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.MediaService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  public init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+public struct Vurio_Dedup_MediaServiceNIOClient: Vurio_Dedup_MediaServiceClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.MediaService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  public init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
   }
 }
 
 /// ---------------------------------------------------------
-/// Config & Settings Services
+/// Media Service
 /// ---------------------------------------------------------
-///
-/// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-public protocol Vurio_Dedup_ConfigServiceAsyncProvider: CallHandlerProvider, Sendable {
+public protocol Vurio_Dedup_MediaServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
-  var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? { get }
+  var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? { get }
 
-  func getConfig(
-    request: Vurio_Dedup_GetConfigRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_GetConfigResponse
+  func makeGetThumbnailCall(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>
 
-  func updateConfig(
-    request: Vurio_Dedup_UpdateConfigRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_UpdateConfigResponse
+  func makeGetPreviewCall(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-extension Vurio_Dedup_ConfigServiceAsyncProvider {
+extension Vurio_Dedup_MediaServiceAsyncClientProtocol {
   public static var serviceDescriptor: GRPCServiceDescriptor {
-    return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor
+    return Vurio_Dedup_MediaServiceClientMetadata.serviceDescriptor
   }
 
-  public var serviceName: Substring {
-    return Vurio_Dedup_ConfigServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  public var interceptors: Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol? {
+  public var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "GetConfig":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetConfigRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetConfigResponse>(),
-        interceptors: self.interceptors?.makeGetConfigInterceptors() ?? [],
-        wrapping: { try await self.getConfig(request: $0, context: $1) }
-      )
+  public func makeGetThumbnailCall(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk> {
+    return self.makeAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getThumbnail.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetThumbnailInterceptors() ?? []
+    )
+  }
 
-    case "UpdateConfig":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UpdateConfigRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_UpdateConfigResponse>(),
-        interceptors: self.interceptors?.makeUpdateConfigInterceptors() ?? [],
-        wrapping: { try await self.updateConfig(request: $0, context: $1) }
-      )
-
-    default:
-      return nil
-    }
+  public func makeGetPreviewCall(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk> {
+    return self.makeAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPreviewInterceptors() ?? []
+    )
   }
 }
 
-public protocol Vurio_Dedup_ConfigServiceServerInterceptorFactoryProtocol: Sendable {
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_MediaServiceAsyncClientProtocol {
+  public func getThumbnail(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Vurio_Dedup_MediaChunk> {
+    return self.performAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getThumbnail.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetThumbnailInterceptors() ?? []
+    )
+  }
 
-  /// - Returns: Interceptors to use when handling 'getConfig'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetConfigInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetConfigRequest, Vurio_Dedup_GetConfigResponse>]
-
-  /// - Returns: Interceptors to use when handling 'updateConfig'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeUpdateConfigInterceptors() -> [ServerInterceptor<Vurio_Dedup_UpdateConfigRequest, Vurio_Dedup_UpdateConfigResponse>]
+  public func getPreview(
+    _ request: Vurio_Dedup_GetMediaRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Vurio_Dedup_MediaChunk> {
+    return self.performAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.getPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPreviewInterceptors() ?? []
+    )
+  }
 }
 
-public enum Vurio_Dedup_ConfigServiceServerMetadata {
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+public struct Vurio_Dedup_MediaServiceAsyncClient: Vurio_Dedup_MediaServiceAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol?
+
+  public init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+public protocol Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'getThumbnail'.
+  func makeGetThumbnailInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>]
+
+  /// - Returns: Interceptors to use when invoking 'getPreview'.
+  func makeGetPreviewInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetMediaRequest, Vurio_Dedup_MediaChunk>]
+}
+
+public enum Vurio_Dedup_MediaServiceClientMetadata {
   public static let serviceDescriptor = GRPCServiceDescriptor(
-    name: "ConfigService",
-    fullName: "vurio.dedup.ConfigService",
+    name: "MediaService",
+    fullName: "vurio.dedup.MediaService",
     methods: [
-      Vurio_Dedup_ConfigServiceServerMetadata.Methods.getConfig,
-      Vurio_Dedup_ConfigServiceServerMetadata.Methods.updateConfig,
+      Vurio_Dedup_MediaServiceClientMetadata.Methods.getThumbnail,
+      Vurio_Dedup_MediaServiceClientMetadata.Methods.getPreview,
     ]
   )
 
   public enum Methods {
-    public static let getConfig = GRPCMethodDescriptor(
-      name: "GetConfig",
-      path: "/vurio.dedup.ConfigService/GetConfig",
-      type: GRPCCallType.unary
+    public static let getThumbnail = GRPCMethodDescriptor(
+      name: "GetThumbnail",
+      path: "/vurio.dedup.MediaService/GetThumbnail",
+      type: GRPCCallType.serverStreaming
     )
 
-    public static let updateConfig = GRPCMethodDescriptor(
-      name: "UpdateConfig",
-      path: "/vurio.dedup.ConfigService/UpdateConfig",
-      type: GRPCCallType.unary
-    )
-  }
-}
-/// ---------------------------------------------------------
-/// Media Locations Service
-/// ---------------------------------------------------------
-///
-/// To build a server, implement a class that conforms to this protocol.
-public protocol Vurio_Dedup_MediaLocationsServiceProvider: CallHandlerProvider {
-  var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? { get }
-
-  func registerLocation(request: Vurio_Dedup_RegisterLocationRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RegisterLocationResponse>
-
-  func deregisterLocation(request: Vurio_Dedup_DeregisterLocationRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_DeregisterLocationResponse>
-
-  func changePath(request: Vurio_Dedup_ChangePathRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ChangePathResponse>
-
-  func getStatus(request: Vurio_Dedup_GetStatusRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetStatusResponse>
-}
-
-extension Vurio_Dedup_MediaLocationsServiceProvider {
-  public var serviceName: Substring {
-    return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
-  /// Returns nil for methods not handled by this service.
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "RegisterLocation":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RegisterLocationRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_RegisterLocationResponse>(),
-        interceptors: self.interceptors?.makeRegisterLocationInterceptors() ?? [],
-        userFunction: self.registerLocation(request:context:)
-      )
-
-    case "DeregisterLocation":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_DeregisterLocationRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_DeregisterLocationResponse>(),
-        interceptors: self.interceptors?.makeDeregisterLocationInterceptors() ?? [],
-        userFunction: self.deregisterLocation(request:context:)
-      )
-
-    case "ChangePath":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ChangePathRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_ChangePathResponse>(),
-        interceptors: self.interceptors?.makeChangePathInterceptors() ?? [],
-        userFunction: self.changePath(request:context:)
-      )
-
-    case "GetStatus":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetStatusRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetStatusResponse>(),
-        interceptors: self.interceptors?.makeGetStatusInterceptors() ?? [],
-        userFunction: self.getStatus(request:context:)
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-/// ---------------------------------------------------------
-/// Media Locations Service
-/// ---------------------------------------------------------
-///
-/// To implement a server, implement an object which conforms to this protocol.
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-public protocol Vurio_Dedup_MediaLocationsServiceAsyncProvider: CallHandlerProvider, Sendable {
-  static var serviceDescriptor: GRPCServiceDescriptor { get }
-  var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? { get }
-
-  func registerLocation(
-    request: Vurio_Dedup_RegisterLocationRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_RegisterLocationResponse
-
-  func deregisterLocation(
-    request: Vurio_Dedup_DeregisterLocationRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_DeregisterLocationResponse
-
-  func changePath(
-    request: Vurio_Dedup_ChangePathRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_ChangePathResponse
-
-  func getStatus(
-    request: Vurio_Dedup_GetStatusRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_GetStatusResponse
-}
-
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-extension Vurio_Dedup_MediaLocationsServiceAsyncProvider {
-  public static var serviceDescriptor: GRPCServiceDescriptor {
-    return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor
-  }
-
-  public var serviceName: Substring {
-    return Vurio_Dedup_MediaLocationsServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  public var interceptors: Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol? {
-    return nil
-  }
-
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "RegisterLocation":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RegisterLocationRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_RegisterLocationResponse>(),
-        interceptors: self.interceptors?.makeRegisterLocationInterceptors() ?? [],
-        wrapping: { try await self.registerLocation(request: $0, context: $1) }
-      )
-
-    case "DeregisterLocation":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_DeregisterLocationRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_DeregisterLocationResponse>(),
-        interceptors: self.interceptors?.makeDeregisterLocationInterceptors() ?? [],
-        wrapping: { try await self.deregisterLocation(request: $0, context: $1) }
-      )
-
-    case "ChangePath":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ChangePathRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_ChangePathResponse>(),
-        interceptors: self.interceptors?.makeChangePathInterceptors() ?? [],
-        wrapping: { try await self.changePath(request: $0, context: $1) }
-      )
-
-    case "GetStatus":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetStatusRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetStatusResponse>(),
-        interceptors: self.interceptors?.makeGetStatusInterceptors() ?? [],
-        wrapping: { try await self.getStatus(request: $0, context: $1) }
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-public protocol Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProtocol: Sendable {
-
-  /// - Returns: Interceptors to use when handling 'registerLocation'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeRegisterLocationInterceptors() -> [ServerInterceptor<Vurio_Dedup_RegisterLocationRequest, Vurio_Dedup_RegisterLocationResponse>]
-
-  /// - Returns: Interceptors to use when handling 'deregisterLocation'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeDeregisterLocationInterceptors() -> [ServerInterceptor<Vurio_Dedup_DeregisterLocationRequest, Vurio_Dedup_DeregisterLocationResponse>]
-
-  /// - Returns: Interceptors to use when handling 'changePath'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeChangePathInterceptors() -> [ServerInterceptor<Vurio_Dedup_ChangePathRequest, Vurio_Dedup_ChangePathResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getStatus'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>]
-}
-
-public enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
-  public static let serviceDescriptor = GRPCServiceDescriptor(
-    name: "MediaLocationsService",
-    fullName: "vurio.dedup.MediaLocationsService",
-    methods: [
-      Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.registerLocation,
-      Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.deregisterLocation,
-      Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.changePath,
-      Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.getStatus,
-    ]
-  )
-
-  public enum Methods {
-    public static let registerLocation = GRPCMethodDescriptor(
-      name: "RegisterLocation",
-      path: "/vurio.dedup.MediaLocationsService/RegisterLocation",
-      type: GRPCCallType.unary
-    )
-
-    public static let deregisterLocation = GRPCMethodDescriptor(
-      name: "DeregisterLocation",
-      path: "/vurio.dedup.MediaLocationsService/DeregisterLocation",
-      type: GRPCCallType.unary
-    )
-
-    public static let changePath = GRPCMethodDescriptor(
-      name: "ChangePath",
-      path: "/vurio.dedup.MediaLocationsService/ChangePath",
-      type: GRPCCallType.unary
-    )
-
-    public static let getStatus = GRPCMethodDescriptor(
-      name: "GetStatus",
-      path: "/vurio.dedup.MediaLocationsService/GetStatus",
-      type: GRPCCallType.unary
-    )
-  }
-}
-/// ---------------------------------------------------------
-/// Duplicates Service
-/// ---------------------------------------------------------
-///
-/// To build a server, implement a class that conforms to this protocol.
-public protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
-  var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? { get }
-
-  func getDuplicateGroups(request: Vurio_Dedup_GetGroupsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetGroupsResponse>
-
-  func ejectDuplicates(request: Vurio_Dedup_EjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_EjectDuplicatesResponse>
-
-  func undoEjectDuplicates(request: Vurio_Dedup_UndoEjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_UndoEjectDuplicatesResponse>
-
-  func subscribeToDuplicateUpdates(request: Vurio_Dedup_Empty, context: StreamingResponseCallContext<Vurio_Dedup_DuplicateGroupUpdate>) -> EventLoopFuture<GRPCStatus>
-}
-
-extension Vurio_Dedup_DuplicatesServiceProvider {
-  public var serviceName: Substring {
-    return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
-  /// Returns nil for methods not handled by this service.
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "GetDuplicateGroups":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetGroupsRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetGroupsResponse>(),
-        interceptors: self.interceptors?.makeGetDuplicateGroupsInterceptors() ?? [],
-        userFunction: self.getDuplicateGroups(request:context:)
-      )
-
-    case "EjectDuplicates":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_EjectDuplicatesRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_EjectDuplicatesResponse>(),
-        interceptors: self.interceptors?.makeEjectDuplicatesInterceptors() ?? [],
-        userFunction: self.ejectDuplicates(request:context:)
-      )
-
-    case "UndoEjectDuplicates":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UndoEjectDuplicatesRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_UndoEjectDuplicatesResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? [],
-        userFunction: self.undoEjectDuplicates(request:context:)
-      )
-
-    case "SubscribeToDuplicateUpdates":
-      return ServerStreamingServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicateGroupUpdate>(),
-        interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? [],
-        userFunction: self.subscribeToDuplicateUpdates(request:context:)
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-/// ---------------------------------------------------------
-/// Duplicates Service
-/// ---------------------------------------------------------
-///
-/// To implement a server, implement an object which conforms to this protocol.
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-public protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvider, Sendable {
-  static var serviceDescriptor: GRPCServiceDescriptor { get }
-  var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? { get }
-
-  func getDuplicateGroups(
-    request: Vurio_Dedup_GetGroupsRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_GetGroupsResponse
-
-  func ejectDuplicates(
-    request: Vurio_Dedup_EjectDuplicatesRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_EjectDuplicatesResponse
-
-  func undoEjectDuplicates(
-    request: Vurio_Dedup_UndoEjectDuplicatesRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_UndoEjectDuplicatesResponse
-
-  func subscribeToDuplicateUpdates(
-    request: Vurio_Dedup_Empty,
-    responseStream: GRPCAsyncResponseStreamWriter<Vurio_Dedup_DuplicateGroupUpdate>,
-    context: GRPCAsyncServerCallContext
-  ) async throws
-}
-
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
-  public static var serviceDescriptor: GRPCServiceDescriptor {
-    return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor
-  }
-
-  public var serviceName: Substring {
-    return Vurio_Dedup_DuplicatesServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  public var interceptors: Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol? {
-    return nil
-  }
-
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "GetDuplicateGroups":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetGroupsRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetGroupsResponse>(),
-        interceptors: self.interceptors?.makeGetDuplicateGroupsInterceptors() ?? [],
-        wrapping: { try await self.getDuplicateGroups(request: $0, context: $1) }
-      )
-
-    case "EjectDuplicates":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_EjectDuplicatesRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_EjectDuplicatesResponse>(),
-        interceptors: self.interceptors?.makeEjectDuplicatesInterceptors() ?? [],
-        wrapping: { try await self.ejectDuplicates(request: $0, context: $1) }
-      )
-
-    case "UndoEjectDuplicates":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UndoEjectDuplicatesRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_UndoEjectDuplicatesResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? [],
-        wrapping: { try await self.undoEjectDuplicates(request: $0, context: $1) }
-      )
-
-    case "SubscribeToDuplicateUpdates":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicateGroupUpdate>(),
-        interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? [],
-        wrapping: { try await self.subscribeToDuplicateUpdates(request: $0, responseStream: $1, context: $2) }
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-public protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol: Sendable {
-
-  /// - Returns: Interceptors to use when handling 'getDuplicateGroups'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetDuplicateGroupsInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetGroupsRequest, Vurio_Dedup_GetGroupsResponse>]
-
-  /// - Returns: Interceptors to use when handling 'ejectDuplicates'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeEjectDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_EjectDuplicatesRequest, Vurio_Dedup_EjectDuplicatesResponse>]
-
-  /// - Returns: Interceptors to use when handling 'undoEjectDuplicates'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeUndoEjectDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>]
-
-  /// - Returns: Interceptors to use when handling 'subscribeToDuplicateUpdates'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeSubscribeToDuplicateUpdatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
-}
-
-public enum Vurio_Dedup_DuplicatesServiceServerMetadata {
-  public static let serviceDescriptor = GRPCServiceDescriptor(
-    name: "DuplicatesService",
-    fullName: "vurio.dedup.DuplicatesService",
-    methods: [
-      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDuplicateGroups,
-      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
-      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
-      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.subscribeToDuplicateUpdates,
-    ]
-  )
-
-  public enum Methods {
-    public static let getDuplicateGroups = GRPCMethodDescriptor(
-      name: "GetDuplicateGroups",
-      path: "/vurio.dedup.DuplicatesService/GetDuplicateGroups",
-      type: GRPCCallType.unary
-    )
-
-    public static let ejectDuplicates = GRPCMethodDescriptor(
-      name: "EjectDuplicates",
-      path: "/vurio.dedup.DuplicatesService/EjectDuplicates",
-      type: GRPCCallType.unary
-    )
-
-    public static let undoEjectDuplicates = GRPCMethodDescriptor(
-      name: "UndoEjectDuplicates",
-      path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
-      type: GRPCCallType.unary
-    )
-
-    public static let subscribeToDuplicateUpdates = GRPCMethodDescriptor(
-      name: "SubscribeToDuplicateUpdates",
-      path: "/vurio.dedup.DuplicatesService/SubscribeToDuplicateUpdates",
+    public static let getPreview = GRPCMethodDescriptor(
+      name: "GetPreview",
+      path: "/vurio.dedup.MediaService/GetPreview",
       type: GRPCCallType.serverStreaming
     )
   }
 }
-/// ---------------------------------------------------------
-/// Advanced Settings Service
-/// ---------------------------------------------------------
-///
-/// To build a server, implement a class that conforms to this protocol.
-public protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvider {
-  var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
 
-  func resetErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func ejectErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func undoEjectErrors(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func ejectIgnored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func undoEjectIgnored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func purgeEjectedAndErrored(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func resetDuplicates(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func startDatabaseIntegrityCheck(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func getDatabaseIntegrityCheckStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_IntegrityCheckStatusResponse>
-
-  func backupDatabase(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
-
-  func getLatestBackup(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
-
-  func clearAllCaches(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ClearCachesResponse>
-
-  func configurePurityOrder(request: Vurio_Dedup_ConfigurePurityOrderRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-
-  func getUserTheme(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetUserThemeResponse>
-
-  func setUserTheme(request: Vurio_Dedup_SetUserThemeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
-}
-
-extension Vurio_Dedup_AdvancedSettingsServiceProvider {
-  public var serviceName: Substring {
-    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
-  /// Returns nil for methods not handled by this service.
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "ResetErrors":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? [],
-        userFunction: self.resetErrors(request:context:)
-      )
-
-    case "EjectErrors":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? [],
-        userFunction: self.ejectErrors(request:context:)
-      )
-
-    case "UndoEjectErrors":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? [],
-        userFunction: self.undoEjectErrors(request:context:)
-      )
-
-    case "EjectIgnored":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? [],
-        userFunction: self.ejectIgnored(request:context:)
-      )
-
-    case "UndoEjectIgnored":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? [],
-        userFunction: self.undoEjectIgnored(request:context:)
-      )
-
-    case "PurgeEjectedAndErrored":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? [],
-        userFunction: self.purgeEjectedAndErrored(request:context:)
-      )
-
-    case "ResetDuplicates":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? [],
-        userFunction: self.resetDuplicates(request:context:)
-      )
-
-    case "StartDatabaseIntegrityCheck":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? [],
-        userFunction: self.startDatabaseIntegrityCheck(request:context:)
-      )
-
-    case "GetDatabaseIntegrityCheckStatus":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_IntegrityCheckStatusResponse>(),
-        interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? [],
-        userFunction: self.getDatabaseIntegrityCheckStatus(request:context:)
-      )
-
-    case "BackupDatabase":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
-        userFunction: self.backupDatabase(request:context:)
-      )
-
-    case "GetLatestBackup":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
-        userFunction: self.getLatestBackup(request:context:)
-      )
-
-    case "ClearAllCaches":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_ClearCachesResponse>(),
-        interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? [],
-        userFunction: self.clearAllCaches(request:context:)
-      )
-
-    case "ConfigurePurityOrder":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ConfigurePurityOrderRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? [],
-        userFunction: self.configurePurityOrder(request:context:)
-      )
-
-    case "GetUserTheme":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetUserThemeResponse>(),
-        interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? [],
-        userFunction: self.getUserTheme(request:context:)
-      )
-
-    case "SetUserTheme":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetUserThemeRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? [],
-        userFunction: self.setUserTheme(request:context:)
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-/// ---------------------------------------------------------
-/// Advanced Settings Service
-/// ---------------------------------------------------------
-///
-/// To implement a server, implement an object which conforms to this protocol.
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-public protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerProvider, Sendable {
-  static var serviceDescriptor: GRPCServiceDescriptor { get }
-  var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? { get }
-
-  func resetErrors(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func ejectErrors(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func undoEjectErrors(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func ejectIgnored(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func undoEjectIgnored(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func purgeEjectedAndErrored(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func resetDuplicates(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func startDatabaseIntegrityCheck(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func getDatabaseIntegrityCheckStatus(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_IntegrityCheckStatusResponse
-
-  func backupDatabase(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
-
-  func getLatestBackup(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
-
-  func clearAllCaches(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_ClearCachesResponse
-
-  func configurePurityOrder(
-    request: Vurio_Dedup_ConfigurePurityOrderRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-
-  func getUserTheme(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_GetUserThemeResponse
-
-  func setUserTheme(
-    request: Vurio_Dedup_SetUserThemeRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_AdvancedActionResponse
-}
-
-@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
-  public static var serviceDescriptor: GRPCServiceDescriptor {
-    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor
-  }
-
-  public var serviceName: Substring {
-    return Vurio_Dedup_AdvancedSettingsServiceServerMetadata.serviceDescriptor.fullName[...]
-  }
-
-  public var interceptors: Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol? {
-    return nil
-  }
-
-  public func handle(
-    method name: Substring,
-    context: CallHandlerContext
-  ) -> GRPCServerHandlerProtocol? {
-    switch name {
-    case "ResetErrors":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeResetErrorsInterceptors() ?? [],
-        wrapping: { try await self.resetErrors(request: $0, context: $1) }
-      )
-
-    case "EjectErrors":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeEjectErrorsInterceptors() ?? [],
-        wrapping: { try await self.ejectErrors(request: $0, context: $1) }
-      )
-
-    case "UndoEjectErrors":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectErrorsInterceptors() ?? [],
-        wrapping: { try await self.undoEjectErrors(request: $0, context: $1) }
-      )
-
-    case "EjectIgnored":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeEjectIgnoredInterceptors() ?? [],
-        wrapping: { try await self.ejectIgnored(request: $0, context: $1) }
-      )
-
-    case "UndoEjectIgnored":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeUndoEjectIgnoredInterceptors() ?? [],
-        wrapping: { try await self.undoEjectIgnored(request: $0, context: $1) }
-      )
-
-    case "PurgeEjectedAndErrored":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makePurgeEjectedAndErroredInterceptors() ?? [],
-        wrapping: { try await self.purgeEjectedAndErrored(request: $0, context: $1) }
-      )
-
-    case "ResetDuplicates":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? [],
-        wrapping: { try await self.resetDuplicates(request: $0, context: $1) }
-      )
-
-    case "StartDatabaseIntegrityCheck":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeStartDatabaseIntegrityCheckInterceptors() ?? [],
-        wrapping: { try await self.startDatabaseIntegrityCheck(request: $0, context: $1) }
-      )
-
-    case "GetDatabaseIntegrityCheckStatus":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_IntegrityCheckStatusResponse>(),
-        interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? [],
-        wrapping: { try await self.getDatabaseIntegrityCheckStatus(request: $0, context: $1) }
-      )
-
-    case "BackupDatabase":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
-        wrapping: { try await self.backupDatabase(request: $0, context: $1) }
-      )
-
-    case "GetLatestBackup":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
-        wrapping: { try await self.getLatestBackup(request: $0, context: $1) }
-      )
-
-    case "ClearAllCaches":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_ClearCachesResponse>(),
-        interceptors: self.interceptors?.makeClearAllCachesInterceptors() ?? [],
-        wrapping: { try await self.clearAllCaches(request: $0, context: $1) }
-      )
-
-    case "ConfigurePurityOrder":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ConfigurePurityOrderRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeConfigurePurityOrderInterceptors() ?? [],
-        wrapping: { try await self.configurePurityOrder(request: $0, context: $1) }
-      )
-
-    case "GetUserTheme":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetUserThemeResponse>(),
-        interceptors: self.interceptors?.makeGetUserThemeInterceptors() ?? [],
-        wrapping: { try await self.getUserTheme(request: $0, context: $1) }
-      )
-
-    case "SetUserTheme":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetUserThemeRequest>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
-        interceptors: self.interceptors?.makeSetUserThemeInterceptors() ?? [],
-        wrapping: { try await self.setUserTheme(request: $0, context: $1) }
-      )
-
-    default:
-      return nil
-    }
-  }
-}
-
-public protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryProtocol: Sendable {
-
-  /// - Returns: Interceptors to use when handling 'resetErrors'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeResetErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'ejectErrors'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeEjectErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'undoEjectErrors'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeUndoEjectErrorsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'ejectIgnored'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeEjectIgnoredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'undoEjectIgnored'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeUndoEjectIgnoredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'purgeEjectedAndErrored'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makePurgeEjectedAndErroredInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'resetDuplicates'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeResetDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'startDatabaseIntegrityCheck'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeStartDatabaseIntegrityCheckInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getDatabaseIntegrityCheckStatus'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetDatabaseIntegrityCheckStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>]
-
-  /// - Returns: Interceptors to use when handling 'backupDatabase'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeBackupDatabaseInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getLatestBackup'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetLatestBackupInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
-  /// - Returns: Interceptors to use when handling 'clearAllCaches'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeClearAllCachesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>]
-
-  /// - Returns: Interceptors to use when handling 'configurePurityOrder'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeConfigurePurityOrderInterceptors() -> [ServerInterceptor<Vurio_Dedup_ConfigurePurityOrderRequest, Vurio_Dedup_AdvancedActionResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getUserTheme'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetUserThemeInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_GetUserThemeResponse>]
-
-  /// - Returns: Interceptors to use when handling 'setUserTheme'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeSetUserThemeInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetUserThemeRequest, Vurio_Dedup_AdvancedActionResponse>]
-}
-
-public enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
-  public static let serviceDescriptor = GRPCServiceDescriptor(
-    name: "AdvancedSettingsService",
-    fullName: "vurio.dedup.AdvancedSettingsService",
-    methods: [
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resetErrors,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.ejectErrors,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.undoEjectErrors,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.ejectIgnored,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.undoEjectIgnored,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.purgeEjectedAndErrored,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resetDuplicates,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.startDatabaseIntegrityCheck,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getDatabaseIntegrityCheckStatus,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.backupDatabase,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getLatestBackup,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.clearAllCaches,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.configurePurityOrder,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getUserTheme,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.setUserTheme,
-    ]
-  )
-
-  public enum Methods {
-    public static let resetErrors = GRPCMethodDescriptor(
-      name: "ResetErrors",
-      path: "/vurio.dedup.AdvancedSettingsService/ResetErrors",
-      type: GRPCCallType.unary
-    )
-
-    public static let ejectErrors = GRPCMethodDescriptor(
-      name: "EjectErrors",
-      path: "/vurio.dedup.AdvancedSettingsService/EjectErrors",
-      type: GRPCCallType.unary
-    )
-
-    public static let undoEjectErrors = GRPCMethodDescriptor(
-      name: "UndoEjectErrors",
-      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectErrors",
-      type: GRPCCallType.unary
-    )
-
-    public static let ejectIgnored = GRPCMethodDescriptor(
-      name: "EjectIgnored",
-      path: "/vurio.dedup.AdvancedSettingsService/EjectIgnored",
-      type: GRPCCallType.unary
-    )
-
-    public static let undoEjectIgnored = GRPCMethodDescriptor(
-      name: "UndoEjectIgnored",
-      path: "/vurio.dedup.AdvancedSettingsService/UndoEjectIgnored",
-      type: GRPCCallType.unary
-    )
-
-    public static let purgeEjectedAndErrored = GRPCMethodDescriptor(
-      name: "PurgeEjectedAndErrored",
-      path: "/vurio.dedup.AdvancedSettingsService/PurgeEjectedAndErrored",
-      type: GRPCCallType.unary
-    )
-
-    public static let resetDuplicates = GRPCMethodDescriptor(
-      name: "ResetDuplicates",
-      path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
-      type: GRPCCallType.unary
-    )
-
-    public static let startDatabaseIntegrityCheck = GRPCMethodDescriptor(
-      name: "StartDatabaseIntegrityCheck",
-      path: "/vurio.dedup.AdvancedSettingsService/StartDatabaseIntegrityCheck",
-      type: GRPCCallType.unary
-    )
-
-    public static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
-      name: "GetDatabaseIntegrityCheckStatus",
-      path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
-      type: GRPCCallType.unary
-    )
-
-    public static let backupDatabase = GRPCMethodDescriptor(
-      name: "BackupDatabase",
-      path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
-      type: GRPCCallType.unary
-    )
-
-    public static let getLatestBackup = GRPCMethodDescriptor(
-      name: "GetLatestBackup",
-      path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
-      type: GRPCCallType.unary
-    )
-
-    public static let clearAllCaches = GRPCMethodDescriptor(
-      name: "ClearAllCaches",
-      path: "/vurio.dedup.AdvancedSettingsService/ClearAllCaches",
-      type: GRPCCallType.unary
-    )
-
-    public static let configurePurityOrder = GRPCMethodDescriptor(
-      name: "ConfigurePurityOrder",
-      path: "/vurio.dedup.AdvancedSettingsService/ConfigurePurityOrder",
-      type: GRPCCallType.unary
-    )
-
-    public static let getUserTheme = GRPCMethodDescriptor(
-      name: "GetUserTheme",
-      path: "/vurio.dedup.AdvancedSettingsService/GetUserTheme",
-      type: GRPCCallType.unary
-    )
-
-    public static let setUserTheme = GRPCMethodDescriptor(
-      name: "SetUserTheme",
-      path: "/vurio.dedup.AdvancedSettingsService/SetUserTheme",
-      type: GRPCCallType.unary
-    )
-  }
-}
