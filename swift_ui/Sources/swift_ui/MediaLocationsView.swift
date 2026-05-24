@@ -93,6 +93,7 @@ struct MediaLocationsView: View {
                             if isRemapping && remappingPath == location {
                                 ProgressView()
                                     .controlSize(.small)
+                            } else {
                                 Button(action: {
                                     remapLocation(oldPath: location)
                                 }) {
