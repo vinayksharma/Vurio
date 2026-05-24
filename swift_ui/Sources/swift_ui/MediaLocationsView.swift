@@ -9,6 +9,7 @@ struct MediaLocationsView: View {
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
     @State private var isDeregistering: Bool = false
+    @State private var ejectionPaths: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -92,6 +93,17 @@ struct MediaLocationsView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.blue)
+                                
+                                Button(action: {
+                                    openEjectedFolder(for: location)
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "folder")
+                                        Text("Ejected")
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(ejectionPaths[location] == nil)
                             }
                         }
                         .padding()
@@ -130,6 +142,7 @@ struct MediaLocationsView: View {
         .onAppear {
             Task {
                 await appState.fetchStatus()
+                await fetchEjectionPaths()
             }
         }
         .overlay(
@@ -262,6 +275,54 @@ struct MediaLocationsView: View {
                     remappingPath = nil
                 }
             }
+        }
+    }
+    
+    private func fetchEjectionPaths() async {
+        do {
+            let req = Vurio_Dedup_GetConfigRequest()
+            if let client = VurioGrpcClient.shared.config {
+                let res = try await client.getConfig(req)
+                if let data = res.jsonPayload.data(using: .utf8),
+                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                   
+                    var paths: [String: String] = [:]
+                    for (key, value) in json {
+                        if key.hasPrefix("ejectionPath:") {
+                            let loc = String(key.dropFirst("ejectionPath:".count))
+                            if let valStr = value as? String {
+                                paths[loc] = valStr
+                            } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
+                                paths[loc] = valStr
+                            }
+                        }
+                    }
+                    await MainActor.run {
+                        self.ejectionPaths = paths
+                    }
+                }
+            }
+        } catch {
+            print("Failed to fetch config for ejection paths: \(error)")
+        }
+    }
+    
+    private func openEjectedFolder(for location: String) {
+        guard let path = ejectionPaths[location] else {
+            statusMessage = "No ejected folder found for this location."
+            return
+        }
+        
+        let url = URL(fileURLWithPath: path)
+        var opened = NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+        if !opened {
+            opened = NSWorkspace.shared.open(url)
+        }
+        
+        if !opened {
+            statusMessage = "Failed to open ejected folder."
+        } else {
+            statusMessage = ""
         }
     }
 }
