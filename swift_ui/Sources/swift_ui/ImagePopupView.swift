@@ -187,17 +187,11 @@ struct ImagePopupView: View {
                 self.currentImage = image
                 self.isLoadingImage = false
             }
+        } catch is CancellationError {
+            // Task was cancelled
         } catch {
-            // Fallback
-            if let image = NSImage(contentsOfFile: file.filePath) {
-                await MainActor.run {
-                    self.currentImage = image
-                    self.isLoadingImage = false
-                }
-            } else {
-                await MainActor.run {
-                    self.isLoadingImage = false
-                }
+            await MainActor.run {
+                self.isLoadingImage = false
             }
         }
     }

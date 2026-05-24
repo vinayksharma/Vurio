@@ -48,16 +48,8 @@ struct ThumbnailView: View {
         } catch is CancellationError {
             // Task was cancelled (e.g. scrolled off screen), do nothing
         } catch {
-            // Fallback: try loading directly via NSImage for standard formats
-            if let image = NSImage(contentsOfFile: filePath) {
-                await MainActor.run {
-                    self.thumbnail = image
-                    self.isLoading = false
-                }
-            } else {
-                await MainActor.run {
-                    self.isLoading = false
-                }
+            await MainActor.run {
+                self.isLoading = false
             }
         }
     }
