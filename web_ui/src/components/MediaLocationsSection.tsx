@@ -224,10 +224,10 @@ const MediaLocationsSection: React.FC = () => {
             onChange={(e) => setDirectoryPath(e.target.value)}
             disabled={!!remappingLocation || !!deregisteringPath}
           />
-          <button id="browse-btn" onClick={browseDirectory} disabled={!!remappingLocation || !!deregisteringPath}>
+          <button id="browse-btn" onClick={browseDirectory} disabled={!!remappingLocation || !!deregisteringPath} title="Browse and select a folder to register" style={{ minWidth: '150px', justifyContent: 'center' }}>
             Browse
           </button>
-          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={!!remappingLocation || !!deregisteringPath}>
+          <button id="scan-btn" className="primary" onClick={handleRegister} disabled={!!remappingLocation || !!deregisteringPath} title="Register the selected folder for deduplication scanning" style={{ minWidth: '150px', justifyContent: 'center' }}>
             Register
           </button>
         </div>
@@ -251,7 +251,7 @@ const MediaLocationsSection: React.FC = () => {
                   onClick={(e) => handleRemap(location, e)}
                   title="Remap this location to a different path"
                   disabled={!!remappingLocation || !!deregisteringPath}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '150px', justifyContent: 'center' }}
                 >
                   {remappingLocation === location ? (
                     <>
@@ -279,7 +279,7 @@ const MediaLocationsSection: React.FC = () => {
                   }}
                   title="Open Ejected Folder in OS"
                   disabled={!ejectionPaths[location] || !!remappingLocation || !!deregisteringPath}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px', minWidth: '150px', justifyContent: 'center' }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                   Ejected
@@ -293,7 +293,8 @@ const MediaLocationsSection: React.FC = () => {
               className="ghost"
               disabled={!selectedLocation || !!remappingLocation || !!deregisteringPath}
               onClick={handleDeregisterSelected}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              title="Deregister and stop scanning the selected location"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '150px', justifyContent: 'center' }}
             >
               {deregisteringPath ? (
                 <>
