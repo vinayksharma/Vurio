@@ -293,44 +293,14 @@ struct MediaLocationsView: View {
     }
     
     private func fetchEjectionPaths() async {
-        do {
-            let req = Vurio_Dedup_GetConfigRequest()
-            if let client = VurioGrpcClient.shared.config {
-                let res = try await client.getConfig(req)
-                if let data = res.jsonPayload.data(using: .utf8),
-                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                   
-                    var locationKeysToPaths: [String: String] = [:]
-                    for (key, value) in json {
-                        if key.hasPrefix("mediaLocation:") {
-                            if let valStr = value as? String {
-                                locationKeysToPaths[key] = valStr
-                            } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
-                                locationKeysToPaths[key] = valStr
-                            }
-                        }
-                    }
-                    
-                    var paths: [String: String] = [:]
-                    for (key, value) in json {
-                        if key.hasPrefix("ejectionPath:") {
-                            let locKey = String(key.dropFirst("ejectionPath:".count))
-                            if let locationPath = locationKeysToPaths[locKey] {
-                                if let valStr = value as? String {
-                                    paths[locationPath] = valStr
-                                } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
-                                    paths[locationPath] = valStr
-                                }
-                            }
-                        }
-                    }
-                    await MainActor.run {
-                        self.ejectionPaths = paths
-                    }
-                }
+        var paths: [String: String] = [:]
+        for location in appState.registeredDirs {
+            if let matched = appState.ejectedDirs.first(where: { $0.hasPrefix(location) }) {
+                paths[location] = matched
             }
-        } catch {
-            print("Failed to fetch config for ejection paths: \(error)")
+        }
+        await MainActor.run {
+            self.ejectionPaths = paths
         }
     }
     
