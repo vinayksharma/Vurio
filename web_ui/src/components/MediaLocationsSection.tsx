@@ -4,6 +4,7 @@ import {
   deregisterLocation,
   changePath,
   verifyRemapSuccess,
+  fetchUserSettings,
 } from '../utils/api';
 import { useStatusPopupStore, useServerStatusStore } from '../stores';
 import { remapEventEmitter } from '../utils/remapEvents';
@@ -16,6 +17,7 @@ const MediaLocationsSection: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
   const [deregisteringPath, setDeregisteringPath] = useState<string | null>(null);
+  const [ejectionPaths, setEjectionPaths] = useState<Record<string, string>>({});
   const openStatusPopup = useStatusPopupStore((state) => state.open);
 
   const refreshLocations = async () => {
@@ -30,6 +32,17 @@ const MediaLocationsSection: React.FC = () => {
     if (locations.length === 0) {
       refreshLocations();
     }
+    
+    fetchUserSettings().then(settings => {
+      const paths: Record<string, string> = {};
+      settings.forEach(s => {
+        if (s.key.startsWith('ejectionPath:')) {
+          const loc = s.key.substring('ejectionPath:'.length);
+          paths[loc] = s.value;
+        }
+      });
+      setEjectionPaths(paths);
+    }).catch(console.error);
   }, []);
 
   const getElectronAPI = (): typeof window.electronAPI | null => {
@@ -250,6 +263,26 @@ const MediaLocationsSection: React.FC = () => {
                   ) : (
                     'Remap'
                   )}
+                </button>
+                <button
+                  className="secondary icon-button remap-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const path = ejectionPaths[location];
+                    if (path && window.electronAPI?.openPath) {
+                      window.electronAPI.openPath(path).then(res => {
+                        if (!res.ok) alert(`Failed to open path: ${res.error}`);
+                      });
+                    } else if (!window.electronAPI?.openPath) {
+                      alert('System path launching is only available in the desktop app.');
+                    }
+                  }}
+                  title="Open Ejected Folder in OS"
+                  disabled={!ejectionPaths[location] || !!remappingLocation || !!deregisteringPath}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                  Ejected
                 </button>
               </li>
             ))}
