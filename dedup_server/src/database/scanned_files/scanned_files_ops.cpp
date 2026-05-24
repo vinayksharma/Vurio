@@ -446,6 +446,24 @@ namespace MediaDedup
         return 0;
     }
 
+    int ScannedFilesOps::countProcessedSuccess(DatabaseManager &db)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << "SELECT COUNT(*) FROM scanned_files WHERE processed=2", Keywords::now;
+            RecordSet rs(stmt);
+            if (rs.moveFirst())
+            {
+                return rs[0].convert<int>();
+            }
+        }
+        catch (...) {}
+        return 0;
+    }
+
     int ScannedFilesOps::countProcessedUpTo(DatabaseManager &db, int max_id)
     {
         try

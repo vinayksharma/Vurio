@@ -161,4 +161,20 @@ class SettingsViewModel: ObservableObject {
     func purgeEjectedAndErrored() async {
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.purgeEjectedAndErrored(Vurio_Dedup_Empty()) }, successMessage: "Purged ejected and errored files")
     }
+    
+    func clearAllCaches() async {
+        isAnyActionRunning = true
+        defer { isAnyActionRunning = false }
+        
+        do {
+            let response = try await VurioGrpcClient.shared.advanced!.clearAllCaches(Vurio_Dedup_Empty())
+            if response.success {
+                print("Caches cleared successfully")
+            } else {
+                print("Action failed: \(response.errorMessage)")
+            }
+        } catch {
+            print("Action error: \(error)")
+        }
+    }
 }

@@ -77,8 +77,8 @@ TEST_F(PurgeEjectedErroredTest, PurgesEjectedFilesAndPromotesRepresentative)
     ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager, group_id, f3.id, f3.file_path, 0.96, 50, "", false));
 
     // Simulate f1 and f3 being ejected
-    EjectedFileHistory h1{f1.id, "/path/to/media/_ejected/file1.jpg", f1.file_path, "file1.jpg", "loc1", ""};
-    EjectedFileHistory h3{f3.id, "/path/to/media/_errored/file3.jpg", f3.file_path, "file3.jpg", "loc1", ""};
+    EjectedFileHistory h1{f1.id, "/path/to/media/ejected_abc/file1.jpg", f1.file_path, "file1.jpg", "loc1", ""};
+    EjectedFileHistory h3{f3.id, "/path/to/media/errored_def/file3.jpg", f3.file_path, "file3.jpg", "loc1", ""};
     
     ASSERT_TRUE(EjectedFilesOps::insert(*db_manager, h1));
     ASSERT_TRUE(EjectedFilesOps::insert(*db_manager, h3));
@@ -88,8 +88,8 @@ TEST_F(PurgeEjectedErroredTest, PurgesEjectedFilesAndPromotesRepresentative)
     std::string purity_str = config_manager->getPropertyValue<std::string>("duplicates.purity.order", "FILE_SIZE");
 
     for (const auto& hist : all_histories) {
-        if (hist.ejected_path.find("_ejected") != std::string::npos ||
-            hist.ejected_path.find("_errored") != std::string::npos) {
+        if (hist.ejected_path.find("/ejected_") != std::string::npos ||
+            hist.ejected_path.find("/errored_") != std::string::npos) {
             
             auto groups = DuplicateGroupsOps::getGroupsForFile(*db_manager, hist.file_id, "EMBEDDING");
             for (const auto& g : groups) {
@@ -156,7 +156,7 @@ TEST_F(PurgeEjectedErroredTest, PurgeCandidateGroupSurvives)
     ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager, group_id, f3.id, f3.file_path, 0.96, 50, "", false));
 
     // Simulate ONLY f3 (candidate) being ejected
-    EjectedFileHistory h3{f3.id, "/path/to/media/_ejected/file3.jpg", f3.file_path, "file3.jpg", "loc1", ""};
+    EjectedFileHistory h3{f3.id, "/path/to/media/ejected_xyz/file3.jpg", f3.file_path, "file3.jpg", "loc1", ""};
     ASSERT_TRUE(EjectedFilesOps::insert(*db_manager, h3));
 
     // Execute Handler Logic
@@ -164,8 +164,8 @@ TEST_F(PurgeEjectedErroredTest, PurgeCandidateGroupSurvives)
     std::string purity_str = config_manager->getPropertyValue<std::string>("duplicates.purity.order", "FILE_SIZE");
 
     for (const auto& hist : all_histories) {
-        if (hist.ejected_path.find("_ejected") != std::string::npos ||
-            hist.ejected_path.find("_errored") != std::string::npos) {
+        if (hist.ejected_path.find("/ejected_") != std::string::npos ||
+            hist.ejected_path.find("/errored_") != std::string::npos) {
             
             auto groups = DuplicateGroupsOps::getGroupsForFile(*db_manager, hist.file_id, "EMBEDDING");
             for (const auto& g : groups) {

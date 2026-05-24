@@ -34,24 +34,14 @@ const MediaLocationsSection: React.FC = () => {
     }
     
     fetchUserSettings().then(settings => {
-      const locationKeysToPaths: Record<string, string> = {};
+      const pathsToLocationKeys: Record<string, string> = {};
       settings.forEach(s => {
         if (s.key.startsWith('mediaLocation:')) {
-          locationKeysToPaths[s.key] = s.value;
+          const locKey = s.key.substring('mediaLocation:'.length);
+          pathsToLocationKeys[s.value] = locKey;
         }
       });
-
-      const paths: Record<string, string> = {};
-      settings.forEach(s => {
-        if (s.key.startsWith('ejectionPath:')) {
-          const locKey = s.key.substring('ejectionPath:'.length);
-          const locationPath = locationKeysToPaths[locKey];
-          if (locationPath) {
-            paths[locationPath] = s.value;
-          }
-        }
-      });
-      setEjectionPaths(paths);
+      setEjectionPaths(pathsToLocationKeys);
     }).catch(console.error);
   }, []);
 
@@ -278,10 +268,18 @@ const MediaLocationsSection: React.FC = () => {
                   className="secondary icon-button remap-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    const path = ejectionPaths[location];
-                    if (path && window.electronAPI?.openPath) {
-                      window.electronAPI.openPath(path).then(res => {
-                        if (!res.ok) alert(`Failed to open path: ${res.error}`);
+                    const uuid = ejectionPaths[location];
+                    if (uuid && window.electronAPI?.openPath) {
+                      const sep = location.includes('\\') ? '\\' : '/';
+                      const base = location.endsWith(sep) ? location : location + sep;
+                      const paths = [
+                        `${base}ejected_${uuid}`,
+                        `${base}errored_${uuid}`,
+                        `${base}ignored_${uuid}`
+                      ];
+                      Promise.all(paths.map(p => window.electronAPI!.openPath(p))).then(results => {
+                        const anyOk = results.some(res => res.ok);
+                        if (!anyOk) alert('No ejected, errored, or ignored folders found for this location.');
                       });
                     } else if (!window.electronAPI?.openPath) {
                       alert('System path launching is only available in the desktop app.');
