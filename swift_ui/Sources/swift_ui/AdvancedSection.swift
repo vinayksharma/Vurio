@@ -99,6 +99,19 @@ struct AdvancedSection: View {
                         isRunning: viewModel.isAnyActionRunning
                     )
                     
+                    ActionRow(
+                        title: "Clear Caches",
+                        description: "Delete all generated thumbnails and QHD previews. Useful for forcing the system to regenerate images after testing new generation logic.",
+                        buttons: [
+                            ActionButton(title: "Clear All Caches", role: .destructive,
+                                         confirmTitle: "Clear All Caches?",
+                                         confirmMessage: "Are you sure you want to clear all thumbnail and preview caches? This will safely delete all generated images. The system will regenerate them automatically as needed.",
+                                         systemImage: "trash",
+                                         action: { Task { await viewModel.clearAllCaches() } })
+                        ],
+                        isRunning: viewModel.isAnyActionRunning
+                    )
+                    
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Advanced Overlay")

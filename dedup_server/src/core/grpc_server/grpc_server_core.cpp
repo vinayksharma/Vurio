@@ -96,7 +96,7 @@ public:
             
             auto checkpoint = MediaDedup::DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
             int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
-            reply->set_duplicate_finding_total(reply->processed_files_count());
+            reply->set_duplicate_finding_total(MediaDedup::ScannedFilesOps::countProcessedSuccess(*db_));
             reply->set_duplicate_finding_completed(MediaDedup::ScannedFilesOps::countProcessedUpTo(*db_, last_processed_id));
             
             auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
@@ -301,7 +301,7 @@ public:
                 }
                 Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                 std::filesystem::path root(media_location_path);
-                std::filesystem::path ejected = root / (uuid.toString() + "_ejected");
+                std::filesystem::path ejected = root / ("ejected_" + uuid.toString());
                 ejection_path = ejected.string();
                 std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                 
@@ -410,7 +410,7 @@ public:
         if (undo_all) {
             auto all = MediaDedup::EjectedFilesOps::getAll(*db_);
             for (const auto& h : all) {
-                if (h.ejected_path.find("_ejected") != std::string::npos) {
+                if (h.ejected_path.find("/ejected_") != std::string::npos) {
                     histories.push_back(h);
                 }
             }
@@ -593,7 +593,7 @@ public:
                     }
                     Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                     std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / (uuid.toString() + "_errored");
+                    std::filesystem::path ejected = root / ("errored_" + uuid.toString());
                     ejection_path = ejected.string();
                     std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                     
@@ -710,7 +710,7 @@ public:
             auto all_histories = MediaDedup::EjectedFilesOps::getAll(*db_);
             std::vector<MediaDedup::EjectedFileHistory> histories;
             for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("_errored") != std::string::npos) {
+                if (hist.ejected_path.find("/errored_") != std::string::npos) {
                     histories.push_back(hist);
                 }
             }
@@ -825,7 +825,7 @@ public:
                     }
                     Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                     std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / (uuid.toString() + "_ignored");
+                    std::filesystem::path ejected = root / ("ignored_" + uuid.toString());
                     ejection_path = ejected.string();
                     std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                     
@@ -942,7 +942,7 @@ public:
             auto all_histories = MediaDedup::EjectedFilesOps::getAll(*db_);
             std::vector<MediaDedup::EjectedFileHistory> histories;
             for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("_ignored") != std::string::npos) {
+                if (hist.ejected_path.find("/ignored_") != std::string::npos) {
                     histories.push_back(hist);
                 }
             }
@@ -1042,8 +1042,9 @@ public:
             std::string purity_str = config_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
 
             for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("_ejected") != std::string::npos ||
-                    hist.ejected_path.find("_errored") != std::string::npos) {
+                if (hist.ejected_path.find("/ejected_") != std::string::npos ||
+                    hist.ejected_path.find("/errored_") != std::string::npos ||
+                    hist.ejected_path.find("/ignored_") != std::string::npos) {
                     
                     auto groups = MediaDedup::DuplicateGroupsOps::getGroupsForFile(*db_, hist.file_id, "EMBEDDING");
                     for (const auto& g : groups) {
@@ -1112,7 +1113,24 @@ public:
 
     grpc::Status ClearAllCaches(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                 vurio::dedup::ClearCachesResponse* reply) override {
-        reply->set_success(true);
+        try {
+            bool thumb_success = thumbnail_cache_->clearCache();
+            bool transcode_success = transcoding_cache_->clearCache();
+
+            try {
+                MediaDedup::ThumbnailCacheOps::clearCache(*db_);
+                MediaDedup::PreviewCacheOps::clearCache(*db_);
+            } catch (...) {
+                // Ignore DB clear errors, similar to REST endpoint
+            }
+
+            reply->set_success(thumb_success && transcode_success);
+            reply->set_thumbnail_cache_cleared(thumb_success);
+            reply->set_disk_cache_cleared(transcode_success);
+        } catch (const std::exception& e) {
+            reply->set_success(false);
+            reply->set_error_message(e.what());
+        }
         return grpc::Status::OK;
     }
 
