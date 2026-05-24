@@ -101,7 +101,9 @@ public:
             
             auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
             for (const auto& kv : user_settings) {
-                if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                if (kv.first.rfind("ejectionPath:", 0) == 0 ||
+                    kv.first.rfind("ejectionPathErrored:", 0) == 0 ||
+                    kv.first.rfind("ejectionPathIgnored:", 0) == 0) {
                     reply->add_ejected_dirs(kv.second);
                 }
             }
@@ -343,6 +345,10 @@ public:
             
             try {
                 std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                try {
+                    std::error_code ec;
+                    std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                } catch (...) {}
                 std::string src_sha1 = calculateFileSHA1(src.string());
                 std::string dest_sha1 = calculateFileSHA1(dest.string());
                 
@@ -485,6 +491,10 @@ public:
             
             try {
                 std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                try {
+                    std::error_code ec;
+                    std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                } catch (...) {}
                 std::string src_sha1 = calculateFileSHA1(src.string());
                 std::string dest_sha1 = calculateFileSHA1(dest.string());
                 
@@ -693,6 +703,10 @@ public:
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -789,6 +803,10 @@ public:
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -925,6 +943,10 @@ public:
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -1021,6 +1043,10 @@ public:
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());

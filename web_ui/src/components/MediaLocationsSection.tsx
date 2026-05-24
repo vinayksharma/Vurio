@@ -17,7 +17,7 @@ const MediaLocationsSection: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [remappingLocation, setRemappingLocation] = useState<string | null>(null);
   const [deregisteringPath, setDeregisteringPath] = useState<string | null>(null);
-  const [ejectionPaths, setEjectionPaths] = useState<Record<string, string>>({});
+  const [ejectionPaths, setEjectionPaths] = useState<Record<string, string[]>>({});
   const openStatusPopup = useStatusPopupStore((state) => state.open);
 
   const refreshLocations = async () => {
@@ -35,13 +35,30 @@ const MediaLocationsSection: React.FC = () => {
     
     fetchUserSettings().then(settings => {
       const pathsToLocationKeys: Record<string, string> = {};
+      const locKeyToPaths: Record<string, string[]> = {};
+
       settings.forEach(s => {
         if (s.key.startsWith('mediaLocation:')) {
           const locKey = s.key.substring('mediaLocation:'.length);
           pathsToLocationKeys[s.value] = locKey;
+        } else if (s.key.startsWith('ejectionPath:') || 
+                   s.key.startsWith('ejectionPathErrored:') || 
+                   s.key.startsWith('ejectionPathIgnored:')) {
+          const prefix = s.key.split(':')[0];
+          const locKey = s.key.substring(prefix.length + 1);
+          if (!locKeyToPaths[locKey]) locKeyToPaths[locKey] = [];
+          locKeyToPaths[locKey].push(s.value);
         }
       });
-      setEjectionPaths(pathsToLocationKeys);
+      
+      const ejectionPathsMap: Record<string, string[]> = {};
+      Object.keys(pathsToLocationKeys).forEach(location => {
+        const locKey = pathsToLocationKeys[location];
+        if (locKeyToPaths[locKey] && locKeyToPaths[locKey].length > 0) {
+          ejectionPathsMap[location] = locKeyToPaths[locKey];
+        }
+      });
+      setEjectionPaths(ejectionPathsMap);
     }).catch(console.error);
   }, []);
 
@@ -268,15 +285,8 @@ const MediaLocationsSection: React.FC = () => {
                   className="secondary icon-button remap-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    const uuid = ejectionPaths[location];
-                    if (uuid && window.electronAPI?.openPath) {
-                      const sep = location.includes('\\') ? '\\' : '/';
-                      const base = location.endsWith(sep) ? location : location + sep;
-                      const paths = [
-                        `${base}ejected_${uuid}`,
-                        `${base}errored_${uuid}`,
-                        `${base}ignored_${uuid}`
-                      ];
+                    const paths = ejectionPaths[location];
+                    if (paths && paths.length > 0 && window.electronAPI?.openPath) {
                       Promise.all(paths.map(p => window.electronAPI!.openPath(p))).then(results => {
                         const anyOk = results.some(res => res.ok);
                         if (!anyOk) alert('No ejected, errored, or ignored folders found for this location.');
@@ -286,7 +296,7 @@ const MediaLocationsSection: React.FC = () => {
                     }
                   }}
                   title="Open Ejected Folder in OS"
-                  disabled={!ejectionPaths[location] || !!remappingLocation || !!deregisteringPath}
+                  disabled={!ejectionPaths[location] || ejectionPaths[location].length === 0 || !!remappingLocation || !!deregisteringPath}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px', minWidth: '150px', justifyContent: 'center' }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
