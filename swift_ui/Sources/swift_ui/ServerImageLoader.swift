@@ -8,18 +8,25 @@ actor ServerImageLoader {
     
     private var activeDownloads = 0
     private let maxConcurrentDownloads = 8
-    private var queue: [CheckedContinuation<Void, Never>] = []
+    private struct QueuedRequest {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    
+    private var queue: [QueuedRequest] = []
     
     private init() {}
     
     func loadThumbnail(filePath: String, size: Int) async throws -> NSImage {
-        await waitForToken()
+        try await waitForToken()
         defer { releaseToken() }
         
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
         for attempt in 0..<maxRetries {
+            try Task.checkCancellation()
+            
             guard let mediaStreaming = VurioGrpcClient.shared.mediaStreaming else {
                 throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
             }
@@ -33,6 +40,7 @@ actor ServerImageLoader {
             var accumulator = Data()
             do {
                 for try await chunk in stream {
+                    try Task.checkCancellation()
                     accumulator.append(chunk.chunkData)
                 }
                 
@@ -55,13 +63,15 @@ actor ServerImageLoader {
     }
     
     func loadPreview(filePath: String) async throws -> NSImage {
-        await waitForToken()
+        try await waitForToken()
         defer { releaseToken() }
         
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
         for _ in 0..<maxRetries {
+            try Task.checkCancellation()
+            
             guard let mediaStreaming = VurioGrpcClient.shared.mediaStreaming else {
                 throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
             }
@@ -74,6 +84,7 @@ actor ServerImageLoader {
             var accumulator = Data()
             do {
                 for try await chunk in stream {
+                    try Task.checkCancellation()
                     accumulator.append(chunk.chunkData)
                 }
                 
@@ -94,20 +105,43 @@ actor ServerImageLoader {
         throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
     }
     
-    private func waitForToken() async {
+    private func enqueue(id: UUID, continuation: CheckedContinuation<Void, Error>) {
+        queue.append(QueuedRequest(id: id, continuation: continuation))
+    }
+    
+    private func cancelQueuedRequest(id: UUID) {
+        if let index = queue.firstIndex(where: { $0.id == id }) {
+            let request = queue.remove(at: index)
+            request.continuation.resume(throwing: CancellationError())
+        }
+    }
+    
+    private func waitForToken() async throws {
+        try Task.checkCancellation()
+        
         if activeDownloads < maxConcurrentDownloads {
             activeDownloads += 1
             return
         }
-        await withCheckedContinuation { continuation in
-            queue.append(continuation)
+        
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                Task {
+                    await self.enqueue(id: id, continuation: continuation)
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelQueuedRequest(id: id)
+            }
         }
     }
     
     private func releaseToken() {
         if !queue.isEmpty {
-            let continuation = queue.removeFirst()
-            continuation.resume()
+            let request = queue.removeFirst()
+            request.continuation.resume()
         } else {
             activeDownloads -= 1
         }
