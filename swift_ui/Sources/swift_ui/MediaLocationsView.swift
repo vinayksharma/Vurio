@@ -300,14 +300,27 @@ struct MediaLocationsView: View {
                 if let data = res.jsonPayload.data(using: .utf8),
                    let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
                    
+                    var locationKeysToPaths: [String: String] = [:]
+                    for (key, value) in json {
+                        if key.hasPrefix("mediaLocation:") {
+                            if let valStr = value as? String {
+                                locationKeysToPaths[key] = valStr
+                            } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
+                                locationKeysToPaths[key] = valStr
+                            }
+                        }
+                    }
+                    
                     var paths: [String: String] = [:]
                     for (key, value) in json {
                         if key.hasPrefix("ejectionPath:") {
-                            let loc = String(key.dropFirst("ejectionPath:".count))
-                            if let valStr = value as? String {
-                                paths[loc] = valStr
-                            } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
-                                paths[loc] = valStr
+                            let locKey = String(key.dropFirst("ejectionPath:".count))
+                            if let locationPath = locationKeysToPaths[locKey] {
+                                if let valStr = value as? String {
+                                    paths[locationPath] = valStr
+                                } else if let obj = value as? [String: Any], let valStr = obj["value"] as? String {
+                                    paths[locationPath] = valStr
+                                }
                             }
                         }
                     }
