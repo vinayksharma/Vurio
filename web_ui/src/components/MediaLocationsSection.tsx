@@ -34,11 +34,21 @@ const MediaLocationsSection: React.FC = () => {
     }
     
     fetchUserSettings().then(settings => {
+      const locationKeysToPaths: Record<string, string> = {};
+      settings.forEach(s => {
+        if (s.key.startsWith('mediaLocation:')) {
+          locationKeysToPaths[s.key] = s.value;
+        }
+      });
+
       const paths: Record<string, string> = {};
       settings.forEach(s => {
         if (s.key.startsWith('ejectionPath:')) {
-          const loc = s.key.substring('ejectionPath:'.length);
-          paths[loc] = s.value;
+          const locKey = s.key.substring('ejectionPath:'.length);
+          const locationPath = locationKeysToPaths[locKey];
+          if (locationPath) {
+            paths[locationPath] = s.value;
+          }
         }
       });
       setEjectionPaths(paths);
