@@ -418,12 +418,57 @@ public:
             for (const auto& f : request->file_paths()) {
                 auto hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*db_, f);
                 if (!hist) hist = MediaDedup::EjectedFilesOps::getByOriginalPath(*db_, f);
-                if (hist) histories.push_back(*hist);
+                
+                if (!hist) {
+                    // Fallback for stranded ejected files (e.g. history wiped)
+                    auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
+                    for (const auto& kv : user_settings) {
+                        if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                            std::string ep = kv.second;
+                            std::replace(ep.begin(), ep.end(), '\\', '/');
+                            if (f.find(ep) == 0) {
+                                std::string loc_key = kv.first.substr(13); // remove "ejectionPath:"
+                                std::string loc_path;
+                                if (MediaDedup::UserSettingsOps::get(*db_, loc_key, loc_path)) {
+                                    std::filesystem::path ejected_f(f);
+                                    std::filesystem::path original_f = std::filesystem::path(loc_path) / ejected_f.filename();
+                                    
+                                    MediaDedup::EjectedFileHistory fake_hist;
+                                    fake_hist.file_id = -1; // Unknown by default
+                                    
+                                    auto stranded_opt = MediaDedup::ScannedFilesOps::getByPath(*db_, f);
+                                    if (stranded_opt) {
+                                        fake_hist.file_id = stranded_opt->id;
+                                    }
+
+                                    fake_hist.ejected_path = f;
+                                    fake_hist.original_file_path = original_f.string();
+                                    std::replace(fake_hist.original_file_path.begin(), fake_hist.original_file_path.end(), '\\', '/');
+                                    
+                                    fake_hist.original_location_key = loc_key;
+                                    fake_hist.original_relative_path = ejected_f.filename().string();
+                                    
+                                    hist = fake_hist;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (hist) {
+                    histories.push_back(*hist);
+                } else {
+                    reply->set_error_message("No ejection history found for " + f);
+                }
             }
         }
         
         int success_count = 0;
         int failure_count = 0;
+        if (histories.size() != request->file_paths().size() && !undo_all) {
+            failure_count += (request->file_paths().size() - histories.size());
+        }
         
         for (const auto& history : histories) {
             std::string ejected_path = history.ejected_path;
@@ -448,20 +493,31 @@ public:
                     std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
                     
                     try {
-                        auto lease = db_->acquireSessionLease();
-                        Poco::Data::Session& sess = lease.get();
-                        sess.begin();
-                        
-                        MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
-                        MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
-                        MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
-                        MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
-                        MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
-                        MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
-                        MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, ejected_path, dest_path_str);
-                        MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
-                        
-                        sess.commit();
+                        bool dest_exists = MediaDedup::ScannedFilesOps::getByPath(*db_, dest_path_str).has_value();
+
+                        if (dest_exists) {
+                            if (history.file_id != -1) {
+                                MediaDedup::ScannedFilesOps::completelyRemoveById(*db_, history.file_id);
+                            }
+                            auto lease = db_->acquireSessionLease();
+                            Poco::Data::Session& sess = lease.get();
+                            MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
+                        } else {
+                            auto lease = db_->acquireSessionLease();
+                            Poco::Data::Session& sess = lease.get();
+                            sess.begin();
+                            
+                            MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
+                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, ejected_path, dest_path_str);
+                            MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
+                            
+                            sess.commit();
+                        }
                     } catch (...) {
                         std::filesystem::remove(dest);
                         throw;
