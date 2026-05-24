@@ -39,14 +39,17 @@ struct AdvancedSection: View {
                             ActionButton(title: "Reset Errors",
                                          confirmTitle: "Reset Error Files?",
                                          confirmMessage: "Are you sure you want to reset all error files? This will clear the list of files that previously failed processing.",
+                                         systemImage: "arrow.counterclockwise",
                                          action: { Task { await viewModel.resetErrors() } }),
                             ActionButton(title: "Eject Errored", role: .destructive,
                                          confirmTitle: "Eject Errored Files?",
                                          confirmMessage: "WARNING: Are you sure you want to eject all errored files? They will be moved to a unique '_errored' folder. Please click 'Cancel' if you would simply like to try Clearing the Errors and retrying them first.",
+                                         systemImage: "eject",
                                          action: { Task { await viewModel.ejectErrors() } }),
                             ActionButton(title: "Restore Errored",
                                          confirmTitle: "Restore Errored Files?",
                                          confirmMessage: "Are you sure you want to restore all errored files? They will be placed back into the processing queue.",
+                                         systemImage: "tray.and.arrow.down",
                                          action: { Task { await viewModel.restoreErrors() } })
                         ],
                         isRunning: viewModel.isAnyActionRunning
@@ -59,10 +62,12 @@ struct AdvancedSection: View {
                             ActionButton(title: "Eject Ignored", role: .destructive,
                                          confirmTitle: "Eject Ignored Files?",
                                          confirmMessage: "WARNING: Are you sure you want to eject all ignored files? They will be moved to a unique '_ignored' folder. These are files that were skipped because they did not meet the size or quality requirements.",
+                                         systemImage: "eject",
                                          action: { Task { await viewModel.ejectIgnored() } }),
                             ActionButton(title: "Restore Ignored",
                                          confirmTitle: "Restore Ignored Files?",
                                          confirmMessage: "Are you sure you want to restore all ignored files? They will be placed back into the processing queue.",
+                                         systemImage: "tray.and.arrow.down",
                                          action: { Task { await viewModel.restoreIgnored() } })
                         ],
                         isRunning: viewModel.isAnyActionRunning
@@ -75,6 +80,7 @@ struct AdvancedSection: View {
                             ActionButton(title: "Reset Duplicates", role: .destructive,
                                          confirmTitle: "Reset All Duplicates?",
                                          confirmMessage: "Are you sure you want to reset all duplicates? This will remove all duplicate findings across every set and mode.",
+                                         systemImage: "doc.on.doc",
                                          action: { Task { await viewModel.resetDuplicates() } })
                         ],
                         isRunning: viewModel.isAnyActionRunning
@@ -87,6 +93,7 @@ struct AdvancedSection: View {
                             ActionButton(title: "Delete", role: .destructive,
                                          confirmTitle: "Purge Ejected & Errored Files?",
                                          confirmMessage: "Are you sure you want to purge all ejected and errored files? This permanently removes them from the database and you will lose the ability to undo their ejection. No source files will be deleted from your disk.",
+                                         systemImage: "trash",
                                          action: { Task { await viewModel.purgeEjectedAndErrored() } })
                         ],
                         isRunning: viewModel.isAnyActionRunning
@@ -130,13 +137,15 @@ struct ActionButton: Identifiable {
     let role: ButtonRole?
     let confirmTitle: String
     let confirmMessage: String
+    let systemImage: String?
     let action: () -> Void
     
-    init(title: String, role: ButtonRole? = nil, confirmTitle: String, confirmMessage: String, action: @escaping () -> Void) {
+    init(title: String, role: ButtonRole? = nil, confirmTitle: String, confirmMessage: String, systemImage: String? = nil, action: @escaping () -> Void) {
         self.title = title
         self.role = role
         self.confirmTitle = confirmTitle
         self.confirmMessage = confirmMessage
+        self.systemImage = systemImage
         self.action = action
     }
 }
@@ -187,8 +196,15 @@ struct ActionRow: View {
             let primaryBtn: Alert.Button = btn.role == .destructive 
                 ? .destructive(Text("Continue"), action: btn.action) 
                 : .default(Text("Continue"), action: btn.action)
+            let titleText: Text = {
+                if let sysImage = btn.systemImage {
+                    return Text("\(Image(systemName: sysImage)) \(btn.confirmTitle)")
+                } else {
+                    return Text(btn.confirmTitle)
+                }
+            }()
             return Alert(
-                title: Text(btn.confirmTitle),
+                title: titleText,
                 message: Text(btn.confirmMessage),
                 primaryButton: primaryBtn,
                 secondaryButton: .cancel()
