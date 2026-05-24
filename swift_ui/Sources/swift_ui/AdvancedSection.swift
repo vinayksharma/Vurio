@@ -192,23 +192,45 @@ struct ActionRow: View {
                 .foregroundColor(Color(NSColor.separatorColor)),
             alignment: .bottom
         )
-        .alert(item: $selectedAction) { btn in
-            let primaryBtn: Alert.Button = btn.role == .destructive 
-                ? .destructive(Text("Continue"), action: btn.action) 
-                : .default(Text("Continue"), action: btn.action)
-            let titleText: Text = {
-                if let sysImage = btn.systemImage {
-                    return Text("\(Image(systemName: sysImage)) \(btn.confirmTitle)")
-                } else {
-                    return Text(btn.confirmTitle)
+        .sheet(item: $selectedAction) { btn in
+            VStack(spacing: 20) {
+                HStack(spacing: 15) {
+                    if let sysImage = btn.systemImage {
+                        Image(systemName: sysImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 32, height: 32)
+                            .foregroundColor(btn.role == .destructive ? .red : .accentColor)
+                    }
+                    Text(btn.confirmTitle)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Spacer()
                 }
-            }()
-            return Alert(
-                title: titleText,
-                message: Text(btn.confirmMessage),
-                primaryButton: primaryBtn,
-                secondaryButton: .cancel()
-            )
+                
+                Text(btn.confirmMessage)
+                    .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack {
+                    Spacer()
+                    Button("Cancel") {
+                        selectedAction = nil
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    
+                    Button(btn.title) {
+                        btn.action()
+                        selectedAction = nil
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(btn.role == .destructive ? .red : .accentColor)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(24)
+            .frame(width: 450)
         }
     }
 }
