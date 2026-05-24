@@ -175,18 +175,7 @@ struct DuplicatesView: View {
                     )
                     .disabled(isProcessing || !canRestore)
                     
-                    Button(action: {
-                        Task { await openEjectedFolders() }
-                    }) {
-                        HStack {
-                            Image(systemName: "folder")
-                            Text("Ejected")
-                        }
-                        .frame(width: 95)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    .disabled(isProcessing)
+
                 }
                 .padding()
             }
@@ -524,29 +513,7 @@ struct DuplicatesView: View {
         }
     }
     
-    private func openEjectedFolders() async {
-        let ejectedDirs = appState.ejectedDirs
-        if ejectedDirs.isEmpty {
-            self.errorMessage = "No ejection folders have been created yet."
-            return
-        }
-        
-        var openedCount = 0
-        for dir in ejectedDirs {
-            let url = URL(fileURLWithPath: dir)
-            if NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) {
-                openedCount += 1
-            } else if NSWorkspace.shared.open(url) {
-                openedCount += 1
-            }
-        }
-        
-        if openedCount == 0 {
-            self.errorMessage = "Could not find any ejected image folders. They may have been fully restored, deleted, or moved manually."
-        } else {
-            self.errorMessage = nil
-        }
-    }
+
     private func refresh() async {
         groups = (0..<totalGroups).map { _ in GroupSlot(group: nil) }
         loadingPages.removeAll()

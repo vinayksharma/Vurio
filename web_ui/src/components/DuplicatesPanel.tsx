@@ -31,7 +31,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
   const isOnline = useServerStatusStore((state) => state.isOnline);
   const serverDupeCount = useServerStatusStore((state) => state.status?.duplicate_groups || 0);
   const serverDuplicatesFound = useServerStatusStore((state) => state.status?.duplicates_found ?? -1); // Total files in groups; -1 = unknown
-  const hasEjectedFolders = useServerStatusStore((state) => (state.status as any)?.has_ejected_folders || false);
+
   const hasEjectedFiles = useServerStatusStore((state) => (state.status as any)?.has_ejected_files || false);
   const registeredDirsCount = useServerStatusStore((state) => state.registeredDirs.length);
   const setActivePanel = useUIStore((state) => state.setActivePanel);
@@ -667,40 +667,6 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     );
   }
 
-  const handleOpenEjectedFolders = async () => {
-    try {
-      const settings = await fetchUserSettings();
-      const ejectionPaths = settings
-        .filter(s => s.key.startsWith('ejectionPath:'))
-        .map(s => s.value);
-
-      if (ejectionPaths.length === 0) {
-        alert('No ejection folders have been created yet. Try ejecting some duplicates first.');
-        return;
-      }
-
-      if (window.electronAPI?.openPath) {
-        let openedCount = 0;
-        for (const path of ejectionPaths) {
-          const res = await window.electronAPI.openPath(path);
-          if (res.ok) {
-            openedCount++;
-          } else {
-            console.error(`Failed to open path ${path}:`, res.error);
-          }
-        }
-        
-        if (openedCount === 0 && ejectionPaths.length > 0) {
-          alert("Could not find any ejected image folders. They may have been fully restored, deleted, or moved manually.");
-        }
-      } else {
-        alert('System path launching is only available in the desktop app.');
-      }
-    } catch (e) {
-      console.error('Failed to resolve ejection folders:', e);
-    }
-  };
-
   const handleBulkEject = async () => {
     if (bulkEjectState) return;
 
@@ -928,23 +894,6 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
                 <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M12 3v12M8 11l4 4 4-4"/>
               </svg>
               {bulkEjectState?.type === 'restore' ? (bulkEjectState.calculating ? 'Working...' : `${bulkEjectState.current}/${bulkEjectState.total}`) : 'Restore'}
-            </button>
-            <button 
-              className="secondary icon-button" 
-              onClick={handleOpenEjectedFolders}
-              disabled={!hasEjectedFolders}
-              title="Open Ejected Folders in OS"
-              style={{ 
-                width: '105px',
-                justifyContent: 'center',
-                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', 
-                borderRadius: '4px',
-                cursor: !hasEjectedFolders ? 'not-allowed' : 'pointer',
-                opacity: !hasEjectedFolders ? 0.6 : 1
-              }}
-            >
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-              Ejected
             </button>
           </div>
         </div>

@@ -421,7 +421,7 @@ namespace MediaDedupServer
                         }
                         Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
                         std::filesystem::path root(media_location_path);
-                        std::filesystem::path ejected = root / (uuid.toString() + "_ejected");
+                        std::filesystem::path ejected = root / ("ejected_" + uuid.toString());
                         ejection_path = ejected.string();
                         std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
                         
@@ -612,7 +612,7 @@ namespace MediaDedupServer
                 {
                     auto all = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
                     for (const auto& h : all) {
-                        if (h.ejected_path.find("_ejected") != std::string::npos) {
+                        if (h.ejected_path.find("/ejected_") != std::string::npos) {
                             histories.push_back(h);
                         }
                     }
@@ -786,8 +786,8 @@ namespace MediaDedupServer
 
                 for (const auto& hist : all_histories)
                 {
-                    if (hist.ejected_path.find("_ejected") != std::string::npos ||
-                        hist.ejected_path.find("_errored") != std::string::npos)
+                    if (hist.ejected_path.find("/ejected_") != std::string::npos ||
+                        hist.ejected_path.find("/errored_") != std::string::npos)
                     {
                         // Check if it's a representative of any group
                         auto groups = MediaDedup::DuplicateGroupsOps::getGroupsForFile(*database_manager_, hist.file_id, "EMBEDDING");
