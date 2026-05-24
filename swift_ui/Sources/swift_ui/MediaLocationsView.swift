@@ -35,20 +35,26 @@ struct MediaLocationsView: View {
                     .cornerRadius(6)
                     .disabled(true)
                 
-                Button("Browse") {
+                Button(action: {
                     browseDirectory()
+                }) {
+                    Text("Browse").frame(width: 140)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
+                .help("Browse and select a folder to register")
                 
-                Button("Register") {
+                Button(action: {
                     Task {
                         await registerLocation()
                     }
+                }) {
+                    Text("Register").frame(width: 140)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
                 .disabled(selectedDirectory.isEmpty)
+                .help("Register the selected folder for deduplication scanning")
             }
             
             if !statusMessage.isEmpty {
@@ -87,12 +93,14 @@ struct MediaLocationsView: View {
                             if isRemapping && remappingPath == location {
                                 ProgressView()
                                     .controlSize(.small)
-                            } else {
-                                Button("Remap") {
+                                Button(action: {
                                     remapLocation(oldPath: location)
+                                }) {
+                                    Text("Remap").frame(width: 140)
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.blue)
+                                .help("Remap this location to a different path")
                                 
                                 Button(action: {
                                     openEjectedFolder(for: location)
@@ -101,9 +109,11 @@ struct MediaLocationsView: View {
                                         Image(systemName: "folder")
                                         Text("Ejected")
                                     }
+                                    .frame(width: 140)
                                 }
                                 .buttonStyle(.bordered)
                                 .disabled(ejectionPaths[location] == nil)
+                                .help("Open Ejected Folder in OS")
                             }
                         }
                         .padding()
@@ -126,15 +136,18 @@ struct MediaLocationsView: View {
                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
             
-            Button("Deregister Selected") {
+            Button(action: {
                 if let location = selectedRegisteredLocation {
                     Task {
                         await deregisterLocation(path: location)
                     }
                 }
+            }) {
+                Text("Deregister Selected").frame(width: 140)
             }
             .buttonStyle(.bordered)
             .disabled(selectedRegisteredLocation == nil)
+            .help("Deregister and stop scanning the selected location")
             
             Spacer()
         }
