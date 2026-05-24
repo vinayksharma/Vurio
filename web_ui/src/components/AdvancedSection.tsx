@@ -2,6 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { resetErrors, resetDuplicates, ejectErrors, undoEjectErrors, ejectIgnored, undoEjectIgnored, purgeEjectedAndErrored, startDatabaseIntegrityCheck, getDatabaseIntegrityCheckStatus, IntegrityCheckStatus, backupDatabase, getLatestBackup, clearAllCaches, fetchCacheLocations, relocateCache } from '../utils/api';
 import { useUIStore } from '../stores';
 
+const Icons = {
+  Reset: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>,
+  Eject: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 4 2 15 22 15 12 4"/><rect x="2" y="19" width="20" height="2"/></svg>,
+  Restore: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+  Delete: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+  Database: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+  Relocate: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+  Terminal: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>,
+  Test: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+  Duplicates: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+};
+
 const AdvancedSection: React.FC = () => {
   const [isResettingErrors, setIsResettingErrors] = useState(false);
   const [isEjectingErrors, setIsEjectingErrors] = useState(false);
@@ -22,6 +34,7 @@ const AdvancedSection: React.FC = () => {
     isOpen: boolean;
     title: string;
     message: string | React.ReactNode;
+    icon?: React.ReactNode;
     onConfirm: () => void;
     confirmText: string;
     isDanger: boolean;
@@ -29,6 +42,7 @@ const AdvancedSection: React.FC = () => {
     isOpen: false,
     title: '',
     message: '',
+    icon: undefined,
     onConfirm: () => {},
     confirmText: 'Continue',
     isDanger: false
@@ -37,11 +51,19 @@ const AdvancedSection: React.FC = () => {
   const debugOverlayEnabled = useUIStore((state) => state.debugOverlayEnabled);
   const setDebugOverlayEnabled = useUIStore((state) => state.setDebugOverlayEnabled);
 
-  const requestConfirm = (title: string, message: string | React.ReactNode, onConfirm: () => void, isDanger = false, confirmText = 'Continue') => {
+  const requestConfirm = (
+    title: string, 
+    message: string | React.ReactNode, 
+    onConfirm: () => void, 
+    isDanger = false, 
+    confirmText = 'Continue',
+    icon?: React.ReactNode
+  ) => {
     setConfirmDialog({
       isOpen: true,
       title,
       message,
+      icon,
       onConfirm,
       confirmText,
       isDanger
@@ -72,7 +94,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsResettingErrors(false);
       }
-    });
+    }, false, 'Continue', Icons.Reset);
   };
 
   const handleEjectErrors = () => {
@@ -91,7 +113,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsEjectingErrors(false);
       }
-    }, true, 'Eject Errored');
+    }, true, 'Eject Errored', Icons.Eject);
   };
 
   const handleRestoreErrors = () => {
@@ -110,7 +132,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsRestoringErrors(false);
       }
-    });
+    }, false, 'Continue', Icons.Restore);
   };
 
   const handleEjectIgnored = () => {
@@ -129,7 +151,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsEjectingIgnored(false);
       }
-    }, true, 'Eject Ignored');
+    }, true, 'Eject Ignored', Icons.Eject);
   };
 
   const handleRestoreIgnored = () => {
@@ -148,7 +170,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsRestoringIgnored(false);
       }
-    });
+    }, false, 'Continue', Icons.Restore);
   };
 
   const handleResetDuplicates = () => {
@@ -163,7 +185,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsResettingDuplicates(false);
       }
-    }, true, 'Reset Duplicates');
+    }, true, 'Reset Duplicates', Icons.Duplicates);
   };
 
   const handlePurgeEjectedErrored = () => {
@@ -182,7 +204,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsPurgingEjectedErrored(false);
       }
-    }, true, 'Delete');
+    }, true, 'Delete', Icons.Delete);
   };
 
   const handleToggleDevTools = () => {
@@ -215,7 +237,7 @@ const AdvancedSection: React.FC = () => {
       }).catch(() => {
         alert('Failed to toggle Developer Tools.');
       });
-    });
+    }, false, 'Continue', Icons.Terminal);
   };
 
   const pollIntegrityStatus = async () => {
@@ -252,7 +274,7 @@ const AdvancedSection: React.FC = () => {
         const err = error as Error;
         alert('Failed to start Integrity Check: ' + err.message);
       }
-    });
+    }, false, 'Continue', Icons.Database);
   };
 
   const handleBackupDatabase = () => {
@@ -273,7 +295,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsBackingUp(false);
       }
-    });
+    }, false, 'Continue', Icons.Database);
   };
 
   const handleShowBackupInFinder = async () => {
@@ -311,7 +333,7 @@ const AdvancedSection: React.FC = () => {
       } finally {
         setIsClearingCaches(false);
       }
-    }, true, 'Clear Caches');
+    }, true, 'Clear Caches', Icons.Delete);
   };
 
   const handleShowCachesInFinder = async () => {
@@ -391,7 +413,7 @@ const AdvancedSection: React.FC = () => {
         } finally {
           setIsRelocatingCache(false);
         }
-      });
+      }, false, 'Relocate', Icons.Relocate);
     } catch (error) {
       const err = error as Error;
       alert(`Failed to prepare cache relocation: ` + err.message);
@@ -419,7 +441,7 @@ const AdvancedSection: React.FC = () => {
       } else {
         alert('Scroll test function not available. Make sure the Duplicates panel is loaded.');
       }
-    });
+    }, false, 'Continue', Icons.Test);
   };
 
   return (
@@ -638,7 +660,10 @@ const AdvancedSection: React.FC = () => {
               debugOverlayEnabled 
                 ? 'Are you sure you want to disable the debug overlay? The live stats will be hidden.' 
                 : 'Are you sure you want to enable the debug overlay? Live stats will be shown on the Duplicates panel.',
-              () => setDebugOverlayEnabled(!debugOverlayEnabled)
+              () => setDebugOverlayEnabled(!debugOverlayEnabled),
+              false,
+              'Continue',
+              Icons.Terminal
             );
           }}
         >
@@ -674,7 +699,17 @@ const AdvancedSection: React.FC = () => {
           <div className="modal-backdrop" onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}></div>
           <div className="modal open">
             <div className="modal-dialog" style={{ width: '450px', zIndex: 10000 }}>
-              <h2>{confirmDialog.title}</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                {confirmDialog.icon && (
+                  <div style={{ 
+                    color: confirmDialog.isDanger ? 'var(--color-danger, #ef4444)' : 'var(--color-primary, #3b82f6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                  }}>
+                    {confirmDialog.icon}
+                  </div>
+                )}
+                <h2 style={{ margin: 0 }}>{confirmDialog.title}</h2>
+              </div>
               <div className="message" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{confirmDialog.message}</div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
                 <button className="ghost" onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}>Cancel</button>
