@@ -837,7 +837,13 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           <span className="panel-meta" id="duplicates-meta">{totalGroups > 0 ? `${totalGroups} groups` : 'No duplicates'}</span>
         </div>
         <div className="tightness-slider-container">
-          <span className="slider-label">identical</span>
+          <span className="slider-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            identical
+          </span>
           <input 
             type="range" 
             min="0" 
@@ -850,7 +856,13 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
             title="Adjust duplication selection scale for perfect matches"
             style={{ '--slider-value': `${(sliderValue / 1000) * 100}%` } as React.CSSProperties}
           />
-          <span className="slider-label right">similar</span>
+          <span className="slider-label right" style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+            similar
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="12" r="6" />
+              <circle cx="15" cy="12" r="6" />
+            </svg>
+          </span>
           
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
             <button 

@@ -141,7 +141,9 @@ struct VurioSlider: View {
                         )
                         .shadow(color: isHoveringSimilar ? .green : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
                         .frame(width: thumbSize, height: thumbSize)
-                        .offset(x: xPosition(for: similarValue, in: width) - thumbSize/2, y: centerY - thumbSize - 2)
+                        .padding(8)
+                        .contentShape(Circle())
+                        .offset(x: xPosition(for: similarValue, in: width) - (thumbSize/2 + 8), y: centerY - thumbSize - 10)
                         .onHover { hovering in
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 isHoveringSimilar = hovering
@@ -171,7 +173,9 @@ struct VurioSlider: View {
                         )
                         .shadow(color: isHoveringDuplicate ? .red : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
                         .frame(width: thumbSize, height: thumbSize)
-                        .offset(x: xPosition(for: duplicateValue, in: width) - thumbSize/2, y: centerY + 2)
+                        .padding(8)
+                        .contentShape(Circle())
+                        .offset(x: xPosition(for: duplicateValue, in: width) - (thumbSize/2 + 8), y: centerY - 6)
                         .onHover { hovering in
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 isHoveringDuplicate = hovering
@@ -231,10 +235,18 @@ struct VurioSlider: View {
 struct TriangleDown: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        let radius: CGFloat = 2.0
+        
+        let p1 = CGPoint(x: rect.minX, y: rect.minY)
+        let p2 = CGPoint(x: rect.maxX, y: rect.minY)
+        let p3 = CGPoint(x: rect.midX, y: rect.maxY)
+        
+        path.move(to: CGPoint(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2))
+        path.addArc(tangent1End: p2, tangent2End: p3, radius: radius)
+        path.addArc(tangent1End: p3, tangent2End: p1, radius: radius)
+        path.addArc(tangent1End: p1, tangent2End: p2, radius: radius)
         path.closeSubpath()
+        
         return path
     }
 }
@@ -242,10 +254,18 @@ struct TriangleDown: Shape {
 struct TriangleUp: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        let radius: CGFloat = 2.0
+        
+        let p1 = CGPoint(x: rect.midX, y: rect.minY)
+        let p2 = CGPoint(x: rect.maxX, y: rect.maxY)
+        let p3 = CGPoint(x: rect.minX, y: rect.maxY)
+        
+        path.move(to: CGPoint(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2))
+        path.addArc(tangent1End: p2, tangent2End: p3, radius: radius)
+        path.addArc(tangent1End: p3, tangent2End: p1, radius: radius)
+        path.addArc(tangent1End: p1, tangent2End: p2, radius: radius)
         path.closeSubpath()
+        
         return path
     }
 }
