@@ -36,8 +36,9 @@ struct AnimatedLogoView: View {
 
     private var textMask: some View {
         Text("VURIO")
-            .font(.system(size: 36, weight: .black))
+            .font(.system(size: 44, weight: .black))
             .tracking(2.0)
+            .scaleEffect(x: 1.0, y: 1.15)
     }
 
     private var borderMask: some View {
