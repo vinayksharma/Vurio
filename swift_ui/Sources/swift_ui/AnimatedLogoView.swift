@@ -18,7 +18,7 @@ struct AnimatedLogoView: View {
         )
     }
 
-    private var invertedGradient: LinearGradient {
+    private var invertedGradient: some View {
         LinearGradient(
             stops: [
                 Gradient.Stop(color: Color(red: 1.0 - 74/255, green: 1.0 - 20/255, blue: 1.0 - 140/255), location: 0),
@@ -31,6 +31,7 @@ struct AnimatedLogoView: View {
             startPoint: .leading,
             endPoint: .trailing
         )
+        .opacity(0.5)
     }
 
     private var textMask: some View {
@@ -57,18 +58,19 @@ struct AnimatedLogoView: View {
             .hidden()
             .overlay(
                 GeometryReader { geometry in
-                    ZStack {
-                        invertedGradient
-                            .frame(width: geometry.size.width * 4)
-                            .offset(x: phase * geometry.size.width)
-                            .mask(borderMask)
-                        
-                        textGradient
-                            .frame(width: geometry.size.width * 4)
-                            .offset(x: phase * geometry.size.width)
-                            .mask(textMask)
-                    }
+                    invertedGradient
+                        .frame(width: geometry.size.width * 4)
+                        .offset(x: phase * geometry.size.width)
                 }
+                .mask(borderMask)
+            )
+            .overlay(
+                GeometryReader { geometry in
+                    textGradient
+                        .frame(width: geometry.size.width * 4)
+                        .offset(x: phase * geometry.size.width)
+                }
+                .mask(textMask)
             )
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
