@@ -74,7 +74,7 @@ struct AnimatedLogoView: View {
             )
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.easeInOut(duration: 120.0).repeatForever(autoreverses: true)) {
+                    withAnimation(.easeInOut(duration: 240.0).repeatForever(autoreverses: true)) {
                         phase = -3.0
                     }
                 }
