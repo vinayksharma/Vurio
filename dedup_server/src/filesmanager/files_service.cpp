@@ -232,6 +232,10 @@ namespace MediaDedup
                     // Copy and delete to handle mount boundaries safely
                     std::filesystem::copy_file(history.ejected_path, history.original_file_path, 
                                             std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(history.original_file_path, std::filesystem::last_write_time(history.ejected_path, ec), ec);
+                    } catch (...) {}
                     std::filesystem::remove(history.ejected_path);
                 }
             }

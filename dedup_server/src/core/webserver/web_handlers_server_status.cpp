@@ -112,10 +112,13 @@ namespace MediaDedup
                 auto& db = scanned_files_service_->getDb();
                 auto user_settings = MediaDedup::UserSettingsOps::list(db);
                 bool has_ejected_folders = false;
+                status_obj.set("ejected_dirs", new Poco::JSON::Array());
                 for (const auto& kv : user_settings) {
-                    if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                    if (kv.first.rfind("ejectionPath:", 0) == 0 ||
+                        kv.first.rfind("ejectionPathErrored:", 0) == 0 ||
+                        kv.first.rfind("ejectionPathIgnored:", 0) == 0) {
+                        status_obj.getArray("ejected_dirs")->add(kv.second);
                         has_ejected_folders = true;
-                        break;
                     }
                 }
                 status_obj.set("has_ejected_folders", has_ejected_folders);
