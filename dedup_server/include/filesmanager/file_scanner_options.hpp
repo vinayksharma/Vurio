@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <vector>
+#include <string>
 
 namespace MediaDedup::Files
 {
@@ -23,5 +25,8 @@ namespace MediaDedup::Files
         // Callback invoked periodically to check if the scan should be aborted.
         // Returns true to abort the scan.
         std::function<bool()> shouldAbort = nullptr;
+
+        // List of normalized absolute directory paths that should be completely ignored during scanning.
+        std::vector<std::string> ignoredPaths;
     };
 }

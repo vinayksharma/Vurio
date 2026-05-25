@@ -2,6 +2,7 @@
 #include "orchestration/duplicate_finder.hpp"
 #include "database/processing_errors_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
+#include "database/user_settings_ops.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -314,10 +315,27 @@ namespace MediaDedup::Orchestration
                     opt.includeHidden = cfg_->getPropertyValue<bool>("filesservice.scan.includeHidden", true);
                     opt.shouldAbort = [this]() { return abortScan_.load(); };
 
+                    std::string eject_path, errored_path, ignored_path;
+                    // kv.first starts with "mediaLocation:", so we can just use the key suffix to match ejection path keys
+                    std::string loc_key = kv.first;
+                    if (loc_key.rfind("mediaLocation:", 0) == 0) {
+                        loc_key = loc_key.substr(14);
+                    }
+                    if (MediaDedup::UserSettingsOps::get(*db_, "ejectionPath:" + loc_key, eject_path)) {
+                        opt.ignoredPaths.push_back(eject_path);
+                    }
+                    if (MediaDedup::UserSettingsOps::get(*db_, "ejectionPathErrored:" + loc_key, errored_path)) {
+                        opt.ignoredPaths.push_back(errored_path);
+                    }
+                    if (MediaDedup::UserSettingsOps::get(*db_, "ejectionPathIgnored:" + loc_key, ignored_path)) {
+                        opt.ignoredPaths.push_back(ignored_path);
+                    }
+
                     logger.information(std::string("Scanning root: ") + root +
                                        ", recursive=" + (opt.recursive ? "true" : "false") +
                                        ", followSymlinks=" + (opt.followSymlinks ? "true" : "false") +
-                                       ", includeHidden=" + (opt.includeHidden ? "true" : "false"));
+                                       ", includeHidden=" + (opt.includeHidden ? "true" : "false") +
+                                       ", ignoredPathsCount=" + std::to_string(opt.ignoredPaths.size()));
                     scan(root, opt, [this, root](const FileRecord &rec)
                          { onFileEmitted(root, rec); });
                     logger.information(std::string("Completed scanning root: ") + root);
