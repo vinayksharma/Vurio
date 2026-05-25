@@ -142,161 +142,197 @@ struct ContentView: View {
     }
 }
 
+enum HoverSegment: Equatable {
+    case none
+    case processed
+    case duplicates
+    case errors
+    case remaining
+    case statusDot
+}
+
+struct CalloutOverlayView: View {
+    let segment: HoverSegment
+    let appState: AppState
+    let hoverX: CGFloat
+    let hoverY: CGFloat
+    let totalWidth: CGFloat
+    
+    var calloutText: String {
+        switch segment {
+        case .processed:
+            return "PROCESSED \(appState.processedFilesCount)/\(appState.scannedFilesCount)"
+        case .duplicates:
+            return "DUPLICATES \(appState.duplicateFilesCount)"
+        case .errors:
+            return "ERRORS \(appState.errorFilesCount)"
+        case .remaining:
+            return "SCANNED \(appState.scannedFilesCount)"
+        case .statusDot:
+            if !appState.isOnline { return "SERVER OFFLINE" }
+            return "REGISTERED PATHS \(appState.registeredDirs.count)\nACTIVE THREADS \(appState.threadCount)/\(appState.maxThreads)"
+        case .none:
+            return ""
+        }
+    }
+    
+    @State private var textWidth: CGFloat = 80
+
+    var body: some View {
+        let isRightHalf = hoverX > totalWidth * 0.6
+        let direction: CGFloat = isRightHalf ? -1 : 1
+        
+        let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
+        let elbowPoint = CGPoint(x: startPoint.x + (15 * direction), y: startPoint.y - 15)
+        
+        let lineLength = max(textWidth + 10, 50)
+        let endPoint = CGPoint(x: elbowPoint.x + (lineLength * direction), y: elbowPoint.y)
+        
+        ZStack(alignment: .topLeading) {
+            Path { path in
+                path.move(to: startPoint)
+                path.addLine(to: elbowPoint)
+                path.addLine(to: endPoint)
+            }
+            .stroke(Color.gray.opacity(0.8), lineWidth: 1.5)
+            
+            Text(calloutText)
+                .font(.custom("Menlo", size: 10))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    GeometryReader { geo in
+                        Color.black.opacity(0.8)
+                            .cornerRadius(4)
+                            .onAppear {
+                                DispatchQueue.main.async { self.textWidth = geo.size.width }
+                            }
+                            .onChange(of: calloutText) { _, _ in
+                                DispatchQueue.main.async { self.textWidth = geo.size.width }
+                            }
+                    }
+                )
+                .position(
+                    x: elbowPoint.x + ((lineLength / 2) * direction),
+                    y: elbowPoint.y - 14
+                )
+        }
+        .animation(.easeOut(duration: 0.15), value: hoverX)
+        .animation(.easeOut(duration: 0.15), value: textWidth)
+    }
+}
+
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
-    @State private var gradientPhase: CGFloat = 0.0
-    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
+    @State private var hoveredSegment: HoverSegment = .none
+    @State private var hoverPosition: CGPoint = .zero
     
     var body: some View {
         VStack(spacing: 0) {
             Divider().background(Color.gray.opacity(0.3))
             
-            HStack {
-                let defaultColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
-                    appearance.name == .darkAqua ? NSColor(calibratedRed: 160/255.0, green: 160/255.0, blue: 160/255.0, alpha: 1.0) : NSColor.secondaryLabelColor
-                }))
-                let errorColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
-                    appearance.name == .darkAqua ? NSColor.systemRed : NSColor.systemRed
-                }))
-                let dupesColor = Color(NSColor(name: nil, dynamicProvider: { appearance in
-                    appearance.name == .darkAqua ? NSColor(calibratedRed: 150/255.0, green: 220/255.0, blue: 150/255.0, alpha: 1.0) : NSColor.systemGreen
-                }))
-                let orangeColor = Color(NSColor.systemOrange)
-                
-                let findingText: Text = {
-                    if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                        let percent = Int((Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
-                        return Text(" (\(percent)% SCANNED)").foregroundColor(orangeColor)
-                    } else {
-                        return Text("")
-                    }
-                }()
-                
-                (Text("SCANNED \(appState.scannedFilesCount) • PROCESSED \(appState.processedFilesCount)")
-                    .foregroundColor(defaultColor) +
-                Text(" • GROUPS \(appState.duplicateGroupsCount)")
-                    .foregroundColor(appState.duplicateGroupsCount > 0 ? dupesColor : defaultColor) +
-                findingText +
-                Text(" • PATHS \(appState.registeredDirs.count) • ")
-                    .foregroundColor(defaultColor) +
-                (advancedOverlayEnabled ? Text("THREADS \(appState.threadCount)/\(appState.maxThreads) • ").foregroundColor(Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)) : Text("")) +
-                Text("ERRORS \(appState.errorFilesCount)")
-                    .foregroundColor(appState.errorFilesCount > 0 ? errorColor : defaultColor))
-                .font(.custom("Menlo", size: 9))
-                .tracking(0.5)
-                
-                Spacer()
-                
-                Circle()
-                    .fill(appState.isOnline ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 6)
-        }
-        .background {
-            ZStack(alignment: .leading) {
-                Color(NSColor.controlBackgroundColor).opacity(0.5)
-                
+            HStack(spacing: 12) {
+                // Segmented Progress Bar
                 GeometryReader { geometry in
-                    if appState.scannedFilesCount > 0 {
-                        let completedPercent = min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
-                        let duplicatePercent = min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
-                        let errorPercent = min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0)
+                    let totalWidth = geometry.size.width
+                    let completedPercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    let duplicatePercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    let errorPercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    
+                    let completedWidth = max(0, totalWidth * CGFloat(completedPercent / 100.0))
+                    let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
+                    let errorWidth = max(0, totalWidth * CGFloat(errorPercent / 100.0))
+                    
+                    let blueColor = Color(red: 74/255.0, green: 144/255.0, blue: 226/255.0)
+                    let greenColor = Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)
+                    let redColor = Color.red.opacity(0.8)
+                    let orangeColor = Color(NSColor.systemOrange)
+                    let emptyColor = Color.white.opacity(0.1)
+                    
+                    ZStack(alignment: .leading) {
+                        // Background track
+                        Capsule()
+                            .fill(emptyColor)
                         
-                        let completedWidth = max(0, geometry.size.width * CGFloat(completedPercent / 100.0))
-                        let duplicateWidth = max(0, geometry.size.width * CGFloat(duplicatePercent / 100.0))
-                        let errorWidth = max(0, geometry.size.width * CGFloat(errorPercent / 100.0))
+                        // Processed (Blue)
+                        Capsule()
+                            .fill(blueColor)
+                            .frame(width: max(0, completedWidth - duplicateWidth))
                         
-                        let blueGradient = LinearGradient(
-                            stops: [
-                                Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 0),
-                                Gradient.Stop(color: Color(red: 124/255.0, green: 142/255.0, blue: 246/255.0).opacity(0.7), location: 0.5),
-                                Gradient.Stop(color: Color(red: 0/255.0, green: 122/255.0, blue: 204/255.0).opacity(0.4), location: 1)
-                            ],
-                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
-                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
-                        )
-                        
-                        let greenGradient = LinearGradient(
-                            stops: [
-                                Gradient.Stop(color: Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0).opacity(0.4), location: 0),
-                                Gradient.Stop(color: Color(red: 170/255.0, green: 240/255.0, blue: 170/255.0).opacity(0.7), location: 0.5),
-                                Gradient.Stop(color: Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0).opacity(0.4), location: 1)
-                            ],
-                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
-                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
-                        )
-                        
-                        let redGradient = LinearGradient(
-                            stops: [
-                                Gradient.Stop(color: Color.red.opacity(0.4), location: 0),
-                                Gradient.Stop(color: Color.red.opacity(0.7), location: 0.5),
-                                Gradient.Stop(color: Color.red.opacity(0.4), location: 1)
-                            ],
-                            startPoint: UnitPoint(x: gradientPhase - 1.5, y: 0.5),
-                            endPoint: UnitPoint(x: gradientPhase + 0.5, y: 0.5)
-                        )
-                        
-                        ZStack(alignment: .leading) {
-                            blueGradient
-                                .frame(width: geometry.size.width)
-                                .mask(
-                                    HStack(spacing: 0) {
-                                        Rectangle().frame(width: completedWidth)
-                                        Spacer(minLength: 0)
-                                    }
-                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
-                                )
+                        // Duplicates (Green)
+                        Capsule()
+                            .fill(greenColor)
+                            .frame(width: duplicateWidth)
+                            .offset(x: max(0, completedWidth - duplicateWidth))
                             
-                            greenGradient
-                                .frame(width: geometry.size.width)
-                                .mask(
-                                    HStack(spacing: 0) {
-                                        Spacer().frame(width: max(0, completedWidth - duplicateWidth))
-                                        Rectangle().frame(width: duplicateWidth)
-                                        Spacer(minLength: 0)
-                                    }
-                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
-                                    .animation(.easeInOut(duration: 0.3), value: duplicateWidth)
-                                )
+                        // Errors (Red)
+                        Capsule()
+                            .fill(redColor)
+                            .frame(width: errorWidth)
+                            .offset(x: completedWidth)
                             
-                            redGradient
-                                .frame(width: geometry.size.width)
-                                .mask(
-                                    HStack(spacing: 0) {
-                                        Spacer().frame(width: completedWidth)
-                                        Rectangle().frame(width: errorWidth)
-                                        Spacer(minLength: 0)
-                                    }
-                                    .animation(.easeInOut(duration: 0.3), value: completedWidth)
-                                    .animation(.easeInOut(duration: 0.3), value: errorWidth)
-                                )
+                        // Finding active indicator (Orange)
+                        if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                            let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
+                            let findingWidth = max(0, totalWidth * CGFloat(findingPercent / 100.0))
+                            Capsule()
+                                .fill(orangeColor)
+                                .frame(width: findingWidth, height: 4)
+                                .offset(y: 8) // Underneath
+                        }
+                    }
+                    .clipShape(Capsule())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            hoverPosition = location
+                            if location.x <= max(0, completedWidth - duplicateWidth) {
+                                hoveredSegment = .processed
+                            } else if location.x <= completedWidth {
+                                hoveredSegment = .duplicates
+                            } else if location.x <= completedWidth + errorWidth {
+                                hoveredSegment = .errors
+                            } else {
+                                hoveredSegment = .remaining
+                            }
+                        case .ended:
+                            hoveredSegment = .none
                         }
                     }
                 }
+                .frame(height: 12)
                 
-                if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                    let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
-                    GeometryReader { geometry in
-                        let findingWidth = max(0, geometry.size.width * CGFloat(findingPercent / 100.0))
-                        Rectangle()
-                            .fill(Color(NSColor.systemOrange))
-                            .frame(width: findingWidth)
-                            .animation(.easeInOut(duration: 0.3), value: findingWidth)
+                // Status Dot
+                Circle()
+                    .fill(appState.isOnline ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active:
+                            hoveredSegment = .statusDot
+                        case .ended:
+                            hoveredSegment = .none
+                        }
                     }
-                    .frame(height: 4)
-                    .offset(y: 12)
-                } else {
-                    Spacer().frame(height: 4)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .overlay {
+                GeometryReader { geo in
+                    if hoveredSegment != .none {
+                        CalloutOverlayView(
+                            segment: hoveredSegment,
+                            appState: appState,
+                            hoverX: hoveredSegment == .statusDot ? geo.size.width - 24 : hoverPosition.x + 20,
+                            hoverY: geo.size.height / 2,
+                            totalWidth: geo.size.width
+                        )
+                        .allowsHitTesting(false)
+                    }
                 }
             }
         }
-        .onAppear {
-            withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
-                gradientPhase = 2.0
-            }
-        }
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }
