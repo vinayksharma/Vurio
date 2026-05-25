@@ -31,13 +31,13 @@ struct AnimatedLogoView: View {
             startPoint: .leading,
             endPoint: .trailing
         )
-        .opacity(0.25)
+        .opacity(0.15)
     }
 
     private var textMask: some View {
         Text("VURIO")
             .font(.system(size: 36, weight: .black))
-            .tracking(0.5)
+            .tracking(2.0)
     }
 
     private var borderMask: some View {
