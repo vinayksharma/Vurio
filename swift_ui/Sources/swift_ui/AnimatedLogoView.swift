@@ -31,7 +31,7 @@ struct AnimatedLogoView: View {
             startPoint: .leading,
             endPoint: .trailing
         )
-        .opacity(0.15)
+        .opacity(0.06)
     }
 
     private var textMask: some View {
