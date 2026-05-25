@@ -204,6 +204,7 @@ public:
 
         for (const auto& member : members) {
             auto* proto_file = proto_group->add_files();
+            proto_file->set_id(std::to_string(member.file_id));
             proto_file->set_file_path(member.file_path);
             proto_file->set_size_bytes(member.file_size);
             proto_file->set_is_representative(member.is_representative);
@@ -345,12 +346,19 @@ public:
             
             std::filesystem::path src(file_path);
             if (!std::filesystem::exists(src)) {
+                last_error = "Source file does not exist on disk: " + file_path;
                 failure_count++;
                 continue;
             }
             
             std::string dest_filename = src.filename().string();
             std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
+            
+            int counter = 1;
+            while (std::filesystem::exists(dest)) {
+                std::string new_name = src.stem().string() + "_" + std::to_string(counter++) + src.extension().string();
+                dest = std::filesystem::path(ejection_path) / new_name;
+            }
             
             try {
                 std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
