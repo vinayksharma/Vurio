@@ -31,7 +31,7 @@ struct AnimatedLogoView: View {
             startPoint: .leading,
             endPoint: .trailing
         )
-        .opacity(0.5)
+        .opacity(0.25)
     }
 
     private var textMask: some View {
@@ -42,14 +42,14 @@ struct AnimatedLogoView: View {
 
     private var borderMask: some View {
         ZStack {
-            textMask.offset(x: 1.5, y: 1.5)
-            textMask.offset(x: -1.5, y: -1.5)
-            textMask.offset(x: -1.5, y: 1.5)
-            textMask.offset(x: 1.5, y: -1.5)
-            textMask.offset(x: 0, y: 1.5)
-            textMask.offset(x: 0, y: -1.5)
-            textMask.offset(x: 1.5, y: 0)
-            textMask.offset(x: -1.5, y: 0)
+            textMask.offset(x: 1.0, y: 1.0)
+            textMask.offset(x: -1.0, y: -1.0)
+            textMask.offset(x: -1.0, y: 1.0)
+            textMask.offset(x: 1.0, y: -1.0)
+            textMask.offset(x: 0, y: 1.0)
+            textMask.offset(x: 0, y: -1.0)
+            textMask.offset(x: 1.0, y: 0)
+            textMask.offset(x: -1.0, y: 0)
         }
     }
 
