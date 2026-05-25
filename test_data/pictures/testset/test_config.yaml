@@ -1,0 +1,4 @@
+media.image.transcoding.enabled: false
+media.image.transcoding.timeoutMs: 30000
+media.image.transcoding.quality: "medium"
+media.image.transcoding.preserveMetadata: false

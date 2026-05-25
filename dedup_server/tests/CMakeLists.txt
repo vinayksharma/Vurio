@@ -68,6 +68,7 @@ set(UNIT_TEST_SOURCES
     unit/test_purge_ejected_errored.cpp
     unit/test_duplicates_reset_api.cpp
     unit/test_files_service_change_path.cpp
+    unit/test_eject_collision.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -236,6 +237,35 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
+        target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
+    endif()
+    if(${test_name} STREQUAL "test_eject_collision")
+        target_sources(${test_name} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
+        )
+        target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS} ${LIBRAW_INCLUDE_DIRS} ${LIBTIFF_INCLUDE_DIRS})
+        target_link_directories(${test_name} PRIVATE ${LIBRAW_LIBRARY_DIRS} ${LIBTIFF_LIBRARY_DIRS})
         target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
     endif()
     if(${test_name} STREQUAL "test_user_settings_service")
@@ -452,6 +482,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
@@ -600,6 +631,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
       NOT ${test_name} STREQUAL "test_media_filtering" AND
+      NOT ${test_name} STREQUAL "test_eject_collision" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
@@ -619,6 +651,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
        NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
        NOT ${test_name} STREQUAL "test_media_filtering" AND
+       NOT ${test_name} STREQUAL "test_eject_collision" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"

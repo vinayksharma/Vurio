@@ -203,6 +203,9 @@ namespace MediaDedup
         
         // 1. Remove from user settings first so subsequent scans ignore it
         bool result = UserSettingsOps::remove(db_manager_, key);
+        UserSettingsOps::remove(db_manager_, "ejectionPath:" + key);
+        UserSettingsOps::remove(db_manager_, "ejectionPathErrored:" + key);
+        UserSettingsOps::remove(db_manager_, "ejectionPathIgnored:" + key);
         
         // 2. Abort any running scan BEFORE we delete rows
         if (result && path_deregistered_callback_) {

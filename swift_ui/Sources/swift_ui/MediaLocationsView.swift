@@ -9,6 +9,7 @@ struct MediaLocationsView: View {
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
     @State private var isDeregistering: Bool = false
+    @State private var showDeregisterAlert: Bool = false
     @State private var ejectionPaths: [String: [String]] = [:]
 
     var body: some View {
@@ -138,10 +139,8 @@ struct MediaLocationsView: View {
             )
             
             Button(action: {
-                if let location = selectedRegisteredLocation {
-                    Task {
-                        await deregisterLocation(path: location)
-                    }
+                if selectedRegisteredLocation != nil {
+                    showDeregisterAlert = true
                 }
             }) {
                 Text("Deregister Selected").frame(width: 140)
@@ -183,6 +182,18 @@ struct MediaLocationsView: View {
                 }
             }
         )
+        .alert("Confirm Deregistration", isPresented: $showDeregisterAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Deregister", role: .destructive) {
+                if let location = selectedRegisteredLocation {
+                    Task {
+                        await deregisterLocation(path: location)
+                    }
+                }
+            }
+        } message: {
+            Text("Deregistering this location will stop scanning it and automatically restore all ejected files back to their original locations. Any ejected files you have already purged will NOT be restored and will remain in the ejected folder.")
+        }
         .disabled(isDeregistering)
     }
     
