@@ -19,6 +19,8 @@ struct DuplicatesView: View {
     @State private var showingBulkEjectConfirmation = false
     @State private var totalEjectingCount: Int = 0
     @State private var ejectingRemainingCount: Int = 0
+    @State private var totalRestoringCount: Int = 0
+    @State private var restoringRemainingCount: Int = 0
     
     // Config and Eject State
     @State private var duplicateTightness: Double = 0.0
@@ -153,7 +155,15 @@ struct DuplicatesView: View {
                                     .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                                     .frame(width: 14, height: 14)
                             }
-                            if isRestoring {
+                            if isRestoring && totalRestoringCount > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Restoring")
+                                        .font(.system(size: 13))
+                                    Text("\(restoringRemainingCount) remaining")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                }
+                            } else if isRestoring {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Restoring")
                                         .font(.system(size: 13))
@@ -165,7 +175,7 @@ struct DuplicatesView: View {
                                 Text("Restore")
                             }
                         }
-                        .frame(width: isRestoring ? 120 : 95)
+                        .frame(width: (isRestoring && totalRestoringCount > 0) ? 120 : (isRestoring ? 120 : 95))
                     }
                     .buttonStyle(.bordered)
                     .tint(canRestore && !isProcessing ? .green : nil)
@@ -491,26 +501,88 @@ struct DuplicatesView: View {
         }
     }
     
+    private func fetchAllEjectedDuplicates() async -> [String] {
+        var toRestore: [String] = []
+        let limit: Int32 = 100
+        var offset: Int32 = 0
+        var hasMore = true
+        
+        guard let client = VurioGrpcClient.shared.duplicates else { return [] }
+        
+        while hasMore {
+            let request = Vurio_Dedup_GetGroupsRequest.with {
+                $0.limit = limit
+                $0.offset = offset
+            }
+            do {
+                let response = try await client.getDuplicateGroups(request)
+                if response.groups.isEmpty {
+                    hasMore = false
+                }
+                for group in response.groups {
+                    for file in group.files {
+                        if file.isEjected {
+                            toRestore.append(file.filePath)
+                        }
+                    }
+                }
+                offset += limit
+            } catch {
+                hasMore = false
+            }
+        }
+        return toRestore
+    }
+    
     private func handleRestore() async {
         guard !isProcessing else { return }
         isRestoring = true
         defer { isRestoring = false }
         
-        do {
-            let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.undoAll = true }
-            if let client = VurioGrpcClient.shared.duplicates {
+        let toRestore = await fetchAllEjectedDuplicates()
+        
+        if toRestore.isEmpty {
+            self.errorMessage = "No ejected duplicates found to restore."
+            return
+        }
+        
+        await MainActor.run {
+            self.totalRestoringCount = toRestore.count
+            self.restoringRemainingCount = toRestore.count
+        }
+        
+        guard let client = VurioGrpcClient.shared.duplicates else { return }
+        
+        let chunkSize = 50
+        var totalSuccess = 0
+        for i in stride(from: 0, to: toRestore.count, by: chunkSize) {
+            let chunk = Array(toRestore[i..<min(i + chunkSize, toRestore.count)])
+            let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.filePaths = chunk }
+            do {
                 let res = try await client.undoEjectDuplicates(req)
-                if res.success {
-                    self.errorMessage = "Successfully restored \(res.successCount) files."
-                    await refresh()
-                    await appState.fetchStatus()
-                } else {
+                totalSuccess += Int(res.successCount)
+                if !res.success && res.successCount == 0 {
                     self.errorMessage = "Restore failed: \(res.errorMessage)"
                 }
+                
+                await MainActor.run {
+                    self.restoringRemainingCount -= chunk.count
+                }
+            } catch {
+                self.errorMessage = "Restore error: \(error.localizedDescription)"
             }
-        } catch {
-            self.errorMessage = "Restore error: \(error.localizedDescription)"
         }
+        
+        await MainActor.run {
+            self.totalRestoringCount = 0
+            self.restoringRemainingCount = 0
+            if totalSuccess > 0 {
+                self.errorMessage = "Successfully restored \(totalSuccess) files."
+            }
+        }
+        
+        await refresh()
+        await appState.fetchStatus()
     }
     
 
