@@ -736,7 +736,7 @@ struct DuplicateGroupCard: View {
                 VerticalScrollingFixView {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(candidates, id: \.filePath) { file in
+                            ForEach(candidates, id: \.id) { file in
                                 DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
                                     onRestoreSet([file.filePath])
                                 }, onEject: {
