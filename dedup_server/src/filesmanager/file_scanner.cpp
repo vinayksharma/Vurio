@@ -115,11 +115,20 @@ namespace MediaDedup::Files
                     fillStats(de, r);
 
                     std::string filename = de.path().filename().string();
-                    if (de.is_directory() && (filename == "vurio_cache" || 
-                                            filename.find("ejected_") == 0 || 
-                                            filename.find("errored_") == 0 || 
-                                            filename.find("ignored_") == 0))
-                        continue;
+                    if (de.is_directory()) {
+                        if (filename == "vurio_cache") continue;
+                        
+                        bool should_ignore = false;
+                        std::string full_path = de.path().string();
+                        std::replace(full_path.begin(), full_path.end(), '\\', '/');
+                        for (const auto& ip : options.ignoredPaths) {
+                            if (full_path == ip) {
+                                should_ignore = true;
+                                break;
+                            }
+                        }
+                        if (should_ignore) continue;
+                    }
 
                     if (!options.includeHidden && r.isHidden)
                         continue;
@@ -157,8 +166,20 @@ namespace MediaDedup::Files
                     fillStats(de, r);
 
                     std::string filename = de.path().filename().string();
-                    if (de.is_directory() && (filename == "vurio_cache" || filename.find("ejected_") == 0 || filename.find("errored_") == 0 || filename.find("ignored_") == 0))
-                        continue;
+                    if (de.is_directory()) {
+                        if (filename == "vurio_cache") continue;
+                        
+                        bool should_ignore = false;
+                        std::string full_path = de.path().string();
+                        std::replace(full_path.begin(), full_path.end(), '\\', '/');
+                        for (const auto& ip : options.ignoredPaths) {
+                            if (full_path == ip) {
+                                should_ignore = true;
+                                break;
+                            }
+                        }
+                        if (should_ignore) continue;
+                    }
 
                     if (!options.includeHidden && r.isHidden)
                         continue;

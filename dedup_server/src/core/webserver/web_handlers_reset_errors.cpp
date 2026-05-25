@@ -165,7 +165,25 @@ namespace MediaDedup
                 }
 
                 std::string dest_filename = src.filename().string();
-                std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
+                std::filesystem::path base_eject = std::filesystem::path(ejection_path);
+                std::filesystem::path dest = base_eject / dest_filename;
+
+                int counter = 0;
+                while (std::filesystem::exists(dest)) {
+                    counter++;
+                    std::string folder_name = dest_filename + "_" + std::to_string(counter);
+                    std::filesystem::path collision_folder = base_eject / folder_name;
+                    
+                    if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
+                        continue;
+                    }
+                    
+                    dest = collision_folder / dest_filename;
+                }
+
+                if (dest.has_parent_path()) {
+                    std::filesystem::create_directories(dest.parent_path());
+                }
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
@@ -355,7 +373,23 @@ namespace MediaDedup
                             }
                             if (std::filesystem::is_empty(parent)) {
                                 std::filesystem::remove(parent);
-                                UserSettingsOps::remove(*database_manager_, "ejectionPathErrored:" + history.original_location_key);
+                                
+                                std::filesystem::path grandparent = parent.parent_path();
+                                std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
+                                if (std::filesystem::exists(gp_ds_store)) {
+                                    std::filesystem::remove(gp_ds_store);
+                                }
+                                if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
+                                    std::filesystem::remove(grandparent);
+                                }
+                                
+                                std::string ejection_key = "ejectionPathErrored:" + history.original_location_key;
+                                std::string registered_path;
+                                if (UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
+                                    if (!std::filesystem::exists(registered_path)) {
+                                        UserSettingsOps::remove(*database_manager_, ejection_key);
+                                    }
+                                }
                             }
                         } catch (...) {}
 
@@ -465,7 +499,25 @@ namespace MediaDedup
                 }
 
                 std::string dest_filename = src.filename().string();
-                std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
+                std::filesystem::path base_eject = std::filesystem::path(ejection_path);
+                std::filesystem::path dest = base_eject / dest_filename;
+
+                int counter = 0;
+                while (std::filesystem::exists(dest)) {
+                    counter++;
+                    std::string folder_name = dest_filename + "_" + std::to_string(counter);
+                    std::filesystem::path collision_folder = base_eject / folder_name;
+                    
+                    if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
+                        continue;
+                    }
+                    
+                    dest = collision_folder / dest_filename;
+                }
+
+                if (dest.has_parent_path()) {
+                    std::filesystem::create_directories(dest.parent_path());
+                }
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
@@ -651,7 +703,23 @@ namespace MediaDedup
                             }
                             if (std::filesystem::is_empty(parent)) {
                                 std::filesystem::remove(parent);
-                                UserSettingsOps::remove(*database_manager_, "ejectionPathIgnored:" + history.original_location_key);
+                                
+                                std::filesystem::path grandparent = parent.parent_path();
+                                std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
+                                if (std::filesystem::exists(gp_ds_store)) {
+                                    std::filesystem::remove(gp_ds_store);
+                                }
+                                if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
+                                    std::filesystem::remove(grandparent);
+                                }
+                                
+                                std::string ejection_key = "ejectionPathIgnored:" + history.original_location_key;
+                                std::string registered_path;
+                                if (UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
+                                    if (!std::filesystem::exists(registered_path)) {
+                                        UserSettingsOps::remove(*database_manager_, ejection_key);
+                                    }
+                                }
                             }
                         } catch (...) {}
 
