@@ -61,7 +61,7 @@ struct PurityOrderSection: View {
                         Button("Apply Purity Rules") {
                             // This is where ConfigurePurityOrder would be called
                         }
-                        .buttonStyle(BorderedProminentButtonStyle())
+                        .vurioButtonStyle(tint: Theme.textAccent)
                     }
                 }
                 .padding()
