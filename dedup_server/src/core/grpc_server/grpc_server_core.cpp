@@ -286,6 +286,15 @@ public:
         for (const auto& file_path : request->file_paths()) {
             auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*db_, file_path);
             if (!file_opt) {
+                // Check if the file is already ejected (UI state out of sync sending original path)
+                auto hist = MediaDedup::EjectedFilesOps::getByOriginalPath(*db_, file_path);
+                if (!hist) hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*db_, file_path);
+                
+                if (hist) {
+                    success_count++;
+                    continue;
+                }
+                
                 last_error = "File not found in database: " + file_path;
                 failure_count++;
                 continue;
