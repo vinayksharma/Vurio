@@ -19,19 +19,19 @@ struct MediaLocationsView: View {
                     .fontWeight(.bold)
                 Spacer()
                 Image(systemName: "arrowtriangle.down.fill")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Theme.textSecondary)
                     .font(.caption)
             }
             
             Text("Register and manage the folders you want the deduplication service to scan.")
-                .foregroundColor(.secondary)
+                .foregroundColor(Theme.textSecondary)
                 .font(.subheadline)
             
             HStack(spacing: 12) {
                 TextField("Select a directory...", text: $selectedDirectory)
                     .textFieldStyle(.plain)
                     .padding(8)
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .background(Theme.surface.opacity(0.5))
                     .cornerRadius(6)
                     .disabled(true)
                 
@@ -40,8 +40,7 @@ struct MediaLocationsView: View {
                 }) {
                     Text("Browse").frame(width: 140)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                .vurioButtonStyle(tint: Theme.textAccent)
                 .help("Browse and select a folder to register")
                 
                 Button(action: {
@@ -51,15 +50,14 @@ struct MediaLocationsView: View {
                 }) {
                     Text("Register").frame(width: 140)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                .vurioButtonStyle(tint: Theme.textAccent)
                 .disabled(selectedDirectory.isEmpty)
                 .help("Register the selected folder for deduplication scanning")
             }
             
             if !statusMessage.isEmpty {
                 Text(statusMessage)
-                    .foregroundColor(.blue)
+                    .foregroundColor(Theme.textAccent)
                     .font(.caption)
             }
             
@@ -70,14 +68,14 @@ struct MediaLocationsView: View {
                 .fontWeight(.bold)
             
             Text("Choose a folder below to manage or deregister it.")
-                .foregroundColor(.secondary)
+                .foregroundColor(Theme.textSecondary)
                 .font(.subheadline)
             
             // Custom List Container
             VStack(spacing: 0) {
                 if appState.registeredDirs.isEmpty {
                     Text("No locations registered.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -86,7 +84,7 @@ struct MediaLocationsView: View {
                             Text(location)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                                .foregroundColor(.primary)
+                                .foregroundColor(Theme.textPrimary)
                             
                             Spacer()
                             
@@ -99,8 +97,7 @@ struct MediaLocationsView: View {
                                 }) {
                                     Text("Remap").frame(width: 140)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.blue)
+                                .vurioButtonStyle(tint: Theme.textAccent)
                                 .help("Remap this location to a different path")
                                 
                                 Button(action: {
@@ -112,29 +109,29 @@ struct MediaLocationsView: View {
                                     }
                                     .frame(width: 140)
                                 }
-                                .buttonStyle(.bordered)
+                                .vurioButtonStyle(tint: Theme.textPrimary)
                                 .disabled(ejectionPaths[location] == nil || ejectionPaths[location]!.isEmpty)
                                 .help("Open Ejected Folder in OS")
                             }
                         }
                         .padding()
-                        .background(selectedRegisteredLocation == location ? Color.white.opacity(0.1) : Color.clear)
+                        .background(selectedRegisteredLocation == location ? Theme.surfaceElevated : Color.clear)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             selectedRegisteredLocation = location
                         }
                         
                         if location != appState.registeredDirs.last {
-                            Divider().background(Color.gray.opacity(0.3))
+                            Divider().background(Theme.border)
                         }
                     }
                 }
             }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .background(Theme.surface.opacity(0.3))
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    .stroke(Theme.border, lineWidth: 1)
             )
             
             Button(action: {
@@ -144,11 +141,18 @@ struct MediaLocationsView: View {
                     }
                 }
             }) {
-                Text("Deregister Selected").frame(width: 140)
+                HStack {
+                    if isDeregistering {
+                        ProgressView().controlSize(.small)
+                        Text("Deregistering...")
+                    } else {
+                        Text("Deregister Selected")
+                    }
+                }
             }
-            .buttonStyle(.bordered)
-            .disabled(selectedRegisteredLocation == nil)
-            .help("Deregister and stop scanning the selected location")
+            .vurioButtonStyle(tint: Theme.error)
+            .disabled(selectedRegisteredLocation == nil || isDeregistering)
+                .help("Deregister and stop scanning the selected location")
             
             Spacer()
         }
@@ -173,10 +177,10 @@ struct MediaLocationsView: View {
                                 .font(.headline)
                             Text("Please wait while the location is removed.")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                         }
                         .padding(30)
-                        .background(Color(NSColor.windowBackgroundColor))
+                        .background(Theme.background)
                         .cornerRadius(12)
                         .shadow(radius: 10)
                     }

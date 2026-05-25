@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vurio Palette Preview</title>
+    <style>
+        body {
+            background-color: #1E1E1E; /* Theme.background */
+            color: #B0B0B0; /* Theme.textPrimary */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            font-weight: 500;
+            margin-bottom: 40px;
+        }
+        .section {
+            background-color: #2D2D2D; /* Theme.surface */
+            border: 1px solid #151515; /* Theme.border */
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        .section-title {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        .section-subtitle {
+            color: #737373; /* Theme.textSecondary */
+            margin-top: 0;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+        .swatch-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 20px;
+        }
+        .swatch-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .swatch {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #151515; /* Theme.border */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .swatch-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .swatch-hex {
+            color: #737373; /* Theme.textSecondary */
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        
+        /* UI Preview Elements */
+        .preview-box {
+            background-color: #3C3C3C; /* Theme.surfaceElevated */
+            border: 1px solid #5A5A5A; /* Theme.borderActive */
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .preview-button {
+            background-color: rgba(59, 130, 246, 0.15); /* Theme.textAccent at 15% opacity */
+            color: #3B82F6; /* Theme.textAccent */
+            border: 1px solid rgba(59, 130, 246, 0.5); /* Theme.textAccent at 50% opacity */
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-right: 10px;
+            transition: all 0.15s ease-in-out;
+        }
+        .preview-button:hover {
+            background-color: rgba(59, 130, 246, 0.3);
+            border: 1px solid rgba(59, 130, 246, 1.0);
+        }
+        .preview-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+        .badge-success { background-color: #388E3C; color: #B0B0B0; }
+        .badge-warning { background-color: #B04A15; color: #B0B0B0; }
+        .badge-error { background-color: #D32F2F; color: #B0B0B0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Vurio Dark Mode Palette Preview</h1>
+        
+        <div class="section">
+            <h2 class="section-title">Backgrounds & Surfaces</h2>
+            <p class="section-subtitle">Notice how the surfaces sit on top of the #1E1E1E background.</p>
+            <div class="swatch-container">
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #1E1E1E;"></div>
+                    <span class="swatch-label">Background</span>
+                    <span class="swatch-hex">#1E1E1E</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #2D2D2D;"></div>
+                    <span class="swatch-label">Surface</span>
+                    <span class="swatch-hex">#2D2D2D</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #3C3C3C;"></div>
+                    <span class="swatch-label">Surface Elevated</span>
+                    <span class="swatch-hex">#3C3C3C</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #151515;"></div>
+                    <span class="swatch-label">Border</span>
+                    <span class="swatch-hex">#151515</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Typography</h2>
+            <p class="section-subtitle">High contrast for primary text, subdued for metadata.</p>
+            <div class="swatch-container">
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #B0B0B0;"></div>
+                    <span class="swatch-label">Text Primary</span>
+                    <span class="swatch-hex">#B0B0B0</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #737373;"></div>
+                    <span class="swatch-label">Text Secondary</span>
+                    <span class="swatch-hex">#737373</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #3B82F6;"></div>
+                    <span class="swatch-label">Text Accent</span>
+                    <span class="swatch-hex">#3B82F6</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Accents & Status</h2>
+            <p class="section-subtitle">Muted, desaturated colors to avoid eye strain and distracting from photos.</p>
+            <div class="swatch-container">
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #2850A7;"></div>
+                    <span class="swatch-label">Accent (Blue)</span>
+                    <span class="swatch-hex">#2850A7</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #388E3C;"></div>
+                    <span class="swatch-label">Success (Green)</span>
+                    <span class="swatch-hex">#388E3C</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #B04A15;"></div>
+                    <span class="swatch-label">Warning (Orange)</span>
+                    <span class="swatch-hex">#B04A15</span>
+                </div>
+                <div class="swatch-card">
+                    <div class="swatch" style="background-color: #D32F2F;"></div>
+                    <span class="swatch-label">Error (Red)</span>
+                    <span class="swatch-hex">#D32F2F</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">UI Component Mockup</h2>
+            <p class="section-subtitle">How they look together in a mini interface.</p>
+            
+            <div class="preview-box">
+                <h3 style="margin-top: 0; margin-bottom: 5px;">Sample Settings Panel</h3>
+                <p style="color: #7A7A7E; margin-top: 0; font-size: 0.9rem;">Adjust your application preferences here.</p>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #38383A;">
+                    <span class="preview-badge badge-success">0 Duplicates</span>
+                    <span class="preview-badge badge-warning">Scanning...</span>
+                    <span class="preview-badge badge-error">2 Errors</span>
+                </div>
+                
+                <div style="margin-top: 30px;">
+                    <button class="preview-button">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

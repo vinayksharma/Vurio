@@ -90,8 +90,7 @@ struct ContentView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            NavigationSplitView {
+        NavigationSplitView {
                 List(selection: $selection) {
                     NavigationLink(value: SidebarItem.duplicates) {
                         Label("Duplicates", systemImage: "photo.on.rectangle.angled")
@@ -125,9 +124,9 @@ struct ContentView: View {
                     Text("Select an item")
                 }
             }
-            
-            StatusBarView()
-        }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                StatusBarView()
+            }
         .frame(minWidth: 1027, minHeight: 800)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
@@ -230,7 +229,7 @@ struct StatusBarView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            Divider().background(Color.gray.opacity(0.3))
+            Divider().background(Theme.border)
             
             HStack(spacing: 12) {
                 // Segmented Progress Bar
@@ -244,11 +243,11 @@ struct StatusBarView: View {
                     let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
                     let errorWidth = max(0, totalWidth * CGFloat(errorPercent / 100.0))
                     
-                    let blueColor = Color(red: 74/255.0, green: 144/255.0, blue: 226/255.0)
-                    let greenColor = Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)
-                    let redColor = Color.red.opacity(0.8)
-                    let orangeColor = Color(NSColor.systemOrange)
-                    let emptyColor = Color.white.opacity(0.1)
+                    let blueColor = Theme.accent
+                    let greenColor = Theme.success
+                    let redColor = Theme.error
+                    let orangeColor = Theme.warning
+                    let emptyColor = Theme.surfaceElevated
                     
                     ZStack(alignment: .leading) {
                         // Background track
@@ -305,7 +304,7 @@ struct StatusBarView: View {
                 
                 // Status Dot
                 Circle()
-                    .fill(appState.isOnline ? Color.green : Color.red)
+                    .fill(appState.isOnline ? Theme.success : Theme.error)
                     .frame(width: 8, height: 8)
                     .onContinuousHover { phase in
                         switch phase {
@@ -333,6 +332,9 @@ struct StatusBarView: View {
                 }
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(
+            Theme.background.opacity(0.8)
+                .background(.ultraThinMaterial)
+        )
     }
 }

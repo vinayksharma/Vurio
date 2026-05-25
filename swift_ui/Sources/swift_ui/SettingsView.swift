@@ -13,7 +13,7 @@ struct SettingsView: View {
                         .font(.largeTitle)
                         .fontWeight(.bold)
                     Text("Adjust server configuration and manage how VURIO behaves.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding(.bottom, 10)
                 
@@ -36,10 +36,10 @@ struct SettingsView: View {
                             Text("Configuration")
                                 .font(.title2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.primary)
+                                .foregroundColor(Theme.textPrimary)
                             Spacer()
                             Image(systemName: configSectionCollapsed ? "chevron.right" : "chevron.down")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -49,19 +49,20 @@ struct SettingsView: View {
                     if !configSectionCollapsed {
                         VStack(alignment: .leading, spacing: 15) {
                             Text("Review and edit advanced options. Changes are validated before saving.")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                             
                             HStack {
                                 Spacer()
                                 Button("Reload") {
                                     Task { await viewModel.loadConfig() }
                                 }
+                                .vurioButtonStyle(tint: Theme.textPrimary)
                                 .disabled(viewModel.isAnyActionRunning)
                                 
                                 Button("Save Changes") {
                                     Task { await viewModel.saveConfiguration() }
                                 }
-                                .buttonStyle(BorderedProminentButtonStyle())
+                                .vurioButtonStyle(tint: Theme.textAccent)
                                 .disabled(viewModel.modifiedProperties.isEmpty || viewModel.isAnyActionRunning)
                             }
                             
@@ -72,7 +73,7 @@ struct SettingsView: View {
                                     VStack(alignment: .leading, spacing: 10) {
                                         Text(sectionName)
                                             .font(.headline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(Theme.textSecondary)
                                             .padding(.top, 10)
                                         
                                         ForEach(keys, id: \.self) { key in
@@ -92,7 +93,7 @@ struct SettingsView: View {
                         .padding()
                     }
                 }
-                .background(Color(NSColor.controlBackgroundColor))
+                .background(Theme.surface)
                 .cornerRadius(10)
                 
                 AdvancedSection(viewModel: viewModel)
@@ -119,7 +120,7 @@ struct ConfigRowView: View {
                 showPopover.toggle()
             }) {
                 Image(systemName: "info.circle")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Theme.textSecondary)
             }
             .buttonStyle(PlainButtonStyle())
             .popover(isPresented: $showPopover, arrowEdge: .trailing) {
