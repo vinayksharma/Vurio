@@ -80,10 +80,13 @@ struct DuplicatesView: View {
                 Divider().background(Color.gray.opacity(0.3))
                 
                 HStack {
-                    Text("IDENTICAL")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.fill.on.square.fill")
+                        Text("IDENTICAL")
+                    }
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
                     
                     // Vurio Slider
                     VurioSlider(
@@ -105,11 +108,14 @@ struct DuplicatesView: View {
                     .frame(height: 42)
                     .padding(.horizontal, 10)
                     
-                    Text("SIMILAR")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.secondary)
-                        .padding(.trailing, 16)
+                    HStack(spacing: 4) {
+                        Text("SIMILAR")
+                        Image(systemName: "square.on.square")
+                    }
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                    .padding(.trailing, 16)
                     
                     Button(action: {
                         showingBulkEjectConfirmation = true
