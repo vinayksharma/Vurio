@@ -9,7 +9,7 @@ struct MediaLocationsView: View {
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
     @State private var isDeregistering: Bool = false
-    @State private var ejectionPaths: [String: String] = [:]
+    @State private var ejectionPaths: [String: [String]] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -113,7 +113,7 @@ struct MediaLocationsView: View {
                                     .frame(width: 140)
                                 }
                                 .buttonStyle(.bordered)
-                                .disabled(ejectionPaths[location] == nil)
+                                .disabled(ejectionPaths[location] == nil || ejectionPaths[location]!.isEmpty)
                                 .help("Open Ejected Folder in OS")
                             }
                         }
@@ -293,10 +293,11 @@ struct MediaLocationsView: View {
     }
     
     private func fetchEjectionPaths() async {
-        var paths: [String: String] = [:]
+        var paths: [String: [String]] = [:]
         for location in appState.registeredDirs {
-            if let matched = appState.ejectedDirs.first(where: { $0.hasPrefix(location) }) {
-                paths[location] = matched
+            let matches = appState.ejectedDirs.filter { $0.hasPrefix(location) }
+            if !matches.isEmpty {
+                paths[location] = matches
             }
         }
         await MainActor.run {
@@ -305,19 +306,23 @@ struct MediaLocationsView: View {
     }
     
     private func openEjectedFolder(for location: String) {
-        guard let path = ejectionPaths[location] else {
+        guard let paths = ejectionPaths[location], !paths.isEmpty else {
             statusMessage = "No ejected folder found for this location."
             return
         }
         
-        let url = URL(fileURLWithPath: path)
-        var opened = NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
-        if !opened {
-            opened = NSWorkspace.shared.open(url)
+        var anyOpened = false
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            var opened = NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+            if !opened {
+                opened = NSWorkspace.shared.open(url)
+            }
+            if opened { anyOpened = true }
         }
         
-        if !opened {
-            statusMessage = "Failed to open ejected folder."
+        if !anyOpened {
+            statusMessage = "Failed to open ejected folder(s)."
         } else {
             statusMessage = ""
         }

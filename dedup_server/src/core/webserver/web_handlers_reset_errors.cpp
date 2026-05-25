@@ -169,6 +169,10 @@ namespace MediaDedup
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -296,6 +300,10 @@ namespace MediaDedup
                 try
                 {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -461,6 +469,10 @@ namespace MediaDedup
 
                 try {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());
@@ -588,6 +600,10 @@ namespace MediaDedup
                 try
                 {
                     std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
+                    try {
+                        std::error_code ec;
+                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
+                    } catch (...) {}
 
                     std::string src_sha1 = calculateFileSHA1(src.string());
                     std::string dest_sha1 = calculateFileSHA1(dest.string());

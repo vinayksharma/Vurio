@@ -115,7 +115,10 @@ namespace MediaDedup::Files
                     fillStats(de, r);
 
                     std::string filename = de.path().filename().string();
-                    if (de.is_directory() && (filename == "vurio_cache" || filename.find("ejected_") == 0 || filename.find("errored_") == 0 || filename.find("ignored_") == 0))
+                    if (de.is_directory() && (filename == "vurio_cache" || 
+                                            filename.find("ejected_") == 0 || 
+                                            filename.find("errored_") == 0 || 
+                                            filename.find("ignored_") == 0))
                         continue;
 
                     if (!options.includeHidden && r.isHidden)
