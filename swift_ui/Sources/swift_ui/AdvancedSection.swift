@@ -15,22 +15,36 @@ struct AdvancedSection: View {
                 HStack {
                     Text("Advanced")
                         .font(.title2)
+                        .textCase(.uppercase)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Theme.textPrimary)
                     Spacer()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                 }
+                .padding()
                 .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            .padding()
             
             if !isCollapsed {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Maintenance shortcuts and developer tools for troubleshooting the server.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                         .padding(.bottom, 10)
+                    
+                    ActionRow(
+                        title: "Database Integrity Check",
+                        description: "Scrub the database for physical files that have been deleted, clean up orphaned metadata and invalid duplicate groups. This runs safely in the background.",
+                        buttons: [
+                            ActionButton(title: "Run Integrity Check",
+                                         confirmTitle: "Run Integrity Check?",
+                                         confirmMessage: "Are you sure you want to run the database integrity check? This will safely scrub the database for missing files in the background.",
+                                         systemImage: "externaldrive.badge.checkmark",
+                                         action: { Task { await viewModel.startDatabaseIntegrityCheck() } })
+                        ],
+                        isRunning: viewModel.isAnyActionRunning
+                    )
                     
                     ActionRow(
                         title: "Manage Error Files",
@@ -116,9 +130,10 @@ struct AdvancedSection: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Advanced Overlay")
                                 .font(.headline)
+                                .textCase(.uppercase)
                             Text("An option to show various technical overlays on existing UI elements or adds new to gain more insight into the inner working of the system.")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         
@@ -132,15 +147,16 @@ struct AdvancedSection: View {
                     .overlay(
                         Rectangle()
                             .frame(height: 1)
-                            .foregroundColor(Color(NSColor.separatorColor)),
+                            .foregroundColor(Theme.border),
                         alignment: .bottom
                     )
                 }
                 .padding()
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Theme.surface)
         .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }
 
@@ -176,9 +192,10 @@ struct ActionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
+                    .textCase(.uppercase)
                 Text(description)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             
@@ -192,8 +209,7 @@ struct ActionRow: View {
                         Text(btn.title)
                             .frame(minWidth: 150)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(btn.role == .destructive ? .red : .accentColor)
+                    .vurioButtonStyle(tint: btn.role == .destructive ? Theme.error : Theme.textAccent)
                     .disabled(isRunning)
                 }
             }
@@ -202,7 +218,7 @@ struct ActionRow: View {
         .overlay(
             Rectangle()
                 .frame(height: 1)
-                .foregroundColor(Color(NSColor.separatorColor)),
+                .foregroundColor(Theme.border),
             alignment: .bottom
         )
         .sheet(item: $selectedAction) { btn in
@@ -213,7 +229,7 @@ struct ActionRow: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 32, height: 32)
-                            .foregroundColor(btn.role == .destructive ? .red : .accentColor)
+                            .foregroundColor(btn.role == .destructive ? Theme.error : Theme.textAccent)
                     }
                     Text(btn.confirmTitle)
                         .font(.title2)
@@ -237,8 +253,7 @@ struct ActionRow: View {
                         btn.action()
                         selectedAction = nil
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(btn.role == .destructive ? .red : .accentColor)
+                    .vurioButtonStyle(tint: btn.role == .destructive ? Theme.error : Theme.textAccent)
                     .keyboardShortcut(.defaultAction)
                 }
             }

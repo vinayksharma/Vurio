@@ -50,6 +50,10 @@ namespace MediaDedup
         void submit(const std::string &type, std::function<void()> fn, const std::string &file_path = "");
         bool canSubmit(const std::string &type, size_t max_queue_size = 10000) const;
 
+        void pause() { paused_.store(true); }
+        void resume();
+        bool isPaused() const { return paused_.load(); }
+
         Status getStatus() const;
 
         /**
@@ -129,6 +133,7 @@ namespace MediaDedup
         std::condition_variable cv_;
         std::atomic<bool> accepting_{true};
         std::atomic<bool> draining_{false};
+        std::atomic<bool> paused_{false};
 
         std::unordered_map<std::string, double> type_to_share_;
         std::unordered_map<std::string, size_t> type_to_running_;

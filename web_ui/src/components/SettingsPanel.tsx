@@ -195,17 +195,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
   if (isLoading) {
     return (
       <section id="panel-settings" className={`content-panel ${isActive ? 'active' : ''}`}>
-        <header className="panel-header">
-          <div>
-            <h1>Settings</h1>
-            <p className="panel-description">Adjust server configuration and manage how VURIO behaves.</p>
-          </div>
-        </header>
         <MediaLocationsSection />
         <UISettingsSection />
         <PurityOrderSection />
-        <section className="panel settings-panel">
-          <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
+        <section 
+          className="panel settings-panel"
+          onClick={() => {
+            if (configSectionCollapsed) setConfigSectionCollapsed(false);
+          }}
+          style={{ cursor: configSectionCollapsed ? 'pointer' : 'default' }}
+        >
+          <h2 className="panel-title" onClick={(e) => {
+            setConfigSectionCollapsed(!configSectionCollapsed);
+            e.stopPropagation();
+          }} style={{ cursor: 'pointer' }}>
             <span>Configuration</span>
             <span 
               className="config-group-toggle" 
@@ -227,17 +230,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
   if (!config) {
     return (
       <section id="panel-settings" className={`content-panel ${isActive ? 'active' : ''}`}>
-        <header className="panel-header">
-          <div>
-            <h1>Settings</h1>
-            <p className="panel-description">Adjust server configuration and manage how VURIO behaves.</p>
-          </div>
-        </header>
         <MediaLocationsSection />
         <UISettingsSection />
         <PurityOrderSection />
-        <section className="panel settings-panel">
-          <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
+        <section 
+          className="panel settings-panel"
+          onClick={() => {
+            if (configSectionCollapsed) setConfigSectionCollapsed(false);
+          }}
+          style={{ cursor: configSectionCollapsed ? 'pointer' : 'default' }}
+        >
+          <h2 className="panel-title" onClick={(e) => {
+            setConfigSectionCollapsed(!configSectionCollapsed);
+            e.stopPropagation();
+          }} style={{ cursor: 'pointer' }}>
             <span>Configuration</span>
             <span 
               className="config-group-toggle" 
@@ -262,16 +268,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
 
   return (
     <section id="panel-settings" className={`content-panel ${isActive ? 'active' : ''}`}>
-      <header className="panel-header">
-        <div>
-          <h1>Settings</h1>
-          <p className="panel-description">Adjust server configuration and manage how Dedup Desktop behaves.</p>
-        </div>
-      </header>
       <MediaLocationsSection />
       <UISettingsSection />
-      <section className="panel settings-panel">
-        <h2 className="panel-title" onClick={() => setConfigSectionCollapsed(!configSectionCollapsed)} style={{ cursor: 'pointer' }}>
+      <section 
+        className="panel settings-panel"
+        onClick={() => {
+          if (configSectionCollapsed) setConfigSectionCollapsed(false);
+        }}
+        style={{ cursor: configSectionCollapsed ? 'pointer' : 'default' }}
+      >
+        <h2 className="panel-title" onClick={(e) => {
+          setConfigSectionCollapsed(!configSectionCollapsed);
+          e.stopPropagation();
+        }} style={{ cursor: 'pointer' }}>
           <span>Configuration</span>
           <span 
             className="config-group-toggle" 

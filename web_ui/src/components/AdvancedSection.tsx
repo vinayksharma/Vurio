@@ -445,8 +445,17 @@ const AdvancedSection: React.FC = () => {
   };
 
   return (
-    <section className="panel advanced-panel">
-      <h2 className="panel-title" onClick={() => setIsCollapsed(!isCollapsed)} style={{ cursor: 'pointer' }}>
+    <section 
+      className="panel settings-panel advanced-panel"
+      onClick={() => {
+        if (isCollapsed) setIsCollapsed(false);
+      }}
+      style={{ cursor: isCollapsed ? 'pointer' : 'default' }}
+    >
+      <h2 className="panel-title" onClick={(e) => {
+        setIsCollapsed(!isCollapsed);
+        e.stopPropagation();
+      }} style={{ cursor: 'pointer' }}>
         <span>Advanced</span>
         <span 
           className="config-group-toggle" 
