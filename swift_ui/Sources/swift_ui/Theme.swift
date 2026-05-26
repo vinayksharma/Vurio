@@ -55,6 +55,7 @@ struct VurioButtonStyleModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content
+            .textCase(.uppercase)
             .buttonStyle(.bordered)
             .tint(tintColor)
             .background(

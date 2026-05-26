@@ -82,6 +82,7 @@ class AppState: ObservableObject {
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var selection: SidebarItem? = .duplicates
+    @State private var sidebarWidth: CGFloat = 200
     
     enum SidebarItem: Hashable {
         case duplicates
@@ -90,29 +91,79 @@ struct ContentView: View {
     }
     
     var body: some View {
+        let isCompact = sidebarWidth < 140
+        
         NavigationSplitView {
-                List(selection: $selection) {
-                    NavigationLink(value: SidebarItem.duplicates) {
-                        Label("Duplicates", systemImage: "photo.on.rectangle.angled")
+            List(selection: $selection) {
+                NavigationLink(value: SidebarItem.duplicates) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "photo.on.rectangle.angled").font(.title2)
+                            .frame(width: 24, alignment: .center)
+                        if !isCompact {
+                            Text("DUPLICATES")
+                                .fontWeight(.bold)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
                     }
-                    NavigationLink(value: SidebarItem.locations) {
-                        Label("Locations", systemImage: "folder")
-                    }
-                    NavigationLink(value: SidebarItem.settings) {
-                        Label("Settings", systemImage: "gear")
-                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, isCompact ? 0 : 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
                 }
-                .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 250)
-                .listStyle(SidebarListStyle())
-                .safeAreaInset(edge: .top) {
-                    AnimatedLogoView()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+                NavigationLink(value: SidebarItem.locations) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "folder").font(.title2)
+                            .frame(width: 24, alignment: .center)
+                        if !isCompact {
+                            Text("LOCATIONS")
+                                .fontWeight(.bold)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, isCompact ? 0 : 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
                 }
-                .navigationTitle("")
-            } detail: {
+                NavigationLink(value: SidebarItem.settings) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "gear").font(.title2)
+                            .frame(width: 24, alignment: .center)
+                        if !isCompact {
+                            Text("SETTINGS")
+                                .fontWeight(.bold)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, isCompact ? 0 : 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                }
+            }
+            .listStyle(SidebarListStyle())
+            .safeAreaInset(edge: .top) {
+                AnimatedLogoView(isCompact: isCompact)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, isCompact ? 10 : 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+            }
+            .background(
+                GeometryReader { geometry in
+                    Color.clear
+                        .onChange(of: geometry.size.width) { newWidth in
+                            sidebarWidth = newWidth
+                        }
+                        .onAppear {
+                            sidebarWidth = geometry.size.width
+                        }
+                }
+            )
+            .navigationSplitViewColumnWidth(min: 80, ideal: 200, max: 250)
+            .navigationTitle("")
+        } detail: {
                 switch selection {
                 case .duplicates:
                     DuplicatesView()
@@ -127,6 +178,7 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 StatusBarView()
             }
+            .contentMargins(.bottom, 30, for: .scrollIndicators)
         .frame(minWidth: 1027, minHeight: 800)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
@@ -157,19 +209,33 @@ struct CalloutOverlayView: View {
     let hoverY: CGFloat
     let totalWidth: CGFloat
     
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
+    
     var calloutText: String {
         switch segment {
         case .processed:
-            return "PROCESSED \(appState.processedFilesCount)/\(appState.scannedFilesCount)"
+            return "\(appState.processedFilesCount.formatted(.number)) / \(appState.scannedFilesCount.formatted(.number)) FILES PROCESSED"
         case .duplicates:
-            return "DUPLICATES \(appState.duplicateFilesCount)"
+            return "\(appState.duplicateFilesCount.formatted(.number)) DUPLICATES FOUND"
         case .errors:
-            return "ERRORS \(appState.errorFilesCount)"
+            return "\(appState.errorFilesCount.formatted(.number)) ERRORS"
         case .remaining:
-            return "SCANNED \(appState.scannedFilesCount)"
+            return "\(appState.scannedFilesCount.formatted(.number)) FILES SCANNED"
         case .statusDot:
             if !appState.isOnline { return "SERVER OFFLINE" }
-            return "REGISTERED PATHS \(appState.registeredDirs.count)\nACTIVE THREADS \(appState.threadCount)/\(appState.maxThreads)"
+            
+            var text = "\(appState.registeredDirs.count.formatted(.number)) REGISTERED PATHS"
+            
+            if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
+                text += "\nFINDING DUPLICATES: \(Int(findingPercent))% COMPLETE OF PROCESSED FILES"
+            }
+            
+            if advancedOverlayEnabled {
+                text += "\n\(appState.threadCount.formatted(.number)) / \(appState.maxThreads.formatted(.number)) ACTIVE THREADS"
+            }
+            
+            return text
         case .none:
             return ""
         }
@@ -183,6 +249,9 @@ struct CalloutOverlayView: View {
         
         let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
         let elbowPoint = CGPoint(x: startPoint.x + (15 * direction), y: startPoint.y - 15)
+        
+        let lineCount = CGFloat(calloutText.components(separatedBy: "\n").count)
+        let textHeight = lineCount * 14.0
         
         let lineLength = max(textWidth + 10, 50)
         let endPoint = CGPoint(x: elbowPoint.x + (lineLength * direction), y: elbowPoint.y)
@@ -198,6 +267,9 @@ struct CalloutOverlayView: View {
             Text(calloutText)
                 .font(.custom("Menlo", size: 10))
                 .foregroundColor(.white)
+                .multilineTextAlignment(.leading)
+                .lineLimit(nil)
+                .fixedSize(horizontal: true, vertical: true)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
                 .background(
@@ -214,7 +286,7 @@ struct CalloutOverlayView: View {
                 )
                 .position(
                     x: elbowPoint.x + ((lineLength / 2) * direction),
-                    y: elbowPoint.y - 14
+                    y: elbowPoint.y - (textHeight / 2) - 5
                 )
         }
         .animation(.easeOut(duration: 0.15), value: hoverX)
@@ -246,42 +318,34 @@ struct StatusBarView: View {
                     let blueColor = Theme.accent
                     let greenColor = Theme.success
                     let redColor = Theme.error
-                    let orangeColor = Theme.warning
                     let emptyColor = Theme.surfaceElevated
                     
                     ZStack(alignment: .leading) {
-                        // Background track
-                        Capsule()
-                            .fill(emptyColor)
-                        
-                        // Processed (Blue)
-                        Capsule()
-                            .fill(blueColor)
-                            .frame(width: max(0, completedWidth - duplicateWidth))
-                        
-                        // Duplicates (Green)
-                        Capsule()
-                            .fill(greenColor)
-                            .frame(width: duplicateWidth)
-                            .offset(x: max(0, completedWidth - duplicateWidth))
+                        // Main Bar
+                        ZStack(alignment: .leading) {
+                            // Background track
+                            Rectangle()
+                                .fill(emptyColor)
                             
-                        // Errors (Red)
-                        Capsule()
-                            .fill(redColor)
-                            .frame(width: errorWidth)
-                            .offset(x: completedWidth)
+                            // Processed (Blue)
+                            Rectangle()
+                                .fill(blueColor)
+                                .frame(width: max(0, completedWidth - duplicateWidth))
                             
-                        // Finding active indicator (Orange)
-                        if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                            let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
-                            let findingWidth = max(0, totalWidth * CGFloat(findingPercent / 100.0))
-                            Capsule()
-                                .fill(orangeColor)
-                                .frame(width: findingWidth, height: 4)
-                                .offset(y: 8) // Underneath
+                            // Duplicates (Green)
+                            Rectangle()
+                                .fill(greenColor)
+                                .frame(width: duplicateWidth)
+                                .offset(x: max(0, completedWidth - duplicateWidth))
+                                
+                            // Errors (Red)
+                            Rectangle()
+                                .fill(redColor)
+                                .frame(width: errorWidth)
+                                .offset(x: completedWidth)
                         }
+                        .clipShape(Capsule())
                     }
-                    .clipShape(Capsule())
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
@@ -300,12 +364,25 @@ struct StatusBarView: View {
                         }
                     }
                 }
-                .frame(height: 12)
+                .frame(height: 8)
                 
-                // Status Dot
-                Circle()
-                    .fill(appState.isOnline ? Theme.success : Theme.error)
-                    .frame(width: 8, height: 8)
+                // Status Dot with Glow and Progress Ring
+                ZStack {
+                    Circle()
+                        .fill(appState.isOnline ? Theme.success : Theme.error)
+                        .brightness(0.3)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: appState.isOnline ? Theme.success : Theme.error, radius: 6)
+                    
+                    if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                        let findingPercent = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
+                        Circle()
+                            .trim(from: 0, to: CGFloat(findingPercent))
+                            .stroke(Theme.warning, lineWidth: 2)
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 14, height: 14)
+                    }
+                }
                     .onContinuousHover { phase in
                         switch phase {
                         case .active:
@@ -316,7 +393,7 @@ struct StatusBarView: View {
                     }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.vertical, 8)
             .overlay {
                 GeometryReader { geo in
                     if hoveredSegment != .none {
@@ -333,7 +410,7 @@ struct StatusBarView: View {
             }
         }
         .background(
-            Theme.background.opacity(0.8)
+            Theme.background.opacity(0.3)
                 .background(.ultraThinMaterial)
         )
     }

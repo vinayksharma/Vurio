@@ -53,23 +53,13 @@ struct DuplicatesView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Duplicate Groups")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Text("Review similar media files grouped by similarity and take action directly from the list.")
-                    .foregroundColor(Theme.textSecondary)
-                    .font(.subheadline)
-            }
-            .padding([.top, .horizontal], 30)
-            .padding(.bottom, 20)
-            
+
             // Top Control Bar
             VStack(spacing: 0) {
                 HStack {
                     Text("Live Duplicate Feed")
                         .font(.headline)
+                        .textCase(.uppercase)
                     Spacer()
                     Text("\(totalGroups) groups")
                         .foregroundColor(Theme.textSecondary)
@@ -666,6 +656,7 @@ struct DuplicateGroupCard: View {
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
     
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     @State private var isRepEjectHovered = false
     
     var representative: Vurio_Dedup_DuplicateFile? {
@@ -686,11 +677,14 @@ struct DuplicateGroupCard: View {
                 Text("Duplicate Group • \(group.files.count) files")
                     .font(.headline)
                     .fontWeight(.bold)
+                    .textCase(.uppercase)
                     .foregroundColor(Theme.textPrimary)
-                Text("ID: \(group.groupID)")
-                    .font(.subheadline)
-                    .foregroundColor(Theme.textSecondary)
-                    .fontDesign(.monospaced)
+                
+                if advancedOverlayEnabled {
+                    Text("ID: \(group.groupID)")
+                        .font(.custom("Menlo", size: 11))
+                        .foregroundColor(Theme.success)
+                }
             }
             
             HStack(alignment: .top, spacing: 20) {
