@@ -4,6 +4,21 @@ class GroupIndexCache {
     var map: [String: Int] = [:]
 }
 
+func logDebug(_ msg: String) {
+    let url = URL(fileURLWithPath: "/tmp/vurio_debug.log")
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(timestamp)] \(msg)\n"
+    if let data = line.data(using: .utf8) {
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            handle.closeFile()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}
+
 struct GroupSlot: Identifiable {
     let id = UUID()
     var group: Vurio_Dedup_DuplicateGroup?
@@ -20,8 +35,7 @@ struct DuplicatesView: View {
     @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
     @State private var selectedFileIndex: Int = 0
     @State private var showingPopup = false
-    @State private var scrolledID: UUID?
-    
+    @State private var scrollOffset: CGFloat = 0
     @State private var showingBulkEjectConfirmation = false
     @State private var totalEjectingCount: Int = 0
     @State private var ejectingRemainingCount: Int = 0
@@ -200,62 +214,92 @@ struct DuplicatesView: View {
                     .padding(.top, 20)
             }
             
-            if groups.isEmpty && !isLoading {
+            if !appState.isOnline {
                 VStack {
                     Spacer()
-                    Text("No duplicates found.")
+                    Text("No groups available.")
+                        .foregroundColor(Theme.textSecondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if groups.isEmpty && !isLoading {
+                VStack {
+                    Spacer()
+                    Text("No groups available.")
                         .foregroundColor(Theme.textSecondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(groups) { slot in
-                            if let group = slot.group {
-                                DuplicateGroupCard(
-                                    group: group,
-                                    duplicateTightness: duplicateTightness,
-                                    isEjecting: isProcessing,
-                                    onThumbnailTapped: { fileIndex in
-                                        selectedGroup = group
-                                        selectedFileIndex = fileIndex
-                                        showingPopup = true
-                                    },
-                                    onEjectSet: { paths in
-                                        Task {
-                                            await ejectGroupFiles(paths, for: group.groupID)
-                                        }
-                                    },
-                                    onRestoreSet: { paths in
-                                        Task {
-                                            await restoreGroupFiles(paths, for: group.groupID)
-                                        }
+                GeometryReader { scrollGeo in
+                    ScrollView {
+                        ZStack(alignment: .topLeading) {
+                            Color.clear
+                                .frame(height: CGFloat(totalGroups) * 180.0)
+                            
+                            let viewportHeight = scrollGeo.size.height
+                            let rowHeight: CGFloat = 180.0
+                            let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
+                            let visibleCount = Int(ceil(viewportHeight / rowHeight)) + 4
+                            let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
+                            
+                            if totalGroups > 0 && startIndex <= endIndex {
+                                ForEach(startIndex...endIndex, id: \.self) { index in
+                                    if index < groups.count {
+                                        GroupRowWrapper(
+                                            slot: groups[index],
+                                            duplicateTightness: duplicateTightness,
+                                            isProcessing: isProcessing,
+                                            pageSize: pageSize,
+                                            onThumbnailTapped: { fileIndex in
+                                                selectedGroup = groups[index].group
+                                                selectedFileIndex = fileIndex
+                                                showingPopup = true
+                                            },
+                                            onEjectSet: { paths in
+                                                if let group = groups[index].group {
+                                                    Task { await ejectGroupFiles(paths, for: group.groupID) }
+                                                }
+                                            },
+                                            onRestoreSet: { paths in
+                                                if let group = groups[index].group {
+                                                    Task { await restoreGroupFiles(paths, for: group.groupID) }
+                                                }
+                                            },
+                                            loadPage: { pageIndex in
+                                                Task { await loadPage(pageIndex: pageIndex) }
+                                            }
+                                        )
+                                        .frame(height: rowHeight)
+                                        .offset(y: CGFloat(index) * rowHeight)
                                     }
-                                )
-                                .padding(.horizontal, 30)
-                                .frame(height: 180)
-                            } else {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity, minHeight: 150)
-                                    .background(Theme.surface.opacity(0.5))
-                                    .cornerRadius(12)
-                                    .padding(.bottom, 12)
-                                    .padding(.horizontal, 30)
-                                    .frame(height: 180)
-                                    .onAppear {
-                                        let pageIndex = Int32(slot.placeholderIndex) / pageSize
-                                        Task {
-                                            await loadPage(pageIndex: pageIndex)
-                                        }
-                                    }
+                                }
                             }
                         }
+                        .background(
+                            ScrollOffsetTracker { newOffset in
+                                // In macOS, depending on flippedness, offset might be different, but typically bounds.origin.y is the scroll offset.
+                                scrollOffset = newOffset
+                                
+                                let rowHeight: CGFloat = 180.0
+                                let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
+                                let visibleCount = Int(ceil(scrollGeo.size.height / rowHeight)) + 4
+                                let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
+                                
+                                if totalGroups > 0 && startIndex <= endIndex {
+                                    let startPage = Int32(startIndex) / pageSize
+                                    let endPage = Int32(endIndex) / pageSize
+                                    
+                                    logDebug("Scroll: offset=\(scrollOffset) bounds=[\(startIndex)..\(endIndex)] pages=[\(startPage)..\(endPage)]")
+                                    
+                                    for p in startPage...endPage {
+                                        Task { await loadPage(pageIndex: p) }
+                                    }
+                                }
+                            }
+                        )
                     }
-                    .scrollTargetLayout()
-                    .padding(.top, 20)
                 }
-                .scrollPosition(id: $scrolledID, anchor: .top)
                 .scrollContentBackground(.hidden)
             }
         }
@@ -588,38 +632,69 @@ struct DuplicatesView: View {
         }
     }
     
+    @MainActor
     private func loadPage(pageIndex: Int32) async {
-        guard !loadingPages.contains(pageIndex) else { return }
+        logDebug("loadPage(\(pageIndex)) called. loadingPages=\(loadingPages)")
+        guard !loadingPages.contains(pageIndex) else {
+            logDebug("loadPage(\(pageIndex)) aborted (already loading)")
+            return
+        }
         loadingPages.insert(pageIndex)
         
         do {
-            guard let client = VurioGrpcClient.shared.duplicates else { return }
+            guard let client = VurioGrpcClient.shared.duplicates else {
+                logDebug("loadPage(\(pageIndex)) failed: grpc client nil")
+                loadingPages.remove(pageIndex)
+                return
+            }
+            
             let request = Vurio_Dedup_GetGroupsRequest.with {
                 $0.limit = pageSize
                 $0.offset = pageIndex * pageSize
             }
             
+            logDebug("loadPage(\(pageIndex)) fetching offset=\(request.offset) limit=\(request.limit)")
+            // Allow the async call to suspend and yield the main thread
             let response = try await client.getDuplicateGroups(request)
+            logDebug("loadPage(\(pageIndex)) fetched \(response.groups.count) groups. Task cancelled? \(Task.isCancelled)")
             
             if !Task.isCancelled {
-                await MainActor.run {
-                    var localGroups = groups
-                    for (i, group) in response.groups.enumerated() {
-                        let globalIndex = Int(pageIndex * pageSize) + i
-                        if globalIndex < localGroups.count {
-                            localGroups[globalIndex].group = group
-                            indexCache.map[group.groupID] = globalIndex
-                        }
+                var localGroups = groups
+                for (i, group) in response.groups.enumerated() {
+                    let globalIndex = Int(pageIndex * pageSize) + i
+                    if globalIndex < localGroups.count {
+                        localGroups[globalIndex].group = group
+                        indexCache.map[group.groupID] = globalIndex
                     }
-                    groups = localGroups
-                    loadingPages.remove(pageIndex)
                 }
+                
+                // Unload groups that have moved far out of view to free memory
+                let rowHeight: CGFloat = 180.0
+                let visibleStart = max(0, Int(scrollOffset / rowHeight))
+                let safeBuffer = Int(pageSize * 2) // keep roughly 2 pages buffer
+                let estimatedViewportRows = 20
+                
+                let upperLimit = max(0, visibleStart - safeBuffer)
+                for i in 0..<upperLimit {
+                    localGroups[i].group = nil
+                }
+                
+                let lowerLimit = min(localGroups.count, visibleStart + estimatedViewportRows + safeBuffer)
+                if lowerLimit < localGroups.count {
+                    for i in lowerLimit..<localGroups.count {
+                        localGroups[i].group = nil
+                    }
+                }
+                
+                groups = localGroups
+                logDebug("loadPage(\(pageIndex)) success. Unloaded < \(upperLimit) and > \(lowerLimit).")
             }
+            loadingPages.remove(pageIndex)
+            
         } catch {
-            await MainActor.run {
-                self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
-                loadingPages.remove(pageIndex)
-            }
+            logDebug("loadPage(\(pageIndex)) error: \(error.localizedDescription)")
+            self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
+            loadingPages.remove(pageIndex)
         }
     }
     
@@ -747,60 +822,58 @@ struct DuplicateGroupCard: View {
                         .padding(.top, 15)
                 }
                 
-                VerticalScrollingFixView {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(candidates, id: \.filePath) { file in
-                                DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
-                                    onRestoreSet([file.filePath])
-                                }, onEject: {
-                                    onEjectSet([file.filePath])
-                                })
-                                    .onTapGesture {
-                                        if !isEjecting {
-                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                                onThumbnailTapped(idx)
-                                            }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(candidates, id: \.filePath) { file in
+                            DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
+                                onRestoreSet([file.filePath])
+                            }, onEject: {
+                                onEjectSet([file.filePath])
+                            })
+                                .onTapGesture {
+                                    if !isEjecting {
+                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                            onThumbnailTapped(idx)
                                         }
                                     }
-                            }
+                                }
                         }
-                        .padding(.top, 15)
-                        .padding(.bottom, 22)
-                        .padding(.leading, 4)
-                        .padding(.trailing, 12)
-                        .overlay(alignment: .bottomLeading) {
-                            let indices = candidates.enumerated().compactMap { index, file in
-                                let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-                                return (1.0 - score) <= duplicateTightness ? index : nil
-                            }
+                    }
+                    .padding(.top, 15)
+                    .padding(.bottom, 22)
+                    .padding(.leading, 4)
+                    .padding(.trailing, 12)
+                    .overlay(alignment: .bottomLeading) {
+                        let indices = candidates.enumerated().compactMap { index, file in
+                            let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                            return (1.0 - score) <= duplicateTightness ? index : nil
+                        }
+                        
+                        if let first = indices.first, let last = indices.last {
+                            let count = last - first + 1
+                            let leftOffset = CGFloat(first) * (70 + 12)
+                            let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
                             
-                            if let first = indices.first, let last = indices.last {
-                                let count = last - first + 1
-                                let leftOffset = CGFloat(first) * (70 + 12)
-                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
-                                
-                                let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
-                                let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
-                                let isRestoreMode = toEject.isEmpty
-                                
-                                BracketView(
-                                    width: width,
-                                    isRestoreMode: isRestoreMode,
-                                    isEjecting: isEjecting,
-                                    action: {
-                                        if isRestoreMode {
-                                            onRestoreSet(toRestore)
-                                        } else if !toEject.isEmpty {
-                                            onEjectSet(toEject)
-                                        }
+                            let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
+                            let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
+                            let isRestoreMode = toEject.isEmpty
+                            
+                            BracketView(
+                                width: width,
+                                isRestoreMode: isRestoreMode,
+                                isEjecting: isEjecting,
+                                action: {
+                                    if isRestoreMode {
+                                        onRestoreSet(toRestore)
+                                    } else if !toEject.isEmpty {
+                                        onEjectSet(toEject)
                                     }
-                                )
-                                .padding(.leading, leftOffset)
-                                .padding(.bottom, 2)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
-                            }
+                                }
+                            )
+                            .padding(.leading, leftOffset)
+                            .padding(.bottom, 2)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
                         }
                     }
                 }
@@ -1025,5 +1098,100 @@ struct CustomRestoreShape: Shape {
         path.addQuadCurve(to: CGPoint(x: 20 * scale, y: 18 * scale), control: CGPoint(x: 20 * scale, y: 20 * scale))
         path.addLine(to: CGPoint(x: 20 * scale, y: 14 * scale))
         return path
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+#if os(macOS)
+import AppKit
+
+struct ScrollOffsetTracker: NSViewRepresentable {
+    var onOffsetChange: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = TrackingView(onOffsetChange: onOffsetChange)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+class TrackingView: NSView {
+    var onOffsetChange: (CGFloat) -> Void
+    private var observer: Any?
+    
+    init(onOffsetChange: @escaping (CGFloat) -> Void) {
+        self.onOffsetChange = onOffsetChange
+        super.init(frame: .zero)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let scrollView = enclosingScrollView {
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            observer = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self, weak scrollView] _ in
+                guard let scrollView = scrollView else { return }
+                // In macOS, flipped views have y going down. The origin.y of contentView's bounds is the scroll offset.
+                self?.onOffsetChange(scrollView.contentView.bounds.origin.y)
+            }
+        }
+    }
+    
+    deinit {
+        if let observer = observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+}
+#endif
+
+struct GroupRowWrapper: View {
+    let slot: GroupSlot
+    let duplicateTightness: Double
+    let isProcessing: Bool
+    let pageSize: Int32
+    let onThumbnailTapped: (Int) -> Void
+    let onEjectSet: ([String]) -> Void
+    let onRestoreSet: ([String]) -> Void
+    let loadPage: (Int32) -> Void
+    
+    var body: some View {
+        Group {
+            if let group = slot.group {
+                DuplicateGroupCard(
+                    group: group,
+                    duplicateTightness: duplicateTightness,
+                    isEjecting: isProcessing,
+                    onThumbnailTapped: onThumbnailTapped,
+                    onEjectSet: onEjectSet,
+                    onRestoreSet: onRestoreSet
+                )
+                .padding(.horizontal, 10)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 150)
+                    .background(Theme.surface.opacity(0.5))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 10)
+                    .onAppear {
+                        let pageIndex = Int32(slot.placeholderIndex) / pageSize
+                        loadPage(pageIndex)
+                    }
+            }
+        }
     }
 }

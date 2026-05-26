@@ -21,6 +21,10 @@ namespace MediaDedup::Orchestration
         logger.information("Starting SchedulerService...");
 
         running_.store(true, std::memory_order_relaxed);
+        paused_.store(false, std::memory_order_relaxed);
+        if (tpm_) {
+            tpm_->resume();
+        }
 
         logger.information("SchedulerService started successfully");
     }
@@ -113,8 +117,10 @@ namespace MediaDedup::Orchestration
             std::lock_guard<std::mutex> lock(jobsMutex_);
             Job &ref = *jobs_[jobId];
             logger.debug("Starting worker thread for job: %s", jobId);
-            ref.worker = std::thread([this, &ref]
+            Job* jobPtr = &ref;
+            ref.worker = std::thread([this, jobPtr]
                                      {
+                                         Job &ref = *jobPtr;
                                          std::mt19937 rng{std::random_device{}()};
                                          while (running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
                                          {
@@ -395,47 +401,55 @@ namespace MediaDedup::Orchestration
         std::string jobId = job.jobId;
         auto callback = job.callback;
 
-        tpm_->submit(job.typeKey, [this, jobId, callback, triggerType]()
-                     {
-            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-            try {
-                logger.debug("Executing job: %s (%s)", jobId, triggerType);
-                callback();
-                
-                // Update job state after successful execution
-                {
-                    std::lock_guard<std::mutex> lock(jobsMutex_);
-                    auto it = jobs_.find(jobId);
-                    if (it != jobs_.end()) {
-                        Job& job = *it->second;
-                        job.state.store(JobState::IDLE);
-                        job.consecutiveFailures.store(0);
-                        job.lastRun = std::chrono::steady_clock::now();
-                        logger.debug("Job %s completed successfully", jobId);
+        try
+        {
+            tpm_->submit(job.typeKey, [this, jobId, callback, triggerType]()
+                         {
+                Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+                try {
+                    logger.debug("Executing job: %s (%s)", jobId, triggerType);
+                    callback();
+                    
+                    // Update job state after successful execution
+                    {
+                        std::lock_guard<std::mutex> lock(jobsMutex_);
+                        auto it = jobs_.find(jobId);
+                        if (it != jobs_.end()) {
+                            Job& job = *it->second;
+                            job.state.store(JobState::IDLE);
+                            job.consecutiveFailures.store(0);
+                            job.lastRun = std::chrono::steady_clock::now();
+                            logger.debug("Job %s completed successfully", jobId);
+                        }
                     }
-                }
-                
-            } catch (const std::exception& e) {
-                // Update job state after failure
-                {
-                    std::lock_guard<std::mutex> lock(jobsMutex_);
-                    auto it = jobs_.find(jobId);
-                    if (it != jobs_.end()) {
-                        Job& job = *it->second;
-                        handleJobFailure(job, e.what());
+                    
+                } catch (const std::exception& e) {
+                    // Update job state after failure
+                    {
+                        std::lock_guard<std::mutex> lock(jobsMutex_);
+                        auto it = jobs_.find(jobId);
+                        if (it != jobs_.end()) {
+                            Job& job = *it->second;
+                            handleJobFailure(job, e.what());
+                        }
                     }
-                }
-            } catch (...) {
-                // Update job state after unknown exception
-                {
-                    std::lock_guard<std::mutex> lock(jobsMutex_);
-                    auto it = jobs_.find(jobId);
-                    if (it != jobs_.end()) {
-                        Job& job = *it->second;
-                        handleJobFailure(job, "Unknown exception");
+                } catch (...) {
+                    // Update job state after unknown exception
+                    {
+                        std::lock_guard<std::mutex> lock(jobsMutex_);
+                        auto it = jobs_.find(jobId);
+                        if (it != jobs_.end()) {
+                            Job& job = *it->second;
+                            handleJobFailure(job, "Unknown exception");
+                        }
                     }
-                }
-            } });
+                } });
+        }
+        catch (...)
+        {
+            job.state.store(JobState::IDLE);
+            throw;
+        }
     }
 
     void SchedulerService::handleJobFailure(Job &job, const std::string &error)
