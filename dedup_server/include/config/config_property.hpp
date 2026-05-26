@@ -46,6 +46,50 @@ namespace MediaDedup
             }
             catch (const std::bad_any_cast &)
             {
+                // Try type coercion for common numeric types
+                if constexpr (std::is_same_v<T, double>)
+                {
+                    if (value_.type() == typeid(int))
+                        return static_cast<double>(std::any_cast<int>(value_));
+                    if (value_.type() == typeid(float))
+                        return static_cast<double>(std::any_cast<float>(value_));
+                    if (value_.type() == typeid(long))
+                        return static_cast<double>(std::any_cast<long>(value_));
+                    if (value_.type() == typeid(long long))
+                        return static_cast<double>(std::any_cast<long long>(value_));
+                }
+                else if constexpr (std::is_same_v<T, int>)
+                {
+                    if (value_.type() == typeid(double))
+                        return static_cast<int>(std::any_cast<double>(value_));
+                    if (value_.type() == typeid(float))
+                        return static_cast<int>(std::any_cast<float>(value_));
+                    if (value_.type() == typeid(long))
+                        return static_cast<int>(std::any_cast<long>(value_));
+                    if (value_.type() == typeid(long long))
+                        return static_cast<int>(std::any_cast<long long>(value_));
+                }
+                else if constexpr (std::is_same_v<T, float>)
+                {
+                    if (value_.type() == typeid(double))
+                        return static_cast<float>(std::any_cast<double>(value_));
+                    if (value_.type() == typeid(int))
+                        return static_cast<float>(std::any_cast<int>(value_));
+                }
+                else if constexpr (std::is_same_v<T, long>)
+                {
+                    if (value_.type() == typeid(int))
+                        return static_cast<long>(std::any_cast<int>(value_));
+                    if (value_.type() == typeid(double))
+                        return static_cast<long>(std::any_cast<double>(value_));
+                }
+                else if constexpr (std::is_same_v<T, long long>)
+                {
+                    if (value_.type() == typeid(int))
+                        return static_cast<long long>(std::any_cast<int>(value_));
+                    if (value_.type() == typeid(double))
+                        return static_cast<long long>(std::any_cast<double>(value_));
+                }
                 return T{};
             }
         }

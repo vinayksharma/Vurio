@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AnimatedLogoView: View {
     var isCompact: Bool = false
-    @State private var phase: CGFloat = 0.0
+    let animationDuration: TimeInterval = 240.0
 
     private var textGradient: LinearGradient {
         LinearGradient(
@@ -36,7 +36,7 @@ struct AnimatedLogoView: View {
     }
 
     @ViewBuilder
-    private func variant(for text: String) -> some View {
+    private func variant(for text: String, phase: CGFloat) -> some View {
         let textMask = Text(text)
             .font(.system(size: 38, weight: .black))
             .tracking(0.5)
@@ -71,16 +71,18 @@ struct AnimatedLogoView: View {
                 }
                 .mask(textMask)
             )
+            // Flatten this highly complex masked view into a single Metal texture, bypassing CPU work during animation
+            .drawingGroup() 
     }
 
     var body: some View {
-        variant(for: isCompact ? "V" : "VURIO")
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeInOut(duration: 240.0).repeatForever(autoreverses: true)) {
-                    phase = -3.0
-                }
-            }
+        TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
+            let elapsed = context.date.timeIntervalSinceReferenceDate
+            let cycle = elapsed.truncatingRemainder(dividingBy: animationDuration * 2)
+            let fraction = cycle < animationDuration ? cycle / animationDuration : 2.0 - (cycle / animationDuration)
+            let phase = -3.0 * fraction
+            
+            variant(for: isCompact ? "V" : "VURIO", phase: CGFloat(phase))
         }
     }
 }

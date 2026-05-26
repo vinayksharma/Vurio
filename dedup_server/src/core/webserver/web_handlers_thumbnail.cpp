@@ -285,48 +285,8 @@ namespace MediaDedup
             // Get configuration
             int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
 
-            // If the source file needs QHD preview caching (e.g. it's a RAW file or large JPEG), we should 
-            // proactively generate the QHD preview cache right now so the user doesn't have 
-            // to wait for it again when they click on the preview!
+            // Generate thumbnail directly from the source path
             std::string source_for_generation = source_path;
-            
-            if (TranscodingPipeline::NeedsQhdPreviewCache(source_path, config_manager_))
-            {
-                // Check if preview already exists to avoid regenerating
-                auto existing_preview = PreviewCacheOps::getPreview(*database_manager_, source_path);
-                if (!existing_preview || existing_preview->source_modified_at < source_mtime || !std::filesystem::exists(existing_preview->cached_path))
-                {
-                    logger.information("Thumbnail generation triggered on RAW or large file. Proactively generating QHD preview cache to speed up future UI loads: %s", source_path);
-                    TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_manager_);
-                    if (transcode_config.enabled)
-                    {
-                        std::string temp_dir = std::filesystem::temp_directory_path().string();
-                        std::string temp_path;
-                        
-                        if (TranscodingPipeline::TranscodeToFile(source_path, temp_path, transcode_config, temp_dir))
-                        {
-                            std::string final_path;
-                            if (transcoding_cache_ && transcoding_cache_->moveToCache(temp_path, final_path)) {
-                                // Upsert the new preview record so PreviewHandler can find it instantly
-                                PreviewCacheRecord new_record;
-                                new_record.source_path = source_path;
-                                new_record.cached_path = final_path;
-                                PreviewCacheOps::upsertPreview(*database_manager_, new_record);
-                                
-                                // Use the generated QHD cache as the source for the thumbnail to save time!
-                                source_for_generation = final_path;
-                            } else {
-                                std::filesystem::remove(temp_path);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Preview cache already exists, use it to generate the thumbnail faster
-                    source_for_generation = existing_preview->cached_path;
-                }
-            }
 
             // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
             Magick::Blob blob;

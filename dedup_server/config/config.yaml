@@ -23,7 +23,7 @@ duplicates.metadata.dimensionTolerance: 0.10000000000000001
 media.audio.flac: true
 media.images.raw.raf: true
 database.path: data/dedup_server.db
-logging.enable_file: false
+logging.enable_file: true
 server.host: localhost
 scheduler.backoff.initialMs: 1000
 media.images.raw.nef: true
@@ -54,7 +54,7 @@ files.manager.scan.intervalMs: 900000
 media.images.jpeg: true
 media.audio.aac: true
 files.manager.useInMemoryIndex: false
-logging.level: .inf
+logging.level: .trace
 files.service.immediateJobTrigger.timeoutMs: 30000
 media.filter.low_res.min_width: 600
 duplicates.finder.maxGroupSize: 100
@@ -119,7 +119,7 @@ media.video.wmv: true
 thumbnail.pipeline.enabled: true
 logging.enable_console: true
 media.images.raw.orf: true
-tpm.types.thumbnail_generator.share: 1
+tpm.types.thumbnail_generator.share: 0.35
 media.images.pgm: true
 media.filter.low_res.min_height: 600
 media.images.gif: true
