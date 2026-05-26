@@ -937,18 +937,20 @@ namespace MediaDedupServer
             }
         }
 
-        void DatabaseIntegrityCheckHandler::handleStart(Poco::Net::HTTPServerResponse &response)
+        bool DatabaseIntegrityCheckHandler::startIntegrityCheck(
+            std::shared_ptr<MediaDedup::DatabaseManager> db,
+            std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+            std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+            std::shared_ptr<MediaDedup::ThreadPoolManager> tpm,
+            std::string& out_error)
         {
             Poco::Logger &logger = Poco::Logger::get("DatabaseIntegrityCheckHandler");
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 if (state_.is_running) {
-                    response.setStatus(Poco::Net::HTTPResponse::HTTP_CONFLICT);
-                    response.setContentType("application/json");
-                    std::string err = R"({"success":false,"error":"An integrity check is already running"})";
-                    response.sendBuffer(err.data(), err.length());
-                    return;
+                    out_error = "An integrity check is already running";
+                    return false;
                 }
                 
                 // Reset state
@@ -967,8 +969,41 @@ namespace MediaDedupServer
             logger.information("Starting background database integrity check.");
 
             // Launch detached thread
-            std::thread t(performIntegrityCheck, database_manager_, config_manager_, scheduler_service_, tpm_);
+            std::thread t(performIntegrityCheck, db, cfg, scheduler, tpm);
             t.detach();
+
+            return true;
+        }
+
+        IntegrityCheckStatusSnapshot DatabaseIntegrityCheckHandler::getIntegrityCheckStatus()
+        {
+            IntegrityCheckStatusSnapshot current_state;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                current_state.is_running = (bool)state_.is_running;
+                current_state.progress = (int)state_.progress;
+                current_state.total_files = (int)state_.total_files;
+                current_state.processed_files = (int)state_.processed_files;
+                current_state.files_removed = (int)state_.files_removed;
+                current_state.groups_removed = (int)state_.groups_removed;
+                current_state.thumbnails_removed = (int)state_.thumbnails_removed;
+                current_state.artifacts_removed = (int)state_.artifacts_removed;
+                current_state.errors_removed = (int)state_.errors_removed;
+                current_state.current_phase = state_.current_phase;
+            }
+            return current_state;
+        }
+
+        void DatabaseIntegrityCheckHandler::handleStart(Poco::Net::HTTPServerResponse &response)
+        {
+            std::string error;
+            if (!startIntegrityCheck(database_manager_, config_manager_, scheduler_service_, tpm_, error)) {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_CONFLICT);
+                response.setContentType("application/json");
+                std::string err = R"({"success":false,"error":")" + error + R"("})";
+                response.sendBuffer(err.data(), err.length());
+                return;
+            }
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             response.setContentType("application/json");
@@ -978,20 +1013,18 @@ namespace MediaDedupServer
 
         void DatabaseIntegrityCheckHandler::handleStatus(Poco::Net::HTTPServerResponse &response)
         {
+            IntegrityCheckStatusSnapshot current_state = getIntegrityCheckStatus();
             Poco::JSON::Object result_obj;
-            {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                result_obj.set("running", (bool)state_.is_running);
-                result_obj.set("progress", (int)state_.progress);
-                result_obj.set("total_files", (int)state_.total_files);
-                result_obj.set("processed_files", (int)state_.processed_files);
-                result_obj.set("files_removed", (int)state_.files_removed);
-                result_obj.set("groups_removed", (int)state_.groups_removed);
-                result_obj.set("thumbnails_removed", (int)state_.thumbnails_removed);
-                result_obj.set("artifacts_removed", (int)state_.artifacts_removed);
-                result_obj.set("errors_removed", (int)state_.errors_removed);
-                result_obj.set("current_phase", state_.current_phase);
-            }
+            result_obj.set("running", (bool)current_state.is_running);
+            result_obj.set("progress", (int)current_state.progress);
+            result_obj.set("total_files", (int)current_state.total_files);
+            result_obj.set("processed_files", (int)current_state.processed_files);
+            result_obj.set("files_removed", (int)current_state.files_removed);
+            result_obj.set("groups_removed", (int)current_state.groups_removed);
+            result_obj.set("thumbnails_removed", (int)current_state.thumbnails_removed);
+            result_obj.set("artifacts_removed", (int)current_state.artifacts_removed);
+            result_obj.set("errors_removed", (int)current_state.errors_removed);
+            result_obj.set("current_phase", current_state.current_phase);
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             response.setContentType("application/json");

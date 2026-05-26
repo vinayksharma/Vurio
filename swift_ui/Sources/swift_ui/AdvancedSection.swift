@@ -34,6 +34,19 @@ struct AdvancedSection: View {
                         .padding(.bottom, 10)
                     
                     ActionRow(
+                        title: "Database Integrity Check",
+                        description: "Scrub the database for physical files that have been deleted, clean up orphaned metadata and invalid duplicate groups. This runs safely in the background.",
+                        buttons: [
+                            ActionButton(title: "Run Integrity Check",
+                                         confirmTitle: "Run Integrity Check?",
+                                         confirmMessage: "Are you sure you want to run the database integrity check? This will safely scrub the database for missing files in the background.",
+                                         systemImage: "externaldrive.badge.checkmark",
+                                         action: { Task { await viewModel.startDatabaseIntegrityCheck() } })
+                        ],
+                        isRunning: viewModel.isAnyActionRunning
+                    )
+                    
+                    ActionRow(
                         title: "Manage Error Files",
                         description: "Clear the list of files that failed processing to retry them, or manage previously errored files.",
                         buttons: [
