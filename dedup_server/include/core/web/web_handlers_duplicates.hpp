@@ -166,6 +166,19 @@ namespace MediaDedupServer
             std::string current_phase;
         };
 
+        struct IntegrityCheckStatusSnapshot {
+            bool is_running;
+            int progress;
+            int total_files;
+            int processed_files;
+            int files_removed;
+            int groups_removed;
+            int thumbnails_removed;
+            int artifacts_removed;
+            int errors_removed;
+            std::string current_phase;
+        };
+
         class DatabaseIntegrityCheckHandler : public Poco::Net::HTTPRequestHandler
         {
         public:
@@ -177,6 +190,22 @@ namespace MediaDedupServer
 
             void handleRequest(Poco::Net::HTTPServerRequest &request,
                                Poco::Net::HTTPServerResponse &response) override;
+
+            static bool startIntegrityCheck(
+                std::shared_ptr<MediaDedup::DatabaseManager> db,
+                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm,
+                std::string& out_error);
+
+            static IntegrityCheckStatusSnapshot getIntegrityCheckStatus();
+
+            // The actual background task
+            static void performIntegrityCheck(
+                std::shared_ptr<MediaDedup::DatabaseManager> db,
+                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
+                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
 
         private:
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
@@ -190,13 +219,6 @@ namespace MediaDedupServer
 
             void handleStart(Poco::Net::HTTPServerResponse &response);
             void handleStatus(Poco::Net::HTTPServerResponse &response);
-            
-            // The actual background task
-            static void performIntegrityCheck(
-                std::shared_ptr<MediaDedup::DatabaseManager> db,
-                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
-                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
-                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
         };
 
         class BackupDatabaseHandler : public Poco::Net::HTTPRequestHandler

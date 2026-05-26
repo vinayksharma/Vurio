@@ -18,7 +18,7 @@ struct MatchScoreSliderSection: View {
                     showPopover.toggle()
                 }) {
                     Image(systemName: "info.circle")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .buttonStyle(PlainButtonStyle())
                 .popover(isPresented: $showPopover, arrowEdge: .trailing) {
@@ -110,14 +110,14 @@ struct VurioSlider: View {
             ZStack(alignment: .topLeading) {
                 // Background Track
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(NSColor.separatorColor))
+                    .fill(Theme.border)
                     .frame(width: width, height: 6)
                     .offset(y: centerY - 3)
                 
                 // Similar Images Range Track (Muted Green)
                 if showSimilarThumb {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.green.opacity(0.5))
+                        .fill(Theme.success.opacity(0.5))
                         .frame(width: max(0, xPosition(for: similarValue, in: width)), height: 6)
                         .offset(y: centerY - 3)
                 }
@@ -125,7 +125,7 @@ struct VurioSlider: View {
                 // Duplicates Range Track (Red)
                 if showDuplicateThumb {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.red)
+                        .fill(Theme.error)
                         .frame(width: max(0, xPosition(for: duplicateValue, in: width)), height: 6)
                         .offset(y: centerY - 3)
                 }
@@ -139,7 +139,7 @@ struct VurioSlider: View {
                             TriangleDown()
                                 .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                         )
-                        .shadow(color: isHoveringSimilar ? .green : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
+                        .shadow(color: isHoveringSimilar ? Theme.success : .black.opacity(0.3), radius: isHoveringSimilar ? 5 : 2, x: 0, y: isHoveringSimilar ? 0 : 2)
                         .frame(width: thumbSize, height: thumbSize)
                         .padding(8)
                         .contentShape(Circle())
@@ -171,7 +171,7 @@ struct VurioSlider: View {
                             TriangleUp()
                                 .stroke(LinearGradient(gradient: Gradient(colors: [.white.opacity(0.9), .white.opacity(0.2)]), startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                         )
-                        .shadow(color: isHoveringDuplicate ? .red : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
+                        .shadow(color: isHoveringDuplicate ? Theme.error : .black.opacity(0.3), radius: isHoveringDuplicate ? 5 : 2, x: 0, y: isHoveringDuplicate ? 0 : 2)
                         .frame(width: thumbSize, height: thumbSize)
                         .padding(8)
                         .contentShape(Circle())
@@ -195,7 +195,7 @@ struct VurioSlider: View {
                 }
                 
                 if advancedOverlayEnabled, let format = formatValue {
-                    let mutedGreen = Color(red: 150/255.0, green: 220/255.0, blue: 150/255.0)
+                    let mutedGreen = Theme.success
                     
                     if showSimilarThumb {
                         let simX = xPosition(for: similarValue, in: width)

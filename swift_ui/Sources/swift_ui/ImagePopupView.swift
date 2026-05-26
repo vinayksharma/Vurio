@@ -25,11 +25,11 @@ struct ImagePopupView: View {
                 .keyboardShortcut(.escape, modifiers: [])
             }
             .padding()
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(Theme.background)
             
             GeometryReader { geometry in
                 ZStack {
-                    Color.black.ignoresSafeArea()
+                    Theme.background.ignoresSafeArea()
                     
                     if group.files.indices.contains(selectedIndex) {
                         if let image = currentImage {
@@ -53,9 +53,9 @@ struct ImagePopupView: View {
                             VStack {
                                 Image(systemName: "photo.badge.exclamationmark")
                                     .font(.system(size: 64))
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(Theme.textSecondary)
                                 Text("Failed to load image")
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(Theme.textSecondary)
                             }
                         }
                     }
@@ -111,7 +111,7 @@ struct ImagePopupView: View {
                                 Task { await handleRestore() }
                             }) {
                                 Image(systemName: "arrow.uturn.backward.circle")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.success)
                             }
                             .disabled(isEjecting)
                             .help("Restore Image (Delete/Backspace)")
@@ -120,7 +120,7 @@ struct ImagePopupView: View {
                                 Task { await handleEject() }
                             }) {
                                 Image(systemName: "trash")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(Theme.error)
                             }
                             .disabled(isEjecting)
                             .help("Eject Image (Delete/Backspace)")
@@ -129,7 +129,7 @@ struct ImagePopupView: View {
                 }
             }
             .padding()
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(Theme.background)
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(
@@ -167,7 +167,7 @@ struct ImagePopupView: View {
                 await loadImage()
             }
         }
-        .onChange(of: selectedIndex) { _ in
+        .onChange(of: selectedIndex) { _, _ in
             Task {
                 await loadImage()
             }

@@ -53,31 +53,21 @@ struct DuplicatesView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Duplicate Groups")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Text("Review similar media files grouped by similarity and take action directly from the list.")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
-            }
-            .padding([.top, .horizontal], 30)
-            .padding(.bottom, 20)
-            
+
             // Top Control Bar
             VStack(spacing: 0) {
                 HStack {
                     Text("Live Duplicate Feed")
                         .font(.headline)
+                        .textCase(.uppercase)
                     Spacer()
                     Text("\(totalGroups) groups")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                         .font(.subheadline)
                 }
                 .padding()
                 
-                Divider().background(Color.gray.opacity(0.3))
+                Divider().background(Theme.border)
                 
                 HStack {
                     HStack(spacing: 4) {
@@ -86,7 +76,7 @@ struct DuplicatesView: View {
                     }
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Theme.textSecondary)
                     
                     // Vurio Slider
                     VurioSlider(
@@ -114,7 +104,7 @@ struct DuplicatesView: View {
                     }
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Theme.textSecondary)
                     .padding(.trailing, 16)
                     
                     Button(action: {
@@ -134,7 +124,7 @@ struct DuplicatesView: View {
                                         .font(.system(size: 13))
                                     Text("\(ejectingRemainingCount) remaining")
                                         .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Theme.textSecondary)
                                 }
                             } else {
                                 Text("Eject")
@@ -142,12 +132,7 @@ struct DuplicatesView: View {
                         }
                         .frame(width: (isEjecting && totalEjectingCount > 0) ? 120 : 95)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(Color.red.opacity(0.5), lineWidth: 1)
-                    )
+                    .vurioButtonStyle(tint: Theme.error)
                     .disabled(isProcessing)
                     
                     Button(action: {
@@ -167,7 +152,7 @@ struct DuplicatesView: View {
                                         .font(.system(size: 13))
                                     Text("\(restoringRemainingCount) remaining")
                                         .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Theme.textSecondary)
                                 }
                             } else if isRestoring {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -175,7 +160,7 @@ struct DuplicatesView: View {
                                         .font(.system(size: 13))
                                     Text("Please wait")
                                         .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Theme.textSecondary)
                                 }
                             } else {
                                 Text("Restore")
@@ -183,33 +168,28 @@ struct DuplicatesView: View {
                         }
                         .frame(width: (isRestoring && totalRestoringCount > 0) ? 120 : (isRestoring ? 120 : 95))
                     }
-                    .buttonStyle(.bordered)
-                    .tint(canRestore && !isProcessing ? .green : nil)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(canRestore && !isProcessing ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+                    .vurioButtonStyle(tint: Theme.success)
                     .disabled(isProcessing || !canRestore)
                     
 
                 }
                 .padding()
             }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .background(Theme.surface.opacity(0.3))
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    .stroke(Theme.border, lineWidth: 1)
             )
             .padding(.horizontal, 30)
             .padding(.bottom, 20)
             
-            Divider().background(Color.gray.opacity(0.3))
+            Divider().background(Theme.border)
             
             // List
             if let error = errorMessage {
                 Text(error)
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.error)
                     .padding(.horizontal, 30)
                     .padding(.top, 20)
             }
@@ -218,7 +198,7 @@ struct DuplicatesView: View {
                 VStack {
                     Spacer()
                     Text("No duplicates found.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -252,7 +232,7 @@ struct DuplicatesView: View {
                             } else {
                                 ProgressView()
                                     .frame(maxWidth: .infinity, minHeight: 150)
-                                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                    .background(Theme.surface.opacity(0.5))
                                     .cornerRadius(12)
                                     .padding(.bottom, 12)
                                     .padding(.horizontal, 30)
@@ -676,6 +656,7 @@ struct DuplicateGroupCard: View {
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
     
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     @State private var isRepEjectHovered = false
     
     var representative: Vurio_Dedup_DuplicateFile? {
@@ -696,11 +677,14 @@ struct DuplicateGroupCard: View {
                 Text("Duplicate Group • \(group.files.count) files")
                     .font(.headline)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                Text("ID: \(group.groupID)")
-                    .font(.subheadline)
-                    .foregroundColor(Color.gray.opacity(0.6))
-                    .fontDesign(.monospaced)
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.textPrimary)
+                
+                if advancedOverlayEnabled {
+                    Text("ID: \(group.groupID)")
+                        .font(.custom("Menlo", size: 11))
+                        .foregroundColor(Theme.success)
+                }
             }
             
             HStack(alignment: .top, spacing: 20) {
@@ -729,7 +713,7 @@ struct DuplicateGroupCard: View {
                 if !candidates.isEmpty {
                     Divider()
                         .frame(height: 70)
-                        .background(Color.gray.opacity(0.5))
+                        .background(Theme.borderActive)
                         .padding(.top, 15)
                 }
                 
@@ -794,10 +778,10 @@ struct DuplicateGroupCard: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(Theme.surface.opacity(0.5))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isRepEjectHovered ? Color.red.opacity(0.8) : Color.gray.opacity(0.2), lineWidth: isRepEjectHovered ? 2 : 1)
+                .stroke(isRepEjectHovered ? Theme.error : Theme.border, lineWidth: isRepEjectHovered ? 2 : 1)
         )
         .cornerRadius(12)
         .padding(.bottom, 12)
@@ -833,8 +817,8 @@ struct DuplicateMemberView: View {
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 16, height: 16)
                         .frame(width: 40, height: 40)
-                        .foregroundColor(.white)
-                        .background(isButtonHovered && !isEjecting ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
+                        .foregroundColor(Theme.textPrimary)
+                        .background(isButtonHovered && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
@@ -851,7 +835,7 @@ struct DuplicateMemberView: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(file.isEjected ? Color.red.opacity(0.6) : (isRep ? Color.orange : (isHovered ? Color.primary.opacity(0.8) : Color.gray.opacity(0.4))), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
+                .stroke(file.isEjected ? Theme.error : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border)), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
         )
         .overlay(alignment: .topTrailing) {
             if !file.isEjected && isHovered && !isEjecting {
@@ -862,8 +846,8 @@ struct DuplicateMemberView: View {
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 10, height: 10)
                         .frame(width: 20, height: 20)
-                        .foregroundColor(.white)
-                        .background(isButtonHovered ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
+                        .foregroundColor(Theme.textPrimary)
+                        .background(isButtonHovered ? Theme.error : Theme.error.opacity(0.8))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
@@ -915,7 +899,7 @@ struct BracketView: View {
     var body: some View {
         ZStack(alignment: .top) {
             BracketShape()
-                .stroke(isRestoreMode ? Color(red: 0.1, green: 0.7, blue: 0.3) : Color.red.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .stroke(isRestoreMode ? Theme.success : Theme.error, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .frame(width: width, height: 8)
             
             Button(action: action) {
@@ -924,8 +908,8 @@ struct BracketView: View {
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
-                        .foregroundColor(.white)
-                        .background(isHovering && !isEjecting ? Color(red: 0.1, green: 0.8, blue: 0.4) : Color(red: 0.1, green: 0.7, blue: 0.3))
+                        .foregroundColor(Theme.textPrimary)
+                        .background(isHovering && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
@@ -934,8 +918,8 @@ struct BracketView: View {
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
-                        .foregroundColor(.white)
-                        .background(isHovering && !isEjecting ? Color(red: 1.0, green: 0.1, blue: 0.1) : Color(red: 0.8, green: 0.0, blue: 0.0))
+                        .foregroundColor(Theme.textPrimary)
+                        .background(isHovering && !isEjecting ? Theme.error : Theme.error.opacity(0.8))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)

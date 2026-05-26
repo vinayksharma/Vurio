@@ -22,18 +22,19 @@ struct PurityOrderSection: View {
                 }
             }) {
                 HStack {
-                    Text("Duplicate Purity Rules")
+                    Text("Purity Order")
                         .font(.title2)
+                        .textCase(.uppercase)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                     Spacer()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .foregroundColor(.secondary)
                 }
+                .padding()
                 .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            .padding()
             
             if !isCollapsed {
                 VStack(alignment: .leading, spacing: 10) {
@@ -61,14 +62,15 @@ struct PurityOrderSection: View {
                         Button("Apply Purity Rules") {
                             // This is where ConfigurePurityOrder would be called
                         }
-                        .buttonStyle(BorderedProminentButtonStyle())
+                        .vurioButtonStyle(tint: Theme.textAccent)
                     }
                 }
                 .padding()
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Theme.surface)
         .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
     
     func move(from source: IndexSet, to destination: Int) {
