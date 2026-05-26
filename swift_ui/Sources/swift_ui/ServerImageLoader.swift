@@ -18,14 +18,21 @@ actor ServerImageLoader {
     private init() {}
     
     nonisolated func loadThumbnail(filePath: String, size: Int) async throws -> NSImage {
+        logDebug("loadThumbnail requested for \(filePath)")
         try await waitForToken()
-        defer { Task { await self.releaseToken() } }
+        logDebug("loadThumbnail token ACQUIRED for \(filePath)")
+        defer { 
+            Task { 
+                await self.releaseToken() 
+                logDebug("loadThumbnail token RELEASED for \(filePath)")
+            } 
+        }
         
-        return try await Task.detached(priority: .userInitiated) {
-            var retryDelay: UInt64 = 100_000_000 // 100ms
-            let maxRetries = 10
-            
-            for attempt in 0..<maxRetries {
+        var retryDelay: UInt64 = 100_000_000 // 100ms
+        let maxRetries = 10
+        
+        do {
+            for _ in 0..<maxRetries {
                 try Task.checkCancellation()
                 
                 guard let mediaStreaming = VurioGrpcClient.shared.mediaStreaming else {
@@ -46,6 +53,7 @@ actor ServerImageLoader {
                     }
                     
                     if let image = NSImage(data: accumulator) {
+                        logDebug("loadThumbnail SUCCESS for \(filePath)")
                         return image
                     } else {
                         throw NSError(domain: "ServerImageLoader", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid image data"])
@@ -56,21 +64,32 @@ actor ServerImageLoader {
                         retryDelay *= 2
                         continue
                     }
+                    logDebug("loadThumbnail ERROR for \(filePath): \(error.localizedDescription)")
                     throw error
                 }
             }
+            logDebug("loadThumbnail MAX RETRIES for \(filePath)")
             throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
-        }.value
+        } catch is CancellationError {
+            logDebug("loadThumbnail CANCELLED for \(filePath). Notifying server.")
+            if let mediaStreaming = VurioGrpcClient.shared.mediaStreaming {
+                var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                cancelReq.filePath = filePath
+                cancelReq.type = "thumbnail_generator"
+                _ = try? await mediaStreaming.cancelMediaGeneration(cancelReq)
+            }
+            throw CancellationError()
+        }
     }
     
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
         try await waitForToken()
         defer { Task { await self.releaseToken() } }
         
-        return try await Task.detached(priority: .userInitiated) {
-            var retryDelay: UInt64 = 100_000_000 // 100ms
-            let maxRetries = 10
-            
+        var retryDelay: UInt64 = 100_000_000 // 100ms
+        let maxRetries = 10
+        
+        do {
             for _ in 0..<maxRetries {
                 try Task.checkCancellation()
                 
@@ -105,7 +124,16 @@ actor ServerImageLoader {
                 }
             }
             throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
-        }.value
+        } catch is CancellationError {
+            logDebug("loadPreview CANCELLED for \(filePath). Notifying server.")
+            if let mediaStreaming = VurioGrpcClient.shared.mediaStreaming {
+                var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                cancelReq.filePath = filePath
+                cancelReq.type = "preview_generator"
+                _ = try? await mediaStreaming.cancelMediaGeneration(cancelReq)
+            }
+            throw CancellationError()
+        }
     }
     
     private func enqueue(id: UUID, continuation: CheckedContinuation<Void, Error>) {

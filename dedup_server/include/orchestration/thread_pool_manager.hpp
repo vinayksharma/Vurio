@@ -20,6 +20,7 @@
 
 namespace MediaDedup
 {
+    struct TaskCleanupHelper;
 
     class ThreadPoolManager
     {
@@ -46,9 +47,12 @@ namespace MediaDedup
         void clearQueues();
 
         void setShare(const std::string &type, double share);
+        void setTemporaryOverride(const std::string &type, double temporary_share);
+        void clearTemporaryOverride(const std::string &type);
 
         void submit(const std::string &type, std::function<void()> fn, const std::string &file_path = "");
         bool canSubmit(const std::string &type, size_t max_queue_size = 10000) const;
+        bool cancelTask(const std::string &type, const std::string &file_path);
 
         void pause() { paused_.store(true); }
         void resume();
@@ -83,6 +87,8 @@ namespace MediaDedup
         std::unordered_map<std::string, std::vector<std::string>> getAllPendingFilePaths() const;
 
     private:
+        friend struct TaskCleanupHelper;
+
         struct QueuedTask
         {
             std::function<void()> fn;
@@ -98,19 +104,22 @@ namespace MediaDedup
             FunctionRunnable(ThreadPoolManager &owner,
                              std::string type,
                              std::function<void()> fn,
-                             uint64_t id)
-                : owner_(owner), type_(std::move(type)), fn_(std::move(fn)), id_(id) {}
+                             uint64_t id,
+                             std::string file_path = "")
+                : owner_(owner), type_(std::move(type)), fn_(std::move(fn)), id_(id), file_path_(std::move(file_path)) {}
 
             void run() override;
 
             uint64_t id() const { return id_; }
             const std::string &type() const { return type_; }
+            const std::string &file_path() const { return file_path_; }
 
         private:
             ThreadPoolManager &owner_;
             std::string type_;
             std::function<void()> fn_;
             uint64_t id_;
+            std::string file_path_;
         };
 
         void onTaskStarted(const std::string &type, uint64_t id);
@@ -136,6 +145,7 @@ namespace MediaDedup
         std::atomic<bool> paused_{false};
 
         std::unordered_map<std::string, double> type_to_share_;
+        std::unordered_map<std::string, double> type_to_temp_override_;
         std::unordered_map<std::string, size_t> type_to_running_;
         std::unordered_map<std::string, std::deque<QueuedTask>> type_to_queue_;
         std::vector<std::string> round_robin_types_;

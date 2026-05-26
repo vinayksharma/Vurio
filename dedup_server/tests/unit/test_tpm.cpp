@@ -355,9 +355,175 @@ TEST(ThreadPoolManagerTest, FilePathTracking)
     tpm.shutdownAndDrain(std::chrono::milliseconds(500));
 }
 
-#if !defined(ALL_UNIT_TESTS)
-int main(int argc, char **argv)
+TEST(ThreadPoolManagerTest, CancelTask)
 {
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("1")); // Only 1 thread to force queueing
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    std::atomic<bool> task1_done{false};
+    std::atomic<bool> task2_done{false};
+
+    // Task 1 will block the queue
+    tpm.submit("media_processor", [&task1_done](){
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        task1_done = true;
+    }, "/path/to/running.jpg");
+
+    // Task 2 gets queued
+    tpm.submit("media_processor", [&task2_done](){
+        task2_done = true;
+    }, "/path/to/queued.jpg");
+
+    // Give a moment for task 1 to start
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    // Cancel task 2 while it's in the queue
+    bool cancelled = tpm.cancelTask("media_processor", "/path/to/queued.jpg");
+    EXPECT_TRUE(cancelled);
+
+    // Cancel a task that doesn't exist
+    bool cancelled_fake = tpm.cancelTask("media_processor", "/path/to/fake.jpg");
+    EXPECT_FALSE(cancelled_fake);
+
+    // Wait for task 1 to finish
+    TestUtils::waitForCondition([&task1_done](){ return task1_done.load(); }, std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
+    
+    // Ensure task 2 never ran
+    EXPECT_FALSE(task2_done.load());
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+}
+
+TEST(ThreadPoolManagerTest, TemporaryPriorityOverride)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+    
+    // Default shares
+    tpm.setShare("A", 1.0);
+    tpm.setShare("B", 1.0);
+
+    // Pause "B" tasks temporarily
+    tpm.setTemporaryOverride("B", 0.0);
+
+    std::atomic<int> startedA{0}, startedB{0};
+    
+    // Submit tasks
+    tpm.submit("A", [&](){
+        startedA.fetch_add(1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    });
+    tpm.submit("B", [&](){
+        startedB.fetch_add(1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    });
+
+    // Wait a bit to let tasks start
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // A should start, but B should not (because B is paused)
+    EXPECT_EQ(startedA.load(), 1);
+    EXPECT_EQ(startedB.load(), 0);
+
+    // Now clear the override
+    tpm.clearTemporaryOverride("B");
+    
+    // Wait for B to start
+    bool ok = MediaDedup::Test::TestUtils::waitForCondition(
+        [&](){ return startedB.load() > 0; },
+        std::chrono::milliseconds(1000), 
+        std::chrono::milliseconds(10)
+    );
+    
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(startedB.load(), 1);
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+}
+
+TEST(ThreadPoolManagerTest, AutoPrioritizesUITasks)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+    tpm.setShare("image_processor", 1.0);
+    tpm.setShare("thumbnail_generator", 0.25);
+
+    std::atomic<int> bg_started{0};
+    std::atomic<int> ui_finished{0};
+    std::atomic<int> bg_finished{0};
+    std::atomic<bool> release_bg{false};
+
+    // Submit 2 background tasks to consume the available 2 threads and block.
+    for (int i = 0; i < 2; ++i)
+    {
+        tpm.submit("image_processor", [&]() {
+            bg_started++;
+            while (!release_bg.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            bg_finished++;
+        }, "file_bg_" + std::to_string(i));
+    }
+
+    // Wait until 2 background tasks have started (filling the pool)
+    bool ok = MediaDedup::Test::TestUtils::waitForCondition(
+        [&](){ return bg_started.load() >= 2; },
+        std::chrono::milliseconds(1000), 
+        std::chrono::milliseconds(10)
+    );
+    EXPECT_TRUE(ok);
+
+    // Submit 5 MORE background tasks (they will be queued)
+    for (int i = 2; i < 7; ++i)
+    {
+        tpm.submit("image_processor", [&]() {
+            // These should run AFTER UI tasks are scheduled.
+            // Under concurrent execution, as soon as one UI task finishes, a background task
+            // can start executing while the other UI task is still running.
+            // So we expect at least 1 UI task to have finished.
+            EXPECT_GE(ui_finished.load(), 1);
+            bg_finished++;
+        }, "file_bg_" + std::to_string(i));
+    }
+
+    // Submit 2 UI tasks
+    for (int i = 0; i < 2; ++i)
+    {
+        tpm.submit("thumbnail_generator", [&]() {
+            ui_finished++;
+        }, "file_ui_" + std::to_string(i));
+    }
+
+    // Release the blocked background tasks
+    release_bg.store(true);
+
+    // Wait for everything
+    ok = MediaDedup::Test::TestUtils::waitForCondition(
+        [&](){ return bg_finished.load() >= 7 && ui_finished.load() >= 2; },
+        std::chrono::milliseconds(2000), 
+        std::chrono::milliseconds(10)
+    );
+    EXPECT_TRUE(ok);
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+}
+#if !defined(ALL_UNIT_TESTS)
+int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
