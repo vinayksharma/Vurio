@@ -66,48 +66,52 @@ class AppState: ObservableObject {
         }
     }
     
-    @MainActor
     func fetchStatus() async {
         do {
             let request = Vurio_Dedup_GetStatusRequest()
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.getStatus(request)
-                self.isOnline = true
-                self.registeredDirs = response.registeredDirs
-                self.ejectedDirs = response.ejectedDirs
-                self.scannedFilesCount = response.scannedFilesCount
-                self.processedFilesCount = response.processedFilesCount
-                self.threadCount = response.threadCount
-                self.maxThreads = response.maxThreads
-                self.errorFilesCount = response.errorFilesCount
-                self.duplicateGroupsCount = response.duplicateGroupsCount
-                self.duplicateFilesCount = response.duplicateFilesCount
-                self.duplicateFindingTotal = response.duplicateFindingTotal
-                self.duplicateFindingCompleted = response.duplicateFindingCompleted
-                self.isPaused = response.isPaused
+                await MainActor.run {
+                    self.isOnline = true
+                    self.registeredDirs = response.registeredDirs
+                    self.ejectedDirs = response.ejectedDirs
+                    self.scannedFilesCount = response.scannedFilesCount
+                    self.processedFilesCount = response.processedFilesCount
+                    self.threadCount = response.threadCount
+                    self.maxThreads = response.maxThreads
+                    self.errorFilesCount = response.errorFilesCount
+                    self.duplicateGroupsCount = response.duplicateGroupsCount
+                    self.duplicateFilesCount = response.duplicateFilesCount
+                    self.duplicateFindingTotal = response.duplicateFindingTotal
+                    self.duplicateFindingCompleted = response.duplicateFindingCompleted
+                    self.isPaused = response.isPaused
+                }
             }
         } catch {
-            self.isOnline = false
+            await MainActor.run {
+                self.isOnline = false
+            }
             print("Failed to fetch status: \(error)")
         }
     }
     
-    @MainActor
     func fetchIntegrityCheckStatus() async {
         do {
             let request = Vurio_Dedup_Empty()
             if let client = VurioGrpcClient.shared.advanced {
                 let response = try await client.getDatabaseIntegrityCheckStatus(request)
-                self.isIntegrityCheckRunning = response.running
-                self.integrityCheckProgress = response.progress
-                self.integrityCheckTotalFiles = response.totalFiles
-                self.integrityCheckProcessedFiles = response.processedFiles
-                self.integrityCheckCurrentPhase = response.currentPhase
-                self.integrityCheckFilesRemoved = response.filesRemoved
-                self.integrityCheckGroupsRemoved = response.groupsRemoved
-                self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
-                self.integrityCheckArtifactsRemoved = response.artifactsRemoved
-                self.integrityCheckErrorsRemoved = response.errorsRemoved
+                await MainActor.run {
+                    self.isIntegrityCheckRunning = response.running
+                    self.integrityCheckProgress = response.progress
+                    self.integrityCheckTotalFiles = response.totalFiles
+                    self.integrityCheckProcessedFiles = response.processedFiles
+                    self.integrityCheckCurrentPhase = response.currentPhase
+                    self.integrityCheckFilesRemoved = response.filesRemoved
+                    self.integrityCheckGroupsRemoved = response.groupsRemoved
+                    self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
+                    self.integrityCheckArtifactsRemoved = response.artifactsRemoved
+                    self.integrityCheckErrorsRemoved = response.errorsRemoved
+                }
             }
         } catch {
             print("Failed to fetch integrity check status: \(error)")

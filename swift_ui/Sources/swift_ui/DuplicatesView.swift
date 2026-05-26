@@ -1,12 +1,18 @@
 import SwiftUI
 
+class GroupIndexCache {
+    var map: [String: Int] = [:]
+}
+
 struct GroupSlot: Identifiable {
     let id = UUID()
     var group: Vurio_Dedup_DuplicateGroup?
+    var placeholderIndex: Int = 0
 }
 
 struct DuplicatesView: View {
     @State private var groups: [GroupSlot] = []
+    @State private var indexCache = GroupIndexCache()
     @State private var loadingPages: Set<Int32> = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -205,7 +211,7 @@ struct DuplicatesView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, slot in
+                        ForEach(groups) { slot in
                             if let group = slot.group {
                                 DuplicateGroupCard(
                                     group: group,
@@ -238,7 +244,7 @@ struct DuplicatesView: View {
                                     .padding(.horizontal, 30)
                                     .frame(height: 180)
                                     .onAppear {
-                                        let pageIndex = Int32(index) / pageSize
+                                        let pageIndex = Int32(slot.placeholderIndex) / pageSize
                                         Task {
                                             await loadPage(pageIndex: pageIndex)
                                         }
@@ -349,7 +355,7 @@ struct DuplicatesView: View {
     
     private func fetchAllEligibleDuplicates() async -> [String] {
         var toEject: [String] = []
-        let limit: Int32 = 100
+        let limit: Int32 = 5000
         var offset: Int32 = 0
         var hasMore = true
         
@@ -489,7 +495,7 @@ struct DuplicatesView: View {
     
     private func fetchAllEjectedDuplicates() async -> [String] {
         var toRestore: [String] = []
-        let limit: Int32 = 100
+        let limit: Int32 = 5000
         var offset: Int32 = 0
         var hasMore = true
         
@@ -573,9 +579,13 @@ struct DuplicatesView: View {
     
 
     private func refresh() async {
-        groups = (0..<totalGroups).map { _ in GroupSlot(group: nil) }
-        loadingPages.removeAll()
-        errorMessage = nil
+        let newGroups = (0..<totalGroups).map { i in GroupSlot(group: nil, placeholderIndex: Int(i)) }
+        await MainActor.run {
+            groups = newGroups
+            indexCache.map.removeAll()
+            loadingPages.removeAll()
+            errorMessage = nil
+        }
     }
     
     private func loadPage(pageIndex: Int32) async {
@@ -583,19 +593,25 @@ struct DuplicatesView: View {
         loadingPages.insert(pageIndex)
         
         do {
+            guard let client = VurioGrpcClient.shared.duplicates else { return }
             let request = Vurio_Dedup_GetGroupsRequest.with {
                 $0.limit = pageSize
                 $0.offset = pageIndex * pageSize
             }
-            if let client = VurioGrpcClient.shared.duplicates {
-                let response = try await client.getDuplicateGroups(request)
+            
+            let response = try await client.getDuplicateGroups(request)
+            
+            if !Task.isCancelled {
                 await MainActor.run {
+                    var localGroups = groups
                     for (i, group) in response.groups.enumerated() {
                         let globalIndex = Int(pageIndex * pageSize) + i
-                        if globalIndex < groups.count {
-                            groups[globalIndex].group = group
+                        if globalIndex < localGroups.count {
+                            localGroups[globalIndex].group = group
+                            indexCache.map[group.groupID] = globalIndex
                         }
                     }
+                    groups = localGroups
                     loadingPages.remove(pageIndex)
                 }
             }
@@ -628,21 +644,35 @@ struct DuplicatesView: View {
         switch update.type {
         case .added:
             if index <= groups.count {
-                groups.insert(GroupSlot(group: update.group), at: index)
+                groups.insert(GroupSlot(group: update.group, placeholderIndex: index), at: index)
                 totalGroups = Int32(groups.count)
-            }
-        case .updated:
-            if let existingIdx = groups.firstIndex(where: { $0.group?.groupID == update.group.groupID }) {
-                groups[existingIdx].group = update.group
-            } else if index < groups.count {
-                groups[index].group = update.group
+                indexCache.map[update.group.groupID] = index
+                if index < groups.count - 1 {
+                    for i in index..<groups.count {
+                        if let g = groups[i].group {
+                            indexCache.map[g.groupID] = i
+                        }
+                    }
+                }
             }
         case .deleted:
-            if let existingIdx = groups.firstIndex(where: { $0.group?.groupID == update.group.groupID }) {
-                groups.remove(at: existingIdx)
+            if index < groups.count {
+                groups.remove(at: index)
                 totalGroups = Int32(groups.count)
+                indexCache.map.removeValue(forKey: update.group.groupID)
+                if index < groups.count {
+                    for i in index..<groups.count {
+                        if let g = groups[i].group {
+                            indexCache.map[g.groupID] = i
+                        }
+                    }
+                }
             }
-        case .UNRECOGNIZED(_):
+        case .updated:
+            if index < groups.count {
+                groups[index] = GroupSlot(group: update.group, placeholderIndex: groups[index].placeholderIndex)
+            }
+        case .UNRECOGNIZED:
             break
         }
     }
@@ -778,12 +808,14 @@ struct DuplicateGroupCard: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.5))
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.surface.opacity(0.5))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isRepEjectHovered ? Theme.error : Theme.border, lineWidth: isRepEjectHovered ? 2 : 1)
         )
-        .cornerRadius(12)
         .padding(.bottom, 12)
     }
 }
@@ -818,10 +850,12 @@ struct DuplicateMemberView: View {
                         .frame(width: 16, height: 16)
                         .frame(width: 40, height: 40)
                         .foregroundColor(Theme.textPrimary)
-                        .background(isButtonHovered && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
-                        .clipShape(Circle())
+                        .background(
+                            Circle()
+                                .fill(isButtonHovered && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+                        )
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
                 .disabled(isEjecting)
@@ -847,10 +881,12 @@ struct DuplicateMemberView: View {
                         .frame(width: 10, height: 10)
                         .frame(width: 20, height: 20)
                         .foregroundColor(Theme.textPrimary)
-                        .background(isButtonHovered ? Theme.error : Theme.error.opacity(0.8))
-                        .clipShape(Circle())
+                        .background(
+                            Circle()
+                                .fill(isButtonHovered ? Theme.error : Theme.error.opacity(0.8))
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+                        )
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
                 .offset(x: 8, y: -8)
@@ -863,7 +899,11 @@ struct DuplicateMemberView: View {
             }
         }
         .scaleEffect(isHovered && !file.isEjected ? 1.05 : 1.0)
-        .shadow(color: isHovered ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(Color.black.opacity(0.01))
+                .shadow(color: isHovered ? Color.black.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+        )
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
@@ -909,20 +949,24 @@ struct BracketView: View {
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(Theme.textPrimary)
-                        .background(isHovering && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
-                        .clipShape(Circle())
+                        .background(
+                            Circle()
+                                .fill(isHovering && !isEjecting ? Theme.success : Theme.success.opacity(0.8))
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+                        )
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 } else {
                     CustomEjectShape()
                         .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 12, height: 12)
                         .frame(width: 24, height: 24)
                         .foregroundColor(Theme.textPrimary)
-                        .background(isHovering && !isEjecting ? Theme.error : Theme.error.opacity(0.8))
-                        .clipShape(Circle())
+                        .background(
+                            Circle()
+                                .fill(isHovering && !isEjecting ? Theme.error : Theme.error.opacity(0.8))
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+                        )
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
                 }
             }
             .buttonStyle(.plain)

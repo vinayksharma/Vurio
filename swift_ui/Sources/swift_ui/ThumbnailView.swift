@@ -40,6 +40,9 @@ struct ThumbnailView: View {
     
     private func generateThumbnail() async {
         do {
+            // Debounce: wait 0.1s before fetching. If scrolled off-screen, this throws CancellationError.
+            try await Task.sleep(nanoseconds: 100_000_000)
+            
             let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width))
             await MainActor.run {
                 self.thumbnail = image
