@@ -211,6 +211,7 @@ public:
 
         for (const auto& member : members) {
             auto* proto_file = proto_group->add_files();
+            proto_file->set_id(std::to_string(member.file_id));
             proto_file->set_file_path(member.file_path);
             proto_file->set_size_bytes(member.file_size);
             proto_file->set_is_representative(member.is_representative);
@@ -293,6 +294,15 @@ public:
         for (const auto& file_path : request->file_paths()) {
             auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*db_, file_path);
             if (!file_opt) {
+                // Check if the file is already ejected (UI state out of sync sending original path)
+                auto hist = MediaDedup::EjectedFilesOps::getByOriginalPath(*db_, file_path);
+                if (!hist) hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*db_, file_path);
+                
+                if (hist) {
+                    success_count++;
+                    continue;
+                }
+                
                 last_error = "File not found in database: " + file_path;
                 failure_count++;
                 continue;
@@ -343,12 +353,19 @@ public:
             
             std::filesystem::path src(file_path);
             if (!std::filesystem::exists(src)) {
+                last_error = "Source file does not exist on disk: " + file_path;
                 failure_count++;
                 continue;
             }
             
             std::string dest_filename = src.filename().string();
             std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
+            
+            int counter = 1;
+            while (std::filesystem::exists(dest)) {
+                std::string new_name = src.stem().string() + "_" + std::to_string(counter++) + src.extension().string();
+                dest = std::filesystem::path(ejection_path) / new_name;
+            }
             
             try {
                 std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
