@@ -467,7 +467,25 @@ namespace MediaDedupServer
                     }
 
                     std::string dest_filename = src.filename().string();
-                    std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
+                    std::filesystem::path base_eject = std::filesystem::path(ejection_path);
+                    std::filesystem::path dest = base_eject / dest_filename;
+
+                    int counter = 0;
+                    while (std::filesystem::exists(dest)) {
+                        counter++;
+                        std::string folder_name = dest_filename + "_" + std::to_string(counter);
+                        std::filesystem::path collision_folder = base_eject / folder_name;
+                        
+                        if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
+                            continue;
+                        }
+                        
+                        dest = collision_folder / dest_filename;
+                    }
+
+                    if (dest.has_parent_path()) {
+                        std::filesystem::create_directories(dest.parent_path());
+                    }
 
                     try {
                         std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
@@ -758,11 +776,11 @@ namespace MediaDedupServer
                             // Filesystem teardown happens ONLY after DB successfully committed
                             std::filesystem::remove(src);
 
-                            // Try to remove ejected directory if empty
+                            // Clean up empty directories
                             try {
                                 std::filesystem::path parent = src.parent_path();
                                 
-                                // On macOS, Finders creates .DS_Store instantly, preventing is_empty from returning true
+                                // On macOS, Finder creates .DS_Store instantly
                                 std::filesystem::path ds_store = parent / ".DS_Store";
                                 if (std::filesystem::exists(ds_store)) {
                                     std::filesystem::remove(ds_store);
@@ -770,9 +788,28 @@ namespace MediaDedupServer
 
                                 if (std::filesystem::is_empty(parent)) {
                                     std::filesystem::remove(parent);
-                                    logger.information("Removed empty ejection directory: %s", parent.string());
-                                    // Remove the user setting so the UI doesn't try to query a missing folder
-                                    MediaDedup::UserSettingsOps::remove(*database_manager_, "ejectionPath:" + history.original_location_key);
+                                    logger.information("Removed empty directory: %s", parent.string());
+                                    
+                                    // If this was a collision folder, also try removing the main ejection folder
+                                    std::filesystem::path grandparent = parent.parent_path();
+                                    std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
+                                    if (std::filesystem::exists(gp_ds_store)) {
+                                        std::filesystem::remove(gp_ds_store);
+                                    }
+                                    if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
+                                        std::filesystem::remove(grandparent);
+                                        logger.information("Removed empty grandparent directory: %s", grandparent.string());
+                                    }
+                                    
+                                    // Only remove DB entry if the main ejection path is actually gone
+                                    std::string ejection_key = "ejectionPath:" + history.original_location_key;
+                                    std::string registered_path;
+                                    if (MediaDedup::UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
+                                        if (!std::filesystem::exists(registered_path)) {
+                                            MediaDedup::UserSettingsOps::remove(*database_manager_, ejection_key);
+                                            logger.information("Removed DB entry for empty ejection path: %s", ejection_key);
+                                        }
+                                    }
                                 }
                             } catch (...) {
                                 // Ignore directory remove errors

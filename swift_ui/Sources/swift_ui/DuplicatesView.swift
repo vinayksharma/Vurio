@@ -822,21 +822,23 @@ struct DuplicateGroupCard: View {
                         .padding(.top, 15)
                 }
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(candidates, id: \.filePath) { file in
-                            DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
-                                onRestoreSet([file.filePath])
-                            }, onEject: {
-                                onEjectSet([file.filePath])
-                            })
-                                .onTapGesture {
-                                    if !isEjecting {
-                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                            onThumbnailTapped(idx)
+                VerticalScrollingFixView {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 12) {
+                            ForEach(candidates, id: \.id) { file in
+                                DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
+                                    onRestoreSet([file.filePath])
+                                }, onEject: {
+                                    onEjectSet([file.filePath])
+                                })
+                                    .onTapGesture {
+                                        if !isEjecting {
+                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                                onThumbnailTapped(idx)
+                                            }
                                         }
                                     }
-                                }
+                            }
                         }
                     }
                     .padding(.top, 15)
