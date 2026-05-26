@@ -266,12 +266,18 @@ namespace MediaDedup
         return allow;
     }
 
+    void ThreadPoolManager::resume()
+    {
+        paused_.store(false);
+        schedule();
+    }
+
     void ThreadPoolManager::schedule()
     {
-        if (draining_.load())
+        if (draining_.load() || paused_.load())
         {
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-            logger.debug("Skipping schedule - draining in progress");
+            logger.debug("Skipping schedule - draining or paused");
             return;
         }
 
