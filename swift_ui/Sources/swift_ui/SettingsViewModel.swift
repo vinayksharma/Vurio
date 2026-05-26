@@ -177,4 +177,8 @@ class SettingsViewModel: ObservableObject {
             print("Action error: \(error)")
         }
     }
+    
+    func startDatabaseIntegrityCheck() async {
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.startDatabaseIntegrityCheck(Vurio_Dedup_Empty()) }, successMessage: "Database integrity check started")
+    }
 }

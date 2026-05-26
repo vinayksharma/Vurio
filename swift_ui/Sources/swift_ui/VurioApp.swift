@@ -41,6 +41,18 @@ class AppState: ObservableObject {
     @Published var isOnline: Bool = true
     @Published var isPaused: Bool = false
     
+    // Integrity Check State
+    @Published var isIntegrityCheckRunning: Bool = false
+    @Published var integrityCheckProgress: Int32 = 0
+    @Published var integrityCheckTotalFiles: Int32 = 0
+    @Published var integrityCheckProcessedFiles: Int32 = 0
+    @Published var integrityCheckCurrentPhase: String = ""
+    @Published var integrityCheckFilesRemoved: Int32 = 0
+    @Published var integrityCheckGroupsRemoved: Int32 = 0
+    @Published var integrityCheckThumbnailsRemoved: Int32 = 0
+    @Published var integrityCheckArtifactsRemoved: Int32 = 0
+    @Published var integrityCheckErrorsRemoved: Int32 = 0
+    
     @MainActor
     func fetchConfig() async {
         do {
@@ -77,6 +89,28 @@ class AppState: ObservableObject {
         } catch {
             self.isOnline = false
             print("Failed to fetch status: \(error)")
+        }
+    }
+    
+    @MainActor
+    func fetchIntegrityCheckStatus() async {
+        do {
+            let request = Vurio_Dedup_Empty()
+            if let client = VurioGrpcClient.shared.advanced {
+                let response = try await client.getDatabaseIntegrityCheckStatus(request)
+                self.isIntegrityCheckRunning = response.running
+                self.integrityCheckProgress = response.progress
+                self.integrityCheckTotalFiles = response.totalFiles
+                self.integrityCheckProcessedFiles = response.processedFiles
+                self.integrityCheckCurrentPhase = response.currentPhase
+                self.integrityCheckFilesRemoved = response.filesRemoved
+                self.integrityCheckGroupsRemoved = response.groupsRemoved
+                self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
+                self.integrityCheckArtifactsRemoved = response.artifactsRemoved
+                self.integrityCheckErrorsRemoved = response.errorsRemoved
+            }
+        } catch {
+            print("Failed to fetch integrity check status: \(error)")
         }
     }
     
@@ -197,6 +231,14 @@ struct ContentView: View {
             }
             .contentMargins(.bottom, 30, for: .scrollIndicators)
         .frame(minWidth: 1027, minHeight: 800)
+        .overlay(
+            Group {
+                if appState.isIntegrityCheckRunning {
+                    IntegrityCheckOverlayView()
+                        .environmentObject(appState)
+                }
+            }
+        )
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -204,8 +246,92 @@ struct ContentView: View {
             // Background status poller
             while !Task.isCancelled {
                 await appState.fetchStatus()
+                await appState.fetchIntegrityCheckStatus()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
+        }
+    }
+}
+
+struct IntegrityCheckOverlayView: View {
+    @EnvironmentObject var appState: AppState
+    
+    var body: some View {
+        ZStack {
+            // Dark transparent background to block interaction
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 24) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 60, height: 60)
+                    .foregroundColor(Theme.textAccent)
+                
+                Text("Database Integrity Check")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Text("Please wait while the database is being verified and cleaned. You will not be able to use the application until this completes.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(Theme.textSecondary)
+                    .padding(.horizontal, 40)
+                
+                VStack(spacing: 8) {
+                    Text(appState.integrityCheckCurrentPhase)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    ProgressView(value: Double(appState.integrityCheckProgress), total: 100.0)
+                        .progressViewStyle(LinearProgressViewStyle(tint: Theme.accent))
+                        .frame(height: 8)
+                        .clipShape(Capsule())
+                    
+                    Text("\(appState.integrityCheckProcessedFiles) of \(appState.integrityCheckTotalFiles) files processed")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .padding(.top, 16)
+                
+                // Stats summary
+                HStack(spacing: 30) {
+                    StatBox(title: "Files Removed", value: appState.integrityCheckFilesRemoved)
+                    StatBox(title: "Groups Removed", value: appState.integrityCheckGroupsRemoved)
+                    StatBox(title: "Thumbnails Cleaned", value: appState.integrityCheckThumbnailsRemoved)
+                    StatBox(title: "Errors Cleaned", value: appState.integrityCheckErrorsRemoved)
+                }
+                .padding(.top, 24)
+            }
+            .padding(40)
+            .frame(width: 600)
+            .background(Theme.surfaceElevated)
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
+        }
+        // Intercept all interactions
+        .contentShape(Rectangle())
+        .onTapGesture {}
+    }
+    
+    struct StatBox: View {
+        let title: String
+        let value: Int32
+        
+        var body: some View {
+            VStack(spacing: 4) {
+                Text("\(value)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(value > 0 ? Theme.warning : Theme.textPrimary)
+                Text(title)
+                    .font(.caption2)
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .frame(minWidth: 80)
         }
     }
 }

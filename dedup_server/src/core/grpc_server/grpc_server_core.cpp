@@ -22,6 +22,8 @@
 #include "orchestration/duplicate_finder.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "core/web/web_handlers_thumbnail.hpp"
+#include "core/web/web_handlers_duplicates.hpp"
+#include "media_processors/media_processor.hpp"
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "orchestration/scheduler_service.hpp"
@@ -621,16 +623,18 @@ class AdvancedSettingsServiceImpl final : public vurio::dedup::AdvancedSettingsS
     std::shared_ptr<DiskCache> thumbnail_cache_;
     std::shared_ptr<DiskCache> transcoding_cache_;
     std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_;
+    std::shared_ptr<MediaDedup::ThreadPoolManager> tpm_;
 
 public:
     explicit AdvancedSettingsServiceImpl(DatabaseManager* db, 
                                          std::shared_ptr<UnifiedObservableConfigManager> config, 
                                          std::shared_ptr<DiskCache> thumbnail_cache,
                                          std::shared_ptr<DiskCache> transcoding_cache,
-                                         std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler)
+                                         std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                                         std::shared_ptr<MediaDedup::ThreadPoolManager> tpm)
         : db_(db), config_(std::move(config)),
           thumbnail_cache_(std::move(thumbnail_cache)), transcoding_cache_(std::move(transcoding_cache)),
-          scheduler_(std::move(scheduler)) {}
+          scheduler_(std::move(scheduler)), tpm_(std::move(tpm)) {}
 
     grpc::Status ResetErrors(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                              vurio::dedup::AdvancedActionResponse* reply) override {
@@ -1203,13 +1207,31 @@ public:
 
     grpc::Status StartDatabaseIntegrityCheck(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                              vurio::dedup::AdvancedActionResponse* reply) override {
-        reply->set_success(true);
+        std::string error;
+        // Wrap db_ in a shared_ptr with a no-op deleter since it's owned elsewhere
+        std::shared_ptr<MediaDedup::DatabaseManager> db_ptr(db_, [](MediaDedup::DatabaseManager*){});
+        if (MediaDedupServer::Core::DatabaseIntegrityCheckHandler::startIntegrityCheck(db_ptr, config_, scheduler_, tpm_, error)) {
+            reply->set_success(true);
+        } else {
+            reply->set_success(false);
+            reply->set_error_message(error);
+        }
         return grpc::Status::OK;
     }
 
     grpc::Status GetDatabaseIntegrityCheckStatus(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                                  vurio::dedup::IntegrityCheckStatusResponse* reply) override {
-        reply->set_running(false);
+        auto state = MediaDedupServer::Core::DatabaseIntegrityCheckHandler::getIntegrityCheckStatus();
+        reply->set_running(state.is_running);
+        reply->set_progress(state.progress);
+        reply->set_total_files(state.total_files);
+        reply->set_processed_files(state.processed_files);
+        reply->set_files_removed(state.files_removed);
+        reply->set_groups_removed(state.groups_removed);
+        reply->set_thumbnails_removed(state.thumbnails_removed);
+        reply->set_artifacts_removed(state.artifacts_removed);
+        reply->set_errors_removed(state.errors_removed);
+        reply->set_current_phase(state.current_phase);
         return grpc::Status::OK;
     }
 
@@ -1406,7 +1428,7 @@ void GrpcServerCore::start(const std::string& socket_path,
     auto config_service = std::make_unique<ConfigServiceImpl>(config_manager);
     auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_manager->getFilesService(), thread_pool_manager, database_manager, scheduler_service);
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager);
-    std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service);
+    std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
 
     if (duplicate_finder) {
