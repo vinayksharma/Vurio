@@ -66,48 +66,52 @@ class AppState: ObservableObject {
         }
     }
     
-    @MainActor
     func fetchStatus() async {
         do {
             let request = Vurio_Dedup_GetStatusRequest()
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.getStatus(request)
-                self.isOnline = true
-                self.registeredDirs = response.registeredDirs
-                self.ejectedDirs = response.ejectedDirs
-                self.scannedFilesCount = response.scannedFilesCount
-                self.processedFilesCount = response.processedFilesCount
-                self.threadCount = response.threadCount
-                self.maxThreads = response.maxThreads
-                self.errorFilesCount = response.errorFilesCount
-                self.duplicateGroupsCount = response.duplicateGroupsCount
-                self.duplicateFilesCount = response.duplicateFilesCount
-                self.duplicateFindingTotal = response.duplicateFindingTotal
-                self.duplicateFindingCompleted = response.duplicateFindingCompleted
-                self.isPaused = response.isPaused
+                await MainActor.run {
+                    self.isOnline = true
+                    self.registeredDirs = response.registeredDirs
+                    self.ejectedDirs = response.ejectedDirs
+                    self.scannedFilesCount = response.scannedFilesCount
+                    self.processedFilesCount = response.processedFilesCount
+                    self.threadCount = response.threadCount
+                    self.maxThreads = response.maxThreads
+                    self.errorFilesCount = response.errorFilesCount
+                    self.duplicateGroupsCount = response.duplicateGroupsCount
+                    self.duplicateFilesCount = response.duplicateFilesCount
+                    self.duplicateFindingTotal = response.duplicateFindingTotal
+                    self.duplicateFindingCompleted = response.duplicateFindingCompleted
+                    self.isPaused = response.isPaused
+                }
             }
         } catch {
-            self.isOnline = false
+            await MainActor.run {
+                self.isOnline = false
+            }
             print("Failed to fetch status: \(error)")
         }
     }
     
-    @MainActor
     func fetchIntegrityCheckStatus() async {
         do {
             let request = Vurio_Dedup_Empty()
             if let client = VurioGrpcClient.shared.advanced {
                 let response = try await client.getDatabaseIntegrityCheckStatus(request)
-                self.isIntegrityCheckRunning = response.running
-                self.integrityCheckProgress = response.progress
-                self.integrityCheckTotalFiles = response.totalFiles
-                self.integrityCheckProcessedFiles = response.processedFiles
-                self.integrityCheckCurrentPhase = response.currentPhase
-                self.integrityCheckFilesRemoved = response.filesRemoved
-                self.integrityCheckGroupsRemoved = response.groupsRemoved
-                self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
-                self.integrityCheckArtifactsRemoved = response.artifactsRemoved
-                self.integrityCheckErrorsRemoved = response.errorsRemoved
+                await MainActor.run {
+                    self.isIntegrityCheckRunning = response.running
+                    self.integrityCheckProgress = response.progress
+                    self.integrityCheckTotalFiles = response.totalFiles
+                    self.integrityCheckProcessedFiles = response.processedFiles
+                    self.integrityCheckCurrentPhase = response.currentPhase
+                    self.integrityCheckFilesRemoved = response.filesRemoved
+                    self.integrityCheckGroupsRemoved = response.groupsRemoved
+                    self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
+                    self.integrityCheckArtifactsRemoved = response.artifactsRemoved
+                    self.integrityCheckErrorsRemoved = response.errorsRemoved
+                }
             }
         } catch {
             print("Failed to fetch integrity check status: \(error)")
@@ -451,9 +455,9 @@ struct StatusBarView: View {
                 // Segmented Progress Bar
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
-                    let completedPercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
-                    let duplicatePercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
-                    let errorPercent = appState.scannedFilesCount > 0 ? min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    let completedPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    let duplicatePercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                    let errorPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
                     
                     let completedWidth = max(0, totalWidth * CGFloat(completedPercent / 100.0))
                     let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
@@ -489,6 +493,9 @@ struct StatusBarView: View {
                                 .offset(x: completedWidth)
                         }
                         .clipShape(Capsule())
+                        .animation(.easeInOut(duration: 0.5), value: completedWidth)
+                        .animation(.easeInOut(duration: 0.5), value: duplicateWidth)
+                        .animation(.easeInOut(duration: 0.5), value: errorWidth)
                     }
                     .onContinuousHover { phase in
                         switch phase {
@@ -543,13 +550,13 @@ struct StatusBarView: View {
                         }
                     
                     if !appState.isPaused && appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                        let findingPercent = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
+                        let findingPercent = appState.isOnline ? min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) : 0.0
                         Circle()
                             .trim(from: 0, to: CGFloat(findingPercent))
                             .stroke(Theme.warning, lineWidth: 2)
                             .rotationEffect(.degrees(-90))
                             .frame(width: 14, height: 14)
-                            .animation(.linear(duration: 0.1), value: findingPercent)
+                            .animation(.linear(duration: 0.5), value: findingPercent)
                     }
                 }
                 }

@@ -95,7 +95,13 @@ namespace MediaDedup
         logger.debug("Thread stack size set to: %d KB (%d bytes)", stackSizeKB, stackSizeBytes);
 
         // Recreate pool with configured idle timeout and desired capacity
-        pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
+        // We set the underlying Poco::ThreadPool capacity to effective_max_ * 2.
+        // ThreadPoolManager manually strictly limits running tasks to effective_max_.
+        // The extra slack allows new tasks to start immediately even if finishing threads
+        // are still executing onTaskComplete() and haven't technically become idle yet,
+        // avoiding NoThreadAvailableException and scheduling stalls.
+        int poco_pool_capacity = static_cast<int>(effective_max_ * 2);
+        pool_ = std::make_unique<Poco::ThreadPool>(1, poco_pool_capacity, idle_timeout_seconds_);
 
         // Set optimized stack size to reduce memory usage (8MB default → 1MB configured)
         pool_->setStackSize(stackSizeBytes);
@@ -106,6 +112,31 @@ namespace MediaDedup
         // Subscribe to config changes
         cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
                                        { onConfigChange(ev); });
+                                       
+        // Load any existing share configurations
+        for (const auto& key : cfg_->getAllPropertyKeys())
+        {
+            if (key.rfind("tpm.types.", 0) == 0 && key.rfind(".share") != std::string::npos)
+            {
+                std::string type = key.substr(std::string("tpm.types.").size());
+                size_t pos = type.rfind(".share");
+                if (pos != std::string::npos)
+                {
+                    type = type.substr(0, pos);
+                    double share = 1.0;
+                    try
+                    {
+                        // Safely try to fetch as double
+                        share = cfg_->getPropertyValue<double>(key, 1.0);
+                    }
+                    catch (...)
+                    {
+                    }
+                    setShare(type, share);
+                }
+            }
+        }
+                                       
         logger.information("ThreadPoolManager initialized successfully");
     }
 
@@ -149,10 +180,32 @@ namespace MediaDedup
 
     void ThreadPoolManager::setShare(const std::string &type, double share)
     {
-        if (share <= 0)
+        if (share < 0)
             share = 1.0;
         std::lock_guard<std::mutex> lock(mutex_);
         type_to_share_[type] = share;
+    }
+
+    void ThreadPoolManager::setTemporaryOverride(const std::string &type, double temporary_share)
+    {
+        if (temporary_share < 0)
+            temporary_share = 1.0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            type_to_temp_override_[type] = temporary_share;
+        }
+        Poco::Logger::get("ThreadPoolManager").information("Temporary share override applied for type '%s': %f", type, temporary_share);
+        schedule();
+    }
+
+    void ThreadPoolManager::clearTemporaryOverride(const std::string &type)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            type_to_temp_override_.erase(type);
+        }
+        Poco::Logger::get("ThreadPoolManager").information("Temporary share override cleared for type '%s'", type);
+        schedule();
     }
 
     void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn, const std::string &file_path)
@@ -166,6 +219,29 @@ namespace MediaDedup
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            
+            // Deduplication check
+            if (!file_path.empty())
+            {
+                // Check if already in queue
+                for (const auto &task : type_to_queue_[type])
+                {
+                    if (task.file_path == file_path)
+                    {
+                        return; // Already queued
+                    }
+                }
+                
+                // Check if currently running
+                for (const auto &pair : active_runnables_)
+                {
+                    if (pair.second->type() == type && pair.second->file_path() == file_path)
+                    {
+                        return; // Already running
+                    }
+                }
+            }
+
             type_to_queue_[type].emplace_back(std::move(fn), file_path);
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
@@ -200,6 +276,30 @@ namespace MediaDedup
         return current_queue_size < max_queue_size;
     }
 
+    bool ThreadPoolManager::cancelTask(const std::string &type, const std::string &file_path)
+    {
+        if (file_path.empty()) return false;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = type_to_queue_.find(type);
+        if (it != type_to_queue_.end())
+        {
+            auto& queue = it->second;
+            auto remove_it = std::remove_if(queue.begin(), queue.end(),
+                [&file_path](const QueuedTask& task) { return task.file_path == file_path; });
+            
+            if (remove_it != queue.end())
+            {
+                size_t removed_count = std::distance(remove_it, queue.end());
+                queue.erase(remove_it, queue.end());
+                Poco::Logger::get("ThreadPoolManager").debug("Cancelled %lu task(s) of type '%s' for file '%s'", 
+                                                            (unsigned long)removed_count, type.c_str(), file_path.c_str());
+                return true;
+            }
+        }
+        return false;
+    }
+
     ThreadPoolManager::Status ThreadPoolManager::getStatus() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -220,10 +320,34 @@ namespace MediaDedup
         return s;
     }
 
+    struct TaskCleanupHelper
+    {
+        ThreadPoolManager *owner = nullptr;
+        std::string type;
+        uint64_t id = 0;
+        bool active = false;
+
+        ~TaskCleanupHelper()
+        {
+            if (active && owner)
+            {
+                Poco::Logger::get("ThreadPoolManager").warning("TaskCleanupHelper: thread exited abruptly, performing task cleanup for type '" + type + "', id " + std::to_string(id));
+                owner->onTaskFinished(type, id);
+            }
+        }
+    };
+
     void ThreadPoolManager::FunctionRunnable::run()
     {
         // Keep this runnable alive for the duration of run to avoid self-destruction
         auto keepAlive = owner_.lockRunnable(id_);
+        
+        thread_local TaskCleanupHelper cleanup;
+        cleanup.owner = &owner_;
+        cleanup.type = type_;
+        cleanup.id = id_;
+        cleanup.active = true;
+
         try
         {
             fn_();
@@ -231,6 +355,8 @@ namespace MediaDedup
         catch (...)
         {
         }
+        
+        cleanup.active = false;
         owner_.onTaskFinished(type_, id_);
     }
 
@@ -258,11 +384,25 @@ namespace MediaDedup
 
     size_t ThreadPoolManager::allowanceFor(const std::string &type) const
     {
-        auto it = type_to_share_.find(type);
-        double share = (it == type_to_share_.end()) ? 1.0 : it->second;
+        double share = 1.0;
+        
+        auto temp_it = type_to_temp_override_.find(type);
+        if (temp_it != type_to_temp_override_.end())
+        {
+            share = temp_it->second;
+        }
+        else
+        {
+            auto it = type_to_share_.find(type);
+            share = (it == type_to_share_.end()) ? 1.0 : it->second;
+        }
+        
+        if (share == 0.0)
+            return 0; // Explicitly allow 0 for pausing
+
         size_t allow = static_cast<size_t>(std::ceil(share * static_cast<double>(effective_max_)));
         if (allow == 0)
-            allow = 1; // ensure at least one
+            allow = 1; // ensure at least one if share > 0
         return allow;
     }
 
@@ -299,28 +439,47 @@ namespace MediaDedup
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
             logger.debug("Skipping schedule - no task types registered");
             return;
-        }
-
-        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        }        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
         logger.debug("Scheduling tasks - running: %u/%u, types: %u", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_), static_cast<unsigned int>(round_robin_types_.size()));
 
         // Make a copy of the round_robin_types_ vector to avoid modification during iteration
         std::vector<std::string> types_copy = round_robin_types_;
-
         size_t startIndex = rr_index_;
         size_t numTypes = types_copy.size();
         size_t tasksStarted = 0;
 
-        for (size_t i = 0; i < numTypes && running_total_ < effective_max_; ++i)
-        {
-            const std::string &type_ref = types_copy[(startIndex + i) % numTypes];
-            std::string type = type_ref; // Make a copy to avoid reference issues
+        // Check for high-priority UI tasks dynamically
+        auto has_ui_tasks_fn = [this]() {
+            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty();
+        };
+
+        bool task_started_in_pass;
+        do {
+            task_started_in_pass = false;
+            
+            for (size_t i = 0; i < numTypes && running_total_ < effective_max_; ++i)
+            {
+                const std::string &type_ref = types_copy[(startIndex + i) % numTypes];
+                std::string type = type_ref; // Make a copy to avoid reference issues
+                
+                // Auto-prioritization: Skip background tasks if UI tasks are waiting right now
+                if (has_ui_tasks_fn() && type != "thumbnail_generator" && type != "preview_generator")
+                {
+                    continue;
+                }
+
             auto &queue = type_to_queue_[type];
             if (queue.empty())
                 continue;
 
             size_t runningForType = type_to_running_[type];
             size_t allowance = allowanceFor(type);
+            
+            // Auto-prioritization: Allow UI tasks to use all available threads
+            if (type == "thumbnail_generator" || type == "preview_generator")
+            {
+                allowance = effective_max_;
+            }
             if (runningForType >= allowance)
             {
                 logger.debug("Type '%s' at allowance limit (%u/%u)", type, static_cast<unsigned int>(runningForType), static_cast<unsigned int>(allowance));
@@ -330,19 +489,14 @@ namespace MediaDedup
             if (running_total_ >= effective_max_)
                 break;
 
-            if (pool_->available() <= 0)
-            {
-                logger.debug("No available threads in pool");
-                break;
-            }
-
             auto task = queue.front();
             queue.pop_front();
             auto fn = std::move(task.fn);
+            std::string task_file_path = task.file_path;
 
             // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
-            auto runnable = std::make_shared<FunctionRunnable>(*this, type, std::move(fn), id);
+            auto runnable = std::make_shared<FunctionRunnable>(*this, type, std::move(fn), id, std::move(task_file_path));
             // Reserve counts before starting to enforce per-type allowance
             running_total_ += 1;
             type_to_running_[type] += 1;
@@ -364,20 +518,45 @@ namespace MediaDedup
             logger.trace("DEBUG: " + hex_debug);
 
             logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "'");
-            pool_->start(*runnable);
-            tasksStarted++;
+            try
+            {
+                pool_->start(*runnable);
+                tasksStarted++;
+                task_started_in_pass = true;
 
-            // Log using safe string concatenation to avoid format specifier issues
-            logger.debug(std::string("Started task ") +
-                         std::to_string(static_cast<unsigned long long>(id)) +
-                         " for type '" + safe_type + "' (running: " +
-                         std::to_string(static_cast<unsigned int>(type_to_running_[type])) + "/" +
-                         std::to_string(static_cast<unsigned int>(running_total_)) + ", allowance: " +
-                         std::to_string(static_cast<unsigned int>(allowance)) + ")");
+                // Log using safe string concatenation to avoid format specifier issues
+                logger.debug(std::string("Started task ") +
+                             std::to_string(static_cast<unsigned long long>(id)) +
+                             " for type '" + safe_type + "' (running: " +
+                             std::to_string(static_cast<unsigned int>(type_to_running_[type])) + "/" +
+                             std::to_string(static_cast<unsigned int>(running_total_)) + ", allowance: " +
+                             std::to_string(static_cast<unsigned int>(allowance)) + ")");
+            }
+            catch (const std::exception& e)
+            {
+                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "': " + e.what());
+                if (running_total_ > 0)
+                    running_total_ -= 1;
+                auto it = type_to_running_.find(type);
+                if (it != type_to_running_.end() && it->second > 0)
+                    it->second -= 1;
+                active_runnables_.erase(id);
+            }
+            catch (...)
+            {
+                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "' due to unknown exception");
+                if (running_total_ > 0)
+                    running_total_ -= 1;
+                auto it = type_to_running_.find(type);
+                if (it != type_to_running_.end() && it->second > 0)
+                    it->second -= 1;
+                active_runnables_.erase(id);
+            }
 
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
         }
+    } while (task_started_in_pass && running_total_ < effective_max_);
 
         if (tasksStarted > 0)
         {

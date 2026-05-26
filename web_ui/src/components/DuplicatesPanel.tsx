@@ -610,9 +610,7 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
         return (
           <div className="card placeholder duplicates-empty-state" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 }}>
             <p style={{ margin: 0, color: 'var(--muted)', textAlign: 'center' }}>
-              {registeredDirsCount === 0 
-                ? 'No duplicates found yet. Register a media location to start scanning.' 
-                : 'No duplicates found yet. Check back once scanning is complete, or adjust your duplication selection scale.'}
+              No groups available.
             </p>
             {registeredDirsCount === 0 && (
               <button className="primary" onClick={() => setActivePanel('settings')} style={{ minWidth: 180 }}>

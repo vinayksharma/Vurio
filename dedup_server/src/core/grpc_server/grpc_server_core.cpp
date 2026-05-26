@@ -1411,6 +1411,14 @@ public:
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Preview generating");
         }
     }
+
+    grpc::Status CancelMediaGeneration(grpc::ServerContext* context, const vurio::dedup::CancelMediaRequest* request,
+                                       vurio::dedup::Empty* response) override {
+        if (tpm_) {
+            tpm_->cancelTask(request->type(), request->file_path());
+        }
+        return grpc::Status::OK;
+    }
 };
 
 GrpcServerCore::GrpcServerCore() {}

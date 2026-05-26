@@ -25,345 +25,345 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
   typealias Version = _2
 }
 
-struct Vurio_Dedup_GetConfigRequest: Sendable {
+public struct Vurio_Dedup_GetConfigRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// empty for all
-  var key: String = String()
+  public var key: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetConfigResponse: Sendable {
+public struct Vurio_Dedup_GetConfigResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var jsonPayload: String = String()
+  public var jsonPayload: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_UpdateConfigRequest: Sendable {
+public struct Vurio_Dedup_UpdateConfigRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var key: String = String()
+  public var key: String = String()
 
-  var valueJson: String = String()
+  public var valueJson: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_UpdateConfigResponse: Sendable {
+public struct Vurio_Dedup_UpdateConfigResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_RegisterLocationRequest: Sendable {
+public struct Vurio_Dedup_RegisterLocationRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var path: String = String()
+  public var path: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_RegisterLocationResponse: Sendable {
+public struct Vurio_Dedup_RegisterLocationResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_DeregisterLocationRequest: Sendable {
+public struct Vurio_Dedup_DeregisterLocationRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var path: String = String()
+  public var path: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_DeregisterLocationResponse: Sendable {
+public struct Vurio_Dedup_DeregisterLocationResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_ChangePathRequest: Sendable {
+public struct Vurio_Dedup_ChangePathRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var oldPath: String = String()
+  public var oldPath: String = String()
 
-  var newPath: String = String()
+  public var newPath: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_ChangePathResponse: Sendable {
+public struct Vurio_Dedup_ChangePathResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var filesUpdated: Int32 = 0
+  public var filesUpdated: Int32 = 0
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetStatusRequest: Sendable {
+public struct Vurio_Dedup_GetStatusRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetStatusResponse: Sendable {
+public struct Vurio_Dedup_GetStatusResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var registeredDirs: [String] = []
+  public var registeredDirs: [String] = []
 
-  var scannedFilesCount: Int32 = 0
+  public var scannedFilesCount: Int32 = 0
 
-  var processedFilesCount: Int32 = 0
+  public var processedFilesCount: Int32 = 0
 
-  var errorFilesCount: Int32 = 0
+  public var errorFilesCount: Int32 = 0
 
-  var threadCount: Int32 = 0
+  public var threadCount: Int32 = 0
 
-  var maxThreads: Int32 = 0
+  public var maxThreads: Int32 = 0
 
-  var duplicateGroupsCount: Int32 = 0
+  public var duplicateGroupsCount: Int32 = 0
 
-  var ejectedDirs: [String] = []
+  public var ejectedDirs: [String] = []
 
-  var duplicateFilesCount: Int32 = 0
+  public var duplicateFilesCount: Int32 = 0
 
-  var duplicateFindingTotal: Int32 = 0
+  public var duplicateFindingTotal: Int32 = 0
 
-  var duplicateFindingCompleted: Int32 = 0
+  public var duplicateFindingCompleted: Int32 = 0
 
-  var isPaused: Bool = false
+  public var isPaused: Bool = false
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetGroupsRequest: Sendable {
+public struct Vurio_Dedup_GetGroupsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var limit: Int32 = 0
+  public var limit: Int32 = 0
 
-  var offset: Int32 = 0
+  public var offset: Int32 = 0
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_DuplicateFile: Sendable {
+public struct Vurio_Dedup_DuplicateFile: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var id: String = String()
+  public var id: String = String()
 
-  var filePath: String = String()
+  public var filePath: String = String()
 
-  var sizeBytes: Int64 = 0
+  public var sizeBytes: Int64 = 0
 
-  var resolution: String = String()
+  public var resolution: String = String()
 
-  var isRepresentative: Bool = false
+  public var isRepresentative: Bool = false
 
-  var similarityScore: Double = 0
+  public var similarityScore: Double = 0
 
-  var isEjected: Bool = false
+  public var isEjected: Bool = false
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_DuplicateGroup: Sendable {
+public struct Vurio_Dedup_DuplicateGroup: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var groupID: String = String()
+  public var groupID: String = String()
 
-  var files: [Vurio_Dedup_DuplicateFile] = []
+  public var files: [Vurio_Dedup_DuplicateFile] = []
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetGroupsResponse: Sendable {
+public struct Vurio_Dedup_GetGroupsResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var groups: [Vurio_Dedup_DuplicateGroup] = []
+  public var groups: [Vurio_Dedup_DuplicateGroup] = []
 
-  var totalGroups: Int32 = 0
+  public var totalGroups: Int32 = 0
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_EjectDuplicatesRequest: Sendable {
+public struct Vurio_Dedup_EjectDuplicatesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var filePaths: [String] = []
+  public var filePaths: [String] = []
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_EjectDuplicatesResponse: Sendable {
+public struct Vurio_Dedup_EjectDuplicatesResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var successCount: Int32 = 0
+  public var successCount: Int32 = 0
 
-  var failureCount: Int32 = 0
+  public var failureCount: Int32 = 0
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_UndoEjectDuplicatesRequest: Sendable {
+public struct Vurio_Dedup_UndoEjectDuplicatesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var filePaths: [String] = []
+  public var filePaths: [String] = []
 
-  var undoAll: Bool = false
+  public var undoAll: Bool = false
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_UndoEjectDuplicatesResponse: Sendable {
+public struct Vurio_Dedup_UndoEjectDuplicatesResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var successCount: Int32 = 0
+  public var successCount: Int32 = 0
 
-  var failureCount: Int32 = 0
+  public var failureCount: Int32 = 0
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
+public struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var type: Vurio_Dedup_DuplicateGroupUpdate.UpdateType = .added
+  public var type: Vurio_Dedup_DuplicateGroupUpdate.UpdateType = .added
 
-  var index: Int32 = 0
+  public var index: Int32 = 0
 
-  var group: Vurio_Dedup_DuplicateGroup {
+  public var group: Vurio_Dedup_DuplicateGroup {
     get {_group ?? Vurio_Dedup_DuplicateGroup()}
     set {_group = newValue}
   }
   /// Returns true if `group` has been explicitly set.
-  var hasGroup: Bool {self._group != nil}
+  public var hasGroup: Bool {self._group != nil}
   /// Clears the value of `group`. Subsequent reads from it will return its default value.
-  mutating func clearGroup() {self._group = nil}
+  public mutating func clearGroup() {self._group = nil}
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  enum UpdateType: SwiftProtobuf.Enum, Swift.CaseIterable {
-    typealias RawValue = Int
+  public enum UpdateType: SwiftProtobuf.Enum, Swift.CaseIterable {
+    public typealias RawValue = Int
     case added // = 0
     case updated // = 1
     case deleted // = 2
     case UNRECOGNIZED(Int)
 
-    init() {
+    public init() {
       self = .added
     }
 
-    init?(rawValue: Int) {
+    public init?(rawValue: Int) {
       switch rawValue {
       case 0: self = .added
       case 1: self = .updated
@@ -372,7 +372,7 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
       }
     }
 
-    var rawValue: Int {
+    public var rawValue: Int {
       switch self {
       case .added: return 0
       case .updated: return 1
@@ -382,7 +382,7 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
     }
 
     // The compiler won't synthesize support with the UNRECOGNIZED case.
-    static let allCases: [Vurio_Dedup_DuplicateGroupUpdate.UpdateType] = [
+    public static let allCases: [Vurio_Dedup_DuplicateGroupUpdate.UpdateType] = [
       .added,
       .updated,
       .deleted,
@@ -390,163 +390,177 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
 
   }
 
-  init() {}
+  public init() {}
 
   fileprivate var _group: Vurio_Dedup_DuplicateGroup? = nil
 }
 
-struct Vurio_Dedup_Empty: Sendable {
+public struct Vurio_Dedup_Empty: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_AdvancedActionResponse: Sendable {
+public struct Vurio_Dedup_AdvancedActionResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var successCount: Int32 = 0
+  public var successCount: Int32 = 0
 
-  var failureCount: Int32 = 0
+  public var failureCount: Int32 = 0
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_IntegrityCheckStatusResponse: Sendable {
+public struct Vurio_Dedup_IntegrityCheckStatusResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var running: Bool = false
+  public var running: Bool = false
 
-  var progress: Int32 = 0
+  public var progress: Int32 = 0
 
-  var totalFiles: Int32 = 0
+  public var totalFiles: Int32 = 0
 
-  var processedFiles: Int32 = 0
+  public var processedFiles: Int32 = 0
 
-  var filesRemoved: Int32 = 0
+  public var filesRemoved: Int32 = 0
 
-  var groupsRemoved: Int32 = 0
+  public var groupsRemoved: Int32 = 0
 
-  var thumbnailsRemoved: Int32 = 0
+  public var thumbnailsRemoved: Int32 = 0
 
-  var artifactsRemoved: Int32 = 0
+  public var artifactsRemoved: Int32 = 0
 
-  var errorsRemoved: Int32 = 0
+  public var errorsRemoved: Int32 = 0
 
-  var currentPhase: String = String()
+  public var currentPhase: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_BackupDatabaseResponse: Sendable {
+public struct Vurio_Dedup_BackupDatabaseResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var backupPath: String = String()
+  public var backupPath: String = String()
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_ClearCachesResponse: Sendable {
+public struct Vurio_Dedup_ClearCachesResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var success: Bool = false
+  public var success: Bool = false
 
-  var thumbnailCacheCleared: Bool = false
+  public var thumbnailCacheCleared: Bool = false
 
-  var diskCacheCleared: Bool = false
+  public var diskCacheCleared: Bool = false
 
-  var errorMessage: String = String()
+  public var errorMessage: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_ConfigurePurityOrderRequest: Sendable {
+public struct Vurio_Dedup_ConfigurePurityOrderRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var purityOrder: String = String()
+  public var purityOrder: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetUserThemeResponse: Sendable {
+public struct Vurio_Dedup_GetUserThemeResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var theme: String = String()
+  public var theme: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_SetUserThemeRequest: Sendable {
+public struct Vurio_Dedup_SetUserThemeRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var theme: String = String()
+  public var theme: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_GetMediaRequest: Sendable {
+public struct Vurio_Dedup_GetMediaRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var filePath: String = String()
+  public var filePath: String = String()
 
-  var size: String = String()
+  public var size: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Vurio_Dedup_MediaChunk: Sendable {
+public struct Vurio_Dedup_CancelMediaRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var chunkData: Data = Data()
+  public var filePath: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var type: String = String()
 
-  init() {}
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Vurio_Dedup_MediaChunk: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var chunkData: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -554,10 +568,10 @@ struct Vurio_Dedup_MediaChunk: Sendable {
 fileprivate let _protobuf_package = "vurio.dedup"
 
 extension Vurio_Dedup_GetConfigRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetConfigRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetConfigRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -569,14 +583,14 @@ extension Vurio_Dedup_GetConfigRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.key.isEmpty {
       try visitor.visitSingularStringField(value: self.key, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetConfigRequest, rhs: Vurio_Dedup_GetConfigRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetConfigRequest, rhs: Vurio_Dedup_GetConfigRequest) -> Bool {
     if lhs.key != rhs.key {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -584,10 +598,10 @@ extension Vurio_Dedup_GetConfigRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 }
 
 extension Vurio_Dedup_GetConfigResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetConfigResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}json_payload\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetConfigResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}json_payload\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -599,14 +613,14 @@ extension Vurio_Dedup_GetConfigResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.jsonPayload.isEmpty {
       try visitor.visitSingularStringField(value: self.jsonPayload, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetConfigResponse, rhs: Vurio_Dedup_GetConfigResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetConfigResponse, rhs: Vurio_Dedup_GetConfigResponse) -> Bool {
     if lhs.jsonPayload != rhs.jsonPayload {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -614,10 +628,10 @@ extension Vurio_Dedup_GetConfigResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 }
 
 extension Vurio_Dedup_UpdateConfigRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".UpdateConfigRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0\u{3}value_json\0")
+  public static let protoMessageName: String = _protobuf_package + ".UpdateConfigRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0\u{3}value_json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -630,7 +644,7 @@ extension Vurio_Dedup_UpdateConfigRequest: SwiftProtobuf.Message, SwiftProtobuf.
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.key.isEmpty {
       try visitor.visitSingularStringField(value: self.key, fieldNumber: 1)
     }
@@ -640,7 +654,7 @@ extension Vurio_Dedup_UpdateConfigRequest: SwiftProtobuf.Message, SwiftProtobuf.
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_UpdateConfigRequest, rhs: Vurio_Dedup_UpdateConfigRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_UpdateConfigRequest, rhs: Vurio_Dedup_UpdateConfigRequest) -> Bool {
     if lhs.key != rhs.key {return false}
     if lhs.valueJson != rhs.valueJson {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -649,10 +663,10 @@ extension Vurio_Dedup_UpdateConfigRequest: SwiftProtobuf.Message, SwiftProtobuf.
 }
 
 extension Vurio_Dedup_UpdateConfigResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".UpdateConfigResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".UpdateConfigResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -665,7 +679,7 @@ extension Vurio_Dedup_UpdateConfigResponse: SwiftProtobuf.Message, SwiftProtobuf
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -675,7 +689,7 @@ extension Vurio_Dedup_UpdateConfigResponse: SwiftProtobuf.Message, SwiftProtobuf
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_UpdateConfigResponse, rhs: Vurio_Dedup_UpdateConfigResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_UpdateConfigResponse, rhs: Vurio_Dedup_UpdateConfigResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -684,10 +698,10 @@ extension Vurio_Dedup_UpdateConfigResponse: SwiftProtobuf.Message, SwiftProtobuf
 }
 
 extension Vurio_Dedup_RegisterLocationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".RegisterLocationRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0")
+  public static let protoMessageName: String = _protobuf_package + ".RegisterLocationRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -699,14 +713,14 @@ extension Vurio_Dedup_RegisterLocationRequest: SwiftProtobuf.Message, SwiftProto
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.path.isEmpty {
       try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_RegisterLocationRequest, rhs: Vurio_Dedup_RegisterLocationRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_RegisterLocationRequest, rhs: Vurio_Dedup_RegisterLocationRequest) -> Bool {
     if lhs.path != rhs.path {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -714,10 +728,10 @@ extension Vurio_Dedup_RegisterLocationRequest: SwiftProtobuf.Message, SwiftProto
 }
 
 extension Vurio_Dedup_RegisterLocationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".RegisterLocationResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".RegisterLocationResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -730,7 +744,7 @@ extension Vurio_Dedup_RegisterLocationResponse: SwiftProtobuf.Message, SwiftProt
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -740,7 +754,7 @@ extension Vurio_Dedup_RegisterLocationResponse: SwiftProtobuf.Message, SwiftProt
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_RegisterLocationResponse, rhs: Vurio_Dedup_RegisterLocationResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_RegisterLocationResponse, rhs: Vurio_Dedup_RegisterLocationResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -749,10 +763,10 @@ extension Vurio_Dedup_RegisterLocationResponse: SwiftProtobuf.Message, SwiftProt
 }
 
 extension Vurio_Dedup_DeregisterLocationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DeregisterLocationRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0")
+  public static let protoMessageName: String = _protobuf_package + ".DeregisterLocationRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -764,14 +778,14 @@ extension Vurio_Dedup_DeregisterLocationRequest: SwiftProtobuf.Message, SwiftPro
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.path.isEmpty {
       try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_DeregisterLocationRequest, rhs: Vurio_Dedup_DeregisterLocationRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_DeregisterLocationRequest, rhs: Vurio_Dedup_DeregisterLocationRequest) -> Bool {
     if lhs.path != rhs.path {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -779,10 +793,10 @@ extension Vurio_Dedup_DeregisterLocationRequest: SwiftProtobuf.Message, SwiftPro
 }
 
 extension Vurio_Dedup_DeregisterLocationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DeregisterLocationResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".DeregisterLocationResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -795,7 +809,7 @@ extension Vurio_Dedup_DeregisterLocationResponse: SwiftProtobuf.Message, SwiftPr
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -805,7 +819,7 @@ extension Vurio_Dedup_DeregisterLocationResponse: SwiftProtobuf.Message, SwiftPr
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_DeregisterLocationResponse, rhs: Vurio_Dedup_DeregisterLocationResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_DeregisterLocationResponse, rhs: Vurio_Dedup_DeregisterLocationResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -814,10 +828,10 @@ extension Vurio_Dedup_DeregisterLocationResponse: SwiftProtobuf.Message, SwiftPr
 }
 
 extension Vurio_Dedup_ChangePathRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ChangePathRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}old_path\0\u{3}new_path\0")
+  public static let protoMessageName: String = _protobuf_package + ".ChangePathRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}old_path\0\u{3}new_path\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -830,7 +844,7 @@ extension Vurio_Dedup_ChangePathRequest: SwiftProtobuf.Message, SwiftProtobuf._M
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.oldPath.isEmpty {
       try visitor.visitSingularStringField(value: self.oldPath, fieldNumber: 1)
     }
@@ -840,7 +854,7 @@ extension Vurio_Dedup_ChangePathRequest: SwiftProtobuf.Message, SwiftProtobuf._M
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_ChangePathRequest, rhs: Vurio_Dedup_ChangePathRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_ChangePathRequest, rhs: Vurio_Dedup_ChangePathRequest) -> Bool {
     if lhs.oldPath != rhs.oldPath {return false}
     if lhs.newPath != rhs.newPath {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -849,10 +863,10 @@ extension Vurio_Dedup_ChangePathRequest: SwiftProtobuf.Message, SwiftProtobuf._M
 }
 
 extension Vurio_Dedup_ChangePathResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ChangePathResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}files_updated\0")
+  public static let protoMessageName: String = _protobuf_package + ".ChangePathResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}files_updated\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -866,7 +880,7 @@ extension Vurio_Dedup_ChangePathResponse: SwiftProtobuf.Message, SwiftProtobuf._
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -879,7 +893,7 @@ extension Vurio_Dedup_ChangePathResponse: SwiftProtobuf.Message, SwiftProtobuf._
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_ChangePathResponse, rhs: Vurio_Dedup_ChangePathResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_ChangePathResponse, rhs: Vurio_Dedup_ChangePathResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
     if lhs.filesUpdated != rhs.filesUpdated {return false}
@@ -889,29 +903,29 @@ extension Vurio_Dedup_ChangePathResponse: SwiftProtobuf.Message, SwiftProtobuf._
 }
 
 extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetStatusRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+  public static let protoMessageName: String = _protobuf_package + ".GetStatusRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     // Load everything into unknown fields
     while try decoder.nextFieldNumber() != nil {}
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetStatusRequest, rhs: Vurio_Dedup_GetStatusRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetStatusRequest, rhs: Vurio_Dedup_GetStatusRequest) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
 extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -934,7 +948,7 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.registeredDirs.isEmpty {
       try visitor.visitRepeatedStringField(value: self.registeredDirs, fieldNumber: 1)
     }
@@ -974,7 +988,7 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetStatusResponse, rhs: Vurio_Dedup_GetStatusResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetStatusResponse, rhs: Vurio_Dedup_GetStatusResponse) -> Bool {
     if lhs.registeredDirs != rhs.registeredDirs {return false}
     if lhs.scannedFilesCount != rhs.scannedFilesCount {return false}
     if lhs.processedFilesCount != rhs.processedFilesCount {return false}
@@ -993,10 +1007,10 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 }
 
 extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetGroupsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetGroupsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1009,7 +1023,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.limit != 0 {
       try visitor.visitSingularInt32Field(value: self.limit, fieldNumber: 1)
     }
@@ -1019,7 +1033,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetGroupsRequest, rhs: Vurio_Dedup_GetGroupsRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetGroupsRequest, rhs: Vurio_Dedup_GetGroupsRequest) -> Bool {
     if lhs.limit != rhs.limit {return false}
     if lhs.offset != rhs.offset {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1028,10 +1042,10 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 }
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0")
+  public static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1049,7 +1063,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
@@ -1074,7 +1088,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_DuplicateFile, rhs: Vurio_Dedup_DuplicateFile) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_DuplicateFile, rhs: Vurio_Dedup_DuplicateFile) -> Bool {
     if lhs.id != rhs.id {return false}
     if lhs.filePath != rhs.filePath {return false}
     if lhs.sizeBytes != rhs.sizeBytes {return false}
@@ -1088,10 +1102,10 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
 }
 
 extension Vurio_Dedup_DuplicateGroup: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DuplicateGroup"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}group_id\0\u{1}files\0")
+  public static let protoMessageName: String = _protobuf_package + ".DuplicateGroup"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}group_id\0\u{1}files\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1104,7 +1118,7 @@ extension Vurio_Dedup_DuplicateGroup: SwiftProtobuf.Message, SwiftProtobuf._Mess
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.groupID.isEmpty {
       try visitor.visitSingularStringField(value: self.groupID, fieldNumber: 1)
     }
@@ -1114,7 +1128,7 @@ extension Vurio_Dedup_DuplicateGroup: SwiftProtobuf.Message, SwiftProtobuf._Mess
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_DuplicateGroup, rhs: Vurio_Dedup_DuplicateGroup) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_DuplicateGroup, rhs: Vurio_Dedup_DuplicateGroup) -> Bool {
     if lhs.groupID != rhs.groupID {return false}
     if lhs.files != rhs.files {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1123,10 +1137,10 @@ extension Vurio_Dedup_DuplicateGroup: SwiftProtobuf.Message, SwiftProtobuf._Mess
 }
 
 extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetGroupsResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{3}total_groups\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetGroupsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{3}total_groups\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1139,7 +1153,7 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.groups.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
     }
@@ -1149,7 +1163,7 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetGroupsResponse, rhs: Vurio_Dedup_GetGroupsResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetGroupsResponse, rhs: Vurio_Dedup_GetGroupsResponse) -> Bool {
     if lhs.groups != rhs.groups {return false}
     if lhs.totalGroups != rhs.totalGroups {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1158,10 +1172,10 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 }
 
 extension Vurio_Dedup_EjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0")
+  public static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1173,14 +1187,14 @@ extension Vurio_Dedup_EjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtob
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.filePaths.isEmpty {
       try visitor.visitRepeatedStringField(value: self.filePaths, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_EjectDuplicatesRequest, rhs: Vurio_Dedup_EjectDuplicatesRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_EjectDuplicatesRequest, rhs: Vurio_Dedup_EjectDuplicatesRequest) -> Bool {
     if lhs.filePaths != rhs.filePaths {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -1188,10 +1202,10 @@ extension Vurio_Dedup_EjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtob
 }
 
 extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1206,7 +1220,7 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -1222,7 +1236,7 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_EjectDuplicatesResponse, rhs: Vurio_Dedup_EjectDuplicatesResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_EjectDuplicatesResponse, rhs: Vurio_Dedup_EjectDuplicatesResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.successCount != rhs.successCount {return false}
     if lhs.failureCount != rhs.failureCount {return false}
@@ -1233,10 +1247,10 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
 }
 
 extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0\u{3}undo_all\0")
+  public static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_paths\0\u{3}undo_all\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1249,7 +1263,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftPr
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.filePaths.isEmpty {
       try visitor.visitRepeatedStringField(value: self.filePaths, fieldNumber: 1)
     }
@@ -1259,7 +1273,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftPr
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesRequest, rhs: Vurio_Dedup_UndoEjectDuplicatesRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesRequest, rhs: Vurio_Dedup_UndoEjectDuplicatesRequest) -> Bool {
     if lhs.filePaths != rhs.filePaths {return false}
     if lhs.undoAll != rhs.undoAll {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1268,10 +1282,10 @@ extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftPr
 }
 
 extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1286,7 +1300,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -1302,7 +1316,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesResponse, rhs: Vurio_Dedup_UndoEjectDuplicatesResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_UndoEjectDuplicatesResponse, rhs: Vurio_Dedup_UndoEjectDuplicatesResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.successCount != rhs.successCount {return false}
     if lhs.failureCount != rhs.failureCount {return false}
@@ -1313,10 +1327,10 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
 }
 
 extension Vurio_Dedup_DuplicateGroupUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DuplicateGroupUpdate"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}index\0\u{1}group\0")
+  public static let protoMessageName: String = _protobuf_package + ".DuplicateGroupUpdate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}index\0\u{1}group\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1330,7 +1344,7 @@ extension Vurio_Dedup_DuplicateGroupUpdate: SwiftProtobuf.Message, SwiftProtobuf
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     // The use of inline closures is to circumvent an issue where the compiler
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
@@ -1347,7 +1361,7 @@ extension Vurio_Dedup_DuplicateGroupUpdate: SwiftProtobuf.Message, SwiftProtobuf
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_DuplicateGroupUpdate, rhs: Vurio_Dedup_DuplicateGroupUpdate) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_DuplicateGroupUpdate, rhs: Vurio_Dedup_DuplicateGroupUpdate) -> Bool {
     if lhs.type != rhs.type {return false}
     if lhs.index != rhs.index {return false}
     if lhs._group != rhs._group {return false}
@@ -1357,33 +1371,33 @@ extension Vurio_Dedup_DuplicateGroupUpdate: SwiftProtobuf.Message, SwiftProtobuf
 }
 
 extension Vurio_Dedup_DuplicateGroupUpdate.UpdateType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ADDED\0\u{1}UPDATED\0\u{1}DELETED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ADDED\0\u{1}UPDATED\0\u{1}DELETED\0")
 }
 
 extension Vurio_Dedup_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".Empty"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+  public static let protoMessageName: String = _protobuf_package + ".Empty"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     // Load everything into unknown fields
     while try decoder.nextFieldNumber() != nil {}
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_Empty, rhs: Vurio_Dedup_Empty) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_Empty, rhs: Vurio_Dedup_Empty) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
 extension Vurio_Dedup_AdvancedActionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".AdvancedActionResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".AdvancedActionResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1398,7 +1412,7 @@ extension Vurio_Dedup_AdvancedActionResponse: SwiftProtobuf.Message, SwiftProtob
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -1414,7 +1428,7 @@ extension Vurio_Dedup_AdvancedActionResponse: SwiftProtobuf.Message, SwiftProtob
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_AdvancedActionResponse, rhs: Vurio_Dedup_AdvancedActionResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_AdvancedActionResponse, rhs: Vurio_Dedup_AdvancedActionResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.successCount != rhs.successCount {return false}
     if lhs.failureCount != rhs.failureCount {return false}
@@ -1425,10 +1439,10 @@ extension Vurio_Dedup_AdvancedActionResponse: SwiftProtobuf.Message, SwiftProtob
 }
 
 extension Vurio_Dedup_IntegrityCheckStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".IntegrityCheckStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}running\0\u{1}progress\0\u{3}total_files\0\u{3}processed_files\0\u{3}files_removed\0\u{3}groups_removed\0\u{3}thumbnails_removed\0\u{3}artifacts_removed\0\u{3}errors_removed\0\u{3}current_phase\0")
+  public static let protoMessageName: String = _protobuf_package + ".IntegrityCheckStatusResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}running\0\u{1}progress\0\u{3}total_files\0\u{3}processed_files\0\u{3}files_removed\0\u{3}groups_removed\0\u{3}thumbnails_removed\0\u{3}artifacts_removed\0\u{3}errors_removed\0\u{3}current_phase\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1449,7 +1463,7 @@ extension Vurio_Dedup_IntegrityCheckStatusResponse: SwiftProtobuf.Message, Swift
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.running != false {
       try visitor.visitSingularBoolField(value: self.running, fieldNumber: 1)
     }
@@ -1483,7 +1497,7 @@ extension Vurio_Dedup_IntegrityCheckStatusResponse: SwiftProtobuf.Message, Swift
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_IntegrityCheckStatusResponse, rhs: Vurio_Dedup_IntegrityCheckStatusResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_IntegrityCheckStatusResponse, rhs: Vurio_Dedup_IntegrityCheckStatusResponse) -> Bool {
     if lhs.running != rhs.running {return false}
     if lhs.progress != rhs.progress {return false}
     if lhs.totalFiles != rhs.totalFiles {return false}
@@ -1500,10 +1514,10 @@ extension Vurio_Dedup_IntegrityCheckStatusResponse: SwiftProtobuf.Message, Swift
 }
 
 extension Vurio_Dedup_BackupDatabaseResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".BackupDatabaseResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}backup_path\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".BackupDatabaseResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}backup_path\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1517,7 +1531,7 @@ extension Vurio_Dedup_BackupDatabaseResponse: SwiftProtobuf.Message, SwiftProtob
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -1530,7 +1544,7 @@ extension Vurio_Dedup_BackupDatabaseResponse: SwiftProtobuf.Message, SwiftProtob
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_BackupDatabaseResponse, rhs: Vurio_Dedup_BackupDatabaseResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_BackupDatabaseResponse, rhs: Vurio_Dedup_BackupDatabaseResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.backupPath != rhs.backupPath {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
@@ -1540,10 +1554,10 @@ extension Vurio_Dedup_BackupDatabaseResponse: SwiftProtobuf.Message, SwiftProtob
 }
 
 extension Vurio_Dedup_ClearCachesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ClearCachesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}thumbnail_cache_cleared\0\u{3}disk_cache_cleared\0\u{3}error_message\0")
+  public static let protoMessageName: String = _protobuf_package + ".ClearCachesResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}thumbnail_cache_cleared\0\u{3}disk_cache_cleared\0\u{3}error_message\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1558,7 +1572,7 @@ extension Vurio_Dedup_ClearCachesResponse: SwiftProtobuf.Message, SwiftProtobuf.
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.success != false {
       try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
     }
@@ -1574,7 +1588,7 @@ extension Vurio_Dedup_ClearCachesResponse: SwiftProtobuf.Message, SwiftProtobuf.
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_ClearCachesResponse, rhs: Vurio_Dedup_ClearCachesResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_ClearCachesResponse, rhs: Vurio_Dedup_ClearCachesResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.thumbnailCacheCleared != rhs.thumbnailCacheCleared {return false}
     if lhs.diskCacheCleared != rhs.diskCacheCleared {return false}
@@ -1585,10 +1599,10 @@ extension Vurio_Dedup_ClearCachesResponse: SwiftProtobuf.Message, SwiftProtobuf.
 }
 
 extension Vurio_Dedup_ConfigurePurityOrderRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ConfigurePurityOrderRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}purity_order\0")
+  public static let protoMessageName: String = _protobuf_package + ".ConfigurePurityOrderRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}purity_order\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1600,14 +1614,14 @@ extension Vurio_Dedup_ConfigurePurityOrderRequest: SwiftProtobuf.Message, SwiftP
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.purityOrder.isEmpty {
       try visitor.visitSingularStringField(value: self.purityOrder, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_ConfigurePurityOrderRequest, rhs: Vurio_Dedup_ConfigurePurityOrderRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_ConfigurePurityOrderRequest, rhs: Vurio_Dedup_ConfigurePurityOrderRequest) -> Bool {
     if lhs.purityOrder != rhs.purityOrder {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -1615,10 +1629,10 @@ extension Vurio_Dedup_ConfigurePurityOrderRequest: SwiftProtobuf.Message, SwiftP
 }
 
 extension Vurio_Dedup_GetUserThemeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetUserThemeResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}theme\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetUserThemeResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}theme\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1630,14 +1644,14 @@ extension Vurio_Dedup_GetUserThemeResponse: SwiftProtobuf.Message, SwiftProtobuf
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.theme.isEmpty {
       try visitor.visitSingularStringField(value: self.theme, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetUserThemeResponse, rhs: Vurio_Dedup_GetUserThemeResponse) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetUserThemeResponse, rhs: Vurio_Dedup_GetUserThemeResponse) -> Bool {
     if lhs.theme != rhs.theme {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -1645,10 +1659,10 @@ extension Vurio_Dedup_GetUserThemeResponse: SwiftProtobuf.Message, SwiftProtobuf
 }
 
 extension Vurio_Dedup_SetUserThemeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".SetUserThemeRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}theme\0")
+  public static let protoMessageName: String = _protobuf_package + ".SetUserThemeRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}theme\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1660,14 +1674,14 @@ extension Vurio_Dedup_SetUserThemeRequest: SwiftProtobuf.Message, SwiftProtobuf.
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.theme.isEmpty {
       try visitor.visitSingularStringField(value: self.theme, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_SetUserThemeRequest, rhs: Vurio_Dedup_SetUserThemeRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_SetUserThemeRequest, rhs: Vurio_Dedup_SetUserThemeRequest) -> Bool {
     if lhs.theme != rhs.theme {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -1675,10 +1689,10 @@ extension Vurio_Dedup_SetUserThemeRequest: SwiftProtobuf.Message, SwiftProtobuf.
 }
 
 extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".GetMediaRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}size\0")
+  public static let protoMessageName: String = _protobuf_package + ".GetMediaRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}size\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1691,7 +1705,7 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.filePath.isEmpty {
       try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
     }
@@ -1701,7 +1715,7 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_GetMediaRequest, rhs: Vurio_Dedup_GetMediaRequest) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_GetMediaRequest, rhs: Vurio_Dedup_GetMediaRequest) -> Bool {
     if lhs.filePath != rhs.filePath {return false}
     if lhs.size != rhs.size {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1709,11 +1723,46 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
   }
 }
 
-extension Vurio_Dedup_MediaChunk: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".MediaChunk"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}chunk_data\0")
+extension Vurio_Dedup_CancelMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelMediaRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}type\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.type) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if !self.type.isEmpty {
+      try visitor.visitSingularStringField(value: self.type, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Vurio_Dedup_CancelMediaRequest, rhs: Vurio_Dedup_CancelMediaRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.type != rhs.type {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_MediaChunk: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MediaChunk"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}chunk_data\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -1725,14 +1774,14 @@ extension Vurio_Dedup_MediaChunk: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.chunkData.isEmpty {
       try visitor.visitSingularBytesField(value: self.chunkData, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Vurio_Dedup_MediaChunk, rhs: Vurio_Dedup_MediaChunk) -> Bool {
+  public static func ==(lhs: Vurio_Dedup_MediaChunk, rhs: Vurio_Dedup_MediaChunk) -> Bool {
     if lhs.chunkData != rhs.chunkData {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

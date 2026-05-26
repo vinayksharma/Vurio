@@ -1283,7 +1283,7 @@ namespace MediaDedupServer
                 
                 // Attempt to resume scheduler on failure
                 try {
-                    scheduler->start();
+                    scheduler->resume();
                 } catch(...) {}
 
                 std::lock_guard<std::mutex> lock(state_mutex_);

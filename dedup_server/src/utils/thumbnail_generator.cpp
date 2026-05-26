@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <vector>
 #include <Magick++.h>
+#include <libraw/libraw.h>
+#include "media_processors/image/backends/raw_file_detector.hpp"
 
 namespace MediaDedup
 {
@@ -62,11 +64,48 @@ namespace MediaDedup
             // Read image using ImageMagick (supports ALL formats including RAW!)
             // Use explicit exception handling to catch corruption early
             Magick::Image image;
+            bool raw_thumb_loaded = false;
+
+            if (RawFileDetector::IsRawFile(source_path))
+            {
+                LibRaw raw_processor;
+                if (raw_processor.open_file(source_path.c_str()) == LIBRAW_SUCCESS)
+                {
+                    if (raw_processor.unpack_thumb() == LIBRAW_SUCCESS)
+                    {
+                        int err = 0;
+                        libraw_processed_image_t *thumb = raw_processor.dcraw_make_mem_thumb(&err);
+                        if (thumb)
+                        {
+                            if (thumb->type == LIBRAW_IMAGE_JPEG)
+                            {
+                                try {
+                                    Magick::Blob thumb_blob(thumb->data, thumb->data_size);
+                                    image.read(thumb_blob);
+                                    raw_thumb_loaded = true;
+                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s", source_path);
+                                } catch (...) {
+                                    logger.warning("Failed to parse extracted JPEG thumbnail for: %s", source_path);
+                                }
+                            }
+                            LibRaw::dcraw_clear_mem(thumb);
+                        }
+                    }
+                    raw_processor.recycle();
+                }
+            }
 
             try
             {
-                image.ping(source_path); // Fast metadata-only read first to detect corruption
-                image.read(source_path); // Now read full image data
+                if (!raw_thumb_loaded)
+                {
+                    if (size > 0)
+                    {
+                        image.size(Magick::Geometry(size, size)); // Hint for JPEG/PNG decode-time scaling
+                    }
+                    image.ping(source_path); // Fast metadata-only read first to detect corruption
+                    image.read(source_path); // Now read full image data
+                }
             }
             catch (const Magick::ErrorCorruptImage &e)
             {
@@ -200,11 +239,48 @@ namespace MediaDedup
             // Read image using ImageMagick (supports ALL formats including RAW!)
             // Use explicit exception handling to catch corruption early
             Magick::Image image;
+            bool raw_thumb_loaded = false;
+
+            if (RawFileDetector::IsRawFile(source_path))
+            {
+                LibRaw raw_processor;
+                if (raw_processor.open_file(source_path.c_str()) == LIBRAW_SUCCESS)
+                {
+                    if (raw_processor.unpack_thumb() == LIBRAW_SUCCESS)
+                    {
+                        int err = 0;
+                        libraw_processed_image_t *thumb = raw_processor.dcraw_make_mem_thumb(&err);
+                        if (thumb)
+                        {
+                            if (thumb->type == LIBRAW_IMAGE_JPEG)
+                            {
+                                try {
+                                    Magick::Blob thumb_blob(thumb->data, thumb->data_size);
+                                    image.read(thumb_blob);
+                                    raw_thumb_loaded = true;
+                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s", source_path);
+                                } catch (...) {
+                                    logger.warning("Failed to parse extracted JPEG thumbnail for: %s", source_path);
+                                }
+                            }
+                            LibRaw::dcraw_clear_mem(thumb);
+                        }
+                    }
+                    raw_processor.recycle();
+                }
+            }
 
             try
             {
-                image.ping(source_path); // Fast metadata-only read first to detect corruption
-                image.read(source_path); // Now read full image data
+                if (!raw_thumb_loaded)
+                {
+                    if (size > 0)
+                    {
+                        image.size(Magick::Geometry(size, size)); // Hint for JPEG/PNG decode-time scaling
+                    }
+                    image.ping(source_path); // Fast metadata-only read first to detect corruption
+                    image.read(source_path); // Now read full image data
+                }
             }
             catch (const Magick::ErrorCorruptImage &e)
             {
