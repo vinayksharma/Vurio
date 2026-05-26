@@ -59,6 +59,9 @@ namespace MediaDedup::Orchestration
         Poco::Logger &logger = Poco::Logger::get("SchedulerService");
         logger.information("Pausing SchedulerService...");
         paused_.store(true, std::memory_order_relaxed);
+        if (tpm_) {
+            tpm_->pause();
+        }
         if (pauseCallback_) {
             pauseCallback_();
         }
@@ -69,6 +72,14 @@ namespace MediaDedup::Orchestration
         Poco::Logger &logger = Poco::Logger::get("SchedulerService");
         logger.information("Resuming SchedulerService...");
         paused_.store(false, std::memory_order_relaxed);
+        if (tpm_) {
+            tpm_->resume();
+        }
+    }
+
+    bool SchedulerService::isPaused() const
+    {
+        return paused_.load(std::memory_order_relaxed);
     }
 
     void SchedulerService::registerJob(const std::string &jobId,

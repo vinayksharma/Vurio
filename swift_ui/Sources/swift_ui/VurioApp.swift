@@ -39,6 +39,7 @@ class AppState: ObservableObject {
     @Published var duplicateFindingTotal: Int32 = 0
     @Published var duplicateFindingCompleted: Int32 = 0
     @Published var isOnline: Bool = true
+    @Published var isPaused: Bool = false
     
     @MainActor
     func fetchConfig() async {
@@ -71,10 +72,26 @@ class AppState: ObservableObject {
                 self.duplicateFilesCount = response.duplicateFilesCount
                 self.duplicateFindingTotal = response.duplicateFindingTotal
                 self.duplicateFindingCompleted = response.duplicateFindingCompleted
+                self.isPaused = response.isPaused
             }
         } catch {
             self.isOnline = false
             print("Failed to fetch status: \(error)")
+        }
+    }
+    
+    @MainActor
+    func togglePause() async {
+        do {
+            if isPaused {
+                _ = try await VurioGrpcClient.shared.advanced?.resumeProcessing(Vurio_Dedup_Empty())
+            } else {
+                _ = try await VurioGrpcClient.shared.advanced?.pauseProcessing(Vurio_Dedup_Empty())
+            }
+            // Optimistically update the state
+            isPaused.toggle()
+        } catch {
+            print("Failed to toggle pause: \(error)")
         }
     }
 }
@@ -298,6 +315,7 @@ struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
     @State private var hoveredSegment: HoverSegment = .none
     @State private var hoverPosition: CGPoint = .zero
+    @State private var isBreathing = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -367,30 +385,57 @@ struct StatusBarView: View {
                 .frame(height: 8)
                 
                 // Status Dot with Glow and Progress Ring
-                ZStack {
-                    Circle()
-                        .fill(appState.isOnline ? Theme.success : Theme.error)
-                        .brightness(0.3)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: appState.isOnline ? Theme.success : Theme.error, radius: 6)
+                Button(action: {
+                    Task {
+                        await appState.togglePause()
+                    }
+                }) {
+                    ZStack {
+                        if appState.isPaused {
+                            // Blinking Red Pause Indicator
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Theme.error)
+                                .shadow(color: Theme.error, radius: isBreathing ? 6 : 2)
+                                .opacity(isBreathing ? 1.0 : 0.4)
+                                .brightness(isBreathing ? 0.2 : 0.0)
+                                .frame(width: 14, height: 14)
+                                .onAppear {
+                                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                                        isBreathing = true
+                                    }
+                                }
+                                .onDisappear {
+                                    isBreathing = false
+                                }
+                        } else {
+                            Circle()
+                                .fill(appState.isOnline ? Theme.success : Theme.error)
+                                .brightness(0.3)
+                                .frame(width: 8, height: 8)
+                                .shadow(color: appState.isOnline ? Theme.success : Theme.error, radius: 6)
+                        }
                     
-                    if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                    if !appState.isPaused && appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
                         let findingPercent = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
                         Circle()
                             .trim(from: 0, to: CGFloat(findingPercent))
                             .stroke(Theme.warning, lineWidth: 2)
                             .rotationEffect(.degrees(-90))
                             .frame(width: 14, height: 14)
+                            .animation(.linear(duration: 0.1), value: findingPercent)
                     }
                 }
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active:
-                            hoveredSegment = .statusDot
-                        case .ended:
-                            hoveredSegment = .none
-                        }
+                }
+                .buttonStyle(.plain)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active:
+                        hoveredSegment = .statusDot
+                    case .ended:
+                        hoveredSegment = .none
                     }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)

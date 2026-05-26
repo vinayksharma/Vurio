@@ -81,6 +81,7 @@ message GetStatusResponse {
   int32 duplicate_files_count = 9;
   int32 duplicate_finding_total = 10;
   int32 duplicate_finding_completed = 11;
+  bool is_paused = 12;
 }
 
 // ---------------------------------------------------------
@@ -165,6 +166,9 @@ service AdvancedSettingsService {
   
   rpc PurgeEjectedAndErrored(Empty) returns (AdvancedActionResponse);
   rpc ResetDuplicates(Empty) returns (AdvancedActionResponse);
+  
+  rpc PauseProcessing(Empty) returns (AdvancedActionResponse);
+  rpc ResumeProcessing(Empty) returns (AdvancedActionResponse);
   
   rpc StartDatabaseIntegrityCheck(Empty) returns (AdvancedActionResponse);
   rpc GetDatabaseIntegrityCheckStatus(Empty) returns (IntegrityCheckStatusResponse);

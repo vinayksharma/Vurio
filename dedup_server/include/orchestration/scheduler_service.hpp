@@ -38,6 +38,7 @@ namespace MediaDedup
             void stop();
             void pause();
             void resume();
+            bool isPaused() const;
 
             void registerJob(const std::string &jobId,
                              std::chrono::milliseconds interval,

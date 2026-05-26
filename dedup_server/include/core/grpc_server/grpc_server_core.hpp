@@ -16,6 +16,7 @@ class DiskCache;
 namespace Orchestration {
     class FilesManager;
     class DuplicateFinder;
+    class SchedulerService;
 }
 class ThreadPoolManager;
 } // namespace MediaDedup
@@ -35,7 +36,8 @@ public:
                std::shared_ptr<ThreadPoolManager> thread_pool_manager,
                std::shared_ptr<DiskCache> thumbnail_cache,
                std::shared_ptr<DiskCache> transcoding_cache,
-               std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder);
+               std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder,
+               std::shared_ptr<Orchestration::SchedulerService> scheduler_service);
     void stop();
 
 private:
