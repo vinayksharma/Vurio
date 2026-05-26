@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AnimatedLogoView: View {
+    var isCompact: Bool = false
     @State private var phase: CGFloat = 0.0
 
     private var textGradient: LinearGradient {
@@ -34,14 +35,14 @@ struct AnimatedLogoView: View {
         .opacity(0.06)
     }
 
-    private var textMask: some View {
-        Text("VURIO")
+    @ViewBuilder
+    private func variant(for text: String) -> some View {
+        let textMask = Text(text)
             .font(.system(size: 38, weight: .black))
             .tracking(0.5)
-    }
-
-    private var borderMask: some View {
-        ZStack {
+            .fixedSize()
+            
+        let borderMask = ZStack {
             textMask.offset(x: 1.0, y: 1.0)
             textMask.offset(x: -1.0, y: -1.0)
             textMask.offset(x: -1.0, y: 1.0)
@@ -51,9 +52,7 @@ struct AnimatedLogoView: View {
             textMask.offset(x: 1.0, y: 0)
             textMask.offset(x: -1.0, y: 0)
         }
-    }
 
-    var body: some View {
         textMask
             .hidden()
             .overlay(
@@ -72,12 +71,16 @@ struct AnimatedLogoView: View {
                 }
                 .mask(textMask)
             )
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.easeInOut(duration: 240.0).repeatForever(autoreverses: true)) {
-                        phase = -3.0
-                    }
+    }
+
+    var body: some View {
+        variant(for: isCompact ? "V" : "VURIO")
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeInOut(duration: 240.0).repeatForever(autoreverses: true)) {
+                    phase = -3.0
                 }
             }
+        }
     }
 }

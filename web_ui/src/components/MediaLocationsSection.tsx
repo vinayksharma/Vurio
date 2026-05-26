@@ -217,8 +217,24 @@ const MediaLocationsSection: React.FC = () => {
   };
 
   return (
-    <section className="panel scan-panel media-locations-section" style={{ position: 'relative' }}>
-      <h2 className="panel-title" onClick={() => !remappingLocation && !deregisteringPath && setIsCollapsed(!isCollapsed)} style={{ cursor: (remappingLocation || deregisteringPath) ? 'wait' : 'pointer', opacity: (remappingLocation || deregisteringPath) ? 0.6 : 1 }}>
+    <section 
+      className="panel settings-panel scan-panel media-locations-section" 
+      style={{ 
+        position: 'relative',
+        cursor: (remappingLocation || deregisteringPath) ? 'wait' : (isCollapsed ? 'pointer' : 'default')
+      }}
+      onClick={() => {
+        if (isCollapsed && !remappingLocation && !deregisteringPath) {
+          setIsCollapsed(false);
+        }
+      }}
+    >
+      <h2 className="panel-title" onClick={(e) => {
+        if (!remappingLocation && !deregisteringPath) {
+          setIsCollapsed(!isCollapsed);
+          e.stopPropagation();
+        }
+      }} style={{ cursor: 'pointer', opacity: (remappingLocation || deregisteringPath) ? 0.6 : 1 }}>
         <span>Media Locations</span>
         <span 
           className="config-group-toggle" 

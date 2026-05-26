@@ -8,15 +8,6 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Settings")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Text("Adjust server configuration and manage how VURIO behaves.")
-                        .foregroundColor(Theme.textSecondary)
-                }
-                .padding(.bottom, 10)
-                
                 // Add MediaLocationsSection here if needed, but the user excluded it from this task since it already exists elsewhere in the Swift app.
                 
 
@@ -35,16 +26,17 @@ struct SettingsView: View {
                         HStack {
                             Text("Configuration")
                                 .font(.title2)
+                                .textCase(.uppercase)
                                 .fontWeight(.semibold)
                                 .foregroundColor(Theme.textPrimary)
                             Spacer()
                             Image(systemName: configSectionCollapsed ? "chevron.right" : "chevron.down")
                                 .foregroundColor(Theme.textSecondary)
                         }
+                        .padding()
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .padding()
                     
                     if !configSectionCollapsed {
                         VStack(alignment: .leading, spacing: 15) {
@@ -73,6 +65,7 @@ struct SettingsView: View {
                                     VStack(alignment: .leading, spacing: 10) {
                                         Text(sectionName)
                                             .font(.headline)
+                                            .textCase(.uppercase)
                                             .foregroundColor(Theme.textSecondary)
                                             .padding(.top, 10)
                                         
@@ -95,6 +88,7 @@ struct SettingsView: View {
                 }
                 .background(Theme.surface)
                 .cornerRadius(10)
+                .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
                 
                 AdvancedSection(viewModel: viewModel)
                 
@@ -204,6 +198,7 @@ struct ASTPopoverContent: View {
                     if node.type == "headline" {
                         Text(.init(node.text))
                             .font(.headline)
+                            .textCase(.uppercase)
                     } else {
                         Text(.init(node.text))
                     }

@@ -78,10 +78,19 @@ const PurityOrderSection: React.FC = () => {
   };
 
   return (
-    <section className="panel settings-panel">
+    <section 
+      className="panel settings-panel"
+      onClick={() => {
+        if (isCollapsed) setIsCollapsed(false);
+      }}
+      style={{ cursor: isCollapsed ? 'pointer' : 'default' }}
+    >
       <h2 
         className="panel-title" 
-        onClick={() => setIsCollapsed(!isCollapsed)} 
+        onClick={(e) => {
+          setIsCollapsed(!isCollapsed);
+          e.stopPropagation();
+        }} 
         style={{ cursor: 'pointer' }}
       >
         <span>Duplicate Purity Rules</span>

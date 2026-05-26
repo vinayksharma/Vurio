@@ -12,11 +12,13 @@ struct MediaLocationsView: View {
     @State private var ejectionPaths: [String: [String]] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
                 Text("Media Locations")
                     .font(.title2)
-                    .fontWeight(.bold)
+                    .textCase(.uppercase)
+                    .fontWeight(.semibold)
                 Spacer()
                 Image(systemName: "arrowtriangle.down.fill")
                     .foregroundColor(Theme.textSecondary)
@@ -65,6 +67,7 @@ struct MediaLocationsView: View {
             
             Text("Registered Locations")
                 .font(.title3)
+                .textCase(.uppercase)
                 .fontWeight(.bold)
             
             Text("Choose a folder below to manage or deregister it.")
@@ -154,9 +157,10 @@ struct MediaLocationsView: View {
             .disabled(selectedRegisteredLocation == nil || isDeregistering)
                 .help("Deregister and stop scanning the selected location")
             
-            Spacer()
+            
         }
         .padding(30)
+        }
         .onAppear {
             Task {
                 await appState.fetchStatus()

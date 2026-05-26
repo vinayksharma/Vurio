@@ -15,16 +15,17 @@ struct AdvancedSection: View {
                 HStack {
                     Text("Advanced")
                         .font(.title2)
+                        .textCase(.uppercase)
                         .fontWeight(.semibold)
                         .foregroundColor(Theme.textPrimary)
                     Spacer()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .foregroundColor(Theme.textSecondary)
                 }
+                .padding()
                 .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            .padding()
             
             if !isCollapsed {
                 VStack(alignment: .leading, spacing: 20) {
@@ -116,6 +117,7 @@ struct AdvancedSection: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Advanced Overlay")
                                 .font(.headline)
+                                .textCase(.uppercase)
                             Text("An option to show various technical overlays on existing UI elements or adds new to gain more insight into the inner working of the system.")
                                 .font(.subheadline)
                                 .foregroundColor(Theme.textSecondary)
@@ -141,6 +143,7 @@ struct AdvancedSection: View {
         }
         .background(Theme.surface)
         .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }
 
@@ -176,6 +179,7 @@ struct ActionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
+                    .textCase(.uppercase)
                 Text(description)
                     .font(.subheadline)
                     .foregroundColor(Theme.textSecondary)
