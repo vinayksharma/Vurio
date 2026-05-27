@@ -777,7 +777,7 @@ struct DuplicateGroupCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Duplicate Group • \(group.files.count) files")
                     .font(.headline)
@@ -812,14 +812,16 @@ struct DuplicateGroupCard: View {
                                 }
                             }
                         }
-                        .padding(.top, 10)
+                        .padding(.top, 15)
+                        .padding(.bottom, 29)
                 }
                 
                 if !candidates.isEmpty {
                     Divider()
                         .frame(height: 70)
                         .background(Theme.borderActive)
-                        .padding(.top, 15)
+                        .padding(.top, 20)
+                        .padding(.bottom, 34)
                 }
                 
                 VerticalScrollingFixView {
@@ -840,48 +842,50 @@ struct DuplicateGroupCard: View {
                                     }
                             }
                         }
-                    }
-                    .padding(.top, 15)
-                    .padding(.bottom, 22)
-                    .padding(.leading, 4)
-                    .padding(.trailing, 12)
-                    .overlay(alignment: .bottomLeading) {
-                        let indices = candidates.enumerated().compactMap { index, file in
-                            let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-                            return (1.0 - score) <= duplicateTightness ? index : nil
-                        }
-                        
-                        if let first = indices.first, let last = indices.last {
-                            let count = last - first + 1
-                            let leftOffset = CGFloat(first) * (70 + 12)
-                            let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
+                        .padding(.top, 20)
+                        .padding(.bottom, 34)
+                        .padding(.leading, 6)
+                        .padding(.trailing, 12)
+                        .overlay(alignment: .bottomLeading) {
+                            let indices = candidates.enumerated().compactMap { index, file in
+                                let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                                return (1.0 - score) <= duplicateTightness ? index : nil
+                            }
                             
-                            let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
-                            let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
-                            let isRestoreMode = toEject.isEmpty
-                            
-                            BracketView(
-                                width: width,
-                                isRestoreMode: isRestoreMode,
-                                isEjecting: isEjecting,
-                                action: {
-                                    if isRestoreMode {
-                                        onRestoreSet(toRestore)
-                                    } else if !toEject.isEmpty {
-                                        onEjectSet(toEject)
+                            if let first = indices.first, let last = indices.last {
+                                let count = last - first + 1
+                                let leftOffset = CGFloat(first) * (70 + 12) + 6 - 4 // Account for leading padding and balance the +8 width
+                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
+                                
+                                let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
+                                let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
+                                let isRestoreMode = toEject.isEmpty
+                                
+                                BracketView(
+                                    width: width,
+                                    isRestoreMode: isRestoreMode,
+                                    isEjecting: isEjecting,
+                                    action: {
+                                        if isRestoreMode {
+                                            onRestoreSet(toRestore)
+                                        } else if !toEject.isEmpty {
+                                            onEjectSet(toEject)
+                                        }
                                     }
-                                }
-                            )
-                            .padding(.leading, leftOffset)
-                            .padding(.bottom, 2)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
+                                )
+                                .padding(.leading, leftOffset)
+                                .padding(.bottom, 8)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -891,7 +895,7 @@ struct DuplicateGroupCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isRepEjectHovered ? Theme.error : Theme.border, lineWidth: isRepEjectHovered ? 2 : 1)
         )
-        .padding(.bottom, 12)
+        .padding(.bottom, 4)
     }
 }
 
