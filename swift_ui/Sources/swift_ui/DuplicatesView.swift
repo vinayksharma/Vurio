@@ -77,19 +77,6 @@ struct DuplicatesView: View {
             // Top Control Bar
             VStack(spacing: 0) {
                 HStack {
-                    Text("Live Duplicate Feed")
-                        .font(.headline)
-                        .textCase(.uppercase)
-                    Spacer()
-                    Text("\(totalGroups) groups")
-                        .foregroundColor(Theme.textSecondary)
-                        .font(.subheadline)
-                }
-                .padding()
-                
-                Divider().background(Theme.border)
-                
-                HStack {
                     HStack(spacing: 4) {
                         Image(systemName: "square.fill.on.square.fill")
                         Text("IDENTICAL")
@@ -235,10 +222,10 @@ struct DuplicatesView: View {
                     ScrollView {
                         ZStack(alignment: .topLeading) {
                             Color.clear
-                                .frame(height: CGFloat(totalGroups) * 180.0)
+                                .frame(height: CGFloat(totalGroups) * 158.0 + 60.0)
                             
                             let viewportHeight = scrollGeo.size.height
-                            let rowHeight: CGFloat = 180.0
+                            let rowHeight: CGFloat = 158.0
                             let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
                             let visibleCount = Int(ceil(viewportHeight / rowHeight)) + 4
                             let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
@@ -281,7 +268,7 @@ struct DuplicatesView: View {
                                 // In macOS, depending on flippedness, offset might be different, but typically bounds.origin.y is the scroll offset.
                                 scrollOffset = newOffset
                                 
-                                let rowHeight: CGFloat = 180.0
+                                let rowHeight: CGFloat = 158.0
                                 let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
                                 let visibleCount = Int(ceil(scrollGeo.size.height / rowHeight)) + 4
                                 let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
@@ -669,12 +656,12 @@ struct DuplicatesView: View {
                 }
                 
                 // Unload groups that have moved far out of view to free memory
-                let rowHeight: CGFloat = 180.0
+                let rowHeight: CGFloat = 158.0
                 let visibleStart = max(0, Int(scrollOffset / rowHeight))
                 let safeBuffer = Int(pageSize * 2) // keep roughly 2 pages buffer
                 let estimatedViewportRows = 20
                 
-                let upperLimit = max(0, visibleStart - safeBuffer)
+                let upperLimit = min(localGroups.count, max(0, visibleStart - safeBuffer))
                 for i in 0..<upperLimit {
                     localGroups[i].group = nil
                 }
@@ -778,23 +765,9 @@ struct DuplicateGroupCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("Duplicate Group • \(group.files.count) files")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .textCase(.uppercase)
-                    .foregroundColor(Theme.textPrimary)
-                
-                if advancedOverlayEnabled {
-                    Text("ID: \(group.groupID)")
-                        .font(.custom("Menlo", size: 11))
-                        .foregroundColor(Theme.success)
-                }
-            }
-            
             HStack(alignment: .top, spacing: 20) {
                 if let rep = representative {
-                    DuplicateMemberView(file: rep, isRep: true, isEjecting: isEjecting, onRestore: {
+                    DuplicateMemberView(file: rep, isRep: true, overlayText: "ID: \(group.groupID)", isEjecting: isEjecting, onRestore: {
                         let allPaths = group.files.map { $0.filePath }
                         onRestoreSet(allPaths)
                     }, onEject: {
@@ -804,24 +777,23 @@ struct DuplicateGroupCard: View {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isRepEjectHovered = hovering
                         }
-                    })
-                        .onTapGesture {
-                            if !isEjecting {
-                                if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
-                                    onThumbnailTapped(idx)
-                                }
+                    }, onThumbnailTapped: {
+                        if !isEjecting {
+                            if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
+                                onThumbnailTapped(idx)
                             }
                         }
-                        .padding(.top, 15)
-                        .padding(.bottom, 29)
+                    })
+                        .padding(.top, 25)
+                        .padding(.bottom, 25)
                 }
                 
                 if !candidates.isEmpty {
                     Divider()
                         .frame(height: 70)
                         .background(Theme.borderActive)
-                        .padding(.top, 20)
-                        .padding(.bottom, 34)
+                        .padding(.top, 30)
+                        .padding(.bottom, 30)
                 }
                 
                 VerticalScrollingFixView {
@@ -832,18 +804,17 @@ struct DuplicateGroupCard: View {
                                     onRestoreSet([file.filePath])
                                 }, onEject: {
                                     onEjectSet([file.filePath])
-                                })
-                                    .onTapGesture {
-                                        if !isEjecting {
-                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                                onThumbnailTapped(idx)
-                                            }
+                                }, onThumbnailTapped: {
+                                    if !isEjecting {
+                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                            onThumbnailTapped(idx)
                                         }
                                     }
+                                })
                             }
                         }
-                        .padding(.top, 20)
-                        .padding(.bottom, 34)
+                        .padding(.top, 30)
+                        .padding(.bottom, 30)
                         .padding(.leading, 6)
                         .padding(.trailing, 12)
                         .overlay(alignment: .bottomLeading) {
@@ -874,13 +845,14 @@ struct DuplicateGroupCard: View {
                                     }
                                 )
                                 .padding(.leading, leftOffset)
-                                .padding(.bottom, 8)
+                                .padding(.bottom, 6)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
                             }
                         }
                     }
                 }
+                .frame(height: 130)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -902,13 +874,16 @@ struct DuplicateGroupCard: View {
 struct DuplicateMemberView: View {
     let file: Vurio_Dedup_DuplicateFile
     let isRep: Bool
+    var overlayText: String? = nil
     var isEjecting: Bool = false
     var onRestore: (() -> Void)? = nil
     var onEject: (() -> Void)? = nil
     var onEjectHoverChanged: ((Bool) -> Void)? = nil
+    var onThumbnailTapped: (() -> Void)? = nil
     
     @State private var isHovered = false
     @State private var isButtonHovered = false
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     
     var body: some View {
         let size: CGFloat = isRep ? 80 : 70
@@ -919,6 +894,10 @@ struct DuplicateMemberView: View {
                 .frame(width: size, height: size)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onThumbnailTapped?()
+                }
             
             if file.isEjected {
                 Button(action: {
@@ -950,8 +929,23 @@ struct DuplicateMemberView: View {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(file.isEjected ? Theme.error : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border)), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
         )
+        .overlay(alignment: .topLeading) {
+            if advancedOverlayEnabled {
+                if let text = overlayText {
+                    Text(text)
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(Theme.success)
+                        .offset(y: -14)
+                } else if !isRep {
+                    Text(String(format: "%.4f", file.similarityScore))
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(Theme.success)
+                        .offset(y: -14)
+                }
+            }
+        }
         .overlay(alignment: .topTrailing) {
-            if !file.isEjected && isHovered && !isEjecting {
+            if !file.isEjected && !isEjecting {
                 Button(action: {
                     onEject?()
                 }) {
@@ -969,6 +963,8 @@ struct DuplicateMemberView: View {
                 }
                 .buttonStyle(.plain)
                 .offset(x: 8, y: -8)
+                .opacity((isHovered || isButtonHovered) ? 1.0 : 0.0)
+                .allowsHitTesting(isHovered || isButtonHovered)
                 .onHover { hovering in
                     withAnimation(.easeInOut(duration: 0.1)) {
                         isButtonHovered = hovering
