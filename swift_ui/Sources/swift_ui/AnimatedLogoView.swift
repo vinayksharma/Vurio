@@ -76,7 +76,7 @@ struct AnimatedLogoView: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0)) { context in
             let elapsed = context.date.timeIntervalSinceReferenceDate
             let cycle = elapsed.truncatingRemainder(dividingBy: animationDuration * 2)
             let fraction = cycle < animationDuration ? cycle / animationDuration : 2.0 - (cycle / animationDuration)

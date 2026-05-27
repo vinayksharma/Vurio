@@ -998,8 +998,11 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
               display: 'flex',
               height: '100%',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '12px',
-              minWidth: 'min-content',
+              minWidth: '100%',
+              width: 'max-content',
+              padding: '0 12px',
               position: 'relative',
             }}
           >
