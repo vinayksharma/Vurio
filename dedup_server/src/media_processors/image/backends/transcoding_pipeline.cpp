@@ -279,13 +279,9 @@ namespace MediaDedup
             return false;
         }
 
-        if (!NeedsTranscoding(source_file_path))
-        {
-            logger.debug("File does not need transcoding: %s", source_file_path);
-            return false;
-        }
+        bool is_raw = NeedsTranscoding(source_file_path);
 
-        logger.information("Starting file-based transcoding for raw file: %s", source_file_path);
+        logger.information("Starting file-based transcoding for file: %s (RAW: %s)", source_file_path, is_raw ? "yes" : "no");
 
         try
         {
@@ -304,6 +300,16 @@ namespace MediaDedup
             }
 
             logger.debug("Source file validation passed - size: %zu bytes", file_size);
+
+            if (is_raw) {
+                auto validation_result = RawValidator::validate(source_file_path);
+                if (!validation_result.is_valid)
+                {
+                    logger.warning("RAW validation failed for %s: %s (code: %d)",
+                                   source_file_path, validation_result.error_message, validation_result.error_code);
+                    return false;
+                }
+            }
 
             // First transcode to memory
             std::vector<std::uint8_t> jpeg_data;
