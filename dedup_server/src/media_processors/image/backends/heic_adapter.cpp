@@ -45,8 +45,7 @@ namespace MediaDedup
 
         try
         {
-            Poco::Pipe outPipe, errPipe;
-            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, &outPipe, &errPipe);
+            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
             
             // Wait for completion (could add timeout here if necessary)
             int rc = handle.wait();
