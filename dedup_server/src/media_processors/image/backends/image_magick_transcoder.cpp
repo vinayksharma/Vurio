@@ -1,4 +1,5 @@
 #include "media_processors/image/backends/image_magick_transcoder.hpp"
+#include "media_processors/image/backends/raw_file_detector.hpp"
 #include <MagickCore/MagickCore.h>
 #include <Poco/Logger.h>
 #include <filesystem>
@@ -148,7 +149,19 @@ namespace MediaDedup
             try
             {
                 logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path.c_str());
-                image_.read(file_path);
+                
+                // Add prefix based on magic bytes to override extension-based delegation
+                ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
+                std::string read_path = file_path;
+                if (format == ImageFormat::JPEG) {
+                    read_path = "jpeg:" + file_path;
+                } else if (format == ImageFormat::PNG) {
+                    read_path = "png:" + file_path;
+                } else if (format == ImageFormat::TIFF) {
+                    read_path = "tiff:" + file_path;
+                }
+                
+                image_.read(read_path);
                 logger_.debug("Successfully read image file: %s (size: %sx%s, depth: %s)",
                               file_path, std::to_string(image_.columns()), std::to_string(image_.rows()), std::to_string(image_.depth()));
             }
