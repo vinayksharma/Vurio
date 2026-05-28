@@ -423,14 +423,25 @@ namespace MediaDedup
 
         std::unique_lock<std::mutex> lock(mutex_);
 
-        // Gradual decrease policy: if running_total_ >= effective_max_, we can still finish tasks but avoid starting new ones
-        if (running_total_ >= effective_max_)
+        // Check for high-priority UI tasks dynamically
+        auto has_ui_tasks_fn = [this]() {
+            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty();
+        };
+
+        size_t current_limit = effective_max_;
+        if (has_ui_tasks_fn())
+        {
+            current_limit = static_cast<size_t>(pool_->capacity());
+        }
+
+        // Gradual decrease policy: if running_total_ >= current_limit, we can still finish tasks but avoid starting new ones
+        if (running_total_ >= current_limit)
         {
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
             std::stringstream thread_id;
             thread_id << std::this_thread::get_id();
             logger.debug("Skipping schedule - at capacity (%u/%u threads), calling thread: %s",
-                         static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_), thread_id.str());
+                         static_cast<unsigned int>(running_total_), static_cast<unsigned int>(current_limit), thread_id.str());
             return;
         }
 
@@ -439,8 +450,9 @@ namespace MediaDedup
             Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
             logger.debug("Skipping schedule - no task types registered");
             return;
-        }        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.debug("Scheduling tasks - running: %u/%u, types: %u", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_), static_cast<unsigned int>(round_robin_types_.size()));
+        }
+        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
+        logger.debug("Scheduling tasks - running: %u/%u, types: %u", static_cast<unsigned int>(running_total_), static_cast<unsigned int>(current_limit), static_cast<unsigned int>(round_robin_types_.size()));
 
         // Make a copy of the round_robin_types_ vector to avoid modification during iteration
         std::vector<std::string> types_copy = round_robin_types_;
@@ -448,16 +460,11 @@ namespace MediaDedup
         size_t numTypes = types_copy.size();
         size_t tasksStarted = 0;
 
-        // Check for high-priority UI tasks dynamically
-        auto has_ui_tasks_fn = [this]() {
-            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty();
-        };
-
         bool task_started_in_pass;
         do {
             task_started_in_pass = false;
             
-            for (size_t i = 0; i < numTypes && running_total_ < effective_max_; ++i)
+            for (size_t i = 0; i < numTypes && running_total_ < current_limit; ++i)
             {
                 const std::string &type_ref = types_copy[(startIndex + i) % numTypes];
                 std::string type = type_ref; // Make a copy to avoid reference issues
@@ -475,10 +482,10 @@ namespace MediaDedup
             size_t runningForType = type_to_running_[type];
             size_t allowance = allowanceFor(type);
             
-            // Auto-prioritization: Allow UI tasks to use all available threads
+            // Auto-prioritization: Allow UI tasks to use all available threads (up to current limit)
             if (type == "thumbnail_generator" || type == "preview_generator")
             {
-                allowance = effective_max_;
+                allowance = current_limit;
             }
             if (runningForType >= allowance)
             {
@@ -486,8 +493,13 @@ namespace MediaDedup
                 continue; // this type is at its slice
             }
 
-            if (running_total_ >= effective_max_)
+            if (running_total_ >= current_limit)
                 break;
+
+            if (running_total_ >= effective_max_ && type != "thumbnail_generator" && type != "preview_generator")
+            {
+                continue; // only UI tasks can bypass effective_max_
+            }
 
             auto task = queue.front();
             queue.pop_front();
@@ -556,11 +568,15 @@ namespace MediaDedup
             // record selection index
             rr_index_ = (startIndex + i + 1) % numTypes;
         }
-    } while (task_started_in_pass && running_total_ < effective_max_);
+    } while (task_started_in_pass && running_total_ < current_limit);
 
         if (tasksStarted > 0)
         {
-            logger.information("Scheduled %u new tasks, total running: %u/%u", static_cast<unsigned int>(tasksStarted), static_cast<unsigned int>(running_total_), static_cast<unsigned int>(effective_max_));
+            logger.information("Scheduled %u new tasks, total running: %u/%u (limit: %u)",
+                               static_cast<unsigned int>(tasksStarted),
+                               static_cast<unsigned int>(running_total_),
+                               static_cast<unsigned int>(effective_max_),
+                               static_cast<unsigned int>(current_limit));
         }
     }
 

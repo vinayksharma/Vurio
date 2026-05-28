@@ -149,6 +149,11 @@ namespace MediaDedup::Orchestration
                                              // submit job using new executeJob method
                                             try
                                             {
+                                                if (ref.state.load() == JobState::RUNNING)
+                                                {
+                                                    Poco::Logger::get("SchedulerService").debug("Job %s is already running, skipping scheduled dispatch", ref.jobId);
+                                                    continue;
+                                                }
                                                 // Info log that a new job dispatch is starting
                                                 {
                                                     Poco::Logger &logger = Poco::Logger::get("SchedulerService");

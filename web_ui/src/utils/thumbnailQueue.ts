@@ -173,9 +173,18 @@ class ThumbnailRequestQueue {
     };
 
     // Cap pending stack to prevent OOM when scrolling through many groups
-    const MAX_PENDING = 400;
+    const MAX_PENDING = 10000;
     if (this.pendingStack.length >= MAX_PENDING) {
-      this.pendingStack = this.pendingStack.slice(-Math.floor(MAX_PENDING * 0.7));
+      const keepCount = Math.floor(MAX_PENDING * 0.7);
+      const dropped = this.pendingStack.slice(0, this.pendingStack.length - keepCount);
+      this.pendingStack = this.pendingStack.slice(-keepCount);
+      
+      // Notify UI of dropped requests so they can be re-queued later if needed
+      dropped.forEach(req => {
+        if (req.callback) {
+          req.callback(false, req.url);
+        }
+      });
     }
 
     this.pendingStack.push(request);
@@ -522,12 +531,12 @@ class ThumbnailRequestQueue {
       // Preload successful
       const isPreloadPlaceholder = preloadImg.naturalWidth === 1 && preloadImg.naturalHeight === 1;
 
+      // Free up the queue slot immediately since network request is done!
+      cleanup(true, isPreloadPlaceholder);
+
       // If this is a "fire and forget" request, just mark as completed and cleanup
       // The server has cached it, which is all we need
       if (request.fireAndForget) {
-        // Server has cached the thumbnail - mark as completed for deduplication
-        // When user scrolls back, it will load from cache quickly
-        cleanup(true, isPreloadPlaceholder);
         return;
       }
 
@@ -557,8 +566,6 @@ class ThumbnailRequestQueue {
               errorIndicator.style.display = 'none';
             }
           }
-
-          cleanup(true, isAsyncPlaceholder);
         };
 
         img.onerror = () => {
@@ -584,8 +591,6 @@ class ThumbnailRequestQueue {
               errorIndicator.style.display = 'flex';
             }
           }
-
-          cleanup(false);
         };
 
         // Set src to trigger load
@@ -599,9 +604,6 @@ class ThumbnailRequestQueue {
             img.onload(new Event('load'));
           }
         }
-      } else {
-        // Element no longer exists or doesn't match
-        cleanup(false);
       }
     };
 
@@ -626,6 +628,9 @@ class ThumbnailRequestQueue {
           retryCount: request.retryCount,
           nextRetryTime: request.nextRetryTime,
         });
+
+        // Remove from active so a slot is freed
+        this.activeRequests.delete(request.url);
 
         // Add back to queue for retry (at end, so it's processed after new requests)
         this.pendingStack.push(request);
