@@ -185,3 +185,45 @@ TEST_F(SchedulerConcurrencyTest, ListJobs_ReturnsRegisteredJobs)
     EXPECT_TRUE(std::find(jobs.begin(), jobs.end(), "job1") != jobs.end());
     EXPECT_TRUE(std::find(jobs.begin(), jobs.end(), "job2") != jobs.end());
 }
+
+TEST_F(SchedulerConcurrencyTest, ScheduledDispatch_WhenAlreadyRunning_SkipsDispatch)
+{
+    std::atomic<int> execution_count{0};
+    std::atomic<bool> job_started{false};
+    std::atomic<bool> release_job{false};
+
+    // Register a test job with a very short interval (50 ms) to trigger rapid scheduled dispatches.
+    // The callback blocks until release_job is true.
+    scheduler_->registerJob("rapidJob", std::chrono::milliseconds(50), "test", [&]()
+                            {
+        job_started.store(true);
+        execution_count.fetch_add(1);
+        while (!release_job.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
+    // Wait until the job starts the first time.
+    auto start = std::chrono::steady_clock::now();
+    while (!job_started.load() &&
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(3))
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(job_started.load());
+
+    // Wait for a few intervals (e.g. 250 ms) while the job is still running/blocking.
+    // If the check works, scheduled dispatches during this time will be skipped,
+    // and the execution count will remain exactly 1.
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    // Verify that it only executed exactly once (no duplicate queueing occurred)
+    EXPECT_EQ(execution_count.load(), 1);
+
+    // Release the job so it can complete.
+    release_job.store(true);
+
+    // Wait a bit to ensure it completes
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+

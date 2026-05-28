@@ -265,6 +265,7 @@ public:
             
             for (const auto& member : group_with_members.members) {
                 auto* proto_file = proto_group->add_files();
+                proto_file->set_id(std::to_string(member.file_id));
                 proto_file->set_file_path(member.file_path);
                 proto_file->set_size_bytes(member.file_size);
                 proto_file->set_is_representative(member.is_representative);

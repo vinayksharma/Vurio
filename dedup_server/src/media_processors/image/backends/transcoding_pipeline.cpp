@@ -132,6 +132,15 @@ namespace MediaDedup
     {
         if (file_path.empty() || !config_manager)
             return false;
+            
+        // Check magic bytes first to catch disguised files
+        ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
+        
+        // HEIC files must always be transcoded for OpenCV embedding
+        if (format == ImageFormat::HEIC) {
+            return true;
+        }
+
         std::filesystem::path p(file_path);
         std::string ext = p.extension().string();
         if (ext.empty())

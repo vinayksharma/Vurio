@@ -71,7 +71,18 @@ if [ "$DO_REBUILD" = true ]; then
   else
     echo "Rebuilding Swift UI and running unit tests..."
     (cd "$SWIFT_UI_DIR" && swift build)
+    echo "Starting backend temporarily for tests..."
+    (cd "$BACKEND_DIR" && ./scripts/run.sh server)
+    sleep 2
+    set +e
     (cd "$SWIFT_UI_DIR" && swift test)
+    TEST_EXIT_CODE=$?
+    set -e
+    echo "Stopping temporary backend..."
+    (cd "$BACKEND_DIR" && ./scripts/run.sh stop)
+    if [ $TEST_EXIT_CODE -ne 0 ]; then
+      exit $TEST_EXIT_CODE
+    fi
   fi
 fi
 
