@@ -522,9 +522,72 @@ TEST(ThreadPoolManagerTest, AutoPrioritizesUITasks)
 
     tpm.shutdownAndDrain(std::chrono::milliseconds(100));
 }
+
+TEST(ThreadPoolManagerTest, UIGraceCapacityBypassesMaxLimit)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2")); // effective_max = 2, pool capacity = 4
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+    tpm.setShare("image_processor", 1.0);
+    tpm.setShare("thumbnail_generator", 0.25);
+
+    std::atomic<int> bg_started{0};
+    std::atomic<int> ui_started{0};
+    std::atomic<bool> release_all{false};
+
+    // Submit 2 background tasks to saturate effective_max_ limit (running = 2).
+    for (int i = 0; i < 2; ++i)
+    {
+        tpm.submit("image_processor", [&]() {
+            bg_started++;
+            while (!release_all.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }, "file_bg_" + std::to_string(i));
+    }
+
+    // Wait until both background tasks start.
+    bool ok = MediaDedup::Test::TestUtils::waitForCondition(
+        [&](){ return bg_started.load() >= 2; },
+        std::chrono::milliseconds(1000), 
+        std::chrono::milliseconds(10)
+    );
+    ASSERT_TRUE(ok);
+
+    // Now submit 2 UI tasks. Since grace capacity is pool_->capacity() = 4,
+    // they should start running immediately even though background tasks are blocking.
+    for (int i = 0; i < 2; ++i)
+    {
+        tpm.submit("thumbnail_generator", [&]() {
+            ui_started++;
+            while (!release_all.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }, "file_ui_" + std::to_string(i));
+    }
+
+    // Wait and verify that UI tasks have actually started (running total = 4).
+    ok = MediaDedup::Test::TestUtils::waitForCondition(
+        [&](){ return ui_started.load() >= 2; },
+        std::chrono::milliseconds(2000), 
+        std::chrono::milliseconds(10)
+    );
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(tpm.getStatus().runningTotal, 4u);
+
+    // Release all tasks and clean up
+    release_all.store(true);
+    tpm.shutdownAndDrain(std::chrono::milliseconds(200));
+}
+
 #if !defined(ALL_UNIT_TESTS)
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
 #endif
+
