@@ -262,7 +262,7 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp
-    src/media_processors/image/backends/raw_validator.cpp
+    src/media_processors/image/backends/heic_adapter.cpp
     src/media_processors/image/backends/tiff_validator.cpp
     src/media_processors/image/backends/transcoding_pipeline.cpp
     src/media_processors/image/pipelines/quality_pipeline.cpp

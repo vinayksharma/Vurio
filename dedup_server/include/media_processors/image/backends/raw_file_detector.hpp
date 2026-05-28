@@ -11,6 +11,16 @@ namespace MediaDedup
      * This class provides static methods to determine if a file is a raw image format
      * that needs to be transcoded before processing by OpenCV or other backends.
      */
+    enum class ImageFormat
+    {
+        JPEG,
+        PNG,
+        HEIC,
+        TIFF,
+        RAW,
+        UNKNOWN
+    };
+
     class RawFileDetector
     {
     public:
@@ -21,6 +31,14 @@ namespace MediaDedup
          * @return true if the file is a raw format that needs transcoding, false otherwise
          */
         static bool IsRawFile(const std::string &file_path);
+
+        /**
+         * @brief Detects the image format by reading the magic bytes of the file.
+         * 
+         * @param file_path The fully qualified path to the file to check
+         * @return The ImageFormat detected from magic bytes
+         */
+        static ImageFormat DetectFormatFromMagicBytes(const std::string &file_path);
 
         /**
          * @brief Get the file extension from a file path
