@@ -911,7 +911,6 @@ const DuplicateGroupControl: React.FC<DuplicateGroupControlProps> = ({ group, gr
           <img
             data-src={thumbnailUrl}
             alt=""
-            loading="lazy"
             decoding="async"
             style={{ display: 'none' }}
             onError={handleImageError}
