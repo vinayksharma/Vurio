@@ -261,7 +261,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS} ${LIBRAW_INCLUDE_DIRS} ${LIBTIFF_INCLUDE_DIRS})
@@ -380,7 +380,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -418,7 +418,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
@@ -520,10 +520,10 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_transcoder.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
-    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp

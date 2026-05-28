@@ -1,7 +1,7 @@
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
-#include "media_processors/image/backends/raw_validator.hpp"
 #include "media_processors/image/backends/image_magick_adapter.hpp"
+#include "media_processors/image/backends/heic_adapter.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
@@ -27,19 +27,6 @@ namespace MediaDedup
         
         logger.information("Starting transcoding for file: %s (RAW: %s)", file_path, is_raw ? "yes" : "no");
 
-        // Validate RAW file before attempting transcoding to catch unsupported/corrupted files early
-        if (is_raw) {
-            auto validation_result = RawValidator::validate(file_path);
-            if (!validation_result.is_valid)
-            {
-                logger.warning("RAW validation failed for %s: %s (code: %d)",
-                               file_path, validation_result.error_message, validation_result.error_code);
-                jpeg_data.clear();
-                return false;
-            }
-            logger.debug("RAW validation passed for %s (format: %s)", file_path, validation_result.format_name);
-        }
-
         // Log file properties for debugging
         try
         {
@@ -63,9 +50,19 @@ namespace MediaDedup
 
         try
         {
-            // Use ImageMagickAdapter for the actual transcoding
-            logger.debug("Calling ImageMagickAdapter::TranscodeToJpeg for: %s", file_path);
-            bool success = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
+            bool success = false;
+            ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
+            if (format == ImageFormat::HEIC)
+            {
+                logger.debug("Calling HeicAdapter::TranscodeToJpeg for: %s", file_path);
+                success = HeicAdapter::TranscodeToJpeg(file_path, jpeg_data);
+            }
+            else
+            {
+                // Use ImageMagickAdapter for the actual transcoding
+                logger.debug("Calling ImageMagickAdapter::TranscodeToJpeg for: %s", file_path);
+                success = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
+            }
 
             if (success)
             {
@@ -179,9 +176,20 @@ namespace MediaDedup
         std::vector<std::uint8_t> jpeg_data;
         jpeg_data.reserve(static_cast<size_t>(file_size / 2)); // heuristic
 
-        if (!ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data))
+        bool success = false;
+        ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(source_file_path);
+        if (format == ImageFormat::HEIC)
         {
-            logger.error("TranscodeNonRawToFile: ImageMagick failed for %s", source_file_path.c_str());
+            success = HeicAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+        }
+        else
+        {
+            success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+        }
+
+        if (!success)
+        {
+            logger.error("TranscodeNonRawToFile: Transcoding failed for %s", source_file_path.c_str());
             return false;
         }
 
@@ -301,21 +309,20 @@ namespace MediaDedup
 
             logger.debug("Source file validation passed - size: %zu bytes", file_size);
 
-            if (is_raw) {
-                auto validation_result = RawValidator::validate(source_file_path);
-                if (!validation_result.is_valid)
-                {
-                    logger.warning("RAW validation failed for %s: %s (code: %d)",
-                                   source_file_path, validation_result.error_message, validation_result.error_code);
-                    return false;
-                }
-            }
-
             // First transcode to memory
             std::vector<std::uint8_t> jpeg_data;
             jpeg_data.reserve(file_size / 10); // Pre-allocate (JPEG is ~10x smaller than uncompressed TIFF)
 
-            bool success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+            bool success = false;
+            ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(source_file_path);
+            if (format == ImageFormat::HEIC)
+            {
+                success = HeicAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+            }
+            else
+            {
+                success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+            }
 
             if (!success)
             {
