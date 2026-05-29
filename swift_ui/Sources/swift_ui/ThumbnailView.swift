@@ -7,6 +7,11 @@ struct ThumbnailView: View {
     
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
+    @State private var isVisible = false
+    
+    private var requestKey: ImageRequest {
+        ImageRequest(filePath: filePath, size: Int(size.width))
+    }
     
     var body: some View {
         Group {
@@ -33,36 +38,41 @@ struct ThumbnailView: View {
                 .background(Color.gray.opacity(0.2))
             }
         }
-        .task(id: filePath) {
-            await generateThumbnail()
+        .onAppear {
+            isVisible = true
+            checkAndLoadThumbnail()
         }
         .onDisappear {
+            // Keep memory low when scrolled out of view
+            isVisible = false
             thumbnail = nil
             isLoading = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ImageLoaded"))) { notification in
+            guard isVisible else { return }
+            if let req = notification.userInfo?["request"] as? ImageRequest, req == requestKey {
+                checkAndLoadThumbnail()
+            }
+        }
     }
     
-    private func generateThumbnail() async {
-        logDebug("ThumbnailView.generateThumbnail started for \(filePath)")
-        do {
-            // Debounce: wait 10ms before fetching. If scrolled off-screen, this throws CancellationError.
-            try await Task.sleep(nanoseconds: 10_000_000)
-            
-            logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width))
-            await MainActor.run {
-                self.thumbnail = image
-                self.isLoading = false
+    private func checkAndLoadThumbnail() {
+        if let cachedPath = ServerImageLoader.shared.cache[requestKey] {
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let image = NSImage(contentsOfFile: cachedPath) {
+                    DispatchQueue.main.async {
+                        self.thumbnail = image
+                        self.isLoading = false
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        ServerImageLoader.shared.invalidateCache(for: self.requestKey)
+                        ServerImageLoader.shared.requestImage(filePath: self.filePath, size: Int(self.size.width))
+                    }
+                }
             }
-            logDebug("ThumbnailView SUCCESS for \(filePath)")
-        } catch is CancellationError {
-            logDebug("ThumbnailView CANCELLED for \(filePath)")
-            // Task was cancelled (e.g. scrolled off screen), do nothing
-        } catch {
-            logDebug("ThumbnailView ERROR for \(filePath): \(error.localizedDescription)")
-            await MainActor.run {
-                self.isLoading = false
-            }
+        } else {
+            ServerImageLoader.shared.requestImage(filePath: filePath, size: Int(size.width))
         }
     }
 }

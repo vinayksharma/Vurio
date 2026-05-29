@@ -235,8 +235,8 @@ message SetUserThemeRequest {
 // Media Service
 // ---------------------------------------------------------
 service MediaService {
-  rpc GetThumbnail(GetMediaRequest) returns (stream MediaChunk);
-  rpc GetPreview(GetMediaRequest) returns (stream MediaChunk);
+  rpc GetThumbnail(GetMediaRequest) returns (MediaPathResponse);
+  rpc GetPreview(GetMediaRequest) returns (MediaPathResponse);
   rpc CancelMediaGeneration(CancelMediaRequest) returns (Empty);
 }
 
@@ -250,6 +250,6 @@ message CancelMediaRequest {
   string type = 2;
 }
 
-message MediaChunk {
-  bytes chunk_data = 1;
+message MediaPathResponse {
+  string file_path = 1;
 }

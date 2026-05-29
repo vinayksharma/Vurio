@@ -1,4 +1,5 @@
 import SwiftUI
+import GRPC
 
 class GroupIndexCache {
     var map: [String: Int] = [:]
@@ -41,7 +42,7 @@ struct DuplicatesView: View {
 
     @State private var groups: [GroupSlot] = []
     @State private var indexCache = GroupIndexCache()
-    @State private var loadingPages: Set<Int32> = []
+    @State private var loadingTasks: [Int32: Task<Void, Never>] = [:]
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var totalGroups: Int32 = 0
@@ -460,7 +461,7 @@ struct DuplicatesView: View {
                     }
                 },
                 loadPage: { pageIndex in
-                    Task { await loadPage(pageIndex: pageIndex) }
+                    triggerLoadPage(pageIndex)
                 }
             )
             .frame(height: rowHeight)
@@ -744,29 +745,44 @@ struct DuplicatesView: View {
     }
     
 
+    private func triggerLoadPage(_ pageIndex: Int32) {
+        guard loadingTasks[pageIndex] == nil else { return }
+        
+        let activePages = loadingTasks.keys
+        for p in activePages {
+            if abs(p - pageIndex) > 2 {
+                loadingTasks[p]?.cancel()
+                loadingTasks[p] = nil
+            }
+        }
+        
+        let task = Task {
+            await loadPage(pageIndex: pageIndex)
+        }
+        loadingTasks[pageIndex] = task
+    }
+
     private func refresh() async {
         let newGroups = (0..<totalGroups).map { i in GroupSlot(group: nil, placeholderIndex: Int(i)) }
         await MainActor.run {
             groups = newGroups
             indexCache.map.removeAll()
-            loadingPages.removeAll()
+            for task in loadingTasks.values {
+                task.cancel()
+            }
+            loadingTasks.removeAll()
             errorMessage = nil
         }
     }
     
     @MainActor
     private func loadPage(pageIndex: Int32) async {
-        logDebug("loadPage(\(pageIndex)) called. loadingPages=\(loadingPages)")
-        guard !loadingPages.contains(pageIndex) else {
-            logDebug("loadPage(\(pageIndex)) aborted (already loading)")
-            return
-        }
-        loadingPages.insert(pageIndex)
+        logDebug("loadPage(\(pageIndex)) called.")
         
         do {
             guard let client = VurioGrpcClient.shared.duplicates else {
                 logDebug("loadPage(\(pageIndex)) failed: grpc client nil")
-                loadingPages.remove(pageIndex)
+                loadingTasks[pageIndex] = nil
                 return
             }
             
@@ -811,12 +827,24 @@ struct DuplicatesView: View {
                 groups = localGroups
                 logDebug("loadPage(\(pageIndex)) success. Unloaded < \(upperLimit) and > \(lowerLimit).")
             }
-            loadingPages.remove(pageIndex)
+            loadingTasks[pageIndex] = nil
             
         } catch {
             logDebug("loadPage(\(pageIndex)) error: \(error.localizedDescription)")
-            self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
-            loadingPages.remove(pageIndex)
+            
+            let isCancelled: Bool
+            if error is CancellationError {
+                isCancelled = true
+            } else if let grpcStatus = error as? GRPCStatus, grpcStatus.code == .cancelled {
+                isCancelled = true
+            } else {
+                isCancelled = false
+            }
+            
+            if !isCancelled {
+                self.errorMessage = "Failed to load page \(pageIndex): \(error.localizedDescription)"
+            }
+            loadingTasks[pageIndex] = nil
         }
     }
     
