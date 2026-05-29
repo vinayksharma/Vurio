@@ -18,6 +18,7 @@ namespace MediaDedup
         HEIC,
         TIFF,
         RAW,
+        GIF,
         UNKNOWN
     };
 

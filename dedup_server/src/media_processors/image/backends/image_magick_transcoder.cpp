@@ -160,12 +160,20 @@ namespace MediaDedup
         // Determine input prefix based on magic bytes
         ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
         std::string read_path = file_path;
+        
+        // Don't prepend tiff: for RAW files even if they have TIFF magic bytes
+        if (format == ImageFormat::TIFF && RawFileDetector::IsRawFile(file_path)) {
+            format = ImageFormat::RAW;
+        }
+
         if (format == ImageFormat::JPEG) {
             read_path = "jpeg:" + file_path;
         } else if (format == ImageFormat::PNG) {
             read_path = "png:" + file_path;
         } else if (format == ImageFormat::TIFF) {
             read_path = "tiff:" + file_path;
+        } else if (format == ImageFormat::GIF) {
+            read_path = file_path + "[0]";
         }
 
         std::string command = "/opt/homebrew/bin/magick";
