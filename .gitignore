@@ -47,3 +47,6 @@ coverage/
 
 # C++ Cache
 dedup_server/.cache/
+
+# Test output images
+dedup_server/test_gif*.jpg
