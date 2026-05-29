@@ -13,6 +13,11 @@ struct ImagePopupView: View {
     @State private var currentImage: NSImage? = nil
     @State private var isLoadingImage: Bool = false
     
+    private var requestKey: ImageRequest? {
+        guard group.files.indices.contains(selectedIndex) else { return nil }
+        return ImageRequest(filePath: group.files[selectedIndex].filePath, size: nil)
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -163,36 +168,40 @@ struct ImagePopupView: View {
         )
         .onAppear {
             selectedIndex = initialIndex
-            Task {
-                await loadImage()
-            }
+            checkAndLoadImage()
         }
         .onChange(of: selectedIndex) { _, _ in
-            Task {
-                await loadImage()
+            checkAndLoadImage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ImageLoaded"))) { notification in
+            if let req = notification.userInfo?["request"] as? ImageRequest, req == requestKey {
+                checkAndLoadImage()
             }
         }
     }
     
-    private func loadImage() async {
-        guard group.files.indices.contains(selectedIndex) else { return }
-        let file = group.files[selectedIndex]
+    private func checkAndLoadImage() {
+        guard let key = requestKey else { return }
         
         isLoadingImage = true
         currentImage = nil
         
-        do {
-            let image = try await ServerImageLoader.shared.loadPreview(filePath: file.filePath)
-            await MainActor.run {
-                self.currentImage = image
-                self.isLoadingImage = false
+        if let cachedPath = ServerImageLoader.shared.cache[key] {
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let image = NSImage(contentsOfFile: cachedPath) {
+                    DispatchQueue.main.async {
+                        self.currentImage = image
+                        self.isLoadingImage = false
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        ServerImageLoader.shared.invalidateCache(for: key)
+                        ServerImageLoader.shared.requestImage(filePath: key.filePath, size: nil)
+                    }
+                }
             }
-        } catch is CancellationError {
-            // Task was cancelled
-        } catch {
-            await MainActor.run {
-                self.isLoadingImage = false
-            }
+        } else {
+            ServerImageLoader.shared.requestImage(filePath: key.filePath, size: nil)
         }
     }
     

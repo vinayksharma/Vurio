@@ -1335,36 +1335,6 @@ class MediaServiceImpl final : public vurio::dedup::MediaService::Service {
     std::shared_ptr<DiskCache> transcoding_cache_;
     std::shared_ptr<ThreadPoolManager> tpm_;
 
-    grpc::Status streamFileContents(const std::string& path, grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) {
-        Poco::FileInputStream fis(path);
-        if (!fis.good()) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
-        
-        char buffer[65536];
-        while (fis.good()) {
-            fis.read(buffer, sizeof(buffer));
-            std::streamsize bytesRead = fis.gcount();
-            if (bytesRead > 0) {
-                vurio::dedup::MediaChunk chunk;
-                chunk.set_chunk_data(buffer, bytesRead);
-                if (!writer->Write(chunk)) {
-                    break;
-                }
-            }
-        }
-        return grpc::Status::OK;
-    }
-
-    int64_t getFileModifiedTime(const std::string& path) {
-        try {
-            auto ftime = std::filesystem::last_write_time(path);
-            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-            return std::chrono::system_clock::to_time_t(sctp);
-        } catch (...) {
-            return 0;
-        }
-    }
-
 public:
     MediaServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> config, 
                      DatabaseManager* db, 
@@ -1374,7 +1344,7 @@ public:
         : config_(config), db_(db), thumbnail_cache_(thumb_cache), transcoding_cache_(trans_cache), tpm_(tpm) {}
 
     grpc::Status GetThumbnail(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
-                              grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) override {
+                              vurio::dedup::MediaPathResponse* response) override {
         std::string file_path = request->file_path();
         int size = 80;
         try { size = std::stoi(request->size()); } catch (...) {}
@@ -1383,7 +1353,8 @@ public:
         
         auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size);
         if (cached && std::filesystem::exists(cached->cached_path)) {
-            return streamFileContents(cached->cached_path, writer);
+            response->set_file_path(cached->cached_path);
+            return grpc::Status::OK;
         } else {
             if (tpm_) {
                 auto config_copy = config_;
@@ -1405,17 +1376,19 @@ public:
     }
 
     grpc::Status GetPreview(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
-                            grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) override {
+                            vurio::dedup::MediaPathResponse* response) override {
         std::string file_path = request->file_path();
         
         if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
             // File does not need transcoding (e.g., standard JPEG/PNG)
-            return streamFileContents(file_path, writer);
+            response->set_file_path(file_path);
+            return grpc::Status::OK;
         }
         
         auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_, file_path);
         if (cached && std::filesystem::exists(cached->cached_path)) {
-            return streamFileContents(cached->cached_path, writer);
+            response->set_file_path(cached->cached_path);
+            return grpc::Status::OK;
         } else {
             if (tpm_) {
                 auto config_copy = config_;
@@ -1513,7 +1486,11 @@ void GrpcServerCore::start(const std::string& socket_path,
     std::string server_address("unix:" + socket_path_);
     
     auto config_service = std::make_unique<ConfigServiceImpl>(config_manager);
-    auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_manager->getFilesService(), thread_pool_manager, database_manager, scheduler_service);
+    std::shared_ptr<MediaDedup::FilesService> files_service = nullptr;
+    if (files_manager) {
+        files_service = files_manager->getFilesService();
+    }
+    auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_service, thread_pool_manager, database_manager, scheduler_service);
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager);
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
