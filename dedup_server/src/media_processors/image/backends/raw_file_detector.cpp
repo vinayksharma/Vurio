@@ -43,6 +43,11 @@ namespace MediaDedup
             }
         }
 
+        if (bytes_read >= 6 && header[0] == 'G' && header[1] == 'I' && header[2] == 'F' && header[3] == '8')
+        {
+            return ImageFormat::GIF;
+        }
+
         return ImageFormat::UNKNOWN;
     }
 
@@ -56,7 +61,7 @@ namespace MediaDedup
         ImageFormat format = DetectFormatFromMagicBytes(file_path);
         // If we positively identify it as a standard non-RAW image, it's not a RAW file 
         // (even if its extension says otherwise)
-        if (format == ImageFormat::JPEG || format == ImageFormat::PNG || format == ImageFormat::HEIC)
+        if (format == ImageFormat::JPEG || format == ImageFormat::PNG || format == ImageFormat::HEIC || format == ImageFormat::GIF)
         {
             return false;
         }
