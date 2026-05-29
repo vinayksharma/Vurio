@@ -887,23 +887,9 @@ struct DuplicatesView: View {
         controller.selectedGroupIndex = target
         controller.selectedCandidateIndex = 0
         
-        let rowHeight: CGFloat = 158.0
-        let targetY = CGFloat(target) * rowHeight
-        var expectedOffset = targetY
-        if anchor == .center {
-            expectedOffset = max(0, targetY - (viewportHeight / 2.0) + (rowHeight / 2.0))
-        } else if anchor == .bottom {
-            expectedOffset = max(0, targetY - viewportHeight + rowHeight)
-        }
-        
-        let totalContentHeight = CGFloat(controller.totalGroups) * rowHeight + 60.0
-        let maxOffset = max(0, totalContentHeight - viewportHeight)
-        expectedOffset = min(expectedOffset, maxOffset)
-        
         if isRapidFire {
             // Instant snap for rapid key presses to prevent scroll view lagging behind
             controller.ignoreScrollUpdatesUntil = now.addingTimeInterval(0.1)
-            self.scrollOffset = expectedOffset
             DispatchQueue.main.async {
                 withAnimation(nil) {
                     proxy.scrollTo(controller.selectedGroupIndex, anchor: anchor)
@@ -922,7 +908,7 @@ struct DuplicatesView: View {
         let deadline = isRapidFire ? 0.15 : duration + 0.15
         DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
             if controller.scrollRequestID == requestID && Date() >= controller.ignoreScrollUpdatesUntil {
-                self.scrollOffset = expectedOffset
+                self.scrollOffset = controller.latestReportedOffset
             }
         }
     }
