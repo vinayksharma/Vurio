@@ -58,6 +58,7 @@ set(UNIT_TEST_SOURCES
     unit/test_swagger_ui_handler.cpp
     unit/test_media_processor.cpp
     unit/test_image_magick_adapter.cpp
+    unit/test_image_magick_transcoder.cpp
     unit/test_raw_file_detector.cpp
     unit/test_transcoding_pipeline.cpp
     unit/test_scheduler_concurrency.cpp
@@ -69,6 +70,7 @@ set(UNIT_TEST_SOURCES
     unit/test_duplicates_reset_api.cpp
     unit/test_files_service_change_path.cpp
     unit/test_eject_collision.cpp
+    unit/test_grpc_media_service.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -106,6 +108,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         # Just add the test to the test list without creating executable
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ImageMagickAdapterTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_image_magick_transcoder")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ImageMagickTranscoderTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -169,6 +178,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_purge_ejected_errored")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PurgeEjectedErroredTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_grpc_media_service")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MediaServiceGrpcTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -477,10 +493,18 @@ add_executable(all_unit_tests
 )
 target_compile_definitions(all_unit_tests PRIVATE ALL_UNIT_TESTS SQLITE_ENABLE_LOAD_EXTENSION)
 target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
+
+set_source_files_properties(
+    ${CMAKE_BINARY_DIR}/generated/dedup.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/dedup.grpc.pb.cc
+    PROPERTIES GENERATED TRUE
+)
+
 target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_thumbnail.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
@@ -527,15 +551,23 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/grpc_server/grpc_server_core.cpp
+    ${CMAKE_BINARY_DIR}/generated/dedup.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/dedup.grpc.pb.cc
 )
 target_include_directories(all_unit_tests PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
     ${SQLITE3_INCLUDE_DIRS}
+    ${GRPC_INCLUDE_DIRS}
+    ${PROTOBUF_INCLUDE_DIRS}
+    ${CMAKE_BINARY_DIR}/generated
 )
 target_link_directories(all_unit_tests PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
     ${LIBTIFF_LIBRARY_DIRS}
+    ${GRPC_LIBRARY_DIRS}
+    ${PROTOBUF_LIBRARY_DIRS}
 )
 target_link_libraries(all_unit_tests 
     ${GTEST_LIBRARIES}
@@ -550,6 +582,8 @@ target_link_libraries(all_unit_tests
     ${OpenCV_LIBS}
     ${ONNXRUNTIME_LIBRARY}
     ${ImageMagick++_LIBRARIES}
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
 )
 add_dependencies(all_unit_tests setup_test_data)
 add_test(NAME all_unit_tests COMMAND all_unit_tests)
@@ -614,6 +648,7 @@ endif()
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
     if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
+       NOT ${test_name} STREQUAL "test_image_magick_transcoder" AND
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_scheduler_concurrency" AND
@@ -632,6 +667,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
       NOT ${test_name} STREQUAL "test_media_filtering" AND
       NOT ${test_name} STREQUAL "test_eject_collision" AND
+      NOT ${test_name} STREQUAL "test_grpc_media_service" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
@@ -641,6 +677,7 @@ endforeach()
 foreach(test_source ${UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
     if(NOT ${test_name} STREQUAL "test_image_magick_adapter" AND 
+       NOT ${test_name} STREQUAL "test_image_magick_transcoder" AND
        NOT ${test_name} STREQUAL "test_raw_file_detector" AND 
        NOT ${test_name} STREQUAL "test_transcoding_pipeline" AND
        NOT ${test_name} STREQUAL "test_files_service_immediate_scan" AND
@@ -652,6 +689,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
        NOT ${test_name} STREQUAL "test_media_filtering" AND
        NOT ${test_name} STREQUAL "test_eject_collision" AND
+       NOT ${test_name} STREQUAL "test_grpc_media_service" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")
         set_tests_properties(${test_name} PROPERTIES
             LABELS "unit"
