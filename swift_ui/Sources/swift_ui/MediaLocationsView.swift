@@ -168,7 +168,7 @@ struct MediaLocationsView: View {
         }
         .overlay(
             Group {
-                if isDeregistering {
+                if isDeregistering || isRemapping {
                     ZStack {
                         Color.black.opacity(0.4)
                             .edgesIgnoringSafeArea(.all)
@@ -176,9 +176,9 @@ struct MediaLocationsView: View {
                         VStack(spacing: 16) {
                             ProgressView()
                                 .controlSize(.regular)
-                            Text("Deregistering location...")
+                            Text(isDeregistering ? "Deregistering location..." : "Remapping location...")
                                 .font(.headline)
-                            Text("Please wait while the location is removed.")
+                            Text(isDeregistering ? "Please wait while the location is removed." : "Please wait while the file paths are updated.")
                                 .font(.subheadline)
                                 .foregroundColor(Theme.textSecondary)
                         }
@@ -202,7 +202,7 @@ struct MediaLocationsView: View {
         } message: {
             Text("Deregistering this location will stop scanning it and automatically restore all ejected files back to their original locations. Any ejected files you have already purged will NOT be restored and will remain in the ejected folder.")
         }
-        .disabled(isDeregistering)
+        .disabled(isDeregistering || isRemapping)
     }
     
     private func browseDirectory() {

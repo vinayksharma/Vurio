@@ -3,7 +3,15 @@
 #include "database/database_manager.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
-#include <Magick++.h>
+#include <Poco/Process.h>
+#include <Poco/Pipe.h>
+#include <Poco/PipeStream.h>
+#include <Poco/StreamCopier.h>
+#include <random>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
+#include <algorithm>
 #include "database/scanned_files_ops.hpp"
 
 namespace MediaDedup
@@ -22,37 +30,103 @@ namespace MediaDedup
             // Note: Transcoding is now handled at the MediaProcessor level
             // ImageProcessor receives pre-transcoded files from the cache
 
-            // Extract EXIF data from the original file using ImageMagick
+            // Extract EXIF data from the original file using ImageMagick identify subprocess
             try {
-                Magick::Image image;
-                // ping() reads headers without decoding the whole image data
-                image.ping(original_file_path);
+                std::string cmd_identify = "/opt/homebrew/bin/magick";
+                std::vector<std::string> args_identify = {
+                    "identify",
+                    "-format",
+                    "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n",
+                    original_file_path
+                };
                 
-                std::string exif_dt;
-                try { exif_dt = image.attribute("exif:DateTimeOriginal"); } catch (...) {}
-                if (exif_dt.empty()) {
-                    try { exif_dt = image.attribute("exif:DateTime"); } catch (...) {}
+                Poco::Pipe out_pipe;
+                Poco::ProcessHandle handle = Poco::Process::launch(cmd_identify, args_identify, nullptr, &out_pipe, nullptr);
+                Poco::PipeInputStream istr(out_pipe);
+                std::string output;
+                Poco::StreamCopier::copyToString(istr, output);
+                int rc = handle.wait();
+                
+                if (rc != 0) {
+                    throw std::runtime_error("magick identify failed with exit code " + std::to_string(rc));
                 }
                 
-                std::string exif_make, exif_model;
-                try { exif_make = image.attribute("exif:Make"); } catch (...) {}
-                try { exif_model = image.attribute("exif:Model"); } catch (...) {}
+                std::vector<std::string> lines;
+                std::string line;
+                std::istringstream stream(output);
+                while (std::getline(stream, line)) {
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+                    lines.push_back(line);
+                }
+                while (lines.size() < 6) {
+                    lines.push_back("");
+                }
+                
+                std::string width_str = lines[0];
+                std::string height_str = lines[1];
+                std::string exif_dt = lines[2];
+                if (exif_dt.empty()) {
+                    exif_dt = lines[3];
+                }
+                
+                std::string exif_make = lines[4];
+                std::string exif_model = lines[5];
                 std::string exif_camera = exif_make;
                 if (!exif_model.empty()) {
                     if (!exif_camera.empty()) exif_camera += " ";
                     exif_camera += exif_model;
                 }
                 
-                std::string exif_res = std::to_string(image.columns()) + "x" + std::to_string(image.rows());
+                std::string exif_res = width_str + "x" + height_str;
+                
+                int width = 0;
+                int height = 0;
+                try {
+                    if (!width_str.empty()) width = std::stoi(width_str);
+                } catch (...) {}
+                try {
+                    if (!height_str.empty()) height = std::stoi(height_str);
+                } catch (...) {}
                 
                 std::vector<std::uint8_t> exif_blob;
+                std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+                static std::random_device rd;
+                static std::mt19937 gen(rd());
+                static std::uniform_int_distribution<> dis(0, 15);
+                
+                std::string uuid;
+                const char *hex_chars = "0123456789abcdef";
+                for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
+                
+                std::string temp_exif_path = (temp_dir / ("exif_out_" + uuid + ".bin")).string();
+                
+                std::string cmd_exif = "/opt/homebrew/bin/magick";
+                std::vector<std::string> args_exif = {
+                    original_file_path,
+                    "exif:" + temp_exif_path
+                };
+                
                 try {
-                    Magick::Blob profile = image.profile("exif");
-                    if (profile.length() > 0) {
-                        const std::uint8_t* start = reinterpret_cast<const std::uint8_t*>(profile.data());
-                        exif_blob.assign(start, start + profile.length());
+                    Poco::ProcessHandle handle_exif = Poco::Process::launch(cmd_exif, args_exif, nullptr, nullptr, nullptr);
+                    int rc_exif = handle_exif.wait();
+                    if (rc_exif == 0 && std::filesystem::exists(temp_exif_path)) {
+                        std::ifstream file(temp_exif_path, std::ios::binary | std::ios::ate);
+                        if (file.is_open()) {
+                            std::streamsize size = file.tellg();
+                            file.seekg(0, std::ios::beg);
+                            if (size > 0) {
+                                exif_blob.resize(size);
+                                file.read(reinterpret_cast<char*>(exif_blob.data()), size);
+                            }
+                        }
                     }
                 } catch (...) {}
+                
+                if (std::filesystem::exists(temp_exif_path)) {
+                    std::filesystem::remove(temp_exif_path);
+                }
                 
                 ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res, exif_blob);
                 Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s, Blob=%zu bytes", 
@@ -64,7 +138,7 @@ namespace MediaDedup
                     int min_h = config_manager->getPropertyValue<int>("media.filter.low_res.min_height", 600);
                     std::string apply_after_date = config_manager->getPropertyValue<std::string>("media.filter.low_res.apply_after_date", "2005-01-01");
 
-                    bool is_low_res = (static_cast<int>(image.columns()) < min_w || static_cast<int>(image.rows()) < min_h);
+                    bool is_low_res = (width < min_w || height < min_h);
                     
                     // Check date to see if we should exempt it (historical photos)
                     bool is_after_date = true; // default to true if no valid date
@@ -79,7 +153,7 @@ namespace MediaDedup
                     }
 
                     if (is_low_res && is_after_date) {
-                        std::string reason = "Image resolution (" + std::to_string(image.columns()) + "x" + std::to_string(image.rows()) + 
+                        std::string reason = "Image resolution (" + std::to_string(width) + "x" + std::to_string(height) + 
                                              ") is below minimum threshold (" + std::to_string(min_w) + "x" + std::to_string(min_h) + ")";
                         ScannedFilesOps::markIgnored(db, original_file_path, reason);
                         Poco::Logger::get("ImageProcessor").information("Ignored %s: %s", original_file_path, reason);
