@@ -367,30 +367,7 @@ namespace MediaDedupServer
                     return;
                 }
 
-                // Handle SIGABRT (assertion failures) - TERMINATE THREAD, NOT PROCESS
-                // This is specifically for ImageMagick assertions on corrupted files
-                // abort() will always terminate the process unless handler doesn't return
-                // So we use pthread_exit() to terminate ONLY the offending thread
-                if (signal == SIGABRT)
-                {
-                    static std::atomic<int> sigabrt_count{0};
-                    int count = ++sigabrt_count;
 
-                    Poco::Logger::get("ConsoleInputManager").error("Received SIGABRT #%d (likely ImageMagick assertion on corrupted file); "
-                                                                   "Terminating CURRENT THREAD ONLY (process continues)",
-                                                                   count);
-
-                    // Log milestone information to track total corrupted files handled
-                    // NO LIMIT - corrupted files should NEVER shut down the server
-                    if (count % 100 == 0)
-                    {
-                        Poco::Logger::get("ConsoleInputManager").information("SIGABRT milestone: Handled %d corrupted files (no limit)", count);
-                    }
-
-                    // CRITICAL: Exit only the current thread (NOT the whole process)
-                    // This prevents abort() from terminating the entire server
-                    pthread_exit(nullptr); // Does not return!
-                }
 
                 ConsoleEventType eventType;
                 std::string signalName;
@@ -528,21 +505,7 @@ namespace MediaDedupServer
                 return false;
             }
 
-            // Setup SIGABRT handler (for assertion failures)
-            // CRITICAL: Use SA_NODEFER to allow handler to be called multiple times
-            // and SA_RESTART to restart interrupted system calls
-            struct sigaction sa_abrt;
-            sa_abrt.sa_handler = signalHandler;
-            sigemptyset(&sa_abrt.sa_mask);
-            sa_abrt.sa_flags = SA_NODEFER | SA_RESTART; // Allow re-entry and restart syscalls
 
-            if (sigaction(SIGABRT, &sa_abrt, &original_sigabrt_) == -1)
-            {
-                Poco::Logger::get("ConsoleInputManager").error("Failed to setup SIGABRT handler");
-                return false;
-            }
-
-            Poco::Logger::get("ConsoleInputManager").information("SIGABRT handler installed with SA_NODEFER|SA_RESTART (ImageMagick assertion protection)");
 
             signal_handlers_setup_ = true;
             return true;
@@ -558,7 +521,7 @@ namespace MediaDedupServer
             sigaction(SIGINT, &original_sigint_, nullptr);
             sigaction(SIGTERM, &original_sigterm_, nullptr);
             sigaction(SIGQUIT, &original_sigquit_, nullptr);
-            sigaction(SIGABRT, &original_sigabrt_, nullptr);
+
 
             signal_handlers_setup_ = false;
         }

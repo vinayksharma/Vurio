@@ -25,7 +25,20 @@ struct GroupSlot: Identifiable {
     var placeholderIndex: Int = 0
 }
 
+class ScrollController: ObservableObject {
+    @Published var selectedGroupIndex: Int = 0
+    @Published var selectedCandidateIndex: Int = 0
+    var totalGroups: Int32 = 0
+    var ignoreScrollUpdatesUntil: Date = .distantPast
+    var latestReportedOffset: CGFloat = 0
+    var lastKeyPressTime: Date = .distantPast
+    var scrollRequestID: UUID = UUID()
+}
+
 struct DuplicatesView: View {
+    @StateObject private var scrollController = ScrollController()
+    @State private var keyMonitor: Any? = nil
+
     @State private var groups: [GroupSlot] = []
     @State private var indexCache = GroupIndexCache()
     @State private var loadingPages: Set<Int32> = []
@@ -219,72 +232,148 @@ struct DuplicatesView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 GeometryReader { scrollGeo in
-                    ScrollView {
-                        ZStack(alignment: .topLeading) {
-                            Color.clear
-                                .frame(height: CGFloat(totalGroups) * 158.0 + 60.0)
-                            
+                    ScrollViewReader { proxy in
+                        ScrollView {
                             let viewportHeight = scrollGeo.size.height
                             let rowHeight: CGFloat = 158.0
                             let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
                             let visibleCount = Int(ceil(viewportHeight / rowHeight)) + 4
                             let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
+                            let selectedIndex = scrollController.selectedGroupIndex
+                            let totalGroupsInt = Int(totalGroups)
                             
-                            if totalGroups > 0 && startIndex <= endIndex {
-                                ForEach(startIndex...endIndex, id: \.self) { index in
-                                    if index < groups.count {
-                                        GroupRowWrapper(
-                                            slot: groups[index],
-                                            duplicateTightness: duplicateTightness,
-                                            isProcessing: isProcessing,
-                                            pageSize: pageSize,
-                                            onThumbnailTapped: { fileIndex in
-                                                selectedGroup = groups[index].group
-                                                selectedFileIndex = fileIndex
-                                                showingPopup = true
-                                            },
-                                            onEjectSet: { paths in
-                                                if let group = groups[index].group {
-                                                    Task { await ejectGroupFiles(paths, for: group.groupID) }
-                                                }
-                                            },
-                                            onRestoreSet: { paths in
-                                                if let group = groups[index].group {
-                                                    Task { await restoreGroupFiles(paths, for: group.groupID) }
-                                                }
-                                            },
-                                            loadPage: { pageIndex in
-                                                Task { await loadPage(pageIndex: pageIndex) }
-                                            }
-                                        )
-                                        .frame(height: rowHeight)
-                                        .offset(y: CGFloat(index) * rowHeight)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Color.clear
+                                    .frame(height: 0)
+                                    .id("topAnchor")
+                                
+                                if selectedIndex >= 0 && selectedIndex < startIndex && selectedIndex < groups.count {
+                                    // Case 1: Selected item is above the visible range
+                                    let topSpacerHeight = CGFloat(selectedIndex) * rowHeight
+                                    if topSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: topSpacerHeight)
+                                    }
+                                    
+                                    renderRow(at: selectedIndex, rowHeight: rowHeight)
+                                    
+                                    let middleSpacerHeight = CGFloat(startIndex - selectedIndex - 1) * rowHeight
+                                    if middleSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: middleSpacerHeight)
+                                    }
+                                    
+                                    if startIndex <= endIndex {
+                                        ForEach(startIndex...endIndex, id: \.self) { index in
+                                            renderRow(at: index, rowHeight: rowHeight)
+                                        }
+                                    }
+                                    
+                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - endIndex)
+                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
+                                    if bottomSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: bottomSpacerHeight)
+                                    }
+                                    
+                                } else if selectedIndex >= 0 && selectedIndex > endIndex && selectedIndex < groups.count {
+                                    // Case 2: Selected item is below the visible range
+                                    let topSpacerHeight = CGFloat(startIndex) * rowHeight
+                                    if topSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: topSpacerHeight)
+                                    }
+                                    
+                                    if startIndex <= endIndex {
+                                        ForEach(startIndex...endIndex, id: \.self) { index in
+                                            renderRow(at: index, rowHeight: rowHeight)
+                                        }
+                                    }
+                                    
+                                    let middleSpacerHeight = CGFloat(selectedIndex - endIndex - 1) * rowHeight
+                                    if middleSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: middleSpacerHeight)
+                                    }
+                                    
+                                    renderRow(at: selectedIndex, rowHeight: rowHeight)
+                                    
+                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - selectedIndex)
+                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
+                                    if bottomSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: bottomSpacerHeight)
+                                    }
+                                    
+                                } else {
+                                    // Case 3: Selected item is inside the visible range (or index is invalid/out of range)
+                                    let topSpacerHeight = CGFloat(startIndex) * rowHeight
+                                    if topSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: topSpacerHeight)
+                                    }
+                                    
+                                    if startIndex <= endIndex {
+                                        ForEach(startIndex...endIndex, id: \.self) { index in
+                                            renderRow(at: index, rowHeight: rowHeight)
+                                        }
+                                    }
+                                    
+                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - endIndex)
+                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
+                                    if bottomSpacerHeight > 0 {
+                                        Spacer(minLength: 0)
+                                            .frame(height: bottomSpacerHeight)
                                     }
                                 }
+                                
+                                Color.clear
+                                    .frame(height: 0)
+                                    .id("bottomAnchor")
+                            }
+                            .background(
+                                ScrollOffsetTracker { newOffset in
+                                    // In macOS, depending on flippedness, offset might be different, but typically bounds.origin.y is the scroll offset.
+                                    scrollController.latestReportedOffset = newOffset
+                                    if Date() < scrollController.ignoreScrollUpdatesUntil { return }
+                                    
+                                    if abs(scrollOffset - newOffset) > 1.0 {
+                                        scrollOffset = newOffset
+                                    }
+                                    
+                                    let rowHeight: CGFloat = 158.0
+                                    let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
+                                    let visibleCount = Int(ceil(scrollGeo.size.height / rowHeight)) + 4
+                                    let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
+                                    
+                                    if totalGroups > 0 && startIndex <= endIndex {
+                                        let startPage = Int32(startIndex) / pageSize
+                                        let endPage = Int32(endIndex) / pageSize
+                                        
+                                        logDebug("Scroll: offset=\(scrollOffset) bounds=[\(startIndex)..\(endIndex)] pages=[\(startPage)..\(endPage)]")
+                                        
+                                        for p in startPage...endPage {
+                                            Task { await loadPage(pageIndex: p) }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        .focusable()
+                        .focusEffectDisabled()
+                        .onAppear {
+                            setupKeyMonitor(proxy: proxy, viewportHeight: scrollGeo.size.height)
+                        }
+                        .onChange(of: scrollGeo.size.height) { old, newHeight in
+                            setupKeyMonitor(proxy: proxy, viewportHeight: newHeight)
+                        }
+                        .onDisappear {
+                            if let monitor = keyMonitor {
+                                logDebug("Removing old keyMonitor on disappear")
+                                NSEvent.removeMonitor(monitor)
+                                keyMonitor = nil
                             }
                         }
-                        .background(
-                            ScrollOffsetTracker { newOffset in
-                                // In macOS, depending on flippedness, offset might be different, but typically bounds.origin.y is the scroll offset.
-                                scrollOffset = newOffset
-                                
-                                let rowHeight: CGFloat = 158.0
-                                let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
-                                let visibleCount = Int(ceil(scrollGeo.size.height / rowHeight)) + 4
-                                let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
-                                
-                                if totalGroups > 0 && startIndex <= endIndex {
-                                    let startPage = Int32(startIndex) / pageSize
-                                    let endPage = Int32(endIndex) / pageSize
-                                    
-                                    logDebug("Scroll: offset=\(scrollOffset) bounds=[\(startIndex)..\(endIndex)] pages=[\(startPage)..\(endPage)]")
-                                    
-                                    for p in startPage...endPage {
-                                        Task { await loadPage(pageIndex: p) }
-                                    }
-                                }
-                            }
-                        )
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -320,7 +409,11 @@ struct DuplicatesView: View {
             if groups.isEmpty || groups.count != totalGroups {
                 await refresh()
             }
+            scrollController.totalGroups = totalGroups
             await listenForUpdates()
+        }
+        .onChange(of: totalGroups) { old, newValue in
+            scrollController.totalGroups = newValue
         }
         .onChange(of: appState.duplicateGroupsCount) { old, newCount in
             // Only refresh if we are currently empty (e.g. going from 0 to >0)
@@ -333,6 +426,48 @@ struct DuplicatesView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ConfigSaved"))) { _ in
             Task {
                 await fetchSettings()
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func renderRow(at index: Int, rowHeight: CGFloat) -> some View {
+        if index < groups.count {
+            GroupRowWrapper(
+                slot: groups[index],
+                duplicateTightness: duplicateTightness,
+                isProcessing: isProcessing,
+                pageSize: pageSize,
+                isSelected: index == scrollController.selectedGroupIndex,
+                selectedCandidateIndex: Binding(
+                    get: { scrollController.selectedCandidateIndex },
+                    set: { scrollController.selectedCandidateIndex = $0 }
+                ),
+                onThumbnailTapped: { fileIndex in
+                    scrollController.selectedGroupIndex = index
+                    selectedGroup = groups[index].group
+                    selectedFileIndex = fileIndex
+                    showingPopup = true
+                },
+                onEjectSet: { paths in
+                    if let group = groups[index].group {
+                        Task { await ejectGroupFiles(paths, for: group.groupID) }
+                    }
+                },
+                onRestoreSet: { paths in
+                    if let group = groups[index].group {
+                        Task { await restoreGroupFiles(paths, for: group.groupID) }
+                    }
+                },
+                loadPage: { pageIndex in
+                    Task { await loadPage(pageIndex: pageIndex) }
+                }
+            )
+            .frame(height: rowHeight)
+            .id(index)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                scrollController.selectedGroupIndex = index
             }
         }
     }
@@ -738,12 +873,179 @@ struct DuplicatesView: View {
             break
         }
     }
+
+    private func smoothScroll(to target: Int, proxy: ScrollViewProxy, duration: Double = 0.15, anchor: UnitPoint = .center, viewportHeight: CGFloat, isRepeat: Bool) {
+        let controller = scrollController
+        let now = Date()
+        let timeSinceLastPress = now.timeIntervalSince(controller.lastKeyPressTime)
+        controller.lastKeyPressTime = now
+        let isRapidFire = isRepeat || timeSinceLastPress < 0.15
+        
+        let requestID = UUID()
+        controller.scrollRequestID = requestID
+        
+        controller.selectedGroupIndex = target
+        controller.selectedCandidateIndex = 0
+        
+        let rowHeight: CGFloat = 158.0
+        let targetY = CGFloat(target) * rowHeight
+        var expectedOffset = targetY
+        if anchor == .center {
+            expectedOffset = max(0, targetY - (viewportHeight / 2.0) + (rowHeight / 2.0))
+        } else if anchor == .bottom {
+            expectedOffset = max(0, targetY - viewportHeight + rowHeight)
+        }
+        
+        let totalContentHeight = CGFloat(controller.totalGroups) * rowHeight + 60.0
+        let maxOffset = max(0, totalContentHeight - viewportHeight)
+        expectedOffset = min(expectedOffset, maxOffset)
+        
+        if isRapidFire {
+            // Instant snap for rapid key presses to prevent scroll view lagging behind
+            controller.ignoreScrollUpdatesUntil = now.addingTimeInterval(0.1)
+            self.scrollOffset = expectedOffset
+            DispatchQueue.main.async {
+                withAnimation(nil) {
+                    proxy.scrollTo(controller.selectedGroupIndex, anchor: anchor)
+                }
+            }
+        } else {
+            // Smooth scroll. Update layout AFTER animation completes.
+            controller.ignoreScrollUpdatesUntil = now.addingTimeInterval(duration + 0.1)
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: duration)) {
+                    proxy.scrollTo(controller.selectedGroupIndex, anchor: anchor)
+                }
+            }
+        }
+        
+        let deadline = isRapidFire ? 0.15 : duration + 0.15
+        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
+            if controller.scrollRequestID == requestID && Date() >= controller.ignoreScrollUpdatesUntil {
+                self.scrollOffset = expectedOffset
+            }
+        }
+    }
+    
+    private func smoothScrollToAnchor(_ anchorName: String, alignment: UnitPoint, duration: Double, proxy: ScrollViewProxy, isRepeat: Bool) {
+        let controller = scrollController
+        let now = Date()
+        let timeSinceLastPress = now.timeIntervalSince(controller.lastKeyPressTime)
+        controller.lastKeyPressTime = now
+        let isRapidFire = isRepeat || timeSinceLastPress < 0.15
+        
+        let ignoreDuration = isRapidFire ? 0.1 : duration + 0.1
+        controller.ignoreScrollUpdatesUntil = Date().addingTimeInterval(ignoreDuration)
+        
+        let requestID = UUID()
+        controller.scrollRequestID = requestID
+        
+        DispatchQueue.main.async {
+            if isRapidFire {
+                withAnimation(nil) {
+                    proxy.scrollTo(anchorName, anchor: alignment)
+                }
+            } else {
+                withAnimation(.easeOut(duration: duration)) {
+                    proxy.scrollTo(anchorName, anchor: alignment)
+                }
+            }
+        }
+        
+        let deadline = isRapidFire ? 0.15 : duration + 0.15
+        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
+            if controller.scrollRequestID == requestID && Date() >= controller.ignoreScrollUpdatesUntil {
+                self.scrollOffset = controller.latestReportedOffset
+            }
+        }
+    }
+
+    private func setupKeyMonitor(proxy: ScrollViewProxy, viewportHeight: CGFloat) {
+        logDebug("setupKeyMonitor called. viewportHeight=\(viewportHeight)")
+        if let monitor = keyMonitor {
+            logDebug("Removing old keyMonitor")
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+        
+        logDebug("Adding local monitor for keyDown")
+        let controller = scrollController
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Prevent runaway "infinite" scrolling by strictly throttling key repeats
+            let isNavKey = [126, 125, 116, 121, 115, 119, 123, 124].contains(event.keyCode)
+            if event.isARepeat && isNavKey {
+                let now = Date()
+                let isPageKey = (event.keyCode == 116 || event.keyCode == 121)
+                let throttleInterval = isPageKey ? 0.15 : 0.08
+                if now.timeIntervalSince(controller.lastKeyPressTime) < throttleInterval {
+                    return nil // Consume and drop to enforce a reasonable cadence
+                }
+            }
+            
+            logDebug("KeyMonitor event: keyCode=\(event.keyCode)")
+            var handled = false
+            let visibleRows = max(1, Int(ceil(viewportHeight / 158.0)) - 1)
+            
+            switch event.keyCode {
+            case 126: // ArrowUp
+                let target = max(0, controller.selectedGroupIndex - 1)
+                logDebug("KeyMonitor handled ArrowUp: target=\(target)")
+                smoothScroll(to: target, proxy: proxy, duration: 0.15, viewportHeight: viewportHeight, isRepeat: event.isARepeat)
+                handled = true
+            case 125: // ArrowDown
+                let target = min(Int(controller.totalGroups) - 1, controller.selectedGroupIndex + 1)
+                logDebug("KeyMonitor handled ArrowDown: target=\(target)")
+                smoothScroll(to: target, proxy: proxy, duration: 0.15, viewportHeight: viewportHeight, isRepeat: event.isARepeat)
+                handled = true
+            case 123: // ArrowLeft
+                controller.selectedCandidateIndex -= 1
+                controller.lastKeyPressTime = Date()
+                handled = true
+            case 124: // ArrowRight
+                controller.selectedCandidateIndex += 1
+                controller.lastKeyPressTime = Date()
+                handled = true
+            case 116: // PageUp
+                let target = max(0, controller.selectedGroupIndex - visibleRows)
+                logDebug("KeyMonitor handled PageUp: target=\(target)")
+                smoothScroll(to: target, proxy: proxy, duration: 0.25, viewportHeight: viewportHeight, isRepeat: event.isARepeat)
+                handled = true
+            case 121: // PageDown
+                let target = min(Int(controller.totalGroups) - 1, controller.selectedGroupIndex + visibleRows)
+                logDebug("KeyMonitor handled PageDown: target=\(target)")
+                smoothScroll(to: target, proxy: proxy, duration: 0.25, viewportHeight: viewportHeight, isRepeat: event.isARepeat)
+                handled = true
+            case 115: // Home
+                logDebug("KeyMonitor handled Home")
+                controller.selectedGroupIndex = 0
+                controller.selectedCandidateIndex = 0
+                smoothScrollToAnchor("topAnchor", alignment: .top, duration: 0.3, proxy: proxy, isRepeat: event.isARepeat)
+                handled = true
+            case 119: // End
+                let target = max(0, Int(controller.totalGroups) - 1)
+                logDebug("KeyMonitor handled End: target=\(target)")
+                controller.selectedGroupIndex = target
+                controller.selectedCandidateIndex = 0
+                smoothScrollToAnchor("bottomAnchor", alignment: .bottom, duration: 0.3, proxy: proxy, isRepeat: event.isARepeat)
+                handled = true
+            default:
+                break
+            }
+            
+            if handled {
+                return nil
+            }
+            return event
+        }
+    }
 }
 
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
     var duplicateTightness: Double
     var isEjecting: Bool
+    var isSelected: Bool
+    @Binding var selectedCandidateIndex: Int
     var onThumbnailTapped: (Int) -> Void
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
@@ -797,57 +1099,84 @@ struct DuplicateGroupCard: View {
                 }
                 
                 VerticalScrollingFixView {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
-                            ForEach(candidates, id: \.id) { file in
-                                DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
-                                    onRestoreSet([file.filePath])
-                                }, onEject: {
-                                    onEjectSet([file.filePath])
-                                }, onThumbnailTapped: {
-                                    if !isEjecting {
-                                        if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                            onThumbnailTapped(idx)
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 12) {
+                                ForEach(Array(candidates.enumerated()), id: \.offset) { index, file in
+                                    DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
+                                        onRestoreSet([file.filePath])
+                                    }, onEject: {
+                                        onEjectSet([file.filePath])
+                                    }, onThumbnailTapped: {
+                                        if !isEjecting {
+                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                                                onThumbnailTapped(idx)
+                                            }
                                         }
-                                    }
-                                })
+                                    }, isFocusedCandidate: isSelected && selectedCandidateIndex == index)
+                                    .id(index)
+                                }
+                            }
+                            .padding(.top, 30)
+                            .padding(.bottom, 30)
+                            .padding(.leading, 6)
+                            .padding(.trailing, 12)
+                            .overlay(alignment: .bottomLeading) {
+                                let indices = candidates.enumerated().compactMap { index, file in
+                                    let score = file.similarityScore > 0 ? file.similarityScore : 1.0
+                                    return (1.0 - score) <= duplicateTightness ? index : nil
+                                }
+                                
+                                if let first = indices.first, let last = indices.last {
+                                    let count = last - first + 1
+                                    let leftOffset = CGFloat(first) * (70 + 12) + 6 - 4 // Account for leading padding and balance the +8 width
+                                    let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
+                                    
+                                    let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
+                                    let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
+                                    let isRestoreMode = toEject.isEmpty
+                                    
+                                    BracketView(
+                                        width: width,
+                                        isRestoreMode: isRestoreMode,
+                                        isEjecting: isEjecting,
+                                        action: {
+                                            if isRestoreMode {
+                                                onRestoreSet(toRestore)
+                                            } else if !toEject.isEmpty {
+                                                onEjectSet(toEject)
+                                            }
+                                        }
+                                    )
+                                    .padding(.leading, leftOffset)
+                                    .padding(.bottom, 6)
+                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
+                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
+                                }
                             }
                         }
-                        .padding(.top, 30)
-                        .padding(.bottom, 30)
-                        .padding(.leading, 6)
-                        .padding(.trailing, 12)
-                        .overlay(alignment: .bottomLeading) {
-                            let indices = candidates.enumerated().compactMap { index, file in
-                                let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-                                return (1.0 - score) <= duplicateTightness ? index : nil
-                            }
-                            
-                            if let first = indices.first, let last = indices.last {
-                                let count = last - first + 1
-                                let leftOffset = CGFloat(first) * (70 + 12) + 6 - 4 // Account for leading padding and balance the +8 width
-                                let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
-                                
-                                let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
-                                let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
-                                let isRestoreMode = toEject.isEmpty
-                                
-                                BracketView(
-                                    width: width,
-                                    isRestoreMode: isRestoreMode,
-                                    isEjecting: isEjecting,
-                                    action: {
-                                        if isRestoreMode {
-                                            onRestoreSet(toRestore)
-                                        } else if !toEject.isEmpty {
-                                            onEjectSet(toEject)
-                                        }
+                        .onChange(of: selectedCandidateIndex) { old, newIdx in
+                            if isSelected {
+                                let safeIdx = min(max(0, newIdx), max(0, candidates.count - 1))
+                                if safeIdx != newIdx {
+                                    DispatchQueue.main.async {
+                                        selectedCandidateIndex = safeIdx
                                     }
-                                )
-                                .padding(.leading, leftOffset)
-                                .padding(.bottom, 6)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: width)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: leftOffset)
+                                } else {
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        proxy.scrollTo(safeIdx, anchor: .center)
+                                    }
+                                }
+                            }
+                        }
+                        .onChange(of: isSelected) { old, newlySelected in
+                            if newlySelected {
+                                let safeIdx = min(max(0, selectedCandidateIndex), max(0, candidates.count - 1))
+                                DispatchQueue.main.async {
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        proxy.scrollTo(safeIdx, anchor: .center)
+                                    }
+                                }
                             }
                         }
                     }
@@ -861,11 +1190,11 @@ struct DuplicateGroupCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Theme.surface.opacity(0.5))
+                .fill(isSelected ? Theme.surfaceElevated.opacity(0.8) : Theme.surface.opacity(0.5))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isRepEjectHovered ? Theme.error : Theme.border, lineWidth: isRepEjectHovered ? 2 : 1)
+                .stroke(isRepEjectHovered ? Theme.error : (isSelected ? Theme.textAccent : Theme.border), lineWidth: (isRepEjectHovered || isSelected) ? 2 : 1)
         )
         .padding(.bottom, 4)
     }
@@ -880,6 +1209,7 @@ struct DuplicateMemberView: View {
     var onEject: (() -> Void)? = nil
     var onEjectHoverChanged: ((Bool) -> Void)? = nil
     var onThumbnailTapped: (() -> Void)? = nil
+    var isFocusedCandidate: Bool = false
     
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -927,7 +1257,7 @@ struct DuplicateMemberView: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(file.isEjected ? Theme.error : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border)), lineWidth: isRep ? 2 : (file.isEjected ? 2 : 1))
+                .stroke(file.isEjected ? Theme.error : (isFocusedCandidate ? Theme.textAccent : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border))), lineWidth: isFocusedCandidate ? 3 : (isRep ? 2 : (file.isEjected ? 2 : 1)))
         )
         .overlay(alignment: .topLeading) {
             if advancedOverlayEnabled {
@@ -1166,6 +1496,8 @@ struct GroupRowWrapper: View {
     let duplicateTightness: Double
     let isProcessing: Bool
     let pageSize: Int32
+    let isSelected: Bool
+    @Binding var selectedCandidateIndex: Int
     let onThumbnailTapped: (Int) -> Void
     let onEjectSet: ([String]) -> Void
     let onRestoreSet: ([String]) -> Void
@@ -1178,6 +1510,8 @@ struct GroupRowWrapper: View {
                     group: group,
                     duplicateTightness: duplicateTightness,
                     isEjecting: isProcessing,
+                    isSelected: isSelected,
+                    selectedCandidateIndex: $selectedCandidateIndex,
                     onThumbnailTapped: onThumbnailTapped,
                     onEjectSet: onEjectSet,
                     onRestoreSet: onRestoreSet

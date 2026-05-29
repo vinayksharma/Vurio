@@ -484,6 +484,79 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
     };
   }, [isActive, handleScroll]);
 
+  // Keyboard navigation for scrolling the duplicates stack
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+         activeEl.tagName === 'TEXTAREA' ||
+         activeEl.tagName === 'SELECT' ||
+         activeEl.getAttribute('contenteditable') === 'true')
+      ) {
+        return;
+      }
+
+      const container = cardStackRef.current;
+      if (!container) return;
+
+      let scrolled = false;
+      const scrollAmount = ITEM_HEIGHT;
+      const pageAmount = container.clientHeight - 20;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          container.scrollTop += scrollAmount;
+          scrolled = true;
+          break;
+        case 'ArrowUp':
+          container.scrollTop -= scrollAmount;
+          scrolled = true;
+          break;
+        case 'PageDown':
+          container.scrollBy({ top: pageAmount, behavior: 'smooth' });
+          scrolled = true;
+          break;
+        case 'PageUp':
+          container.scrollBy({ top: -pageAmount, behavior: 'smooth' });
+          scrolled = true;
+          break;
+        case 'Home':
+          container.scrollTo({ top: 0, behavior: 'smooth' });
+          scrolled = true;
+          break;
+        case 'End':
+          container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+          scrolled = true;
+          break;
+        default:
+          break;
+      }
+
+      if (scrolled) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isActive, ITEM_HEIGHT]);
+
+  // Focus the duplicates stack container automatically when the panel is activated
+  useEffect(() => {
+    if (isActive) {
+      const timer = setTimeout(() => {
+        cardStackRef.current?.focus({ preventScroll: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive]);
+
   useEffect(() => {
     if (!isLoading && isActive && totalGroups > 0) {
       if (totalGroups !== lastTotalGroupsRef.current) {
@@ -908,7 +981,14 @@ const DuplicatesPanel: React.FC<DuplicatesPanelProps> = ({ isActive }) => {
           </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, height: 0, display: 'flex', flexDirection: 'column', borderRadius: 18, border: '1px solid var(--panel-border)', overflow: 'hidden', background: 'var(--bg)' }}>
-          <div className="card-stack hide-scrollbars" id="duplicates-stack" ref={cardStackRef} style={{ position: 'relative', overflow: 'auto', flex: 1, border: 'none', borderRadius: 0, width: '100%', paddingRight: '16px' }}>
+          <div 
+            className="card-stack hide-scrollbars" 
+            id="duplicates-stack" 
+            ref={cardStackRef} 
+            tabIndex={0}
+            aria-label="Duplicates feed"
+            style={{ position: 'relative', overflow: 'auto', flex: 1, border: 'none', borderRadius: 0, width: '100%', paddingRight: '16px' }}
+          >
             <div style={{ height: `${totalHeight}px`, position: 'relative' }}>{renderItems()}</div>
           </div>
           <div style={{ position: 'absolute', right: 4, top: 4, bottom: 4, width: '10px', zIndex: 50, pointerEvents: 'none' }}>

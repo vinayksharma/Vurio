@@ -2,8 +2,11 @@
 #include "media_processors/image/backends/raw_file_detector.hpp"
 #include <MagickCore/MagickCore.h>
 #include <Poco/Logger.h>
+#include <Poco/Process.h>
 #include <filesystem>
 #include <cstdlib>
+#include <random>
+#include <fstream>
 
 namespace MediaDedup
 {
@@ -139,103 +142,93 @@ namespace MediaDedup
             return false;
         }
 
-        logger_.debug("Starting transcoding for file: %s", file_path.c_str());
+        logger_.debug("Starting subprocess transcoding for file: %s", file_path.c_str());
+
+        // Generate a temporary file path for the output JPEG
+        std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+        
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        static std::uniform_int_distribution<> dis(0, 15);
+        
+        std::string uuid;
+        const char *hex_chars = "0123456789abcdef";
+        for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
+        
+        std::string temp_out_path = (temp_dir / ("magick_out_" + uuid + ".jpg")).string();
+
+        // Determine input prefix based on magic bytes
+        ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
+        std::string read_path = file_path;
+        if (format == ImageFormat::JPEG) {
+            read_path = "jpeg:" + file_path;
+        } else if (format == ImageFormat::PNG) {
+            read_path = "png:" + file_path;
+        } else if (format == ImageFormat::TIFF) {
+            read_path = "tiff:" + file_path;
+        }
+
+        std::string command = "/opt/homebrew/bin/magick";
+        std::vector<std::string> args;
+        args.push_back(read_path);
+        args.push_back("-depth");
+        args.push_back("8");
+        args.push_back("-auto-orient");
+        args.push_back("-colorspace");
+        args.push_back("sRGB");
+        args.push_back("-resize");
+        args.push_back("2560x2560>");
+        args.push_back("-quality");
+        args.push_back("85");
+        args.push_back("jpeg:" + temp_out_path);
 
         try
         {
-            logger_.information("Transcoding image: %s", file_path);
-
-            // Read the new file (ImageMagick will automatically clear previous data)
-            try
+            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
+            int rc = handle.wait();
+            if (rc != 0)
             {
-                logger_.debug("Reading RAW/image file with ImageMagick: %s", file_path.c_str());
-                
-                // Add prefix based on magic bytes to override extension-based delegation
-                ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
-                std::string read_path = file_path;
-                if (format == ImageFormat::JPEG) {
-                    read_path = "jpeg:" + file_path;
-                } else if (format == ImageFormat::PNG) {
-                    read_path = "png:" + file_path;
-                } else if (format == ImageFormat::TIFF) {
-                    read_path = "tiff:" + file_path;
-                }
-                
-                image_.read(read_path);
-                logger_.debug("Successfully read image file: %s (size: %sx%s, depth: %s)",
-                              file_path, std::to_string(image_.columns()), std::to_string(image_.rows()), std::to_string(image_.depth()));
-            }
-            catch (const Magick::Exception &e)
-            {
-                logger_.error("Failed to read image file %s: %s [MagickException]", file_path.c_str(), e.what());
-                logger_.error("Possible causes: insufficient memory, unsupported RAW format, or corrupted file");
-                jpeg_data.clear();
-                return false;
-            }
-            catch (const std::exception &e)
-            {
-                logger_.error("Failed to read image file %s (std exception): %s", file_path.c_str(), e.what());
-                jpeg_data.clear();
-                return false;
-            }
-            catch (...)
-            {
-                logger_.error("Failed to read image file %s (unknown exception)", file_path.c_str());
-                jpeg_data.clear();
+                logger_.error("magick command failed with exit code %d for file: %s", rc, file_path);
+                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
                 return false;
             }
 
-            // Validate image properties
-            if (image_.columns() == 0 || image_.rows() == 0)
+            if (!std::filesystem::exists(temp_out_path))
             {
-                logger_.error("Invalid image dimensions for %s: %llux%llu", file_path.c_str(), static_cast<unsigned long long>(image_.columns()), static_cast<unsigned long long>(image_.rows()));
+                logger_.error("magick succeeded but output file is missing: %s", temp_out_path);
                 return false;
             }
 
-            logger_.debug("Image properties - size: %llux%llu, depth: %llu, colorspace: %d",
-                          static_cast<unsigned long long>(image_.columns()), static_cast<unsigned long long>(image_.rows()), static_cast<unsigned long long>(image_.depth()), static_cast<int>(image_.colorSpace()));
-
-            // Configure image properties for optimal transcoding
-            configureImageProperties(image_);
-
-            // Set JPEG format options for OpenCV compatibility
-            setJpegFormatOptions(image_);
-
-            // Write to memory buffer
-            Magick::Blob blob;
-            image_.write(&blob);
-
-            // Validate blob data
-            if (blob.length() == 0)
+            // Read output file
+            std::ifstream file(temp_out_path, std::ios::binary | std::ios::ate);
+            if (!file.is_open())
             {
-                logger_.error("Transcoding produced empty data for file: %s", file_path.c_str());
+                logger_.error("Failed to read the temporary JPEG file: %s", temp_out_path);
+                std::filesystem::remove(temp_out_path);
                 return false;
             }
 
-            // Copy data to output vector
-            const char *data = static_cast<const char *>(blob.data());
-            size_t data_size = blob.length();
-            jpeg_data.assign(data, data + data_size);
+            std::streamsize size = file.tellg();
+            file.seekg(0, std::ios::beg);
 
-            logger_.information("Successfully transcoded image: %s, size: %s bytes", file_path, std::to_string(data_size));
-            return true;
-        }
-        catch (const Magick::Exception &e)
-        {
-            logger_.error("Failed to transcode image %s: %s", file_path.c_str(), e.what());
-            jpeg_data.clear();
-            return false;
+            jpeg_data.resize(size);
+            if (file.read(reinterpret_cast<char*>(jpeg_data.data()), size))
+            {
+                logger_.information("Successfully transcoded image to JPEG via subprocess: %s (%zu bytes)", file_path, static_cast<size_t>(size));
+                std::filesystem::remove(temp_out_path);
+                return true;
+            }
+            else
+            {
+                logger_.error("Failed to read data from temporary JPEG file: %s", temp_out_path);
+                std::filesystem::remove(temp_out_path);
+                return false;
+            }
         }
         catch (const std::exception &e)
         {
-            logger_.error("Failed to transcode image %s (std exception): %s", file_path.c_str(), e.what());
-            jpeg_data.clear();
-            return false;
-        }
-        catch (...)
-        {
-            logger_.error("Failed to transcode image %s (unknown exception)", file_path.c_str());
-            jpeg_data.clear();
+            logger_.error("Exception executing magick on image file %s: %s", file_path, e.what());
+            if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
             return false;
         }
     }

@@ -27,6 +27,11 @@
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "orchestration/scheduler_service.hpp"
+#include "utils/thumbnail_generator.hpp"
+#include "media_processors/image/backends/transcoding_pipeline.hpp"
+#include "core/web/web_handlers_websocket.hpp"
+#include <chrono>
+#include <sstream>
 namespace MediaDedup {
 namespace Core {
 
@@ -1349,6 +1354,17 @@ class MediaServiceImpl final : public vurio::dedup::MediaService::Service {
         return grpc::Status::OK;
     }
 
+    int64_t getFileModifiedTime(const std::string& path) {
+        try {
+            auto ftime = std::filesystem::last_write_time(path);
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            return std::chrono::system_clock::to_time_t(sctp);
+        } catch (...) {
+            return 0;
+        }
+    }
+
 public:
     MediaServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> config, 
                      DatabaseManager* db, 
@@ -1363,7 +1379,9 @@ public:
         int size = 80;
         try { size = std::stoi(request->size()); } catch (...) {}
         
-        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, size);
+        int normalized_size = ThumbnailGenerator::getClosestValidSize(size);
+        
+        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size);
         if (cached && std::filesystem::exists(cached->cached_path)) {
             return streamFileContents(cached->cached_path, writer);
         } else {
@@ -1374,7 +1392,7 @@ public:
                 auto xcache_copy = transcoding_cache_;
                 auto tpm_copy = tpm_;
                 std::string path_copy = file_path;
-                int size_copy = size;
+                int size_copy = normalized_size;
                 
                 tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
                     MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
@@ -1390,6 +1408,11 @@ public:
                             grpc::ServerWriter<vurio::dedup::MediaChunk>* writer) override {
         std::string file_path = request->file_path();
         
+        if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
+            // File does not need transcoding (e.g., standard JPEG/PNG)
+            return streamFileContents(file_path, writer);
+        }
+        
         auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_, file_path);
         if (cached && std::filesystem::exists(cached->cached_path)) {
             return streamFileContents(cached->cached_path, writer);
@@ -1397,16 +1420,54 @@ public:
             if (tpm_) {
                 auto config_copy = config_;
                 auto db_copy = db_;
-                auto tcache_copy = thumbnail_cache_;
                 auto xcache_copy = transcoding_cache_;
-                auto tpm_copy = tpm_;
                 std::string path_copy = file_path;
                 
-                tpm_->submit("preview_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy]() {
-                    // For preview, we invoke ThumbnailHandler just to generate the QHD cache proactively
-                    MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
-                    std::string cached_path;
-                    temp_handler.generateAndCacheThumbnail(path_copy, 256, cached_path);
+                tpm_->submit("preview_generator", [config_copy, db_copy, xcache_copy, path_copy]() {
+                    TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(config_copy);
+                    if (transcode_config.enabled) {
+                        std::string temp_dir = std::filesystem::temp_directory_path().string();
+                        std::string temp_path;
+                        if (TranscodingPipeline::TranscodeToFile(path_copy, temp_path, transcode_config, temp_dir)) {
+                            std::string final_path;
+                            if (xcache_copy && xcache_copy->moveToCache(temp_path, final_path)) {
+                                PreviewCacheRecord new_record;
+                                new_record.source_path = path_copy;
+                                new_record.cached_path = final_path;
+                                
+                                try {
+                                    auto ftime = std::filesystem::last_write_time(path_copy);
+                                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                                        ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+                                    new_record.source_modified_at = std::chrono::system_clock::to_time_t(sctp);
+                                } catch (...) {
+                                    new_record.source_modified_at = 0;
+                                }
+                                
+                                try {
+                                    new_record.file_size_bytes = std::filesystem::file_size(final_path);
+                                } catch (...) {
+                                    new_record.file_size_bytes = 0;
+                                }
+                                
+                                int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                                                     std::chrono::system_clock::now().time_since_epoch()).count();
+                                new_record.created_at = now_ts;
+                                new_record.last_accessed_at = now_ts;
+                                
+                                PreviewCacheOps::upsertPreview(*db_copy, new_record);
+                                
+                                nlohmann::json msg;
+                                msg["type"] = "media_ready";
+                                msg["media_type"] = "preview";
+                                msg["file_path"] = path_copy;
+                                
+                                WebSocketStatusHandler::broadcastMessage(msg.dump());
+                            } else {
+                                std::filesystem::remove(temp_path);
+                            }
+                        }
+                    }
                 }, file_path);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Preview generating");

@@ -1,14 +1,18 @@
 #include "utils/thumbnail_generator.hpp"
 #include "media_processors/image/backends/tiff_validator.hpp"
 #include <Poco/Logger.h>
+#include <Poco/Process.h>
 #include <filesystem>
 #include <chrono>
 #include <thread>
 #include <future>
 #include <algorithm>
 #include <vector>
+#include <fstream>
+#include <random>
 #include <Magick++.h>
 #include <libraw/libraw.h>
+#include <memory>
 #include "media_processors/image/backends/raw_file_detector.hpp"
 
 namespace MediaDedup
@@ -37,19 +41,15 @@ namespace MediaDedup
                 return false;
             }
 
-            // Check if file is readable (exists() doesn't verify read permissions)
-            // macOS Photos Library files may exist but not be readable due to access restrictions
+            // Check if file is readable
             std::error_code ec;
             auto perms = std::filesystem::status(source_path, ec).permissions();
             if (ec || (perms & (std::filesystem::perms::owner_read | std::filesystem::perms::group_read | std::filesystem::perms::others_read)) == std::filesystem::perms::none)
             {
-                // Note: This check may not catch all permission issues (e.g., macOS Photos Library restrictions)
-                // ImageMagick will also check during actual read, but this gives us an early warning
                 logger.warning("File may not be readable (permissions check): %s", source_path);
             }
 
             // CRITICAL: Validate TIFF files BEFORE passing to ImageMagick
-            // Corrupted TIFFs cause ImageMagick assertions that kill the process
             if (TiffValidator::isTiffFile(source_path))
             {
                 auto result = TiffValidator::validate(source_path);
@@ -57,130 +57,113 @@ namespace MediaDedup
                 {
                     logger.warning("Skipping corrupted TIFF file (pre-validation failed): %s - %s",
                                    source_path, result.error_message);
-                    return false; // Skip this file - would cause ImageMagick to assert/crash
+                    return false;
                 }
             }
 
-            // Read image using ImageMagick (supports ALL formats including RAW!)
-            // Use explicit exception handling to catch corruption early
-            Magick::Image image;
+            std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            static std::uniform_int_distribution<> dis(0, 15);
+            
+            auto make_temp_path = [&](const std::string &prefix, const std::string &ext) {
+                std::string uuid;
+                const char *hex_chars = "0123456789abcdef";
+                for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
+                return (temp_dir / (prefix + "_" + uuid + ext)).string();
+            };
+
+            std::string input_path = source_path;
+            std::string temp_in_path;
             bool raw_thumb_loaded = false;
 
             if (RawFileDetector::IsRawFile(source_path))
             {
-                LibRaw raw_processor;
-                if (raw_processor.open_file(source_path.c_str()) == LIBRAW_SUCCESS)
+                auto raw_processor = std::make_unique<LibRaw>();
+                if (raw_processor->open_file(source_path.c_str()) == LIBRAW_SUCCESS)
                 {
-                    if (raw_processor.unpack_thumb() == LIBRAW_SUCCESS)
+                    if (raw_processor->unpack_thumb() == LIBRAW_SUCCESS)
                     {
                         int err = 0;
-                        libraw_processed_image_t *thumb = raw_processor.dcraw_make_mem_thumb(&err);
+                        libraw_processed_image_t *thumb = raw_processor->dcraw_make_mem_thumb(&err);
                         if (thumb)
                         {
                             if (thumb->type == LIBRAW_IMAGE_JPEG)
                             {
-                                try {
-                                    Magick::Blob thumb_blob(thumb->data, thumb->data_size);
-                                    image.read(thumb_blob);
+                                temp_in_path = make_temp_path("raw_thumb_in", ".jpg");
+                                std::ofstream out_file(temp_in_path, std::ios::binary);
+                                if (out_file.is_open())
+                                {
+                                    out_file.write(reinterpret_cast<const char*>(thumb->data), thumb->data_size);
+                                    out_file.close();
+                                    input_path = temp_in_path;
                                     raw_thumb_loaded = true;
-                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s", source_path);
-                                } catch (...) {
-                                    logger.warning("Failed to parse extracted JPEG thumbnail for: %s", source_path);
+                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s -> %s", source_path, temp_in_path);
                                 }
                             }
                             LibRaw::dcraw_clear_mem(thumb);
                         }
                     }
-                    raw_processor.recycle();
+                    raw_processor->recycle();
                 }
             }
 
-            try
-            {
-                if (!raw_thumb_loaded)
-                {
-                    if (size > 0)
-                    {
-                        image.size(Magick::Geometry(size, size)); // Hint for JPEG/PNG decode-time scaling
+            struct Cleanup {
+                std::string in_file;
+                ~Cleanup() {
+                    if (!in_file.empty() && std::filesystem::exists(in_file)) {
+                        std::filesystem::remove(in_file);
                     }
-                    image.ping(source_path); // Fast metadata-only read first to detect corruption
-                    image.read(source_path); // Now read full image data
                 }
-            }
-            catch (const Magick::ErrorCorruptImage &e)
-            {
-                logger.error("Corrupted image file (skipping): %s - %s", source_path, std::string(e.what()));
-                return false;
-            }
-            catch (const Magick::ErrorFileOpen &e)
-            {
-                std::string error_msg = std::string(e.what());
-                // Check for permission errors and provide helpful message
-                if (error_msg.find("Operation not permitted") != std::string::npos ||
-                    error_msg.find("permission") != std::string::npos)
-                {
-                    logger.error("Cannot open image file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
-                                 source_path, error_msg);
+            } cleanup;
+
+            cleanup.in_file = temp_in_path;
+
+            std::string read_path = input_path;
+            if (!raw_thumb_loaded) {
+                ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(input_path);
+                if (format == ImageFormat::JPEG) {
+                    read_path = "jpeg:" + input_path;
+                } else if (format == ImageFormat::PNG) {
+                    read_path = "png:" + input_path;
+                } else if (format == ImageFormat::TIFF) {
+                    read_path = "tiff:" + input_path;
                 }
-                else
-                {
-                    logger.error("Cannot open image file: %s - %s", source_path, error_msg);
-                }
-                return false;
-            }
-            catch (const Magick::Error &e)
-            {
-                std::string error_msg = std::string(e.what());
-                // Check for permission errors in generic ImageMagick errors
-                if (error_msg.find("Operation not permitted") != std::string::npos ||
-                    error_msg.find("permission") != std::string::npos)
-                {
-                    logger.error("ImageMagick error reading file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
-                                 source_path, error_msg);
-                }
-                else
-                {
-                    logger.error("ImageMagick error reading file: %s - %s", source_path, error_msg);
-                }
-                return false;
             }
 
-            image.autoOrient();
-
-            size_t orig_w = image.columns();
-            size_t orig_h = image.rows();
-
-            if (orig_w == 0 || orig_h == 0)
-            {
-                logger.warning("Invalid image dimensions: %zux%zu for %s", orig_w, orig_h, source_path);
-                return false;
-            }
-
-            size_t new_w = orig_w, new_h = orig_h;
+            std::string command = "/opt/homebrew/bin/magick";
+            std::vector<std::string> args;
+            args.push_back(read_path);
+            args.push_back("-depth");
+            args.push_back("8");
+            args.push_back("-auto-orient");
+            args.push_back("-colorspace");
+            args.push_back("sRGB");
             if (size > 0)
             {
-                Magick::Geometry geom(size, size);
-                image.resize(geom);
+                args.push_back("-resize");
+                args.push_back(std::to_string(size) + "x" + std::to_string(size));
+            }
+            args.push_back("-quality");
+            args.push_back(std::to_string(quality));
+            args.push_back("jpeg:" + output_path);
+
+            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
+            int rc = handle.wait();
+            if (rc != 0)
+            {
+                logger.error("magick command failed with exit code %d for file: %s", rc, source_path);
+                return false;
             }
 
-            // Set JPEG quality (0-100)
-            image.quality(quality);
+            if (!std::filesystem::exists(output_path))
+            {
+                logger.error("magick succeeded but output file is missing: %s", output_path);
+                return false;
+            }
 
-            // Set output format to JPEG explicitly
-            image.magick("JPEG");
-
-            // Write thumbnail to file (for backward compatibility)
-            image.write(output_path);
-
-            logger.debug("Generated thumbnail: %s (%zux%zu) -> %s (%zux%zu)",
-                         source_path, orig_w, orig_h, output_path, new_w, new_h);
-
+            logger.debug("Generated thumbnail: %s -> %s", source_path, output_path);
             return true;
-        }
-        catch (const Magick::Exception &e)
-        {
-            Poco::Logger::get("ThumbnailGenerator").error("ImageMagick exception in generate: %s", std::string(e.what()));
-            return false;
         }
         catch (const std::exception &e)
         {
@@ -212,19 +195,15 @@ namespace MediaDedup
                 return false;
             }
 
-            // Check if file is readable (exists() doesn't verify read permissions)
-            // macOS Photos Library files may exist but not be readable due to access restrictions
+            // Check if file is readable
             std::error_code ec;
             auto perms = std::filesystem::status(source_path, ec).permissions();
             if (ec || (perms & (std::filesystem::perms::owner_read | std::filesystem::perms::group_read | std::filesystem::perms::others_read)) == std::filesystem::perms::none)
             {
-                // Note: This check may not catch all permission issues (e.g., macOS Photos Library restrictions)
-                // ImageMagick will also check during actual read, but this gives us an early warning
                 logger.warning("File may not be readable (permissions check): %s", source_path);
             }
 
             // CRITICAL: Validate TIFF files BEFORE passing to ImageMagick
-            // Corrupted TIFFs cause ImageMagick assertions that kill the process
             if (TiffValidator::isTiffFile(source_path))
             {
                 auto result = TiffValidator::validate(source_path);
@@ -232,148 +211,149 @@ namespace MediaDedup
                 {
                     logger.warning("Skipping corrupted TIFF file (pre-validation failed): %s - %s",
                                    source_path, result.error_message);
-                    return false; // Skip this file - would cause ImageMagick to assert/crash
+                    return false;
                 }
             }
 
-            // Read image using ImageMagick (supports ALL formats including RAW!)
-            // Use explicit exception handling to catch corruption early
-            Magick::Image image;
+            std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            static std::uniform_int_distribution<> dis(0, 15);
+            
+            auto make_temp_path = [&](const std::string &prefix, const std::string &ext) {
+                std::string uuid;
+                const char *hex_chars = "0123456789abcdef";
+                for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
+                return (temp_dir / (prefix + "_" + uuid + ext)).string();
+            };
+
+            std::string input_path = source_path;
+            std::string temp_in_path;
             bool raw_thumb_loaded = false;
 
             if (RawFileDetector::IsRawFile(source_path))
             {
-                LibRaw raw_processor;
-                if (raw_processor.open_file(source_path.c_str()) == LIBRAW_SUCCESS)
+                auto raw_processor = std::make_unique<LibRaw>();
+                if (raw_processor->open_file(source_path.c_str()) == LIBRAW_SUCCESS)
                 {
-                    if (raw_processor.unpack_thumb() == LIBRAW_SUCCESS)
+                    if (raw_processor->unpack_thumb() == LIBRAW_SUCCESS)
                     {
                         int err = 0;
-                        libraw_processed_image_t *thumb = raw_processor.dcraw_make_mem_thumb(&err);
+                        libraw_processed_image_t *thumb = raw_processor->dcraw_make_mem_thumb(&err);
                         if (thumb)
                         {
                             if (thumb->type == LIBRAW_IMAGE_JPEG)
                             {
-                                try {
-                                    Magick::Blob thumb_blob(thumb->data, thumb->data_size);
-                                    image.read(thumb_blob);
+                                temp_in_path = make_temp_path("raw_thumb_in", ".jpg");
+                                std::ofstream out_file(temp_in_path, std::ios::binary);
+                                if (out_file.is_open())
+                                {
+                                    out_file.write(reinterpret_cast<const char*>(thumb->data), thumb->data_size);
+                                    out_file.close();
+                                    input_path = temp_in_path;
                                     raw_thumb_loaded = true;
-                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s", source_path);
-                                } catch (...) {
-                                    logger.warning("Failed to parse extracted JPEG thumbnail for: %s", source_path);
+                                    logger.debug("Successfully extracted JPEG thumbnail from RAW file: %s -> %s", source_path, temp_in_path);
                                 }
                             }
                             LibRaw::dcraw_clear_mem(thumb);
                         }
                     }
-                    raw_processor.recycle();
+                    raw_processor->recycle();
                 }
             }
 
-            try
-            {
-                if (!raw_thumb_loaded)
-                {
-                    if (size > 0)
-                    {
-                        image.size(Magick::Geometry(size, size)); // Hint for JPEG/PNG decode-time scaling
+            struct Cleanup {
+                std::string in_file;
+                std::string out_file;
+                ~Cleanup() {
+                    if (!in_file.empty() && std::filesystem::exists(in_file)) {
+                        std::filesystem::remove(in_file);
                     }
-                    image.ping(source_path); // Fast metadata-only read first to detect corruption
-                    image.read(source_path); // Now read full image data
+                    if (!out_file.empty() && std::filesystem::exists(out_file)) {
+                        std::filesystem::remove(out_file);
+                    }
+                }
+            } cleanup;
+
+            cleanup.in_file = temp_in_path;
+            std::string temp_out_path = make_temp_path("thumb_out", ".jpg");
+            cleanup.out_file = temp_out_path;
+
+            std::string read_path = input_path;
+            if (!raw_thumb_loaded) {
+                ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(input_path);
+                if (format == ImageFormat::JPEG) {
+                    read_path = "jpeg:" + input_path;
+                } else if (format == ImageFormat::PNG) {
+                    read_path = "png:" + input_path;
+                } else if (format == ImageFormat::TIFF) {
+                    read_path = "tiff:" + input_path;
                 }
             }
-            catch (const Magick::ErrorCorruptImage &e)
-            {
-                logger.error("Corrupted image file (skipping): %s - %s", source_path, std::string(e.what()));
-                return false;
-            }
-            catch (const Magick::ErrorFileOpen &e)
-            {
-                std::string error_msg = std::string(e.what());
-                // Check for permission errors and provide helpful message
-                if (error_msg.find("Operation not permitted") != std::string::npos ||
-                    error_msg.find("permission") != std::string::npos)
-                {
-                    logger.error("Cannot open image file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
-                                 source_path, error_msg);
-                }
-                else
-                {
-                    logger.error("Cannot open image file: %s - %s", source_path, error_msg);
-                }
-                return false;
-            }
-            catch (const Magick::Error &e)
-            {
-                std::string error_msg = std::string(e.what());
-                // Check for permission errors in generic ImageMagick errors
-                if (error_msg.find("Operation not permitted") != std::string::npos ||
-                    error_msg.find("permission") != std::string::npos)
-                {
-                    logger.error("ImageMagick error reading file (permission denied): %s - %s (This may be due to macOS Photos Library access restrictions)",
-                                 source_path, error_msg);
-                }
-                else
-                {
-                    logger.error("ImageMagick error reading file: %s - %s", source_path, error_msg);
-                }
-                return false;
-            }
 
-            // Apply EXIF rotation to ensure correct orientation
-            image.autoOrient();
-
-            // Convert to sRGB to ensure proper colors (RAW files often default to linear RGB or CMYK)
-            if (image.colorSpace() != Magick::sRGBColorspace)
-            {
-                image.colorSpace(Magick::sRGBColorspace);
-            }
-
-            size_t orig_w = image.columns();
-            size_t orig_h = image.rows();
-
-            if (orig_w == 0 || orig_h == 0)
-            {
-                logger.warning("Invalid image dimensions: %zux%zu for %s", orig_w, orig_h, source_path);
-                return false;
-            }
-
+            std::string command = "/opt/homebrew/bin/magick";
+            std::vector<std::string> args;
+            args.push_back(read_path);
+            args.push_back("-depth");
+            args.push_back("8");
+            args.push_back("-auto-orient");
+            args.push_back("-colorspace");
+            args.push_back("sRGB");
             if (size > 0)
             {
-                Magick::Geometry geom(size, size);
-                image.resize(geom);
+                args.push_back("-resize");
+                args.push_back(std::to_string(size) + "x" + std::to_string(size));
             }
+            args.push_back("-quality");
+            args.push_back(std::to_string(quality));
+            args.push_back("jpeg:" + temp_out_path);
 
-            // Set JPEG quality (0-100)
-            image.quality(quality);
-
-            // Set output format to JPEG explicitly
-            image.magick("JPEG");
-            // Set depth to 8-bit for web compatibility
-            image.depth(8);
-
-            // Write thumbnail to blob
-            image.write(&blob);
-
-            if (blob.length() == 0)
+            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
+            int rc = handle.wait();
+            if (rc != 0)
             {
-                logger.error("Thumbnail generation produced empty blob for: %s", source_path);
+                logger.error("magick command failed with exit code %d for file: %s", rc, source_path);
                 return false;
             }
 
-            logger.debug("Generated thumbnail to blob: %s (%zux%zu) -> blob (%zux%zu, %zu bytes)",
-                         source_path, orig_w, orig_h, image.columns(), image.rows(), blob.length());
+            if (!std::filesystem::exists(temp_out_path))
+            {
+                logger.error("magick succeeded but output file is missing: %s", temp_out_path);
+                return false;
+            }
 
-            return true;
-        }
-        catch (const Magick::Exception &e)
-        {
-            Poco::Logger::get("ThumbnailGenerator").error("ImageMagick exception in generate: %s", std::string(e.what()));
-            return false;
+            std::ifstream file(temp_out_path, std::ios::binary | std::ios::ate);
+            if (!file.is_open())
+            {
+                logger.error("Failed to read temporary output file: %s", temp_out_path);
+                return false;
+            }
+
+            std::streamsize out_size = file.tellg();
+            file.seekg(0, std::ios::beg);
+
+            if (out_size <= 0)
+            {
+                logger.error("Generated temporary file is empty: %s", temp_out_path);
+                return false;
+            }
+
+            std::vector<std::uint8_t> data(out_size);
+            if (file.read(reinterpret_cast<char*>(data.data()), out_size))
+            {
+                blob.update(data.data(), out_size);
+                logger.debug("Generated thumbnail to blob: %s -> blob (%zu bytes)", source_path, static_cast<size_t>(out_size));
+                return true;
+            }
+            else
+            {
+                logger.error("Failed to read data from temporary output file: %s", temp_out_path);
+                return false;
+            }
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("ThumbnailGenerator").error("Exception in generate: %s", std::string(e.what()));
+            Poco::Logger::get("ThumbnailGenerator").error("Exception in generateToBlob: %s", std::string(e.what()));
             return false;
         }
     }
