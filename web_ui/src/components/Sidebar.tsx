@@ -21,7 +21,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activePanel, onPanelChange }) => {
           <button
             key={item.id}
             className={`nav-item ${activePanel === item.id ? 'active' : ''}`}
-            onClick={() => onPanelChange(item.id)}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onPanelChange(item.id);
+            }}
           >
             <span className="nav-icon" aria-hidden="true">
               {item.icon}
