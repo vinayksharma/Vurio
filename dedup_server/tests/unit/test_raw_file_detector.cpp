@@ -104,3 +104,78 @@ TEST_F(RawFileDetectorTest, IsRawFile_CaseInsensitive_Works)
     EXPECT_TRUE(RawFileDetector::IsRawFile("test.DNG"));
     EXPECT_TRUE(RawFileDetector::IsRawFile("test.NeF"));
 }
+
+TEST_F(RawFileDetectorTest, DetectFormatFromMagicBytes_DetectsJPEG)
+{
+    std::string path = MediaDedup::Test::TestUtils::generateTempFilePath("test_magic_jpeg", "jpg");
+    std::string content;
+    content.push_back((char)0xFF);
+    content.push_back((char)0xD8);
+    content.push_back((char)0xFF);
+    content.push_back((char)0xE0);
+    MediaDedup::Test::TestUtils::createTempFile(content, path);
+
+    EXPECT_EQ(RawFileDetector::DetectFormatFromMagicBytes(path), ImageFormat::JPEG);
+    MediaDedup::Test::TestUtils::deleteFile(path);
+}
+
+TEST_F(RawFileDetectorTest, DetectFormatFromMagicBytes_DetectsPNG)
+{
+    std::string path = MediaDedup::Test::TestUtils::generateTempFilePath("test_magic_png", "png");
+    std::string content;
+    content.push_back((char)0x89);
+    content.push_back((char)0x50);
+    content.push_back((char)0x4E);
+    content.push_back((char)0x47);
+    content.push_back((char)0x0D);
+    content.push_back((char)0x0A);
+    content.push_back((char)0x1A);
+    content.push_back((char)0x0A);
+    MediaDedup::Test::TestUtils::createTempFile(content, path);
+
+    EXPECT_EQ(RawFileDetector::DetectFormatFromMagicBytes(path), ImageFormat::PNG);
+    MediaDedup::Test::TestUtils::deleteFile(path);
+}
+
+TEST_F(RawFileDetectorTest, DetectFormatFromMagicBytes_DetectsGIF)
+{
+    std::string path = MediaDedup::Test::TestUtils::generateTempFilePath("test_magic_gif", "gif");
+    std::string content = "GIF89a...";
+    MediaDedup::Test::TestUtils::createTempFile(content, path);
+
+    EXPECT_EQ(RawFileDetector::DetectFormatFromMagicBytes(path), ImageFormat::GIF);
+    MediaDedup::Test::TestUtils::deleteFile(path);
+}
+
+TEST_F(RawFileDetectorTest, DetectFormatFromMagicBytes_DetectsTIFF)
+{
+    std::string path = MediaDedup::Test::TestUtils::generateTempFilePath("test_magic_tiff", "tiff");
+    std::string content;
+    content.push_back((char)0x49);
+    content.push_back((char)0x49);
+    content.push_back((char)0x2A);
+    content.push_back((char)0x00);
+    MediaDedup::Test::TestUtils::createTempFile(content, path);
+
+    EXPECT_EQ(RawFileDetector::DetectFormatFromMagicBytes(path), ImageFormat::TIFF);
+    MediaDedup::Test::TestUtils::deleteFile(path);
+}
+
+TEST_F(RawFileDetectorTest, DetectFormatFromMagicBytes_DetectsHEIC)
+{
+    std::string path = MediaDedup::Test::TestUtils::generateTempFilePath("test_magic_heic", "heic");
+    std::string content;
+    content.resize(12, '\0');
+    content[4] = 'f';
+    content[5] = 't';
+    content[6] = 'y';
+    content[7] = 'p';
+    content[8] = 'h';
+    content[9] = 'e';
+    content[10] = 'i';
+    content[11] = 'c';
+    MediaDedup::Test::TestUtils::createTempFile(content, path);
+
+    EXPECT_EQ(RawFileDetector::DetectFormatFromMagicBytes(path), ImageFormat::HEIC);
+    MediaDedup::Test::TestUtils::deleteFile(path);
+}
