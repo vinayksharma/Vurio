@@ -60,13 +60,7 @@ actor ServerImageLoader {
                     continue
                 }
             } catch is CancellationError {
-                logDebug("loadThumbnail CANCELLED for \(filePath). Notifying server.")
-                if let client = VurioGrpcClient.shared.mediaStreaming {
-                    var cancelReq = Vurio_Dedup_CancelMediaRequest()
-                    cancelReq.filePath = filePath
-                    cancelReq.type = "thumbnail_generator"
-                    _ = try? await client.cancelMediaGeneration(cancelReq)
-                }
+                logDebug("loadThumbnail CANCELLED for \(filePath).")
                 throw CancellationError()
             } catch {
                 if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
@@ -114,13 +108,7 @@ actor ServerImageLoader {
                     continue
                 }
             } catch is CancellationError {
-                logDebug("loadPreview CANCELLED for \(filePath). Notifying server.")
-                if let client = VurioGrpcClient.shared.mediaStreaming {
-                    var cancelReq = Vurio_Dedup_CancelMediaRequest()
-                    cancelReq.filePath = filePath
-                    cancelReq.type = "preview_generator"
-                    _ = try? await client.cancelMediaGeneration(cancelReq)
-                }
+                logDebug("loadPreview CANCELLED for \(filePath).")
                 throw CancellationError()
             } catch {
                 if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
