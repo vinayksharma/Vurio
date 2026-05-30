@@ -49,7 +49,6 @@ struct DuplicatesView: View {
     @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
     @State private var selectedFileIndex: Int = 0
     @State private var showingPopup = false
-    @State private var scrollOffset: CGFloat = 0
     @State private var showingBulkEjectConfirmation = false
     @State private var totalEjectingCount: Int = 0
     @State private var ejectingRemainingCount: Int = 0
@@ -235,130 +234,19 @@ struct DuplicatesView: View {
                 GeometryReader { scrollGeo in
                     ScrollViewReader { proxy in
                         ScrollView {
-                            let viewportHeight = scrollGeo.size.height
-                            let rowHeight: CGFloat = 158.0
-                            let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
-                            let visibleCount = Int(ceil(viewportHeight / rowHeight)) + 4
-                            let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
-                            let selectedIndex = scrollController.selectedGroupIndex
-                            let totalGroupsInt = Int(totalGroups)
-                            
-                            VStack(alignment: .leading, spacing: 0) {
+                            LazyVStack(alignment: .leading, spacing: 0) {
                                 Color.clear
                                     .frame(height: 0)
                                     .id("topAnchor")
                                 
-                                if selectedIndex >= 0 && selectedIndex < startIndex && selectedIndex < groups.count {
-                                    // Case 1: Selected item is above the visible range
-                                    let topSpacerHeight = CGFloat(selectedIndex) * rowHeight
-                                    if topSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: topSpacerHeight)
-                                    }
-                                    
-                                    renderRow(at: selectedIndex, rowHeight: rowHeight)
-                                    
-                                    let middleSpacerHeight = CGFloat(startIndex - selectedIndex - 1) * rowHeight
-                                    if middleSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: middleSpacerHeight)
-                                    }
-                                    
-                                    if startIndex <= endIndex {
-                                        ForEach(startIndex...endIndex, id: \.self) { index in
-                                            renderRow(at: index, rowHeight: rowHeight)
-                                        }
-                                    }
-                                    
-                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - endIndex)
-                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
-                                    if bottomSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: bottomSpacerHeight)
-                                    }
-                                    
-                                } else if selectedIndex >= 0 && selectedIndex > endIndex && selectedIndex < groups.count {
-                                    // Case 2: Selected item is below the visible range
-                                    let topSpacerHeight = CGFloat(startIndex) * rowHeight
-                                    if topSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: topSpacerHeight)
-                                    }
-                                    
-                                    if startIndex <= endIndex {
-                                        ForEach(startIndex...endIndex, id: \.self) { index in
-                                            renderRow(at: index, rowHeight: rowHeight)
-                                        }
-                                    }
-                                    
-                                    let middleSpacerHeight = CGFloat(selectedIndex - endIndex - 1) * rowHeight
-                                    if middleSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: middleSpacerHeight)
-                                    }
-                                    
-                                    renderRow(at: selectedIndex, rowHeight: rowHeight)
-                                    
-                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - selectedIndex)
-                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
-                                    if bottomSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: bottomSpacerHeight)
-                                    }
-                                    
-                                } else {
-                                    // Case 3: Selected item is inside the visible range (or index is invalid/out of range)
-                                    let topSpacerHeight = CGFloat(startIndex) * rowHeight
-                                    if topSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: topSpacerHeight)
-                                    }
-                                    
-                                    if startIndex <= endIndex {
-                                        ForEach(startIndex...endIndex, id: \.self) { index in
-                                            renderRow(at: index, rowHeight: rowHeight)
-                                        }
-                                    }
-                                    
-                                    let remainingGroups = CGFloat(totalGroupsInt - 1 - endIndex)
-                                    let bottomSpacerHeight = max(0.0, remainingGroups * rowHeight + 60.0)
-                                    if bottomSpacerHeight > 0 {
-                                        Spacer(minLength: 0)
-                                            .frame(height: bottomSpacerHeight)
-                                    }
+                                ForEach(groups.indices, id: \.self) { index in
+                                    renderRow(at: index, rowHeight: 158.0)
                                 }
                                 
                                 Color.clear
                                     .frame(height: 0)
                                     .id("bottomAnchor")
                             }
-                            .background(
-                                ScrollOffsetTracker { newOffset in
-                                    // In macOS, depending on flippedness, offset might be different, but typically bounds.origin.y is the scroll offset.
-                                    scrollController.latestReportedOffset = newOffset
-                                    if Date() < scrollController.ignoreScrollUpdatesUntil { return }
-                                    
-                                    if abs(scrollOffset - newOffset) > 1.0 {
-                                        scrollOffset = newOffset
-                                    }
-                                    
-                                    let rowHeight: CGFloat = 158.0
-                                    let startIndex = max(0, Int(scrollOffset / rowHeight) - 2)
-                                    let visibleCount = Int(ceil(scrollGeo.size.height / rowHeight)) + 4
-                                    let endIndex = min(Int(totalGroups) - 1, startIndex + visibleCount)
-                                    
-                                    if totalGroups > 0 && startIndex <= endIndex {
-                                        let startPage = Int32(startIndex) / pageSize
-                                        let endPage = Int32(endIndex) / pageSize
-                                        
-                                        logDebug("Scroll: offset=\(scrollOffset) bounds=[\(startIndex)..\(endIndex)] pages=[\(startPage)..\(endPage)]")
-                                        
-                                        for p in startPage...endPage {
-                                            Task { await loadPage(pageIndex: p) }
-                                        }
-                                    }
-                                }
-                            )
                         }
                         .focusable()
                         .focusEffectDisabled()
@@ -806,26 +694,8 @@ struct DuplicatesView: View {
                     }
                 }
                 
-                // Unload groups that have moved far out of view to free memory
-                let rowHeight: CGFloat = 158.0
-                let visibleStart = max(0, Int(scrollOffset / rowHeight))
-                let safeBuffer = Int(pageSize * 2) // keep roughly 2 pages buffer
-                let estimatedViewportRows = 20
-                
-                let upperLimit = min(localGroups.count, max(0, visibleStart - safeBuffer))
-                for i in 0..<upperLimit {
-                    localGroups[i].group = nil
-                }
-                
-                let lowerLimit = min(localGroups.count, visibleStart + estimatedViewportRows + safeBuffer)
-                if lowerLimit < localGroups.count {
-                    for i in lowerLimit..<localGroups.count {
-                        localGroups[i].group = nil
-                    }
-                }
-                
                 groups = localGroups
-                logDebug("loadPage(\(pageIndex)) success. Unloaded < \(upperLimit) and > \(lowerLimit).")
+                logDebug("loadPage(\(pageIndex)) success.")
             }
             loadingTasks[pageIndex] = nil
             
@@ -933,12 +803,7 @@ struct DuplicatesView: View {
             }
         }
         
-        let deadline = isRapidFire ? 0.15 : duration + 0.15
-        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
-            if controller.scrollRequestID == requestID && Date() >= controller.ignoreScrollUpdatesUntil {
-                self.scrollOffset = controller.latestReportedOffset
-            }
-        }
+
     }
     
     private func smoothScrollToAnchor(_ anchorName: String, alignment: UnitPoint, duration: Double, proxy: ScrollViewProxy, isRepeat: Bool) {
@@ -966,12 +831,7 @@ struct DuplicatesView: View {
             }
         }
         
-        let deadline = isRapidFire ? 0.15 : duration + 0.15
-        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
-            if controller.scrollRequestID == requestID && Date() >= controller.ignoreScrollUpdatesUntil {
-                self.scrollOffset = controller.latestReportedOffset
-            }
-        }
+
     }
 
     private func setupKeyMonitor(proxy: ScrollViewProxy, viewportHeight: CGFloat) {
