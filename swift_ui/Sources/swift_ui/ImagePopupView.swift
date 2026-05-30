@@ -13,11 +13,6 @@ struct ImagePopupView: View {
     @State private var currentImage: NSImage? = nil
     @State private var isLoadingImage: Bool = false
     
-    private var requestKey: ImageRequest? {
-        guard group.files.indices.contains(selectedIndex) else { return nil }
-        return ImageRequest(filePath: group.files[selectedIndex].filePath, size: nil)
-    }
-    
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -173,35 +168,37 @@ struct ImagePopupView: View {
         .onChange(of: selectedIndex) { _, _ in
             checkAndLoadImage()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ImageLoaded"))) { notification in
-            if let req = notification.userInfo?["request"] as? ImageRequest, req == requestKey {
-                checkAndLoadImage()
-            }
-        }
     }
     
     private func checkAndLoadImage() {
-        guard let key = requestKey else { return }
+        guard group.files.indices.contains(selectedIndex) else { return }
+        let filePath = group.files[selectedIndex].filePath
         
         isLoadingImage = true
         currentImage = nil
         
-        if let cachedPath = ServerImageLoader.shared.cache[key] {
-            DispatchQueue.global(qos: .userInitiated).async {
-                if let image = NSImage(contentsOfFile: cachedPath) {
-                    DispatchQueue.main.async {
-                        self.currentImage = image
+        Task {
+            do {
+                if let cachedImage = ImageCache.shared.getImage(forKey: "\(filePath)_preview") {
+                    await MainActor.run {
+                        self.currentImage = cachedImage
                         self.isLoadingImage = false
                     }
                 } else {
-                    DispatchQueue.main.async {
-                        ServerImageLoader.shared.invalidateCache(for: key)
-                        ServerImageLoader.shared.requestImage(filePath: key.filePath, size: nil)
+                    let image = try await ServerImageLoader.shared.loadPreview(filePath: filePath)
+                    await MainActor.run {
+                        self.currentImage = image
+                        self.isLoadingImage = false
                     }
                 }
+            } catch is CancellationError {
+                // Ignore
+            } catch {
+                print("Failed to load preview for \(filePath): \(error)")
+                await MainActor.run {
+                    self.isLoadingImage = false
+                }
             }
-        } else {
-            ServerImageLoader.shared.requestImage(filePath: key.filePath, size: nil)
         }
     }
     
