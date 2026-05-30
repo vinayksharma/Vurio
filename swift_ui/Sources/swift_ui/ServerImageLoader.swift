@@ -8,6 +8,7 @@ actor ServerImageLoader {
     
     private var activeDownloads = 0
     private let maxConcurrentDownloads = 8
+    private let maxQueueSize = 1000
     private struct QueuedRequest {
         let id: UUID
         let continuation: CheckedContinuation<Void, Error>
@@ -134,6 +135,11 @@ actor ServerImageLoader {
     
     private func enqueue(id: UUID, continuation: CheckedContinuation<Void, Error>) {
         queue.append(QueuedRequest(id: id, continuation: continuation))
+        if queue.count > maxQueueSize {
+            // Drop the oldest request (at the start of the array) since it's LIFO
+            let oldest = queue.removeFirst()
+            oldest.continuation.resume(throwing: CancellationError())
+        }
     }
     
     private func cancelQueuedRequest(id: UUID) {
