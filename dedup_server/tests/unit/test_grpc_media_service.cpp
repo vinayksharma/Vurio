@@ -93,11 +93,8 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailNotCachedReturnsUnavailable) {
     req.set_size("128");
 
     grpc::ClientContext context;
-
-    auto reader = stub->GetThumbnail(&context, req);
-    vurio::dedup::MediaChunk chunk;
-    while(reader->Read(&chunk)) {}
-    grpc::Status status = reader->Finish();
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
     EXPECT_EQ(status.error_message(), "Thumbnail generating");
@@ -145,17 +142,11 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     req.set_size("128");
 
     grpc::ClientContext context;
-
-    auto reader = stub->GetThumbnail(&context, req);
-    vurio::dedup::MediaChunk chunk;
-    std::string data;
-    while(reader->Read(&chunk)) {
-        data.append(chunk.chunk_data());
-    }
-    grpc::Status status = reader->Finish();
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
 
     EXPECT_TRUE(status.ok());
-    EXPECT_EQ(data, "fake data");
+    EXPECT_EQ(resp.file_path(), fake_thumb);
 
     server.stop();
 }
@@ -178,19 +169,13 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     }
 
     grpc::ClientContext context;
-    
-    auto reader = stub->GetPreview(&context, req);
-    vurio::dedup::MediaChunk chunk;
-    std::string data;
-    while(reader->Read(&chunk)) {
-        data.append(chunk.chunk_data());
-    }
-    grpc::Status status = reader->Finish();
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetPreview(&context, req, &resp);
 
     // .jpg doesn't strictly need transcoding according to default config usually, 
     // it will return the original file data.
     EXPECT_TRUE(status.ok());
-    EXPECT_EQ(data, "fake image");
+    EXPECT_EQ(resp.file_path(), "/tmp/test.jpg");
 
     std::filesystem::remove("/tmp/test.jpg");
 
