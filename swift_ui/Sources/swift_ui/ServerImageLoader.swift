@@ -3,112 +3,192 @@ import SwiftUI
 import GRPC
 import Logging
 
-struct ImageRequest: Hashable, Equatable {
-    let filePath: String
-    let size: Int? // nil means preview
-}
-
-@MainActor
-class ServerImageLoader {
+actor ServerImageLoader {
     static let shared = ServerImageLoader()
     
-    var cache: [ImageRequest: String] = [:]
-    private var requestStack: [ImageRequest] = []
-    private var queuedRequests: Set<ImageRequest> = []
-    private var activeWorkers = 0
-    private let maxWorkers = 8
-    private let maxStackSize = 300
+    private var activeDownloads = 0
+    private let maxConcurrentDownloads = 8
+    private struct QueuedRequest {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    
+    private var queue: [QueuedRequest] = []
     
     private init() {}
     
-    func invalidateCache(for req: ImageRequest) {
-        cache.removeValue(forKey: req)
-    }
-    
-    func requestImage(filePath: String, size: Int?) {
-        let req = ImageRequest(filePath: filePath, size: size)
-        
-        // If it's already queued, remove it so we can push it to the top (LIFO)
-        if queuedRequests.contains(req) {
-            requestStack.removeAll { $0 == req }
-        } else {
-            queuedRequests.insert(req)
+    nonisolated func loadThumbnail(filePath: String, size: Int) async throws -> NSImage {
+        logDebug("loadThumbnail requested for \(filePath)")
+        try await waitForToken()
+        logDebug("loadThumbnail token ACQUIRED for \(filePath)")
+        defer { 
+            Task { 
+                await self.releaseToken() 
+                logDebug("loadThumbnail token RELEASED for \(filePath)")
+            } 
         }
-        
-        requestStack.append(req)
-        
-        // Cap the stack size
-        if requestStack.count > maxStackSize {
-            let dropped = requestStack.removeFirst()
-            queuedRequests.remove(dropped)
-        }
-        
-        spawnWorkerIfNeeded()
-    }
-    
-    private func spawnWorkerIfNeeded() {
-        guard activeWorkers < maxWorkers else { return }
-        guard !requestStack.isEmpty else { return }
-        
-        activeWorkers += 1
-        Task {
-            await workerLoop()
-        }
-    }
-    
-    private func workerLoop() async {
-        while let req = popRequest() {
-            await fetchImage(req)
-        }
-        
-        activeWorkers -= 1
-    }
-    
-    private func popRequest() -> ImageRequest? {
-        guard let req = requestStack.popLast() else { return nil }
-        queuedRequests.remove(req)
-        return req
-    }
-    
-    private func fetchImage(_ req: ImageRequest) async {
-        guard let client = VurioGrpcClient.shared.mediaStreaming else { return }
-        
-        var request = Vurio_Dedup_GetMediaRequest()
-        request.filePath = req.filePath
         
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
-        for _ in 0..<maxRetries {
-            do {
-                let responsePath: String
-                if let size = req.size {
-                    request.size = String(size)
-                    let response = try await client.getThumbnail(request)
-                    responsePath = response.filePath
-                } else {
-                    let response = try await client.getPreview(request)
-                    responsePath = response.filePath
+        do {
+            for _ in 0..<maxRetries {
+                try Task.checkCancellation()
+                
+                guard let mediaStreaming = VurioGrpcClient.shared.mediaStreaming else {
+                    throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
                 }
                 
-                if FileManager.default.fileExists(atPath: responsePath) {
-                    self.cache[req] = responsePath
-                    NotificationCenter.default.post(name: NSNotification.Name("ImageLoaded"), object: nil, userInfo: ["request": req])
-                    return
-                } else {
-                    logDebug("fetchImage ERROR: Invalid image data at path: \(responsePath)")
-                    return
+                var request = Vurio_Dedup_GetMediaRequest()
+                request.filePath = filePath
+                request.size = String(size)
+                
+                let stream = mediaStreaming.getThumbnail(request)
+                
+                var accumulator = Data()
+                do {
+                    for try await chunk in stream {
+                        try Task.checkCancellation()
+                        accumulator.append(chunk.chunkData)
+                    }
+                    
+                    if let image = await self.decodeImageInBackground(data: accumulator) {
+                        ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
+                        logDebug("loadThumbnail SUCCESS for \(filePath)")
+                        return image
+                    } else {
+                        throw NSError(domain: "ServerImageLoader", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid image data"])
+                    }
+                } catch {
+                    if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
+                        try await Task.sleep(nanoseconds: retryDelay)
+                        retryDelay *= 2
+                        continue
+                    }
+                    logDebug("loadThumbnail ERROR for \(filePath): \(error.localizedDescription)")
+                    throw error
                 }
-            } catch {
-                if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
-                    try? await Task.sleep(nanoseconds: retryDelay)
-                    retryDelay *= 2
-                    continue
+            }
+            logDebug("loadThumbnail MAX RETRIES for \(filePath)")
+            throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
+        } catch is CancellationError {
+            logDebug("loadThumbnail CANCELLED for \(filePath). Notifying server.")
+            if let mediaStreaming = VurioGrpcClient.shared.mediaStreaming {
+                var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                cancelReq.filePath = filePath
+                cancelReq.type = "thumbnail_generator"
+                _ = try? await mediaStreaming.cancelMediaGeneration(cancelReq)
+            }
+            throw CancellationError()
+        }
+    }
+    
+    nonisolated func loadPreview(filePath: String) async throws -> NSImage {
+        try await waitForToken()
+        defer { Task { await self.releaseToken() } }
+        
+        var retryDelay: UInt64 = 100_000_000 // 100ms
+        let maxRetries = 10
+        
+        do {
+            for _ in 0..<maxRetries {
+                try Task.checkCancellation()
+                
+                guard let mediaStreaming = VurioGrpcClient.shared.mediaStreaming else {
+                    throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
                 }
-                logDebug("fetchImage ERROR for \(req.filePath): \(error.localizedDescription)")
-                return
+                
+                var request = Vurio_Dedup_GetMediaRequest()
+                request.filePath = filePath
+                
+                let stream = mediaStreaming.getPreview(request)
+                
+                var accumulator = Data()
+                do {
+                    for try await chunk in stream {
+                        try Task.checkCancellation()
+                        accumulator.append(chunk.chunkData)
+                    }
+                    
+                    if let image = await self.decodeImageInBackground(data: accumulator) {
+                        ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
+                        return image
+                    } else {
+                        throw NSError(domain: "ServerImageLoader", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid image data"])
+                    }
+                } catch {
+                    if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
+                        try await Task.sleep(nanoseconds: retryDelay)
+                        retryDelay *= 2
+                        continue
+                    }
+                    throw error
+                }
+            }
+            throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
+        } catch is CancellationError {
+            logDebug("loadPreview CANCELLED for \(filePath). Notifying server.")
+            if let mediaStreaming = VurioGrpcClient.shared.mediaStreaming {
+                var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                cancelReq.filePath = filePath
+                cancelReq.type = "preview_generator"
+                _ = try? await mediaStreaming.cancelMediaGeneration(cancelReq)
+            }
+            throw CancellationError()
+        }
+    }
+    
+    private func decodeImageInBackground(data: Data) async -> NSImage? {
+        return await Task.detached(priority: .userInitiated) {
+            guard let image = NSImage(data: data) else { return nil }
+            // Force decompression by asking for a CGImage
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+            let size = NSSize(width: cgImage.width, height: cgImage.height)
+            return NSImage(cgImage: cgImage, size: size)
+        }.value
+    }
+    
+    private func enqueue(id: UUID, continuation: CheckedContinuation<Void, Error>) {
+        queue.append(QueuedRequest(id: id, continuation: continuation))
+    }
+    
+    private func cancelQueuedRequest(id: UUID) {
+        if let index = queue.firstIndex(where: { $0.id == id }) {
+            let request = queue.remove(at: index)
+            request.continuation.resume(throwing: CancellationError())
+        }
+    }
+    
+    private func waitForToken() async throws {
+        try Task.checkCancellation()
+        
+        if activeDownloads < maxConcurrentDownloads {
+            activeDownloads += 1
+            return
+        }
+        
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                Task {
+                    await self.enqueue(id: id, continuation: continuation)
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelQueuedRequest(id: id)
             }
         }
-        logDebug("fetchImage MAX RETRIES exceeded for \(req.filePath)")
+    }
+    
+    private func releaseToken() {
+        if !queue.isEmpty {
+            // Use LIFO (removeLast) so the most recently requested thumbnails (visible on screen)
+            // get priority over older requests that might be scrolling out of view.
+            let request = queue.removeLast()
+            request.continuation.resume()
+        } else {
+            activeDownloads -= 1
+        }
     }
 }
