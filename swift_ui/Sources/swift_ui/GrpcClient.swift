@@ -25,7 +25,10 @@ final class VurioGrpcClient {
                 target: .unixDomainSocket(socketPath),
                 transportSecurity: .plaintext,
                 eventLoopGroup: self.group
-            )
+            ) { configuration in
+                configuration.connectionPool.connectionsPerEventLoop = 8
+                configuration.connectionPool.maxWaitersPerEventLoop = 1000
+            }
             
             self.config = Vurio_Dedup_ConfigServiceAsyncClient(channel: self.channel!)
             self.media = Vurio_Dedup_MediaLocationsServiceAsyncClient(channel: self.channel!)
