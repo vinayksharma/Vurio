@@ -11,6 +11,10 @@
 #include "database/preview_cache_ops.hpp"
 #include "config/unified_observable_config.hpp"
 #include "filesmanager/disk_cache.hpp"
+#include "orchestration/files_manager.hpp"
+#include "orchestration/thread_pool_manager.hpp"
+#include "filesmanager/files_service.hpp"
+#include "media_processors/media_processor.hpp"
 
 using namespace MediaDedup;
 using namespace MediaDedup::Core;
@@ -23,6 +27,10 @@ protected:
     std::string test_db_path_ = "test_media_service.db";
     std::string test_thumb_cache_dir_ = "test_thumb_cache";
     std::string test_transcode_cache_dir_ = "test_transcode_cache";
+    std::shared_ptr<MediaDedup::Orchestration::FilesManager> files_manager_;
+    std::shared_ptr<MediaDedup::ThreadPoolManager> tpm_;
+    std::shared_ptr<MediaDedup::MediaProcessor> media_processor_;
+    std::shared_ptr<MediaDedup::FilesService> files_service_;
 
     void SetUp() override {
         std::filesystem::remove(test_db_path_);
@@ -41,6 +49,17 @@ protected:
 
         thumb_cache_ = std::make_shared<DiskCache>(config_, "cache.thumbnail");
         transcode_cache_ = std::make_shared<DiskCache>(config_, "cache.transcoding");
+
+        files_service_ = std::make_shared<FilesService>(*db_, nullptr);
+        
+        tpm_ = std::make_shared<ThreadPoolManager>(config_);
+        tpm_->initialize();
+        
+        media_processor_ = std::make_shared<MediaProcessor>(config_, db_, tpm_);
+        media_processor_->initialize();
+        
+        files_manager_ = std::make_shared<MediaDedup::Orchestration::FilesManager>(config_, db_, files_service_, media_processor_);
+        files_manager_->initialize();
     }
 
     void TearDown() override {
@@ -64,8 +83,7 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailNotCachedReturnsUnavailable) {
     std::string socket_path = "/tmp/test_grpc_media_service.sock";
     
     GrpcServerCore server;
-    // tpm is nullptr so it won't actually generate anything
-    server.start(socket_path, config_, db_.get(), nullptr, nullptr, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
@@ -74,10 +92,12 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailNotCachedReturnsUnavailable) {
     req.set_file_path("/tmp/nonexistent.jpg");
     req.set_size("128");
 
-    vurio::dedup::MediaPathResponse res;
     grpc::ClientContext context;
 
-    grpc::Status status = stub->GetThumbnail(&context, req, &res);
+    auto reader = stub->GetThumbnail(&context, req);
+    vurio::dedup::MediaChunk chunk;
+    while(reader->Read(&chunk)) {}
+    grpc::Status status = reader->Finish();
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
     EXPECT_EQ(status.error_message(), "Thumbnail generating");
@@ -115,7 +135,7 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     EXPECT_TRUE(std::filesystem::exists(fake_thumb));
 
     GrpcServerCore server;
-    server.start(socket_path, config_, db_.get(), nullptr, nullptr, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
@@ -124,13 +144,18 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     req.set_file_path(fake_src);
     req.set_size("128");
 
-    vurio::dedup::MediaPathResponse res;
     grpc::ClientContext context;
 
-    grpc::Status status = stub->GetThumbnail(&context, req, &res);
+    auto reader = stub->GetThumbnail(&context, req);
+    vurio::dedup::MediaChunk chunk;
+    std::string data;
+    while(reader->Read(&chunk)) {
+        data.append(chunk.chunk_data());
+    }
+    grpc::Status status = reader->Finish();
 
     EXPECT_TRUE(status.ok());
-    EXPECT_EQ(res.file_path(), fake_thumb);
+    EXPECT_EQ(data, "fake data");
 
     server.stop();
 }
@@ -139,7 +164,7 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     std::string socket_path = "/tmp/test_grpc_media_service_preview.sock";
 
     GrpcServerCore server;
-    server.start(socket_path, config_, db_.get(), nullptr, nullptr, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
@@ -147,15 +172,27 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     vurio::dedup::GetMediaRequest req;
     req.set_file_path("/tmp/test.jpg");
 
-    vurio::dedup::MediaPathResponse res;
-    grpc::ClientContext context;
+    {
+        std::ofstream ofs("/tmp/test.jpg");
+        ofs << "fake image";
+    }
 
-    grpc::Status status = stub->GetPreview(&context, req, &res);
+    grpc::ClientContext context;
+    
+    auto reader = stub->GetPreview(&context, req);
+    vurio::dedup::MediaChunk chunk;
+    std::string data;
+    while(reader->Read(&chunk)) {
+        data.append(chunk.chunk_data());
+    }
+    grpc::Status status = reader->Finish();
 
     // .jpg doesn't strictly need transcoding according to default config usually, 
-    // it will return the original file path.
+    // it will return the original file data.
     EXPECT_TRUE(status.ok());
-    EXPECT_EQ(res.file_path(), "/tmp/test.jpg");
+    EXPECT_EQ(data, "fake image");
+
+    std::filesystem::remove("/tmp/test.jpg");
 
     server.stop();
 }
