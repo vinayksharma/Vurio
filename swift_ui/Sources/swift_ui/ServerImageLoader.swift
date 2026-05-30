@@ -31,8 +31,8 @@ actor ServerImageLoader {
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
-        do {
-            for _ in 0..<maxRetries {
+        for _ in 0..<maxRetries {
+            do {
                 try Task.checkCancellation()
                 
                 guard let client = VurioGrpcClient.shared.mediaStreaming else {
@@ -54,24 +54,32 @@ actor ServerImageLoader {
                     return image
                 } else {
                     logDebug("loadThumbnail FAILED to read from path for \(filePath): \(responsePath)")
-                    // It might not be written yet if there's a race, try retrying
+                    // Wait and retry
                     try await Task.sleep(nanoseconds: retryDelay)
                     retryDelay *= 2
                     continue
                 }
+            } catch is CancellationError {
+                logDebug("loadThumbnail CANCELLED for \(filePath). Notifying server.")
+                if let client = VurioGrpcClient.shared.mediaStreaming {
+                    var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                    cancelReq.filePath = filePath
+                    cancelReq.type = "thumbnail_generator"
+                    _ = try? await client.cancelMediaGeneration(cancelReq)
+                }
+                throw CancellationError()
+            } catch {
+                if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
+                    try? await Task.sleep(nanoseconds: retryDelay)
+                    retryDelay *= 2
+                    continue
+                }
+                logDebug("loadThumbnail ERROR for \(filePath): \(error.localizedDescription)")
+                throw error
             }
-            logDebug("loadThumbnail MAX RETRIES for \(filePath)")
-            throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
-        } catch is CancellationError {
-            logDebug("loadThumbnail CANCELLED for \(filePath). Notifying server.")
-            if let client = VurioGrpcClient.shared.mediaStreaming {
-                var cancelReq = Vurio_Dedup_CancelMediaRequest()
-                cancelReq.filePath = filePath
-                cancelReq.type = "thumbnail_generator"
-                _ = try? await client.cancelMediaGeneration(cancelReq)
-            }
-            throw CancellationError()
         }
+        logDebug("loadThumbnail MAX RETRIES for \(filePath)")
+        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
     }
     
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
@@ -81,8 +89,8 @@ actor ServerImageLoader {
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
-        do {
-            for _ in 0..<maxRetries {
+        for _ in 0..<maxRetries {
+            do {
                 try Task.checkCancellation()
                 
                 guard let client = VurioGrpcClient.shared.mediaStreaming else {
@@ -105,18 +113,25 @@ actor ServerImageLoader {
                     retryDelay *= 2
                     continue
                 }
+            } catch is CancellationError {
+                logDebug("loadPreview CANCELLED for \(filePath). Notifying server.")
+                if let client = VurioGrpcClient.shared.mediaStreaming {
+                    var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                    cancelReq.filePath = filePath
+                    cancelReq.type = "preview_generator"
+                    _ = try? await client.cancelMediaGeneration(cancelReq)
+                }
+                throw CancellationError()
+            } catch {
+                if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
+                    try? await Task.sleep(nanoseconds: retryDelay)
+                    retryDelay *= 2
+                    continue
+                }
+                throw error
             }
-            throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
-        } catch is CancellationError {
-            logDebug("loadPreview CANCELLED for \(filePath). Notifying server.")
-            if let client = VurioGrpcClient.shared.mediaStreaming {
-                var cancelReq = Vurio_Dedup_CancelMediaRequest()
-                cancelReq.filePath = filePath
-                cancelReq.type = "preview_generator"
-                _ = try? await client.cancelMediaGeneration(cancelReq)
-            }
-            throw CancellationError()
         }
+        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
     }
     
     private func decodeImageInBackground(filePath: String) async -> NSImage? {
