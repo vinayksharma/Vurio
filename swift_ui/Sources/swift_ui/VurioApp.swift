@@ -140,6 +140,7 @@ struct ContentView: View {
     @State private var sidebarWidth: CGFloat = 200
     
     enum SidebarItem: Hashable {
+        case duplicatesOld
         case duplicates
         case locations
         case settings
@@ -151,6 +152,21 @@ struct ContentView: View {
         
         NavigationSplitView {
             List(selection: $selection) {
+                NavigationLink(value: SidebarItem.duplicatesOld) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "photo.on.rectangle.angled").font(.title2)
+                            .frame(width: 24, alignment: .center)
+                        if !isCompact {
+                            Text("DUPLICATES (OLD)")
+                                .fontWeight(.bold)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, isCompact ? 0 : 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                }
                 NavigationLink(value: SidebarItem.duplicates) {
                     HStack(spacing: 12) {
                         Image(systemName: "photo.on.rectangle.angled").font(.title2)
@@ -236,8 +252,12 @@ struct ContentView: View {
             .navigationTitle("")
         } detail: {
                 switch selection {
-                case .duplicates:
+                case .duplicatesOld:
                     DuplicatesView()
+                case .duplicates:
+                    Text("New Duplicates VurioScroller View (Coming Soon)")
+                        .font(.largeTitle)
+                        .foregroundColor(.secondary)
                 case .locations:
                     MediaLocationsView()
                 case .settings:
