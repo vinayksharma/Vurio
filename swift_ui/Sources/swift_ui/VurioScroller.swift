@@ -355,16 +355,6 @@ struct RowContainer<RowContent: View>: View {
         if viewModel.index >= 0 {
             content(viewModel.index)
                 .contentShape(Rectangle())
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(viewModel.isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
-                        .padding(2)
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(viewModel.isHovered && !viewModel.isSelected ? Color.primary.opacity(0.05) : Color.clear)
-                        .padding(2)
-                )
                 .onHover { hovering in
                     viewModel.isHovered = hovering
                 }
