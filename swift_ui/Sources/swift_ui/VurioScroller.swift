@@ -7,6 +7,7 @@ class RowViewModel: ObservableObject, Identifiable {
     @Published var index: Int = -1
     @Published var isSelected: Bool = false
     @Published var isHovered: Bool = false
+    @Published var refreshTrigger: Int = 0
 }
 
 /// A custom high-performance, infinitely scrollable virtualization container using AppKit.
@@ -15,9 +16,58 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
     let rowHeight: CGFloat
     var scrollbarInsets: EdgeInsets = EdgeInsets()
     @Binding var selection: Int?
-    let rowContent: (Int) -> RowContent
+    var rowContent: (Int) -> RowContent
     
+    
+    class Coordinator {
+        var monitor: Any?
+        deinit {
+            if let monitor = monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> VurioScrollView {
+        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak coordinator = context.coordinator] event in
+            guard let window = event.window else { return event }
+            
+            // Find if there is a VurioScrollView under the mouse
+            let mouseLocation = window.mouseLocationOutsideOfEventStream
+            guard let hitView = window.contentView?.hitTest(mouseLocation) else { return event }
+            
+            // Walk up to find VurioScrollView
+            var current: NSView? = hitView
+            var targetScrollView: VurioScrollView? = nil
+            while current != nil {
+                if let sv = current as? VurioScrollView {
+                    targetScrollView = sv
+                    break
+                }
+                current = current?.superview
+            }
+            
+            guard let scrollView = targetScrollView else { return event }
+            
+            let hasPhase = event.phase != [] || event.momentumPhase != []
+            if !hasPhase {
+                if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) && abs(event.scrollingDeltaY) > 0 {
+                    scrollView.scrollWheel(with: event)
+                    return nil
+                }
+            } else {
+                if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) && abs(event.scrollingDeltaY) > 0 {
+                    scrollView.scrollWheel(with: event)
+                    return nil
+                }
+            }
+            return event
+        }
+
         let scrollView = VurioScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -73,6 +123,8 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
             docView.totalItemCount = totalItemCount
             docView.rowHeight = rowHeight
             docView.currentSelection = selection
+            docView.rowContent = rowContent
+            docView.refreshActiveViews()
             docView.updateDocumentSize()
         }
     }
@@ -82,7 +134,7 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
 class VurioDocumentView<RowContent: View>: NSView {
     var totalItemCount: Int
     var rowHeight: CGFloat
-    let rowContent: (Int) -> RowContent
+    var rowContent: (Int) -> RowContent
     var onSelectionChanged: ((Int?) -> Void)?
     
     var currentSelection: Int? {
@@ -109,6 +161,16 @@ class VurioDocumentView<RowContent: View>: NSView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    func refreshActiveViews() {
+        for (index, view) in activeViews {
+            if let hostingView = view as? VurioRowHostingView<AnyView>,
+               let viewModel = viewModels[view] {
+                hostingView.rootView = AnyView(RowContainer(viewModel: viewModel, content: rowContent))
+                viewModel.refreshTrigger += 1
+            }
+        }
+    }
+
     func updateDocumentSize() {
         let totalHeight = CGFloat(totalItemCount) * rowHeight
         let newWidth = superview?.bounds.width ?? 800
@@ -289,6 +351,7 @@ struct RowContainer<RowContent: View>: View {
     let content: (Int) -> RowContent
     
     var body: some View {
+        let _ = viewModel.refreshTrigger
         if viewModel.index >= 0 {
             content(viewModel.index)
                 .contentShape(Rectangle())
@@ -316,6 +379,16 @@ class VurioRowHostingView<Content: View>: NSHostingView<Content> {
     
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
+    }
+    
+    override func scrollWheel(with event: NSEvent) {
+        if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
+            // Forward vertical scrolls to the outer VurioScrollView
+            self.nextResponder?.scrollWheel(with: event)
+        } else {
+            // Forward horizontal scrolls to the inner SwiftUI views
+            super.scrollWheel(with: event)
+        }
     }
     
     override func mouseDown(with event: NSEvent) {
