@@ -2,6 +2,16 @@ import SwiftUI
 import GRPC
 import Logging
 
+class GroupIndexCache {
+    var map: [String: Int] = [:]
+}
+
+struct GroupSlot: Identifiable {
+    let id = UUID()
+    var group: Vurio_Dedup_DuplicateGroup?
+    var placeholderIndex: Int = 0
+}
+
 @MainActor
 class DuplicatesViewModel: ObservableObject {
     @Published var groups: [GroupSlot] = []
