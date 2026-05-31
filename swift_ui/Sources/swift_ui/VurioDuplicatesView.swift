@@ -360,13 +360,13 @@ struct VurioGroupRowWrapper: View {
                     onEjectSet: onEjectSet,
                     onRestoreSet: onRestoreSet
                 )
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 30)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, minHeight: 150)
                     .background(Theme.surface.opacity(0.5))
                     .cornerRadius(12)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 30)
                     .onAppear {
                         let pageIndex = Int32(slot.placeholderIndex) / pageSize
                         loadPage(pageIndex)
