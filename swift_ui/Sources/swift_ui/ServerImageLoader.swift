@@ -29,6 +29,24 @@ actor ServerImageLoader {
             } 
         }
         
+        defer {
+            if Task.isCancelled {
+                Task {
+                    do {
+                        var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                        cancelReq.filePath = filePath
+                        cancelReq.type = "thumbnail_generator"
+                        if let client = VurioGrpcClient.shared.mediaStreaming {
+                            _ = try await client.cancelMediaGeneration(cancelReq)
+                            logDebug("Sent server cancellation for thumbnail: \(filePath)")
+                        }
+                    } catch {
+                        logDebug("Failed to send server cancellation: \(error)")
+                    }
+                }
+            }
+        }
+        
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
         
@@ -80,6 +98,24 @@ actor ServerImageLoader {
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
         try await waitForToken()
         defer { Task { await self.releaseToken() } }
+        
+        defer {
+            if Task.isCancelled {
+                Task {
+                    do {
+                        var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                        cancelReq.filePath = filePath
+                        cancelReq.type = "preview_generator"
+                        if let client = VurioGrpcClient.shared.mediaStreaming {
+                            _ = try await client.cancelMediaGeneration(cancelReq)
+                            logDebug("Sent server cancellation for preview: \(filePath)")
+                        }
+                    } catch {
+                        logDebug("Failed to send server cancellation: \(error)")
+                    }
+                }
+            }
+        }
         
         var retryDelay: UInt64 = 100_000_000 // 100ms
         let maxRetries = 10
