@@ -255,9 +255,7 @@ struct ContentView: View {
                 case .duplicatesOld:
                     DuplicatesView()
                 case .duplicates:
-                    Text("New Duplicates VurioScroller View (Coming Soon)")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
+                    VurioDuplicatesView()
                 case .locations:
                     MediaLocationsView()
                 case .settings:
