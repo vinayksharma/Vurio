@@ -12,6 +12,7 @@ struct DuplicateGroupCard: View {
     
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     @State private var isRepEjectHovered = false
+    @State private var isCardHovered = false
     
     var representative: Vurio_Dedup_DuplicateFile? {
         group.files.first(where: { $0.isRepresentative }) ?? group.files.first
@@ -150,12 +151,15 @@ struct DuplicateGroupCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? Theme.surfaceElevated.opacity(0.8) : Theme.surface.opacity(0.5))
+                .fill(isSelected ? Theme.surfaceElevated.opacity(0.8) : (isCardHovered ? Color.primary.opacity(0.05) : Theme.surface.opacity(0.5)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isRepEjectHovered ? Theme.error : (isSelected ? Theme.textAccent : Theme.border), lineWidth: (isRepEjectHovered || isSelected) ? 2 : 1)
         )
+        .onHover { hovering in
+            isCardHovered = hovering
+        }
         .padding(.bottom, 4)
     }
 }
