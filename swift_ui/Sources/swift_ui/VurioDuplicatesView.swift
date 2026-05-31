@@ -169,10 +169,13 @@ struct VurioDuplicatesView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 GeometryReader { scrollGeo in
-                    VurioScroller(
+                    var customInsets = scrollGeo.safeAreaInsets
+                    customInsets.bottom += 30
+                    
+                    return VurioScroller(
                         totalItemCount: Int(viewModel.totalGroups),
                         rowHeight: 158.0,
-                        scrollbarInsets: scrollGeo.safeAreaInsets,
+                        scrollbarInsets: customInsets,
                         selection: $selection
                     ) { index in
                         renderRow(at: index, rowHeight: 158.0)
