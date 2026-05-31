@@ -544,6 +544,20 @@ namespace MediaDedup
                              std::to_string(static_cast<unsigned int>(running_total_)) + ", allowance: " +
                              std::to_string(static_cast<unsigned int>(allowance)) + ")");
             }
+            catch (const Poco::NoThreadAvailableException& e)
+            {
+                logger.warning("No threads available in pool. Pushing task " + std::to_string(static_cast<unsigned long long>(id)) + " back to queue.");
+                if (running_total_ > 0)
+                    running_total_ -= 1;
+                auto it = type_to_running_.find(type);
+                if (it != type_to_running_.end() && it->second > 0)
+                    it->second -= 1;
+                active_runnables_.erase(id);
+                
+                // Put task back so it doesn't get dropped
+                queue.push_front(task);
+                break; // Stop scheduling
+            }
             catch (const std::exception& e)
             {
                 logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "': " + e.what());
