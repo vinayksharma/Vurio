@@ -50,7 +50,12 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
             object: scrollView.contentView,
             queue: nil
         ) { [weak documentView] _ in
-            documentView?.boundsDidChange()
+            // Decouple the heavy SwiftUI math from the scroll event loop.
+            // This allows the scrollbar thumb to track perfectly with the mouse pointer
+            // without being blocked by view recycling and frame calculations.
+            DispatchQueue.main.async {
+                documentView?.boundsDidChange()
+            }
         }
         
         return scrollView
@@ -96,6 +101,7 @@ class VurioDocumentView<RowContent: View>: NSView {
         self.rowContent = rowContent
         super.init(frame: .zero)
         self.wantsLayer = true
+        self.autoresizesSubviews = false
         updateDocumentSize()
     }
     
@@ -194,18 +200,25 @@ class VurioDocumentView<RowContent: View>: NSView {
     
     private func layoutVisibleRows() {
         guard let scrollView = enclosingScrollView else { return }
+        
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        
         let visibleRect = scrollView.contentView.bounds
         
         let startRow = max(0, Int(floor(visibleRect.minY / rowHeight)) - 1)
         let endRow = min(totalItemCount - 1, Int(ceil(visibleRect.maxY / rowHeight)) + 1)
         
-        if startRow > endRow { return }
+        if startRow > endRow {
+            CATransaction.commit()
+            return
+        }
         
         let visibleIndices = Set(startRow...endRow)
         
         for (index, view) in activeViews {
             if !visibleIndices.contains(index) {
-                view.removeFromSuperview()
+                view.isHidden = true
                 pool.append(view)
                 activeViews.removeValue(forKey: index)
             }
@@ -217,6 +230,10 @@ class VurioDocumentView<RowContent: View>: NSView {
                 
                 let yPos = CGFloat(index) * rowHeight
                 view.frame = CGRect(x: 0, y: yPos, width: self.bounds.width, height: rowHeight)
+                
+                if view.isHidden {
+                    view.isHidden = false
+                }
                 
                 if view.superview == nil {
                     self.addSubview(view)
@@ -230,6 +247,8 @@ class VurioDocumentView<RowContent: View>: NSView {
                 }
             }
         }
+        
+        CATransaction.commit()
     }
     
     private func getReusableView(for index: Int) -> NSView {
