@@ -232,6 +232,8 @@ struct Vurio_Dedup_DuplicateFile: Sendable {
 
   var isEjected: Bool = false
 
+  var cachedThumbnailPath: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1038,7 +1040,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1053,6 +1055,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 5: try { try decoder.decodeSingularBoolField(value: &self.isRepresentative) }()
       case 6: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.isEjected) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.cachedThumbnailPath) }()
       default: break
       }
     }
@@ -1080,6 +1083,9 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if self.isEjected != false {
       try visitor.visitSingularBoolField(value: self.isEjected, fieldNumber: 7)
     }
+    if !self.cachedThumbnailPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.cachedThumbnailPath, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1091,6 +1097,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.isRepresentative != rhs.isRepresentative {return false}
     if lhs.similarityScore != rhs.similarityScore {return false}
     if lhs.isEjected != rhs.isEjected {return false}
+    if lhs.cachedThumbnailPath != rhs.cachedThumbnailPath {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

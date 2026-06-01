@@ -35,6 +35,8 @@ class DuplicatesViewModel: ObservableObject {
     
     var isProcessing: Bool { isEjecting || isRestoring }
     
+    private var prefetchTasks: [Int: Task<Void, Never>] = [:]
+    
     let pageSize: Int32 = 30
     var indexCache = GroupIndexCache()
     private weak var appState: AppState?
@@ -55,16 +57,63 @@ class DuplicatesViewModel: ObservableObject {
         self.appState = appState
     }
     
-    func triggerLoadPage(_ pageIndex: Int32) {
-        guard loadingTasks[pageIndex] == nil else { return }
+    func updateVisibleRows(_ range: ClosedRange<Int>) {
+        let prefetchMargin = 25
+        let start = max(0, range.lowerBound - prefetchMargin)
+        let end = min(max(0, groups.count - 1), range.upperBound + prefetchMargin)
+        guard start <= end else { return }
+        
+        let startPage = Int32(start / Int(pageSize))
+        let endPage = Int32(end / Int(pageSize))
         
         let activePages = loadingTasks.keys
         for p in activePages {
-            if abs(p - pageIndex) > 2 {
+            if p < startPage || p > endPage {
                 loadingTasks[p]?.cancel()
                 loadingTasks[p] = nil
             }
         }
+        
+        for p in startPage...endPage {
+            triggerLoadPage(p)
+        }
+        
+        let desiredPrefetch = Set(start...end).subtracting(Set(range))
+        
+        for (index, task) in prefetchTasks {
+            if index < start || index > end {
+                task.cancel()
+                prefetchTasks.removeValue(forKey: index)
+            }
+        }
+        
+        for index in desiredPrefetch {
+            if prefetchTasks[index] == nil {
+                guard index < groups.count, let group = groups[index].group else { continue }
+                
+                let task = Task.detached(priority: .background) { [weak self] in
+                    let rep = group.files.first(where: { $0.isRepresentative }) ?? group.files.first
+                    let candidates = group.files.filter { !$0.isRepresentative }
+                    
+                    if let rep = rep {
+                        if ImageCache.shared.getImage(forKey: "\(rep.filePath)_80") == nil {
+                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: 80, cachedThumbnailPath: rep.cachedThumbnailPath)
+                        }
+                    }
+                    for file in candidates {
+                        try? Task.checkCancellation()
+                        if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
+                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath)
+                        }
+                    }
+                }
+                prefetchTasks[index] = task
+            }
+        }
+    }
+    
+    func triggerLoadPage(_ pageIndex: Int32) {
+        guard loadingTasks[pageIndex] == nil else { return }
         
         let task = Task {
             await loadPage(pageIndex: pageIndex)

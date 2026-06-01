@@ -275,6 +275,9 @@ public:
                 proto_file->set_size_bytes(member.file_size);
                 proto_file->set_is_representative(member.is_representative);
                 proto_file->set_similarity_score(member.similarity_score);
+                if (!member.cached_thumbnail_path.empty()) {
+                    proto_file->set_cached_thumbnail_path(member.cached_thumbnail_path);
+                }
                 
                 bool is_ejected = false;
                 std::string normalized_path = member.file_path;

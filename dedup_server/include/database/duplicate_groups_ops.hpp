@@ -33,6 +33,7 @@ namespace MediaDedup
         std::string created_date;
         bool is_representative = false;
         std::string added_at;
+        std::string cached_thumbnail_path;
     };
 
     struct DuplicateCheckpointRecord

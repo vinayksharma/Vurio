@@ -1,6 +1,7 @@
 #include "database/duplicate_groups_ops.hpp"
 #include "database/database_manager.hpp"
 #include "database/sql_constants.hpp"
+#include "database/thumbnail_cache_ops.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Logger.h>
@@ -37,6 +38,13 @@ namespace MediaDedup
             if (!db.ensureTableExists("duplicate_processing_checkpoint", SQL::kCreateDuplicateProcessingCheckpointTable))
             {
                 logger.error("Failed to create duplicate_processing_checkpoint table");
+                return false;
+            }
+
+            // Ensure thumbnail_cache table exists since we now join with it
+            if (!ThumbnailCacheOps::ensureTable(db))
+            {
+                logger.error("Failed to create thumbnail_cache table");
                 return false;
             }
 
@@ -942,6 +950,10 @@ namespace MediaDedup
                     member.created_date = member_row[4].convert<std::string>();
                     member.is_representative = member_row[5].convert<bool>();
                     member.added_at = member_row[6].convert<std::string>();
+                    
+                    if (!member_row[7].isEmpty()) {
+                        member.cached_thumbnail_path = member_row[7].convert<std::string>();
+                    }
 
                     // Always add the member, including the representative, so the UI receives full metadata
                     group_with_members.members.push_back(member);

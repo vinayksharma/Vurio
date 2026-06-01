@@ -423,12 +423,16 @@ namespace MediaDedup
             "SELECT COUNT(*) FROM duplicate_groups WHERE mode=? AND representative_created_date > ?";
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
-            "SELECT file_id, file_path, similarity_score, file_size, created_date, is_representative, added_at "
-            "FROM duplicate_members WHERE group_id=? ORDER BY similarity_score DESC";
+            "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, tc.cached_path "
+            "FROM duplicate_members dm "
+            "LEFT JOIN thumbnail_cache tc ON dm.file_path = tc.source_path AND tc.thumbnail_size = 256 "
+            "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroup =
-            "SELECT group_id, file_id, file_path, similarity_score, file_size, created_date, "
-            "is_representative, added_at FROM duplicate_members WHERE group_id=? ORDER BY similarity_score DESC";
+            "SELECT dm.group_id, dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, "
+            "dm.is_representative, dm.added_at, tc.cached_path FROM duplicate_members dm "
+            "LEFT JOIN thumbnail_cache tc ON dm.file_path = tc.source_path AND tc.thumbnail_size = 256 "
+            "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
         inline constexpr std::string_view kSelectDuplicateGroupsForFile =
             "SELECT id, mode, representative_file_id, representative_file_path, "

@@ -184,7 +184,7 @@ struct DuplicateMemberView: View {
         let cornerRadius: CGFloat = 8
         
         ZStack {
-            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size))
+            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size), cachedThumbnailPath: file.cachedThumbnailPath)
                 .frame(width: size, height: size)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)

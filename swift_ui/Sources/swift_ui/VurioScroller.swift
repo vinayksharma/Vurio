@@ -16,6 +16,7 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
     let rowHeight: CGFloat
     var scrollbarInsets: EdgeInsets = EdgeInsets()
     @Binding var selection: Int?
+    var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)? = nil
     var rowContent: (Int) -> RowContent
     
     
@@ -87,6 +88,12 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
             }
         }
         
+        documentView.onVisibleRowsChanged = { newRange in
+            DispatchQueue.main.async {
+                self.onVisibleRowsChanged?(newRange)
+            }
+        }
+        
         scrollView.documentView = documentView
         
         // Wire up keyboard navigation
@@ -136,6 +143,7 @@ class VurioDocumentView<RowContent: View>: NSView {
     var rowHeight: CGFloat
     var rowContent: (Int) -> RowContent
     var onSelectionChanged: ((Int?) -> Void)?
+    var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)?
     
     var currentSelection: Int? {
         didSet {
@@ -275,6 +283,8 @@ class VurioDocumentView<RowContent: View>: NSView {
             CATransaction.commit()
             return
         }
+        
+        onVisibleRowsChanged?(startRow...endRow)
         
         let visibleIndices = Set(startRow...endRow)
         
