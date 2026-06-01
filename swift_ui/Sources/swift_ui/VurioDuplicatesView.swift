@@ -176,7 +176,10 @@ struct VurioDuplicatesView: View {
                         totalItemCount: Int(viewModel.totalGroups),
                         rowHeight: 158.0,
                         scrollbarInsets: customInsets,
-                        selection: $selection
+                        selection: $selection,
+                        onVisibleRowsChanged: { range in
+                            viewModel.updateVisibleRows(range)
+                        }
                     ) { index in
                         renderRow(at: index, rowHeight: 158.0)
                     }

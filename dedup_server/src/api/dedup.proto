@@ -107,6 +107,7 @@ message DuplicateFile {
   bool is_representative = 5;
   double similarity_score = 6;
   bool is_ejected = 7;
+  string cached_thumbnail_path = 8;
 }
 
 message DuplicateGroup {

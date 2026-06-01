@@ -4,6 +4,7 @@ import QuickLookThumbnailing
 struct ThumbnailView: View {
     let filePath: String
     let size: CGSize
+    var cachedThumbnailPath: String? = nil
     
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
@@ -23,10 +24,6 @@ struct ThumbnailView: View {
             } else {
                 VStack {
                     Image(systemName: "photo.badge.exclamationmark")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("Unavailable")
-                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .frame(width: size.width, height: size.height)
@@ -57,7 +54,7 @@ struct ThumbnailView: View {
             try await Task.sleep(nanoseconds: 75_000_000)
             
             logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width))
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width), cachedThumbnailPath: cachedThumbnailPath)
             await MainActor.run {
                 self.thumbnail = image
                 self.isLoading = false

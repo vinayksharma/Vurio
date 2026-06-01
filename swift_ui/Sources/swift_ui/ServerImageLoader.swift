@@ -16,10 +16,49 @@ actor ServerImageLoader {
     
     private var queue: [QueuedRequest] = []
     
+    private var inFlightTasks: [String: Task<NSImage, Error>] = [:]
+    
+    private func getOrCreateTask(key: String, operation: @escaping () async throws -> NSImage) -> Task<NSImage, Error> {
+        if let task = inFlightTasks[key] {
+            return task
+        }
+        let task = Task {
+            defer {
+                Task { await self.removeInFlightTask(key: key) }
+            }
+            return try await operation()
+        }
+        inFlightTasks[key] = task
+        return task
+    }
+    
+    private func removeInFlightTask(key: String) {
+        inFlightTasks.removeValue(forKey: key)
+    }
+    
     private init() {}
     
-    nonisolated func loadThumbnail(filePath: String, size: Int) async throws -> NSImage {
+    nonisolated func loadThumbnail(filePath: String, size: Int, cachedThumbnailPath: String? = nil) async throws -> NSImage {
+        let currentPriority = Task.currentPriority
+        let key = "\(filePath)_\(size)"
+        
+        let task = await getOrCreateTask(key: key) {
+            return try await self.performLoadThumbnail(filePath: filePath, size: size, priority: currentPriority, cachedThumbnailPath: cachedThumbnailPath)
+        }
+        return try await task.value
+    }
+    
+    private func performLoadThumbnail(filePath: String, size: Int, priority: TaskPriority?, cachedThumbnailPath: String?) async throws -> NSImage {
         logDebug("loadThumbnail requested for \(filePath)")
+        
+        if let cachedPath = cachedThumbnailPath, !cachedPath.isEmpty {
+            if let image = await self.decodeImageInBackground(filePath: cachedPath, priority: priority) {
+                ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
+                return image
+            }
+            logDebug("Failed to load direct cached thumbnail for \(filePath), falling back to gRPC.")
+        }
+        
         try await waitForToken()
         logDebug("loadThumbnail token ACQUIRED for \(filePath)")
         defer { 
@@ -67,7 +106,7 @@ actor ServerImageLoader {
                 
                 try Task.checkCancellation()
                 
-                if let image = await self.decodeImageInBackground(filePath: responsePath) {
+                if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
                     ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
                     logDebug("loadThumbnail SUCCESS for \(filePath)")
                     return image
@@ -96,6 +135,16 @@ actor ServerImageLoader {
     }
     
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
+        let currentPriority = Task.currentPriority
+        let key = "\(filePath)_preview"
+        
+        let task = await getOrCreateTask(key: key) {
+            return try await self.performLoadPreview(filePath: filePath, priority: currentPriority)
+        }
+        return try await task.value
+    }
+    
+    private func performLoadPreview(filePath: String, priority: TaskPriority?) async throws -> NSImage {
         try await waitForToken()
         defer { Task { await self.releaseToken() } }
         
@@ -136,7 +185,7 @@ actor ServerImageLoader {
                 
                 try Task.checkCancellation()
                 
-                if let image = await self.decodeImageInBackground(filePath: responsePath) {
+                if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
                     ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                     return image
                 } else {
@@ -159,11 +208,16 @@ actor ServerImageLoader {
         throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
     }
     
-    private func decodeImageInBackground(filePath: String) async -> NSImage? {
-        return await Task.detached(priority: .userInitiated) {
-            guard let image = NSImage(contentsOfFile: filePath) else { return nil }
-            // Force decompression by asking for a CGImage
-            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+    private func decodeImageInBackground(filePath: String, priority: TaskPriority? = nil) async -> NSImage? {
+        return await Task.detached(priority: priority ?? .userInitiated) {
+            let url = URL(fileURLWithPath: filePath)
+            let options: [CFString: Any] = [
+                kCGImageSourceShouldCacheImmediately: true
+            ]
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, options as CFDictionary) else {
+                return nil
+            }
             let size = NSSize(width: cgImage.width, height: cgImage.height)
             return NSImage(cgImage: cgImage, size: size)
         }.value
