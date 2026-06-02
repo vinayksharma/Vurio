@@ -11,20 +11,35 @@ struct MediaLocationsView: View {
     @State private var isDeregistering: Bool = false
     @State private var showDeregisterAlert: Bool = false
     @State private var ejectionPaths: [String: [String]] = [:]
+    @State private var isCollapsed = true
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                Text("Media Locations")
-                    .font(.title2)
-                    .textCase(.uppercase)
-                    .fontWeight(.semibold)
-                Spacer()
-                Image(systemName: "arrowtriangle.down.fill")
-                    .foregroundColor(Theme.textSecondary)
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                withAnimation {
+                    isCollapsed.toggle()
+                }
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: "folder.fill")
+                        .font(.title2)
+                        .foregroundColor(Theme.textPrimary)
+                    Text("Media Locations")
+                        .font(.title2)
+                        .textCase(.uppercase)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Theme.textPrimary)
+                    Spacer()
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .padding()
+                .contentShape(Rectangle())
             }
+            .buttonStyle(PlainButtonStyle())
+            
+            if !isCollapsed {
+                VStack(alignment: .leading, spacing: 20) {
             
             Text("Register and manage the folders you want the deduplication service to scan.")
                 .foregroundColor(Theme.textSecondary)
@@ -155,11 +170,13 @@ struct MediaLocationsView: View {
             .vurioButtonStyle(tint: Theme.error)
             .disabled(selectedRegisteredLocation == nil || isDeregistering)
                 .help("Deregister and stop scanning the selected location")
-            
-            
+                }
+                .padding()
+            }
         }
-        .padding(30)
-        }
+        .background(Theme.surface)
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
         .onAppear {
             Task {
                 await appState.fetchStatus()
@@ -257,6 +274,7 @@ struct MediaLocationsView: View {
                         selectedRegisteredLocation = nil
                     }
                     await appState.fetchStatus()
+                    NotificationCenter.default.post(name: Notification.Name("MediaLocationDeregistered"), object: nil)
                 } else {
                     statusMessage = "Failed: \(response.errorMessage)"
                 }

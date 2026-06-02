@@ -92,6 +92,11 @@ namespace MediaDedup
             bool isRunning() const { return running_.load(); }
 
             /**
+             * @brief Abort the current duplicate finding run if it is active
+             */
+            void abortCurrentFind() { abort_.store(true); }
+
+            /**
              * @brief Get similarity threshold (minimum to consider for a group)
              *
              * Scores >= this but < duplicate are 'similar' tier.
@@ -336,6 +341,7 @@ namespace MediaDedup
             std::shared_ptr<ThreadPoolManager> tpm_;
 
             std::atomic<bool> running_{false};
+            std::atomic<bool> abort_{false};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;
 

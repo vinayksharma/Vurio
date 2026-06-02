@@ -1229,6 +1229,11 @@ namespace MediaDedupServer
                     del_errors << "DELETE FROM processing_errors WHERE file_path NOT IN (SELECT file_path FROM scanned_files)";
                     int errors_removed = del_errors.execute();
 
+                    Poco::Data::Statement del_resolved_errors(sess);
+                    del_resolved_errors << "DELETE FROM processing_errors WHERE file_path IN (SELECT file_path FROM scanned_files WHERE processed >= 0)";
+                    int resolved_errors_removed = del_resolved_errors.execute();
+                    errors_removed += resolved_errors_removed;
+
                     {
                         std::lock_guard<std::mutex> lock(state_mutex_);
                         state_.thumbnails_removed += thumbs_removed;

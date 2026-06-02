@@ -21,15 +21,18 @@ struct PurityOrderSection: View {
                     isCollapsed.toggle()
                 }
             }) {
-                HStack {
+                HStack(spacing: 12) {
+                    Image(systemName: "list.number")
+                        .font(.title2)
+                        .foregroundColor(Theme.textPrimary)
                     Text("Purity Order")
                         .font(.title2)
                         .textCase(.uppercase)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Theme.textPrimary)
                     Spacer()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding()
                 .contentShape(Rectangle())
@@ -46,14 +49,17 @@ struct PurityOrderSection: View {
                         ForEach(rules, id: \.self) { rule in
                             HStack {
                                 Image(systemName: "line.3.horizontal")
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Theme.textSecondary)
                                 Text(rule)
+                                    .foregroundColor(Theme.textPrimary)
                             }
                             .padding(.vertical, 4)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                         }
                         .onMove(perform: move)
                     }
-                    .frame(height: 160)
+                    .frame(height: 220)
                     .cornerRadius(8)
                     .listStyle(PlainListStyle())
                     

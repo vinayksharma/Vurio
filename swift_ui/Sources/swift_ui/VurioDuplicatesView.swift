@@ -90,7 +90,7 @@ struct VurioDuplicatesView: View {
                         .frame(width: (viewModel.isEjecting && viewModel.totalEjectingCount > 0) ? 120 : 95)
                     }
                     .vurioButtonStyle(tint: Theme.error)
-                    .disabled(viewModel.isProcessing)
+                    .disabled(viewModel.isProcessing || !viewModel.canEject)
                     
                     Button(action: {
                         Task { await viewModel.handleRestore() }
@@ -229,6 +229,9 @@ struct VurioDuplicatesView: View {
             if viewModel.groups.isEmpty && newCount > 0 && !viewModel.isLoading {
                 viewModel.totalGroups = newCount
                 Task { await viewModel.refresh() }
+            } else if newCount == 0 && viewModel.totalGroups > 0 {
+                viewModel.totalGroups = 0
+                viewModel.groups = []
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ConfigSaved"))) { _ in
@@ -237,6 +240,40 @@ struct VurioDuplicatesView: View {
             await viewModel.fetchSettings()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MediaLocationDeregistered"))) { _ in
+            Task {
+                await appState.fetchStatus()
+                viewModel.totalGroups = appState.duplicateGroupsCount
+                if viewModel.totalGroups == 0 {
+                    viewModel.groups = []
+                } else {
+                    await viewModel.refresh()
+                }
+            }
+        }
+        .overlay(
+            Group {
+                if viewModel.isEjecting || viewModel.isRestoring {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                        
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .controlSize(.regular)
+                            Text(viewModel.isEjecting ? "Ejecting..." : "Restoring...")
+                                .font(.headline)
+                                .foregroundColor(Theme.textPrimary)
+                        }
+                        .padding(30)
+                        .background(Theme.background)
+                        .cornerRadius(12)
+                        .shadow(radius: 10)
+                    }
+                }
+            }
+        )
+        .disabled(viewModel.isEjecting || viewModel.isRestoring)
     }
     
     @ViewBuilder
