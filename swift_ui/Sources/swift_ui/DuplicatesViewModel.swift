@@ -41,14 +41,15 @@ class DuplicatesViewModel: ObservableObject {
     var indexCache = GroupIndexCache()
     private weak var appState: AppState?
     
-    var hasEjectedFiles: Bool {
-        groups.contains(where: { slot in
-            slot.group?.files.contains(where: { $0.isEjected }) ?? false
-        })
+    var canEject: Bool {
+        groups.contains { slot in
+            guard let group = slot.group else { return false }
+            return group.files.contains { !$0.isRepresentative && !$0.isEjected && ((1.0 - ($0.similarityScore > 0 ? $0.similarityScore : 1.0)) <= duplicateTightness) }
+        }
     }
     
     var canRestore: Bool {
-        hasEjectedFiles
+        appState?.hasEjectedFilesInFolder ?? false
     }
     
     init() {}
@@ -153,7 +154,21 @@ class DuplicatesViewModel: ObservableObject {
             
             if !Task.isCancelled {
                 var localGroups = groups
-                for (i, group) in response.groups.enumerated() {
+                let updatedGroups = await Task.detached(priority: .background) {
+                    var modifiedGroups = response.groups
+                    for i in 0..<modifiedGroups.count {
+                        for j in 0..<modifiedGroups[i].files.count {
+                            if !modifiedGroups[i].files[j].isEjected {
+                                if !FileManager.default.fileExists(atPath: modifiedGroups[i].files[j].filePath) {
+                                    modifiedGroups[i].files[j].isEjected = true
+                                }
+                            }
+                        }
+                    }
+                    return modifiedGroups
+                }.value
+
+                for (i, group) in updatedGroups.enumerated() {
                     let globalIndex = Int(pageIndex * pageSize) + i
                     if globalIndex < localGroups.count {
                         localGroups[globalIndex].group = group

@@ -13,6 +13,7 @@ class SettingsViewModel: ObservableObject {
     
     // Advanced UI States
     @Published var isAnyActionRunning = false
+    @Published var activeOperationMessage: String? = nil
     
     var groupedConfigKeys: [(String, [String])] {
         var groups: [String: [String]] = [:]
@@ -139,19 +140,27 @@ class SettingsViewModel: ObservableObject {
     }
     
     func ejectErrors() async {
+        activeOperationMessage = "Ejecting errored files..."
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors ejected")
+        activeOperationMessage = nil
     }
     
     func restoreErrors() async {
+        activeOperationMessage = "Restoring errored files..."
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors restored")
+        activeOperationMessage = nil
     }
     
     func ejectIgnored() async {
+        activeOperationMessage = "Ejecting ignored files..."
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored ejected")
+        activeOperationMessage = nil
     }
     
     func restoreIgnored() async {
+        activeOperationMessage = "Restoring ignored files..."
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored restored")
+        activeOperationMessage = nil
     }
     
     func resetDuplicates() async {

@@ -27,6 +27,7 @@ class AppState: ObservableObject {
     @Published var configStatus: String = "Connecting..."
     @Published var registeredDirs: [String] = []
     @Published var ejectedDirs: [String] = []
+    @Published var hasEjectedFilesInFolder: Bool = false
     
     // Status State
     @Published var scannedFilesCount: Int32 = 0
@@ -86,6 +87,25 @@ class AppState: ObservableObject {
                     self.duplicateFindingCompleted = response.duplicateFindingCompleted
                     self.isPaused = response.isPaused
                 }
+                
+                let dirs = response.ejectedDirs
+                let hasFiles = await Task.detached(priority: .background) {
+                    for dir in dirs {
+                        let url = URL(fileURLWithPath: dir)
+                        if let items = try? FileManager.default.contentsOfDirectory(atPath: url.path), !items.isEmpty {
+                            // Filter out hidden files like .DS_Store
+                            let visibleFiles = items.filter { !$0.hasPrefix(".") }
+                            if !visibleFiles.isEmpty {
+                                return true
+                            }
+                        }
+                    }
+                    return false
+                }.value
+                
+                await MainActor.run {
+                    self.hasEjectedFilesInFolder = hasFiles
+                }
             }
         } catch {
             await MainActor.run {
@@ -136,12 +156,12 @@ class AppState: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @State private var selection: SidebarItem? = .duplicates
+    @State private var selection: SidebarItem? = .vu
     @State private var sidebarWidth: CGFloat = 200
     
     enum SidebarItem: Hashable {
+        case vu
         case duplicates
-        case locations
         case settings
     }
     
@@ -150,12 +170,12 @@ struct ContentView: View {
         
         NavigationSplitView {
             List(selection: $selection) {
-                NavigationLink(value: SidebarItem.duplicates) {
+                NavigationLink(value: SidebarItem.vu) {
                     HStack(spacing: 12) {
-                        Image(systemName: "photo.on.rectangle.angled").font(.title2)
+                        Image(systemName: "square.grid.2x2").font(.title2)
                             .frame(width: 24, alignment: .center)
                         if !isCompact {
-                            Text("DUPLICATES")
+                            Text("VU")
                                 .fontWeight(.bold)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -165,12 +185,12 @@ struct ContentView: View {
                     .padding(.leading, isCompact ? 0 : 4)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
                 }
-                NavigationLink(value: SidebarItem.locations) {
+                NavigationLink(value: SidebarItem.duplicates) {
                     HStack(spacing: 12) {
-                        Image(systemName: "folder").font(.title2)
+                        Image(systemName: "photo.on.rectangle.angled").font(.title2)
                             .frame(width: 24, alignment: .center)
                         if !isCompact {
-                            Text("LOCATIONS")
+                            Text("DUPLICATES")
                                 .fontWeight(.bold)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -218,16 +238,23 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 80, ideal: 200, max: 250)
             .navigationTitle("")
-        } detail: {
-                switch selection {
-                case .duplicates:
+            } detail: {
+                ZStack {
+                    VUView()
+                        .opacity(selection == .vu ? 1 : 0)
+                        .allowsHitTesting(selection == .vu)
+                    
                     VurioDuplicatesView()
-                case .locations:
-                    MediaLocationsView()
-                case .settings:
+                        .opacity(selection == .duplicates ? 1 : 0)
+                        .allowsHitTesting(selection == .duplicates)
+                    
                     SettingsView()
-                case .none:
-                    Text("Select an item")
+                        .opacity(selection == .settings ? 1 : 0)
+                        .allowsHitTesting(selection == .settings)
+                    
+                    if selection == .none {
+                        Text("Select an item")
+                    }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {

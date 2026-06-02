@@ -110,6 +110,8 @@ namespace MediaDedup
                 return;
             }
 
+            abort_.store(false);
+
             logger.information("Starting duplicate detection run...");
 
             try
@@ -125,10 +127,10 @@ namespace MediaDedup
 
                 logger.debug("Resuming from checkpoint: last_processed_id=%d", last_processed_id);
 
-                // Process batches until no more new files
+                // Process batches until no more new files or aborted
                 int total_processed = 0;
                 int batch_count = 0;
-                while (true)
+                while (!abort_.load())
                 {
                     int processed = processBatch(mode_str, batch_size_, last_processed_id);
                     if (processed == 0)
@@ -144,8 +146,16 @@ namespace MediaDedup
                                  batch_count, processed, total_processed);
                 }
 
-                logger.information("Duplicate detection run completed: processed %d files in %d batches",
-                                   total_processed, batch_count);
+                if (abort_.load())
+                {
+                    logger.information("Duplicate detection run aborted: processed %d files in %d batches",
+                                       total_processed, batch_count);
+                }
+                else
+                {
+                    logger.information("Duplicate detection run completed: processed %d files in %d batches",
+                                       total_processed, batch_count);
+                }
 
                 // Perform cross-group checking exactly ONCE at the end of the run,
                 // but ONLY if new files were actually processed. If no new files were added,

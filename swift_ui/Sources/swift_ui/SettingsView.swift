@@ -8,9 +8,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 
-                // Add MediaLocationsSection here if needed, but the user excluded it from this task since it already exists elsewhere in the Swift app.
-                
-
+                MediaLocationsView()
                 
                 PurityOrderSection(viewModel: viewModel)
                 
@@ -23,7 +21,10 @@ struct SettingsView: View {
                             configSectionCollapsed.toggle()
                         }
                     }) {
-                        HStack {
+                        HStack(spacing: 12) {
+                            Image(systemName: "gearshape.2.fill")
+                                .font(.title2)
+                                .foregroundColor(Theme.textPrimary)
                             Text("Configuration")
                                 .font(.title2)
                                 .textCase(.uppercase)
@@ -63,11 +64,15 @@ struct SettingsView: View {
                             } else {
                                 ForEach(viewModel.groupedConfigKeys, id: \.0) { sectionName, keys in
                                     VStack(alignment: .leading, spacing: 10) {
-                                        Text(sectionName)
-                                            .font(.headline)
-                                            .textCase(.uppercase)
-                                            .foregroundColor(Theme.textSecondary)
-                                            .padding(.top, 10)
+                                        HStack(spacing: 8) {
+                                            Image(systemName: iconForSection(sectionName))
+                                                .foregroundColor(Theme.textSecondary)
+                                            Text(sectionName)
+                                                .font(.headline)
+                                                .textCase(.uppercase)
+                                                .foregroundColor(Theme.textSecondary)
+                                        }
+                                        .padding(.top, 10)
                                         
                                         ForEach(keys, id: \.self) { key in
                                             ConfigRowView(key: key, viewModel: viewModel)
@@ -100,6 +105,43 @@ struct SettingsView: View {
                 await viewModel.loadConfig()
             }
         }
+        .overlay(
+            Group {
+                if let message = viewModel.activeOperationMessage {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                        
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .controlSize(.regular)
+                            Text(message)
+                                .font(.headline)
+                            Text("Please wait...")
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(30)
+                        .background(Theme.background)
+                        .cornerRadius(12)
+                        .shadow(radius: 10)
+                    }
+                }
+            }
+        )
+        .disabled(viewModel.activeOperationMessage != nil)
+    }
+}
+
+extension SettingsView {
+    func iconForSection(_ section: String) -> String {
+        let s = section.lowercased()
+        if s.contains("duplicates") { return "doc.on.doc" }
+        if s.contains("media") { return "folder.fill" }
+        if s.contains("tpm") { return "cpu" }
+        if s.contains("scanner") { return "magnifyingglass" }
+        if s.contains("processor") { return "cpu.fill" }
+        return "gearshape"
     }
 }
 

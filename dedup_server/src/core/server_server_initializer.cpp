@@ -339,8 +339,11 @@ namespace MediaDedup
                                             { fm->runOnce(); });
 
             // Ensure scans are aborted when scheduler is paused (e.g., during integrity checks)
-            scheduler_service_->setPauseCallback([fm = files_manager_]()
-                                                 { fm->abortCurrentScan(); });
+            scheduler_service_->setPauseCallback([fm = files_manager_, df = duplicate_finder_]()
+                                                 {
+                                                     if (fm) fm->abortCurrentScan();
+                                                     if (df) df->abortCurrentFind();
+                                                 });
 
             // Run an initial scan on startup so scan count reflects current directories without waiting for first interval
             if (scheduler_service_->triggerJob("fileScan"))

@@ -12,7 +12,10 @@ struct AdvancedSection: View {
                     isCollapsed.toggle()
                 }
             }) {
-                HStack {
+                HStack(spacing: 12) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .font(.title2)
+                        .foregroundColor(Theme.textPrimary)
                     Text("Advanced")
                         .font(.title2)
                         .textCase(.uppercase)
