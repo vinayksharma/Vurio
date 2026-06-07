@@ -12,8 +12,7 @@ class RowViewModel: ObservableObject, Identifiable {
 
 /// A custom high-performance, infinitely scrollable virtualization container using AppKit.
 struct VurioScroller<RowContent: View>: NSViewRepresentable {
-    let totalItemCount: Int
-    let rowHeight: CGFloat
+    let itemHeights: [CGFloat]
     var scrollbarInsets: EdgeInsets = EdgeInsets()
     @Binding var selection: Int?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)? = nil
@@ -76,8 +75,7 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
         scrollView.drawsBackground = false
         
         let documentView = VurioDocumentView(
-            totalItemCount: totalItemCount,
-            rowHeight: rowHeight,
+            itemHeights: itemHeights,
             rowContent: rowContent
         )
         
@@ -127,20 +125,21 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
         )
         
         if let docView = nsView.documentView as? VurioDocumentView<RowContent> {
-            docView.totalItemCount = totalItemCount
-            docView.rowHeight = rowHeight
+            docView.itemHeights = itemHeights
             docView.currentSelection = selection
             docView.rowContent = rowContent
             docView.refreshActiveViews()
-            docView.updateDocumentSize()
         }
     }
 }
 
 /// The document view representing the entire virtualized scroll area.
 class VurioDocumentView<RowContent: View>: NSView {
-    var totalItemCount: Int
-    var rowHeight: CGFloat
+    var itemHeights: [CGFloat] {
+        didSet {
+            updatePrefixSums()
+        }
+    }
     var rowContent: (Int) -> RowContent
     var onSelectionChanged: ((Int?) -> Void)?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)?
@@ -154,15 +153,15 @@ class VurioDocumentView<RowContent: View>: NSView {
     private var pool: [NSView] = []
     private var activeViews: [Int: NSView] = [:] 
     private var viewModels: [NSView: RowViewModel] = [:] 
+    private var prefixSums: [CGFloat] = [] 
     
-    init(totalItemCount: Int, rowHeight: CGFloat, @ViewBuilder rowContent: @escaping (Int) -> RowContent) {
-        self.totalItemCount = totalItemCount
-        self.rowHeight = rowHeight
+    init(itemHeights: [CGFloat], @ViewBuilder rowContent: @escaping (Int) -> RowContent) {
+        self.itemHeights = itemHeights
         self.rowContent = rowContent
         super.init(frame: .zero)
         self.wantsLayer = true
         self.autoresizesSubviews = false
-        updateDocumentSize()
+        updatePrefixSums()
     }
     
     required init?(coder: NSCoder) {
@@ -179,8 +178,19 @@ class VurioDocumentView<RowContent: View>: NSView {
         }
     }
 
+    func updatePrefixSums() {
+        prefixSums.reserveCapacity(itemHeights.count + 1)
+        var sum: CGFloat = 0
+        prefixSums = [0]
+        for h in itemHeights {
+            sum += h
+            prefixSums.append(sum)
+        }
+        updateDocumentSize()
+    }
+
     func updateDocumentSize() {
-        let totalHeight = CGFloat(totalItemCount) * rowHeight
+        let totalHeight = prefixSums.last ?? 0
         let newWidth = superview?.bounds.width ?? 800
         let newFrame = CGRect(x: 0, y: 0, width: newWidth, height: totalHeight)
         
@@ -207,9 +217,9 @@ class VurioDocumentView<RowContent: View>: NSView {
         window?.makeFirstResponder(self.enclosingScrollView)
         
         let localPoint = self.convert(event.locationInWindow, from: nil)
-        let clickedIndex = Int(localPoint.y / rowHeight)
+        let clickedIndex = max(0, prefixSums.upperBound(of: localPoint.y) - 1)
         
-        if clickedIndex >= 0 && clickedIndex < totalItemCount {
+        if clickedIndex >= 0 && clickedIndex < itemHeights.count {
             if currentSelection != clickedIndex {
                 currentSelection = clickedIndex
                 onSelectionChanged?(clickedIndex)
@@ -236,15 +246,17 @@ class VurioDocumentView<RowContent: View>: NSView {
         var newSelection = currentSelection ?? 0
         
         if end {
-            newSelection = direction == 0 ? 0 : totalItemCount - 1
+            newSelection = direction == 0 ? 0 : itemHeights.count - 1
         } else if page {
-            let visibleRows = Int((enclosingScrollView?.contentView.bounds.height ?? rowHeight) / rowHeight)
-            newSelection += direction * max(1, visibleRows - 1)
+            let visibleHeight = enclosingScrollView?.contentView.bounds.height ?? 500
+            let currentY = prefixSums[min(newSelection, itemHeights.count)]
+            let targetY = currentY + CGFloat(direction) * visibleHeight
+            newSelection = max(0, prefixSums.upperBound(of: targetY) - 1)
         } else {
             newSelection += direction
         }
         
-        newSelection = max(0, min(totalItemCount - 1, newSelection))
+        newSelection = max(0, min(itemHeights.count - 1, newSelection))
         
         if currentSelection != newSelection {
             currentSelection = newSelection
@@ -256,7 +268,7 @@ class VurioDocumentView<RowContent: View>: NSView {
     private func scrollToVisible(index: Int) {
         guard let scrollView = enclosingScrollView else { return }
         
-        let rowRect = CGRect(x: 0, y: CGFloat(index) * rowHeight, width: 1, height: rowHeight)
+        let rowRect = CGRect(x: 0, y: prefixSums[index], width: 1, height: itemHeights[index])
         let visibleRect = scrollView.contentView.bounds
         
         if rowRect.minY < visibleRect.minY {
@@ -276,10 +288,10 @@ class VurioDocumentView<RowContent: View>: NSView {
         
         let visibleRect = scrollView.contentView.bounds
         
-        let startRow = max(0, Int(floor(visibleRect.minY / rowHeight)) - 1)
-        let endRow = min(totalItemCount - 1, Int(ceil(visibleRect.maxY / rowHeight)) + 1)
+        let startRow = max(0, prefixSums.upperBound(of: visibleRect.minY) - 1)
+        let endRow = min(itemHeights.count - 1, prefixSums.lowerBound(of: visibleRect.maxY) - 1)
         
-        if startRow > endRow {
+        if startRow > endRow || itemHeights.isEmpty {
             CATransaction.commit()
             return
         }
@@ -300,8 +312,8 @@ class VurioDocumentView<RowContent: View>: NSView {
             if activeViews[index] == nil {
                 let view = getReusableView(for: index)
                 
-                let yPos = CGFloat(index) * rowHeight
-                view.frame = CGRect(x: 0, y: yPos, width: self.bounds.width, height: rowHeight)
+                let yPos = prefixSums[index]
+                view.frame = CGRect(x: 0, y: yPos, width: self.bounds.width, height: itemHeights[index])
                 
                 if view.isHidden {
                     view.isHidden = false
@@ -437,5 +449,35 @@ class VurioScrollView: NSScrollView {
             handled = false
             super.keyDown(with: event)
         }
+    }
+}
+
+extension Array where Element: Comparable {
+    func lowerBound(of value: Element) -> Int {
+        var low = 0
+        var high = count
+        while low < high {
+            let mid = low + (high - low) / 2
+            if self[mid] < value {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+    
+    func upperBound(of value: Element) -> Int {
+        var low = 0
+        var high = count
+        while low < high {
+            let mid = low + (high - low) / 2
+            if self[mid] <= value {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
     }
 }

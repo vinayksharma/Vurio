@@ -173,8 +173,7 @@ struct VurioDuplicatesView: View {
                     customInsets.bottom += 30
                     
                     return VurioScroller(
-                        totalItemCount: Int(viewModel.totalGroups),
-                        rowHeight: 158.0,
+                        itemHeights: Array(repeating: 158.0, count: Int(viewModel.totalGroups)),
                         scrollbarInsets: customInsets,
                         selection: $selection,
                         onVisibleRowsChanged: { range in

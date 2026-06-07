@@ -163,6 +163,7 @@ struct ContentView: View {
         case vu
         case duplicates
         case settings
+        case scroller
     }
     
     var body: some View {
@@ -215,6 +216,21 @@ struct ContentView: View {
                     .padding(.leading, isCompact ? 0 : 4)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
                 }
+                NavigationLink(value: SidebarItem.scroller) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "scroll").font(.title2)
+                            .frame(width: 24, alignment: .center)
+                        if !isCompact {
+                            Text("SCROLLER")
+                                .fontWeight(.bold)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, isCompact ? 0 : 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                }
             }
             .listStyle(SidebarListStyle())
             .safeAreaInset(edge: .top) {
@@ -251,6 +267,10 @@ struct ContentView: View {
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)
                         .allowsHitTesting(selection == .settings)
+
+                    VurioScrollerTestView()
+                        .opacity(selection == .scroller ? 1 : 0)
+                        .allowsHitTesting(selection == .scroller)
                     
                     if selection == .none {
                         Text("Select an item")
