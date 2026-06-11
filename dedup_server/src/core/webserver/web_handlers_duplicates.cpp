@@ -4,6 +4,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
 #include "database/ejected_files_ops.hpp"
+#include "filesmanager/media_availability.hpp"
 #include "orchestration/duplicate_finder.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/thread_pool_manager.hpp"
@@ -122,6 +123,10 @@ namespace MediaDedupServer
                     }
                 }
 
+                // Snapshot the mount table once per request so we can flag members
+                // that live on a currently-disconnected volume (cheap, no path I/O).
+                auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
                 // Build JSON response
                 Poco::JSON::Object root;
                 Poco::JSON::Array groups_array;
@@ -164,6 +169,12 @@ namespace MediaDedupServer
                             }
                         }
                         member_obj.set("is_ejected", is_ejected);
+
+                        // Disconnected-media flag: a member is unavailable when the
+                        // volume its file lives on is not currently mounted.
+                        bool is_available = MediaDedup::MediaAvailability::isPathAvailable(
+                            member.file_path, mounted_fs);
+                        member_obj.set("is_available", is_available);
 
                         members_array.add(member_obj);
                     }
@@ -394,11 +405,25 @@ namespace MediaDedupServer
                 Poco::JSON::Array::Ptr files_array = object->getArray("files");
                 int success_count = 0;
                 int failure_count = 0;
+                int skipped_unavailable = 0;
                 std::string last_error = "";
+
+                // Snapshot the mount table once so we can skip files on disconnected volumes.
+                auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
 
                 for (size_t i = 0; i < files_array->size(); ++i)
                 {
                     std::string file_path = files_array->get(i).toString();
+
+                    // Skip files whose volume is currently disconnected rather than
+                    // counting them as failures (multi-path groups operate only on
+                    // available paths).
+                    if (!MediaDedup::MediaAvailability::isPathAvailable(file_path, mounted_fs)) {
+                        logger.information("Skipping eject for file on disconnected volume: %s", file_path);
+                        skipped_unavailable++;
+                        continue;
+                    }
+
                     auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*database_manager_, file_path);
                     if (!file_opt) {
                         logger.warning("File not found in DB: %s", file_path);
@@ -557,9 +582,10 @@ namespace MediaDedupServer
                 response.setContentType("application/json");
 
                 Poco::JSON::Object result_obj;
-                result_obj.set("success", success_count > 0);
+                result_obj.set("success", success_count > 0 || (failure_count == 0 && skipped_unavailable > 0));
                 result_obj.set("success_count", success_count);
                 result_obj.set("failure_count", failure_count);
+                result_obj.set("skipped_unavailable", skipped_unavailable);
                 if (success_count == 0 && !last_error.empty()) {
                     result_obj.set("error", last_error);
                 }
@@ -632,7 +658,11 @@ namespace MediaDedupServer
                 std::vector<MediaDedup::EjectedFileHistory> histories;
                 int success_count = 0;
                 int failure_count = 0;
+                int skipped_unavailable = 0;
                 std::string last_error = "";
+
+                // Snapshot the mount table once so we can skip restores onto disconnected volumes.
+                auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
 
                 if (undo_all)
                 {
@@ -712,6 +742,17 @@ namespace MediaDedupServer
                 {
                     std::string ejected_path = history.ejected_path;
                     std::string original_path = history.original_file_path;
+
+                    // Skip (don't fail or delete history) when either the ejected
+                    // file's volume or the restore destination's volume is
+                    // disconnected; the file can be restored once reconnected.
+                    if (!MediaDedup::MediaAvailability::isPathAvailable(ejected_path, mounted_fs) ||
+                        !MediaDedup::MediaAvailability::isPathAvailable(original_path, mounted_fs))
+                    {
+                        logger.information("Skipping undo-eject for file on disconnected volume: %s", ejected_path);
+                        skipped_unavailable++;
+                        continue;
+                    }
 
                     std::filesystem::path src(ejected_path);
                     std::filesystem::path dest(original_path);
@@ -836,9 +877,10 @@ namespace MediaDedupServer
                 response.setContentType("application/json");
 
                 Poco::JSON::Object result_obj;
-                result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
+                result_obj.set("success", success_count > 0 || (failure_count == 0));
                 result_obj.set("success_count", success_count);
                 result_obj.set("failure_count", failure_count);
+                result_obj.set("skipped_unavailable", skipped_unavailable);
 
                 std::ostringstream oss;
                 result_obj.stringify(oss);

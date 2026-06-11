@@ -622,6 +622,87 @@ namespace MediaDedup
         }
     }
 
+    LocateMissingFileHandler::LocateMissingFileHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                                       std::shared_ptr<FilesService> service)
+        : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}
+
+    void LocateMissingFileHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
+                                                 Poco::Net::HTTPServerResponse &response)
+    {
+        if (request.getMethod() != "POST")
+        {
+            sendErrorResponse(response, "Method not allowed", 405);
+            return;
+        }
+        if (!service_)
+        {
+            sendErrorResponse(response, "Service unavailable", 503);
+            return;
+        }
+        std::string body = getRequestBody(request);
+        if (body.empty())
+        {
+            sendErrorResponse(response, "Body required", 400);
+            return;
+        }
+
+        Poco::JSON::Parser parser;
+        Poco::JSON::Object::Ptr json;
+        try
+        {
+            json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (...)
+        {
+            sendErrorResponse(response, "Invalid JSON", 400);
+            return;
+        }
+        if (!json->has("member_path") || !json->has("located_path"))
+        {
+            sendErrorResponse(response, "Missing member_path or located_path", 400);
+            return;
+        }
+        std::string member_path = json->get("member_path").toString();
+        std::string located_path = json->get("located_path").toString();
+        if (member_path.empty() || located_path.empty())
+        {
+            sendErrorResponse(response, "member_path and located_path cannot be empty", 400);
+            return;
+        }
+
+        auto result = service_->locateMissingFile(member_path, located_path);
+
+        Poco::JSON::Object obj;
+        obj.set("status", result.success ? "ok" : "error");
+        obj.set("files_updated", result.files_updated);
+        obj.set("old_path", result.old_path);
+        obj.set("new_path", result.new_path);
+        if (!result.error_message.empty())
+        {
+            obj.set("error", result.error_message);
+        }
+        std::ostringstream oss;
+        obj.stringify(oss);
+
+        if (result.success)
+        {
+            sendJsonResponse(response, oss.str());
+        }
+        else
+        {
+            // Validation failures (size/path mismatch, not found) are client errors;
+            // anything else surfaces as a server error.
+            int code = (result.error_message.find("not found") != std::string::npos ||
+                        result.error_message.find("does not match") != std::string::npos ||
+                        result.error_message.find("does not exist") != std::string::npos ||
+                        result.error_message.find("Could not determine") != std::string::npos ||
+                        result.error_message.find("Verification failed") != std::string::npos)
+                           ? 400
+                           : 500;
+            sendErrorResponse(response, result.error_message.empty() ? "Locate failed" : result.error_message, code);
+        }
+    }
+
     VerifyPathRemappingHandler::VerifyPathRemappingHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                                            std::shared_ptr<FilesService> service)
         : ConfigRequestHandler(std::move(config_manager)), service_(std::move(service)) {}

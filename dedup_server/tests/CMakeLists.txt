@@ -273,6 +273,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/media_availability.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
@@ -529,6 +530,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/filesmanager/media_availability.cpp
     ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp

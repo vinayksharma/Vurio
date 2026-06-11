@@ -5,6 +5,7 @@
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Logger.h>
+#include <algorithm>
 
 namespace MediaDedup
 {
@@ -273,6 +274,73 @@ namespace MediaDedup
             Poco::Logger::get("EjectedFilesOps").error("Failed to delete ejected file history: " + std::string(e.what()));
             return false;
         }
+    }
+
+    namespace
+    {
+        // Normalize separators to '/' and strip a single trailing slash.
+        std::string normRoot(const std::string &p)
+        {
+            std::string s = p;
+            std::replace(s.begin(), s.end(), '\\', '/');
+            while (s.length() > 1 && s.back() == '/')
+                s.pop_back();
+            return s;
+        }
+
+        // If `path` (normalized) starts with `oldRoot`, replace that prefix with
+        // `newRoot`; otherwise return `path` unchanged.
+        std::string replacePrefix(const std::string &path, const std::string &oldRoot, const std::string &newRoot)
+        {
+            std::string p = path;
+            std::replace(p.begin(), p.end(), '\\', '/');
+            if (p.rfind(oldRoot, 0) == 0)
+                return newRoot + p.substr(oldRoot.length());
+            return p;
+        }
+    }
+
+    int EjectedFilesOps::remapLocation(DatabaseManager &db,
+                                       const std::string &old_location_key,
+                                       const std::string &new_location_key,
+                                       const std::string &old_root,
+                                       const std::string &new_root)
+    {
+        const std::string old_norm = normRoot(old_root);
+        const std::string new_norm = normRoot(new_root);
+
+        auto rows = getByLocationKey(db, old_location_key);
+        if (rows.empty())
+            return 0;
+
+        int updated = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            for (const auto &h : rows)
+            {
+                std::string new_ejected = replacePrefix(h.ejected_path, old_norm, new_norm);
+                std::string new_original = replacePrefix(h.original_file_path, old_norm, new_norm);
+
+                Statement stmt(sess);
+                int file_id_val = h.file_id;
+                std::string new_key_val = new_location_key;
+                stmt << "UPDATE ejected_files_history SET ejected_path=?, original_file_path=?, "
+                        "original_location_key=? WHERE file_id=?",
+                    Keywords::use(new_ejected),
+                    Keywords::use(new_original),
+                    Keywords::use(new_key_val),
+                    Keywords::use(file_id_val),
+                    Keywords::now;
+                updated++;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("EjectedFilesOps").error("Failed to remap ejected file history: " + std::string(e.what()));
+        }
+        return updated;
     }
 
     bool EjectedFilesOps::deleteAll(DatabaseManager &db)

@@ -9,7 +9,8 @@ struct DuplicateGroupCard: View {
     var onThumbnailTapped: (Int) -> Void
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
-    
+    var onLocateSet: (String) -> Void
+
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     @State private var isRepEjectHovered = false
     @State private var isCardHovered = false
@@ -46,6 +47,8 @@ struct DuplicateGroupCard: View {
                                 onThumbnailTapped(idx)
                             }
                         }
+                    }, onLocate: {
+                        onLocateSet(rep.filePath)
                     })
                         .padding(.top, 25)
                         .padding(.bottom, 25)
@@ -74,6 +77,8 @@ struct DuplicateGroupCard: View {
                                                 onThumbnailTapped(idx)
                                             }
                                         }
+                                    }, onLocate: {
+                                        onLocateSet(file.filePath)
                                     }, isFocusedCandidate: isSelected && selectedCandidateIndex == index)
                                     .id(index)
                                 }
@@ -173,16 +178,25 @@ struct DuplicateMemberView: View {
     var onEject: (() -> Void)? = nil
     var onEjectHoverChanged: ((Bool) -> Void)? = nil
     var onThumbnailTapped: (() -> Void)? = nil
+    var onLocate: (() -> Void)? = nil
     var isFocusedCandidate: Bool = false
-    
+
     @State private var isHovered = false
     @State private var isButtonHovered = false
+    @State private var isMaskHovered = false
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
-    
+
+    /// The file's source volume is disconnected and it is not in the ejected bin —
+    /// i.e. genuinely missing. The thumbnail is masked and the only allowed action
+    /// is to locate the file at its new on-disk location.
+    private var isMissing: Bool {
+        !file.isAvailable && !file.isEjected
+    }
+
     var body: some View {
         let size: CGFloat = isRep ? 80 : 70
         let cornerRadius: CGFloat = 8
-        
+
         ZStack {
             ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size), cachedThumbnailPath: file.cachedThumbnailPath)
                 .frame(width: size, height: size)
@@ -190,9 +204,35 @@ struct DuplicateMemberView: View {
                 .opacity(file.isEjected ? 0.3 : 1.0)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    onThumbnailTapped?()
+                    if !isMissing { onThumbnailTapped?() }
                 }
-            
+
+            if isMissing {
+                // Etched mask: covers the whole thumbnail, swallows every other
+                // interaction, and exposes a single "locate" affordance.
+                Button(action: { onLocate?() }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.black.opacity(isMaskHovered ? 0.7 : 0.55))
+                        VStack(spacing: 3) {
+                            Image(systemName: "questionmark.folder.fill")
+                                .font(.system(size: isRep ? 20 : 17, weight: .semibold))
+                            Text("Locate")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .foregroundColor(Theme.textPrimary)
+                    }
+                    .frame(width: size, height: size)
+                }
+                .buttonStyle(.plain)
+                .help("This file's drive is disconnected. Click to locate it in its new location.")
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isMaskHovered = hovering
+                    }
+                }
+            }
+
             if file.isEjected {
                 Button(action: {
                     onRestore?()
@@ -220,8 +260,15 @@ struct DuplicateMemberView: View {
             }
         }
         .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(file.isEjected ? Theme.error : (isFocusedCandidate ? Theme.textAccent : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border))), lineWidth: isFocusedCandidate ? 3 : (isRep ? 2 : (file.isEjected ? 2 : 1)))
+            Group {
+                if isMissing {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(file.isEjected ? Theme.error : (isFocusedCandidate ? Theme.textAccent : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border))), lineWidth: isFocusedCandidate ? 3 : (isRep ? 2 : (file.isEjected ? 2 : 1)))
+                }
+            }
         )
         .overlay(alignment: .topLeading) {
             if advancedOverlayEnabled {
@@ -239,7 +286,7 @@ struct DuplicateMemberView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !file.isEjected && !isEjecting {
+            if !file.isEjected && !isEjecting && !isMissing {
                 Button(action: {
                     onEject?()
                 }) {
@@ -267,7 +314,7 @@ struct DuplicateMemberView: View {
                 }
             }
         }
-        .scaleEffect(isHovered && !file.isEjected ? 1.05 : 1.0)
+        .scaleEffect(isHovered && !file.isEjected && !isMissing ? 1.05 : 1.0)
         .background(
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.black.opacity(0.01))

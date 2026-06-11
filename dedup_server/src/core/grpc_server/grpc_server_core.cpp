@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "orchestration/duplicate_finder.hpp"
 #include "filesmanager/disk_cache.hpp"
+#include "filesmanager/media_availability.hpp"
 #include "core/web/web_handlers_thumbnail.hpp"
 #include "core/web/web_handlers_duplicates.hpp"
 #include "media_processors/media_processor.hpp"
@@ -161,6 +162,17 @@ public:
         reply->set_files_updated(result.files_updated);
         return grpc::Status::OK;
     }
+
+    grpc::Status LocateMissingFile(grpc::ServerContext* context, const vurio::dedup::LocateMissingFileRequest* request,
+                                   vurio::dedup::LocateMissingFileResponse* reply) override {
+        auto result = files_->locateMissingFile(request->member_path(), request->located_path());
+        reply->set_success(result.success);
+        reply->set_error_message(result.error_message);
+        reply->set_files_updated(result.files_updated);
+        reply->set_old_path(result.old_path);
+        reply->set_new_path(result.new_path);
+        return grpc::Status::OK;
+    }
 };
 
 class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Service {
@@ -261,7 +273,10 @@ public:
                 ejection_paths.push_back(ep);
             }
         }
-        
+
+        // Snapshot the mount table once so we can flag members on disconnected volumes.
+        auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
         for (const auto& group_with_members : page.groups) {
             if (group_with_members.group.member_count < 2) continue;
             
@@ -289,6 +304,9 @@ public:
                     }
                 }
                 proto_file->set_is_ejected(is_ejected);
+
+                proto_file->set_is_available(
+                    MediaDedup::MediaAvailability::isPathAvailable(member.file_path, mounted_fs));
             }
         }
         return grpc::Status::OK;
@@ -298,9 +316,16 @@ public:
                                  vurio::dedup::EjectDuplicatesResponse* reply) override {
         int success_count = 0;
         int failure_count = 0;
+        int skipped_unavailable = 0;
         std::string last_error = "";
-        
+
+        auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
         for (const auto& file_path : request->file_paths()) {
+            if (!MediaDedup::MediaAvailability::isPathAvailable(file_path, mounted_fs)) {
+                skipped_unavailable++;
+                continue;
+            }
             auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*db_, file_path);
             if (!file_opt) {
                 // Check if the file is already ejected (UI state out of sync sending original path)
@@ -434,9 +459,10 @@ public:
             }
         }
         
-        reply->set_success(success_count > 0);
+        reply->set_success(success_count > 0 || (failure_count == 0 && skipped_unavailable > 0));
         reply->set_success_count(success_count);
         reply->set_failure_count(failure_count);
+        reply->set_skipped_unavailable(skipped_unavailable);
         reply->set_error_message(last_error);
         return grpc::Status::OK;
     }
@@ -445,7 +471,9 @@ public:
                                      vurio::dedup::UndoEjectDuplicatesResponse* reply) override {
         bool undo_all = request->undo_all();
         std::vector<MediaDedup::EjectedFileHistory> histories;
-        
+        int skipped_unavailable = 0;
+        auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
         if (undo_all) {
             auto all = MediaDedup::EjectedFilesOps::getAll(*db_);
             for (const auto& h : all) {
@@ -512,10 +540,17 @@ public:
         for (const auto& history : histories) {
             std::string ejected_path = history.ejected_path;
             std::string original_path = history.original_file_path;
-            
+
+            // Skip (don't fail or delete history) when either endpoint's volume is disconnected.
+            if (!MediaDedup::MediaAvailability::isPathAvailable(ejected_path, mounted_fs) ||
+                !MediaDedup::MediaAvailability::isPathAvailable(original_path, mounted_fs)) {
+                skipped_unavailable++;
+                continue;
+            }
+
             std::filesystem::path src(ejected_path);
             std::filesystem::path dest(original_path);
-            
+
             if (!std::filesystem::exists(src)) {
                 MediaDedup::EjectedFilesOps::deleteByEjectedPath(*db_, ejected_path);
                 failure_count++;
@@ -586,9 +621,10 @@ public:
             }
         }
         
-        reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
+        reply->set_success(success_count > 0 || failure_count == 0);
         reply->set_success_count(success_count);
         reply->set_failure_count(failure_count);
+        reply->set_skipped_unavailable(skipped_unavailable);
         return grpc::Status::OK;
     }
 

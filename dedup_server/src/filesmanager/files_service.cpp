@@ -822,6 +822,19 @@ namespace MediaDedup
         result.partial_success = (total_failed > 0);
         result.success = (total_failed == 0);
 
+        // Remap ejected-file history so previously-ejected files in this location
+        // can still be restored after the path change (these rows are not covered
+        // by the scanned_files prefix updates above).
+        if (total_updated > 0)
+        {
+            int history_updated = EjectedFilesOps::remapLocation(db_manager_, old_key, new_key, old_location_value, new_path);
+            if (history_updated > 0)
+            {
+                logger_.information("changeMediaLocationPath: Remapped %d ejected_files_history row(s) from %s to %s",
+                                    history_updated, old_location_value, new_path);
+            }
+        }
+
         // Populate update_details with per-table statistics
         result.update_details["scanned_files"] = std::make_pair(total_updated, total_failed);
         result.update_details["image_artifacts"] = std::make_pair(image_artifacts_updated, image_artifacts_failed);
@@ -920,6 +933,142 @@ namespace MediaDedup
             }
         }
 
+        return result;
+    }
+
+    FilesService::LocateResult FilesService::locateMissingFile(
+        const std::string &member_path,
+        const std::string &located_path)
+    {
+        LocateResult result;
+
+        if (member_path.empty() || located_path.empty())
+        {
+            result.error_message = "member_path and located_path must not be empty";
+            return result;
+        }
+
+        // Look up the member file in the database.
+        auto file_opt = ScannedFilesOps::getByPath(db_manager_, member_path);
+        if (!file_opt)
+        {
+            result.error_message = "Member file not found in database: " + member_path;
+            return result;
+        }
+        const auto &file = *file_opt;
+
+        // Validate the located file exists and is a regular file.
+        std::error_code ec;
+        if (!std::filesystem::exists(located_path, ec) || !std::filesystem::is_regular_file(located_path, ec))
+        {
+            result.error_message = "Located file does not exist or is not a regular file: " + located_path;
+            return result;
+        }
+
+        // Validate size against stored metadata (sizeBytes).
+        uint64_t stored_size = 0;
+        try
+        {
+            auto metadata = nlohmann::json::parse(file.file_metadata);
+            if (metadata.contains("sizeBytes"))
+                stored_size = metadata["sizeBytes"].get<uint64_t>();
+        }
+        catch (...) { /* metadata missing/unparseable -> skip size check */ }
+
+        if (stored_size > 0)
+        {
+            uint64_t actual_size = 0;
+            try { actual_size = static_cast<uint64_t>(std::filesystem::file_size(located_path)); }
+            catch (...) {}
+            if (actual_size != stored_size)
+            {
+                result.error_message = "Located file size does not match the expected file (stored " +
+                                       std::to_string(stored_size) + " bytes, got " + std::to_string(actual_size) +
+                                       "). Please select the correct file.";
+                return result;
+            }
+        }
+
+        // Resolve the old registered root for this location.
+        std::string old_root;
+        if (!UserSettingsOps::get(db_manager_, file.location_key, old_root))
+        {
+            old_root.clear();
+        }
+        while (old_root.size() > 1 && (old_root.back() == '/' || old_root.back() == '\\'))
+            old_root.pop_back();
+
+        // Determine the member's relative path (reconstruct from member_path/old_root if missing).
+        std::string relative = file.relative_path;
+        std::replace(relative.begin(), relative.end(), '\\', '/');
+        if (!relative.empty() && relative[0] == '/')
+            relative = relative.substr(1);
+
+        std::string mp = member_path;
+        std::replace(mp.begin(), mp.end(), '\\', '/');
+
+        if (relative.empty() && !old_root.empty())
+        {
+            std::string root_norm = old_root;
+            std::replace(root_norm.begin(), root_norm.end(), '\\', '/');
+            if (mp.rfind(root_norm, 0) == 0)
+            {
+                relative = mp.substr(root_norm.size());
+                if (!relative.empty() && relative[0] == '/')
+                    relative = relative.substr(1);
+            }
+        }
+
+        if (relative.empty())
+        {
+            result.error_message = "Could not determine the file's relative path; cannot derive the new location root.";
+            return result;
+        }
+
+        // Fall back for old_root: strip the relative path from member_path.
+        if (old_root.empty() && mp.size() > relative.size() &&
+            mp.compare(mp.size() - relative.size(), relative.size(), relative) == 0)
+        {
+            old_root = mp.substr(0, mp.size() - relative.size());
+            while (old_root.size() > 1 && old_root.back() == '/')
+                old_root.pop_back();
+        }
+        if (old_root.empty())
+        {
+            result.error_message = "Could not determine the registered media location for this file.";
+            return result;
+        }
+
+        // Derive the new root by stripping the member's relative path from the located file.
+        std::string located_norm = located_path;
+        std::replace(located_norm.begin(), located_norm.end(), '\\', '/');
+        if (located_norm.size() < relative.size() ||
+            located_norm.compare(located_norm.size() - relative.size(), relative.size(), relative) != 0)
+        {
+            result.error_message = "The selected file's path does not match the expected sub-path (" + relative +
+                                   "). Please select the same file from the reconnected drive.";
+            return result;
+        }
+        std::string new_root = located_norm.substr(0, located_norm.size() - relative.size());
+        while (new_root.size() > 1 && new_root.back() == '/')
+            new_root.pop_back();
+        if (new_root.empty())
+        {
+            result.error_message = "Could not derive a valid new location root from the selected file.";
+            return result;
+        }
+
+        logger_.information("locateMissingFile: member=%s located=%s -> remapping %s to %s",
+                            member_path, located_path, old_root, new_root);
+
+        // Reuse the existing remap engine: it samples sibling files, validates the
+        // tree (80% threshold), and remaps all files + dependent tables.
+        auto change = changeMediaLocationPath(old_root, new_root);
+        result.files_updated = change.files_updated;
+        result.old_path = old_root;
+        result.new_path = new_root;
+        result.success = change.files_updated > 0;
+        result.error_message = change.error_message;
         return result;
     }
 
