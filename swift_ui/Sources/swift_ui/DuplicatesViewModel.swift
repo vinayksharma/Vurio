@@ -132,6 +132,25 @@ class DuplicatesViewModel: ObservableObject {
         loadingTasks.removeAll()
         errorMessage = nil
     }
+
+    /// Re-fetch only the pages that already have data so server-computed fields
+    /// (notably `isAvailable`) update in place — e.g. right after a volume mounts
+    /// or unmounts — without resetting loaded rows to placeholders. `loadPage`
+    /// overwrites each slot's group while keeping its stable id, so this updates
+    /// the connected/disconnected state without a visible reload.
+    func reloadLoadedPages() async {
+        let loadedPages: [Int32] = Set(
+            groups.enumerated()
+                .filter { $0.element.group != nil }
+                .map { Int32($0.offset) / pageSize }
+        ).sorted()
+        for page in loadedPages {
+            // Bypass the in-flight guard in triggerLoadPage; mount events are rare.
+            loadingTasks[page]?.cancel()
+            loadingTasks[page] = nil
+            await loadPage(pageIndex: page)
+        }
+    }
     
     func loadPage(pageIndex: Int32) async {
         logDebug("loadPage(\(pageIndex)) called.")
