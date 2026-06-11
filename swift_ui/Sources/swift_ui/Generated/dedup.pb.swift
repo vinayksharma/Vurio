@@ -155,6 +155,44 @@ struct Vurio_Dedup_ChangePathResponse: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_LocateMissingFileRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// path of a member file as stored in the DB (on the disconnected location)
+  var memberPath: String = String()
+
+  /// the file the user pointed to on disk
+  var locatedPath: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_LocateMissingFileResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var success: Bool = false
+
+  var errorMessage: String = String()
+
+  var filesUpdated: Int32 = 0
+
+  /// old registered root
+  var oldPath: String = String()
+
+  /// newly remapped root
+  var newPath: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_GetStatusRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -234,6 +272,9 @@ struct Vurio_Dedup_DuplicateFile: Sendable {
 
   var cachedThumbnailPath: String = String()
 
+  /// false when the volume this file lives on is disconnected
+  var isAvailable: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -292,6 +333,9 @@ struct Vurio_Dedup_EjectDuplicatesResponse: Sendable {
 
   var errorMessage: String = String()
 
+  /// files skipped because their volume is disconnected
+  var skippedUnavailable: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -323,6 +367,9 @@ struct Vurio_Dedup_UndoEjectDuplicatesResponse: Sendable {
   var failureCount: Int32 = 0
 
   var errorMessage: String = String()
+
+  /// files skipped because their volume is disconnected
+  var skippedUnavailable: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -899,6 +946,91 @@ extension Vurio_Dedup_ChangePathResponse: SwiftProtobuf.Message, SwiftProtobuf._
   }
 }
 
+extension Vurio_Dedup_LocateMissingFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".LocateMissingFileRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}member_path\0\u{3}located_path\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.memberPath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.locatedPath) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.memberPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.memberPath, fieldNumber: 1)
+    }
+    if !self.locatedPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.locatedPath, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_LocateMissingFileRequest, rhs: Vurio_Dedup_LocateMissingFileRequest) -> Bool {
+    if lhs.memberPath != rhs.memberPath {return false}
+    if lhs.locatedPath != rhs.locatedPath {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_LocateMissingFileResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".LocateMissingFileResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}files_updated\0\u{3}old_path\0\u{3}new_path\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.filesUpdated) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.oldPath) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.newPath) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.success != false {
+      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 2)
+    }
+    if self.filesUpdated != 0 {
+      try visitor.visitSingularInt32Field(value: self.filesUpdated, fieldNumber: 3)
+    }
+    if !self.oldPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.oldPath, fieldNumber: 4)
+    }
+    if !self.newPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.newPath, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_LocateMissingFileResponse, rhs: Vurio_Dedup_LocateMissingFileResponse) -> Bool {
+    if lhs.success != rhs.success {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.filesUpdated != rhs.filesUpdated {return false}
+    if lhs.oldPath != rhs.oldPath {return false}
+    if lhs.newPath != rhs.newPath {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetStatusRequest"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap()
@@ -1040,7 +1172,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0\u{3}is_available\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1056,6 +1188,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 6: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.isEjected) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.cachedThumbnailPath) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.isAvailable) }()
       default: break
       }
     }
@@ -1086,6 +1219,9 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.cachedThumbnailPath.isEmpty {
       try visitor.visitSingularStringField(value: self.cachedThumbnailPath, fieldNumber: 8)
     }
+    if self.isAvailable != false {
+      try visitor.visitSingularBoolField(value: self.isAvailable, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1098,6 +1234,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.similarityScore != rhs.similarityScore {return false}
     if lhs.isEjected != rhs.isEjected {return false}
     if lhs.cachedThumbnailPath != rhs.cachedThumbnailPath {return false}
+    if lhs.isAvailable != rhs.isAvailable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1205,7 +1342,7 @@ extension Vurio_Dedup_EjectDuplicatesRequest: SwiftProtobuf.Message, SwiftProtob
 
 extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".EjectDuplicatesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0\u{3}skipped_unavailable\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1217,6 +1354,7 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.successCount) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.failureCount) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.skippedUnavailable) }()
       default: break
       }
     }
@@ -1235,6 +1373,9 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
     if !self.errorMessage.isEmpty {
       try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 4)
     }
+    if self.skippedUnavailable != 0 {
+      try visitor.visitSingularInt32Field(value: self.skippedUnavailable, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1243,6 +1384,7 @@ extension Vurio_Dedup_EjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProto
     if lhs.successCount != rhs.successCount {return false}
     if lhs.failureCount != rhs.failureCount {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.skippedUnavailable != rhs.skippedUnavailable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1285,7 +1427,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesRequest: SwiftProtobuf.Message, SwiftPr
 
 extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".UndoEjectDuplicatesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}success_count\0\u{3}failure_count\0\u{3}error_message\0\u{3}skipped_unavailable\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1297,6 +1439,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.successCount) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.failureCount) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.skippedUnavailable) }()
       default: break
       }
     }
@@ -1315,6 +1458,9 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
     if !self.errorMessage.isEmpty {
       try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 4)
     }
+    if self.skippedUnavailable != 0 {
+      try visitor.visitSingularInt32Field(value: self.skippedUnavailable, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1323,6 +1469,7 @@ extension Vurio_Dedup_UndoEjectDuplicatesResponse: SwiftProtobuf.Message, SwiftP
     if lhs.successCount != rhs.successCount {return false}
     if lhs.failureCount != rhs.failureCount {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.skippedUnavailable != rhs.skippedUnavailable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

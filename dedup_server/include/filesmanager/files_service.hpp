@@ -58,6 +58,24 @@ namespace MediaDedup
             const std::string &new_path,
             int sample_size = 20);
 
+        // Result of relinking a disconnected location via a user-located file.
+        struct LocateResult
+        {
+            bool success = false;
+            std::string error_message;
+            int files_updated = 0;
+            std::string old_path; // old registered root
+            std::string new_path; // newly remapped root
+        };
+
+        // Given a member file path (as stored in the DB, on a disconnected
+        // location) and a file the user located on disk, validate the located
+        // file against stored metadata (size), derive the new media-location root
+        // by stripping the member's relative path, and remap the whole location
+        // via changeMediaLocationPath().
+        LocateResult locateMissingFile(const std::string &member_path,
+                                       const std::string &located_path);
+
         // Verification structure for path remapping
         struct PathRemappingVerification
         {

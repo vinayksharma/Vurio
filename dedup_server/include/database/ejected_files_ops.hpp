@@ -35,7 +35,17 @@ namespace MediaDedup
         
         static bool deleteByEjectedPath(DatabaseManager &db, const std::string &ejected_path);
         static bool deleteByEjectedPath(Poco::Data::Session &sess, const std::string &ejected_path);
-        
+
         static bool deleteAll(DatabaseManager &db);
+
+        // Remaps ejected-file history rows from one media location root to another
+        // (used when a location's path changes). Rewrites the old_root prefix to
+        // new_root in ejected_path and original_file_path, and updates
+        // original_location_key. Returns the number of rows updated.
+        static int remapLocation(DatabaseManager &db,
+                                 const std::string &old_location_key,
+                                 const std::string &new_location_key,
+                                 const std::string &old_root,
+                                 const std::string &new_root);
     };
 }

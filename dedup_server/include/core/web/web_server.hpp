@@ -380,6 +380,20 @@ namespace MediaDedup
         std::shared_ptr<class FilesService> service_;
     };
 
+    // Relinks a disconnected media location from a user-located file.
+    class LocateMissingFileHandler : public ConfigRequestHandler
+    {
+    public:
+        LocateMissingFileHandler(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
+                                 std::shared_ptr<class FilesService> service);
+
+        void handleRequest(Poco::Net::HTTPServerRequest &request,
+                           Poco::Net::HTTPServerResponse &response) override;
+
+    private:
+        std::shared_ptr<class FilesService> service_;
+    };
+
     // TPM status handler
     class TPMStatusHandler : public ConfigRequestHandler
     {

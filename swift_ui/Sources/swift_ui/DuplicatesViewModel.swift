@@ -154,19 +154,12 @@ class DuplicatesViewModel: ObservableObject {
             
             if !Task.isCancelled {
                 var localGroups = groups
-                let updatedGroups = await Task.detached(priority: .background) {
-                    var modifiedGroups = response.groups
-                    for i in 0..<modifiedGroups.count {
-                        for j in 0..<modifiedGroups[i].files.count {
-                            if !modifiedGroups[i].files[j].isEjected {
-                                if !FileManager.default.fileExists(atPath: modifiedGroups[i].files[j].filePath) {
-                                    modifiedGroups[i].files[j].isEjected = true
-                                }
-                            }
-                        }
-                    }
-                    return modifiedGroups
-                }.value
+                // Ejection state and availability come straight from the server:
+                // `isEjected` is derived from ejection history (not file presence) and
+                // `isAvailable` reflects whether the file's volume is mounted. A missing
+                // file on a disconnected volume must NOT be coerced to "ejected" here —
+                // that's what made every thumbnail flip to the restore state on unplug.
+                let updatedGroups = response.groups
 
                 for (i, group) in updatedGroups.enumerated() {
                     let globalIndex = Int(pageIndex * pageSize) + i
@@ -306,7 +299,31 @@ class DuplicatesViewModel: ObservableObject {
             self.errorMessage = "Restore error: \(error.localizedDescription)"
         }
     }
-    
+
+    /// Point a genuinely-missing file at its new on-disk location. The server
+    /// infers the registered media-location root from the picked file and remaps
+    /// every affected path, after which we refresh to pick up the new locations
+    /// and availability.
+    func locateMissingFile(memberPath: String, locatedPath: String) async {
+        do {
+            let req = Vurio_Dedup_LocateMissingFileRequest.with {
+                $0.memberPath = memberPath
+                $0.locatedPath = locatedPath
+            }
+            if let client = VurioGrpcClient.shared.media {
+                let res = try await client.locateMissingFile(req)
+                if res.success {
+                    await appState?.fetchStatus()
+                    await refresh()
+                } else {
+                    self.errorMessage = "Locate failed: \(res.errorMessage)"
+                }
+            }
+        } catch {
+            self.errorMessage = "Locate error: \(error.localizedDescription)"
+        }
+    }
+
     func fetchSettings() async {
         do {
             let req = Vurio_Dedup_GetConfigRequest()

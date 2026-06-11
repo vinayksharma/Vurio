@@ -290,6 +290,11 @@ internal protocol Vurio_Dedup_MediaLocationsServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_GetStatusRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>
+
+  func locateMissingFile(
+    _ request: Vurio_Dedup_LocateMissingFileRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse>
 }
 
 extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
@@ -366,6 +371,26 @@ extension Vurio_Dedup_MediaLocationsServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetStatusInterceptors() ?? []
+    )
+  }
+
+  /// Relink a disconnected media location: the user points to a file they
+  /// located on disk; the server validates it against stored metadata, derives
+  /// the new root, and remaps the whole location.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to LocateMissingFile.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func locateMissingFile(
+    _ request: Vurio_Dedup_LocateMissingFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.locateMissingFile.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeLocateMissingFileInterceptors() ?? []
     )
   }
 }
@@ -454,6 +479,11 @@ internal protocol Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol: GRPCClie
     _ request: Vurio_Dedup_GetStatusRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>
+
+  func makeLocateMissingFileCall(
+    _ request: Vurio_Dedup_LocateMissingFileRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -513,6 +543,18 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetStatusInterceptors() ?? []
     )
   }
+
+  internal func makeLocateMissingFileCall(
+    _ request: Vurio_Dedup_LocateMissingFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.locateMissingFile.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeLocateMissingFileInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -564,6 +606,18 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetStatusInterceptors() ?? []
     )
   }
+
+  internal func locateMissingFile(
+    _ request: Vurio_Dedup_LocateMissingFileRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_LocateMissingFileResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.locateMissingFile.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeLocateMissingFileInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -596,6 +650,9 @@ internal protocol Vurio_Dedup_MediaLocationsServiceClientInterceptorFactoryProto
 
   /// - Returns: Interceptors to use when invoking 'getStatus'.
   func makeGetStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'locateMissingFile'.
+  func makeLocateMissingFileInterceptors() -> [ClientInterceptor<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse>]
 }
 
 internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
@@ -607,6 +664,7 @@ internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
       Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.deregisterLocation,
       Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.changePath,
       Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.getStatus,
+      Vurio_Dedup_MediaLocationsServiceClientMetadata.Methods.locateMissingFile,
     ]
   )
 
@@ -632,6 +690,12 @@ internal enum Vurio_Dedup_MediaLocationsServiceClientMetadata {
     internal static let getStatus = GRPCMethodDescriptor(
       name: "GetStatus",
       path: "/vurio.dedup.MediaLocationsService/GetStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let locateMissingFile = GRPCMethodDescriptor(
+      name: "LocateMissingFile",
+      path: "/vurio.dedup.MediaLocationsService/LocateMissingFile",
       type: GRPCCallType.unary
     )
   }
@@ -2673,6 +2737,11 @@ internal protocol Vurio_Dedup_MediaLocationsServiceProvider: CallHandlerProvider
   func changePath(request: Vurio_Dedup_ChangePathRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ChangePathResponse>
 
   func getStatus(request: Vurio_Dedup_GetStatusRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetStatusResponse>
+
+  /// Relink a disconnected media location: the user points to a file they
+  /// located on disk; the server validates it against stored metadata, derives
+  /// the new root, and remaps the whole location.
+  func locateMissingFile(request: Vurio_Dedup_LocateMissingFileRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_LocateMissingFileResponse>
 }
 
 extension Vurio_Dedup_MediaLocationsServiceProvider {
@@ -2723,6 +2792,15 @@ extension Vurio_Dedup_MediaLocationsServiceProvider {
         userFunction: self.getStatus(request:context:)
       )
 
+    case "LocateMissingFile":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_LocateMissingFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_LocateMissingFileResponse>(),
+        interceptors: self.interceptors?.makeLocateMissingFileInterceptors() ?? [],
+        userFunction: self.locateMissingFile(request:context:)
+      )
+
     default:
       return nil
     }
@@ -2758,6 +2836,14 @@ internal protocol Vurio_Dedup_MediaLocationsServiceAsyncProvider: CallHandlerPro
     request: Vurio_Dedup_GetStatusRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_GetStatusResponse
+
+  /// Relink a disconnected media location: the user points to a file they
+  /// located on disk; the server validates it against stored metadata, derives
+  /// the new root, and remaps the whole location.
+  func locateMissingFile(
+    request: Vurio_Dedup_LocateMissingFileRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_LocateMissingFileResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2815,6 +2901,15 @@ extension Vurio_Dedup_MediaLocationsServiceAsyncProvider {
         wrapping: { try await self.getStatus(request: $0, context: $1) }
       )
 
+    case "LocateMissingFile":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_LocateMissingFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_LocateMissingFileResponse>(),
+        interceptors: self.interceptors?.makeLocateMissingFileInterceptors() ?? [],
+        wrapping: { try await self.locateMissingFile(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -2838,6 +2933,10 @@ internal protocol Vurio_Dedup_MediaLocationsServiceServerInterceptorFactoryProto
   /// - Returns: Interceptors to use when handling 'getStatus'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetStatusRequest, Vurio_Dedup_GetStatusResponse>]
+
+  /// - Returns: Interceptors to use when handling 'locateMissingFile'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeLocateMissingFileInterceptors() -> [ServerInterceptor<Vurio_Dedup_LocateMissingFileRequest, Vurio_Dedup_LocateMissingFileResponse>]
 }
 
 internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
@@ -2849,6 +2948,7 @@ internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
       Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.deregisterLocation,
       Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.changePath,
       Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.getStatus,
+      Vurio_Dedup_MediaLocationsServiceServerMetadata.Methods.locateMissingFile,
     ]
   )
 
@@ -2874,6 +2974,12 @@ internal enum Vurio_Dedup_MediaLocationsServiceServerMetadata {
     internal static let getStatus = GRPCMethodDescriptor(
       name: "GetStatus",
       path: "/vurio.dedup.MediaLocationsService/GetStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let locateMissingFile = GRPCMethodDescriptor(
+      name: "LocateMissingFile",
+      path: "/vurio.dedup.MediaLocationsService/LocateMissingFile",
       type: GRPCCallType.unary
     )
   }

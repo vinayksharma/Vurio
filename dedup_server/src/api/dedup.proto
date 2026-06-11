@@ -36,6 +36,10 @@ service MediaLocationsService {
   rpc DeregisterLocation(DeregisterLocationRequest) returns (DeregisterLocationResponse);
   rpc ChangePath(ChangePathRequest) returns (ChangePathResponse);
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  // Relink a disconnected media location: the user points to a file they
+  // located on disk; the server validates it against stored metadata, derives
+  // the new root, and remaps the whole location.
+  rpc LocateMissingFile(LocateMissingFileRequest) returns (LocateMissingFileResponse);
 }
 
 message RegisterLocationRequest {
@@ -65,6 +69,19 @@ message ChangePathResponse {
   bool success = 1;
   string error_message = 2;
   int32 files_updated = 3;
+}
+
+message LocateMissingFileRequest {
+  string member_path = 1;  // path of a member file as stored in the DB (on the disconnected location)
+  string located_path = 2; // the file the user pointed to on disk
+}
+
+message LocateMissingFileResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 files_updated = 3;
+  string old_path = 4; // old registered root
+  string new_path = 5; // newly remapped root
 }
 
 message GetStatusRequest {}
@@ -108,6 +125,7 @@ message DuplicateFile {
   double similarity_score = 6;
   bool is_ejected = 7;
   string cached_thumbnail_path = 8;
+  bool is_available = 9; // false when the volume this file lives on is disconnected
 }
 
 message DuplicateGroup {
@@ -129,6 +147,7 @@ message EjectDuplicatesResponse {
   int32 success_count = 2;
   int32 failure_count = 3;
   string error_message = 4;
+  int32 skipped_unavailable = 5; // files skipped because their volume is disconnected
 }
 
 message UndoEjectDuplicatesRequest {
@@ -141,6 +160,7 @@ message UndoEjectDuplicatesResponse {
   int32 success_count = 2;
   int32 failure_count = 3;
   string error_message = 4;
+  int32 skipped_unavailable = 5; // files skipped because their volume is disconnected
 }
 
 message DuplicateGroupUpdate {

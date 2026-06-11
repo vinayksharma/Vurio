@@ -1,5 +1,6 @@
 import SwiftUI
 import GRPC
+import AppKit
 
 struct VurioDuplicatesView: View {
     @State private var selection: Int? = 0
@@ -301,6 +302,9 @@ struct VurioDuplicatesView: View {
                         Task { await viewModel.restoreGroupFiles(paths, for: group.groupID) }
                     }
                 },
+                onLocateSet: { memberPath in
+                    locateMissingFile(memberPath: memberPath)
+                },
                 loadPage: { pageIndex in
                     viewModel.triggerLoadPage(pageIndex)
                 }
@@ -314,6 +318,22 @@ struct VurioDuplicatesView: View {
         }
     }
     
+    /// Prompt the user for the file's new on-disk location, then ask the server to
+    /// remap it. The server infers the registered media-location root from the
+    /// chosen file, so the user only needs to point at the moved file itself.
+    private func locateMissingFile(memberPath: String) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Locate \"\((memberPath as NSString).lastPathComponent)\" in its new location"
+        panel.prompt = "Locate"
+
+        if panel.runModal() == .OK, let locatedPath = panel.url?.path {
+            Task { await viewModel.locateMissingFile(memberPath: memberPath, locatedPath: locatedPath) }
+        }
+    }
+
     private func fetchSettings() async {
         do {
             let req = Vurio_Dedup_GetConfigRequest()
@@ -387,8 +407,9 @@ struct VurioGroupRowWrapper: View {
     let onThumbnailTapped: (Int) -> Void
     let onEjectSet: ([String]) -> Void
     let onRestoreSet: ([String]) -> Void
+    let onLocateSet: (String) -> Void
     let loadPage: (Int32) -> Void
-    
+
     var body: some View {
         Group {
             if let group = slot.group {
@@ -400,7 +421,8 @@ struct VurioGroupRowWrapper: View {
                     selectedCandidateIndex: $selectedCandidateIndex,
                     onThumbnailTapped: onThumbnailTapped,
                     onEjectSet: onEjectSet,
-                    onRestoreSet: onRestoreSet
+                    onRestoreSet: onRestoreSet,
+                    onLocateSet: onLocateSet
                 )
                 .padding(.horizontal, 30)
             } else {

@@ -235,6 +235,8 @@ namespace MediaDedup
             return new ChangeMediaLocationPathHandler(config_manager_, files_service_);
         if (path == "/api/v1/media-locations/verify-remapping" && method == "POST")
             return new VerifyPathRemappingHandler(config_manager_, files_service_);
+        if (path == "/api/v1/media-locations/locate-file" && method == "POST")
+            return new LocateMissingFileHandler(config_manager_, files_service_);
 
         // Scheduler management endpoints
         if (path.find("/api/v1/scheduler/trigger/") == 0 && method == "POST")
