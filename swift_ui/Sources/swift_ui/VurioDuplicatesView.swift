@@ -240,6 +240,16 @@ struct VurioDuplicatesView: View {
             await viewModel.fetchSettings()
             }
         }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
+            // A volume came online — re-fetch loaded pages so disconnected files
+            // flip back to connected without waiting for the user to scroll.
+            Task { await viewModel.reloadLoadedPages() }
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in
+            // A volume went offline — re-fetch loaded pages so its files show the
+            // disconnected (Locate) mask immediately.
+            Task { await viewModel.reloadLoadedPages() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MediaLocationDeregistered"))) { _ in
             Task {
                 await appState.fetchStatus()
