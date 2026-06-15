@@ -29,6 +29,9 @@ class AppState: ObservableObject {
     @Published var registeredDirs: [String] = []
     @Published var ejectedDirs: [String] = []
     @Published var hasEjectedFilesInFolder: Bool = false
+    // Registered roots that currently have real ejected files on disk. Recomputed
+    // on every fetchStatus, so per-location "Ejected" buttons stay reactive.
+    @Published var ejectedRootsWithFiles: Set<String> = []
     
     // Status State
     @Published var scannedFilesCount: Int32 = 0
@@ -90,22 +93,41 @@ class AppState: ObservableObject {
                 }
                 
                 let dirs = response.ejectedDirs
-                let hasFiles = await Task.detached(priority: .background) {
-                    for dir in dirs {
-                        let url = URL(fileURLWithPath: dir)
-                        if let items = try? FileManager.default.contentsOfDirectory(atPath: url.path), !items.isEmpty {
-                            // Filter out hidden files like .DS_Store
-                            let visibleFiles = items.filter { !$0.hasPrefix(".") }
-                            if !visibleFiles.isEmpty {
+                let roots = response.registeredDirs
+                let scan = await Task.detached(priority: .background) { () -> (Bool, Set<String>) in
+                    let fm = FileManager.default
+                    // True iff `dir` contains an actual file (recursively), skipping
+                    // hidden entries (.DS_Store) and empty leftover subdirectories
+                    // (e.g. spent collision folders after a restore) - those must NOT
+                    // count, otherwise eject/restore buttons stay enabled with nothing
+                    // left to act on.
+                    func hasRealFile(_ dir: String) -> Bool {
+                        guard let enumerator = fm.enumerator(
+                            at: URL(fileURLWithPath: dir),
+                            includingPropertiesForKeys: [.isRegularFileKey],
+                            options: [.skipsHiddenFiles]
+                        ) else { return false }
+                        for case let fileURL as URL in enumerator {
+                            if (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
                                 return true
                             }
                         }
+                        return false
                     }
-                    return false
+                    var rootsWithFiles = Set<String>()
+                    var anyFiles = false
+                    for dir in dirs where hasRealFile(dir) {
+                        anyFiles = true
+                        for root in roots where dir.hasPrefix(root) {
+                            rootsWithFiles.insert(root)
+                        }
+                    }
+                    return (anyFiles, rootsWithFiles)
                 }.value
-                
+
                 await MainActor.run {
-                    self.hasEjectedFilesInFolder = hasFiles
+                    self.hasEjectedFilesInFolder = scan.0
+                    self.ejectedRootsWithFiles = scan.1
                 }
             }
         } catch {
@@ -342,7 +364,7 @@ struct IntegrityCheckOverlayView: View {
                         .frame(height: 8)
                         .clipShape(Capsule())
                     
-                    Text("\(appState.integrityCheckProcessedFiles) of \(appState.integrityCheckTotalFiles) files processed")
+                    Text("\(appState.integrityCheckProcessedFiles.formatted(.number)) of \(appState.integrityCheckTotalFiles.formatted(.number)) files processed")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }
@@ -374,7 +396,7 @@ struct IntegrityCheckOverlayView: View {
         
         var body: some View {
             VStack(spacing: 4) {
-                Text("\(value)")
+                Text(value.formatted(.number))
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(value > 0 ? Theme.warning : Theme.textPrimary)
@@ -422,8 +444,8 @@ struct CalloutOverlayView: View {
             var text = "\(appState.registeredDirs.count.formatted(.number)) REGISTERED PATHS"
             
             if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                let findingPercent = min(100.0, (Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) * 100.0)
-                text += "\nFINDING DUPLICATES: \(Int(findingPercent))% COMPLETE OF PROCESSED FILES"
+                let findingFraction = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
+                text += "\nFINDING DUPLICATES: \(findingFraction.formatted(.percent.precision(.fractionLength(0)))) COMPLETE OF PROCESSED FILES"
             }
             
             if advancedOverlayEnabled {
@@ -513,7 +535,9 @@ struct StatusBarView: View {
                         .layoutPriority(1)
                         .frame(maxWidth: 340, alignment: .leading)
                         .contentShape(Rectangle())
-                        .onTapGesture { messageCenter.dismiss() }
+                        // Clicking keeps the message up for another full duration
+                        // instead of dismissing it.
+                        .onTapGesture { messageCenter.keepAlive() }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
@@ -565,7 +589,12 @@ struct StatusBarView: View {
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
-                            hoverPosition = location
+                            // Store the hover x in the status-bar's coordinate space (not
+                            // the bar's local space) so the callout — drawn in that space —
+                            // stays aligned even when a status message offsets/resizes the
+                            // progress bar.
+                            let barMinX = geometry.frame(in: .named("sb")).minX
+                            hoverPosition = CGPoint(x: location.x + barMinX, y: location.y)
                             if location.x <= max(0, completedWidth - duplicateWidth) {
                                 hoveredSegment = .processed
                             } else if location.x <= completedWidth {
@@ -638,13 +667,14 @@ struct StatusBarView: View {
             .animation(.easeInOut(duration: 0.35), value: messageCenter.message)
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .coordinateSpace(name: "sb")
             .overlay {
                 GeometryReader { geo in
                     if hoveredSegment != .none {
                         CalloutOverlayView(
                             segment: hoveredSegment,
                             appState: appState,
-                            hoverX: hoveredSegment == .statusDot ? geo.size.width - 24 : hoverPosition.x + 20,
+                            hoverX: hoveredSegment == .statusDot ? geo.size.width - 24 : hoverPosition.x,
                             hoverY: geo.size.height / 2,
                             totalWidth: geo.size.width
                         )

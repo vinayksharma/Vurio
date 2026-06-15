@@ -339,7 +339,7 @@ struct DuplicateMemberView: View {
                         .foregroundColor(Theme.success)
                         .offset(y: -14)
                 } else if !isRep {
-                    Text(String(format: "%.4f", file.similarityScore))
+                    Text(file.similarityScore.formatted(.number.precision(.fractionLength(4))))
                         .font(.custom("Menlo", size: 9))
                         .foregroundColor(Theme.success)
                         .offset(y: -14)

@@ -476,6 +476,7 @@ class DuplicatesViewModel: ObservableObject {
 
         self.totalEjectingCount = toEject.count
         self.ejectingRemainingCount = toEject.count
+        MessageCenter.shared.post("Ejecting \(toEject.count.formatted(.number)) file\(toEject.count == 1 ? "" : "s")")
 
         guard let client = VurioGrpcClient.shared.duplicates else {
             isEjecting = false
@@ -495,6 +496,10 @@ class DuplicatesViewModel: ObservableObject {
 
                 self.ejectingRemainingCount -= chunk.count
                 self.ejectedThisRun.append(contentsOf: chunk)
+                // Surface the updated remaining count on the status bar each chunk.
+                if ejectingRemainingCount > 0 {
+                    MessageCenter.shared.post("Ejecting: \(ejectingRemainingCount.formatted(.number)) remaining")
+                }
                 // Flip the just-ejected rows in place for immediate, scroll-preserving feedback.
                 applyEjectionState(chunk, isEjected: true)
             } catch {
@@ -521,6 +526,9 @@ class DuplicatesViewModel: ObservableObject {
             await performRestore(of: ejected)
             isRestoring = false
         } else {
+            if !ejected.isEmpty {
+                MessageCenter.shared.post("Ejected \(ejected.count.formatted(.number)) file\(ejected.count == 1 ? "" : "s")")
+            }
             isEjecting = false
         }
     }
@@ -581,6 +589,7 @@ class DuplicatesViewModel: ObservableObject {
     private func performRestore(of paths: [String]) async {
         self.totalRestoringCount = paths.count
         self.restoringRemainingCount = paths.count
+        MessageCenter.shared.post("Restoring \(paths.count.formatted(.number)) file\(paths.count == 1 ? "" : "s")")
 
         guard let client = VurioGrpcClient.shared.duplicates else {
             self.totalRestoringCount = 0
@@ -602,6 +611,10 @@ class DuplicatesViewModel: ObservableObject {
                 }
 
                 self.restoringRemainingCount -= chunk.count
+                // Surface the updated remaining count on the status bar each chunk.
+                if restoringRemainingCount > 0 {
+                    MessageCenter.shared.post("Restoring: \(restoringRemainingCount.formatted(.number)) remaining")
+                }
                 // Flip the just-restored rows in place for immediate, scroll-preserving feedback.
                 applyEjectionState(chunk, isEjected: false)
             } catch {
@@ -612,7 +625,7 @@ class DuplicatesViewModel: ObservableObject {
         self.totalRestoringCount = 0
         self.restoringRemainingCount = 0
         if totalSuccess > 0 {
-            self.errorMessage = "Successfully restored \(totalSuccess) files."
+            self.errorMessage = "Successfully restored \(totalSuccess.formatted(.number)) files."
         }
 
         // Reconcile authoritative state without blanking the list to placeholders.

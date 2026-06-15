@@ -474,6 +474,444 @@ namespace MediaDedupServer
             return copyFileVerified(src, dest);
         }
 
+        BulkOpResult bulkEject(MediaDedup::DatabaseManager& db,
+                               const std::vector<std::string>& filePaths)
+        {
+            Poco::Logger& logger = Poco::Logger::get("EjectService");
+            BulkOpResult result;
+            int& success_count = result.successCount;
+            int& failure_count = result.failureCount;
+            int& skipped_unavailable = result.skippedUnavailable;
+            std::string& last_error = result.lastError;
+
+            // Snapshot the mount table once so we can skip files on disconnected volumes.
+            auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
+            // DB mutations are accumulated and applied in a single transaction after
+            // every on-disk move succeeds (one commit/fsync per request).
+            struct EjectStaged {
+                int file_id;
+                std::string old_path;
+                std::string new_path;
+                std::string new_relative_path;
+                std::string location_key;
+                MediaDedup::EjectedFileHistory history;
+            };
+            std::vector<EjectStaged> staged;
+
+            // On-disk moves already performed, for post-commit cleanup / rollback.
+            struct AppliedMove {
+                std::filesystem::path src;
+                std::filesystem::path dest;
+                bool wasRename;
+            };
+            std::vector<AppliedMove> applied;
+
+            // Per-location settings resolved once per request, not per file.
+            std::unordered_map<std::string, std::string> ejectionPathByLocation;
+            std::unordered_map<std::string, std::string> mediaPathByLocation;
+
+            for (const auto& file_path : filePaths)
+            {
+                if (!MediaDedup::MediaAvailability::isPathAvailable(file_path, mounted_fs)) {
+                    logger.information("Skipping eject for file on disconnected volume: %s", file_path);
+                    skipped_unavailable++;
+                    continue;
+                }
+
+                auto file_opt = MediaDedup::ScannedFilesOps::getByPath(db, file_path);
+                if (!file_opt) {
+                    logger.warning("File not found in DB: %s", file_path);
+                    last_error = "File not found in database: " + file_path;
+                    failure_count++;
+                    continue;
+                }
+
+                std::string location_key = file_opt->location_key;
+                std::string ejection_path;
+
+                if (auto it = ejectionPathByLocation.find(location_key); it != ejectionPathByLocation.end()) {
+                    ejection_path = it->second;
+                } else {
+                    if (!MediaDedup::UserSettingsOps::get(db, "ejectionPath:" + location_key, ejection_path)) {
+                        std::string media_location_path;
+                        if (!MediaDedup::UserSettingsOps::get(db, location_key, media_location_path)) {
+                            logger.error("Cannot find media location for key: %s", location_key);
+                            last_error = "Cannot find registered media location for key: " + location_key;
+                            failure_count++;
+                            continue;
+                        }
+                        Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
+                        std::filesystem::path root(media_location_path);
+                        std::filesystem::path ejected = root / ("ejected_" + uuid.toString());
+                        ejection_path = ejected.string();
+                        std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
+                        try {
+                            std::filesystem::create_directories(ejected);
+                            MediaDedup::UserSettingsOps::upsert(db, "ejectionPath:" + location_key, ejection_path);
+                        } catch (const std::exception& e) {
+                            logger.error("Failed to create ejection directory %s: %s", ejected.string(), std::string(e.what()));
+                            last_error = "Failed to create ejection directory: " + std::string(e.what());
+                            failure_count++;
+                            continue;
+                        }
+                    } else {
+                        std::filesystem::path ejected(ejection_path);
+                        if (!std::filesystem::exists(ejected)) {
+                            try {
+                                std::filesystem::create_directories(ejected);
+                            } catch (const std::exception& e) {
+                                logger.error("Failed to recreate missing ejection directory %s: %s", ejection_path, std::string(e.what()));
+                                last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
+                                failure_count++;
+                                continue;
+                            }
+                        }
+                    }
+                    ejectionPathByLocation[location_key] = ejection_path;
+                }
+
+                std::string normalized_file_path = file_path;
+                std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
+                if (normalized_file_path.find(ejection_path) == 0) {
+                    logger.information("File already in ejection folder: %s", file_path);
+                    success_count++;
+                    continue;
+                }
+
+                std::filesystem::path src(file_path);
+                if (!std::filesystem::exists(src)) {
+                    logger.warning("File does not exist on disk: %s", file_path);
+                    last_error = "File does not exist on disk: " + file_path;
+                    failure_count++;
+                    continue;
+                }
+
+                std::string dest_filename = src.filename().string();
+                std::filesystem::path base_eject = std::filesystem::path(ejection_path);
+                std::filesystem::path dest = base_eject / dest_filename;
+
+                int counter = 0;
+                while (std::filesystem::exists(dest)) {
+                    counter++;
+                    std::string folder_name = dest_filename + "_" + std::to_string(counter);
+                    std::filesystem::path collision_folder = base_eject / folder_name;
+                    if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
+                        continue;
+                    }
+                    dest = collision_folder / dest_filename;
+                }
+
+                if (dest.has_parent_path()) {
+                    std::filesystem::create_directories(dest.parent_path());
+                }
+
+                VerifiedMoveResult mv = moveFileVerified(src, dest);
+                if (!mv.ok) {
+                    logger.error("Error ejecting file %s: %s", file_path, mv.error);
+                    last_error = "Error moving file: " + mv.error;
+                    failure_count++;
+                    continue;
+                }
+
+                applied.push_back({src, dest, mv.wasRename});
+
+                std::string new_file_path = dest.string();
+                std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
+
+                std::string new_relative_path;
+                std::string media_location_path;
+                if (auto mit = mediaPathByLocation.find(location_key); mit != mediaPathByLocation.end()) {
+                    media_location_path = mit->second;
+                } else if (MediaDedup::UserSettingsOps::get(db, location_key, media_location_path)) {
+                    mediaPathByLocation[location_key] = media_location_path;
+                }
+                if (!media_location_path.empty()) {
+                    new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
+                    std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
+                }
+
+                EjectStaged st;
+                st.file_id = file_opt->id;
+                st.old_path = file_path;
+                st.new_path = new_file_path;
+                st.new_relative_path = new_relative_path;
+                st.location_key = location_key;
+                st.history.file_id = file_opt->id;
+                st.history.ejected_path = new_file_path;
+                st.history.original_file_path = file_opt->file_path;
+                st.history.original_relative_path = file_opt->relative_path;
+                st.history.original_location_key = location_key;
+                staged.push_back(std::move(st));
+            }
+
+            bool committed = false;
+            if (!staged.empty()) {
+                try {
+                    auto lease = db.acquireSessionLease();
+                    Poco::Data::Session& sess = lease.get();
+                    sess.begin();
+                    for (const auto& st : staged) {
+                        MediaDedup::EjectedFilesOps::insert(sess, st.history);
+                        MediaDedup::ScannedFilesOps::updateFilePath(sess, st.file_id, st.new_path, st.new_relative_path, st.location_key);
+                        MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, st.old_path, st.new_path);
+                        MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, st.old_path, st.new_path);
+                        MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, st.old_path, st.new_path);
+                        MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, st.old_path, st.new_path);
+                        MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, st.old_path, st.new_path);
+                        MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, st.old_path, st.new_path);
+                    }
+                    sess.commit();
+                    committed = true;
+                } catch (const std::exception& e) {
+                    logger.error("DB commit failed during eject batch, rolling back " +
+                                 std::to_string(applied.size()) + " move(s): " + std::string(e.what()));
+                    for (const auto& a : applied) {
+                        std::error_code rec;
+                        if (a.wasRename) {
+                            std::filesystem::rename(a.dest, a.src, rec);
+                        } else {
+                            std::filesystem::remove(a.dest, rec);
+                        }
+                    }
+                    last_error = std::string("Database update failed: ") + e.what();
+                    failure_count += static_cast<int>(staged.size());
+                }
+            }
+
+            if (committed) {
+                for (const auto& a : applied) {
+                    if (!a.wasRename) {
+                        std::error_code rec;
+                        std::filesystem::remove(a.src, rec);
+                    }
+                }
+                success_count += static_cast<int>(staged.size());
+                logger.information("Ejected " + std::to_string(staged.size()) + " file(s) in batch");
+            }
+
+            return result;
+        }
+
+        BulkOpResult bulkUndoEject(MediaDedup::DatabaseManager& db,
+                                   const std::vector<std::string>& filePaths,
+                                   bool undoAll)
+        {
+            Poco::Logger& logger = Poco::Logger::get("UndoEjectService");
+            BulkOpResult result;
+            int& success_count = result.successCount;
+            int& failure_count = result.failureCount;
+            int& skipped_unavailable = result.skippedUnavailable;
+            std::string& last_error = result.lastError;
+
+            std::vector<MediaDedup::EjectedFileHistory> histories;
+            auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
+            if (undoAll) {
+                auto all = MediaDedup::EjectedFilesOps::getAll(db);
+                for (const auto& h : all) {
+                    if (h.ejected_path.find("/ejected_") != std::string::npos) {
+                        histories.push_back(h);
+                    }
+                }
+            } else {
+                for (const auto& f : filePaths) {
+                    auto hist = MediaDedup::EjectedFilesOps::getByEjectedPath(db, f);
+                    if (!hist) {
+                        hist = MediaDedup::EjectedFilesOps::getByOriginalPath(db, f);
+                    }
+                    if (!hist) {
+                        // Fallback for stranded ejected files (e.g. history wiped)
+                        auto user_settings = MediaDedup::UserSettingsOps::list(db);
+                        for (const auto& kv : user_settings) {
+                            if (kv.first.rfind("ejectionPath:", 0) == 0) {
+                                std::string ep = kv.second;
+                                std::replace(ep.begin(), ep.end(), '\\', '/');
+                                if (f.find(ep) == 0) {
+                                    std::string loc_key = kv.first.substr(13);
+                                    std::string loc_path;
+                                    if (MediaDedup::UserSettingsOps::get(db, loc_key, loc_path)) {
+                                        std::filesystem::path ejected_f(f);
+                                        std::filesystem::path original_f = std::filesystem::path(loc_path) / ejected_f.filename();
+                                        MediaDedup::EjectedFileHistory fake_hist;
+                                        fake_hist.file_id = -1;
+                                        auto stranded_opt = MediaDedup::ScannedFilesOps::getByPath(db, f);
+                                        if (stranded_opt) {
+                                            fake_hist.file_id = stranded_opt->id;
+                                        }
+                                        fake_hist.ejected_path = f;
+                                        fake_hist.original_file_path = original_f.string();
+                                        std::replace(fake_hist.original_file_path.begin(), fake_hist.original_file_path.end(), '\\', '/');
+                                        fake_hist.original_location_key = loc_key;
+                                        fake_hist.original_relative_path = ejected_f.filename().string();
+                                        hist = fake_hist;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (hist) {
+                        histories.push_back(*hist);
+                    } else {
+                        logger.warning("No ejection history found for %s", f);
+                        last_error = "No ejection history found for " + f;
+                        failure_count++;
+                    }
+                }
+            }
+
+            if (histories.size() != filePaths.size() && !undoAll) {
+                failure_count += static_cast<int>(filePaths.size() - histories.size());
+            }
+
+            struct UndoStaged {
+                bool dest_exists;
+                bool wasRename;
+                int file_id;
+                std::string ejected_path;
+                std::string dest_path_str;
+                std::string original_relative_path;
+                std::string original_location_key;
+                std::filesystem::path src;
+                std::filesystem::path dest;
+            };
+            std::vector<UndoStaged> staged;
+
+            for (const auto& history : histories) {
+                std::string ejected_path = history.ejected_path;
+                std::string original_path = history.original_file_path;
+
+                if (!MediaDedup::MediaAvailability::isPathAvailable(ejected_path, mounted_fs) ||
+                    !MediaDedup::MediaAvailability::isPathAvailable(original_path, mounted_fs)) {
+                    logger.information("Skipping undo-eject for file on disconnected volume: %s", ejected_path);
+                    skipped_unavailable++;
+                    continue;
+                }
+
+                std::filesystem::path src(ejected_path);
+                std::filesystem::path dest(original_path);
+
+                if (!std::filesystem::exists(src)) {
+                    logger.warning("Ejected file does not exist on disk: %s", ejected_path);
+                    MediaDedup::EjectedFilesOps::deleteByEjectedPath(db, ejected_path);
+                    failure_count++;
+                    continue;
+                }
+
+                VerifiedMoveResult mv = moveFileVerified(src, dest);
+                if (!mv.ok) {
+                    logger.error("Error restoring file %s: %s", ejected_path, mv.error);
+                    last_error = "Error moving file: " + mv.error;
+                    failure_count++;
+                    continue;
+                }
+
+                std::string dest_path_str = dest.string();
+                std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
+
+                UndoStaged st;
+                st.dest_exists = MediaDedup::ScannedFilesOps::getByPath(db, dest_path_str).has_value();
+                st.wasRename = mv.wasRename;
+                st.file_id = history.file_id;
+                st.ejected_path = ejected_path;
+                st.dest_path_str = dest_path_str;
+                st.original_relative_path = history.original_relative_path;
+                st.original_location_key = history.original_location_key;
+                st.src = src;
+                st.dest = dest;
+                staged.push_back(std::move(st));
+            }
+
+            // dest_exists rows are removed first; completelyRemoveById manages its
+            // own session, so it runs before opening the batch transaction.
+            for (const auto& st : staged) {
+                if (st.dest_exists && st.file_id != -1) {
+                    MediaDedup::ScannedFilesOps::completelyRemoveById(db, st.file_id);
+                }
+            }
+
+            bool committed = false;
+            if (!staged.empty()) {
+                try {
+                    auto lease = db.acquireSessionLease();
+                    Poco::Data::Session& sess = lease.get();
+                    sess.begin();
+                    for (const auto& st : staged) {
+                        if (!st.dest_exists) {
+                            MediaDedup::ScannedFilesOps::updateFilePath(sess, st.file_id, st.dest_path_str, st.original_relative_path, st.original_location_key);
+                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, st.ejected_path, st.dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, st.ejected_path, st.dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, st.ejected_path, st.dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, st.ejected_path, st.dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, st.ejected_path, st.dest_path_str);
+                            MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, st.ejected_path, st.dest_path_str);
+                        }
+                        MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, st.ejected_path);
+                    }
+                    sess.commit();
+                    committed = true;
+                } catch (const std::exception& e) {
+                    logger.error("DB commit failed during undo-eject batch, rolling back " +
+                                 std::to_string(staged.size()) + " move(s): " + std::string(e.what()));
+                    for (const auto& st : staged) {
+                        std::error_code rec;
+                        if (st.wasRename) {
+                            std::filesystem::rename(st.dest, st.src, rec);
+                        } else {
+                            std::filesystem::remove(st.dest, rec);
+                        }
+                    }
+                    last_error = std::string("Database update failed: ") + e.what();
+                    failure_count += static_cast<int>(staged.size());
+                }
+            }
+
+            if (committed) {
+                success_count += static_cast<int>(staged.size());
+                for (const auto& st : staged) {
+                    if (!st.wasRename) {
+                        std::error_code rec;
+                        std::filesystem::remove(st.src, rec);
+                    }
+                    // Clean up empty ejection directories (best-effort).
+                    try {
+                        std::filesystem::path parent = st.src.parent_path();
+                        std::filesystem::path ds_store = parent / ".DS_Store";
+                        if (std::filesystem::exists(ds_store)) {
+                            std::filesystem::remove(ds_store);
+                        }
+                        if (std::filesystem::is_empty(parent)) {
+                            std::filesystem::remove(parent);
+                            logger.information("Removed empty directory: %s", parent.string());
+                            std::filesystem::path grandparent = parent.parent_path();
+                            std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
+                            if (std::filesystem::exists(gp_ds_store)) {
+                                std::filesystem::remove(gp_ds_store);
+                            }
+                            if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
+                                std::filesystem::remove(grandparent);
+                                logger.information("Removed empty grandparent directory: %s", grandparent.string());
+                            }
+                            std::string ejection_key = "ejectionPath:" + st.original_location_key;
+                            std::string registered_path;
+                            if (MediaDedup::UserSettingsOps::get(db, ejection_key, registered_path)) {
+                                if (!std::filesystem::exists(registered_path)) {
+                                    MediaDedup::UserSettingsOps::remove(db, ejection_key);
+                                    logger.information("Removed DB entry for empty ejection path: %s", ejection_key);
+                                }
+                            }
+                        }
+                    } catch (...) {
+                        // Ignore directory remove errors
+                    }
+                }
+                logger.information("Restored " + std::to_string(staged.size()) + " file(s) in batch");
+            }
+
+            return result;
+        }
+
         void EjectDuplicatesHandler::handleRequest(Poco::Net::HTTPServerRequest &request,
                                                    Poco::Net::HTTPServerResponse &response)
         {
@@ -502,238 +940,16 @@ namespace MediaDedupServer
                 }
 
                 Poco::JSON::Array::Ptr files_array = object->getArray("files");
-                int success_count = 0;
-                int failure_count = 0;
-                int skipped_unavailable = 0;
-                std::string last_error = "";
-
-                // Snapshot the mount table once so we can skip files on disconnected volumes.
-                auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
-
-                // DB mutations are accumulated and applied in a single transaction
-                // after every on-disk move succeeds (one commit/fsync per request
-                // instead of one per file).
-                struct EjectStaged {
-                    int file_id;
-                    std::string old_path;
-                    std::string new_path;
-                    std::string new_relative_path;
-                    std::string location_key;
-                    MediaDedup::EjectedFileHistory history;
-                };
-                std::vector<EjectStaged> staged;
-
-                // On-disk moves already performed, for post-commit cleanup / rollback.
-                struct AppliedMove {
-                    std::filesystem::path src;
-                    std::filesystem::path dest;
-                    bool wasRename;
-                };
-                std::vector<AppliedMove> applied;
-
-                // The ejection path and media-location root are identical for every
-                // file in a given location. Resolve each once per request instead of
-                // running a leased user_settings query per file.
-                std::unordered_map<std::string, std::string> ejectionPathByLocation;
-                std::unordered_map<std::string, std::string> mediaPathByLocation;
-
-                for (size_t i = 0; i < files_array->size(); ++i)
-                {
-                    std::string file_path = files_array->get(i).toString();
-
-                    // Skip files whose volume is currently disconnected rather than
-                    // counting them as failures (multi-path groups operate only on
-                    // available paths).
-                    if (!MediaDedup::MediaAvailability::isPathAvailable(file_path, mounted_fs)) {
-                        logger.information("Skipping eject for file on disconnected volume: %s", file_path);
-                        skipped_unavailable++;
-                        continue;
-                    }
-
-                    auto file_opt = MediaDedup::ScannedFilesOps::getByPath(*database_manager_, file_path);
-                    if (!file_opt) {
-                        logger.warning("File not found in DB: %s", file_path);
-                        last_error = "File not found in database: " + file_path;
-                        failure_count++;
-                        continue;
-                    }
-
-                    std::string location_key = file_opt->location_key;
-                    std::string ejection_path;
-
-                    // Resolve (and ensure on disk) the ejection path once per
-                    // location_key per request; reuse it for the rest of this
-                    // location's files.
-                    if (auto it = ejectionPathByLocation.find(location_key); it != ejectionPathByLocation.end()) {
-                        ejection_path = it->second;
-                    } else {
-                        // Ensure ejection path exists for this location_key
-                        if (!MediaDedup::UserSettingsOps::get(*database_manager_, "ejectionPath:" + location_key, ejection_path)) {
-                            std::string media_location_path;
-                            if (!MediaDedup::UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                                logger.error("Cannot find media location for key: %s", location_key);
-                                last_error = "Cannot find registered media location for key: " + location_key;
-                                failure_count++;
-                                continue;
-                            }
-                            Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                            std::filesystem::path root(media_location_path);
-                            std::filesystem::path ejected = root / ("ejected_" + uuid.toString());
-                            ejection_path = ejected.string();
-                            std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
-
-                            try {
-                                std::filesystem::create_directories(ejected);
-                                MediaDedup::UserSettingsOps::upsert(*database_manager_, "ejectionPath:" + location_key, ejection_path);
-                            } catch (const std::exception& e) {
-                                logger.error("Failed to create ejection directory %s: %s", ejected.string(), std::string(e.what()));
-                                last_error = "Failed to create ejection directory: " + std::string(e.what());
-                                failure_count++;
-                                continue;
-                            }
-                        } else {
-                            // Ensure it exists on disk, recreate if missing
-                            std::filesystem::path ejected(ejection_path);
-                            if (!std::filesystem::exists(ejected)) {
-                                try {
-                                    std::filesystem::create_directories(ejected);
-                                } catch (const std::exception& e) {
-                                    logger.error("Failed to recreate missing ejection directory %s: %s", ejection_path, std::string(e.what()));
-                                    last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
-                                    failure_count++;
-                                    continue;
-                                }
-                            }
-                        }
-                        ejectionPathByLocation[location_key] = ejection_path;
-                    }
-
-                    // Check if file is already ejected
-                    std::string normalized_file_path = file_path;
-                    std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
-                    if (normalized_file_path.find(ejection_path) == 0) {
-                        logger.information("File already in ejection folder: %s", file_path);
-                        success_count++; // Treat as success since it's where it belongs
-                        continue;
-                    }
-
-                    std::filesystem::path src(file_path);
-                    if (!std::filesystem::exists(src)) {
-                        logger.warning("File does not exist on disk: %s", file_path);
-                        last_error = "File does not exist on disk: " + file_path;
-                        failure_count++;
-                        continue;
-                    }
-
-                    std::string dest_filename = src.filename().string();
-                    std::filesystem::path base_eject = std::filesystem::path(ejection_path);
-                    std::filesystem::path dest = base_eject / dest_filename;
-
-                    int counter = 0;
-                    while (std::filesystem::exists(dest)) {
-                        counter++;
-                        std::string folder_name = dest_filename + "_" + std::to_string(counter);
-                        std::filesystem::path collision_folder = base_eject / folder_name;
-                        
-                        if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
-                            continue;
-                        }
-                        
-                        dest = collision_folder / dest_filename;
-                    }
-
-                    if (dest.has_parent_path()) {
-                        std::filesystem::create_directories(dest.parent_path());
-                    }
-
-                    VerifiedMoveResult mv = moveFileVerified(src, dest);
-                    if (!mv.ok) {
-                        logger.error("Error ejecting file %s: %s", file_path, mv.error);
-                        last_error = "Error moving file: " + mv.error;
-                        failure_count++;
-                        continue;
-                    }
-
-                    applied.push_back({src, dest, mv.wasRename});
-
-                    std::string new_file_path = dest.string();
-                    std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
-
-                    std::string new_relative_path;
-                    std::string media_location_path;
-                    if (auto mit = mediaPathByLocation.find(location_key); mit != mediaPathByLocation.end()) {
-                        media_location_path = mit->second;
-                    } else if (MediaDedup::UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                        mediaPathByLocation[location_key] = media_location_path;
-                    }
-                    if (!media_location_path.empty()) {
-                        new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
-                        std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
-                    }
-
-                    EjectStaged st;
-                    st.file_id = file_opt->id;
-                    st.old_path = file_path;
-                    st.new_path = new_file_path;
-                    st.new_relative_path = new_relative_path;
-                    st.location_key = location_key;
-                    st.history.file_id = file_opt->id;
-                    st.history.ejected_path = new_file_path;
-                    st.history.original_file_path = file_opt->file_path;
-                    st.history.original_relative_path = file_opt->relative_path;
-                    st.history.original_location_key = location_key;
-                    staged.push_back(std::move(st));
+                std::vector<std::string> file_paths;
+                for (size_t i = 0; i < files_array->size(); ++i) {
+                    file_paths.push_back(files_array->get(i).toString());
                 }
 
-                // Apply all staged path changes in a single transaction. The on-disk
-                // moves already happened above; if the commit fails we undo every one
-                // of them so no asset is left half-ejected.
-                bool committed = false;
-                if (!staged.empty()) {
-                    try {
-                        auto lease = database_manager_->acquireSessionLease();
-                        Poco::Data::Session& sess = lease.get();
-                        sess.begin();
-                        for (const auto& st : staged) {
-                            MediaDedup::EjectedFilesOps::insert(sess, st.history);
-                            MediaDedup::ScannedFilesOps::updateFilePath(sess, st.file_id, st.new_path, st.new_relative_path, st.location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, st.old_path, st.new_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, st.old_path, st.new_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, st.old_path, st.new_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, st.old_path, st.new_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, st.old_path, st.new_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, st.old_path, st.new_path);
-                        }
-                        sess.commit();
-                        committed = true;
-                    } catch (const std::exception& e) {
-                        logger.error("DB commit failed during eject batch, rolling back " +
-                                     std::to_string(applied.size()) + " move(s): " + std::string(e.what()));
-                        for (const auto& a : applied) {
-                            std::error_code rec;
-                            if (a.wasRename) {
-                                std::filesystem::rename(a.dest, a.src, rec); // move back atomically
-                            } else {
-                                std::filesystem::remove(a.dest, rec);        // source still present
-                            }
-                        }
-                        last_error = std::string("Database update failed: ") + e.what();
-                        failure_count += static_cast<int>(staged.size());
-                    }
-                }
-
-                if (committed) {
-                    // Filesystem teardown happens ONLY after the DB has committed.
-                    // Renamed sources are already gone; copied sources are removed now.
-                    for (const auto& a : applied) {
-                        if (!a.wasRename) {
-                            std::error_code rec;
-                            std::filesystem::remove(a.src, rec);
-                        }
-                    }
-                    success_count += static_cast<int>(staged.size());
-                    logger.information("Ejected " + std::to_string(staged.size()) + " file(s) in batch");
-                }
+                BulkOpResult r = bulkEject(*database_manager_, file_paths);
+                int success_count = r.successCount;
+                int failure_count = r.failureCount;
+                int skipped_unavailable = r.skippedUnavailable;
+                std::string last_error = r.lastError;
 
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 response.setContentType("application/json");
@@ -812,256 +1028,10 @@ namespace MediaDedupServer
                     }
                 }
 
-                std::vector<MediaDedup::EjectedFileHistory> histories;
-                int success_count = 0;
-                int failure_count = 0;
-                int skipped_unavailable = 0;
-                std::string last_error = "";
-
-                // Snapshot the mount table once so we can skip restores onto disconnected volumes.
-                auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
-
-                if (undo_all)
-                {
-                    auto all = MediaDedup::EjectedFilesOps::getAll(*database_manager_);
-                    for (const auto& h : all) {
-                        if (h.ejected_path.find("/ejected_") != std::string::npos) {
-                            histories.push_back(h);
-                        }
-                    }
-                }
-                else
-                {
-                    for (const auto& f : target_files)
-                    {
-                        auto hist = MediaDedup::EjectedFilesOps::getByEjectedPath(*database_manager_, f);
-                        if (!hist)
-                        {
-                            hist = MediaDedup::EjectedFilesOps::getByOriginalPath(*database_manager_, f);
-                        }
-                        
-                        if (!hist)
-                        {
-                            // Fallback for stranded ejected files (e.g. history wiped)
-                            auto user_settings = MediaDedup::UserSettingsOps::list(*database_manager_);
-                            for (const auto& kv : user_settings) {
-                                if (kv.first.rfind("ejectionPath:", 0) == 0) {
-                                    std::string ep = kv.second;
-                                    std::replace(ep.begin(), ep.end(), '\\', '/');
-                                    if (f.find(ep) == 0) {
-                                        std::string loc_key = kv.first.substr(13); // remove "ejectionPath:"
-                                        std::string loc_path;
-                                        if (MediaDedup::UserSettingsOps::get(*database_manager_, loc_key, loc_path)) {
-                                            std::filesystem::path ejected_f(f);
-                                            std::filesystem::path original_f = std::filesystem::path(loc_path) / ejected_f.filename();
-                                            
-                                            MediaDedup::EjectedFileHistory fake_hist;
-                                            fake_hist.file_id = -1; // Unknown by default
-                                            
-                                            auto stranded_opt = MediaDedup::ScannedFilesOps::getByPath(*database_manager_, f);
-                                            if (stranded_opt) {
-                                                fake_hist.file_id = stranded_opt->id;
-                                            }
-
-                                            fake_hist.ejected_path = f;
-                                            fake_hist.original_file_path = original_f.string();
-                                            std::replace(fake_hist.original_file_path.begin(), fake_hist.original_file_path.end(), '\\', '/');
-                                            
-                                            fake_hist.original_location_key = loc_key;
-                                            fake_hist.original_relative_path = ejected_f.filename().string();
-                                            
-                                            hist = fake_hist;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (hist)
-                        {
-                            histories.push_back(*hist);
-                        }
-                        else
-                        {
-                            logger.warning("No ejection history found for %s", f);
-                            last_error = "No ejection history found for " + f;
-                            failure_count++;
-                        }
-                    }
-                }
-
-                if (histories.size() != target_files.size() && !undo_all) {
-                    failure_count += (target_files.size() - histories.size());
-                }
-
-                // DB mutations are batched into a single transaction after every
-                // on-disk move succeeds (one commit/fsync per request instead of one
-                // per file). Each record also carries what's needed to roll back the
-                // move and clean up empty ejection folders afterwards.
-                struct UndoStaged {
-                    bool dest_exists;
-                    bool wasRename;
-                    int file_id;
-                    std::string ejected_path;          // "from" path for path updates
-                    std::string dest_path_str;         // restored (original) path
-                    std::string original_relative_path;
-                    std::string original_location_key;
-                    std::filesystem::path src;         // ejected file's former location
-                    std::filesystem::path dest;        // restored location
-                };
-                std::vector<UndoStaged> staged;
-
-                for (const auto& history : histories)
-                {
-                    std::string ejected_path = history.ejected_path;
-                    std::string original_path = history.original_file_path;
-
-                    // Skip (don't fail or delete history) when either the ejected
-                    // file's volume or the restore destination's volume is
-                    // disconnected; the file can be restored once reconnected.
-                    if (!MediaDedup::MediaAvailability::isPathAvailable(ejected_path, mounted_fs) ||
-                        !MediaDedup::MediaAvailability::isPathAvailable(original_path, mounted_fs))
-                    {
-                        logger.information("Skipping undo-eject for file on disconnected volume: %s", ejected_path);
-                        skipped_unavailable++;
-                        continue;
-                    }
-
-                    std::filesystem::path src(ejected_path);
-                    std::filesystem::path dest(original_path);
-
-                    if (!std::filesystem::exists(src))
-                    {
-                        logger.warning("Ejected file does not exist on disk: %s", ejected_path);
-                        MediaDedup::EjectedFilesOps::deleteByEjectedPath(*database_manager_, ejected_path);
-                        failure_count++;
-                        continue;
-                    }
-
-                    VerifiedMoveResult mv = moveFileVerified(src, dest);
-                    if (!mv.ok) {
-                        logger.error("Error restoring file %s: %s", ejected_path, mv.error);
-                        last_error = "Error moving file: " + mv.error;
-                        failure_count++;
-                        continue;
-                    }
-
-                    std::string dest_path_str = dest.string();
-                    std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
-
-                    UndoStaged st;
-                    st.dest_exists = MediaDedup::ScannedFilesOps::getByPath(*database_manager_, dest_path_str).has_value();
-                    st.wasRename = mv.wasRename;
-                    st.file_id = history.file_id;
-                    st.ejected_path = ejected_path;
-                    st.dest_path_str = dest_path_str;
-                    st.original_relative_path = history.original_relative_path;
-                    st.original_location_key = history.original_location_key;
-                    st.src = src;
-                    st.dest = dest;
-                    staged.push_back(std::move(st));
-                }
-
-                // Records whose destination already had a row need that stale row
-                // removed first; completelyRemoveById manages its own session, so it
-                // runs before the batch transaction is opened.
-                for (const auto& st : staged) {
-                    if (st.dest_exists && st.file_id != -1) {
-                        MediaDedup::ScannedFilesOps::completelyRemoveById(*database_manager_, st.file_id);
-                    }
-                }
-
-                // Apply all staged path changes / history deletions in one transaction.
-                // The on-disk moves already happened; if the commit fails we undo every
-                // one of them so nothing is left half-restored.
-                bool committed = false;
-                if (!staged.empty()) {
-                    try {
-                        auto lease = database_manager_->acquireSessionLease();
-                        Poco::Data::Session& sess = lease.get();
-                        sess.begin();
-                        for (const auto& st : staged) {
-                            if (!st.dest_exists) {
-                                MediaDedup::ScannedFilesOps::updateFilePath(sess, st.file_id, st.dest_path_str, st.original_relative_path, st.original_location_key);
-                                MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, st.ejected_path, st.dest_path_str);
-                                MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, st.ejected_path, st.dest_path_str);
-                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, st.ejected_path, st.dest_path_str);
-                                MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, st.ejected_path, st.dest_path_str);
-                                MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, st.ejected_path, st.dest_path_str);
-                                MediaDedup::ScannedFilesOps::updateFilePathInPreviewCache(sess, st.ejected_path, st.dest_path_str);
-                            }
-                            MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, st.ejected_path);
-                        }
-                        sess.commit();
-                        committed = true;
-                    } catch (const std::exception& e) {
-                        logger.error("DB commit failed during undo-eject batch, rolling back " +
-                                     std::to_string(staged.size()) + " move(s): " + std::string(e.what()));
-                        for (const auto& st : staged) {
-                            std::error_code rec;
-                            if (st.wasRename) {
-                                std::filesystem::rename(st.dest, st.src, rec); // move back atomically
-                            } else {
-                                std::filesystem::remove(st.dest, rec);         // source still present
-                            }
-                        }
-                        last_error = std::string("Database update failed: ") + e.what();
-                        failure_count += static_cast<int>(staged.size());
-                    }
-                }
-
-                if (committed) {
-                    success_count += static_cast<int>(staged.size());
-                    for (const auto& st : staged) {
-                        // FS teardown happens ONLY after the DB has committed. Renamed
-                        // sources are already gone; copied sources are removed now.
-                        if (!st.wasRename) {
-                            std::error_code rec;
-                            std::filesystem::remove(st.src, rec);
-                        }
-
-                        // Clean up empty ejection directories (best-effort).
-                        try {
-                            std::filesystem::path parent = st.src.parent_path();
-
-                            // On macOS, Finder creates .DS_Store instantly
-                            std::filesystem::path ds_store = parent / ".DS_Store";
-                            if (std::filesystem::exists(ds_store)) {
-                                std::filesystem::remove(ds_store);
-                            }
-
-                            if (std::filesystem::is_empty(parent)) {
-                                std::filesystem::remove(parent);
-                                logger.information("Removed empty directory: %s", parent.string());
-
-                                // If this was a collision folder, also try removing the main ejection folder
-                                std::filesystem::path grandparent = parent.parent_path();
-                                std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
-                                if (std::filesystem::exists(gp_ds_store)) {
-                                    std::filesystem::remove(gp_ds_store);
-                                }
-                                if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
-                                    std::filesystem::remove(grandparent);
-                                    logger.information("Removed empty grandparent directory: %s", grandparent.string());
-                                }
-
-                                // Only remove DB entry if the main ejection path is actually gone
-                                std::string ejection_key = "ejectionPath:" + st.original_location_key;
-                                std::string registered_path;
-                                if (MediaDedup::UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
-                                    if (!std::filesystem::exists(registered_path)) {
-                                        MediaDedup::UserSettingsOps::remove(*database_manager_, ejection_key);
-                                        logger.information("Removed DB entry for empty ejection path: %s", ejection_key);
-                                    }
-                                }
-                            }
-                        } catch (...) {
-                            // Ignore directory remove errors
-                        }
-                    }
-                    logger.information("Restored " + std::to_string(staged.size()) + " file(s) in batch");
-                }
+                BulkOpResult r = bulkUndoEject(*database_manager_, target_files, undo_all);
+                int success_count = r.successCount;
+                int failure_count = r.failureCount;
+                int skipped_unavailable = r.skippedUnavailable;
 
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 response.setContentType("application/json");

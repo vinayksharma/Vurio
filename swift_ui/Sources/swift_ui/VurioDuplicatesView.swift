@@ -54,7 +54,7 @@ struct VurioDuplicatesView: View {
                         similarValue: $viewModel.similarSliderValue,
                         range: 0.0...viewModel.maxDistance,
                         formatValue: { val in
-                            return String(format: "%.3f", 1.0 - val)
+                            return (1.0 - val).formatted(.number.precision(.fractionLength(3)))
                         },
                         showSimilarThumb: false
                     )
