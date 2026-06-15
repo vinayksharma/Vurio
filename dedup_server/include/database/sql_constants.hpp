@@ -364,6 +364,12 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateGroupsIndexRepDate =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_rep_date ON duplicate_groups(representative_created_date);";
 
+        // Eject/restore rewrite representative_file_path via
+        // "UPDATE duplicate_groups SET representative_file_path=? WHERE representative_file_path=?".
+        // Without this index that WHERE is a full table scan on every moved file.
+        inline constexpr std::string_view kCreateDuplicateGroupsIndexRepPath =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_rep_path ON duplicate_groups(representative_file_path);";
+
         inline constexpr std::string_view kCreateDuplicateMembersIndexFile =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_id ON duplicate_members(file_id);";
 

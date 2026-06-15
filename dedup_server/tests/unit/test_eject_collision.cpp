@@ -218,6 +218,143 @@ TEST_F(EjectCollisionTest, TestEjectionCollisionFolders) {
     EXPECT_TRUE(std::filesystem::exists(test_file3_));
 }
 
+namespace {
+    std::string readFileContent(const std::string& path) {
+        std::ifstream ifs(path, std::ios::binary);
+        std::ostringstream ss;
+        ss << ifs.rdbuf();
+        return ss.str();
+    }
+
+    int countRegularFiles(const std::filesystem::path& root) {
+        int n = 0;
+        for (auto it = std::filesystem::recursive_directory_iterator(root);
+             it != std::filesystem::recursive_directory_iterator(); ++it) {
+            if (it->is_regular_file()) ++n;
+        }
+        return n;
+    }
+}
+
+// Eject all three files in a SINGLE request, then restore them all in a single
+// undo_all request. Exercises the batched (one-transaction-per-request) path and
+// the rename fast path with N > 1, including intra-batch filename collisions, and
+// asserts byte content survives the eject -> restore round trip.
+TEST_F(EjectCollisionTest, BatchEjectAndUndoAllPreservesContent) {
+    // Batch eject: all three colliding files in one request.
+    {
+        Poco::JSON::Object body;
+        Poco::JSON::Array files;
+        files.add(test_file1_);
+        files.add(test_file2_);
+        files.add(test_file3_);
+        body.set("files", files);
+        std::ostringstream oss;
+        body.stringify(oss);
+
+        MockHTTPServerResponse response;
+        MockHTTPServerRequest request(response, "POST", "/api/v1/duplicates/eject", oss.str());
+        eject_handler_->handleRequest(request, response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        Poco::JSON::Parser parser;
+        auto result = parser.parse(response.os_.str()).extract<Poco::JSON::Object::Ptr>();
+        EXPECT_EQ(result->getValue<int>("success_count"), 3);
+        EXPECT_EQ(result->getValue<int>("failure_count"), 0);
+    }
+
+    // All sources moved out; all three landed in the ejection folder; all three
+    // recorded in ejection history (committed by the single batch transaction).
+    std::string ejection_path;
+    ASSERT_TRUE(UserSettingsOps::get(*db_manager_, "ejectionPath:location_1", ejection_path));
+    EXPECT_FALSE(std::filesystem::exists(test_file1_));
+    EXPECT_FALSE(std::filesystem::exists(test_file2_));
+    EXPECT_FALSE(std::filesystem::exists(test_file3_));
+    EXPECT_EQ(countRegularFiles(ejection_path), 3);
+    EXPECT_EQ(EjectedFilesOps::getAll(*db_manager_).size(), 3u);
+
+    // Batch restore via undo_all.
+    {
+        Poco::JSON::Object body;
+        body.set("undo_all", true);
+        std::ostringstream oss;
+        body.stringify(oss);
+
+        MockHTTPServerResponse response;
+        MockHTTPServerRequest request(response, "POST", "/api/v1/duplicates/undo_eject", oss.str());
+        undo_handler_->handleRequest(request, response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        Poco::JSON::Parser parser;
+        auto result = parser.parse(response.os_.str()).extract<Poco::JSON::Object::Ptr>();
+        EXPECT_EQ(result->getValue<int>("success_count"), 3);
+        EXPECT_EQ(result->getValue<int>("failure_count"), 0);
+    }
+
+    // Everything restored to its original location with content intact, history cleared.
+    ASSERT_TRUE(std::filesystem::exists(test_file1_));
+    ASSERT_TRUE(std::filesystem::exists(test_file2_));
+    ASSERT_TRUE(std::filesystem::exists(test_file3_));
+    EXPECT_EQ(readFileContent(test_file1_), "content1");
+    EXPECT_EQ(readFileContent(test_file2_), "content2");
+    EXPECT_EQ(readFileContent(test_file3_), "content3");
+    EXPECT_EQ(EjectedFilesOps::getAll(*db_manager_).size(), 0u);
+}
+
+// Direct unit tests for the move helpers, including the cross-device copy+verify
+// fallback whose logic is otherwise unreachable without a second mounted volume.
+class VerifiedMoveTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        dir_ = "/tmp/vurio_test_move_" + std::to_string(Poco::Timestamp().epochMicroseconds());
+        std::filesystem::create_directories(dir_);
+    }
+    void TearDown() override {
+        std::error_code ec;
+        std::filesystem::remove_all(dir_, ec);
+    }
+    std::filesystem::path dir_;
+};
+
+TEST_F(VerifiedMoveTest, MoveUsesRenameOnSameFilesystem) {
+    std::filesystem::path src = dir_ / "src.bin";
+    std::filesystem::path dest = dir_ / "dest.bin";
+    {
+        std::ofstream ofs(src, std::ios::binary);
+        ofs << std::string("hello\0world", 11); // embedded NUL
+    }
+
+    VerifiedMoveResult r = moveFileVerified(src, dest);
+    EXPECT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.wasRename);                       // same fs -> atomic rename, no copy
+    EXPECT_FALSE(std::filesystem::exists(src));     // source relocated
+    ASSERT_TRUE(std::filesystem::exists(dest));
+    EXPECT_EQ(readFileContent(dest.string()), std::string("hello\0world", 11));
+}
+
+TEST_F(VerifiedMoveTest, CopyVerifiedPreservesContentAcrossBufferBoundary) {
+    // > 1 MiB so the single-pass streaming loop runs over several buffer reads.
+    std::string payload;
+    payload.reserve(2'500'000);
+    for (size_t i = 0; i < 2'500'000; ++i) {
+        payload.push_back(static_cast<char>((i * 31 + 7) & 0xFF));
+    }
+
+    std::filesystem::path src = dir_ / "big_src.bin";
+    std::filesystem::path dest = dir_ / "big_dest.bin";
+    {
+        std::ofstream ofs(src, std::ios::binary);
+        ofs.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    }
+
+    VerifiedMoveResult r = copyFileVerified(src, dest);
+    EXPECT_TRUE(r.ok) << r.error;
+    EXPECT_FALSE(r.wasRename);                       // copy path, not rename
+    EXPECT_TRUE(std::filesystem::exists(src));       // copy leaves the source in place
+    ASSERT_TRUE(std::filesystem::exists(dest));
+    EXPECT_EQ(readFileContent(dest.string()), payload); // byte-for-byte identical
+}
+
 #ifndef ALL_UNIT_TESTS
 int main(int argc, char **argv)
 {

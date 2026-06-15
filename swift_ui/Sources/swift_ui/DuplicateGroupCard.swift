@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DuplicateGroupCard: View {
     let group: Vurio_Dedup_DuplicateGroup
@@ -14,6 +15,9 @@ struct DuplicateGroupCard: View {
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     @State private var isRepEjectHovered = false
     @State private var isCardHovered = false
+    // Path of the most recently hovered thumbnail in this group. Persists after
+    // the pointer leaves until another thumbnail is hovered (advanced overlay).
+    @State private var lastHoveredPath: String?
     
     var representative: Vurio_Dedup_DuplicateFile? {
         group.files.first(where: { $0.isRepresentative }) ?? group.files.first
@@ -31,27 +35,7 @@ struct DuplicateGroupCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 20) {
                 if let rep = representative {
-                    DuplicateMemberView(file: rep, isRep: true, overlayText: "ID: \(group.groupID)", isEjecting: isEjecting, onRestore: {
-                        let allPaths = group.files.map { $0.filePath }
-                        onRestoreSet(allPaths)
-                    }, onEject: {
-                        let allPaths = group.files.map { $0.filePath }
-                        onEjectSet(allPaths)
-                    }, onEjectHoverChanged: { hovering in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isRepEjectHovered = hovering
-                        }
-                    }, onThumbnailTapped: {
-                        if !isEjecting {
-                            if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
-                                onThumbnailTapped(idx)
-                            }
-                        }
-                    }, onLocate: {
-                        onLocateSet(rep.filePath)
-                    })
-                        .padding(.top, 25)
-                        .padding(.bottom, 25)
+                    representativeMemberView(rep)
                 }
                 
                 if !candidates.isEmpty {
@@ -67,20 +51,7 @@ struct DuplicateGroupCard: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 12) {
                                 ForEach(Array(candidates.enumerated()), id: \.offset) { index, file in
-                                    DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
-                                        onRestoreSet([file.filePath])
-                                    }, onEject: {
-                                        onEjectSet([file.filePath])
-                                    }, onThumbnailTapped: {
-                                        if !isEjecting {
-                                            if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
-                                                onThumbnailTapped(idx)
-                                            }
-                                        }
-                                    }, onLocate: {
-                                        onLocateSet(file.filePath)
-                                    }, isFocusedCandidate: isSelected && selectedCandidateIndex == index)
-                                    .id(index)
+                                    candidateMemberView(file: file, index: index)
                                 }
                             }
                             .padding(.top, 30)
@@ -162,10 +133,99 @@ struct DuplicateGroupCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isRepEjectHovered ? Theme.error : (isSelected ? Theme.textAccent : Theme.border), lineWidth: (isRepEjectHovered || isSelected) ? 2 : 1)
         )
+        // The advanced-overlay path bar is drawn as a bottom overlay inside the
+        // card's existing padding (in the empty space below the thumbnails), so
+        // enabling the overlay never changes the row height or the spacing around
+        // the image.
+        .overlay(alignment: .bottomLeading) {
+            if advancedOverlayEnabled {
+                advancedPathBar
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+            }
+        }
         .onHover { hovering in
             isCardHovered = hovering
+            // Clear the displayed path once the pointer leaves the whole group.
+            if !hovering { lastHoveredPath = nil }
         }
         .padding(.bottom, 4)
+    }
+
+    // Path of the last-hovered thumbnail with a copy button. Rendered as a fixed
+    // 16pt-high bar; placed by the caller as a bottom overlay so it occupies the
+    // empty space below the thumbnails without adding layout height.
+    @ViewBuilder
+    private var advancedPathBar: some View {
+        HStack(spacing: 6) {
+            if let path = lastHoveredPath {
+                Text(path)
+                    .font(.custom("Menlo", size: 9))
+                    .foregroundColor(Theme.success)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(path)
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                        .foregroundColor(Theme.success)
+                }
+                .buttonStyle(.plain)
+                .help("Copy path")
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .leading)
+    }
+
+    // The representative thumbnail. Extracted from `body` to keep that expression
+    // small enough for the Swift type-checker.
+    @ViewBuilder
+    private func representativeMemberView(_ rep: Vurio_Dedup_DuplicateFile) -> some View {
+        DuplicateMemberView(file: rep, isRep: true, overlayText: "ID: \(group.groupID)", isEjecting: isEjecting, onRestore: {
+            onRestoreSet(group.files.map { $0.filePath })
+        }, onEject: {
+            onEjectSet(group.files.map { $0.filePath })
+        }, onEjectHoverChanged: { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isRepEjectHovered = hovering
+            }
+        }, onThumbnailTapped: {
+            if !isEjecting {
+                if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
+                    onThumbnailTapped(idx)
+                }
+            }
+        }, onLocate: {
+            onLocateSet(rep.filePath)
+        }, onThumbnailHoverChanged: { hovering in
+            if hovering { lastHoveredPath = rep.filePath }
+        })
+        .padding(.top, 25)
+        .padding(.bottom, 25)
+    }
+
+    // A single candidate thumbnail. Extracted from `body` for the same reason.
+    @ViewBuilder
+    private func candidateMemberView(file: Vurio_Dedup_DuplicateFile, index: Int) -> some View {
+        DuplicateMemberView(file: file, isRep: false, isEjecting: isEjecting, onRestore: {
+            onRestoreSet([file.filePath])
+        }, onEject: {
+            onEjectSet([file.filePath])
+        }, onThumbnailTapped: {
+            if !isEjecting {
+                if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                    onThumbnailTapped(idx)
+                }
+            }
+        }, onLocate: {
+            onLocateSet(file.filePath)
+        }, onThumbnailHoverChanged: { hovering in
+            if hovering { lastHoveredPath = file.filePath }
+        }, isFocusedCandidate: isSelected && selectedCandidateIndex == index)
+        .id(index)
     }
 }
 
@@ -179,6 +239,7 @@ struct DuplicateMemberView: View {
     var onEjectHoverChanged: ((Bool) -> Void)? = nil
     var onThumbnailTapped: (() -> Void)? = nil
     var onLocate: (() -> Void)? = nil
+    var onThumbnailHoverChanged: ((Bool) -> Void)? = nil
     var isFocusedCandidate: Bool = false
 
     @State private var isHovered = false
@@ -323,6 +384,7 @@ struct DuplicateMemberView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
+            onThumbnailHoverChanged?(hovering)
         }
         .zIndex(isHovered ? 1 : 0)
     }

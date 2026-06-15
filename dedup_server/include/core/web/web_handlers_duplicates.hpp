@@ -4,6 +4,8 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <memory>
+#include <string>
+#include <filesystem>
 #include "config/unified_observable_config.hpp"
 
 namespace MediaDedup
@@ -20,6 +22,31 @@ namespace MediaDedupServer
 {
     namespace Core
     {
+        // ---------------------------------------------------------------------
+        // File-move utilities used by eject/restore. Exposed here so they can be
+        // unit tested directly (the cross-device copy+verify fallback is otherwise
+        // hard to reach without a second mounted volume).
+        // ---------------------------------------------------------------------
+        struct VerifiedMoveResult {
+            bool ok = false;
+            bool wasRename = false; // true: atomic rename (source already relocated)
+            std::string error;
+        };
+
+        // Copy src -> dest reading the source exactly once (single-pass hashing),
+        // then verify the written destination matches. The source is left in place;
+        // callers delete it only after committing dependent state. On any error or
+        // hash mismatch the partial destination is removed. Always reports
+        // wasRename == false.
+        VerifiedMoveResult copyFileVerified(const std::filesystem::path& src,
+                                            const std::filesystem::path& dest);
+
+        // Move src -> dest. Fast path: atomic same-filesystem rename - no bytes are
+        // copied, so there is nothing to corrupt and no hashing is needed. Genuine
+        // cross-device moves (EXDEV) fall back to copyFileVerified.
+        VerifiedMoveResult moveFileVerified(const std::filesystem::path& src,
+                                            const std::filesystem::path& dest);
+
         /**
          * @brief Handler for GET /api/v1/duplicates/groups
          *

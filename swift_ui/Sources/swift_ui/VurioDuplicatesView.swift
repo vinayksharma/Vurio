@@ -12,10 +12,16 @@ struct VurioDuplicatesView: View {
     @State private var selectedFileIndex: Int = 0
     @State private var showingPopup = false
     @State private var showingBulkEjectConfirmation = false
+    @State private var isEjectButtonHovered = false
+    @State private var isRestoreButtonHovered = false
     
     @EnvironmentObject var appState: AppState
 
-    
+    // Fixed row height regardless of the advanced overlay. The overlay's path bar is
+    // drawn inside this height (as a bottom overlay on the card), so turning the
+    // advanced overlay on does not grow the row or change the spacing around images.
+    private let rowHeight: CGFloat = 158
+
     let pageSize: Int32 = 30
     
     let columns = [
@@ -54,6 +60,9 @@ struct VurioDuplicatesView: View {
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 42)
+                    // Freeze the eligibility slider while a bulk eject/restore runs so
+                    // the displayed eligible set can't shift under the in-flight op.
+                    .disabled(viewModel.isProcessing)
                     .padding(.horizontal, 10)
                     
                     HStack(spacing: 4) {
@@ -65,69 +74,38 @@ struct VurioDuplicatesView: View {
                     .foregroundColor(Theme.textSecondary)
                     .padding(.trailing, 16)
                     
+                    // While ejecting, the button doubles as Cancel (hover shows
+                    // "Cancel"); clicking it cancels the eject and immediately
+                    // restores the files this run ejected. Enabled during its own
+                    // eject so the cancel is reachable; disabled while restoring.
                     Button(action: {
-                        showingBulkEjectConfirmation = true
-                    }) {
-                        HStack {
-                            if viewModel.isEjecting {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                CustomEjectShape()
-                                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                                    .frame(width: 14, height: 14)
-                            }
-                            if viewModel.isEjecting && viewModel.totalEjectingCount > 0 {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Ejecting")
-                                        .font(.system(size: 13))
-                                    Text("\(viewModel.ejectingRemainingCount) remaining")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(Theme.textSecondary)
-                                }
-                            } else {
-                                Text("Eject")
-                            }
+                        if viewModel.isEjecting {
+                            viewModel.requestCancel()
+                        } else {
+                            showingBulkEjectConfirmation = true
                         }
-                        .frame(width: (viewModel.isEjecting && viewModel.totalEjectingCount > 0) ? 120 : 95)
+                    }) {
+                        ejectButtonLabel
                     }
                     .vurioButtonStyle(tint: Theme.error)
-                    .disabled(viewModel.isProcessing || !viewModel.canEject)
-                    
+                    .onHover { isEjectButtonHovered = $0 }
+                    .disabled(viewModel.isRestoring || (!viewModel.isEjecting && !viewModel.canEject))
+
+                    // While restoring, the button doubles as Cancel (hover shows
+                    // "Cancel"); clicking stops the restore and leaves the remaining
+                    // files ejected (so Restore stays enabled while any remain).
                     Button(action: {
-                        Task { await viewModel.handleRestore() }
-                    }) {
-                        HStack {
-                            if viewModel.isRestoring {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                CustomRestoreShape()
-                                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                                    .frame(width: 14, height: 14)
-                            }
-                            if viewModel.isRestoring && viewModel.totalRestoringCount > 0 {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Restoring")
-                                        .font(.system(size: 13))
-                                    Text("\(viewModel.restoringRemainingCount) remaining")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(Theme.textSecondary)
-                                }
-                            } else if viewModel.isRestoring {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Restoring")
-                                        .font(.system(size: 13))
-                                    Text("Please wait")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(Theme.textSecondary)
-                                }
-                            } else {
-                                Text("Restore")
-                            }
+                        if viewModel.isRestoring {
+                            viewModel.requestCancel()
+                        } else {
+                            Task { await viewModel.handleRestore() }
                         }
-                        .frame(width: (viewModel.isRestoring && viewModel.totalRestoringCount > 0) ? 120 : (viewModel.isRestoring ? 120 : 95))
+                    }) {
+                        restoreButtonLabel
                     }
                     .vurioButtonStyle(tint: Theme.success)
-                    .disabled(viewModel.isProcessing || !viewModel.canRestore)
+                    .onHover { isRestoreButtonHovered = $0 }
+                    .disabled(viewModel.isEjecting || (!viewModel.isRestoring && !viewModel.canRestore))
                     
 
                 }
@@ -143,15 +121,10 @@ struct VurioDuplicatesView: View {
             .padding(.bottom, 20)
             
             Divider().background(Theme.border)
-            
+
             // List
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .foregroundColor(Theme.error)
-                    .padding(.horizontal, 30)
-                    .padding(.top, 20)
-            }
-            
+            // (Status/error messages now slide in on the bottom status bar via
+            // MessageCenter instead of rendering here.)
             if !appState.isOnline {
                 VStack {
                     Spacer()
@@ -174,14 +147,14 @@ struct VurioDuplicatesView: View {
                     customInsets.bottom += 30
                     
                     return VurioScroller(
-                        itemHeights: Array(repeating: 158.0, count: Int(viewModel.totalGroups)),
+                        itemHeights: Array(repeating: rowHeight, count: Int(viewModel.totalGroups)),
                         scrollbarInsets: customInsets,
                         selection: $selection,
                         onVisibleRowsChanged: { range in
                             viewModel.updateVisibleRows(range)
                         }
                     ) { index in
-                        renderRow(at: index, rowHeight: 158.0)
+                        renderRow(at: index, rowHeight: rowHeight)
                     }
                     .background(Color.clear)
                 }
@@ -261,31 +234,55 @@ struct VurioDuplicatesView: View {
                 }
             }
         }
-        .overlay(
-            Group {
-                if viewModel.isEjecting || viewModel.isRestoring {
-                    ZStack {
-                        Color.black.opacity(0.4)
-                            .edgesIgnoringSafeArea(.all)
-                        
-                        VStack(spacing: 16) {
-                            ProgressView()
-                                .controlSize(.regular)
-                            Text(viewModel.isEjecting ? "Ejecting..." : "Restoring...")
-                                .font(.headline)
-                                .foregroundColor(Theme.textPrimary)
-                        }
-                        .padding(30)
-                        .background(Theme.background)
-                        .cornerRadius(12)
-                        .shadow(radius: 10)
-                    }
-                }
-            }
-        )
-        .disabled(viewModel.isEjecting || viewModel.isRestoring)
+        // Bulk eject/restore runs in the background. Integrity is guaranteed
+        // server-side (each request is one atomic transaction), so there is no
+        // blocking overlay: progress is shown inline on the Eject/Restore buttons
+        // and the user can keep browsing. Conflicting actions are individually
+        // gated by `isProcessing` (both bulk buttons, the slider, and per-card
+        // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
+    // Eject button content. On hover during an eject it collapses to "Cancel";
+    // otherwise it shows the eject icon / live "Ejecting" progress. Extracted to
+    // keep the body expression within the Swift type-checker's limit.
+    @ViewBuilder
+    private var ejectButtonLabel: some View {
+        HStack {
+            if viewModel.isEjecting && isEjectButtonHovered {
+                Text("Cancel")
+            } else if viewModel.isEjecting {
+                ProgressView().controlSize(.small)
+                Text("Ejecting")
+            } else {
+                CustomEjectShape()
+                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .frame(width: 14, height: 14)
+                Text("Eject")
+            }
+        }
+        .frame(width: (viewModel.isEjecting && !isEjectButtonHovered) ? 110 : 95)
+    }
+
+    // Restore button content. Mirrors the eject button: hover during a restore
+    // collapses to "Cancel"; otherwise shows the restore icon / live progress.
+    @ViewBuilder
+    private var restoreButtonLabel: some View {
+        HStack {
+            if viewModel.isRestoring && isRestoreButtonHovered {
+                Text("Cancel")
+            } else if viewModel.isRestoring {
+                ProgressView().controlSize(.small)
+                Text("Restoring")
+            } else {
+                CustomRestoreShape()
+                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .frame(width: 14, height: 14)
+                Text("Restore")
+            }
+        }
+        .frame(width: (viewModel.isRestoring && !isRestoreButtonHovered) ? 110 : 95)
+    }
+
     @ViewBuilder
     private func renderRow(at index: Int, rowHeight: CGFloat) -> some View {
         if index < viewModel.groups.count {
