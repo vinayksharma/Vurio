@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <memory>
 #include <string>
+#include <vector>
 #include <filesystem>
 #include "config/unified_observable_config.hpp"
 
@@ -46,6 +47,22 @@ namespace MediaDedupServer
         // cross-device moves (EXDEV) fall back to copyFileVerified.
         VerifiedMoveResult moveFileVerified(const std::filesystem::path& src,
                                             const std::filesystem::path& dest);
+
+        struct BulkOpResult {
+            int successCount = 0;
+            int failureCount = 0;
+            int skippedUnavailable = 0;
+            std::string lastError;
+        };
+
+        // Bulk eject / restore, shared by BOTH the HTTP handlers and the gRPC
+        // server so the optimized move + single-transaction logic lives in exactly
+        // one place (avoids the HTTP/gRPC implementations drifting apart).
+        BulkOpResult bulkEject(MediaDedup::DatabaseManager& db,
+                               const std::vector<std::string>& filePaths);
+        BulkOpResult bulkUndoEject(MediaDedup::DatabaseManager& db,
+                                   const std::vector<std::string>& filePaths,
+                                   bool undoAll);
 
         /**
          * @brief Handler for GET /api/v1/duplicates/groups

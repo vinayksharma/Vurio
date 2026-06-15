@@ -37,7 +37,7 @@ struct MatchScoreSliderSection: View {
                 duplicateValue: $duplicateDistance,
                 similarValue: $similarDistance,
                 range: 0.0...maxDistance,
-                formatValue: { val in String(format: "%.3f", 1.0 - val) },
+                formatValue: { val in (1.0 - val).formatted(.number.precision(.fractionLength(3))) },
                 duplicateHelpText: viewModel.configDescriptions["duplicates.threshold.duplicate"] ?? "Adjust exact duplicates threshold",
                 similarHelpText: viewModel.configDescriptions["duplicates.threshold.similarity"] ?? "Adjust similar images threshold"
             )

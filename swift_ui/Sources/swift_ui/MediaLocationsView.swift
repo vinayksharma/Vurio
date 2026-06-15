@@ -15,7 +15,6 @@ struct MediaLocationsView: View {
     @State private var selectedRegisteredLocation: String? = nil
     @State private var isDeregistering: Bool = false
     @State private var showDeregisterAlert: Bool = false
-    @State private var ejectionPaths: [String: [String]] = [:]
     @State private var isCollapsed = true
 
     var body: some View {
@@ -130,7 +129,7 @@ struct MediaLocationsView: View {
                                     .frame(width: 140)
                                 }
                                 .vurioButtonStyle(tint: Theme.textPrimary)
-                                .disabled(ejectionPaths[location] == nil || ejectionPaths[location]!.isEmpty)
+                                .disabled(!appState.ejectedRootsWithFiles.contains(location))
                                 .help("Open Ejected Folder in OS")
                             }
                         }
@@ -181,7 +180,6 @@ struct MediaLocationsView: View {
         .onAppear {
             Task {
                 await appState.fetchStatus()
-                await fetchEjectionPaths()
             }
         }
         .overlay(
@@ -313,7 +311,7 @@ struct MediaLocationsView: View {
                         if let client = VurioGrpcClient.shared.media {
                             let response = try await client.changePath(request)
                             if response.success {
-                                statusMessage = "Path remapped successfully. (\(response.filesUpdated) files updated)"
+                                statusMessage = "Path remapped successfully. (\(response.filesUpdated.formatted(.number)) files updated)"
                                 await appState.fetchStatus()
                             } else {
                                 statusMessage = "Failed: \(response.errorMessage)"
@@ -330,25 +328,13 @@ struct MediaLocationsView: View {
         }
     }
     
-    private func fetchEjectionPaths() async {
-        var paths: [String: [String]] = [:]
-        for location in appState.registeredDirs {
-            let matches = appState.ejectedDirs.filter { $0.hasPrefix(location) }
-            if !matches.isEmpty {
-                paths[location] = matches
-            }
-        }
-        await MainActor.run {
-            self.ejectionPaths = paths
-        }
-    }
-    
     private func openEjectedFolder(for location: String) {
-        guard let paths = ejectionPaths[location], !paths.isEmpty else {
+        let paths = appState.ejectedDirs.filter { $0.hasPrefix(location) }
+        guard !paths.isEmpty else {
             statusMessage = "No ejected folder found for this location."
             return
         }
-        
+
         var anyOpened = false
         for path in paths {
             let url = URL(fileURLWithPath: path)
