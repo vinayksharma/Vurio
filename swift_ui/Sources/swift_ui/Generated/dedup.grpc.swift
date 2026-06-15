@@ -12,6 +12,205 @@ import SwiftProtobuf
 
 
 /// ---------------------------------------------------------
+/// Security / pairing handshake
+///
+/// Every gRPC call (except Handshake itself) must carry the per-instance session
+/// token in the "x-vurio-token" metadata header. A client obtains that token by
+/// presenting the server's startup cookie (read from a 0600 file only the same
+/// OS user can open) to Handshake. This binds a client to one server instance.
+/// ---------------------------------------------------------
+///
+/// Usage: instantiate `Vurio_Dedup_SecurityServiceClient`, then call methods of this protocol to make API calls.
+internal protocol Vurio_Dedup_SecurityServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? { get }
+
+  func handshake(
+    _ request: Vurio_Dedup_HandshakeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>
+}
+
+extension Vurio_Dedup_SecurityServiceClientProtocol {
+  internal var serviceName: String {
+    return "vurio.dedup.SecurityService"
+  }
+
+  /// Unary call to Handshake
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to Handshake.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func handshake(
+    _ request: Vurio_Dedup_HandshakeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.handshake.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Vurio_Dedup_SecurityServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_SecurityServiceNIOClient")
+internal final class Vurio_Dedup_SecurityServiceClient: Vurio_Dedup_SecurityServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.SecurityService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Vurio_Dedup_SecurityServiceNIOClient: Vurio_Dedup_SecurityServiceClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.SecurityService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// ---------------------------------------------------------
+/// Security / pairing handshake
+///
+/// Every gRPC call (except Handshake itself) must carry the per-instance session
+/// token in the "x-vurio-token" metadata header. A client obtains that token by
+/// presenting the server's startup cookie (read from a 0600 file only the same
+/// OS user can open) to Handshake. This binds a client to one server instance.
+/// ---------------------------------------------------------
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_SecurityServiceAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? { get }
+
+  func makeHandshakeCall(
+    _ request: Vurio_Dedup_HandshakeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_SecurityServiceAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_SecurityServiceClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeHandshakeCall(
+    _ request: Vurio_Dedup_HandshakeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.handshake.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_SecurityServiceAsyncClientProtocol {
+  internal func handshake(
+    _ request: Vurio_Dedup_HandshakeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_HandshakeResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.handshake.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Vurio_Dedup_SecurityServiceAsyncClient: Vurio_Dedup_SecurityServiceAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'handshake'.
+  func makeHandshakeInterceptors() -> [ClientInterceptor<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>]
+}
+
+internal enum Vurio_Dedup_SecurityServiceClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "SecurityService",
+    fullName: "vurio.dedup.SecurityService",
+    methods: [
+      Vurio_Dedup_SecurityServiceClientMetadata.Methods.handshake,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let handshake = GRPCMethodDescriptor(
+      name: "Handshake",
+      path: "/vurio.dedup.SecurityService/Handshake",
+      type: GRPCCallType.unary
+    )
+  }
+}
+
+/// ---------------------------------------------------------
 /// Config & Settings Services
 /// ---------------------------------------------------------
 ///
@@ -2574,6 +2773,128 @@ internal enum Vurio_Dedup_MediaServiceClientMetadata {
   }
 }
 
+/// ---------------------------------------------------------
+/// Security / pairing handshake
+///
+/// Every gRPC call (except Handshake itself) must carry the per-instance session
+/// token in the "x-vurio-token" metadata header. A client obtains that token by
+/// presenting the server's startup cookie (read from a 0600 file only the same
+/// OS user can open) to Handshake. This binds a client to one server instance.
+/// ---------------------------------------------------------
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Vurio_Dedup_SecurityServiceProvider: CallHandlerProvider {
+  var interceptors: Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol? { get }
+
+  func handshake(request: Vurio_Dedup_HandshakeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_HandshakeResponse>
+}
+
+extension Vurio_Dedup_SecurityServiceProvider {
+  internal var serviceName: Substring {
+    return Vurio_Dedup_SecurityServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "Handshake":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_HandshakeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_HandshakeResponse>(),
+        interceptors: self.interceptors?.makeHandshakeInterceptors() ?? [],
+        userFunction: self.handshake(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// ---------------------------------------------------------
+/// Security / pairing handshake
+///
+/// Every gRPC call (except Handshake itself) must carry the per-instance session
+/// token in the "x-vurio-token" metadata header. A client obtains that token by
+/// presenting the server's startup cookie (read from a 0600 file only the same
+/// OS user can open) to Handshake. This binds a client to one server instance.
+/// ---------------------------------------------------------
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_SecurityServiceAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol? { get }
+
+  func handshake(
+    request: Vurio_Dedup_HandshakeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_HandshakeResponse
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_SecurityServiceAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_SecurityServiceServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Vurio_Dedup_SecurityServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "Handshake":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_HandshakeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_HandshakeResponse>(),
+        interceptors: self.interceptors?.makeHandshakeInterceptors() ?? [],
+        wrapping: { try await self.handshake(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'handshake'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeHandshakeInterceptors() -> [ServerInterceptor<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>]
+}
+
+internal enum Vurio_Dedup_SecurityServiceServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "SecurityService",
+    fullName: "vurio.dedup.SecurityService",
+    methods: [
+      Vurio_Dedup_SecurityServiceServerMetadata.Methods.handshake,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let handshake = GRPCMethodDescriptor(
+      name: "Handshake",
+      path: "/vurio.dedup.SecurityService/Handshake",
+      type: GRPCCallType.unary
+    )
+  }
+}
 /// ---------------------------------------------------------
 /// Config & Settings Services
 /// ---------------------------------------------------------
