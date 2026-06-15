@@ -4,7 +4,12 @@ import AppKit
 struct MediaLocationsView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedDirectory: String = ""
-    @State private var statusMessage: String = ""
+    // Routes status text to the app-wide MessageCenter (status-bar toast).
+    // Write-only bridge: existing `statusMessage = ...` assignments post a message.
+    private var statusMessage: String {
+        get { "" }
+        nonmutating set { if !newValue.isEmpty { MessageCenter.shared.post(newValue) } }
+    }
     @State private var isRemapping: Bool = false
     @State private var remappingPath: String? = nil
     @State private var selectedRegisteredLocation: String? = nil
@@ -73,12 +78,8 @@ struct MediaLocationsView: View {
                 .help("Register the selected folder for deduplication scanning")
             }
             
-            if !statusMessage.isEmpty {
-                Text(statusMessage)
-                    .foregroundColor(Theme.textAccent)
-                    .font(.caption)
-            }
-            
+            // (Status messages now slide in on the bottom status bar via MessageCenter.)
+
             Spacer().frame(height: 10)
             
             Text("Registered Locations")

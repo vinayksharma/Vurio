@@ -16,6 +16,7 @@ struct VurioApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(MessageCenter.shared)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
@@ -490,15 +491,32 @@ struct CalloutOverlayView: View {
 
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var messageCenter: MessageCenter
     @State private var hoveredSegment: HoverSegment = .none
     @State private var hoverPosition: CGPoint = .zero
     @State private var isBreathing = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             Divider().background(Theme.border)
-            
+
             HStack(spacing: 12) {
+                // Transient status message: slides in from the left and compresses
+                // the progress bar into the remaining space. Dismisses on click
+                // (auto-dismiss after a few seconds is handled by MessageCenter).
+                if let message = messageCenter.message {
+                    Text(message)
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(Theme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                        .frame(maxWidth: 340, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { messageCenter.dismiss() }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+
                 // Segmented Progress Bar
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
@@ -617,6 +635,7 @@ struct StatusBarView: View {
                     }
                 }
             }
+            .animation(.easeInOut(duration: 0.35), value: messageCenter.message)
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
             .overlay {

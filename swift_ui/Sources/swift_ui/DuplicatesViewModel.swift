@@ -17,7 +17,13 @@ class DuplicatesViewModel: ObservableObject {
     @Published var groups: [GroupSlot] = []
     @Published var loadingTasks: [Int32: Task<Void, Never>] = [:]
     @Published var isLoading = false
-    @Published var errorMessage: String?
+    // Routes status/error text to the app-wide MessageCenter (status-bar toast).
+    // Write-only bridge: assigning a non-nil value posts a message; reads return
+    // nil. New code should call `MessageCenter.shared.post(...)` directly.
+    var errorMessage: String? {
+        get { nil }
+        set { if let text = newValue { MessageCenter.shared.post(text) } }
+    }
     @Published var totalGroups: Int32 = 0
     
     @Published var totalEjectingCount: Int = 0
@@ -34,7 +40,21 @@ class DuplicatesViewModel: ObservableObject {
     @Published var isRestoring = false
     
     var isProcessing: Bool { isEjecting || isRestoring }
-    
+
+    // Cooperative cancel flag for the in-flight bulk op. Checked between chunks, so
+    // cancellation takes effect within one batch. Reset at the start of each op.
+    private var cancelRequested = false
+    // Files ejected so far in the current eject run, so a cancel can put back
+    // exactly what this run moved (and nothing from earlier operations).
+    private var ejectedThisRun: [String] = []
+
+    /// Request cancellation of the in-flight bulk eject or restore. For eject this
+    /// also triggers an immediate restore of the files ejected so far (handled in
+    /// `handleBulkEject`); for restore it simply stops, leaving the rest ejected.
+    func requestCancel() {
+        cancelRequested = true
+    }
+
     private var prefetchTasks: [Int: Task<Void, Never>] = [:]
     
     let pageSize: Int32 = 30
@@ -421,25 +441,50 @@ class DuplicatesViewModel: ObservableObject {
         return toEject
     }
 
+    /// Optimistically reflect an eject/restore on the currently-loaded rows so
+    /// thumbnails flip immediately as each chunk completes, without a blocking
+    /// reload. Authoritative server state (including any path changes) is
+    /// reconciled via `reloadLoadedPages()` when the bulk op finishes.
+    private func applyEjectionState(_ paths: [String], isEjected: Bool) {
+        let pathSet = Set(paths)
+        for gi in groups.indices {
+            guard var group = groups[gi].group else { continue }
+            var changed = false
+            for fi in group.files.indices where pathSet.contains(group.files[fi].filePath) {
+                group.files[fi].isEjected = isEjected
+                changed = true
+            }
+            if changed {
+                groups[gi].group = group
+            }
+        }
+    }
+
     func handleBulkEject() async {
         guard !isProcessing else { return }
         isEjecting = true
-        defer { isEjecting = false }
-        
+        cancelRequested = false
+        ejectedThisRun = []
+
         let toEject = await fetchAllEligibleDuplicates()
-        
+
         if toEject.isEmpty {
             self.errorMessage = "No eligible duplicates found to eject."
+            isEjecting = false
             return
         }
-        
+
         self.totalEjectingCount = toEject.count
         self.ejectingRemainingCount = toEject.count
-        
-        guard let client = VurioGrpcClient.shared.duplicates else { return }
-        
+
+        guard let client = VurioGrpcClient.shared.duplicates else {
+            isEjecting = false
+            return
+        }
+
         let chunkSize = 50
         for i in stride(from: 0, to: toEject.count, by: chunkSize) {
+            if cancelRequested { break }
             let chunk = Array(toEject[i..<min(i + chunkSize, toEject.count)])
             let req = Vurio_Dedup_EjectDuplicatesRequest.with { $0.filePaths = chunk }
             do {
@@ -447,18 +492,37 @@ class DuplicatesViewModel: ObservableObject {
                 if !res.success && res.successCount == 0 {
                     self.errorMessage = "Eject failed: \(res.errorMessage)"
                 }
-                
+
                 self.ejectingRemainingCount -= chunk.count
+                self.ejectedThisRun.append(contentsOf: chunk)
+                // Flip the just-ejected rows in place for immediate, scroll-preserving feedback.
+                applyEjectionState(chunk, isEjected: true)
             } catch {
                 self.errorMessage = "Eject error: \(error.localizedDescription)"
             }
         }
-        
+
+        let wasCancelled = cancelRequested
+        let ejected = ejectedThisRun
         self.totalEjectingCount = 0
         self.ejectingRemainingCount = 0
-        
-        await refresh()
+
+        // Reconcile authoritative state without blanking the list to placeholders.
+        await reloadLoadedPages()
         await appState?.fetchStatus()
+
+        if wasCancelled && !ejected.isEmpty {
+            // Cancelling an eject immediately puts back exactly what this run moved.
+            // Transition straight from ejecting into restoring without dropping the
+            // processing state (so the UI never flashes back to idle).
+            cancelRequested = false
+            isEjecting = false
+            isRestoring = true
+            await performRestore(of: ejected)
+            isRestoring = false
+        } else {
+            isEjecting = false
+        }
     }
     
     private func fetchAllEjectedDuplicates() async -> [String] {
@@ -497,24 +561,38 @@ class DuplicatesViewModel: ObservableObject {
     func handleRestore() async {
         guard !isProcessing else { return }
         isRestoring = true
+        cancelRequested = false
         defer { isRestoring = false }
-        
+
         let toRestore = await fetchAllEjectedDuplicates()
-        
+
         if toRestore.isEmpty {
             self.errorMessage = "No ejected duplicates found to restore."
             return
         }
-        
-        self.totalRestoringCount = toRestore.count
-        self.restoringRemainingCount = toRestore.count
-        
-        guard let client = VurioGrpcClient.shared.duplicates else { return }
-        
+
+        await performRestore(of: toRestore)
+    }
+
+    /// Restore a specific set of ejected files in cancellable 50-file chunks.
+    /// Cancelling stops between chunks and leaves the not-yet-restored files
+    /// ejected, so the Restore affordance stays enabled while any remain.
+    /// Callers own the `isRestoring` flag.
+    private func performRestore(of paths: [String]) async {
+        self.totalRestoringCount = paths.count
+        self.restoringRemainingCount = paths.count
+
+        guard let client = VurioGrpcClient.shared.duplicates else {
+            self.totalRestoringCount = 0
+            self.restoringRemainingCount = 0
+            return
+        }
+
         let chunkSize = 50
         var totalSuccess = 0
-        for i in stride(from: 0, to: toRestore.count, by: chunkSize) {
-            let chunk = Array(toRestore[i..<min(i + chunkSize, toRestore.count)])
+        for i in stride(from: 0, to: paths.count, by: chunkSize) {
+            if cancelRequested { break }
+            let chunk = Array(paths[i..<min(i + chunkSize, paths.count)])
             let req = Vurio_Dedup_UndoEjectDuplicatesRequest.with { $0.filePaths = chunk }
             do {
                 let res = try await client.undoEjectDuplicates(req)
@@ -522,20 +600,23 @@ class DuplicatesViewModel: ObservableObject {
                 if !res.success && res.successCount == 0 {
                     self.errorMessage = "Restore failed: \(res.errorMessage)"
                 }
-                
+
                 self.restoringRemainingCount -= chunk.count
+                // Flip the just-restored rows in place for immediate, scroll-preserving feedback.
+                applyEjectionState(chunk, isEjected: false)
             } catch {
                 self.errorMessage = "Restore error: \(error.localizedDescription)"
             }
         }
-        
+
         self.totalRestoringCount = 0
         self.restoringRemainingCount = 0
         if totalSuccess > 0 {
             self.errorMessage = "Successfully restored \(totalSuccess) files."
         }
-        
-        await refresh()
+
+        // Reconcile authoritative state without blanking the list to placeholders.
+        await reloadLoadedPages()
         await appState?.fetchStatus()
     }
 }

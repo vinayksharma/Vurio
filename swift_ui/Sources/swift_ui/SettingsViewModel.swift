@@ -126,12 +126,12 @@ class SettingsViewModel: ObservableObject {
         do {
             let response = try await action()
             if response.success {
-                print(successMessage)
+                MessageCenter.shared.post(successMessage)
             } else {
-                print("Action failed: \(response.errorMessage)")
+                MessageCenter.shared.post("Action failed: \(response.errorMessage)")
             }
         } catch {
-            print("Action error: \(error)")
+            MessageCenter.shared.post("Action error: \(error.localizedDescription)")
         }
     }
     
@@ -178,12 +178,12 @@ class SettingsViewModel: ObservableObject {
         do {
             let response = try await VurioGrpcClient.shared.advanced!.clearAllCaches(Vurio_Dedup_Empty())
             if response.success {
-                print("Caches cleared successfully")
+                MessageCenter.shared.post("Caches cleared successfully")
             } else {
-                print("Action failed: \(response.errorMessage)")
+                MessageCenter.shared.post("Action failed: \(response.errorMessage)")
             }
         } catch {
-            print("Action error: \(error)")
+            MessageCenter.shared.post("Action error: \(error.localizedDescription)")
         }
     }
     
