@@ -3,6 +3,28 @@ syntax = "proto3";
 package vurio.dedup;
 
 // ---------------------------------------------------------
+// Security / pairing handshake
+//
+// Every gRPC call (except Handshake itself) must carry the per-instance session
+// token in the "x-vurio-token" metadata header. A client obtains that token by
+// presenting the server's startup cookie (read from a 0600 file only the same
+// OS user can open) to Handshake. This binds a client to one server instance.
+// ---------------------------------------------------------
+service SecurityService {
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+}
+
+message HandshakeRequest {
+  string cookie = 1;
+}
+
+message HandshakeResponse {
+  bool ok = 1;
+  string session_token = 2;
+  string error_message = 3;
+}
+
+// ---------------------------------------------------------
 // Config & Settings Services
 // ---------------------------------------------------------
 service ConfigService {
