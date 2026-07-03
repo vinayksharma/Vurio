@@ -15,8 +15,9 @@ struct VurioDuplicatesView: View {
     @State private var isEjectButtonHovered = false
     @State private var isRestoreButtonHovered = false
     @State private var isFiltersCollapsed = true
-    // BINNED = duplicate groups (default); ALL = every photo grouped by capture day.
-    @AppStorage("duplicatesViewMode") private var showAllMode = false
+    // Mode is driven by the selected sidebar tab: BINNED (duplicate groups) vs
+    // VU (every photo grouped by capture day). false = binned, true = ALL/day view.
+    let showAllMode: Bool
 
     @StateObject private var allViewModel = AllDaysViewModel()
 
@@ -41,42 +42,28 @@ struct VurioDuplicatesView: View {
             // Top Control Bar — collapsible "Filters" panel (collapsed by default),
             // styled after the Media Locations dropdown in Settings.
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        withAnimation {
-                            isFiltersCollapsed.toggle()
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.title3)
-                                .foregroundColor(Theme.textPrimary)
-                            Text("Filters")
-                                .font(.title3)
-                                .textCase(.uppercase)
-                                .fontWeight(.semibold)
-                                .foregroundColor(Theme.textPrimary)
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
+                Button(action: {
+                    withAnimation {
+                        isFiltersCollapsed.toggle()
                     }
-                    .buttonStyle(PlainButtonStyle())
-
-                    // BINNED / ALL mode toggle, reachable even when collapsed.
-                    modeToggle
-
-                    Button(action: {
-                        withAnimation {
-                            isFiltersCollapsed.toggle()
-                        }
-                    }) {
+                }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Filters")
+                            .font(.title3)
+                            .textCase(.uppercase)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
                         Image(systemName: isFiltersCollapsed ? "chevron.right" : "chevron.down")
                             .foregroundColor(Theme.textSecondary)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .padding()
+                    .contentShape(Rectangle())
                 }
-                .padding()
+                .buttonStyle(PlainButtonStyle())
 
                 if !isFiltersCollapsed {
                 HStack {
@@ -273,6 +260,10 @@ struct VurioDuplicatesView: View {
             if viewModel.groups.isEmpty || viewModel.groups.count != viewModel.totalGroups {
                 await viewModel.refresh()
             }
+            // Load the first binned page even in ALL mode so the global
+            // Eject/Restore buttons reflect eligibility on the VU tab too (they
+            // inspect loaded groups).
+            viewModel.triggerLoadPage(0)
             if showAllMode && allViewModel.days.isEmpty {
                 await allViewModel.refresh()
             }
@@ -356,21 +347,6 @@ struct VurioDuplicatesView: View {
         // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
-    // BINNED / ALL segmented toggle. BINNED shows duplicate groups (the classic
-    // view); ALL shows every scanned photo grouped by capture day.
-    @ViewBuilder
-    private var modeToggle: some View {
-        Picker("", selection: $showAllMode) {
-            Text("BINNED").tag(false)
-            Text("ALL").tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 160)
-        .disabled(viewModel.isProcessing)
-        .help("Binned: duplicate groups. All: every photo by capture day.")
-    }
-
     // Eject button content. On hover during an eject it collapses to "Cancel";
     // otherwise it shows the eject icon / live "Ejecting" progress. Extracted to
     // keep the body expression within the Swift type-checker's limit.
