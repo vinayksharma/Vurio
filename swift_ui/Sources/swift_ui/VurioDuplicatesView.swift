@@ -14,6 +14,7 @@ struct VurioDuplicatesView: View {
     @State private var showingBulkEjectConfirmation = false
     @State private var isEjectButtonHovered = false
     @State private var isRestoreButtonHovered = false
+    @State private var isFiltersCollapsed = true
     
     @EnvironmentObject var appState: AppState
 
@@ -31,8 +32,33 @@ struct VurioDuplicatesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // Top Control Bar
+            // Top Control Bar — collapsible "Filters" panel (collapsed by default),
+            // styled after the Media Locations dropdown in Settings.
             VStack(spacing: 0) {
+                Button(action: {
+                    withAnimation {
+                        isFiltersCollapsed.toggle()
+                    }
+                }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.textPrimary)
+                        Text("Filters")
+                            .font(.title3)
+                            .textCase(.uppercase)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        Image(systemName: isFiltersCollapsed ? "chevron.right" : "chevron.down")
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    .padding()
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                if !isFiltersCollapsed {
                 HStack {
                     HStack(spacing: 4) {
                         Image(systemName: "square.fill.on.square.fill")
@@ -109,7 +135,8 @@ struct VurioDuplicatesView: View {
                     
 
                 }
-                .padding()
+                .padding([.horizontal, .bottom])
+                }
             }
             .background(Theme.surface.opacity(0.3))
             .cornerRadius(8)
