@@ -189,7 +189,7 @@ struct ContentView: View {
     
     enum SidebarItem: Hashable {
         case vu
-        case duplicates
+        case binned
         case settings
         case scroller
     }
@@ -214,12 +214,12 @@ struct ContentView: View {
                     .padding(.leading, isCompact ? 0 : 4)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
                 }
-                NavigationLink(value: SidebarItem.duplicates) {
+                NavigationLink(value: SidebarItem.binned) {
                     HStack(spacing: 12) {
                         Image(systemName: "photo.on.rectangle.angled").font(.title2)
                             .frame(width: 24, alignment: .center)
                         if !isCompact {
-                            Text("DUPLICATES")
+                            Text("BINNED")
                                 .fontWeight(.bold)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -284,14 +284,13 @@ struct ContentView: View {
             .navigationTitle("")
             } detail: {
                 ZStack {
-                    VUView()
-                        .opacity(selection == .vu ? 1 : 0)
-                        .allowsHitTesting(selection == .vu)
-                    
-                    VurioDuplicatesView()
-                        .opacity(selection == .duplicates ? 1 : 0)
-                        .allowsHitTesting(selection == .duplicates)
-                    
+                    // One panel drives both tabs: VU shows the day-based ALL view,
+                    // BINNED shows the duplicate-groups view. The mode follows the
+                    // selected tab (VurioDuplicatesView reacts to showAllMode).
+                    VurioDuplicatesView(showAllMode: selection == .vu)
+                        .opacity((selection == .vu || selection == .binned) ? 1 : 0)
+                        .allowsHitTesting(selection == .vu || selection == .binned)
+
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)
                         .allowsHitTesting(selection == .settings)
