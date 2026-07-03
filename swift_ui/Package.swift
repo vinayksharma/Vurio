@@ -19,7 +19,10 @@ let package = Package(
                 .product(name: "GRPC", package: "grpc-swift"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf")
             ],
-            path: "Sources/swift_ui"
+            path: "Sources/swift_ui",
+            resources: [
+                .copy("Fonts")
+            ]
         ),
         .testTarget(
             name: "swift_uiTests",

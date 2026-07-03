@@ -128,6 +128,10 @@ message GetStatusResponse {
 // ---------------------------------------------------------
 service DuplicatesService {
   rpc GetDuplicateGroups(GetGroupsRequest) returns (GetGroupsResponse);
+  // Day-based "ALL" view: every scanned file grouped by capture day
+  // (EXIF datetime, falling back to file mtime, then scan time),
+  // paginated over days (newest day first).
+  rpc GetDayGroups(GetDayGroupsRequest) returns (GetDayGroupsResponse);
   rpc EjectDuplicates(EjectDuplicatesRequest) returns (EjectDuplicatesResponse);
   rpc UndoEjectDuplicates(UndoEjectDuplicatesRequest) returns (UndoEjectDuplicatesResponse);
   rpc SubscribeToDuplicateUpdates(Empty) returns (stream DuplicateGroupUpdate);
@@ -158,6 +162,34 @@ message DuplicateGroup {
 message GetGroupsResponse {
   repeated DuplicateGroup groups = 1;
   int32 total_groups = 2;
+}
+
+message GetDayGroupsRequest {
+  int32 limit = 1;  // days per page
+  int32 offset = 2; // day offset (0 = newest day)
+}
+
+message DayFile {
+  string id = 1;
+  string file_path = 2;
+  string taken_time = 3; // normalized "YYYY-MM-DD HH:MM:SS"
+  int64 size_bytes = 4;
+  string cached_thumbnail_path = 5;
+  bool is_ejected = 6;
+  bool is_available = 7; // false when the volume this file lives on is disconnected
+  string group_id = 8;   // duplicate group id; empty when the file is unique
+  bool is_representative = 9;
+  double similarity_score = 10;
+}
+
+message DayGroup {
+  string day = 1;               // "YYYY-MM-DD"
+  repeated DayFile files = 2;   // ascending taken_time
+}
+
+message GetDayGroupsResponse {
+  repeated DayGroup days = 1;
+  int32 total_days = 2;
 }
 
 message EjectDuplicatesRequest {

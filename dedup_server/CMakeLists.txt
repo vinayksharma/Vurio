@@ -273,6 +273,7 @@ add_executable(media_dedup_server
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp
+    src/database/day_groups_ops.cpp
     src/database/thumbnail_cache_ops.cpp
     src/database/preview_cache_ops.cpp
     src/database/ejected_files_ops.cpp

@@ -41,6 +41,7 @@ set(UNIT_TEST_SOURCES
     unit/test_database_service.cpp
     unit/test_user_settings_service.cpp
     unit/test_scanned_files_ops.cpp
+    unit/test_day_groups_ops.cpp
     unit/test_preview_cache_ops.cpp
     unit/test_web_handlers_preview.cpp
     unit/test_image_artifacts_ops.cpp
@@ -217,6 +218,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_day_groups_ops")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DayGroupsOpsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     elseif(${test_name} STREQUAL "test_preview_cache_ops")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewCacheOpsTest.*")
@@ -266,6 +274,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
@@ -453,6 +462,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
@@ -513,6 +523,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
         ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
         ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/database/session/session_lease.cpp
     ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
@@ -666,6 +677,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
+      NOT ${test_name} STREQUAL "test_day_groups_ops" AND
       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
       NOT ${test_name} STREQUAL "test_media_filtering" AND
       NOT ${test_name} STREQUAL "test_eject_collision" AND
@@ -688,6 +700,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_quality_pipeline_memory" AND
        NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
        NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
+       NOT ${test_name} STREQUAL "test_day_groups_ops" AND
        NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
        NOT ${test_name} STREQUAL "test_media_filtering" AND
        NOT ${test_name} STREQUAL "test_eject_collision" AND
