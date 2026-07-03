@@ -1,13 +1,18 @@
 import SwiftUI
 import AppKit
+import CoreText
 
 @main
 struct VurioApp: App {
     @StateObject private var appState = AppState()
-    
+
     init() {
         // Run as a regular macOS app so it has a menu and dock icon, and can be brought to foreground
         NSApplication.shared.setActivationPolicy(.regular)
+        // Bundled 7-segment font for the day-view date stamps ("DSEG7 Classic").
+        if let fontURL = Bundle.module.url(forResource: "DSEG7Classic-Regular", withExtension: "ttf", subdirectory: "Fonts") {
+            CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+        }
         // Connect to the C++ backend via UDS
         VurioGrpcClient.shared.connect()
     }

@@ -15,13 +15,19 @@ struct VurioDuplicatesView: View {
     @State private var isEjectButtonHovered = false
     @State private var isRestoreButtonHovered = false
     @State private var isFiltersCollapsed = true
-    
+    // BINNED = duplicate groups (default); ALL = every photo grouped by capture day.
+    @AppStorage("duplicatesViewMode") private var showAllMode = false
+
+    @StateObject private var allViewModel = AllDaysViewModel()
+
     @EnvironmentObject var appState: AppState
 
     // Fixed row height regardless of the advanced overlay. The overlay's path bar is
     // drawn inside this height (as a bottom overlay on the card), so turning the
     // advanced overlay on does not grow the row or change the spacing around images.
     private let rowHeight: CGFloat = 158
+    // ALL-view day rows: same image strip plus the date-stamp header line.
+    private let dayRowHeight: CGFloat = 170
 
     let pageSize: Int32 = 30
     
@@ -35,28 +41,42 @@ struct VurioDuplicatesView: View {
             // Top Control Bar — collapsible "Filters" panel (collapsed by default),
             // styled after the Media Locations dropdown in Settings.
             VStack(spacing: 0) {
-                Button(action: {
-                    withAnimation {
-                        isFiltersCollapsed.toggle()
+                HStack(spacing: 12) {
+                    Button(action: {
+                        withAnimation {
+                            isFiltersCollapsed.toggle()
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.title3)
+                                .foregroundColor(Theme.textPrimary)
+                            Text("Filters")
+                                .font(.title3)
+                                .textCase(.uppercase)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Theme.textPrimary)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
                     }
-                }) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.title3)
-                            .foregroundColor(Theme.textPrimary)
-                        Text("Filters")
-                            .font(.title3)
-                            .textCase(.uppercase)
-                            .fontWeight(.semibold)
-                            .foregroundColor(Theme.textPrimary)
-                        Spacer()
+                    .buttonStyle(PlainButtonStyle())
+
+                    // BINNED / ALL mode toggle, reachable even when collapsed.
+                    modeToggle
+
+                    Button(action: {
+                        withAnimation {
+                            isFiltersCollapsed.toggle()
+                        }
+                    }) {
                         Image(systemName: isFiltersCollapsed ? "chevron.right" : "chevron.down")
                             .foregroundColor(Theme.textSecondary)
+                            .contentShape(Rectangle())
                     }
-                    .padding()
-                    .contentShape(Rectangle())
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .buttonStyle(PlainButtonStyle())
+                .padding()
 
                 if !isFiltersCollapsed {
                 HStack {
@@ -124,7 +144,10 @@ struct VurioDuplicatesView: View {
                         if viewModel.isRestoring {
                             viewModel.requestCancel()
                         } else {
-                            Task { await viewModel.handleRestore() }
+                            Task {
+                                await viewModel.handleRestore()
+                                if showAllMode { await allViewModel.reloadLoadedPages() }
+                            }
                         }
                     }) {
                         restoreButtonLabel
@@ -160,6 +183,34 @@ struct VurioDuplicatesView: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
+            } else if showAllMode {
+                // ALL mode: one row per capture day.
+                if allViewModel.days.isEmpty {
+                    VStack {
+                        Spacer()
+                        Text("No days available.")
+                            .foregroundColor(Theme.textSecondary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    GeometryReader { scrollGeo in
+                        var customInsets = scrollGeo.safeAreaInsets
+                        customInsets.bottom += 30
+
+                        return VurioScroller(
+                            itemHeights: Array(repeating: dayRowHeight, count: Int(allViewModel.totalDays)),
+                            scrollbarInsets: customInsets,
+                            selection: $selection,
+                            onVisibleRowsChanged: { range in
+                                allViewModel.updateVisibleRows(range)
+                            }
+                        ) { index in
+                            renderDayRow(at: index, rowHeight: dayRowHeight)
+                        }
+                        .background(Color.clear)
+                    }
+                }
             } else if viewModel.groups.isEmpty && !viewModel.isLoading {
                 VStack {
                     Spacer()
@@ -172,7 +223,7 @@ struct VurioDuplicatesView: View {
                 GeometryReader { scrollGeo in
                     var customInsets = scrollGeo.safeAreaInsets
                     customInsets.bottom += 30
-                    
+
                     return VurioScroller(
                         itemHeights: Array(repeating: rowHeight, count: Int(viewModel.totalGroups)),
                         scrollbarInsets: customInsets,
@@ -198,13 +249,17 @@ struct VurioDuplicatesView: View {
                     if let fileIndex = selectedGroup?.files.firstIndex(where: { $0.filePath == filePath }) {
                         selectedGroup?.files[fileIndex].isEjected = isEjected
                     }
+                    allViewModel.applyEjectionState([filePath], isEjected: isEjected)
                 }
             }
         }
         .alert("Eject Duplicates", isPresented: $showingBulkEjectConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Eject", role: .destructive) {
-                Task { await viewModel.handleBulkEject() }
+                Task {
+                    await viewModel.handleBulkEject()
+                    if showAllMode { await allViewModel.reloadLoadedPages() }
+                }
             }
         } message: {
             Text("All images identified as duplicates will be ejected. Do you want to proceed?")
@@ -218,10 +273,29 @@ struct VurioDuplicatesView: View {
             if viewModel.groups.isEmpty || viewModel.groups.count != viewModel.totalGroups {
                 await viewModel.refresh()
             }
+            if showAllMode && allViewModel.days.isEmpty {
+                await allViewModel.refresh()
+            }
             await viewModel.listenForUpdates()
         }
+        .onChange(of: showAllMode) { _, isAll in
+            // Entering a mode reconciles its data: ALL loads (or reloads) its day
+            // pages; returning to BINNED re-fetches loaded pages so ejects done in
+            // ALL mode are reflected.
+            Task {
+                if isAll {
+                    if allViewModel.days.isEmpty {
+                        await allViewModel.refresh()
+                    } else {
+                        await allViewModel.reloadLoadedPages()
+                    }
+                } else {
+                    await viewModel.reloadLoadedPages()
+                }
+            }
+        }
         .onChange(of: viewModel.totalGroups) { old, newValue in
-            
+
         }
         .onChange(of: appState.duplicateGroupsCount) { old, newCount in
             // Only refresh if we are currently empty (e.g. going from 0 to >0)
@@ -243,12 +317,18 @@ struct VurioDuplicatesView: View {
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
             // A volume came online — re-fetch loaded pages so disconnected files
             // flip back to connected without waiting for the user to scroll.
-            Task { await viewModel.reloadLoadedPages() }
+            Task {
+                await viewModel.reloadLoadedPages()
+                await allViewModel.reloadLoadedPages()
+            }
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in
             // A volume went offline — re-fetch loaded pages so its files show the
             // disconnected (Locate) mask immediately.
-            Task { await viewModel.reloadLoadedPages() }
+            Task {
+                await viewModel.reloadLoadedPages()
+                await allViewModel.reloadLoadedPages()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MediaLocationDeregistered"))) { _ in
             Task {
@@ -258,6 +338,13 @@ struct VurioDuplicatesView: View {
                     viewModel.groups = []
                 } else {
                     await viewModel.refresh()
+                }
+                if showAllMode {
+                    await allViewModel.refresh()
+                } else {
+                    // Drop stale day data; it reloads on the next switch to ALL.
+                    allViewModel.days = []
+                    allViewModel.totalDays = 0
                 }
             }
         }
@@ -269,6 +356,21 @@ struct VurioDuplicatesView: View {
         // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
+    // BINNED / ALL segmented toggle. BINNED shows duplicate groups (the classic
+    // view); ALL shows every scanned photo grouped by capture day.
+    @ViewBuilder
+    private var modeToggle: some View {
+        Picker("", selection: $showAllMode) {
+            Text("BINNED").tag(false)
+            Text("ALL").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 160)
+        .disabled(viewModel.isProcessing)
+        .help("Binned: duplicate groups. All: every photo by capture day.")
+    }
+
     // Eject button content. On hover during an eject it collapses to "Cancel";
     // otherwise it shows the eject icon / live "Ejecting" progress. Extracted to
     // keep the body expression within the Swift type-checker's limit.
@@ -352,6 +454,63 @@ struct VurioDuplicatesView: View {
         }
     }
     
+    // One ALL-view day row: a loaded DayGroupCard or a placeholder that triggers
+    // its page load. Mirrors VurioGroupRowWrapper for the binned rows.
+    @ViewBuilder
+    private func renderDayRow(at index: Int, rowHeight: CGFloat) -> some View {
+        if index < allViewModel.days.count {
+            let slot = allViewModel.days[index]
+            Group {
+                if let dayGroup = slot.day {
+                    DayGroupCard(
+                        day: dayGroup,
+                        duplicateTightness: viewModel.duplicateTightness,
+                        isEjecting: viewModel.isProcessing,
+                        isSelected: index == selection,
+                        onThumbnailTapped: { group, fileIndex in
+                            selection = index
+                            selectedGroup = group
+                            selectedFileIndex = fileIndex
+                            showingPopup = true
+                        },
+                        onEjectSet: { paths in
+                            Task {
+                                await viewModel.ejectGroupFiles(paths, for: "")
+                                allViewModel.applyEjectionState(paths, isEjected: true)
+                            }
+                        },
+                        onRestoreSet: { paths in
+                            Task {
+                                await viewModel.restoreGroupFiles(paths, for: "")
+                                allViewModel.applyEjectionState(paths, isEjected: false)
+                            }
+                        },
+                        onLocateSet: { memberPath in
+                            locateMissingFile(memberPath: memberPath)
+                        }
+                    )
+                    .padding(.horizontal, 30)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 150)
+                        .background(Theme.surface.opacity(0.5))
+                        .cornerRadius(12)
+                        .padding(.horizontal, 30)
+                        .onAppear {
+                            let pageIndex = Int32(slot.placeholderIndex) / allViewModel.pageSize
+                            allViewModel.triggerLoadPage(pageIndex)
+                        }
+                }
+            }
+            .frame(height: rowHeight)
+            .id(index)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selection = index
+            }
+        }
+    }
+
     /// Prompt the user for the file's new on-disk location, then ask the server to
     /// remap it. The server infers the registered media-location root from the
     /// chosen file, so the user only needs to point at the moved file itself.
@@ -364,7 +523,10 @@ struct VurioDuplicatesView: View {
         panel.prompt = "Locate"
 
         if panel.runModal() == .OK, let locatedPath = panel.url?.path {
-            Task { await viewModel.locateMissingFile(memberPath: memberPath, locatedPath: locatedPath) }
+            Task {
+                await viewModel.locateMissingFile(memberPath: memberPath, locatedPath: locatedPath)
+                if showAllMode { await allViewModel.reloadLoadedPages() }
+            }
         }
     }
 

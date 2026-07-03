@@ -20,6 +20,23 @@ struct Theme {
     static let success = Color(hex: "#388E3C")
     static let warning = Color(hex: "#B04A15")
     static let error = Color(hex: "#D32F2F")
+
+    // Amber of a film-camera quartz date-back; used by DateStampLabel.
+    static let dateStampAmber = Color(hex: "#FFB000")
+}
+
+// 7-segment "date stamp" label used on day panels (ALL view). Renders with the
+// bundled DSEG7 Classic font registered at app startup.
+struct DateStampLabel: View {
+    let text: String
+    var size: CGFloat = 11
+
+    var body: some View {
+        Text(text)
+            .font(.custom("DSEG7 Classic", size: size))
+            .foregroundColor(Theme.dateStampAmber)
+            .shadow(color: Theme.dateStampAmber.opacity(0.6), radius: 3)
+    }
 }
 
 extension Color {
