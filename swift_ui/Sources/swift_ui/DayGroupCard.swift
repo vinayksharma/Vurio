@@ -205,7 +205,7 @@ struct DayGroupCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(setStroke, style: StrokeStyle(lineWidth: 1.5))
         )
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .topLeading) {
             Button(action: {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                     _ = expandedGroupIDs.remove(groupID)
@@ -222,7 +222,7 @@ struct DayGroupCard: View {
                     )
             }
             .buttonStyle(.plain)
-            .offset(x: 7, y: -7)
+            .offset(x: -7, y: -7)
             .help("Collapse this duplicate set")
         }
     }
