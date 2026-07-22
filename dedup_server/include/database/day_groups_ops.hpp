@@ -22,7 +22,15 @@ namespace MediaDedup
     struct DayGroupRecord
     {
         std::string day; // "YYYY-MM-DD"
+        std::vector<DayFileRecord> files; // ascending taken_time; may be a
+                                          // prefix when files_per_day is set
+        int total_files = 0; // total files in this day
+    };
+
+    struct DayFilesPage
+    {
         std::vector<DayFileRecord> files; // ascending taken_time
+        int total_files = 0; // total files in this day
     };
 
     struct DayGroupsPage
@@ -41,6 +49,15 @@ namespace MediaDedup
     class DayGroupsOps
     {
     public:
-        static DayGroupsPage getDayGroups(DatabaseManager &db, int offset, int limit);
+        // files_per_day caps how many files each returned day carries
+        // (0 = all files); DayGroupRecord.total_files always holds the full
+        // per-day count so callers can page the rest via getDayFiles.
+        static DayGroupsPage getDayGroups(DatabaseManager &db, int offset, int limit,
+                                          int files_per_day = 0);
+
+        // One page of a single day's files (taken_time order), for
+        // horizontal-scroll pagination within a day row.
+        static DayFilesPage getDayFiles(DatabaseManager &db, const std::string &day,
+                                        int offset, int limit);
     };
 }

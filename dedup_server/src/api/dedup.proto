@@ -132,6 +132,9 @@ service DuplicatesService {
   // (EXIF datetime, falling back to file mtime, then scan time),
   // paginated over days (newest day first).
   rpc GetDayGroups(GetDayGroupsRequest) returns (GetDayGroupsResponse);
+  // Fetch more files for a single day (horizontal-scroll pagination within a
+  // day row); offset/limit page over the day's files in taken_time order.
+  rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);
   rpc EjectDuplicates(EjectDuplicatesRequest) returns (EjectDuplicatesResponse);
   rpc UndoEjectDuplicates(UndoEjectDuplicatesRequest) returns (UndoEjectDuplicatesResponse);
   rpc SubscribeToDuplicateUpdates(Empty) returns (stream DuplicateGroupUpdate);
@@ -165,8 +168,9 @@ message GetGroupsResponse {
 }
 
 message GetDayGroupsRequest {
-  int32 limit = 1;  // days per page
-  int32 offset = 2; // day offset (0 = newest day)
+  int32 limit = 1;         // days per page
+  int32 offset = 2;        // day offset (0 = newest day)
+  int32 files_per_day = 3; // max files returned per day (0 = all files)
 }
 
 message DayFile {
@@ -184,12 +188,25 @@ message DayFile {
 
 message DayGroup {
   string day = 1;               // "YYYY-MM-DD"
-  repeated DayFile files = 2;   // ascending taken_time
+  repeated DayFile files = 2;   // ascending taken_time; may be a prefix when
+                                // GetDayGroupsRequest.files_per_day is set
+  int32 total_files = 3;        // total files in this day
 }
 
 message GetDayGroupsResponse {
   repeated DayGroup days = 1;
   int32 total_days = 2;
+}
+
+message GetDayFilesRequest {
+  string day = 1;   // "YYYY-MM-DD"
+  int32 offset = 2; // file offset within the day (taken_time order)
+  int32 limit = 3;
+}
+
+message GetDayFilesResponse {
+  repeated DayFile files = 1;
+  int32 total_files = 2; // total files in this day
 }
 
 message EjectDuplicatesRequest {

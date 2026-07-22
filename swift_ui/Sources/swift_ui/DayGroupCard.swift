@@ -12,6 +12,9 @@ struct DayGroupCard: View {
     var isSelected: Bool
     var onThumbnailTapped: (Vurio_Dedup_DuplicateGroup, Int) -> Void
     var onLocateSet: (String) -> Void
+    // Called when the trailing sentinel scrolls into view and the day has more
+    // files than are loaded (horizontal-scroll pagination).
+    var onLoadMore: (() -> Void)? = nil
 
     @State private var expandedGroupIDs: Set<String> = []
     @State private var isCardHovered = false
@@ -31,15 +34,21 @@ struct DayGroupCard: View {
     }
 
     private var items: [DayItem] {
+        // Single pass: bucket group members first, then emit each single/stack at
+        // its first member's slot. (The previous per-group `filter` was O(files²),
+        // recomputed on every body evaluation — a real cost on multi-hundred-file
+        // days, re-triggered by hover/expand state changes.)
+        var membersByGroup: [String: [Vurio_Dedup_DayFile]] = [:]
+        for file in day.files where !file.groupID.isEmpty {
+            membersByGroup[file.groupID, default: []].append(file)
+        }
         var result: [DayItem] = []
         var seenGroups: Set<String> = []
         for file in day.files {
             if file.groupID.isEmpty {
                 result.append(.single(file))
-            } else if !seenGroups.contains(file.groupID) {
-                seenGroups.insert(file.groupID)
-                let members = day.files.filter { $0.groupID == file.groupID }
-                result.append(.stack(file.groupID, members))
+            } else if seenGroups.insert(file.groupID).inserted {
+                result.append(.stack(file.groupID, membersByGroup[file.groupID] ?? [file]))
             }
         }
         return result
@@ -72,6 +81,19 @@ struct DayGroupCard: View {
                                     collapsedStackView(groupID: groupID, members: members)
                                 }
                             }
+                        }
+
+                        // Trailing sentinel: the LazyHStack materializes it only
+                        // when scrolled near the end of the loaded files, which
+                        // pages in the day's next chunk. Its id changes with the
+                        // loaded count so each appended page re-arms onAppear.
+                        if day.files.count < Int(day.totalFiles) {
+                            ProgressView()
+                                .frame(width: 70, height: 70)
+                                .background(Theme.surface.opacity(0.5))
+                                .cornerRadius(8)
+                                .id("load-more-\(day.files.count)")
+                                .onAppear { onLoadMore?() }
                         }
                     }
                     .padding(.top, 22)
@@ -138,7 +160,7 @@ struct DayGroupCard: View {
             }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, allowEject: false)
+        }, allowEject: false, fixedSize: 70)
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -153,7 +175,10 @@ struct DayGroupCard: View {
         }) {
             ZStack {
                 ForEach(Array(members.prefix(3).enumerated().reversed()), id: \.offset) { index, file in
-                    ThumbnailView(filePath: file.filePath, size: CGSize(width: 70, height: 70), cachedThumbnailPath: file.cachedThumbnailPath)
+                    // Layer priority = stack depth: the visible top (index 0) loads
+                    // first; the occluded layers behind it wait until every stack's
+                    // top has been delivered, then load one layer at a time.
+                    ThumbnailView(filePath: file.filePath, size: CGSize(width: 70, height: 70), cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: index)
                         .frame(width: 70, height: 70)
                         .cornerRadius(8)
                         .overlay(

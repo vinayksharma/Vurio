@@ -116,15 +116,17 @@ class DuplicatesViewModel: ObservableObject {
                     let rep = group.files.first(where: { $0.isRepresentative }) ?? group.files.first
                     let candidates = group.files.filter { !$0.isRepresentative }
                     
+                    // Off-screen prefetch runs below every visible layer so it never
+                    // delays thumbnails on screen.
                     if let rep = rep {
                         if ImageCache.shared.getImage(forKey: "\(rep.filePath)_80") == nil {
-                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: 80, cachedThumbnailPath: rep.cachedThumbnailPath)
+                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: 80, cachedThumbnailPath: rep.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
                         }
                     }
                     for file in candidates {
                         try? Task.checkCancellation()
                         if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
-                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath)
+                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
                         }
                     }
                 }

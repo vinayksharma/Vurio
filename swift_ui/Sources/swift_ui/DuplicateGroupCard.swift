@@ -245,6 +245,11 @@ struct DuplicateMemberView: View {
     // the ejected (red) border. Used by the VU day view, which is read-only for
     // eject — all eject management lives on the BINNED tab.
     var allowEject: Bool = true
+    // Overrides the isRep-based tile size (80/70). The VU day view pins every
+    // tile to 70 so a group representative shares one thumbnail cache entry
+    // ("path_70") between the collapsed stack, the expanded set, and prefetch —
+    // instead of a second cold fetch/decode at 80.
+    var fixedSize: CGFloat? = nil
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -259,7 +264,7 @@ struct DuplicateMemberView: View {
     }
 
     var body: some View {
-        let size: CGFloat = isRep ? 80 : 70
+        let size: CGFloat = fixedSize ?? (isRep ? 80 : 70)
         let cornerRadius: CGFloat = 8
 
         ZStack {
