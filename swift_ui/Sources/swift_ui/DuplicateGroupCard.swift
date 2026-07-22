@@ -241,6 +241,10 @@ struct DuplicateMemberView: View {
     var onLocate: (() -> Void)? = nil
     var onThumbnailHoverChanged: ((Bool) -> Void)? = nil
     var isFocusedCandidate: Bool = false
+    // When false, this tile exposes no eject/restore affordance and never shows
+    // the ejected (red) border. Used by the VU day view, which is read-only for
+    // eject — all eject management lives on the BINNED tab.
+    var allowEject: Bool = true
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -294,7 +298,7 @@ struct DuplicateMemberView: View {
                 }
             }
 
-            if file.isEjected {
+            if file.isEjected && allowEject {
                 Button(action: {
                     onRestore?()
                 }) {
@@ -327,7 +331,7 @@ struct DuplicateMemberView: View {
                         .stroke(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                 } else {
                     RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke(file.isEjected ? Theme.error : (isFocusedCandidate ? Theme.textAccent : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border))), lineWidth: isFocusedCandidate ? 3 : (isRep ? 2 : (file.isEjected ? 2 : 1)))
+                        .stroke((file.isEjected && allowEject) ? Theme.error : (isFocusedCandidate ? Theme.textAccent : (isRep ? Theme.textAccent : (isHovered ? Theme.textPrimary : Theme.border))), lineWidth: isFocusedCandidate ? 3 : (isRep ? 2 : ((file.isEjected && allowEject) ? 2 : 1)))
                 }
             }
         )
@@ -347,7 +351,7 @@ struct DuplicateMemberView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !file.isEjected && !isEjecting && !isMissing {
+            if !file.isEjected && !isEjecting && !isMissing && allowEject {
                 Button(action: {
                     onEject?()
                 }) {

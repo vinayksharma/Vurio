@@ -107,42 +107,11 @@ struct VurioDuplicatesView: View {
                     .foregroundColor(Theme.textSecondary)
                     .padding(.trailing, 16)
                     
-                    // While ejecting, the button doubles as Cancel (hover shows
-                    // "Cancel"); clicking it cancels the eject and immediately
-                    // restores the files this run ejected. Enabled during its own
-                    // eject so the cancel is reachable; disabled while restoring.
-                    Button(action: {
-                        if viewModel.isEjecting {
-                            viewModel.requestCancel()
-                        } else {
-                            showingBulkEjectConfirmation = true
-                        }
-                    }) {
-                        ejectButtonLabel
+                    // Eject/Restore controls live only on the BINNED tab. The VU
+                    // (ALL/day) view is read-only for eject.
+                    if !showAllMode {
+                        ejectRestoreControls
                     }
-                    .vurioButtonStyle(tint: Theme.error)
-                    .onHover { isEjectButtonHovered = $0 }
-                    .disabled(viewModel.isRestoring || (!viewModel.isEjecting && !viewModel.canEject))
-
-                    // While restoring, the button doubles as Cancel (hover shows
-                    // "Cancel"); clicking stops the restore and leaves the remaining
-                    // files ejected (so Restore stays enabled while any remain).
-                    Button(action: {
-                        if viewModel.isRestoring {
-                            viewModel.requestCancel()
-                        } else {
-                            Task {
-                                await viewModel.handleRestore()
-                                if showAllMode { await allViewModel.reloadLoadedPages() }
-                            }
-                        }
-                    }) {
-                        restoreButtonLabel
-                    }
-                    .vurioButtonStyle(tint: Theme.success)
-                    .onHover { isRestoreButtonHovered = $0 }
-                    .disabled(viewModel.isEjecting || (!viewModel.isRestoring && !viewModel.canRestore))
-                    
 
                 }
                 .padding([.horizontal, .bottom])
@@ -227,7 +196,9 @@ struct VurioDuplicatesView: View {
         }
         .sheet(isPresented: $showingPopup) {
             if let group = selectedGroup {
-                ImagePopupView(group: group, isPresented: $showingPopup, initialIndex: selectedFileIndex) { filePath, isEjected in
+                // VU (ALL/day) view is read-only for eject, so the popup opened from
+                // it hides its eject/restore controls. BINNED keeps them.
+                ImagePopupView(group: group, isPresented: $showingPopup, initialIndex: selectedFileIndex, allowEject: !showAllMode) { filePath, isEjected in
                     if let index = viewModel.groups.firstIndex(where: { $0.group?.groupID == group.groupID }) {
                         if let fileIndex = viewModel.groups[index].group?.files.firstIndex(where: { $0.filePath == filePath }) {
                             viewModel.groups[index].group?.files[fileIndex].isEjected = isEjected
@@ -347,6 +318,46 @@ struct VurioDuplicatesView: View {
         // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
+    // The bulk Eject/Restore buttons for the BINNED tab. Extracted so the Filters
+    // bar stays within the Swift type-checker's expression limit.
+    @ViewBuilder
+    private var ejectRestoreControls: some View {
+        // While ejecting, the button doubles as Cancel (hover shows "Cancel");
+        // clicking it cancels the eject and immediately restores the files this run
+        // ejected. Enabled during its own eject so the cancel is reachable; disabled
+        // while restoring.
+        Button(action: {
+            if viewModel.isEjecting {
+                viewModel.requestCancel()
+            } else {
+                showingBulkEjectConfirmation = true
+            }
+        }) {
+            ejectButtonLabel
+        }
+        .vurioButtonStyle(tint: Theme.error)
+        .onHover { isEjectButtonHovered = $0 }
+        .disabled(viewModel.isRestoring || (!viewModel.isEjecting && !viewModel.canEject))
+
+        // While restoring, the button doubles as Cancel (hover shows "Cancel");
+        // clicking stops the restore and leaves the remaining files ejected (so
+        // Restore stays enabled while any remain).
+        Button(action: {
+            if viewModel.isRestoring {
+                viewModel.requestCancel()
+            } else {
+                Task {
+                    await viewModel.handleRestore()
+                }
+            }
+        }) {
+            restoreButtonLabel
+        }
+        .vurioButtonStyle(tint: Theme.success)
+        .onHover { isRestoreButtonHovered = $0 }
+        .disabled(viewModel.isEjecting || (!viewModel.isRestoring && !viewModel.canRestore))
+    }
+
     // Eject button content. On hover during an eject it collapses to "Cancel";
     // otherwise it shows the eject icon / live "Ejecting" progress. Extracted to
     // keep the body expression within the Swift type-checker's limit.
@@ -440,7 +451,6 @@ struct VurioDuplicatesView: View {
                 if let dayGroup = slot.day {
                     DayGroupCard(
                         day: dayGroup,
-                        duplicateTightness: viewModel.duplicateTightness,
                         isEjecting: viewModel.isProcessing,
                         isSelected: index == selection,
                         onThumbnailTapped: { group, fileIndex in
@@ -448,18 +458,6 @@ struct VurioDuplicatesView: View {
                             selectedGroup = group
                             selectedFileIndex = fileIndex
                             showingPopup = true
-                        },
-                        onEjectSet: { paths in
-                            Task {
-                                await viewModel.ejectGroupFiles(paths, for: "")
-                                allViewModel.applyEjectionState(paths, isEjected: true)
-                            }
-                        },
-                        onRestoreSet: { paths in
-                            Task {
-                                await viewModel.restoreGroupFiles(paths, for: "")
-                                allViewModel.applyEjectionState(paths, isEjected: false)
-                            }
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

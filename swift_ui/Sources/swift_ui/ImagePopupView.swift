@@ -4,6 +4,9 @@ struct ImagePopupView: View {
     @State var group: Vurio_Dedup_DuplicateGroup
     @Binding var isPresented: Bool
     var initialIndex: Int = 0
+    // When false, the full-screen viewer exposes no eject/restore control (button
+    // or keyboard shortcut). Set by the VU day view, which is read-only for eject.
+    var allowEject: Bool = true
     var onEjectStatusChanged: ((String, Bool) -> Void)?
     
     @State private var selectedIndex: Int = 0
@@ -101,11 +104,11 @@ struct ImagePopupView: View {
                 Button(action: { rotation -= 90 }) { Image(systemName: "rotate.left") }
                 Button(action: { rotation += 90 }) { Image(systemName: "rotate.right") }
                 
-                if group.files.indices.contains(selectedIndex) {
+                if allowEject, group.files.indices.contains(selectedIndex) {
                     let currentFile = group.files[selectedIndex]
                     if !currentFile.isRepresentative {
                         Divider().frame(height: 20)
-                        
+
                         if currentFile.isEjected {
                             Button(action: {
                                 Task { await handleRestore() }
@@ -135,7 +138,7 @@ struct ImagePopupView: View {
         .background(
             // Hidden buttons for keyboard shortcuts
             Group {
-                if group.files.indices.contains(selectedIndex) {
+                if allowEject, group.files.indices.contains(selectedIndex) {
                     let currentFile = group.files[selectedIndex]
                     if !currentFile.isRepresentative {
                         Button("") {
