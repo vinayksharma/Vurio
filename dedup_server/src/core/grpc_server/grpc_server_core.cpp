@@ -402,17 +402,9 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status GetDayGroups(grpc::ServerContext* context, const vurio::dedup::GetDayGroupsRequest* request,
-                              vurio::dedup::GetDayGroupsResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
-        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
-
-        int limit = request->limit() > 0 ? request->limit() : 30;
-        int offset = request->offset() >= 0 ? request->offset() : 0;
-
-        auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit);
-        reply->set_total_days(page.total_days);
-
+    // Ejection roots ("ejectionPath:" user settings, slashes normalized) used to
+    // flag day files already moved into an ejection bin.
+    std::vector<std::string> loadEjectionPaths() {
         auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
         std::vector<std::string> ejection_paths;
         for (const auto& kv : user_settings) {
@@ -422,6 +414,56 @@ public:
                 ejection_paths.push_back(ep);
             }
         }
+        return ejection_paths;
+    }
+
+    // Map one DayFileRecord onto its proto, including the derived
+    // is_ejected/is_available flags. Shared by GetDayGroups and GetDayFiles.
+    void fillDayFileProto(vurio::dedup::DayFile* proto_file,
+                          const MediaDedup::DayFileRecord& file,
+                          const std::vector<std::string>& ejection_paths,
+                          const std::vector<std::string>& mounted_fs) {
+        proto_file->set_id(std::to_string(file.file_id));
+        proto_file->set_file_path(file.file_path);
+        proto_file->set_taken_time(file.taken_time);
+        proto_file->set_size_bytes(file.size_bytes);
+        if (!file.cached_thumbnail_path.empty()) {
+            proto_file->set_cached_thumbnail_path(file.cached_thumbnail_path);
+        }
+        if (file.group_id > 0) {
+            proto_file->set_group_id(std::to_string(file.group_id));
+            proto_file->set_is_representative(file.is_representative);
+            proto_file->set_similarity_score(file.similarity_score);
+        }
+
+        bool is_ejected = false;
+        std::string normalized_path = file.file_path;
+        std::replace(normalized_path.begin(), normalized_path.end(), '\\', '/');
+        for (const auto& ep : ejection_paths) {
+            if (normalized_path.find(ep) == 0) {
+                is_ejected = true;
+                break;
+            }
+        }
+        proto_file->set_is_ejected(is_ejected);
+
+        proto_file->set_is_available(
+            MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
+    }
+
+    grpc::Status GetDayGroups(grpc::ServerContext* context, const vurio::dedup::GetDayGroupsRequest* request,
+                              vurio::dedup::GetDayGroupsResponse* reply) override {
+        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+
+        int limit = request->limit() > 0 ? request->limit() : 30;
+        int offset = request->offset() >= 0 ? request->offset() : 0;
+        int files_per_day = request->files_per_day() > 0 ? request->files_per_day() : 0;
+
+        auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day);
+        reply->set_total_days(page.total_days);
+
+        auto ejection_paths = loadEjectionPaths();
 
         // Snapshot the mount table once so we can flag files on disconnected volumes.
         auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
@@ -429,36 +471,34 @@ public:
         for (const auto& day : page.days) {
             auto* proto_day = reply->add_days();
             proto_day->set_day(day.day);
+            proto_day->set_total_files(day.total_files);
 
             for (const auto& file : day.files) {
-                auto* proto_file = proto_day->add_files();
-                proto_file->set_id(std::to_string(file.file_id));
-                proto_file->set_file_path(file.file_path);
-                proto_file->set_taken_time(file.taken_time);
-                proto_file->set_size_bytes(file.size_bytes);
-                if (!file.cached_thumbnail_path.empty()) {
-                    proto_file->set_cached_thumbnail_path(file.cached_thumbnail_path);
-                }
-                if (file.group_id > 0) {
-                    proto_file->set_group_id(std::to_string(file.group_id));
-                    proto_file->set_is_representative(file.is_representative);
-                    proto_file->set_similarity_score(file.similarity_score);
-                }
-
-                bool is_ejected = false;
-                std::string normalized_path = file.file_path;
-                std::replace(normalized_path.begin(), normalized_path.end(), '\\', '/');
-                for (const auto& ep : ejection_paths) {
-                    if (normalized_path.find(ep) == 0) {
-                        is_ejected = true;
-                        break;
-                    }
-                }
-                proto_file->set_is_ejected(is_ejected);
-
-                proto_file->set_is_available(
-                    MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
+                fillDayFileProto(proto_day->add_files(), file, ejection_paths, mounted_fs);
             }
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetDayFiles(grpc::ServerContext* context, const vurio::dedup::GetDayFilesRequest* request,
+                             vurio::dedup::GetDayFilesResponse* reply) override {
+        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        if (request->day().empty()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "day is required");
+        }
+
+        int limit = request->limit() > 0 ? request->limit() : 60;
+        int offset = request->offset() >= 0 ? request->offset() : 0;
+
+        auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit);
+        reply->set_total_files(page.total_files);
+
+        auto ejection_paths = loadEjectionPaths();
+        auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
+
+        for (const auto& file : page.files) {
+            fillDayFileProto(reply->add_files(), file, ejection_paths, mounted_fs);
         }
         return grpc::Status::OK;
     }

@@ -919,6 +919,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>
 
+  func getDayFiles(
+    _ request: Vurio_Dedup_GetDayFilesRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>
+
   func ejectDuplicates(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions?
@@ -976,6 +981,25 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? []
+    )
+  }
+
+  /// Fetch more files for a single day (horizontal-scroll pagination within a
+  /// day row); offset/limit page over the day's files in taken_time order.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetDayFiles.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getDayFiles(
+    _ request: Vurio_Dedup_GetDayFilesRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDayFilesInterceptors() ?? []
     )
   }
 
@@ -1112,6 +1136,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>
 
+  func makeGetDayFilesCall(
+    _ request: Vurio_Dedup_GetDayFilesRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>
+
   func makeEjectDuplicatesCall(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions?
@@ -1159,6 +1188,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetDayFilesCall(
+    _ request: Vurio_Dedup_GetDayFilesRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDayFilesInterceptors() ?? []
     )
   }
 
@@ -1225,6 +1266,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
+  internal func getDayFiles(
+    _ request: Vurio_Dedup_GetDayFilesRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_GetDayFilesResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetDayFilesInterceptors() ?? []
+    )
+  }
+
   internal func ejectDuplicates(
     _ request: Vurio_Dedup_EjectDuplicatesRequest,
     callOptions: CallOptions? = nil
@@ -1287,6 +1340,9 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when invoking 'getDayGroups'.
   func makeGetDayGroupsInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'getDayFiles'.
+  func makeGetDayFilesInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
+
   /// - Returns: Interceptors to use when invoking 'ejectDuplicates'.
   func makeEjectDuplicatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_EjectDuplicatesRequest, Vurio_Dedup_EjectDuplicatesResponse>]
 
@@ -1304,6 +1360,7 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     methods: [
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayGroups,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.undoEjectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates,
@@ -1320,6 +1377,12 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     internal static let getDayGroups = GRPCMethodDescriptor(
       name: "GetDayGroups",
       path: "/vurio.dedup.DuplicatesService/GetDayGroups",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getDayFiles = GRPCMethodDescriptor(
+      name: "GetDayFiles",
+      path: "/vurio.dedup.DuplicatesService/GetDayFiles",
       type: GRPCCallType.unary
     )
 
@@ -3384,6 +3447,10 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
   /// paginated over days (newest day first).
   func getDayGroups(request: Vurio_Dedup_GetDayGroupsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetDayGroupsResponse>
 
+  /// Fetch more files for a single day (horizontal-scroll pagination within a
+  /// day row); offset/limit page over the day's files in taken_time order.
+  func getDayFiles(request: Vurio_Dedup_GetDayFilesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetDayFilesResponse>
+
   func ejectDuplicates(request: Vurio_Dedup_EjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_EjectDuplicatesResponse>
 
   func undoEjectDuplicates(request: Vurio_Dedup_UndoEjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_UndoEjectDuplicatesResponse>
@@ -3419,6 +3486,15 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_GetDayGroupsResponse>(),
         interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? [],
         userFunction: self.getDayGroups(request:context:)
+      )
+
+    case "GetDayFiles":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetDayFilesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetDayFilesResponse>(),
+        interceptors: self.interceptors?.makeGetDayFilesInterceptors() ?? [],
+        userFunction: self.getDayFiles(request:context:)
       )
 
     case "EjectDuplicates":
@@ -3477,6 +3553,13 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_GetDayGroupsResponse
 
+  /// Fetch more files for a single day (horizontal-scroll pagination within a
+  /// day row); offset/limit page over the day's files in taken_time order.
+  func getDayFiles(
+    request: Vurio_Dedup_GetDayFilesRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_GetDayFilesResponse
+
   func ejectDuplicates(
     request: Vurio_Dedup_EjectDuplicatesRequest,
     context: GRPCAsyncServerCallContext
@@ -3531,6 +3614,15 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.getDayGroups(request: $0, context: $1) }
       )
 
+    case "GetDayFiles":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetDayFilesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetDayFilesResponse>(),
+        interceptors: self.interceptors?.makeGetDayFilesInterceptors() ?? [],
+        wrapping: { try await self.getDayFiles(request: $0, context: $1) }
+      )
+
     case "EjectDuplicates":
       return GRPCAsyncServerHandler(
         context: context,
@@ -3574,6 +3666,10 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetDayGroupsInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>]
 
+  /// - Returns: Interceptors to use when handling 'getDayFiles'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetDayFilesInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
+
   /// - Returns: Interceptors to use when handling 'ejectDuplicates'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeEjectDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_EjectDuplicatesRequest, Vurio_Dedup_EjectDuplicatesResponse>]
@@ -3594,6 +3690,7 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     methods: [
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayGroups,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.subscribeToDuplicateUpdates,
@@ -3610,6 +3707,12 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     internal static let getDayGroups = GRPCMethodDescriptor(
       name: "GetDayGroups",
       path: "/vurio.dedup.DuplicatesService/GetDayGroups",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getDayFiles = GRPCMethodDescriptor(
+      name: "GetDayFiles",
+      path: "/vurio.dedup.DuplicatesService/GetDayFiles",
       type: GRPCCallType.unary
     )
 

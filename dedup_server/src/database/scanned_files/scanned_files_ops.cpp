@@ -29,6 +29,19 @@ namespace MediaDedup
             // Column likely already exists, ignore
         }
 
+        // Ensure the generated taken_day column exists (migration). VIRTUAL, so
+        // the ALTER is instant; the partial index below materializes its values
+        // and makes the day-view queries index-served.
+        try {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << std::string(SQL::kAlterScannedFilesAddTakenDay), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").information("Added taken_day generated column to scanned_files table.");
+        } catch (const std::exception &) {
+            // Column likely already exists, ignore
+        }
+
         // Create indexes for efficient lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try
@@ -44,6 +57,10 @@ namespace MediaDedup
             // Create composite index for filtered queries
             stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessed), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created composite index for location_key filtering");
+
+            // Partial index on the generated taken_day column (day-view queries)
+            stmt << std::string(SQL::kCreateScannedFilesIndexTakenDay), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created taken_day index for day-view queries");
         }
         catch (const std::exception &e)
         {

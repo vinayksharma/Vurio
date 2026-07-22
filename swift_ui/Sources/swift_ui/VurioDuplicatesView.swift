@@ -461,6 +461,9 @@ struct VurioDuplicatesView: View {
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)
+                        },
+                        onLoadMore: {
+                            Task { await allViewModel.loadMoreFiles(day: dayGroup.day) }
                         }
                     )
                     .padding(.horizontal, 30)

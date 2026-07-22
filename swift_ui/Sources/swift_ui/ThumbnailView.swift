@@ -5,7 +5,11 @@ struct ThumbnailView: View {
     let filePath: String
     let size: CGSize
     var cachedThumbnailPath: String? = nil
-    
+    // Stack layer for prioritized loading: 0 = top/visible (highest priority),
+    // deeper layers load only after all shallower ones are delivered. Defaults to
+    // 0 so non-stacked thumbnails always load at top priority.
+    var layerPriority: Int = 0
+
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
     
@@ -54,7 +58,7 @@ struct ThumbnailView: View {
             try await Task.sleep(nanoseconds: 75_000_000)
             
             logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width), cachedThumbnailPath: cachedThumbnailPath)
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width), cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
             await MainActor.run {
                 self.thumbnail = image
                 self.isLoading = false

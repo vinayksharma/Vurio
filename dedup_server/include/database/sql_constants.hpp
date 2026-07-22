@@ -428,16 +428,27 @@ namespace MediaDedup
         inline constexpr std::string_view kSelectDuplicateGroupsCountOlderThan =
             "SELECT COUNT(*) FROM duplicate_groups WHERE mode=? AND representative_created_date > ?";
 
+// Best cached thumbnail path for a source file, independent of which size bucket
+// the pipeline produced. Prefers the smallest bucket >= 128 (adequate for the
+// 70-80px display tiles), otherwise the largest smaller bucket. Populating this
+// lets the Swift client decode the local file directly and skip the gRPC
+// thumbnail round-trip whenever ANY cached thumbnail exists (not only a 256px
+// one). Uses idx_thumbnail_source_path; at most 5 size rows per path to sort.
+#define VURIO_BEST_THUMB_SUBQUERY(src_col) \
+    "(SELECT tc.cached_path FROM thumbnail_cache tc " \
+    "WHERE tc.source_path = " src_col " " \
+    "ORDER BY (tc.thumbnail_size < 128), ABS(tc.thumbnail_size - 128) LIMIT 1)"
+
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
-            "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, tc.cached_path "
+            "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, "
+            VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path "
             "FROM duplicate_members dm "
-            "LEFT JOIN thumbnail_cache tc ON dm.file_path = tc.source_path AND tc.thumbnail_size = 256 "
             "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroup =
             "SELECT dm.group_id, dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, "
-            "dm.is_representative, dm.added_at, tc.cached_path FROM duplicate_members dm "
-            "LEFT JOIN thumbnail_cache tc ON dm.file_path = tc.source_path AND tc.thumbnail_size = 256 "
+            "dm.is_representative, dm.added_at, "
+            VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path FROM duplicate_members dm "
             "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
 // Day-groups ("ALL" view) queries.
@@ -447,17 +458,38 @@ namespace MediaDedup
 // std::filesystem::file_time_type ticks — nanoseconds since the Unix epoch on
 // Apple libc++). Final fallback: the row's created_at (scan time).
 // The BETWEEN guard filters garbage EXIF like "0000:00:00 00:00:00".
-#define VURIO_TAKEN_TIME_EXPR \
-    "CASE WHEN sf.exif_datetime IS NOT NULL AND length(sf.exif_datetime) >= 10 " \
-    "          AND substr(sf.exif_datetime,1,4) BETWEEN '1900' AND '2999' " \
-    "     THEN substr(sf.exif_datetime,1,4)||'-'||substr(sf.exif_datetime,6,2)||'-'||" \
-    "          substr(sf.exif_datetime,9,2)||substr(sf.exif_datetime,11) " \
-    "     ELSE COALESCE(CASE WHEN json_valid(sf.file_metadata) " \
-    "                             AND CAST(json_extract(sf.file_metadata,'$.modifiedAt') AS INTEGER) > 0 " \
-    "                        THEN datetime(CAST(json_extract(sf.file_metadata,'$.modifiedAt') AS INTEGER)/1000000000,'unixepoch') " \
+//
+// The prefix parameter P is the table alias ("sf.") in queries, and empty for
+// the generated-column definition below (generated columns cannot use aliases).
+#define VURIO_TAKEN_TIME_EXPR_P(P) \
+    "CASE WHEN " P "exif_datetime IS NOT NULL AND length(" P "exif_datetime) >= 10 " \
+    "          AND substr(" P "exif_datetime,1,4) BETWEEN '1900' AND '2999' " \
+    "     THEN substr(" P "exif_datetime,1,4)||'-'||substr(" P "exif_datetime,6,2)||'-'||" \
+    "          substr(" P "exif_datetime,9,2)||substr(" P "exif_datetime,11) " \
+    "     ELSE COALESCE(CASE WHEN json_valid(" P "file_metadata) " \
+    "                             AND CAST(json_extract(" P "file_metadata,'$.modifiedAt') AS INTEGER) > 0 " \
+    "                        THEN datetime(CAST(json_extract(" P "file_metadata,'$.modifiedAt') AS INTEGER)/1000000000,'unixepoch') " \
     "                   END, " \
-    "                   sf.created_at) " \
+    "                   " P "created_at) " \
     "END"
+
+#define VURIO_TAKEN_TIME_EXPR VURIO_TAKEN_TIME_EXPR_P("sf.")
+
+        // Materialized capture day on scanned_files. A VIRTUAL generated column
+        // costs nothing to add (no table rewrite, ALTER-able, no backfill); the
+        // partial index below materializes its values so all three day-view
+        // queries are index-served instead of full-scanning scanned_files and
+        // re-evaluating the taken-time CASE per row on every page request.
+        inline constexpr std::string_view kAlterScannedFilesAddTakenDay =
+            "ALTER TABLE scanned_files ADD COLUMN taken_day TEXT "
+            "GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL";
+
+        // Partial index restricted to the day-view row filter so the planner can
+        // serve count/paging/per-day lookups from the index alone. The predicate
+        // must stay textually equivalent to VURIO_DAY_VIEW_FILTER.
+        inline constexpr std::string_view kCreateScannedFilesIndexTakenDay =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_taken_day "
+            "ON scanned_files(taken_day) WHERE processed >= 0 AND processed <> 3";
 
 // Rows shown in the day view: anything scanned that is not ignored (3) and
 // not errored (<0). Unprocessed/in-progress files still render (thumbnails
@@ -465,28 +497,45 @@ namespace MediaDedup
 #define VURIO_DAY_VIEW_FILTER "sf.processed >= 0 AND sf.processed <> 3"
 
         inline constexpr std::string_view kSelectScanDaysCount =
-            "SELECT COUNT(DISTINCT substr(" VURIO_TAKEN_TIME_EXPR ",1,10)) "
+            "SELECT COUNT(DISTINCT sf.taken_day) "
             "FROM scanned_files sf WHERE " VURIO_DAY_VIEW_FILTER;
 
         inline constexpr std::string_view kSelectScanDaysWithPagination =
-            "SELECT substr(" VURIO_TAKEN_TIME_EXPR ",1,10) AS day "
+            "SELECT sf.taken_day AS day "
             "FROM scanned_files sf WHERE " VURIO_DAY_VIEW_FILTER " "
             "GROUP BY day ORDER BY day DESC LIMIT ? OFFSET ?";
 
-        // Files for one day, ascending by taken time. LEFT JOINs pull duplicate
-        // membership (group id / representative / score) and any cached 256px
-        // thumbnail. GROUP BY sf.id guards against a file appearing in more
-        // than one duplicate_members row.
+        // Files for one day, ascending by taken time. The LEFT JOIN pulls duplicate
+        // membership (group id / representative / score); the subquery pulls the
+        // best available cached thumbnail (any size bucket). GROUP BY sf.id guards
+        // against a file appearing in more than one duplicate_members row.
         inline constexpr std::string_view kSelectScanFilesByDay =
             "SELECT sf.id, sf.file_path, " VURIO_TAKEN_TIME_EXPR " AS taken_time, "
             "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0), "
-            "tc.cached_path, MIN(dm.group_id), MAX(dm.is_representative), MAX(dm.similarity_score) "
+            VURIO_BEST_THUMB_SUBQUERY("sf.file_path") " AS cached_path, MIN(dm.group_id), MAX(dm.is_representative), MAX(dm.similarity_score) "
             "FROM scanned_files sf "
             "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id "
-            "LEFT JOIN thumbnail_cache tc ON sf.file_path = tc.source_path AND tc.thumbnail_size = 256 "
             "WHERE " VURIO_DAY_VIEW_FILTER " "
-            "AND substr(" VURIO_TAKEN_TIME_EXPR ",1,10) = ? "
+            "AND sf.taken_day = ? "
             "GROUP BY sf.id ORDER BY taken_time ASC, sf.id ASC";
+
+        // Paged variant of kSelectScanFilesByDay (horizontal-scroll pagination
+        // within a day row). Ordering is deterministic (taken_time, id), so
+        // offset paging is stable across requests.
+        inline constexpr std::string_view kSelectScanFilesByDayPaged =
+            "SELECT sf.id, sf.file_path, " VURIO_TAKEN_TIME_EXPR " AS taken_time, "
+            "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0), "
+            VURIO_BEST_THUMB_SUBQUERY("sf.file_path") " AS cached_path, MIN(dm.group_id), MAX(dm.is_representative), MAX(dm.similarity_score) "
+            "FROM scanned_files sf "
+            "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id "
+            "WHERE " VURIO_DAY_VIEW_FILTER " "
+            "AND sf.taken_day = ? "
+            "GROUP BY sf.id ORDER BY taken_time ASC, sf.id ASC LIMIT ? OFFSET ?";
+
+        // Total files in one day (index-served via idx_scanned_files_taken_day).
+        inline constexpr std::string_view kSelectScanFilesByDayCount =
+            "SELECT COUNT(*) FROM scanned_files sf "
+            "WHERE " VURIO_DAY_VIEW_FILTER " AND sf.taken_day = ?";
 
         inline constexpr std::string_view kSelectDuplicateGroupsForFile =
             "SELECT id, mode, representative_file_id, representative_file_path, "
