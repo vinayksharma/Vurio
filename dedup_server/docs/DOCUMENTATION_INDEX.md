@@ -5,51 +5,21 @@ All project documentation is consolidated in this directory for easy navigation 
 ## Project Guidelines
 
 - **[CURSOR_RULES.md](CURSOR_RULES.md)** - Core development workflow and rules for AI agents and developers
-- **[config_rules.md](config_rules.md)** - Configuration management rules and best practices
-- **[CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)** - Complete configuration properties reference
+- **[configuration_guide.md](configuration_guide.md)** - Complete configuration management rules, properties reference, and best practices
 
 ## Architecture & Design
 
-- **[duplicate_detection_architecture.md](duplicate_detection_architecture.md)** - Duplicate detection system architecture
-- **[image_processing_architecture.md](image_processing_architecture.md)** - Image processing pipeline architecture
-- **[files_manager.md](files_manager.md)** - FilesManager technical specification
-- **[files_scanner.md](files_scanner.md)** - FileScanner technical specification
-
-## API Documentation
-
-- **[DUPLICATES_API.md](DUPLICATES_API.md)** - Duplicate Groups API - paginated retrieval with representatives and candidates
-- **[THUMBNAIL_API.md](THUMBNAIL_API.md)** - Thumbnail generation API with caching
-
-## Feature Implementation
-
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Summary of major feature implementations
-- **[processing_status_codes.md](processing_status_codes.md)** - File processing status code definitions
+- **[architecture_design.md](architecture_design.md)** - System architecture, database design, and component technical specifications
+- **[api_reference.md](api_reference.md)** - External-facing and internal API specifications
 
 ## Technical Analysis
 
-- **[OPENCV_VS_IMAGEMAGICK_ANALYSIS.md](OPENCV_VS_IMAGEMAGICK_ANALYSIS.md)** - Comparison of OpenCV vs ImageMagick roles
-- **[RAW_JPEG_TRANSCODING_ANALYSIS.md](RAW_JPEG_TRANSCODING_ANALYSIS.md)** - RAW file transcoding: TIFF vs JPEG analysis
+- **[technical_analysis.md](technical_analysis.md)** - Technical analyses and ongoing research
+- **[developer_operations_guide.md](developer_operations_guide.md)** - Testing, building, operations, and status code references
 
 ## Troubleshooting & Fixes
 
-- **[IMAGEMAGICK_CRASH_FIX.md](IMAGEMAGICK_CRASH_FIX.md)** - Fix for SIGABRT crashes on corrupted TIFF files
-- **[ARW_TRANSCODING_FIX.md](ARW_TRANSCODING_FIX.md)** - Sony ARW RAW file transcoding fixes
-- **[LOGGING_LEVEL_FIX.md](LOGGING_LEVEL_FIX.md)** - Logging level configuration fix
-- **[STDERR_CAPTURE_REMOVAL.md](STDERR_CAPTURE_REMOVAL.md)** - stderr capture removal rationale
-- **[VALIDATION_IMPLEMENTATION.md](VALIDATION_IMPLEMENTATION.md)** - TIFF validation implementation
-
-**Note:** Thumbnail troubleshooting and performance information is now consolidated in [THUMBNAIL_API.md](THUMBNAIL_API.md).
-
-## User Guides
-
-- **[START_SCRIPT_README.md](START_SCRIPT_README.md)** - Server startup script documentation
-- **[WEB_SERVER_README.md](WEB_SERVER_README.md)** - Web server configuration and usage
-
-## Directory-Specific READMEs
-
-- **[config_README.md](config_README.md)** - Configuration directory overview
-- **[tests_README.md](tests_README.md)** - Tests directory overview
-- **[test_scripts_README.md](test_scripts_README.md)** - Test scripts documentation
+- **[troubleshooting_and_fixes.md](troubleshooting_and_fixes.md)** - Incident reports, specific bug fixes, and troubleshooting logs
 
 ---
 
@@ -64,4 +34,4 @@ Per `CURSOR_RULES.md`:
 
 ## Total Documentation
 
-**20 files** organized in `/docs` covering architecture, APIs, configuration, troubleshooting, and project guidelines.
+The documentation has been consolidated into core category files for easier maintenance.
