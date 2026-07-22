@@ -8,12 +8,9 @@ import AppKit
 /// collapse button folds it back.
 struct DayGroupCard: View {
     let day: Vurio_Dedup_DayGroup
-    var duplicateTightness: Double
     var isEjecting: Bool
     var isSelected: Bool
     var onThumbnailTapped: (Vurio_Dedup_DuplicateGroup, Int) -> Void
-    var onEjectSet: ([String]) -> Void
-    var onRestoreSet: ([String]) -> Void
     var onLocateSet: (String) -> Void
 
     @State private var expandedGroupIDs: Set<String> = []
@@ -132,18 +129,16 @@ struct DayGroupCard: View {
 
     @ViewBuilder
     private func memberView(_ file: Vurio_Dedup_DayFile, isRep: Bool, popupFiles: [Vurio_Dedup_DayFile], popupGroupID: String) -> some View {
-        DuplicateMemberView(file: asDuplicateFile(file), isRep: isRep, isEjecting: isEjecting, onRestore: {
-            onRestoreSet([file.filePath])
-        }, onEject: {
-            onEjectSet([file.filePath])
-        }, onThumbnailTapped: {
+        // VU is read-only for eject (allowEject: false) — no per-tile eject/restore
+        // and no ejected (red) border. Eject management lives on the BINNED tab.
+        DuplicateMemberView(file: asDuplicateFile(file), isRep: isRep, isEjecting: isEjecting, onThumbnailTapped: {
             if !isEjecting {
                 let index = popupFiles.firstIndex(where: { $0.filePath == file.filePath }) ?? 0
                 onThumbnailTapped(makeGroup(id: popupGroupID, files: popupFiles), index)
             }
         }, onLocate: {
             onLocateSet(file.filePath)
-        })
+        }, allowEject: false)
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -163,7 +158,7 @@ struct DayGroupCard: View {
                         .cornerRadius(8)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(index == 0 ? Theme.error : Theme.border, lineWidth: index == 0 ? 1.5 : 1)
+                                .stroke(index == 0 ? Theme.success : Theme.border, lineWidth: index == 0 ? 1.5 : 1)
                         )
                         .opacity(file.isEjected && index == 0 ? 0.3 : 1.0)
                         .rotationEffect(.degrees(Double(index) * 3))
@@ -177,7 +172,7 @@ struct DayGroupCard: View {
                     .foregroundColor(Theme.textPrimary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Theme.error.opacity(0.85)))
+                    .background(Capsule().fill(Theme.success.opacity(0.85)))
                     .offset(x: 6, y: 6)
             }
             .contentShape(Rectangle())
@@ -187,20 +182,13 @@ struct DayGroupCard: View {
         .opacity(top.isEjected ? 0.85 : 1.0)
     }
 
-    /// Expanded duplicate group: this day's members side by side inside a red
-    /// bordered set, with the binned view's bracket action underneath (eject the
-    /// slider-eligible members, or restore when they are all ejected).
+    /// Expanded duplicate group: this day's members side by side inside a green
+    /// bordered set. VU is read-only for eject, so there is no bracket action here —
+    /// eject/restore lives on the BINNED tab.
     @ViewBuilder
     private func expandedStackView(groupID: String, members: [Vurio_Dedup_DayFile]) -> some View {
-        let eligible = members.filter { file in
-            let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-            return !file.isRepresentative && (1.0 - score) <= duplicateTightness
-        }
-        let toRestore = eligible.filter { $0.isEjected }.map { $0.filePath }
-        let toEject = eligible.filter { !$0.isEjected }.map { $0.filePath }
-        let isRestoreMode = toEject.isEmpty && !toRestore.isEmpty
-        let setFill: Color = Theme.error.opacity(0.06)
-        let setStroke: Color = Theme.error.opacity(0.8)
+        let setFill: Color = Theme.success.opacity(0.06)
+        let setStroke: Color = Theme.success.opacity(0.8)
 
         HStack(alignment: .center, spacing: 12) {
             ForEach(members, id: \.id) { file in
@@ -229,30 +217,13 @@ struct DayGroupCard: View {
                     .frame(width: 18, height: 18)
                     .background(
                         Circle()
-                            .fill(Theme.error.opacity(0.85))
+                            .fill(Theme.success.opacity(0.85))
                             .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
                     )
             }
             .buttonStyle(.plain)
             .offset(x: 7, y: -7)
             .help("Collapse this duplicate set")
-        }
-        .overlay(alignment: .bottom) {
-            if !toEject.isEmpty || !toRestore.isEmpty {
-                BracketView(
-                    width: CGFloat(members.count) * 70 + CGFloat(max(0, members.count - 1)) * 12 + 8,
-                    isRestoreMode: isRestoreMode,
-                    isEjecting: isEjecting,
-                    action: {
-                        if isRestoreMode {
-                            onRestoreSet(toRestore)
-                        } else {
-                            onEjectSet(toEject)
-                        }
-                    }
-                )
-                .offset(y: 16)
-            }
         }
     }
 }
