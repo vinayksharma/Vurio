@@ -50,6 +50,13 @@ class AppState: ObservableObject {
     @Published var duplicateFindingCompleted: Int32 = 0
     @Published var isOnline: Bool = true
     @Published var isPaused: Bool = false
+
+    // Consecutive fetchStatus failures. Flipping isOnline on a single failure
+    // tears down and rebuilds the whole detail view (losing scroll position),
+    // so one transient hiccup — e.g. the server briefly starved for DB
+    // sessions during heavy processing — must not read as "offline".
+    private var statusFailureStreak = 0
+    private let offlineThreshold = 3
     
     // Integrity Check State
     @Published var isIntegrityCheckRunning: Bool = false
@@ -82,6 +89,7 @@ class AppState: ObservableObject {
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.getStatus(request)
                 await MainActor.run {
+                    self.statusFailureStreak = 0
                     self.isOnline = true
                     self.registeredDirs = response.registeredDirs
                     self.ejectedDirs = response.ejectedDirs
@@ -137,9 +145,12 @@ class AppState: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.isOnline = false
+                self.statusFailureStreak += 1
+                if self.statusFailureStreak >= self.offlineThreshold {
+                    self.isOnline = false
+                }
             }
-            print("Failed to fetch status: \(error)")
+            print("Failed to fetch status (streak \(statusFailureStreak)): \(error)")
         }
     }
     

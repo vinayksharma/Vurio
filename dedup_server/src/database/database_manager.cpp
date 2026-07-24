@@ -25,12 +25,12 @@ namespace MediaDedup
         {
             // Get pool sizes from config, with defaults if config_manager is not available
             int pool_min = 4;
-            int pool_max = 20;
+            int pool_max = 32;
             
             if (config_manager_)
             {
                 pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
-                pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 20);
+                pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 32);
                 logger_.information("Using database session pool: min=%d, max=%d", pool_min, pool_max);
             }
             else
@@ -118,12 +118,12 @@ namespace MediaDedup
             {
                 // Get pool sizes from config, with defaults if config_manager is not available
                 int pool_min = 4;
-                int pool_max = 20;
+                int pool_max = 32;
                 
                 if (config_manager_)
                 {
                     pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
-                    pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 20);
+                    pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 32);
                 }
                 
                 session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 

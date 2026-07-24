@@ -362,7 +362,10 @@ namespace MediaDedup
         manager->createProperty<int>("database.session.acquireTimeoutMs", 3000, getDesc("database.session.acquireTimeoutMs"), getLongDesc("database.session.acquireTimeoutMs"));
         manager->createProperty<int>("database.session.acquireBackoffMs", 50, getDesc("database.session.acquireBackoffMs"), getLongDesc("database.session.acquireBackoffMs"));
         manager->createProperty<int>("database.session.poolMin", 4, getDesc("database.session.poolMin"), getLongDesc("database.session.poolMin"));
-        manager->createProperty<int>("database.session.poolMax", 20, getDesc("database.session.poolMax"), getLongDesc("database.session.poolMax"));
+        // Must exceed the thread pool's burst limit (effective_max * 2, ~22 on a
+        // typical machine) or background processing alone can exhaust the pool
+        // and starve UI queries into "Timed out acquiring DB session" errors.
+        manager->createProperty<int>("database.session.poolMax", 32, getDesc("database.session.poolMax"), getLongDesc("database.session.poolMax"));
         manager->createProperty<bool>("database.vector.enabled", false, getDesc("database.vector.enabled"), getLongDesc("database.vector.enabled"));
         manager->createProperty<std::string>("database.vector.extensionPath", "", getDesc("database.vector.extensionPath"), getLongDesc("database.vector.extensionPath"));
         manager->createProperty<int>("database.sqlite.cacheSize", 1000, getDesc("database.sqlite.cacheSize"), getLongDesc("database.sqlite.cacheSize"));

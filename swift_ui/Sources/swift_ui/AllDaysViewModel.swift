@@ -117,6 +117,25 @@ class AllDaysViewModel: ObservableObject {
         }
     }
 
+    /// The server answers UNAVAILABLE when the day view is momentarily starved
+    /// (DB session pool contention while background processing runs). Retry with
+    /// capped backoff instead of surfacing an error — the page fills in as the
+    /// burst drains, and the day list is never mistaken for empty.
+    private func callWithBusyRetry<R>(_ op: () async throws -> R) async throws -> R {
+        var delay: UInt64 = 250_000_000 // 250ms
+        let maxDelay: UInt64 = 2_000_000_000
+        var attemptsLeft = 4
+        while true {
+            do {
+                return try await op()
+            } catch let status as GRPCStatus where status.code == .unavailable && attemptsLeft > 0 {
+                attemptsLeft -= 1
+                try await Task.sleep(nanoseconds: delay)
+                delay = min(delay * 2, maxDelay)
+            }
+        }
+    }
+
     func loadPage(pageIndex: Int32) async {
         do {
             guard let client = VurioGrpcClient.shared.duplicates else {
@@ -130,7 +149,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.filesPerDay = filesPerDay
             }
 
-            let response = try await client.getDayGroups(request)
+            let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
 
             if !Task.isCancelled {
                 // Resize the slot list when the server's day count moved (files
@@ -195,7 +214,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.offset = Int32(day.files.count)
                 $0.limit = filesPerDay
             }
-            let response = try await client.getDayFiles(request)
+            let response = try await callWithBusyRetry { try await client.getDayFiles(request) }
 
             guard let di = days.firstIndex(where: { $0.day?.day == dayKey }),
                   var current = days[di].day else { return }
