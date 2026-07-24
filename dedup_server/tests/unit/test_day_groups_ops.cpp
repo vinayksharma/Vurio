@@ -86,7 +86,7 @@ TEST_F(DayGroupsOpsTest, FallsBackToFileMtimeFromMetadata)
 {
     // 2023-03-15 12:00:00 UTC = 1678881600s; modifiedAt is stored as
     // nanoseconds since the Unix epoch (file_time_type ticks on Apple libc++).
-    insertFile("/media/video.mp4", std::nullopt,
+    insertFile("/media/mtime.heic", std::nullopt,
                "{\"modifiedAt\": 1678881600000000000, \"sizeBytes\": 12345}");
 
     auto page = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
@@ -97,6 +97,24 @@ TEST_F(DayGroupsOpsTest, FallsBackToFileMtimeFromMetadata)
     ASSERT_EQ(page.days[0].files.size(), 1u);
     EXPECT_EQ(page.days[0].files[0].taken_time, "2023-03-15 12:00:00");
     EXPECT_EQ(page.days[0].files[0].size_bytes, 12345);
+}
+
+TEST_F(DayGroupsOpsTest, ExcludesVideoFiles)
+{
+    // Only photos are supported at this time: video files (previously scanned
+    // rows may exist) never appear in the day view.
+    insertFile("/media/photo.jpg", std::string("2023:03:15 12:00:00"));
+    insertFile("/media/clip.mp4", std::string("2023:03:15 13:00:00"));
+    insertFile("/media/clip.mov", std::string("2023:03:16 09:00:00"));
+
+    auto page = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
+
+    // The video-only day (03-16) disappears entirely; 03-15 keeps the photo.
+    EXPECT_EQ(page.total_days, 1);
+    ASSERT_EQ(page.days.size(), 1u);
+    EXPECT_EQ(page.days[0].day, "2023-03-15");
+    ASSERT_EQ(page.days[0].files.size(), 1u);
+    EXPECT_EQ(page.days[0].files[0].file_path, "/media/photo.jpg");
 }
 
 TEST_F(DayGroupsOpsTest, GarbageExifFallsBackToMetadata)

@@ -22,8 +22,14 @@ class SettingsViewModel: ObservableObject {
             "duplicates.threshold.duplicate",
             "duplicates.threshold.similarity"
         ]
-        
-        for key in config.keys where !excludedKeys.contains(key) {
+
+        // Key prefixes hidden from Settings. Video is not supported at this
+        // time (formats are disabled and never scanned) — hiding media.video.*
+        // drops the whole "Media - Video" section. Remove when video lands.
+        let excludedPrefixes = ["media.video."]
+
+        for key in config.keys where !excludedKeys.contains(key)
+            && !excludedPrefixes.contains(where: { key.hasPrefix($0) }) {
             let parts = key.split(separator: ".")
             let section: String
             

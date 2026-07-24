@@ -504,10 +504,27 @@ namespace MediaDedup
             "CREATE INDEX IF NOT EXISTS idx_scanned_files_taken_day "
             "ON scanned_files(taken_day) WHERE processed >= 0 AND processed <> 3";
 
+// Video files are excluded from the day view: only photos are supported at
+// this time (the scanner no longer ingests videos, but previously scanned
+// rows persist in the database). Extensions mirror the media.video.* config
+// keys. Drop this predicate when video support lands.
+#define VURIO_NOT_VIDEO_P(P) \
+    "lower(" P "file_name) NOT LIKE '%.mp4' AND lower(" P "file_name) NOT LIKE '%.avi' " \
+    "AND lower(" P "file_name) NOT LIKE '%.mov' AND lower(" P "file_name) NOT LIKE '%.mkv' " \
+    "AND lower(" P "file_name) NOT LIKE '%.wmv' AND lower(" P "file_name) NOT LIKE '%.flv' " \
+    "AND lower(" P "file_name) NOT LIKE '%.webm' AND lower(" P "file_name) NOT LIKE '%.m4v' " \
+    "AND lower(" P "file_name) NOT LIKE '%.mpg' AND lower(" P "file_name) NOT LIKE '%.mpeg' " \
+    "AND lower(" P "file_name) NOT LIKE '%.ts' AND lower(" P "file_name) NOT LIKE '%.mts' " \
+    "AND lower(" P "file_name) NOT LIKE '%.m2ts' AND lower(" P "file_name) NOT LIKE '%.ogv'"
+
 // Rows shown in the day view: anything scanned that is not ignored (3) and
-// not errored (<0). Unprocessed/in-progress files still render (thumbnails
-// generate on demand). P is the table alias prefix.
-#define VURIO_DAY_VIEW_FILTER_P(P) P "processed >= 0 AND " P "processed <> 3"
+// not errored (<0), excluding videos. Unprocessed/in-progress files still
+// render (thumbnails generate on demand). P is the table alias prefix.
+// The processed conditions must stay textually equivalent to the
+// idx_scanned_files_taken_day partial-index predicate (extra conjuncts are
+// fine — the index stays usable).
+#define VURIO_DAY_VIEW_FILTER_P(P) \
+    P "processed >= 0 AND " P "processed <> 3 AND " VURIO_NOT_VIDEO_P(P)
 #define VURIO_DAY_VIEW_FILTER VURIO_DAY_VIEW_FILTER_P("sf.")
 
 // Day anchoring: a duplicate group appears on the day its REPRESENTATIVE was
