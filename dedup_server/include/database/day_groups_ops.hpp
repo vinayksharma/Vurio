@@ -31,6 +31,7 @@ namespace MediaDedup
     {
         std::vector<DayFileRecord> files; // ascending taken_time
         int total_files = 0; // total files in this day
+        bool ok = true; // false when the query failed (see DayGroupsPage.ok)
     };
 
     struct DayGroupsPage
@@ -40,6 +41,10 @@ namespace MediaDedup
         int start = 0;
         int end = 0;
         int returned = 0;
+        // False when the query failed (e.g. DB session pool exhausted under
+        // load). Callers must NOT treat a failed page as an empty library —
+        // returning total_days=0 as success makes the client wipe its day list.
+        bool ok = true;
     };
 
     // Read-only queries backing the day-based "ALL" view: every scanned file

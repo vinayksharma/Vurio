@@ -461,6 +461,13 @@ public:
         int files_per_day = request->files_per_day() > 0 ? request->files_per_day() : 0;
 
         auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day);
+        if (!page.ok) {
+            // Transient failure (e.g. DB session pool exhausted under load).
+            // Returning OK with total_days=0 would make the client treat the
+            // library as empty and wipe its day list — surface an error so the
+            // client keeps its state and retries.
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Day view temporarily busy");
+        }
         reply->set_total_days(page.total_days);
 
         auto ejection_paths = loadEjectionPaths();
@@ -492,6 +499,9 @@ public:
         int offset = request->offset() >= 0 ? request->offset() : 0;
 
         auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit);
+        if (!page.ok) {
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Day view temporarily busy");
+        }
         reply->set_total_files(page.total_files);
 
         auto ejection_paths = loadEjectionPaths();

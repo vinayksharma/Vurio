@@ -130,12 +130,14 @@ namespace MediaDedup
         catch (const Poco::Exception &e)
         {
             logger.error("Exception in getDayGroups: %s", e.displayText());
-            return page; // Return empty page on error
+            page.ok = false; // signal failure — must not read as an empty library
+            return page;
         }
         catch (const std::exception &e)
         {
             logger.error("Exception in getDayGroups: %s", std::string(e.what()));
-            return page; // Return empty page on error
+            page.ok = false; // signal failure — must not read as an empty library
+            return page;
         }
     }
 
@@ -172,11 +174,13 @@ namespace MediaDedup
         catch (const Poco::Exception &e)
         {
             logger.error("Exception in getDayFiles: %s", e.displayText());
+            page.ok = false;
             return page;
         }
         catch (const std::exception &e)
         {
             logger.error("Exception in getDayFiles: %s", std::string(e.what()));
+            page.ok = false;
             return page;
         }
     }
