@@ -56,6 +56,7 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateDuplicateGroupsIndexCreatedAt), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexRepDate), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexRepPath), now;
+            sess << std::string(SQL::kCreateDuplicateGroupsIndexRepFileId), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFile), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
 

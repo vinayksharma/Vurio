@@ -42,8 +42,9 @@ namespace MediaDedup
         {
             int total = 0;
             std::string key = day_key;
+            std::string key2 = day_key; // bound twice: anchor branch + pulled-members branch
             Statement count_stmt = (sess << std::string(SQL::kSelectScanFilesByDayCount),
-                                    use(key), into(total));
+                                    use(key), use(key2), into(total));
             count_stmt.execute();
             return total;
         }
@@ -87,13 +88,14 @@ namespace MediaDedup
                 DayGroupRecord day;
                 day.day = day_key;
 
+                std::string day_key2 = day_key; // bound twice: anchor + pulled-members branches
                 if (files_per_day > 0)
                 {
                     day.total_files = countFilesForDay(sess, day_key);
 
                     int file_offset = 0;
                     Statement files_stmt = (sess << std::string(SQL::kSelectScanFilesByDayPaged),
-                                            use(day_key), use(files_per_day), use(file_offset));
+                                            use(day_key), use(day_key2), use(files_per_day), use(file_offset));
                     files_stmt.execute();
 
                     Poco::Data::RecordSet files_rs(files_stmt);
@@ -104,7 +106,8 @@ namespace MediaDedup
                 }
                 else
                 {
-                    Statement files_stmt = (sess << std::string(SQL::kSelectScanFilesByDay), use(day_key));
+                    Statement files_stmt = (sess << std::string(SQL::kSelectScanFilesByDay),
+                                            use(day_key), use(day_key2));
                     files_stmt.execute();
 
                     Poco::Data::RecordSet files_rs(files_stmt);
@@ -148,10 +151,11 @@ namespace MediaDedup
             Session &sess = lease.get();
 
             std::string day_key = day;
+            std::string day_key2 = day; // bound twice: anchor + pulled-members branches
             page.total_files = countFilesForDay(sess, day_key);
 
             Statement files_stmt = (sess << std::string(SQL::kSelectScanFilesByDayPaged),
-                                    use(day_key), use(limit), use(offset));
+                                    use(day_key), use(day_key2), use(limit), use(offset));
             files_stmt.execute();
 
             Poco::Data::RecordSet files_rs(files_stmt);
