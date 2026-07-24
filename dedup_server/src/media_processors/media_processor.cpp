@@ -1200,9 +1200,24 @@ namespace MediaDedup
 
         for (const auto &key : all_keys)
         {
+            // Video is not supported at this time: video formats are never
+            // scanned, regardless of any persisted media.video.* toggle (the
+            // Video section is also hidden in the configuration UI). Remove
+            // this skip when video support lands.
+            if (key.find("media.video.") == 0)
+            {
+                continue;
+            }
+
             // Check for image formats (including raw)
             if (key.find("media.images.") == 0)
             {
+                // Only formats enabled in configuration are scanned.
+                if (!config_manager_->getPropertyValue<bool>(key, false))
+                {
+                    continue;
+                }
+
                 std::string extension = key.substr(12); // Remove "media.images."
                 // Remove leading dot if present
                 if (!extension.empty() && extension[0] == '.')
@@ -1225,20 +1240,15 @@ namespace MediaDedup
                     supported_extensions.insert(extension);
                 }
             }
-            // Check for video formats
-            else if (key.find("media.video.") == 0)
-            {
-                std::string extension = key.substr(11); // Remove "media.video."
-                // Remove leading dot if present
-                if (!extension.empty() && extension[0] == '.')
-                {
-                    extension = extension.substr(1);
-                }
-                supported_extensions.insert(extension);
-            }
             // Check for audio formats
             else if (key.find("media.audio.") == 0)
             {
+                // Only formats enabled in configuration are scanned.
+                if (!config_manager_->getPropertyValue<bool>(key, false))
+                {
+                    continue;
+                }
+
                 std::string extension = key.substr(11); // Remove "media.audio."
                 // Remove leading dot if present
                 if (!extension.empty() && extension[0] == '.')

@@ -139,6 +139,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isActive }) => {
     const groups: Record<string, Array<{ key: string; value: unknown }>> = {};
     
     for (const [key, value] of Object.entries(config)) {
+      // Video is not supported at this time (formats are disabled and never
+      // scanned) — hide the whole Video Formats section. Remove when video lands.
+      if (key.startsWith('media.video.')) {
+        continue;
+      }
       const category = getCategoryFromKey(key);
       if (!groups[category]) {
         groups[category] = [];

@@ -520,20 +520,20 @@ namespace MediaDedup
         manager->createProperty<bool>("media.images.hdr.transcode", true, getDesc("media.images.hdr.transcode"), getLongDesc("media.images.hdr.transcode"));
 
         // Video
-        manager->createProperty<bool>("media.video.mp4", true, getDesc("media.video.mp4"), getLongDesc("media.video.mp4"));
-        manager->createProperty<bool>("media.video.avi", true, getDesc("media.video.avi"), getLongDesc("media.video.avi"));
-        manager->createProperty<bool>("media.video.mov", true, getDesc("media.video.mov"), getLongDesc("media.video.mov"));
-        manager->createProperty<bool>("media.video.mkv", true, getDesc("media.video.mkv"), getLongDesc("media.video.mkv"));
-        manager->createProperty<bool>("media.video.wmv", true, getDesc("media.video.wmv"), getLongDesc("media.video.wmv"));
-        manager->createProperty<bool>("media.video.flv", true, getDesc("media.video.flv"), getLongDesc("media.video.flv"));
-        manager->createProperty<bool>("media.video.webm", true, getDesc("media.video.webm"), getLongDesc("media.video.webm"));
-        manager->createProperty<bool>("media.video.m4v", true, getDesc("media.video.m4v"), getLongDesc("media.video.m4v"));
-        manager->createProperty<bool>("media.video.mpg", true, getDesc("media.video.mpg"), getLongDesc("media.video.mpg"));
-        manager->createProperty<bool>("media.video.mpeg", true, getDesc("media.video.mpeg"), getLongDesc("media.video.mpeg"));
-        manager->createProperty<bool>("media.video.ts", true, getDesc("media.video.ts"), getLongDesc("media.video.ts"));
-        manager->createProperty<bool>("media.video.mts", true, getDesc("media.video.mts"), getLongDesc("media.video.mts"));
-        manager->createProperty<bool>("media.video.m2ts", true, getDesc("media.video.m2ts"), getLongDesc("media.video.m2ts"));
-        manager->createProperty<bool>("media.video.ogv", true, getDesc("media.video.ogv"), getLongDesc("media.video.ogv"));
+        manager->createProperty<bool>("media.video.mp4", false, getDesc("media.video.mp4"), getLongDesc("media.video.mp4"));
+        manager->createProperty<bool>("media.video.avi", false, getDesc("media.video.avi"), getLongDesc("media.video.avi"));
+        manager->createProperty<bool>("media.video.mov", false, getDesc("media.video.mov"), getLongDesc("media.video.mov"));
+        manager->createProperty<bool>("media.video.mkv", false, getDesc("media.video.mkv"), getLongDesc("media.video.mkv"));
+        manager->createProperty<bool>("media.video.wmv", false, getDesc("media.video.wmv"), getLongDesc("media.video.wmv"));
+        manager->createProperty<bool>("media.video.flv", false, getDesc("media.video.flv"), getLongDesc("media.video.flv"));
+        manager->createProperty<bool>("media.video.webm", false, getDesc("media.video.webm"), getLongDesc("media.video.webm"));
+        manager->createProperty<bool>("media.video.m4v", false, getDesc("media.video.m4v"), getLongDesc("media.video.m4v"));
+        manager->createProperty<bool>("media.video.mpg", false, getDesc("media.video.mpg"), getLongDesc("media.video.mpg"));
+        manager->createProperty<bool>("media.video.mpeg", false, getDesc("media.video.mpeg"), getLongDesc("media.video.mpeg"));
+        manager->createProperty<bool>("media.video.ts", false, getDesc("media.video.ts"), getLongDesc("media.video.ts"));
+        manager->createProperty<bool>("media.video.mts", false, getDesc("media.video.mts"), getLongDesc("media.video.mts"));
+        manager->createProperty<bool>("media.video.m2ts", false, getDesc("media.video.m2ts"), getLongDesc("media.video.m2ts"));
+        manager->createProperty<bool>("media.video.ogv", false, getDesc("media.video.ogv"), getLongDesc("media.video.ogv"));
 
         // Audio
         manager->createProperty<bool>("media.audio.mp3", true, getDesc("media.audio.mp3"), getLongDesc("media.audio.mp3"));
