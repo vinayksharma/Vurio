@@ -48,7 +48,15 @@ struct DayGroupCard: View {
             if file.groupID.isEmpty {
                 result.append(.single(file))
             } else if seenGroups.insert(file.groupID).inserted {
-                result.append(.stack(file.groupID, membersByGroup[file.groupID] ?? [file]))
+                let members = membersByGroup[file.groupID] ?? [file]
+                // A group whose other members were taken on different days (or
+                // are not loaded yet) has only one member here — render it as a
+                // plain single; a fanned "stack of 1" with a ×1 badge is noise.
+                if members.count == 1 {
+                    result.append(.single(file))
+                } else {
+                    result.append(.stack(file.groupID, members))
+                }
             }
         }
         return result
