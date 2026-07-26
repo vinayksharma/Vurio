@@ -168,7 +168,7 @@ struct DayGroupCard: View {
             }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, allowEject: false, fixedSize: 70)
+        }, allowEject: false, fixedSize: 70, showMatchScore: false)
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
