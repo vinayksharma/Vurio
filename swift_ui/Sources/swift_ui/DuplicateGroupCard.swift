@@ -250,6 +250,9 @@ struct DuplicateMemberView: View {
     // ("path_70") between the collapsed stack, the expanded set, and prefetch —
     // instead of a second cold fetch/decode at 80.
     var fixedSize: CGFloat? = nil
+    // When false, the advanced overlay omits the per-tile match (similarity)
+    // score. The VU day view hides scores; BINNED keeps them.
+    var showMatchScore: Bool = true
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -347,7 +350,7 @@ struct DuplicateMemberView: View {
                         .font(.custom("Menlo", size: 9))
                         .foregroundColor(Theme.success)
                         .offset(y: -14)
-                } else if !isRep {
+                } else if !isRep && showMatchScore {
                     Text(file.similarityScore.formatted(.number.precision(.fractionLength(4))))
                         .font(.custom("Menlo", size: 9))
                         .foregroundColor(Theme.success)
