@@ -1751,3 +1751,37 @@ With **1226 duplicate groups** in the database and the duplicate finder running:
 
 2025-10-27
 
+
+---
+
+# RAF Thumbnails/Previews Intermittently Missing in the Viewer (2026-07-31)
+
+## Investigation Summary
+
+Fujifilm RAF files sometimes showed no thumbnail and/or no preview in the SwiftUI viewer, healing on a later visit. The stepped pipeline (scan-time: QHD preview transcode → embedding → thumbnail from preview; view-time: cache lookup → async generation → client polling) was traced end to end.
+
+## Root Causes Identified
+
+1. **Transient mass transcode failures under load.** `processing_errors` held 4,143 rows ("Failed to transcode raw file", source ImageMagick) across 3,603 distinct RAFs, essentially all in one burst on 2026-07-23 — yet all but 4 later succeeded. The `magick` subprocess ran with **no timeout** (`ThumbnailGenerator`'s `timeout_ms` was documented "Unused"; `TranscodingConfig.timeout_ms` was loaded but never passed) and `thumbnail_generator`/`preview_generator` tasks were **exempt from the thread cap**, so RAF bursts spawned unbounded parallel demosaics (100–200MB each) that failed under memory pressure.
+2. **Client retry budget vs. generation latency.** GetThumbnail/GetPreview answer UNAVAILABLE ("generating") on a cache miss; the Swift client polled only ~4s (10 retries, 400ms cap) before giving up. The server's `media_ready` completion signal went to a WebSocket the SwiftUI app never consumes.
+3. **Divergent RAW decoders.** Thumbnails extracted the embedded JPEG via LibRaw; previews only ever ran the full `magick` demosaic — so a RAF could have one asset but not the other.
+4. **Silent, never-retried scan-time thumbnail failures.** A thumbnail failure after successful embedding left the file `processed=2` with no cache row, permanently (healthy X-T4 files were found in this state).
+5. **Permanently corrupt files spun forever.** 4 RAFs with zero-filled headers failed generation on every request with no negative caching and no user-visible explanation.
+6. Secondary: DB session-lease exceptions in cache lookups were treated as cache misses; a shared `static std::mt19937` for temp names was raced across threads; gRPC cache lookups skipped mtime staleness; the magick path was hardcoded.
+
+## Fixes Applied
+
+- **Timeout + bounded concurrency:** `utils/subprocess_runner` runs `magick` with a hard kill-on-timeout (default 60s, config `media.image.transcoding.timeoutMs`); `ThreadPoolManager` caps combined thumbnail+preview generation at `tpm.mediaGeneration.maxConcurrent` (default 4) instead of the unlimited exemption.
+- **One RAW decoder:** `RawEmbeddedExtractor` (LibRaw, JPEG + bitmap-type thumbs) is now the single RAW entry point for BOTH `ThumbnailGenerator` and `ImageMagickTranscoder`; previews use the embedded JPEG when its long edge ≥ 2560px, else fall back to full demosaic.
+- **Push completion events:** new `MediaService.SubscribeToMediaReady` gRPC stream (fed by `MediaReadyBus`) publishes success/failure of every generation; the Swift `ServerImageLoader` waits on these events (2s poll fallback) under a 60s deadline instead of the old ~4s budget.
+- **Negative cache + distinct UX:** after 3 failed generations (`MediaGenerationFailures`), GetThumbnail/GetPreview return FAILED_PRECONDITION with the reason (one `processing_errors` row is written at the threshold); the client stops re-requesting and shows an "Unreadable" warning tile / viewer message. Zero-header files are detected up front (`RawFileDetector::HasZeroedHeader`) and labeled "Corrupted file (zeroed header)".
+- **Backfill:** the database integrity check gained a final phase that enqueues regeneration for `processed>=2` files missing a `thumbnail_cache` row (limit 5000/run) or a needed preview (RAW/large, limit 20000 candidates/run).
+- **Hardenings:** DB-lease failures in `getBestFitThumbnail`/`getPreview` now surface as "lookup busy" (UNAVAILABLE, no generation resubmit) instead of reading as a miss; gRPC handlers honor source mtime (still serving cache when the source is unreadable, e.g. disconnected volume); all temp names use `utils/temp_paths` (atomic counter + pid + monotonic ns); the magick binary path is `tools.imagemagick.path` (`utils/tool_paths`, set at startup).
+
+## Expected Result
+
+RAF bursts no longer overwhelm the host (≤4 concurrent decodes, each ≤60s); previews for Fuji bodies come from the embedded JPEG in milliseconds; the viewer waits on push events instead of timing out at ~4s; corrupt files show a clear "unreadable" state instead of endless spinners; silent thumbnail gaps are healed by the integrity check.
+
+## Date
+
+2026-07-31

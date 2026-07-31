@@ -1118,6 +1118,20 @@
             "text": "The amount of memory allocated to each worker thread's stack. Adjust only if experiencing stack overflow issues."
         }
     ],
+    "tpm.mediaGeneration.maxConcurrent": "Max Concurrent Thumbnail/Preview Generations",
+    "tpm.mediaGeneration.maxConcurrent.long": [
+        {
+            "type": "paragraph",
+            "text": "Combined cap on thumbnail and preview generation tasks running at once. Each task launches an external ImageMagick decode that can use hundreds of MB for RAW files; unbounded bursts cause transient decode failures under memory pressure. Default 4."
+        }
+    ],
+    "tools.imagemagick.path": "ImageMagick Binary Path",
+    "tools.imagemagick.path.long": [
+        {
+            "type": "paragraph",
+            "text": "Full path to the ImageMagick 'magick' executable used for thumbnail and preview generation. Defaults to the Homebrew location /opt/homebrew/bin/magick."
+        }
+    ],
     "media.processor.maxQueueSize": "Media Processor Max Queue Size",
     "media.processor.maxQueueSize.long": [
         {

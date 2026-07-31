@@ -12,7 +12,10 @@ struct ThumbnailView: View {
 
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
-    
+    // Set when the server negative-cached this file (unsupported/corrupted):
+    // rendered as a distinct warning tile, never re-requested.
+    @State private var unreadableReason: String? = nil
+
     var body: some View {
         Group {
             if let thumbnail = thumbnail {
@@ -21,6 +24,17 @@ struct ThumbnailView: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(width: size.width, height: size.height)
                     .clipped()
+            } else if let reason = unreadableReason {
+                VStack(spacing: 2) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(Theme.warning)
+                    Text("Unreadable")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .frame(width: size.width, height: size.height)
+                .background(Color.gray.opacity(0.2))
+                .help("File unreadable — \(reason)")
             } else if isLoading {
                 ProgressView()
                     .frame(width: size.width, height: size.height)
@@ -48,6 +62,7 @@ struct ThumbnailView: View {
         .onDisappear {
             thumbnail = nil
             isLoading = true
+            unreadableReason = nil
         }
     }
     
@@ -67,6 +82,12 @@ struct ThumbnailView: View {
         } catch is CancellationError {
             logDebug("ThumbnailView CANCELLED for \(filePath)")
             // Task was cancelled (e.g. scrolled off screen), do nothing
+        } catch let error as MediaUnreadableError {
+            logDebug("ThumbnailView UNREADABLE for \(filePath): \(error.message)")
+            await MainActor.run {
+                self.unreadableReason = error.message
+                self.isLoading = false
+            }
         } catch {
             logDebug("ThumbnailView ERROR for \(filePath): \(error.localizedDescription)")
             await MainActor.run {

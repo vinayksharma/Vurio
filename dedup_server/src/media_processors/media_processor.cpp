@@ -319,7 +319,13 @@ namespace MediaDedup
                             else
                             {
                                 Poco::Logger::get("MediaProcessor").error("Failed to transcode raw file: %s", file_path_copy);
-                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Failed to transcode raw file (unsupported or corrupted)", "ImageMagick");
+                                // Distinguish zero-filled/truncated copies so a
+                                // permanently unreadable file is labeled as such
+                                // instead of the generic transcode failure.
+                                const std::string reason = RawFileDetector::HasZeroedHeader(file_path_copy)
+                                    ? "Corrupted file (zeroed header, unreadable by any decoder)"
+                                    : "Failed to transcode raw file (unsupported or corrupted)";
+                                ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, reason, "ImageMagick");
                                 ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1);
                                 if (std::filesystem::exists(temp_filename)) std::filesystem::remove(temp_filename);
                                 return;

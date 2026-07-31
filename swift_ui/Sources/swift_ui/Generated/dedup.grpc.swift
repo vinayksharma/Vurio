@@ -2610,6 +2610,12 @@ internal protocol Vurio_Dedup_MediaServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_CancelMediaRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_CancelMediaRequest, Vurio_Dedup_Empty>
+
+  func subscribeToMediaReady(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?,
+    handler: @escaping (Vurio_Dedup_MediaReadyEvent) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent>
 }
 
 extension Vurio_Dedup_MediaServiceClientProtocol {
@@ -2668,6 +2674,29 @@ extension Vurio_Dedup_MediaServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeCancelMediaGenerationInterceptors() ?? []
+    )
+  }
+
+  /// Pushes an event whenever an async thumbnail/preview generation finishes
+  /// (success or failure), so clients don't have to poll GetThumbnail/GetPreview
+  /// on a guessed schedule after an UNAVAILABLE "generating" answer.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SubscribeToMediaReady.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  internal func subscribeToMediaReady(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Vurio_Dedup_MediaReadyEvent) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent> {
+    return self.makeServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.subscribeToMediaReady.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToMediaReadyInterceptors() ?? [],
+      handler: handler
     )
   }
 }
@@ -2751,6 +2780,11 @@ internal protocol Vurio_Dedup_MediaServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_CancelMediaRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_CancelMediaRequest, Vurio_Dedup_Empty>
+
+  func makeSubscribeToMediaReadyCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2798,6 +2832,18 @@ extension Vurio_Dedup_MediaServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeCancelMediaGenerationInterceptors() ?? []
     )
   }
+
+  internal func makeSubscribeToMediaReadyCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent> {
+    return self.makeAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.subscribeToMediaReady.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToMediaReadyInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2837,6 +2883,18 @@ extension Vurio_Dedup_MediaServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeCancelMediaGenerationInterceptors() ?? []
     )
   }
+
+  internal func subscribeToMediaReady(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Vurio_Dedup_MediaReadyEvent> {
+    return self.performAsyncServerStreamingCall(
+      path: Vurio_Dedup_MediaServiceClientMetadata.Methods.subscribeToMediaReady.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSubscribeToMediaReadyInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2866,6 +2924,9 @@ internal protocol Vurio_Dedup_MediaServiceClientInterceptorFactoryProtocol: Send
 
   /// - Returns: Interceptors to use when invoking 'cancelMediaGeneration'.
   func makeCancelMediaGenerationInterceptors() -> [ClientInterceptor<Vurio_Dedup_CancelMediaRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when invoking 'subscribeToMediaReady'.
+  func makeSubscribeToMediaReadyInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent>]
 }
 
 internal enum Vurio_Dedup_MediaServiceClientMetadata {
@@ -2876,6 +2937,7 @@ internal enum Vurio_Dedup_MediaServiceClientMetadata {
       Vurio_Dedup_MediaServiceClientMetadata.Methods.getThumbnail,
       Vurio_Dedup_MediaServiceClientMetadata.Methods.getPreview,
       Vurio_Dedup_MediaServiceClientMetadata.Methods.cancelMediaGeneration,
+      Vurio_Dedup_MediaServiceClientMetadata.Methods.subscribeToMediaReady,
     ]
   )
 
@@ -2896,6 +2958,12 @@ internal enum Vurio_Dedup_MediaServiceClientMetadata {
       name: "CancelMediaGeneration",
       path: "/vurio.dedup.MediaService/CancelMediaGeneration",
       type: GRPCCallType.unary
+    )
+
+    internal static let subscribeToMediaReady = GRPCMethodDescriptor(
+      name: "SubscribeToMediaReady",
+      path: "/vurio.dedup.MediaService/SubscribeToMediaReady",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
@@ -4436,6 +4504,11 @@ internal protocol Vurio_Dedup_MediaServiceProvider: CallHandlerProvider {
   func getPreview(request: Vurio_Dedup_GetMediaRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MediaPathResponse>
 
   func cancelMediaGeneration(request: Vurio_Dedup_CancelMediaRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_Empty>
+
+  /// Pushes an event whenever an async thumbnail/preview generation finishes
+  /// (success or failure), so clients don't have to poll GetThumbnail/GetPreview
+  /// on a guessed schedule after an UNAVAILABLE "generating" answer.
+  func subscribeToMediaReady(request: Vurio_Dedup_Empty, context: StreamingResponseCallContext<Vurio_Dedup_MediaReadyEvent>) -> EventLoopFuture<GRPCStatus>
 }
 
 extension Vurio_Dedup_MediaServiceProvider {
@@ -4477,6 +4550,15 @@ extension Vurio_Dedup_MediaServiceProvider {
         userFunction: self.cancelMediaGeneration(request:context:)
       )
 
+    case "SubscribeToMediaReady":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MediaReadyEvent>(),
+        interceptors: self.interceptors?.makeSubscribeToMediaReadyInterceptors() ?? [],
+        userFunction: self.subscribeToMediaReady(request:context:)
+      )
+
     default:
       return nil
     }
@@ -4507,6 +4589,15 @@ internal protocol Vurio_Dedup_MediaServiceAsyncProvider: CallHandlerProvider, Se
     request: Vurio_Dedup_CancelMediaRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_Empty
+
+  /// Pushes an event whenever an async thumbnail/preview generation finishes
+  /// (success or failure), so clients don't have to poll GetThumbnail/GetPreview
+  /// on a guessed schedule after an UNAVAILABLE "generating" answer.
+  func subscribeToMediaReady(
+    request: Vurio_Dedup_Empty,
+    responseStream: GRPCAsyncResponseStreamWriter<Vurio_Dedup_MediaReadyEvent>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4555,6 +4646,15 @@ extension Vurio_Dedup_MediaServiceAsyncProvider {
         wrapping: { try await self.cancelMediaGeneration(request: $0, context: $1) }
       )
 
+    case "SubscribeToMediaReady":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MediaReadyEvent>(),
+        interceptors: self.interceptors?.makeSubscribeToMediaReadyInterceptors() ?? [],
+        wrapping: { try await self.subscribeToMediaReady(request: $0, responseStream: $1, context: $2) }
+      )
+
     default:
       return nil
     }
@@ -4574,6 +4674,10 @@ internal protocol Vurio_Dedup_MediaServiceServerInterceptorFactoryProtocol: Send
   /// - Returns: Interceptors to use when handling 'cancelMediaGeneration'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeCancelMediaGenerationInterceptors() -> [ServerInterceptor<Vurio_Dedup_CancelMediaRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when handling 'subscribeToMediaReady'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSubscribeToMediaReadyInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MediaReadyEvent>]
 }
 
 internal enum Vurio_Dedup_MediaServiceServerMetadata {
@@ -4584,6 +4688,7 @@ internal enum Vurio_Dedup_MediaServiceServerMetadata {
       Vurio_Dedup_MediaServiceServerMetadata.Methods.getThumbnail,
       Vurio_Dedup_MediaServiceServerMetadata.Methods.getPreview,
       Vurio_Dedup_MediaServiceServerMetadata.Methods.cancelMediaGeneration,
+      Vurio_Dedup_MediaServiceServerMetadata.Methods.subscribeToMediaReady,
     ]
   )
 
@@ -4604,6 +4709,12 @@ internal enum Vurio_Dedup_MediaServiceServerMetadata {
       name: "CancelMediaGeneration",
       path: "/vurio.dedup.MediaService/CancelMediaGeneration",
       type: GRPCCallType.unary
+    )
+
+    internal static let subscribeToMediaReady = GRPCMethodDescriptor(
+      name: "SubscribeToMediaReady",
+      path: "/vurio.dedup.MediaService/SubscribeToMediaReady",
+      type: GRPCCallType.serverStreaming
     )
   }
 }

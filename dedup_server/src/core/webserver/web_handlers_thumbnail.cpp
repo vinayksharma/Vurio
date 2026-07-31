@@ -7,6 +7,8 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/URI.h>
 #include "core/web/web_handlers_websocket.hpp"
+#include "core/media_ready_bus.hpp"
+#include "core/media_generation_failures.hpp"
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
@@ -184,10 +186,17 @@ namespace MediaDedup
                         msg.set("type", "media_ready");
                         msg.set("media_type", "thumbnail");
                         msg.set("file_path", path_copy);
-                        
+
                         std::stringstream ss;
                         msg.stringify(ss);
                         WebSocketStatusHandler::broadcastMessage(ss.str());
+                        MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
+                        MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
+                    } else {
+                        MediaGenerationFailures::instance().recordFailure(
+                            path_copy, "thumbnail", "Thumbnail generation failed (unsupported or corrupted file)");
+                        MediaReadyBus::instance().publish({path_copy, "thumbnail", false,
+                                                           "Thumbnail generation failed"});
                     }
                 }, source_path);
 

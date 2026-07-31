@@ -21,6 +21,11 @@ namespace MediaDedup
     class ImageMagickTranscoder
     {
     public:
+        // QHD long-edge target for cached previews. Also the gate for using a
+        // RAW file's embedded JPEG: embedded images at least this large serve
+        // as the preview source instead of a full demosaic.
+        static constexpr size_t MAX_PREVIEW_DIMENSION = 2560;
+
         /**
          * @brief Construct a new ImageMagick transcoder
          *
@@ -43,7 +48,8 @@ namespace MediaDedup
          * @param jpeg_data Output vector to store transcoded JPEG data
          * @return true if transcoding succeeded, false otherwise
          */
-        bool transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data);
+        bool transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data,
+                             int timeout_ms = 60000);
 
         /**
          * @brief Check if this transcoder instance is valid

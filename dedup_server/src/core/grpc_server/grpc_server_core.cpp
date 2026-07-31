@@ -32,6 +32,9 @@
 #include "utils/thumbnail_generator.hpp"
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "core/web/web_handlers_websocket.hpp"
+#include "core/media_ready_bus.hpp"
+#include "core/media_generation_failures.hpp"
+#include "database/processing_errors_ops.hpp"
 #include <chrono>
 #include <sstream>
 #include <mutex>
@@ -1313,17 +1316,60 @@ public:
                      std::shared_ptr<ThreadPoolManager> tpm)
         : config_(config), db_(db), thumbnail_cache_(thumb_cache), transcoding_cache_(trans_cache), tpm_(tpm) {}
 
+    // mtime of the source file, or 0 when unreadable (e.g. its volume is
+    // disconnected — cached assets are still served in that case).
+    static int64_t sourceModifiedTime(const std::string& path) {
+        try {
+            auto ftime = std::filesystem::last_write_time(path);
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            return std::chrono::system_clock::to_time_t(sctp);
+        } catch (...) {
+            return 0;
+        }
+    }
+
+    // Threshold-crossing bookkeeping shared by the thumbnail and preview
+    // generation lambdas: count the failure, persist one processing_errors row
+    // the moment the file becomes negative-cached, and push the failure event.
+    static void recordGenerationFailure(DatabaseManager* db, const std::string& path,
+                                        const std::string& media_type, const std::string& message) {
+        int count = MediaDedup::MediaGenerationFailures::instance().recordFailure(path, media_type, message);
+        if (count == MediaDedup::MediaGenerationFailures::FAILURE_THRESHOLD && db) {
+            MediaDedup::ProcessingErrorsOps::insertError(*db, path, MediaDedup::ServerMode::EMBEDDING, -6,
+                                                         message, "MediaGeneration");
+        }
+        MediaDedup::MediaReadyBus::instance().publish({path, media_type, false, message});
+    }
+
     grpc::Status GetThumbnail(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
                               vurio::dedup::MediaPathResponse* response) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string file_path = request->file_path();
         int size = 80;
         try { size = std::stoi(request->size()); } catch (...) {}
-        
+
         int normalized_size = ThumbnailGenerator::getClosestValidSize(size);
-        
-        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size);
-        if (cached && std::filesystem::exists(cached->cached_path)) {
+
+        // Negative cache: a file that failed generation repeatedly gets a
+        // distinct, terminal answer instead of an endless UNAVAILABLE loop.
+        if (auto reason = MediaDedup::MediaGenerationFailures::instance().permanentFailureReason(file_path, "thumbnail")) {
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
+        }
+
+        bool lookup_failed = false;
+        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size, &lookup_failed);
+        if (lookup_failed) {
+            // DB session pool starved — the asset may well be cached. Let the
+            // client retry the lookup; do NOT submit a fresh generation.
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail cache lookup busy");
+        }
+
+        // Serve the cache when it is fresh. mtime 0 (source unreadable, e.g.
+        // disconnected volume) still serves the cached asset.
+        int64_t source_mtime = sourceModifiedTime(file_path);
+        if (cached && std::filesystem::exists(cached->cached_path) &&
+            (source_mtime == 0 || cached->source_modified_at == 0 || cached->source_modified_at == source_mtime)) {
             response->set_file_path(cached->cached_path);
             return grpc::Status::OK;
         } else {
@@ -1335,11 +1381,17 @@ public:
                 auto tpm_copy = tpm_;
                 std::string path_copy = file_path;
                 int size_copy = normalized_size;
-                
+
                 tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
                     MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
                     std::string cached_path;
-                    temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path);
+                    if (temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
+                        MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
+                        MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
+                    } else {
+                        recordGenerationFailure(db_copy, path_copy, "thumbnail",
+                                                "Thumbnail generation failed (unsupported or corrupted file)");
+                    }
                 }, file_path);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail generating");
@@ -1356,9 +1408,20 @@ public:
             response->set_file_path(file_path);
             return grpc::Status::OK;
         }
-        
-        auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_, file_path);
-        if (cached && std::filesystem::exists(cached->cached_path)) {
+
+        if (auto reason = MediaDedup::MediaGenerationFailures::instance().permanentFailureReason(file_path, "preview")) {
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
+        }
+
+        bool lookup_failed = false;
+        auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_, file_path, &lookup_failed);
+        if (lookup_failed) {
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Preview cache lookup busy");
+        }
+
+        int64_t source_mtime = sourceModifiedTime(file_path);
+        if (cached && std::filesystem::exists(cached->cached_path) &&
+            (source_mtime == 0 || cached->source_modified_at == 0 || cached->source_modified_at == source_mtime)) {
             response->set_file_path(cached->cached_path);
             return grpc::Status::OK;
         } else {
@@ -1379,7 +1442,7 @@ public:
                                 PreviewCacheRecord new_record;
                                 new_record.source_path = path_copy;
                                 new_record.cached_path = final_path;
-                                
+
                                 try {
                                     auto ftime = std::filesystem::last_write_time(path_copy);
                                     auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
@@ -1388,29 +1451,36 @@ public:
                                 } catch (...) {
                                     new_record.source_modified_at = 0;
                                 }
-                                
+
                                 try {
                                     new_record.file_size_bytes = std::filesystem::file_size(final_path);
                                 } catch (...) {
                                     new_record.file_size_bytes = 0;
                                 }
-                                
+
                                 int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
                                                      std::chrono::system_clock::now().time_since_epoch()).count();
                                 new_record.created_at = now_ts;
                                 new_record.last_accessed_at = now_ts;
-                                
+
                                 PreviewCacheOps::upsertPreview(*db_copy, new_record);
-                                
+
                                 nlohmann::json msg;
                                 msg["type"] = "media_ready";
                                 msg["media_type"] = "preview";
                                 msg["file_path"] = path_copy;
-                                
+
                                 WebSocketStatusHandler::broadcastMessage(msg.dump());
+                                MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "preview");
+                                MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview", true, ""});
                             } else {
                                 std::filesystem::remove(temp_path);
+                                recordGenerationFailure(db_copy, path_copy, "preview",
+                                                        "Failed to cache transcoded preview");
                             }
+                        } else {
+                            recordGenerationFailure(db_copy, path_copy, "preview",
+                                                    "Preview generation failed (unsupported or corrupted file)");
                         }
                     }
                 }, file_path);
@@ -1425,6 +1495,45 @@ public:
         if (tpm_) {
             tpm_->cancelTask(request->type(), request->file_path());
         }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SubscribeToMediaReady(grpc::ServerContext* context, const vurio::dedup::Empty* request,
+                                       grpc::ServerWriter<vurio::dedup::MediaReadyEvent>* writer) override {
+        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
+        auto subscription = MediaDedup::MediaReadyBus::instance().subscribe();
+
+        while (!context->IsCancelled()) {
+            MediaDedup::MediaReadyBus::Event event;
+            {
+                std::unique_lock<std::mutex> lock(subscription->mutex);
+                subscription->cv.wait_for(lock, std::chrono::seconds(1), [&subscription, context]{
+                    return !subscription->events.empty() || context->IsCancelled();
+                });
+
+                if (context->IsCancelled()) {
+                    break;
+                }
+                if (subscription->events.empty()) {
+                    continue; // Timeout, loop and check cancelled again
+                }
+
+                event = subscription->events.front();
+                subscription->events.pop();
+            }
+
+            vurio::dedup::MediaReadyEvent proto_event;
+            proto_event.set_file_path(event.file_path);
+            proto_event.set_media_type(event.media_type);
+            proto_event.set_success(event.success);
+            proto_event.set_error_message(event.error_message);
+
+            if (!writer->Write(proto_event)) {
+                break; // Connection closed
+            }
+        }
+
+        MediaDedup::MediaReadyBus::instance().unsubscribe(subscription);
         return grpc::Status::OK;
     }
 };

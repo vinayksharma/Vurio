@@ -276,6 +276,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -412,6 +413,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/media_generation_failures.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
@@ -450,6 +457,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/media_generation_failures.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
@@ -518,6 +531,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_thumbnail.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
@@ -536,6 +550,12 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/media_generation_failures.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/files_manager.cpp

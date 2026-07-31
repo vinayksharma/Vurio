@@ -47,9 +47,14 @@ namespace MediaDedup
                                                                 const std::string &source_path,
                                                                 int size);
 
+        // lookup_failed (optional) is set true when the query itself failed
+        // (e.g. DB session pool starved) — callers must treat that as "try
+        // again", NOT as a cache miss, or they'd re-submit generation for an
+        // asset that is already cached.
         static std::optional<ThumbnailCacheRecord> getBestFitThumbnail(DatabaseManager &db,
                                                                        const std::string &source_path,
-                                                                       int min_size);
+                                                                       int min_size,
+                                                                       bool *lookup_failed = nullptr);
 
         /**
          * @brief Insert or update a thumbnail cache record

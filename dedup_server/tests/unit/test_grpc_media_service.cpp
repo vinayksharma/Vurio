@@ -41,6 +41,10 @@ protected:
 
         db_ = std::make_shared<DatabaseManager>(test_db_path_);
         db_->initialize();
+        // The server initializer ensures these tables at startup; a missing
+        // table reads as a failed cache lookup ("busy"), not as a cache miss.
+        ThumbnailCacheOps::ensureTable(*db_);
+        PreviewCacheOps::ensureTable(*db_);
 
         config_ = std::make_shared<UnifiedObservableConfigManager>("test_media_service_config.yaml", false);
         config_->initialize();
@@ -79,20 +83,41 @@ protected:
 #include <grpcpp/grpcpp.h>
 #include "dedup.grpc.pb.h"
 
+// Every gRPC call except Handshake requires the per-instance session token
+// (x-vurio-token). start() writes the pairing cookie to ~/.vurio/grpc.cookie;
+// complete the handshake exactly like a real client to obtain the token.
+static std::string pairWithServer(const std::shared_ptr<grpc::Channel>& channel) {
+    std::string cookie;
+    if (const char* home = std::getenv("HOME")) {
+        std::ifstream ifs(std::filesystem::path(home) / ".vurio" / "grpc.cookie");
+        std::getline(ifs, cookie);
+    }
+    auto security = vurio::dedup::SecurityService::NewStub(channel);
+    vurio::dedup::HandshakeRequest req;
+    req.set_cookie(cookie);
+    vurio::dedup::HandshakeResponse resp;
+    grpc::ClientContext ctx;
+    grpc::Status st = security->Handshake(&ctx, req, &resp);
+    return (st.ok() && resp.ok()) ? resp.session_token() : std::string();
+}
+
 TEST_F(MediaServiceGrpcTest, GetThumbnailNotCachedReturnsUnavailable) {
     std::string socket_path = "/tmp/test_grpc_media_service.sock";
-    
+
     GrpcServerCore server;
     server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel);
+    ASSERT_FALSE(token.empty());
 
     vurio::dedup::GetMediaRequest req;
     req.set_file_path("/tmp/nonexistent.jpg");
     req.set_size("128");
 
     grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
     vurio::dedup::MediaPathResponse resp;
     grpc::Status status = stub->GetThumbnail(&context, req, &resp);
 
@@ -136,12 +161,15 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel);
+    ASSERT_FALSE(token.empty());
 
     vurio::dedup::GetMediaRequest req;
     req.set_file_path(fake_src);
     req.set_size("128");
 
     grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
     vurio::dedup::MediaPathResponse resp;
     grpc::Status status = stub->GetThumbnail(&context, req, &resp);
 
@@ -159,6 +187,8 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel);
+    ASSERT_FALSE(token.empty());
 
     vurio::dedup::GetMediaRequest req;
     req.set_file_path("/tmp/test.jpg");
@@ -169,6 +199,7 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     }
 
     grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
     vurio::dedup::MediaPathResponse resp;
     grpc::Status status = stub->GetPreview(&context, req, &resp);
 

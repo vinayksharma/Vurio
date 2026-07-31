@@ -8,6 +8,7 @@
 #include "orchestration/duplicate_finder.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/thread_pool_manager.hpp"
+#include "core/media_backfill.hpp"
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
@@ -1476,6 +1477,20 @@ namespace MediaDedupServer
 
                 logger.information("Resuming scheduler service...");
                 scheduler->resume();
+
+                // Phase 6: Backfill missing thumbnails/previews. A scan-time
+                // thumbnail failure is non-critical (the file stays processed=2)
+                // and was never revisited, leaving silent gaps that only healed
+                // if the user happened to view the file. The real work lives in
+                // MediaBackfill (server-only TU) behind a hook, so test binaries
+                // compiling this file don't drag in the media-generation stack.
+                if (tpm) {
+                    {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        state_.current_phase = "Backfilling missing thumbnails/previews...";
+                    }
+                    MediaDedup::MediaBackfillHook::run(db, cfg, tpm);
+                }
 
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);

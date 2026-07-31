@@ -27,6 +27,7 @@ namespace MediaDedup
          * Logs info message on successful processing and error messages on failure
          */
         static bool TranscodeToJpeg(const std::string &file_path,
-                                    std::vector<std::uint8_t> &jpeg_data);
+                                    std::vector<std::uint8_t> &jpeg_data,
+                                    int timeout_ms = 60000);
     };
 }

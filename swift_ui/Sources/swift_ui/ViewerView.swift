@@ -31,6 +31,9 @@ struct ViewerView: View {
 
     @State private var currentImage: NSImage? = nil
     @State private var isLoadingImage = false
+    // Server negative-cached the file (unsupported/corrupted): distinct state,
+    // no further requests for it.
+    @State private var unreadableMessage: String? = nil
 
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
@@ -121,6 +124,17 @@ struct ViewerView: View {
                 } else if isLoadingImage {
                     ProgressView()
                         .controlSize(.large)
+                } else if let message = unreadableMessage {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 64))
+                            .foregroundColor(Theme.warning)
+                        Text("File unreadable — unsupported or corrupted")
+                            .foregroundColor(Theme.textPrimary)
+                        Text(message)
+                            .font(.caption)
+                            .foregroundColor(Theme.textSecondary)
+                    }
                 } else if model.selectedImage != nil {
                     VStack {
                         Image(systemName: "photo.badge.exclamationmark")
@@ -387,6 +401,7 @@ struct ViewerView: View {
 
         isLoadingImage = true
         currentImage = nil
+        unreadableMessage = nil
         do {
             let image = try await ServerImageLoader.shared.loadPreview(filePath: filePath)
             // The selection may have moved on while the preview downloaded.
@@ -396,6 +411,11 @@ struct ViewerView: View {
             }
         } catch is CancellationError {
             // Selection changed; the new .task run owns the state.
+        } catch let error as MediaUnreadableError {
+            if model.selectedImage?.filePath == filePath {
+                unreadableMessage = error.message
+                isLoadingImage = false
+            }
         } catch {
             print("Failed to load preview for \(filePath): \(error)")
             if model.selectedImage?.filePath == filePath {

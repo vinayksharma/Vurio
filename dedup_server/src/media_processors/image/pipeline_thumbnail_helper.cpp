@@ -7,6 +7,7 @@
 #include <Poco/Logger.h>
 #include <Poco/JSON/Object.h>
 #include "core/web/web_handlers_websocket.hpp"
+#include "core/media_ready_bus.hpp"
 #include <Magick++.h>
 #include <filesystem>
 #include <chrono>
@@ -85,7 +86,8 @@ namespace MediaDedup
             // Generate thumbnail to blob using ThumbnailGenerator (handles all validation and error handling)
             Magick::Blob blob;
             std::string source_for_generation = transcoded_path.empty() ? file_path : transcoded_path;
-            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality))
+            int timeout_ms = config_manager.getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS);
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, timeout_ms))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;
@@ -136,10 +138,11 @@ namespace MediaDedup
             msg.set("type", "media_ready");
             msg.set("media_type", "thumbnail");
             msg.set("file_path", file_path);
-            
+
             std::stringstream msg_ss;
             msg.stringify(msg_ss);
             WebSocketStatusHandler::broadcastMessage(msg_ss.str());
+            MediaReadyBus::instance().publish({file_path, "thumbnail", true, ""});
 
             return true;
         }

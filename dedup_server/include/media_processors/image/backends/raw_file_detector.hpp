@@ -56,6 +56,13 @@ namespace MediaDedup
          */
         static std::vector<std::string> GetSupportedRawExtensions();
 
+        /**
+         * @brief True when the file's first bytes are all zero — a truncated or
+         * zero-filled copy no decoder can read. Lets callers fail fast with a
+         * "corrupted file" verdict instead of burning a decode attempt.
+         */
+        static bool HasZeroedHeader(const std::string &file_path);
+
     private:
         /**
          * @brief Check if an extension is a raw format

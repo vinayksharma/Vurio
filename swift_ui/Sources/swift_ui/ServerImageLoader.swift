@@ -3,6 +3,13 @@ import SwiftUI
 import GRPC
 import Logging
 
+/// The server negative-cached this file after repeated generation failures
+/// (FAILED_PRECONDITION): it is unsupported or corrupted. Callers show a
+/// distinct "unreadable" state and stop re-requesting.
+struct MediaUnreadableError: Error {
+    let message: String
+}
+
 actor ServerImageLoader {
     static let shared = ServerImageLoader()
 
@@ -29,6 +36,16 @@ actor ServerImageLoader {
     private var activeByPriority: [Int: Int] = [:]
     
     private var inFlightTasks: [String: Task<NSImage, Error>] = [:]
+
+    // MARK: Media-ready push events
+    // The server answers UNAVAILABLE ("generating") on a cache miss and pushes
+    // a MediaReadyEvent when the background generation finishes. Waiters block
+    // on that push (with a short poll fallback) instead of guessing a backoff.
+    private var readyWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    private var mediaReadySubscription: Task<Void, Never>? = nil
+    // Client mirror of the server's negative cache, keyed "type|path": known
+    // unreadable files fail immediately instead of hitting the server again.
+    private var unreadable: [String: String] = [:]
     
     private func getOrCreateTask(key: String, operation: @escaping () async throws -> NSImage) -> Task<NSImage, Error> {
         if let task = inFlightTasks[key] {
@@ -47,8 +64,74 @@ actor ServerImageLoader {
     private func removeInFlightTask(key: String) {
         inFlightTasks.removeValue(forKey: key)
     }
-    
+
     private init() {}
+
+    // MARK: - Media-ready subscription
+
+    /// Lazily opens (and keeps re-opening) the SubscribeToMediaReady stream.
+    /// Requests that raced ahead of the stream are covered by the short poll
+    /// fallback in the retry loops.
+    private func ensureMediaReadySubscription() {
+        guard mediaReadySubscription == nil else { return }
+        mediaReadySubscription = Task {
+            while !Task.isCancelled {
+                guard let client = VurioGrpcClient.shared.mediaStreaming else {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    continue
+                }
+                do {
+                    for try await event in client.subscribeToMediaReady(Vurio_Dedup_Empty()) {
+                        await self.handleMediaReady(event)
+                    }
+                } catch {
+                    logDebug("Media-ready stream dropped: \(error.localizedDescription)")
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private func handleMediaReady(_ event: Vurio_Dedup_MediaReadyEvent) {
+        let key = "\(event.mediaType)|\(event.filePath)"
+        guard let waiters = readyWaiters.removeValue(forKey: key) else { return }
+        for (_, continuation) in waiters {
+            continuation.resume()
+        }
+    }
+
+    private func addReadyWaiter(key: String, id: UUID, continuation: CheckedContinuation<Void, Never>) {
+        readyWaiters[key, default: [:]][id] = continuation
+    }
+
+    private func resumeReadyWaiter(key: String, id: UUID) {
+        if let continuation = readyWaiters[key]?.removeValue(forKey: id) {
+            if readyWaiters[key]?.isEmpty == true { readyWaiters.removeValue(forKey: key) }
+            continuation.resume()
+        }
+    }
+
+    /// Blocks until the server pushes a media-ready event for this file (either
+    /// outcome) or the fallback timeout elapses — whichever comes first.
+    private func waitForReadySignal(type: String, filePath: String, timeoutNs: UInt64) async {
+        let key = "\(type)|\(filePath)"
+        let id = UUID()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            addReadyWaiter(key: key, id: id, continuation: continuation)
+            Task {
+                try? await Task.sleep(nanoseconds: timeoutNs)
+                await self.resumeReadyWaiter(key: key, id: id)
+            }
+        }
+    }
+
+    private func markUnreadable(type: String, filePath: String, message: String) {
+        unreadable["\(type)|\(filePath)"] = message
+    }
+
+    private func unreadableReason(type: String, filePath: String) -> String? {
+        unreadable["\(type)|\(filePath)"]
+    }
     
     /// - Parameter layerPriority: stack layer of this thumbnail (0 = top/highest
     ///   priority). Deeper layers of a collapsed stack only acquire a download
@@ -103,53 +186,73 @@ actor ServerImageLoader {
             }
         }
         
-        var retryDelay: UInt64 = 100_000_000 // 100ms
-        let maxRetryDelay: UInt64 = 400_000_000 // cap backoff at 400ms so late polls don't stall
-        let maxRetries = 10
-        
-        for _ in 0..<maxRetries {
+        // Known-unreadable files fail immediately — no server round trip.
+        if let reason = unreadableReason(type: "thumbnail", filePath: filePath) {
+            throw MediaUnreadableError(message: reason)
+        }
+        ensureMediaReadySubscription()
+
+        // The old fixed budget (10 polls ≈ 4s) lost the race against slow RAW
+        // generations — the asset appeared seconds after the client had given
+        // up. Now UNAVAILABLE waits on the server's media-ready push (2s poll
+        // fallback) under a generous overall deadline; scroll-off still
+        // cancels immediately.
+        let deadline = Date().addingTimeInterval(60)
+        var decodeFailures = 0
+
+        while true {
             do {
                 try Task.checkCancellation()
-                
+
                 guard let client = VurioGrpcClient.shared.mediaStreaming else {
                     throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
                 }
-                
+
                 var request = Vurio_Dedup_GetMediaRequest()
                 request.filePath = filePath
                 request.size = String(size)
-                
+
                 let response = try await client.getThumbnail(request)
                 let responsePath = response.filePath
-                
+
                 try Task.checkCancellation()
-                
+
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
                     ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
                     logDebug("loadThumbnail SUCCESS for \(filePath)")
                     return image
                 } else {
                     logDebug("loadThumbnail FAILED to read from path for \(filePath): \(responsePath)")
-                    // Wait and retry
-                    try await Task.sleep(nanoseconds: retryDelay)
-                    retryDelay = min(retryDelay * 2, maxRetryDelay)
+                    decodeFailures += 1
+                    if decodeFailures >= 3 || Date() >= deadline {
+                        throw NSError(domain: "ServerImageLoader", code: -4, userInfo: [NSLocalizedDescriptionKey: "Failed to decode thumbnail"])
+                    }
+                    try await Task.sleep(nanoseconds: 300_000_000)
                     continue
                 }
             } catch is CancellationError {
                 logDebug("loadThumbnail CANCELLED for \(filePath).")
                 throw CancellationError()
             } catch {
-                if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
-                    try? await Task.sleep(nanoseconds: retryDelay)
-                    retryDelay = min(retryDelay * 2, maxRetryDelay)
-                    continue
+                if let grpcError = error as? GRPCStatus {
+                    if grpcError.code == .unavailable {
+                        if Date() >= deadline { break }
+                        await waitForReadySignal(type: "thumbnail", filePath: filePath, timeoutNs: 2_000_000_000)
+                        continue
+                    }
+                    if grpcError.code == .failedPrecondition {
+                        let message = grpcError.message ?? "File unreadable (unsupported or corrupted)"
+                        markUnreadable(type: "thumbnail", filePath: filePath, message: message)
+                        logDebug("loadThumbnail UNREADABLE for \(filePath): \(message)")
+                        throw MediaUnreadableError(message: message)
+                    }
                 }
                 logDebug("loadThumbnail ERROR for \(filePath): \(error.localizedDescription)")
                 throw error
             }
         }
-        logDebug("loadThumbnail MAX RETRIES for \(filePath)")
-        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
+        logDebug("loadThumbnail DEADLINE for \(filePath)")
+        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for thumbnail generation"])
     }
     
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
@@ -186,47 +289,65 @@ actor ServerImageLoader {
             }
         }
         
-        var retryDelay: UInt64 = 100_000_000 // 100ms
-        let maxRetryDelay: UInt64 = 400_000_000 // cap backoff at 400ms so late polls don't stall
-        let maxRetries = 10
-        
-        for _ in 0..<maxRetries {
+        if let reason = unreadableReason(type: "preview", filePath: filePath) {
+            throw MediaUnreadableError(message: reason)
+        }
+        ensureMediaReadySubscription()
+
+        // Same push-driven wait as thumbnails: a RAW preview can take longer
+        // than any polite polling budget, and the user is actively looking at
+        // the viewer while it generates.
+        let deadline = Date().addingTimeInterval(60)
+        var decodeFailures = 0
+
+        while true {
             do {
                 try Task.checkCancellation()
-                
+
                 guard let client = VurioGrpcClient.shared.mediaStreaming else {
                     throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
                 }
-                
+
                 var request = Vurio_Dedup_GetMediaRequest()
                 request.filePath = filePath
-                
+
                 let response = try await client.getPreview(request)
                 let responsePath = response.filePath
-                
+
                 try Task.checkCancellation()
-                
+
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
                     ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                     return image
                 } else {
-                    try await Task.sleep(nanoseconds: retryDelay)
-                    retryDelay = min(retryDelay * 2, maxRetryDelay)
+                    decodeFailures += 1
+                    if decodeFailures >= 3 || Date() >= deadline {
+                        throw NSError(domain: "ServerImageLoader", code: -4, userInfo: [NSLocalizedDescriptionKey: "Failed to decode preview"])
+                    }
+                    try await Task.sleep(nanoseconds: 300_000_000)
                     continue
                 }
             } catch is CancellationError {
                 logDebug("loadPreview CANCELLED for \(filePath).")
                 throw CancellationError()
             } catch {
-                if let grpcError = error as? GRPCStatus, grpcError.code == .unavailable {
-                    try? await Task.sleep(nanoseconds: retryDelay)
-                    retryDelay = min(retryDelay * 2, maxRetryDelay)
-                    continue
+                if let grpcError = error as? GRPCStatus {
+                    if grpcError.code == .unavailable {
+                        if Date() >= deadline { break }
+                        await waitForReadySignal(type: "preview", filePath: filePath, timeoutNs: 2_000_000_000)
+                        continue
+                    }
+                    if grpcError.code == .failedPrecondition {
+                        let message = grpcError.message ?? "File unreadable (unsupported or corrupted)"
+                        markUnreadable(type: "preview", filePath: filePath, message: message)
+                        logDebug("loadPreview UNREADABLE for \(filePath): \(message)")
+                        throw MediaUnreadableError(message: message)
+                    }
                 }
                 throw error
             }
         }
-        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Max retries exceeded"])
+        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for preview generation"])
     }
     
     private func decodeImageInBackground(filePath: String, priority: TaskPriority? = nil) async -> NSImage? {
