@@ -11,6 +11,7 @@ All project documentation is consolidated in this directory for easy navigation 
 
 - **[architecture_design.md](architecture_design.md)** - System architecture, database design, and component technical specifications
 - **[api_reference.md](api_reference.md)** - External-facing and internal API specifications
+- **[ui_requirements.md](ui_requirements.md)** - Product requirements for the SwiftUI desktop frontend
 
 ## Technical Analysis
 

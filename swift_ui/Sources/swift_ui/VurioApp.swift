@@ -201,9 +201,14 @@ struct ContentView: View {
     enum SidebarItem: Hashable {
         case vu
         case binned
+        case viewer
         case settings
         case scroller
     }
+
+    // Double-clicks in VU/BINNED post a request here; reacting to it switches
+    // the sidebar to the VIEWER tab.
+    @ObservedObject private var viewerState = ViewerState.shared
     
     var body: some View {
         let isCompact = sidebarWidth < 140
@@ -211,64 +216,19 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 NavigationLink(value: SidebarItem.vu) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "square.grid.2x2").font(.title2)
-                            .frame(width: 24, alignment: .center)
-                        if !isCompact {
-                            Text("VU")
-                                .fontWeight(.bold)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
-                        }
-                    }
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, isCompact ? 0 : 4)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                    SidebarLinkLabel(icon: "square.grid.2x2", title: "VU", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.binned) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "photo.on.rectangle.angled").font(.title2)
-                            .frame(width: 24, alignment: .center)
-                        if !isCompact {
-                            Text("BINNED")
-                                .fontWeight(.bold)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
-                        }
-                    }
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, isCompact ? 0 : 4)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                    SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
+                }
+                NavigationLink(value: SidebarItem.viewer) {
+                    SidebarLinkLabel(icon: "viewfinder", title: "VIEWER", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.settings) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "gear").font(.title2)
-                            .frame(width: 24, alignment: .center)
-                        if !isCompact {
-                            Text("SETTINGS")
-                                .fontWeight(.bold)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
-                        }
-                    }
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, isCompact ? 0 : 4)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                    SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.scroller) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "scroll").font(.title2)
-                            .frame(width: 24, alignment: .center)
-                        if !isCompact {
-                            Text("SCROLLER")
-                                .fontWeight(.bold)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
-                        }
-                    }
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, isCompact ? 0 : 4)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
+                    SidebarLinkLabel(icon: "scroll", title: "SCROLLER", isCompact: isCompact)
                 }
             }
             .listStyle(SidebarListStyle())
@@ -302,6 +262,10 @@ struct ContentView: View {
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)
 
+                    ViewerView(isActive: selection == .viewer)
+                        .opacity(selection == .viewer ? 1 : 0)
+                        .allowsHitTesting(selection == .viewer)
+
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)
                         .allowsHitTesting(selection == .settings)
@@ -331,6 +295,11 @@ struct ContentView: View {
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
+        .onChange(of: viewerState.request) { _, request in
+            if request != nil {
+                selection = .viewer
+            }
+        }
         .task {
             // Background status poller
             while !Task.isCancelled {
@@ -339,6 +308,29 @@ struct ContentView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
+    }
+}
+
+// One sidebar row: icon plus (when the sidebar is wide enough) the tab title.
+struct SidebarLinkLabel: View {
+    let icon: String
+    let title: String
+    let isCompact: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.title2)
+                .frame(width: 24, alignment: .center)
+            if !isCompact {
+                Text(title)
+                    .fontWeight(.bold)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, isCompact ? 0 : 4)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
     }
 }
 

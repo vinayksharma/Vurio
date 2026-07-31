@@ -3,14 +3,16 @@ import GRPC
 import AppKit
 
 struct VurioDuplicatesView: View {
-    @State private var selection: Int? = 0
+    // Per-tab row selection: VU and BINNED keep independent selections (and
+    // scroll positions — both scrollers stay mounted) across tab switches.
+    @State private var vuSelection: Int? = 0
+    @State private var binnedSelection: Int? = 0
     @State private var selectedCandidateIndex: Int = 0
+    // VU: path of the single-click-selected thumbnail (accent border on its tile).
+    @State private var selectedVUFilePath: String? = nil
 
     @StateObject private var viewModel = DuplicatesViewModel()
-    
-    @State private var selectedGroup: Vurio_Dedup_DuplicateGroup?
-    @State private var selectedFileIndex: Int = 0
-    @State private var showingPopup = false
+
     @State private var showingBulkEjectConfirmation = false
     @State private var isEjectButtonHovered = false
     @State private var isRestoreButtonHovered = false
@@ -139,77 +141,34 @@ struct VurioDuplicatesView: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
-            } else if showAllMode {
-                // ALL mode: one row per capture day.
-                if allViewModel.days.isEmpty {
-                    VStack {
-                        Spacer()
-                        Text("No days available.")
-                            .foregroundColor(Theme.textSecondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    GeometryReader { scrollGeo in
-                        var customInsets = scrollGeo.safeAreaInsets
-                        customInsets.bottom += 30
-
-                        return VurioScroller(
-                            itemHeights: Array(repeating: dayRowHeight, count: Int(allViewModel.totalDays)),
-                            scrollbarInsets: customInsets,
-                            selection: $selection,
-                            onVisibleRowsChanged: { range in
-                                allViewModel.updateVisibleRows(range)
-                            }
-                        ) { index in
-                            renderDayRow(at: index, rowHeight: dayRowHeight)
-                        }
-                        .background(Color.clear)
-                    }
-                }
-            } else if viewModel.groups.isEmpty && !viewModel.isLoading {
-                VStack {
-                    Spacer()
-                    Text("No viewModel.groups available.")
-                        .foregroundColor(Theme.textSecondary)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
             } else {
-                GeometryReader { scrollGeo in
-                    var customInsets = scrollGeo.safeAreaInsets
-                    customInsets.bottom += 30
+                // Both tabs' scrollers stay mounted (opacity-toggled, like the
+                // tab panels in ContentView) so switching between VU and BINNED
+                // preserves each side's scroll position and selection — an
+                // if/else would tear down the AppKit scroll view on every switch.
+                ZStack {
+                    vuList
+                        .opacity(showAllMode ? 1 : 0)
+                        .allowsHitTesting(showAllMode)
 
-                    return VurioScroller(
-                        itemHeights: Array(repeating: rowHeight, count: Int(viewModel.totalGroups)),
-                        scrollbarInsets: customInsets,
-                        selection: $selection,
-                        onVisibleRowsChanged: { range in
-                            viewModel.updateVisibleRows(range)
-                        }
-                    ) { index in
-                        renderRow(at: index, rowHeight: rowHeight)
-                    }
-                    .background(Color.clear)
+                    binnedList
+                        .opacity(showAllMode ? 0 : 1)
+                        .allowsHitTesting(!showAllMode)
                 }
             }
         }
-        .sheet(isPresented: $showingPopup) {
-            if let group = selectedGroup {
-                // VU (ALL/day) view is read-only for eject, so the popup opened from
-                // it hides its eject/restore controls. BINNED keeps them.
-                ImagePopupView(group: group, isPresented: $showingPopup, initialIndex: selectedFileIndex, allowEject: !showAllMode) { filePath, isEjected in
-                    if let index = viewModel.groups.firstIndex(where: { $0.group?.groupID == group.groupID }) {
-                        if let fileIndex = viewModel.groups[index].group?.files.firstIndex(where: { $0.filePath == filePath }) {
-                            viewModel.groups[index].group?.files[fileIndex].isEjected = isEjected
-                        }
-                    }
-                    if let fileIndex = selectedGroup?.files.firstIndex(where: { $0.filePath == filePath }) {
-                        selectedGroup?.files[fileIndex].isEjected = isEjected
-                    }
-                    allViewModel.applyEjectionState([filePath], isEjected: isEjected)
+        // The VIEWER tab (group mode) ejects/restores through its own gRPC calls;
+        // it broadcasts each change so the loaded rows here stay in sync without
+        // a reload.
+        .onReceive(NotificationCenter.default.publisher(for: .viewerEjectStatusChanged)) { note in
+            guard let filePath = note.userInfo?["filePath"] as? String,
+                  let isEjected = note.userInfo?["isEjected"] as? Bool else { return }
+            for groupIndex in viewModel.groups.indices {
+                if let fileIndex = viewModel.groups[groupIndex].group?.files.firstIndex(where: { $0.filePath == filePath }) {
+                    viewModel.groups[groupIndex].group?.files[fileIndex].isEjected = isEjected
                 }
             }
+            allViewModel.applyEjectionState([filePath], isEjected: isEjected)
         }
         .alert("Eject Duplicates", isPresented: $showingBulkEjectConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -318,6 +277,68 @@ struct VurioDuplicatesView: View {
         // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
+    // VU (ALL mode) list: one row per capture day.
+    @ViewBuilder
+    private var vuList: some View {
+        if allViewModel.days.isEmpty {
+            VStack {
+                Spacer()
+                Text("No days available.")
+                    .foregroundColor(Theme.textSecondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            GeometryReader { scrollGeo in
+                var customInsets = scrollGeo.safeAreaInsets
+                customInsets.bottom += 30
+
+                return VurioScroller(
+                    itemHeights: Array(repeating: dayRowHeight, count: Int(allViewModel.totalDays)),
+                    scrollbarInsets: customInsets,
+                    selection: $vuSelection,
+                    onVisibleRowsChanged: { range in
+                        allViewModel.updateVisibleRows(range)
+                    }
+                ) { index in
+                    renderDayRow(at: index, rowHeight: dayRowHeight)
+                }
+                .background(Color.clear)
+            }
+        }
+    }
+
+    // BINNED list: one row per duplicate group.
+    @ViewBuilder
+    private var binnedList: some View {
+        if viewModel.groups.isEmpty && !viewModel.isLoading {
+            VStack {
+                Spacer()
+                Text("No viewModel.groups available.")
+                    .foregroundColor(Theme.textSecondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            GeometryReader { scrollGeo in
+                var customInsets = scrollGeo.safeAreaInsets
+                customInsets.bottom += 30
+
+                return VurioScroller(
+                    itemHeights: Array(repeating: rowHeight, count: Int(viewModel.totalGroups)),
+                    scrollbarInsets: customInsets,
+                    selection: $binnedSelection,
+                    onVisibleRowsChanged: { range in
+                        viewModel.updateVisibleRows(range)
+                    }
+                ) { index in
+                    renderRow(at: index, rowHeight: rowHeight)
+                }
+                .background(Color.clear)
+            }
+        }
+    }
+
     // The bulk Eject/Restore buttons for the BINNED tab. Extracted so the Filters
     // bar stays within the Swift type-checker's expression limit.
     @ViewBuilder
@@ -407,13 +428,16 @@ struct VurioDuplicatesView: View {
                 duplicateTightness: viewModel.duplicateTightness,
                 isProcessing: viewModel.isProcessing,
                 pageSize: viewModel.pageSize,
-                isSelected: index == selection,
+                isSelected: index == binnedSelection,
                 selectedCandidateIndex: $selectedCandidateIndex,
-                onThumbnailTapped: { fileIndex in
-                    selection = index
-                    selectedGroup = viewModel.groups[index].group
-                    selectedFileIndex = fileIndex
-                    showingPopup = true
+                onThumbnailTapped: { _ in
+                    binnedSelection = index
+                },
+                onThumbnailDoubleTapped: { fileIndex in
+                    binnedSelection = index
+                    if let group = viewModel.groups[index].group {
+                        ViewerState.shared.open(.group(group, selectedIndex: fileIndex))
+                    }
                 },
                 onEjectSet: { paths in
                     if let group = viewModel.groups[index].group {
@@ -436,11 +460,11 @@ struct VurioDuplicatesView: View {
             .id(index)
             .contentShape(Rectangle())
             .onTapGesture {
-                selection = index
+                binnedSelection = index
             }
         }
     }
-    
+
     // One ALL-view day row: a loaded DayGroupCard or a placeholder that triggers
     // its page load. Mirrors VurioGroupRowWrapper for the binned rows.
     @ViewBuilder
@@ -452,12 +476,18 @@ struct VurioDuplicatesView: View {
                     DayGroupCard(
                         day: dayGroup,
                         isEjecting: viewModel.isProcessing,
-                        isSelected: index == selection,
-                        onThumbnailTapped: { group, fileIndex in
-                            selection = index
-                            selectedGroup = group
-                            selectedFileIndex = fileIndex
-                            showingPopup = true
+                        isSelected: index == vuSelection,
+                        selectedFilePath: selectedVUFilePath,
+                        onThumbnailTapped: { file in
+                            vuSelection = index
+                            selectedVUFilePath = file.filePath
+                        },
+                        onThumbnailDoubleTapped: { file in
+                            vuSelection = index
+                            selectedVUFilePath = file.filePath
+                            // `index` is the day's global offset (0 = newest),
+                            // which anchors the VIEWER's library timeline.
+                            ViewerState.shared.open(.timeline(anchorDayIndex: index, file: file))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)
@@ -483,7 +513,7 @@ struct VurioDuplicatesView: View {
             .id(index)
             .contentShape(Rectangle())
             .onTapGesture {
-                selection = index
+                vuSelection = index
             }
         }
     }
@@ -578,6 +608,7 @@ struct VurioGroupRowWrapper: View {
     let isSelected: Bool
     @Binding var selectedCandidateIndex: Int
     let onThumbnailTapped: (Int) -> Void
+    let onThumbnailDoubleTapped: (Int) -> Void
     let onEjectSet: ([String]) -> Void
     let onRestoreSet: ([String]) -> Void
     let onLocateSet: (String) -> Void
@@ -593,6 +624,7 @@ struct VurioGroupRowWrapper: View {
                     isSelected: isSelected,
                     selectedCandidateIndex: $selectedCandidateIndex,
                     onThumbnailTapped: onThumbnailTapped,
+                    onThumbnailDoubleTapped: onThumbnailDoubleTapped,
                     onEjectSet: onEjectSet,
                     onRestoreSet: onRestoreSet,
                     onLocateSet: onLocateSet

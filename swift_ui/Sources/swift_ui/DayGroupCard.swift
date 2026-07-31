@@ -10,7 +10,11 @@ struct DayGroupCard: View {
     let day: Vurio_Dedup_DayGroup
     var isEjecting: Bool
     var isSelected: Bool
-    var onThumbnailTapped: (Vurio_Dedup_DuplicateGroup, Int) -> Void
+    // Path of the file selected by single-click (accent border on its tile).
+    var selectedFilePath: String?
+    // Single-click selects the file; double-click opens it in the VIEWER tab.
+    var onThumbnailTapped: (Vurio_Dedup_DayFile) -> Void
+    var onThumbnailDoubleTapped: (Vurio_Dedup_DayFile) -> Void
     var onLocateSet: (String) -> Void
     // Called when the trailing sentinel scrolls into view and the day has more
     // files than are loaded (horizontal-scroll pagination).
@@ -62,11 +66,12 @@ struct DayGroupCard: View {
         return result
     }
 
-    /// "YYYY-MM-DD HH:MM" — the day plus the first photo's taken time.
+    /// "YYYY-MM-DD  HH:MM" — the day plus the first photo's taken time. Double
+    /// space: DSEG7 renders a single space too narrow to read as a separator.
     private var dateStampText: String {
         if let first = day.files.first, first.takenTime.count >= 16 {
             let time = String(first.takenTime.dropFirst(11).prefix(5))
-            return "\(day.day) \(time)"
+            return "\(day.day)  \(time)"
         }
         return day.day
     }
@@ -143,32 +148,22 @@ struct DayGroupCard: View {
         }
     }
 
-    /// Synthesizes a DuplicateGroup so the existing ImagePopupView can present
-    /// any set of day files.
-    private func makeGroup(id: String, files: [Vurio_Dedup_DayFile]) -> Vurio_Dedup_DuplicateGroup {
-        Vurio_Dedup_DuplicateGroup.with {
-            $0.groupID = id
-            $0.files = files.map { asDuplicateFile($0) }
-        }
-    }
-
     @ViewBuilder
     private func singleView(_ file: Vurio_Dedup_DayFile) -> some View {
-        memberView(file, isRep: false, popupFiles: [file], popupGroupID: "day-\(day.day)")
+        memberView(file, isRep: false)
     }
 
     @ViewBuilder
-    private func memberView(_ file: Vurio_Dedup_DayFile, isRep: Bool, popupFiles: [Vurio_Dedup_DayFile], popupGroupID: String) -> some View {
+    private func memberView(_ file: Vurio_Dedup_DayFile, isRep: Bool) -> some View {
         // VU is read-only for eject (allowEject: false) — no per-tile eject/restore
         // and no ejected (red) border. Eject management lives on the BINNED tab.
         DuplicateMemberView(file: asDuplicateFile(file), isRep: isRep, isEjecting: isEjecting, onThumbnailTapped: {
-            if !isEjecting {
-                let index = popupFiles.firstIndex(where: { $0.filePath == file.filePath }) ?? 0
-                onThumbnailTapped(makeGroup(id: popupGroupID, files: popupFiles), index)
-            }
+            if !isEjecting { onThumbnailTapped(file) }
+        }, onThumbnailDoubleTapped: {
+            if !isEjecting { onThumbnailDoubleTapped(file) }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, allowEject: false, fixedSize: 70, showMatchScore: false)
+        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: 70, showMatchScore: false)
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -225,7 +220,7 @@ struct DayGroupCard: View {
 
         HStack(alignment: .center, spacing: 12) {
             ForEach(members, id: \.id) { file in
-                memberView(file, isRep: file.isRepresentative, popupFiles: members, popupGroupID: groupID)
+                memberView(file, isRep: file.isRepresentative)
             }
         }
         .padding(.horizontal, 8)
