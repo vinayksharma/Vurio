@@ -2,13 +2,14 @@ import SwiftUI
 import GRPC
 
 extension Notification.Name {
-    /// Posted by the VIEWER after a successful eject/restore so the persistent
-    /// VU/BINNED views reconcile their loaded rows without a reload.
+    /// Posted by the embedded viewer after a successful eject/restore so the
+    /// persistent VU/BINNED views reconcile their loaded rows without a reload.
     /// userInfo: ["filePath": String, "isEjected": Bool]
     static let viewerEjectStatusChanged = Notification.Name("ViewerEjectStatusChanged")
 }
 
-/// What the VIEWER tab should display. Produced by a double-click in VU/BINNED.
+/// What an embedded viewer should display. Produced by a double-click in
+/// VU/BINNED, which slides that tab's viewer in over the grid.
 enum ViewerContent {
     /// Library timeline anchored at the double-clicked image's day. The anchor
     /// index is the day's global offset (0 = newest), i.e. its VU row index.
@@ -23,19 +24,7 @@ struct ViewerRequest: Identifiable, Equatable {
     static func == (lhs: ViewerRequest, rhs: ViewerRequest) -> Bool { lhs.id == rhs.id }
 }
 
-/// Cross-tab handoff: VU/BINNED post a request here; ContentView reacts by
-/// switching the sidebar selection to VIEWER; ViewerView consumes the request.
-@MainActor
-final class ViewerState: ObservableObject {
-    static let shared = ViewerState()
-    @Published private(set) var request: ViewerRequest?
-
-    func open(_ content: ViewerContent) {
-        request = ViewerRequest(content: content)
-    }
-}
-
-/// One image in the VIEWER strip, unified over DayFile (timeline) and
+/// One image in the viewer strip, unified over DayFile (timeline) and
 /// DuplicateFile (group) shapes.
 struct ViewerImage: Identifiable, Equatable {
     let id: String
@@ -78,7 +67,7 @@ enum ViewerItem: Identifiable, Equatable {
     }
 }
 
-/// Data model for the VIEWER tab. Group mode holds a BINNED group verbatim;
+/// Data model for an embedded viewer. Group mode holds a BINNED group verbatim;
 /// timeline mode keeps a contiguous window of whole days (newest day first,
 /// files ascending by taken time within a day — VU's reading order flattened
 /// horizontally) and grows it at either end as the strip scrolls.

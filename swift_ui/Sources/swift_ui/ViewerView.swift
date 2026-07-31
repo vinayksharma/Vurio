@@ -1,17 +1,25 @@
 import SwiftUI
 import AppKit
 
-/// The VIEWER tab: a full-client-area image viewer with non-destructive view
-/// transforms (zoom/pan/rotate/fit/actual-size) over a horizontally scrollable
-/// thumbnail strip styled like a VU day panel. The strip holds either the
-/// library timeline (entered from VU) or one duplicate group (entered from
-/// BINNED); eject/restore is available in group mode only.
+/// The embedded viewer: slides in over the VU/BINNED grid on a thumbnail
+/// double-click, filling the tab with non-destructive view transforms
+/// (zoom/pan/rotate/fit/actual-size) over a horizontally scrollable thumbnail
+/// strip styled like a VU day panel. The strip holds either the library
+/// timeline (opened from VU) or one duplicate group (opened from BINNED);
+/// eject/restore is available in group mode only. VU and BINNED each host
+/// their own instance; the X button (or Esc) slides the grid back in.
 struct ViewerView: View {
-    // Keyboard shortcuts and eject actions are gated on the tab being frontmost:
-    // the view stays mounted (opacity-toggled) while other tabs are shown.
+    /// What to show; nil while this tab's viewer is closed. The view stays
+    /// mounted (parked offscreen) so an open viewer's strip position and
+    /// selection survive tab switches.
+    let request: ViewerRequest?
+    // Keyboard shortcuts and eject actions are gated on this instance being
+    // the slid-in viewer of the frontmost tab: both instances stay mounted
+    // while hidden and must not swallow keys meant for VU/BINNED.
     let isActive: Bool
+    /// Closes the viewer (X button / Esc): the owner slides the grid back in.
+    let onClose: () -> Void
 
-    @ObservedObject private var viewerState = ViewerState.shared
     @StateObject private var model = ViewerViewModel()
 
     @State private var scale: CGFloat = 1.0
@@ -29,18 +37,21 @@ struct ViewerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The path bar (and its close button) stays up even when the strip
+            // is empty so the viewer can always be dismissed.
+            pathBar
             if model.items.isEmpty && !model.isLoading {
                 emptyState
             } else {
-                pathBar
                 mainImageArea
                 controlBar
                 thumbnailStrip
             }
         }
+        .background(Theme.background)
         .background(keyboardShortcuts)
-        .task(id: viewerState.request?.id) {
-            if let request = viewerState.request {
+        .task(id: request?.id) {
+            if let request {
                 await model.load(request)
             }
         }
@@ -60,7 +71,7 @@ struct ViewerView: View {
             Image(systemName: "viewfinder")
                 .font(.system(size: 48))
                 .foregroundColor(Theme.textSecondary)
-            Text("Double-click an image in VU or BINNED to view it here")
+            Text("Nothing to display")
                 .foregroundColor(Theme.textSecondary)
             Spacer()
         }
@@ -70,7 +81,7 @@ struct ViewerView: View {
     // MARK: - Path bar
 
     private var pathBar: some View {
-        HStack {
+        HStack(spacing: 12) {
             if let selected = model.selectedImage {
                 Text(selected.filePath)
                     .font(.custom("Menlo", size: 9))
@@ -80,6 +91,13 @@ struct ViewerView: View {
                     .help(selected.filePath)
             }
             Spacer()
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .help("Close viewer (Esc)")
         }
         .padding(.horizontal, 30)
         .padding(.vertical, 6)
@@ -290,26 +308,32 @@ struct ViewerView: View {
 
     // MARK: - Keyboard
 
-    /// Hidden buttons carrying the shortcuts. Mounted only while the VIEWER tab
-    /// is frontmost — the view itself stays alive (opacity-toggled) otherwise
-    /// and must not swallow keys meant for VU/BINNED.
+    /// Hidden buttons carrying the shortcuts. Mounted only while this viewer
+    /// is the slid-in one on the frontmost tab — the view itself stays alive
+    /// (parked offscreen) otherwise and must not swallow keys meant for
+    /// VU/BINNED.
     @ViewBuilder
     private var keyboardShortcuts: some View {
-        if isActive && !model.items.isEmpty {
+        if isActive {
             Group {
-                Button("") { model.selectPrevious() }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("") { onClose() }
+                    .keyboardShortcut(.escape, modifiers: [])
                     .hidden()
-                Button("") { model.selectNext() }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-                    .hidden()
-                if model.isGroupMode, model.selectedImage?.isRepresentative == false {
-                    Button("") { Task { await model.toggleEjectSelected() } }
-                        .keyboardShortcut(.delete, modifiers: [])
+                if !model.items.isEmpty {
+                    Button("") { model.selectPrevious() }
+                        .keyboardShortcut(.leftArrow, modifiers: [])
                         .hidden()
-                    Button("") { Task { await model.toggleEjectSelected() } }
-                        .keyboardShortcut(.deleteForward, modifiers: [])
+                    Button("") { model.selectNext() }
+                        .keyboardShortcut(.rightArrow, modifiers: [])
                         .hidden()
+                    if model.isGroupMode, model.selectedImage?.isRepresentative == false {
+                        Button("") { Task { await model.toggleEjectSelected() } }
+                            .keyboardShortcut(.delete, modifiers: [])
+                            .hidden()
+                        Button("") { Task { await model.toggleEjectSelected() } }
+                            .keyboardShortcut(.deleteForward, modifiers: [])
+                            .hidden()
+                    }
                 }
             }
         }
