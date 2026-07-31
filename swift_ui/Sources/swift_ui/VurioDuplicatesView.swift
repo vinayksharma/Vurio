@@ -20,6 +20,18 @@ struct VurioDuplicatesView: View {
     // Mode is driven by the selected sidebar tab: BINNED (duplicate groups) vs
     // VU (every photo grouped by capture day). false = binned, true = ALL/day view.
     let showAllMode: Bool
+    // Whether VU/BINNED is the selected sidebar tab at all (this panel stays
+    // mounted behind SETTINGS/SCROLLER). Gates the embedded viewers' keyboard
+    // shortcuts.
+    let isFrontmost: Bool
+
+    // Per-tab embedded viewer: a double-click sets the tab's request and the
+    // viewer slides in over the grid; X/Esc clears it and slides the grid back.
+    // Each tab keeps its own request so an open viewer survives tab switches.
+    @State private var vuViewerRequest: ViewerRequest? = nil
+    @State private var binnedViewerRequest: ViewerRequest? = nil
+
+    private static let viewerSlide = Animation.spring(response: 0.4, dampingFraction: 0.85)
 
     @StateObject private var allViewModel = AllDaysViewModel()
 
@@ -39,6 +51,72 @@ struct VurioDuplicatesView: View {
     ]
     
     var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                gridContent
+                    .offset(x: activeViewerOpen ? -geo.size.width : 0)
+                    .allowsHitTesting(!activeViewerOpen)
+
+                embeddedViewers(width: geo.size.width)
+            }
+            .clipped()
+        }
+    }
+
+    private var activeViewerOpen: Bool {
+        showAllMode ? vuViewerRequest != nil : binnedViewerRequest != nil
+    }
+
+    // Both viewers stay mounted so an open viewer's state (strip position,
+    // selection) survives tab switches. A closed viewer parks offscreen to the
+    // right; opening/closing slides it over the grid (animated at the mutation
+    // sites), while tab switches swap the two instantly via opacity, matching
+    // the lists below.
+    @ViewBuilder
+    private func embeddedViewers(width: CGFloat) -> some View {
+        ViewerView(
+            request: vuViewerRequest,
+            isActive: isFrontmost && showAllMode && vuViewerRequest != nil,
+            onClose: { closeViewer(inAllMode: true) }
+        )
+        .offset(x: vuViewerRequest != nil ? 0 : width)
+        .opacity(showAllMode ? 1 : 0)
+        .allowsHitTesting(showAllMode && vuViewerRequest != nil)
+
+        ViewerView(
+            request: binnedViewerRequest,
+            isActive: isFrontmost && !showAllMode && binnedViewerRequest != nil,
+            onClose: { closeViewer(inAllMode: false) }
+        )
+        .offset(x: binnedViewerRequest != nil ? 0 : width)
+        .opacity(showAllMode ? 0 : 1)
+        .allowsHitTesting(!showAllMode && binnedViewerRequest != nil)
+    }
+
+    private func openViewer(_ content: ViewerContent) {
+        withAnimation(Self.viewerSlide) {
+            if showAllMode {
+                vuViewerRequest = ViewerRequest(content: content)
+            } else {
+                binnedViewerRequest = ViewerRequest(content: content)
+            }
+        }
+    }
+
+    private func closeViewer(inAllMode: Bool) {
+        withAnimation(Self.viewerSlide) {
+            if inAllMode {
+                vuViewerRequest = nil
+            } else {
+                binnedViewerRequest = nil
+            }
+        }
+    }
+
+    // The grid: filters bar plus the VU/BINNED scroller stack, with all the
+    // data-lifecycle modifiers. Always mounted; an embedded viewer slides in
+    // over it.
+    private var gridContent: some View {
         VStack(alignment: .leading, spacing: 0) {
 
             // Top Control Bar — collapsible "Filters" panel (collapsed by default),
@@ -157,9 +235,9 @@ struct VurioDuplicatesView: View {
                 }
             }
         }
-        // The VIEWER tab (group mode) ejects/restores through its own gRPC calls;
-        // it broadcasts each change so the loaded rows here stay in sync without
-        // a reload.
+        // The embedded viewer (group mode) ejects/restores through its own gRPC
+        // calls; it broadcasts each change so the loaded rows here stay in sync
+        // without a reload.
         .onReceive(NotificationCenter.default.publisher(for: .viewerEjectStatusChanged)) { note in
             guard let filePath = note.userInfo?["filePath"] as? String,
                   let isEjected = note.userInfo?["isEjected"] as? Bool else { return }
@@ -436,7 +514,7 @@ struct VurioDuplicatesView: View {
                 onThumbnailDoubleTapped: { fileIndex in
                     binnedSelection = index
                     if let group = viewModel.groups[index].group {
-                        ViewerState.shared.open(.group(group, selectedIndex: fileIndex))
+                        openViewer(.group(group, selectedIndex: fileIndex))
                     }
                 },
                 onEjectSet: { paths in
@@ -486,8 +564,8 @@ struct VurioDuplicatesView: View {
                             vuSelection = index
                             selectedVUFilePath = file.filePath
                             // `index` is the day's global offset (0 = newest),
-                            // which anchors the VIEWER's library timeline.
-                            ViewerState.shared.open(.timeline(anchorDayIndex: index, file: file))
+                            // which anchors the viewer's library timeline.
+                            openViewer(.timeline(anchorDayIndex: index, file: file))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

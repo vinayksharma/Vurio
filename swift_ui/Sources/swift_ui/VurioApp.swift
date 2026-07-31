@@ -201,15 +201,10 @@ struct ContentView: View {
     enum SidebarItem: Hashable {
         case vu
         case binned
-        case viewer
         case settings
         case scroller
     }
 
-    // Double-clicks in VU/BINNED post a request here; reacting to it switches
-    // the sidebar to the VIEWER tab.
-    @ObservedObject private var viewerState = ViewerState.shared
-    
     var body: some View {
         let isCompact = sidebarWidth < 140
         
@@ -220,9 +215,6 @@ struct ContentView: View {
                 }
                 NavigationLink(value: SidebarItem.binned) {
                     SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
-                }
-                NavigationLink(value: SidebarItem.viewer) {
-                    SidebarLinkLabel(icon: "viewfinder", title: "VIEWER", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.settings) {
                     SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
@@ -257,14 +249,15 @@ struct ContentView: View {
                 ZStack {
                     // One panel drives both tabs: VU shows the day-based ALL view,
                     // BINNED shows the duplicate-groups view. The mode follows the
-                    // selected tab (VurioDuplicatesView reacts to showAllMode).
-                    VurioDuplicatesView(showAllMode: selection == .vu)
+                    // selected tab (VurioDuplicatesView reacts to showAllMode). It
+                    // also hosts each tab's embedded viewer; isFrontmost gates the
+                    // viewer's keyboard shortcuts to these two tabs.
+                    VurioDuplicatesView(
+                        showAllMode: selection == .vu,
+                        isFrontmost: selection == .vu || selection == .binned
+                    )
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)
-
-                    ViewerView(isActive: selection == .viewer)
-                        .opacity(selection == .viewer ? 1 : 0)
-                        .allowsHitTesting(selection == .viewer)
 
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)
@@ -294,11 +287,6 @@ struct ContentView: View {
         )
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
-        }
-        .onChange(of: viewerState.request) { _, request in
-            if request != nil {
-                selection = .viewer
-            }
         }
         .task {
             // Background status poller

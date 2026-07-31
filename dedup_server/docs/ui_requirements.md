@@ -76,3 +76,20 @@ Switching between VU and BINNED must preserve each tab's view state — scroll p
 - Tab switch + context handoff via a small shared `ViewerState` observable (`ViewerContent.timeline(anchorDayIndex:dayKey:file:)` / `.group(group:selectedIndex:)`).
 - Double-click is implemented on the shared tile (`DuplicateMemberView`) as a `TapGesture(count: 2)` layered with the existing single tap; single-click select fires immediately (no double-click delay) since selection is a prerequisite of opening the viewer anyway.
 - Eject-state changes made in the VIEWER are broadcast (NotificationCenter) so the persistent VU/BINNED views reconcile without a reload.
+
+---
+
+## Embedded Viewer (2026-07-30) — supersedes the VIEWER tab's navigation model
+
+The separate VIEWER sidebar tab is removed; the viewer is now embedded in the VU and BINNED tabs themselves. Everything else about the viewer (main image area and transforms, thumbnail-strip modes, group-mode eject/restore, ←/→ and Delete shortcuts) is unchanged from the VIEWER Tab section above.
+
+- **Open:** double-clicking a thumbnail slides that tab's grid out to the left and slides the viewer in from the right, in place (spring animation), filling the tab's client area.
+- **Close:** an ✕ button at the top-right of the viewer's path bar — or Esc — slides the viewer out and the grid back in.
+- **Two instances:** VU and BINNED each host their own viewer. An open viewer survives VU↔BINNED tab switches (consistent with the tab-state-retention rule): switching away and back returns to the viewer exactly as it was, until explicitly closed.
+- **Sidebar** now offers VU, BINNED, SETTINGS, SCROLLER.
+
+### Implementation notes
+
+- The `ViewerState` handoff singleton is gone; the double-click handlers in `VurioDuplicatesView` set a per-tab `ViewerRequest` (`vuViewerRequest` / `binnedViewerRequest`) directly, and `ViewerView` takes the request as a prop plus an `onClose` callback.
+- Both `ViewerView` instances stay mounted inside `VurioDuplicatesView`: a closed viewer parks offscreen to the right (offset), open/close is animated at the mutation sites, and tab switches swap the instances instantly via opacity — the same always-mounted pattern the two scrollers use.
+- Viewer keyboard shortcuts (now including Esc) are gated on the instance being the slid-in viewer of the frontmost tab (`isFrontmost` is passed down from `ContentView` so shortcuts stay dead while SETTINGS/SCROLLER are shown).
