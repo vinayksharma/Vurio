@@ -8,6 +8,7 @@ struct DuplicateGroupCard: View {
     var isSelected: Bool
     @Binding var selectedCandidateIndex: Int
     var onThumbnailTapped: (Int) -> Void
+    var onThumbnailDoubleTapped: (Int) -> Void
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
     var onLocateSet: (String) -> Void
@@ -198,6 +199,12 @@ struct DuplicateGroupCard: View {
                     onThumbnailTapped(idx)
                 }
             }
+        }, onThumbnailDoubleTapped: {
+            if !isEjecting {
+                if let idx = group.files.firstIndex(where: { $0.filePath == rep.filePath }) {
+                    onThumbnailDoubleTapped(idx)
+                }
+            }
         }, onLocate: {
             onLocateSet(rep.filePath)
         }, onThumbnailHoverChanged: { hovering in
@@ -216,8 +223,18 @@ struct DuplicateGroupCard: View {
             onEjectSet([file.filePath])
         }, onThumbnailTapped: {
             if !isEjecting {
+                // Single-click focuses the candidate (accent border + keyboard
+                // anchor) and selects the row via the callback.
+                selectedCandidateIndex = index
                 if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
                     onThumbnailTapped(idx)
+                }
+            }
+        }, onThumbnailDoubleTapped: {
+            if !isEjecting {
+                selectedCandidateIndex = index
+                if let idx = group.files.firstIndex(where: { $0.filePath == file.filePath }) {
+                    onThumbnailDoubleTapped(idx)
                 }
             }
         }, onLocate: {
@@ -238,6 +255,11 @@ struct DuplicateMemberView: View {
     var onEject: (() -> Void)? = nil
     var onEjectHoverChanged: ((Bool) -> Void)? = nil
     var onThumbnailTapped: (() -> Void)? = nil
+    // Double-click opens the VIEWER tab. Single-click (onThumbnailTapped) only
+    // selects, so it also fires on the first click of a double-click — that is
+    // deliberate: selection is a prerequisite of viewing, and it keeps
+    // single-click feedback instant (no double-click disambiguation delay).
+    var onThumbnailDoubleTapped: (() -> Void)? = nil
     var onLocate: (() -> Void)? = nil
     var onThumbnailHoverChanged: ((Bool) -> Void)? = nil
     var isFocusedCandidate: Bool = false
@@ -279,6 +301,9 @@ struct DuplicateMemberView: View {
                 .onTapGesture {
                     if !isMissing { onThumbnailTapped?() }
                 }
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    if !isMissing { onThumbnailDoubleTapped?() }
+                })
 
             if isMissing {
                 // Etched mask: covers the whole thumbnail, swallows every other
