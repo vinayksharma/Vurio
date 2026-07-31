@@ -38,8 +38,11 @@ namespace MediaDedup
         }
     }
 
-    std::optional<PreviewCacheRecord> PreviewCacheOps::getPreview(DatabaseManager &db, const std::string &source_path)
+    std::optional<PreviewCacheRecord> PreviewCacheOps::getPreview(DatabaseManager &db, const std::string &source_path,
+                                                                  bool *lookup_failed)
     {
+        if (lookup_failed)
+            *lookup_failed = false;
         try
         {
             auto lease = db.acquireSessionLease();
@@ -70,6 +73,8 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("PreviewCacheOps").error("Exception in getPreview: %s", std::string(e.what()));
+            if (lookup_failed)
+                *lookup_failed = true;
             return std::nullopt;
         }
     }

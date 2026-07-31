@@ -81,8 +81,11 @@ namespace MediaDedup
 
     std::optional<ThumbnailCacheRecord> ThumbnailCacheOps::getBestFitThumbnail(DatabaseManager &db,
                                                                         const std::string &source_path,
-                                                                        int min_size)
+                                                                        int min_size,
+                                                                        bool *lookup_failed)
     {
+        if (lookup_failed)
+            *lookup_failed = false;
         try
         {
             auto lease = db.acquireSessionLease();
@@ -116,6 +119,8 @@ namespace MediaDedup
         catch (const std::exception &e)
         {
             Poco::Logger::get("ThumbnailCacheOps").error("Exception in getBestFitThumbnail: %s", std::string(e.what()));
+            if (lookup_failed)
+                *lookup_failed = true;
             return std::nullopt;
         }
     }

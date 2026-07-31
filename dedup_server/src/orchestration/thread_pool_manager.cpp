@@ -86,6 +86,14 @@ namespace MediaDedup
         idle_timeout_seconds_ = idleSeconds;
         logger.debug("Thread idle timeout set to: %d seconds", idleSeconds);
 
+        // Combined cap on concurrently running thumbnail/preview generation
+        // tasks (each runs an external magick decode of up to 100-200MB).
+        int mediaCap = cfg_->getPropertyValue<int>("tpm.mediaGeneration.maxConcurrent", 4);
+        if (mediaCap < 1)
+            mediaCap = 1;
+        media_generation_cap_ = static_cast<size_t>(mediaCap);
+        logger.debug("Media generation concurrency cap set to: %d", mediaCap);
+
         // Read stack size configuration (memory optimization)
         std::string stackSizeKey = "tpm.thread.stackSizeKB";
         int stackSizeKB = cfg_->getPropertyValue<int>(stackSizeKey, 1024); // Default 1MB (1024KB)
@@ -481,10 +489,20 @@ namespace MediaDedup
 
             size_t runningForType = type_to_running_[type];
             size_t allowance = allowanceFor(type);
-            
-            // Auto-prioritization: Allow UI tasks to use all available threads (up to current limit)
+
+            // Media generation (thumbnail/preview) spawns an external magick
+            // decoder per task. It stays exempt from the per-type share slices
+            // (so the UI is responsive during heavy processing) but is bounded
+            // by a combined cap — the old "use every thread" exemption let RAF
+            // bursts run dozens of parallel demosaics, which is what caused
+            // mass transient transcode failures under memory pressure.
             if (type == "thumbnail_generator" || type == "preview_generator")
             {
+                size_t media_running = type_to_running_["thumbnail_generator"] + type_to_running_["preview_generator"];
+                if (media_running >= media_generation_cap_)
+                {
+                    continue;
+                }
                 allowance = current_limit;
             }
             if (runningForType >= allowance)
@@ -681,6 +699,28 @@ namespace MediaDedup
                 // and rely on the scheduler to enforce the new lower cap (gradual decrease).
             }
             schedule();
+        }
+        else if (event.key == "tpm.mediaGeneration.maxConcurrent")
+        {
+            try
+            {
+                int cap = 4;
+                if (event.new_value.type() == typeid(int))
+                    cap = std::any_cast<int>(event.new_value);
+                else if (event.new_value.type() == typeid(std::string))
+                    cap = std::stoi(std::any_cast<std::string>(event.new_value));
+                if (cap < 1)
+                    cap = 1;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    media_generation_cap_ = static_cast<size_t>(cap);
+                }
+                Poco::Logger::get("ThreadPoolManager").information("Media generation concurrency cap changed to %d", cap);
+                schedule();
+            }
+            catch (...)
+            {
+            }
         }
         else if (event.key == "tpm.killTimeoutMs")
         {

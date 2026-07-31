@@ -330,6 +330,10 @@ service MediaService {
   rpc GetThumbnail(GetMediaRequest) returns (MediaPathResponse);
   rpc GetPreview(GetMediaRequest) returns (MediaPathResponse);
   rpc CancelMediaGeneration(CancelMediaRequest) returns (Empty);
+  // Pushes an event whenever an async thumbnail/preview generation finishes
+  // (success or failure), so clients don't have to poll GetThumbnail/GetPreview
+  // on a guessed schedule after an UNAVAILABLE "generating" answer.
+  rpc SubscribeToMediaReady(Empty) returns (stream MediaReadyEvent);
 }
 
 message GetMediaRequest {
@@ -344,4 +348,11 @@ message CancelMediaRequest {
 
 message MediaPathResponse {
   string file_path = 1;
+}
+
+message MediaReadyEvent {
+  string file_path = 1;
+  string media_type = 2; // "thumbnail" | "preview"
+  bool success = 3;
+  string error_message = 4; // set when success == false
 }

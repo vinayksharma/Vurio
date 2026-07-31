@@ -401,6 +401,8 @@ namespace MediaDedup
         manager->createProperty<int>("tpm.killTimeoutMs", 10000, getDesc("tpm.killTimeoutMs"), getLongDesc("tpm.killTimeoutMs"));
         manager->createProperty<int>("tpm.thread.idleTimeoutSeconds", 120, getDesc("tpm.thread.idleTimeoutSeconds"), getLongDesc("tpm.thread.idleTimeoutSeconds"));
         manager->createProperty<int>("tpm.thread.stackSizeKB", 1024, getDesc("tpm.thread.stackSizeKB"), getLongDesc("tpm.thread.stackSizeKB"));
+        manager->createProperty<int>("tpm.mediaGeneration.maxConcurrent", 4, getDesc("tpm.mediaGeneration.maxConcurrent"), getLongDesc("tpm.mediaGeneration.maxConcurrent"));
+        manager->createProperty<std::string>("tools.imagemagick.path", "/opt/homebrew/bin/magick", getDesc("tools.imagemagick.path"), getLongDesc("tools.imagemagick.path"));
         manager->createProperty<double>("tpm.types.fileScan.share", 1.0, getDesc("tpm.types.fileScan.share"), getLongDesc("tpm.types.fileScan.share"));
 
         // Create default media processor properties

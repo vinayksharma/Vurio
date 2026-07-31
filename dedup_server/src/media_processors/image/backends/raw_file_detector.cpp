@@ -130,6 +130,26 @@ namespace MediaDedup
             "rwz", "srw"};
     }
 
+    bool RawFileDetector::HasZeroedHeader(const std::string &file_path)
+    {
+        std::ifstream file(file_path, std::ios::binary);
+        if (!file.is_open())
+            return false;
+
+        unsigned char header[64] = {0};
+        file.read(reinterpret_cast<char *>(header), sizeof(header));
+        std::streamsize bytes_read = file.gcount();
+        if (bytes_read < 16)
+            return false; // too small to judge; let the decoder decide
+
+        for (std::streamsize i = 0; i < bytes_read; ++i)
+        {
+            if (header[i] != 0)
+                return false;
+        }
+        return true;
+    }
+
     bool RawFileDetector::IsRawExtension(const std::string &extension)
     {
         if (extension.empty())

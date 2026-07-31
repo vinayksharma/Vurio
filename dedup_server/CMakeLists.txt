@@ -244,6 +244,13 @@ add_executable(media_dedup_server
     src/database/processing_errors_ops.cpp
     src/utils/stderr_capture.cpp
     src/utils/thumbnail_generator.cpp
+    src/utils/subprocess_runner.cpp
+    src/utils/temp_paths.cpp
+    src/utils/tool_paths.cpp
+    src/core/media_ready_bus.cpp
+    src/core/media_generation_failures.cpp
+    src/core/media_backfill.cpp
+    src/core/media_backfill_hook.cpp
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp
     src/orchestration/files_manager.cpp
@@ -263,6 +270,7 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp
+    src/media_processors/image/backends/raw_embedded_extractor.cpp
     src/media_processors/image/backends/heic_adapter.cpp
     src/media_processors/image/backends/tiff_validator.cpp
     src/media_processors/image/backends/transcoding_pipeline.cpp

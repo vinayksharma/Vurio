@@ -24,12 +24,14 @@ namespace MediaDedup
          * @param size Target size in pixels (longer edge will be this size)
          * @param quality JPEG quality (0-100, default 85)
          * @param blob Output blob containing the JPEG thumbnail data
+         * @param timeout_ms Hard limit on the magick subprocess; expired decodes are killed
          * @return true if thumbnail generated successfully, false otherwise
          */
         static bool generateToBlob(const std::string &source_path,
                                     int size,
                                     Magick::Blob &blob,
-                                    int quality = 85);
+                                    int quality = 85,
+                                    int timeout_ms = DEFAULT_TIMEOUT_MS);
 
         /**
          * @brief Generate a thumbnail for an image file (synchronous)
@@ -38,14 +40,14 @@ namespace MediaDedup
          * @param output_path Path where the thumbnail JPEG will be saved
          * @param size Target size in pixels (longer edge will be this size)
          * @param quality JPEG quality (0-100, default 85)
-         * @param timeout_ms Unused (kept for backward compatibility)
+         * @param timeout_ms Hard limit on the magick subprocess; expired decodes are killed
          * @return true if thumbnail generated successfully, false otherwise
          */
         static bool generate(const std::string &source_path,
                              const std::string &output_path,
                              int size,
                              int quality = 85,
-                             int timeout_ms = 5000);
+                             int timeout_ms = DEFAULT_TIMEOUT_MS);
 
         /**
          * @brief Validate if a size is supported
@@ -66,7 +68,14 @@ namespace MediaDedup
         static constexpr int VALID_SIZES[] = {0, 128, 256, 512, 1024};
         static constexpr int DEFAULT_SIZE = 256;
         static constexpr int DEFAULT_QUALITY = 85;
-        static constexpr int DEFAULT_TIMEOUT_MS = 5000;
+
+    public:
+        // Hard cap on one magick subprocess. Generous enough for a legitimate
+        // full-RAW demosaic on a slow volume; a hung decoder is killed so it
+        // can never pin a pool thread forever.
+        static constexpr int DEFAULT_TIMEOUT_MS = 60000;
+
+    private:
     };
 
 } // namespace MediaDedup

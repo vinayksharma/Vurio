@@ -88,6 +88,12 @@ The separate VIEWER sidebar tab is removed; the viewer is now embedded in the VU
 - **Two instances:** VU and BINNED each host their own viewer. An open viewer survives VU↔BINNED tab switches (consistent with the tab-state-retention rule): switching away and back returns to the viewer exactly as it was, until explicitly closed.
 - **Sidebar** now offers VU, BINNED, SETTINGS, SCROLLER.
 
+---
+
+## Unreadable-media state (2026-07-31)
+
+When the server negative-caches a file after repeated thumbnail/preview generation failures (gRPC `FAILED_PRECONDITION`, e.g. a corrupted RAF with a zeroed header), the UI shows a distinct state instead of the generic error and stops re-requesting: grid tiles render a warning triangle + "Unreadable" with the reason in the tooltip; the viewer's main area shows "File unreadable — unsupported or corrupted" plus the server's reason. Thumbnails/previews still generating are awaited via the `SubscribeToMediaReady` push stream (with polling fallback) up to 60 s instead of the old ~4 s retry budget.
+
 ### Implementation notes
 
 - The `ViewerState` handoff singleton is gone; the double-click handlers in `VurioDuplicatesView` set a per-tab `ViewerRequest` (`vuViewerRequest` / `binnedViewerRequest`) directly, and `ViewerView` takes the request as a prop plus an `onClose` callback.

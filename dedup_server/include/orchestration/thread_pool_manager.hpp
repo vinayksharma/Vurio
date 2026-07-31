@@ -133,6 +133,9 @@ namespace MediaDedup
         // Config
         std::shared_ptr<UnifiedObservableConfigManager> cfg_;
         size_t effective_max_;
+        // Combined running-task cap for thumbnail_generator + preview_generator
+        // (each task shells out to magick; unbounded bursts OOM the host).
+        size_t media_generation_cap_ = 4;
         std::chrono::milliseconds kill_timeout_;
         int idle_timeout_seconds_;
 

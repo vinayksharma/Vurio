@@ -30,7 +30,11 @@ namespace MediaDedup
         /**
          * @brief Get a preview by source path
          */
-        static std::optional<PreviewCacheRecord> getPreview(DatabaseManager &db, const std::string &source_path);
+        // lookup_failed (optional) is set true when the query itself failed
+        // (e.g. DB session pool starved) — callers must treat that as "try
+        // again", NOT as a cache miss.
+        static std::optional<PreviewCacheRecord> getPreview(DatabaseManager &db, const std::string &source_path,
+                                                            bool *lookup_failed = nullptr);
 
         /**
          * @brief Insert or update a preview record

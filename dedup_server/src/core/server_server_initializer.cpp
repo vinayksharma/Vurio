@@ -1,5 +1,7 @@
 #include "core/server_initializer.hpp"
 #include "config/unified_observable_config.hpp"
+#include "utils/tool_paths.hpp"
+#include "core/media_backfill.hpp"
 #include "database/database_manager.hpp"
 #include "database/database_service.hpp"
 #include "database/user_settings_ops.hpp"
@@ -45,6 +47,16 @@ namespace MediaDedup
             // Note: Thread stack size optimization is configured in ThreadPoolManager
             // HTTP server threads will use system default (8MB) - this is acceptable for HTTP processing
             // TPM threads will use optimized stack size (1MB) via tpm.thread.stackSizeKB setting
+
+            // Publish the external ImageMagick binary location to the static
+            // utilities (ThumbnailGenerator/transcoder) that have no config access.
+            ToolPaths::setMagickPath(
+                config_manager_->getPropertyValue<std::string>("tools.imagemagick.path", "/opt/homebrew/bin/magick"));
+
+            // Register the thumbnail/preview backfill used by the database
+            // integrity check (kept behind a hook so test binaries that compile
+            // the integrity handler don't link the media-generation stack).
+            MediaBackfill::installHook();
 
             logger.information("Configuration initialized successfully");
             return true;

@@ -10,7 +10,8 @@ namespace MediaDedup
 {
 
     bool ImageMagickAdapter::TranscodeToJpeg(const std::string &file_path,
-                                             std::vector<std::uint8_t> &jpeg_data)
+                                             std::vector<std::uint8_t> &jpeg_data,
+                                             int timeout_ms)
     {
         Poco::Logger &log = Poco::Logger::get("ImageMagickAdapter");
 
@@ -49,7 +50,7 @@ namespace MediaDedup
         }
 
         // Use the RAII transcoder for thread-safe parallel processing
-        bool result = transcoder.transcodeToJpeg(file_path, jpeg_data);
+        bool result = transcoder.transcodeToJpeg(file_path, jpeg_data, timeout_ms);
         if (!result)
         {
             log.warning("TranscodeToJpeg failed for file: %s", file_path);

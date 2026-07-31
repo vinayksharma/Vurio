@@ -1,11 +1,13 @@
 #include "media_processors/image/backends/image_magick_transcoder.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
+#include "media_processors/image/backends/raw_embedded_extractor.hpp"
+#include "utils/subprocess_runner.hpp"
+#include "utils/temp_paths.hpp"
+#include "utils/tool_paths.hpp"
 #include <MagickCore/MagickCore.h>
 #include <Poco/Logger.h>
-#include <Poco/Process.h>
 #include <filesystem>
 #include <cstdlib>
-#include <random>
 #include <fstream>
 
 namespace MediaDedup
@@ -122,7 +124,8 @@ namespace MediaDedup
         }
     }
 
-    bool ImageMagickTranscoder::transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data)
+    bool ImageMagickTranscoder::transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data,
+                                                int timeout_ms)
     {
         if (!valid_)
         {
@@ -142,25 +145,23 @@ namespace MediaDedup
             return false;
         }
 
+        // Fail fast on zero-filled/truncated copies — no decoder can read them.
+        if (RawFileDetector::HasZeroedHeader(file_path))
+        {
+            logger_.error("Corrupted file (zeroed header), skipping transcode: %s", file_path.c_str());
+            return false;
+        }
+
         logger_.debug("Starting subprocess transcoding for file: %s", file_path.c_str());
 
-        // Generate a temporary file path for the output JPEG
-        std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
-        
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<> dis(0, 15);
-        
-        std::string uuid;
-        const char *hex_chars = "0123456789abcdef";
-        for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
-        
-        std::string temp_out_path = (temp_dir / ("magick_out_" + uuid + ".jpg")).string();
+        std::string temp_out_path = makeTempFilePath("magick_out", ".jpg");
 
         // Determine input prefix based on magic bytes
         ImageFormat format = RawFileDetector::DetectFormatFromMagicBytes(file_path);
         std::string read_path = file_path;
-        
+        // Temp file holding an extracted embedded JPEG; removed after the run.
+        std::string embedded_temp_path;
+
         // Don't prepend tiff: for RAW files even if they have TIFF magic bytes
         if (format == ImageFormat::TIFF && RawFileDetector::IsRawFile(file_path)) {
             format = ImageFormat::RAW;
@@ -174,9 +175,32 @@ namespace MediaDedup
             read_path = "tiff:" + file_path;
         } else if (format == ImageFormat::GIF) {
             read_path = file_path + "[0]";
+        } else if (RawFileDetector::IsRawFile(file_path)) {
+            // Consolidated RAW path (same decoder the thumbnail side uses):
+            // prefer the camera's embedded JPEG when it can carry a QHD
+            // preview; fall back to the slow full demosaic only when the
+            // embedded image is absent or smaller than the output target.
+            if (auto embedded = RawEmbeddedExtractor::extract(file_path))
+            {
+                if (embedded->longEdge() >= static_cast<int>(MAX_PREVIEW_DIMENSION))
+                {
+                    embedded_temp_path = embedded->jpeg_path;
+                    read_path = "jpeg:" + embedded_temp_path;
+                    logger_.debug("Using embedded JPEG (%dx%d) for RAW preview: %s",
+                                  embedded->width, embedded->height, file_path.c_str());
+                }
+                else
+                {
+                    logger_.debug("Embedded JPEG too small (%dx%d < %d), full demosaic: %s",
+                                  embedded->width, embedded->height,
+                                  static_cast<int>(MAX_PREVIEW_DIMENSION), file_path.c_str());
+                    std::error_code ec;
+                    std::filesystem::remove(embedded->jpeg_path, ec);
+                }
+            }
         }
 
-        std::string command = "/opt/homebrew/bin/magick";
+        std::string command = ToolPaths::magickPath();
         std::vector<std::string> args;
         args.push_back(read_path);
         args.push_back("-depth");
@@ -185,18 +209,33 @@ namespace MediaDedup
         args.push_back("-colorspace");
         args.push_back("sRGB");
         args.push_back("-resize");
-        args.push_back("2560x2560>");
+        args.push_back(std::to_string(MAX_PREVIEW_DIMENSION) + "x" + std::to_string(MAX_PREVIEW_DIMENSION) + ">");
         args.push_back("-quality");
         args.push_back("85");
         args.push_back("jpeg:" + temp_out_path);
 
+        struct EmbeddedCleanup {
+            std::string path;
+            ~EmbeddedCleanup() {
+                if (!path.empty()) {
+                    std::error_code ec;
+                    std::filesystem::remove(path, ec);
+                }
+            }
+        } embedded_cleanup{embedded_temp_path};
+
         try
         {
-            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
-            int rc = handle.wait();
-            if (rc != 0)
+            SubprocessResult run = runProcessWithTimeout(command, args, timeout_ms);
+            if (run.timed_out)
             {
-                logger_.error("magick command failed with exit code %d for file: %s", rc, file_path);
+                logger_.error("magick timed out after %d ms for file: %s", timeout_ms, file_path);
+                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
+                return false;
+            }
+            if (run.exit_code != 0)
+            {
+                logger_.error("magick command failed with exit code %d for file: %s", run.exit_code, file_path);
                 if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
                 return false;
             }
@@ -266,7 +305,7 @@ namespace MediaDedup
 
             // Resize if the image is excessively large (e.g., > 2560 on longest edge)
             // to optimize preview loading times in the UI and save disk space.
-            const size_t MAX_DIMENSION = 2560; // QHD resolution limit for fast web previews
+            const size_t MAX_DIMENSION = MAX_PREVIEW_DIMENSION; // QHD resolution limit for fast web previews
             size_t width = image.columns();
             size_t height = image.rows();
             

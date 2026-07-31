@@ -4,9 +4,10 @@
 #include "media_processors/image/backends/heic_adapter.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <random>
 #include <opencv2/opencv.hpp>
 
 namespace MediaDedup
@@ -61,7 +62,7 @@ namespace MediaDedup
             {
                 // Use ImageMagickAdapter for the actual transcoding
                 logger.debug("Calling ImageMagickAdapter::TranscodeToJpeg for: %s", file_path);
-                success = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data);
+                success = ImageMagickAdapter::TranscodeToJpeg(file_path, jpeg_data, config.timeout_ms);
             }
 
             if (success)
@@ -330,7 +331,7 @@ namespace MediaDedup
             }
             else
             {
-                success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data);
+                success = ImageMagickAdapter::TranscodeToJpeg(source_file_path, jpeg_data, config.timeout_ms);
             }
 
             if (!success)
@@ -447,17 +448,14 @@ namespace MediaDedup
             return "";
         }
 
-        // Generate short UUID (8 characters)
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<> dis(0, 15);
-
-        std::string uuid;
-        const char *hex_chars = "0123456789abcdef";
-        for (int i = 0; i < 8; ++i)
-        {
-            uuid += hex_chars[dis(gen)];
-        }
+        // Collision-free unique suffix (the previous shared mt19937 was raced
+        // across pool threads): atomic sequence + monotonic nanoseconds.
+        static std::atomic<uint64_t> sequence{0};
+        const uint64_t seq = sequence.fetch_add(1, std::memory_order_relaxed);
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+        std::string uuid = std::to_string(seq) + "_" + std::to_string(ns);
 
         // Combine: base_name + "_" + uuid + extension
         std::string filename = base_name + "_" + uuid + extension;

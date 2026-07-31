@@ -7,7 +7,8 @@
 #include <Poco/Pipe.h>
 #include <Poco/PipeStream.h>
 #include <Poco/StreamCopier.h>
-#include <random>
+#include "utils/tool_paths.hpp"
+#include "utils/temp_paths.hpp"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -32,7 +33,7 @@ namespace MediaDedup
 
             // Extract EXIF data from the original file using ImageMagick identify subprocess
             try {
-                std::string cmd_identify = "/opt/homebrew/bin/magick";
+                std::string cmd_identify = ToolPaths::magickPath();
                 std::vector<std::string> args_identify = {
                     "identify",
                     "-format",
@@ -91,18 +92,9 @@ namespace MediaDedup
                 } catch (...) {}
                 
                 std::vector<std::uint8_t> exif_blob;
-                std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
-                static std::random_device rd;
-                static std::mt19937 gen(rd());
-                static std::uniform_int_distribution<> dis(0, 15);
+                std::string temp_exif_path = makeTempFilePath("exif_out", ".bin");
                 
-                std::string uuid;
-                const char *hex_chars = "0123456789abcdef";
-                for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
-                
-                std::string temp_exif_path = (temp_dir / ("exif_out_" + uuid + ".bin")).string();
-                
-                std::string cmd_exif = "/opt/homebrew/bin/magick";
+                std::string cmd_exif = ToolPaths::magickPath();
                 std::vector<std::string> args_exif = {
                     original_file_path,
                     "exif:" + temp_exif_path

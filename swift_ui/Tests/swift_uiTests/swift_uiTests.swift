@@ -6,9 +6,21 @@ import NIO
 @Test func printServerStatus() async throws {
     let client = VurioGrpcClient.shared
     client.connect(socketPath: "/tmp/vurio_dedup.sock")
-    
-    guard let mediaClient = client.media else {
-        print("❌ Could not connect to media client")
+
+    // Pairing (cookie read + Handshake RPC) is asynchronous by design: the
+    // service clients stay nil until it completes, and connect() returns
+    // immediately. Poll for the paired client instead of asserting right away.
+    var pairedClient: Vurio_Dedup_MediaLocationsServiceAsyncClient? = nil
+    for _ in 0..<100 { // up to 10s; pairing retries every 500ms internally
+        if let media = client.media {
+            pairedClient = media
+            break
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    guard let mediaClient = pairedClient else {
+        print("❌ Could not connect to media client (pairing did not complete)")
         #expect(false)
         return
     }
