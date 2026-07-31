@@ -433,7 +433,7 @@ namespace MediaDedup
 
         // Check for high-priority UI tasks dynamically
         auto has_ui_tasks_fn = [this]() {
-            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty();
+            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty() || !type_to_queue_["fullres_generator"].empty();
         };
 
         size_t current_limit = effective_max_;
@@ -478,7 +478,7 @@ namespace MediaDedup
                 std::string type = type_ref; // Make a copy to avoid reference issues
                 
                 // Auto-prioritization: Skip background tasks if UI tasks are waiting right now
-                if (has_ui_tasks_fn() && type != "thumbnail_generator" && type != "preview_generator")
+                if (has_ui_tasks_fn() && type != "thumbnail_generator" && type != "preview_generator" && type != "fullres_generator")
                 {
                     continue;
                 }
@@ -496,9 +496,9 @@ namespace MediaDedup
             // by a combined cap — the old "use every thread" exemption let RAF
             // bursts run dozens of parallel demosaics, which is what caused
             // mass transient transcode failures under memory pressure.
-            if (type == "thumbnail_generator" || type == "preview_generator")
+            if (type == "thumbnail_generator" || type == "preview_generator" || type == "fullres_generator")
             {
-                size_t media_running = type_to_running_["thumbnail_generator"] + type_to_running_["preview_generator"];
+                size_t media_running = type_to_running_["thumbnail_generator"] + type_to_running_["preview_generator"] + type_to_running_["fullres_generator"];
                 if (media_running >= media_generation_cap_)
                 {
                     continue;
@@ -514,7 +514,7 @@ namespace MediaDedup
             if (running_total_ >= current_limit)
                 break;
 
-            if (running_total_ >= effective_max_ && type != "thumbnail_generator" && type != "preview_generator")
+            if (running_total_ >= effective_max_ && type != "thumbnail_generator" && type != "preview_generator" && type != "fullres_generator")
             {
                 continue; // only UI tasks can bypass effective_max_
             }
