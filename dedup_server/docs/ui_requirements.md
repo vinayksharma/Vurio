@@ -90,6 +90,12 @@ The separate VIEWER sidebar tab is removed; the viewer is now embedded in the VU
 
 ---
 
+## Viewer image fade transitions (2026-07-31)
+
+Changing the displayed image in the embedded viewer fades rather than snaps: navigating cross-fades directly between images when the next preview is already cached, and otherwise fades the old image out (spinner fades in) and the new one in when it arrives (0.18s ease-in-out). A zoomed/panned image glides back to fit during the fade instead of snapping first. Error/unreadable placeholders fade the same way. The full-resolution swap is deliberately excluded — same image identity, so it remains an instant in-place sharpening.
+
+---
+
 ## Full-resolution on zoom (2026-07-31)
 
 When the user zooms past 1.2× in the embedded viewer (same threshold as the legacy web viewer), the app seamlessly upgrades the displayed image from the QHD preview to full resolution: the preview stays on screen until the full-res bitmap is decoded, then swaps in place with all transforms (zoom/pan/rotation) preserved — the fitted frame is identical for both bitmaps, so the only visible change is added sharpness.

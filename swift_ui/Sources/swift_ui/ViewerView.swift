@@ -30,6 +30,11 @@ struct ViewerView: View {
     @State private var mainAreaSize: CGSize = .zero
 
     @State private var currentImage: NSImage? = nil
+    // Path of the bitmap currently on screen — the Image view's identity, so
+    // navigation cross-fades while a same-path full-res swap stays instant.
+    @State private var displayedImagePath: String? = nil
+    // Fade used whenever the displayed image appears/disappears/changes.
+    private static let imageFade = Animation.easeInOut(duration: 0.18)
     @State private var isLoadingImage = false
     // Server negative-cached the file (unsupported/corrupted): distinct state,
     // no further requests for it.
@@ -67,7 +72,11 @@ struct ViewerView: View {
             }
         }
         .onChange(of: model.selectedID) { _, _ in
-            resetTransform()
+            // Glide a zoomed/panned image back to fit while the fade runs,
+            // instead of snapping the frame before the old image disappears.
+            withAnimation(Self.imageFade) {
+                resetTransform()
+            }
             fullResLoadedFor = nil
             fullResRequestFor = nil
         }
@@ -134,9 +143,13 @@ struct ViewerView: View {
                         .scaleEffect(scale)
                         .rotationEffect(.degrees(rotation))
                         .offset(panOffset)
-                } else if isLoadingImage {
-                    ProgressView()
-                        .controlSize(.large)
+                        // Identity follows the displayed file, so navigating
+                        // cross-fades between images (both layers animate their
+                        // opacity inside the ZStack) — while the full-res swap,
+                        // which keeps the same path, stays an instant in-place
+                        // replacement.
+                        .id(displayedImagePath)
+                        .transition(.opacity)
                 } else if let message = unreadableMessage {
                     VStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")
@@ -148,7 +161,8 @@ struct ViewerView: View {
                             .font(.caption)
                             .foregroundColor(Theme.textSecondary)
                     }
-                } else if model.selectedImage != nil {
+                    .transition(.opacity)
+                } else if model.selectedImage != nil, !isLoadingImage {
                     VStack {
                         Image(systemName: "photo.badge.exclamationmark")
                             .font(.system(size: 64))
@@ -156,7 +170,18 @@ struct ViewerView: View {
                         Text("Failed to load image")
                             .foregroundColor(Theme.textSecondary)
                     }
+                    .transition(.opacity)
                 }
+
+                // Loading spinner: kept mounted and opacity-driven. The
+                // AppKit-backed ProgressView ignores insertion transitions,
+                // which made it pop in hard instead of fading with the image.
+                let spinnerVisible = currentImage == nil && isLoadingImage && unreadableMessage == nil
+                ProgressView()
+                    .controlSize(.large)
+                    .opacity(spinnerVisible ? 1 : 0)
+                    .animation(Self.imageFade, value: spinnerVisible)
+                    .allowsHitTesting(false)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
@@ -460,26 +485,39 @@ struct ViewerView: View {
 
     private func loadPreview() async {
         guard let selected = model.selectedImage else {
-            currentImage = nil
+            withAnimation(Self.imageFade) {
+                currentImage = nil
+                displayedImagePath = nil
+            }
             return
         }
         let filePath = selected.filePath
 
         if let cached = ImageCache.shared.getImage(forKey: "\(filePath)_preview") {
-            currentImage = cached
-            isLoadingImage = false
+            // Instant cache hit: cross-fade straight from the previous image.
+            withAnimation(Self.imageFade) {
+                currentImage = cached
+                displayedImagePath = filePath
+                isLoadingImage = false
+            }
             return
         }
 
-        isLoadingImage = true
-        currentImage = nil
-        unreadableMessage = nil
+        withAnimation(Self.imageFade) {
+            isLoadingImage = true
+            currentImage = nil
+            displayedImagePath = nil
+            unreadableMessage = nil
+        }
         do {
             let image = try await ServerImageLoader.shared.loadPreview(filePath: filePath)
             // The selection may have moved on while the preview downloaded.
             if model.selectedImage?.filePath == filePath {
-                currentImage = image
-                isLoadingImage = false
+                withAnimation(Self.imageFade) {
+                    currentImage = image
+                    displayedImagePath = filePath
+                    isLoadingImage = false
+                }
                 // If the user zoomed in while the preview was still loading,
                 // kick the full-resolution upgrade now.
                 maybeLoadFullResolution(zoomScale: scale)
@@ -488,13 +526,17 @@ struct ViewerView: View {
             // Selection changed; the new .task run owns the state.
         } catch let error as MediaUnreadableError {
             if model.selectedImage?.filePath == filePath {
-                unreadableMessage = error.message
-                isLoadingImage = false
+                withAnimation(Self.imageFade) {
+                    unreadableMessage = error.message
+                    isLoadingImage = false
+                }
             }
         } catch {
             print("Failed to load preview for \(filePath): \(error)")
             if model.selectedImage?.filePath == filePath {
-                isLoadingImage = false
+                withAnimation(Self.imageFade) {
+                    isLoadingImage = false
+                }
             }
         }
     }
