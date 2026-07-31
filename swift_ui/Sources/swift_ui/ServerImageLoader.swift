@@ -255,6 +255,117 @@ actor ServerImageLoader {
         throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for thumbnail generation"])
     }
     
+    // RAW formats the local decode path should not attempt — mirror of the
+    // server's RawFileDetector extension list. These route through the
+    // server's consolidated RAW decoder instead.
+    private static let rawExtensions: Set<String> = [
+        "3fr", "arw", "bay", "cr2", "dcr", "dng", "fff", "iiq", "kdc", "mef",
+        "mos", "mrw", "nef", "nrw", "orf", "pef", "raf", "raw", "rw2", "rwl",
+        "rwz", "srw"
+    ]
+
+    /// Full-resolution image for the viewer's zoomed-in state. Hybrid source:
+    /// standard formats decode straight from the original file (byte-identical
+    /// full resolution, no server hop); RAW formats — or standard files the
+    /// local decoder can't read — go through GetPreview(size: "full"), which
+    /// the server generates async (native res, quality 95) and announces via
+    /// the media-ready push, exactly like the web viewer's size=full fetch.
+    nonisolated func loadFullResolution(filePath: String) async throws -> NSImage {
+        let currentPriority = Task.currentPriority
+        let key = "\(filePath)_fullres"
+
+        let task = await getOrCreateTask(key: key) {
+            return try await self.performLoadFullResolution(filePath: filePath, priority: currentPriority)
+        }
+        return try await task.value
+    }
+
+    private func performLoadFullResolution(filePath: String, priority: TaskPriority?) async throws -> NSImage {
+        if let reason = unreadableReason(type: "preview_full", filePath: filePath) {
+            throw MediaUnreadableError(message: reason)
+        }
+
+        let ext = (filePath as NSString).pathExtension.lowercased()
+        if !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
+            if let image = await decodeImageInBackground(filePath: filePath, priority: priority) {
+                return image
+            }
+            // Local decode failed (odd codec, truncated file) — fall through
+            // to the server, whose decoder stack is broader.
+        }
+
+        ensureMediaReadySubscription()
+        try await waitForToken(priority: 0)
+        defer { Task { await self.releaseToken(priority: 0) } }
+
+        defer {
+            if Task.isCancelled {
+                Task {
+                    do {
+                        var cancelReq = Vurio_Dedup_CancelMediaRequest()
+                        cancelReq.filePath = filePath
+                        cancelReq.type = "fullres_generator"
+                        if let client = VurioGrpcClient.shared.mediaStreaming {
+                            _ = try await client.cancelMediaGeneration(cancelReq)
+                        }
+                    } catch {
+                        logDebug("Failed to send server cancellation: \(error)")
+                    }
+                }
+            }
+        }
+
+        let deadline = Date().addingTimeInterval(60)
+        var decodeFailures = 0
+
+        while true {
+            do {
+                try Task.checkCancellation()
+
+                guard let client = VurioGrpcClient.shared.mediaStreaming else {
+                    throw NSError(domain: "ServerImageLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "gRPC client not initialized"])
+                }
+
+                var request = Vurio_Dedup_GetMediaRequest()
+                request.filePath = filePath
+                request.size = "full"
+
+                let response = try await client.getPreview(request)
+
+                try Task.checkCancellation()
+
+                if let image = await self.decodeImageInBackground(filePath: response.filePath, priority: priority) {
+                    return image
+                } else {
+                    decodeFailures += 1
+                    if decodeFailures >= 3 || Date() >= deadline {
+                        throw NSError(domain: "ServerImageLoader", code: -4, userInfo: [NSLocalizedDescriptionKey: "Failed to decode full-resolution image"])
+                    }
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                    continue
+                }
+            } catch is CancellationError {
+                logDebug("loadFullResolution CANCELLED for \(filePath).")
+                throw CancellationError()
+            } catch {
+                if let grpcError = error as? GRPCStatus {
+                    if grpcError.code == .unavailable {
+                        if Date() >= deadline { break }
+                        await waitForReadySignal(type: "preview_full", filePath: filePath, timeoutNs: 2_000_000_000)
+                        continue
+                    }
+                    if grpcError.code == .failedPrecondition {
+                        let message = grpcError.message ?? "File unreadable (unsupported or corrupted)"
+                        markUnreadable(type: "preview_full", filePath: filePath, message: message)
+                        throw MediaUnreadableError(message: message)
+                    }
+                }
+                throw error
+            }
+        }
+        throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for full-resolution generation"])
+    }
+
     nonisolated func loadPreview(filePath: String) async throws -> NSImage {
         let currentPriority = Task.currentPriority
         let key = "\(filePath)_preview"

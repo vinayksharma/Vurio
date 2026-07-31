@@ -90,6 +90,17 @@ The separate VIEWER sidebar tab is removed; the viewer is now embedded in the VU
 
 ---
 
+## Full-resolution on zoom (2026-07-31)
+
+When the user zooms past 1.2× in the embedded viewer (same threshold as the legacy web viewer), the app seamlessly upgrades the displayed image from the QHD preview to full resolution: the preview stays on screen until the full-res bitmap is decoded, then swaps in place with all transforms (zoom/pan/rotation) preserved — the fitted frame is identical for both bitmaps, so the only visible change is added sharpness.
+
+- **Source (hybrid):** standard formats (JPEG/PNG/HEIC/TIFF…) are decoded directly from the original file on disk — byte-identical full resolution, no server hop. RAW formats (and standard files the local decoder can't read) go through `GetPreview(size: "full")`: the server generates a native-resolution JPEG (quality 95, embedded-JPEG extraction for RAW) asynchronously, indexed in a session-lifetime temp cache, announced via the `SubscribeToMediaReady` push (`media_type: "preview_full"`).
+- One request per image (in-flight lock); failures unlock so the next zoom retries; `FAILED_PRECONDITION` (unreadable file) keeps the preview and never retries. Selection changes reset the state.
+- Server-side full-res generation runs as task type `fullres_generator`, counted under the same `tpm.mediaGeneration.maxConcurrent` cap as thumbnails/previews.
+- While the full-res image is being pulled, a small non-interactive "LOADING FULL RES" capsule (spinner + DSEG-style caption) fades in at the bottom-right of the image area and fades out when the swap completes or the request ends.
+
+---
+
 ## Unreadable-media state (2026-07-31)
 
 When the server negative-caches a file after repeated thumbnail/preview generation failures (gRPC `FAILED_PRECONDITION`, e.g. a corrupted RAF with a zeroed header), the UI shows a distinct state instead of the generic error and stops re-requesting: grid tiles render a warning triangle + "Unreadable" with the reason in the tooltip; the viewer's main area shows "File unreadable — unsupported or corrupted" plus the server's reason. Thumbnails/previews still generating are awaited via the `SubscribeToMediaReady` push stream (with polling fallback) up to 60 s instead of the old ~4 s retry budget.

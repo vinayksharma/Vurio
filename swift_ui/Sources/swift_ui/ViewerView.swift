@@ -35,6 +35,14 @@ struct ViewerView: View {
     // no further requests for it.
     @State private var unreadableMessage: String? = nil
 
+    // Full-resolution upgrade on zoom (same 1.2x threshold as the web viewer):
+    // the QHD preview stays on screen until the full-res image is decoded,
+    // then swaps in place. `loadedFor` stops re-requests for the current
+    // image; `requestFor` is the in-flight lock, cleared on failure so the
+    // next zoom retries.
+    @State private var fullResLoadedFor: String? = nil
+    @State private var fullResRequestFor: String? = nil
+
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
 
@@ -60,6 +68,11 @@ struct ViewerView: View {
         }
         .onChange(of: model.selectedID) { _, _ in
             resetTransform()
+            fullResLoadedFor = nil
+            fullResRequestFor = nil
+        }
+        .onChange(of: scale) { _, newScale in
+            maybeLoadFullResolution(zoomScale: newScale)
         }
         .task(id: model.selectedID) {
             await loadPreview()
@@ -150,6 +163,28 @@ struct ViewerView: View {
             .contentShape(Rectangle())
             .gesture(panGesture)
             .simultaneousGesture(magnifyGesture)
+            // Unobtrusive badge while the full-resolution image is being
+            // pulled; the preview stays interactive underneath.
+            .overlay(alignment: .bottomTrailing) {
+                if let selected = model.selectedImage, fullResRequestFor == selected.filePath {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("LOADING FULL RES")
+                            .font(.custom("Menlo", size: 9))
+                            .fontWeight(.bold)
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Theme.surfaceElevated.opacity(0.9)))
+                    .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
+                    .padding(12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: fullResRequestFor)
             .onAppear { mainAreaSize = geometry.size }
             .onChange(of: geometry.size) { _, newSize in
                 mainAreaSize = newSize
@@ -384,6 +419,43 @@ struct ViewerView: View {
         setScale(1.0 / fitRatio)
     }
 
+    // MARK: - Full-resolution upgrade
+
+    /// Fires once the zoom passes 1.2x: fetch the original-resolution image
+    /// and swap it under the current transforms. The swap is visually seamless
+    /// (beyond added sharpness) because the image is laid out aspect-fit — the
+    /// fitted frame, and thus every transform, is identical for both bitmaps.
+    private func maybeLoadFullResolution(zoomScale: CGFloat) {
+        guard zoomScale > 1.2,
+              currentImage != nil,
+              let selected = model.selectedImage,
+              fullResLoadedFor != selected.filePath,
+              fullResRequestFor != selected.filePath else { return }
+
+        let filePath = selected.filePath
+        fullResRequestFor = filePath
+
+        Task { @MainActor in
+            do {
+                let image = try await ServerImageLoader.shared.loadFullResolution(filePath: filePath)
+                if model.selectedImage?.filePath == filePath {
+                    currentImage = image
+                }
+                fullResLoadedFor = filePath
+                if fullResRequestFor == filePath { fullResRequestFor = nil }
+            } catch is MediaUnreadableError {
+                // Terminal for this file: keep showing the preview, never retry.
+                fullResLoadedFor = filePath
+                if fullResRequestFor == filePath { fullResRequestFor = nil }
+            } catch {
+                // Transient (timeout, cancellation, connection): unlock so the
+                // next zoom change retries — mirrors the web viewer's onerror.
+                if fullResRequestFor == filePath { fullResRequestFor = nil }
+                print("Full-resolution load failed for \(filePath): \(error)")
+            }
+        }
+    }
+
     // MARK: - Preview loading
 
     private func loadPreview() async {
@@ -408,6 +480,9 @@ struct ViewerView: View {
             if model.selectedImage?.filePath == filePath {
                 currentImage = image
                 isLoadingImage = false
+                // If the user zoomed in while the preview was still loading,
+                // kick the full-resolution upgrade now.
+                maybeLoadFullResolution(zoomScale: scale)
             }
         } catch is CancellationError {
             // Selection changed; the new .task run owns the state.

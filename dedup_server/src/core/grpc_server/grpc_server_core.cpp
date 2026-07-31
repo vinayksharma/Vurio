@@ -35,6 +35,8 @@
 #include "core/media_ready_bus.hpp"
 #include "core/media_generation_failures.hpp"
 #include "database/processing_errors_ops.hpp"
+#include "utils/temp_paths.hpp"
+#include <unordered_map>
 #include <chrono>
 #include <sstream>
 #include <mutex>
@@ -1398,11 +1400,77 @@ public:
         }
     }
 
+    // Session-lifetime index of generated full-resolution previews (temp
+    // files): path -> {temp jpeg, source mtime}. Mirrors the web endpoint's
+    // no-persistent-cache semantics while making repeat zooms instant within
+    // a server run; temp files are reclaimed by the OS.
+    struct FullResEntry { std::string temp_path; int64_t source_mtime; };
+    static std::mutex& fullResMutex() { static std::mutex m; return m; }
+    static std::unordered_map<std::string, FullResEntry>& fullResCache() {
+        static std::unordered_map<std::string, FullResEntry> c; return c;
+    }
+
     grpc::Status GetPreview(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
                             vurio::dedup::MediaPathResponse* response) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string file_path = request->file_path();
-        
+
+        // Full-resolution request (viewer zoomed in). The native client asks
+        // this only for RAW files (it decodes standard formats locally); the
+        // handler is format-agnostic anyway. Same generation call as the web
+        // endpoint's size=full (native res, quality 95), but async + pushed
+        // via MediaReady like every other gRPC media generation.
+        if (request->size() == "full") {
+            if (auto reason = MediaDedup::MediaGenerationFailures::instance().permanentFailureReason(file_path, "preview_full")) {
+                return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
+            }
+
+            int64_t full_mtime = sourceModifiedTime(file_path);
+            {
+                std::lock_guard<std::mutex> lock(fullResMutex());
+                auto it = fullResCache().find(file_path);
+                if (it != fullResCache().end()) {
+                    if (std::filesystem::exists(it->second.temp_path) &&
+                        (full_mtime == 0 || it->second.source_mtime == full_mtime)) {
+                        response->set_file_path(it->second.temp_path);
+                        return grpc::Status::OK;
+                    }
+                    fullResCache().erase(it);
+                }
+            }
+
+            if (tpm_) {
+                auto db_copy = db_;
+                auto config_copy = config_;
+                std::string path_copy = file_path;
+                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy]() {
+                    int timeout_ms = config_copy
+                        ? config_copy->getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS)
+                        : ThumbnailGenerator::DEFAULT_TIMEOUT_MS;
+                    Magick::Blob blob;
+                    // size 0 = native resolution, quality 95 — matches the web endpoint
+                    if (ThumbnailGenerator::generateToBlob(path_copy, 0, blob, 95, timeout_ms)) {
+                        std::string out_path = MediaDedup::makeTempFilePath("fullres", ".jpg");
+                        std::ofstream out(out_path, std::ios::binary);
+                        out.write(static_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.length()));
+                        out.close();
+                        if (!out.fail()) {
+                            {
+                                std::lock_guard<std::mutex> lock(fullResMutex());
+                                fullResCache()[path_copy] = {out_path, sourceModifiedTime(path_copy)};
+                            }
+                            MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "preview_full");
+                            MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview_full", true, ""});
+                            return;
+                        }
+                    }
+                    recordGenerationFailure(db_copy, path_copy, "preview_full",
+                                            "Full-resolution generation failed (unsupported or corrupted file)");
+                }, file_path);
+            }
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Full resolution generating");
+        }
+
         if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
             // File does not need transcoding (e.g., standard JPEG/PNG)
             response->set_file_path(file_path);
