@@ -1433,6 +1433,7 @@ public:
                     if (std::filesystem::exists(it->second.temp_path) &&
                         (full_mtime == 0 || it->second.source_mtime == full_mtime)) {
                         response->set_file_path(it->second.temp_path);
+                        response->set_is_full_resolution(true);
                         return grpc::Status::OK;
                     }
                     fullResCache().erase(it);
@@ -1471,9 +1472,27 @@ public:
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Full resolution generating");
         }
 
+        // Best-available: when a full-resolution render is already materialized
+        // for this file, serve it for the ordinary preview request too — no
+        // point handing out QHD only for the viewer to upgrade on zoom.
+        {
+            std::lock_guard<std::mutex> lock(fullResMutex());
+            auto it = fullResCache().find(file_path);
+            if (it != fullResCache().end() && std::filesystem::exists(it->second.temp_path)) {
+                int64_t current_mtime = sourceModifiedTime(file_path);
+                if (current_mtime == 0 || it->second.source_mtime == current_mtime) {
+                    response->set_file_path(it->second.temp_path);
+                    response->set_is_full_resolution(true);
+                    return grpc::Status::OK;
+                }
+            }
+        }
+
         if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
-            // File does not need transcoding (e.g., standard JPEG/PNG)
+            // File does not need transcoding (e.g., standard JPEG/PNG) — the
+            // original path IS the full-resolution image.
             response->set_file_path(file_path);
+            response->set_is_full_resolution(true);
             return grpc::Status::OK;
         }
 

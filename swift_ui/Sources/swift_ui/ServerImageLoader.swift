@@ -46,6 +46,16 @@ actor ServerImageLoader {
     // Client mirror of the server's negative cache, keyed "type|path": known
     // unreadable files fail immediately instead of hitting the server again.
     private var unreadable: [String: String] = [:]
+
+    // Paths whose full-resolution image is known to be readily available
+    // (local decode succeeded once, or the server said/served full-res).
+    // Preview loads for these skip the QHD step and serve full-res directly,
+    // and the viewer skips its zoom-time upgrade.
+    private var knownFullRes: Set<String> = []
+
+    func isFullResolutionKnown(filePath: String) -> Bool {
+        knownFullRes.contains(filePath)
+    }
     
     private func getOrCreateTask(key: String, operation: @escaping () async throws -> NSImage) -> Task<NSImage, Error> {
         if let task = inFlightTasks[key] {
@@ -288,6 +298,7 @@ actor ServerImageLoader {
         let ext = (filePath as NSString).pathExtension.lowercased()
         if !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
             if let image = await decodeImageInBackground(filePath: filePath, priority: priority) {
+                knownFullRes.insert(filePath)
                 return image
             }
             // Local decode failed (odd codec, truncated file) — fall through
@@ -335,6 +346,7 @@ actor ServerImageLoader {
                 try Task.checkCancellation()
 
                 if let image = await self.decodeImageInBackground(filePath: response.filePath, priority: priority) {
+                    knownFullRes.insert(filePath)
                     return image
                 } else {
                     decodeFailures += 1
@@ -403,6 +415,20 @@ actor ServerImageLoader {
         if let reason = unreadableReason(type: "preview", filePath: filePath) {
             throw MediaUnreadableError(message: reason)
         }
+
+        // Best-available: when full resolution is already known to be cheap
+        // (local decode proven, or the server has it materialized), serve it
+        // directly and skip the QHD step entirely.
+        if knownFullRes.contains(filePath) {
+            if let image = try? await performLoadFullResolution(filePath: filePath, priority: priority) {
+                ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
+                return image
+            }
+            // Full-res no longer obtainable (server restarted, volume gone) —
+            // forget and fall back to the normal preview flow.
+            knownFullRes.remove(filePath)
+        }
+
         ensureMediaReadySubscription()
 
         // Same push-driven wait as thumbnails: a RAW preview can take longer
@@ -428,6 +454,12 @@ actor ServerImageLoader {
                 try Task.checkCancellation()
 
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
+                    // The server hands out the best it has: the original file
+                    // or an already-materialized full-res render both arrive
+                    // flagged, so the viewer can skip its zoom-time upgrade.
+                    if response.isFullResolution {
+                        knownFullRes.insert(filePath)
+                    }
                     ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                     return image
                 } else {

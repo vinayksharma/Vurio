@@ -81,6 +81,9 @@ struct DayGroupCard: View {
             DateStampLabel(text: dateStampText)
 
             VerticalScrollingFixView {
+                // Native indicator off: the hover scrollbar below scales its
+                // thumb to the day's TOTAL file count, not just the pages
+                // loaded so far.
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .center, spacing: 12) {
                         ForEach(items) { item in
@@ -114,6 +117,8 @@ struct DayGroupCard: View {
                     .padding(.leading, 6)
                     .padding(.trailing, 12)
                 }
+                .hoverHorizontalScrollbar(totalUnits: Int(day.totalFiles),
+                                          loadedUnits: day.files.count)
             }
             .frame(height: 118)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -113,6 +113,18 @@ final class ViewerViewModel: ObservableObject {
         images.first { $0.id == selectedID }
     }
 
+    /// Unit counts driving the strip's virtual scrollbar: in group mode every
+    /// image is loaded; in timeline mode the units are days, with unloaded
+    /// days estimated at the average loaded-day width and `leading` counting
+    /// the days that exist before the loaded window.
+    var scrollbarUnits: (total: Int, loaded: Int, leading: Int) {
+        if isGroupMode {
+            let count = images.count
+            return (count, count, 0)
+        }
+        return (Int(totalDays), days.count, windowStart)
+    }
+
     var canLoadNewer: Bool { !isGroupMode && !items.isEmpty && windowStart > 0 }
     var canLoadOlder: Bool { !isGroupMode && !items.isEmpty && windowStart + days.count < Int(totalDays) }
     // Sentinel ids change with the window bounds so each growth re-arms onAppear.

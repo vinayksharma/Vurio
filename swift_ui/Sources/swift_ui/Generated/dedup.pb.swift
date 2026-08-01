@@ -748,6 +748,11 @@ struct Vurio_Dedup_MediaPathResponse: Sendable {
 
   var filePath: String = String()
 
+  /// True when the returned path is already full resolution (the original
+  /// file, or a cached full-res render) — the viewer can skip its zoom-time
+  /// full-resolution upgrade.
+  var isFullResolution: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -2410,7 +2415,7 @@ extension Vurio_Dedup_CancelMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Vurio_Dedup_MediaPathResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".MediaPathResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}is_full_resolution\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2419,6 +2424,7 @@ extension Vurio_Dedup_MediaPathResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.isFullResolution) }()
       default: break
       }
     }
@@ -2428,11 +2434,15 @@ extension Vurio_Dedup_MediaPathResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.filePath.isEmpty {
       try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
     }
+    if self.isFullResolution != false {
+      try visitor.visitSingularBoolField(value: self.isFullResolution, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_MediaPathResponse, rhs: Vurio_Dedup_MediaPathResponse) -> Bool {
     if lhs.filePath != rhs.filePath {return false}
+    if lhs.isFullResolution != rhs.isFullResolution {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

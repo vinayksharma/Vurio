@@ -289,6 +289,9 @@ struct ViewerView: View {
 
     private var thumbnailStrip: some View {
         ScrollViewReader { proxy in
+            // Native indicator off: the custom hover scrollbar below sizes its
+            // thumb against the FULL timeline (including not-yet-loaded days),
+            // which the native one cannot do.
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .center, spacing: 12) {
                     if model.canLoadNewer {
@@ -321,6 +324,9 @@ struct ViewerView: View {
                 .padding(.vertical, 14)
                 .padding(.horizontal, 12)
             }
+            .hoverHorizontalScrollbar(totalUnits: model.scrollbarUnits.total,
+                                      loadedUnits: model.scrollbarUnits.loaded,
+                                      leadingUnits: model.scrollbarUnits.leading)
             .onChange(of: model.scrollTarget) { _, target in
                 guard let target else { return }
                 // Applied on the next runloop turn so freshly (pre)pended items
@@ -348,7 +354,10 @@ struct ViewerView: View {
                 .stroke(Theme.border, lineWidth: 1)
         )
         .padding(.horizontal, 30)
-        .padding(.bottom, 12)
+        // Clears the bottom status bar the viewer underlaps (~30pt): with the
+        // old 12pt the strip's bottom edge — where the hover scrollbar lives —
+        // rendered hidden beneath it.
+        .padding(.bottom, 42)
     }
 
     /// Vertical DSEG7 day separator between the timeline's day sections.
@@ -500,6 +509,9 @@ struct ViewerView: View {
                 displayedImagePath = filePath
                 isLoadingImage = false
             }
+            if await ServerImageLoader.shared.isFullResolutionKnown(filePath: filePath) {
+                fullResLoadedFor = filePath
+            }
             return
         }
 
@@ -518,9 +530,16 @@ struct ViewerView: View {
                     displayedImagePath = filePath
                     isLoadingImage = false
                 }
-                // If the user zoomed in while the preview was still loading,
-                // kick the full-resolution upgrade now.
-                maybeLoadFullResolution(zoomScale: scale)
+                // Served best-available: when the preview is already full
+                // resolution (original file or materialized render), there is
+                // nothing to upgrade on zoom.
+                if await ServerImageLoader.shared.isFullResolutionKnown(filePath: filePath) {
+                    fullResLoadedFor = filePath
+                } else {
+                    // If the user zoomed in while the preview was still
+                    // loading, kick the full-resolution upgrade now.
+                    maybeLoadFullResolution(zoomScale: scale)
+                }
             }
         } catch is CancellationError {
             // Selection changed; the new .task run owns the state.
