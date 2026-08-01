@@ -49,6 +49,8 @@ struct DuplicateGroupCard: View {
                 
                 VerticalScrollingFixView {
                     ScrollViewReader { proxy in
+                        // Native indicator off: the hover scrollbar below is
+                        // consistent with the VU/viewer strips.
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 12) {
                                 ForEach(Array(candidates.enumerated()), id: \.offset) { index, file in
@@ -93,6 +95,8 @@ struct DuplicateGroupCard: View {
                                 }
                             }
                         }
+                        .hoverHorizontalScrollbar(totalUnits: candidates.count,
+                                                  loadedUnits: candidates.count)
                         .onChange(of: selectedCandidateIndex) { old, newIdx in
                             if isSelected {
                                 let safeIdx = min(max(0, newIdx), max(0, candidates.count - 1))

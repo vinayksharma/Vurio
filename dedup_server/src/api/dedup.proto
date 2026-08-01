@@ -348,6 +348,10 @@ message CancelMediaRequest {
 
 message MediaPathResponse {
   string file_path = 1;
+  // True when the returned path is already full resolution (the original
+  // file, or a cached full-res render) — the viewer can skip its zoom-time
+  // full-resolution upgrade.
+  bool is_full_resolution = 2;
 }
 
 message MediaReadyEvent {

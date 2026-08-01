@@ -90,6 +90,12 @@ The separate VIEWER sidebar tab is removed; the viewer is now embedded in the VU
 
 ---
 
+## Hover scrollbars on horizontal strips (2026-07-31)
+
+All three horizontal thumbnail strips (viewer strip, VU day panels, BINNED candidate rows) show a custom overlay scrollbar that fades in on hover and out on exit. Unlike the native indicator, its thumb is sized and positioned against the strip's FULL logical content — including pages not yet lazily loaded (a day's total file count; the timeline's total day count, with days before the loaded window shifting the thumb) — so the thumb honestly reflects where you are in everything that can load, with unloaded units estimated at the average loaded-unit width. Implemented as a single reusable modifier in `HoverScrollbar.swift` (`hoverHorizontalScrollbar` on the ScrollView) that introspects the backing NSScrollView for offset/content/viewport geometry — SwiftUI preference-based measurement reports zero width from inside macOS ScrollView content, so the AppKit clip/document views are observed directly (same pattern as VurioScroller). Binding only considers NSScrollViews whose window-space frame coincides with the modifier's own background view (they are geometrically identical by construction) — this pins each bar to its own strip; without it a bar could bind a sibling strip's scroller and drag two strips at once, or capture a vertical scroller in layered hierarchies like the embedded viewer. The bar is interactive: clicking the track jumps there and the same gesture drags; the interactive band is itself an AppKit view (a SwiftUI gesture would lose hit-testing to the NSScrollView beneath) that tracks its own hover via NSTrackingArea and only hit-tests while visible, so tile clicks are unaffected when hidden. Dragging past the loaded region clamps to the loaded edge and extends as sentinels page more content in. The bar never shows when the content fits the viewport.
+
+---
+
 ## Viewer image fade transitions (2026-07-31)
 
 Changing the displayed image in the embedded viewer fades rather than snaps: navigating cross-fades directly between images when the next preview is already cached, and otherwise fades the old image out (spinner fades in) and the new one in when it arrives (0.18s ease-in-out). A zoomed/panned image glides back to fit during the fade instead of snapping first. Error/unreadable placeholders fade the same way. The full-resolution swap is deliberately excluded — same image identity, so it remains an instant in-place sharpening.
@@ -104,6 +110,7 @@ When the user zooms past 1.2× in the embedded viewer (same threshold as the leg
 - One request per image (in-flight lock); failures unlock so the next zoom retries; `FAILED_PRECONDITION` (unreadable file) keeps the preview and never retries. Selection changes reset the state.
 - Server-side full-res generation runs as task type `fullres_generator`, counted under the same `tpm.mediaGeneration.maxConcurrent` cap as thumbnails/previews.
 - While the full-res image is being pulled, a small non-interactive "LOADING FULL RES" capsule (spinner + DSEG-style caption) fades in at the bottom-right of the image area and fades out when the swap completes or the request ends.
+- **Best-available serving:** once a full-resolution image is known to be cheap — the server has it materialized in its session cache, the file is a standard format served as its original path, or a local decode already succeeded — subsequent views of that image serve full resolution directly and skip the QHD step and the zoom-time upgrade entirely. `MediaPathResponse.is_full_resolution` tells the client what it received; the client keeps a session-scoped set of such paths and falls back to the normal preview flow if the full-res source disappears (server restart, unmounted volume).
 
 ---
 
