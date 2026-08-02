@@ -43,12 +43,13 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
 
 ### QW-2. Stop wiping the QHD preview cache on shutdown ✅ 1 line
 
-> **STATUS: ✔ IMPLEMENTED 2026-08-02 — awaiting user validation.**
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
 > `MediaProcessor::shutdown()` no longer calls `disk_cache_->clearCache()` (comment
-> left in place explaining why). Regression test:
+> left in place explaining why). Manual clearing via the ClearAllCaches RPC is
+> unaffected (and clears files + DB rows together). Regression test:
 > `MediaProcessorShutdownTest.ShutdownPreservesTranscodingDiskCache` in
 > `tests/unit/test_media_processor.cpp` (fixture split into `SetUpCore()` so the
-> test runs without the test-image assets). Full suite green (247 tests).
+> test runs without the test-image assets).
 - **File:** `src/media_processors/media_processor.cpp:107-113` (`MediaProcessor::shutdown()`).
 - **Problem:** unconditionally calls `disk_cache_->clearCache()` on the shared
   transcoding cache (the persistent preview store injected at
@@ -63,6 +64,13 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
   re-transcode (no `magick` spawns for already-cached RAWs).
 
 ### QW-3. Fix the null pause-callback capture ✅ 1 line move
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> `setPauseCallback` moved below the `duplicateFinder` job registration in
+> `server_server_initializer.cpp`, with an ORDERING IS LOAD-BEARING comment; the
+> callback now captures a live `duplicate_finder_`. New tests:
+> `SchedulerServiceTest.PauseInvokesPauseCallbackEachTime` and
+> `PauseWithoutCallbackIsSafe` pin the callback contract the wiring relies on.
 - **File:** `src/core/server_server_initializer.cpp:354` vs `:394`.
 - **Problem:** `setPauseCallback([fm = files_manager_, df = duplicate_finder_](){ ... })`
   captures `duplicate_finder_` **by value while it is still nullptr** (it is
