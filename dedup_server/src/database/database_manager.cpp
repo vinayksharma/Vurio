@@ -26,23 +26,29 @@ namespace MediaDedup
             // Get pool sizes from config, with defaults if config_manager is not available
             int pool_min = 4;
             int pool_max = 32;
-            
+            int cache_pages = 2000;
+            std::string temp_store = "memory";
+
             if (config_manager_)
             {
                 pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
                 pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 32);
+                // QW-7: these two knobs existed in config but were read
+                // nowhere; they now drive the per-connection pragmas.
+                cache_pages = config_manager_->getPropertyValue<int>("database.sqlite.cacheSize", 2000);
+                temp_store = config_manager_->getPropertyValue<std::string>("database.sqlite.tempStore", "memory");
                 logger_.information("Using database session pool: min=%d, max=%d", pool_min, pool_max);
             }
             else
             {
                 logger_.warning("No config manager provided, using default session pool sizes: min=%d, max=%d", pool_min, pool_max);
             }
-            
+
             // Initialize SessionManager and its pool
-            session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 
-                                                               static_cast<std::size_t>(pool_min), 
-                                                               static_cast<std::size_t>(pool_max), 
-                                                               60);
+            session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_,
+                                                               static_cast<std::size_t>(pool_min),
+                                                               static_cast<std::size_t>(pool_max),
+                                                               60, cache_pages, temp_store);
             if (session_manager_->initialize())
             {
                 connected_ = true;
@@ -119,17 +125,21 @@ namespace MediaDedup
                 // Get pool sizes from config, with defaults if config_manager is not available
                 int pool_min = 4;
                 int pool_max = 32;
-                
+                int cache_pages = 2000;
+                std::string temp_store = "memory";
+
                 if (config_manager_)
                 {
                     pool_min = config_manager_->getPropertyValue<int>("database.session.poolMin", 4);
                     pool_max = config_manager_->getPropertyValue<int>("database.session.poolMax", 32);
+                    cache_pages = config_manager_->getPropertyValue<int>("database.sqlite.cacheSize", 2000);
+                    temp_store = config_manager_->getPropertyValue<std::string>("database.sqlite.tempStore", "memory");
                 }
-                
-                session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_, 
-                                                                   static_cast<std::size_t>(pool_min), 
-                                                                   static_cast<std::size_t>(pool_max), 
-                                                                   60);
+
+                session_manager_ = std::make_unique<SessionManager>("SQLite", db_path_,
+                                                                   static_cast<std::size_t>(pool_min),
+                                                                   static_cast<std::size_t>(pool_max),
+                                                                   60, cache_pages, temp_store);
                 if (!session_manager_->initialize())
                     return false;
             }

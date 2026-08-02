@@ -154,6 +154,19 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
 - **Verify:** profile a dedup batch; `Poco::Logger::get` disappears from the hot stack.
 
 ### QW-7. Set `busy_timeout` + per-connection pragmas on every pooled connection ✅ ~20 lines
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> A `SqliteTunedSessionPool` subclass overrides Poco's `customizeSession` hook
+> (invoked once per newly created physical connection) and applies
+> `SessionManager::applySqlitePragmas`: busy_timeout=5000, synchronous=NORMAL,
+> cache_size, temp_store, foreign_keys=ON. WAL stays a one-time (persistent)
+> setting at initialize; the dead `PRAGMA cache = shared` line is gone; the
+> per-lease `foreign_keys` round trip in `getConnectedSession` is gone. The
+> previously dead config keys `database.sqlite.cacheSize`/`tempStore` are now
+> wired through DatabaseManager into the pragmas. Tests:
+> `SessionPragmasTest.EveryConcurrentConnectionIsTuned` (4 simultaneous leases,
+> each connection asserted tuned) + `ApplySqlitePragmasHonorsParameters`.
+> Suite green (264 tests).
 - **File:** `src/database/session/session_manager.cpp:34-57` (init-time pragmas) and
   `:98-110` (`getConnectedSession`).
 - **Problem:** pragmas are applied to **one** borrowed session at `initialize()`.
