@@ -38,11 +38,29 @@ namespace MediaDedup
                        const std::string &connection_string,
                        std::size_t pool_min = 1,
                        std::size_t pool_max = 8,
-                       int idle_seconds = 60);
+                       int idle_seconds = 60,
+                       int sqlite_cache_size_pages = 2000,
+                       std::string sqlite_temp_store = "memory");
 
         bool initialize();
 
         Lease acquireLease();
+
+        /**
+         * @brief Apply the per-connection SQLite tuning pragmas to one session.
+         *
+         * QW-7 (docs/backend_optimization_plan.md): these pragmas are
+         * per-connection state, so they must run on EVERY physical connection
+         * the pool creates (via customizeSession), not once at initialize().
+         * Most critically `busy_timeout` — its default of 0 makes concurrent
+         * writers fail instantly with SQLITE_BUSY, which the ops layer swallows
+         * as `return false` (silent write loss under load).
+         *
+         * Public/static so tests can verify the exact pragma set.
+         */
+        static void applySqlitePragmas(Poco::Data::Session &session,
+                                       int cache_size_pages,
+                                       const std::string &temp_store);
 
         void setAcquireTimeoutMs(int ms) { acquire_timeout_ = std::chrono::milliseconds(ms); }
         void setBackoffMs(int ms) { acquire_backoff_ = std::chrono::milliseconds(ms); }
@@ -58,6 +76,11 @@ namespace MediaDedup
         std::size_t pool_min_;
         std::size_t pool_max_;
         int idle_seconds_;
+
+        // Per-connection SQLite tuning (applied by the pool's
+        // customizeSession hook; see applySqlitePragmas)
+        int sqlite_cache_size_pages_;
+        std::string sqlite_temp_store_;
 
         // Lease/timeout control for bounded waits
         std::size_t leased_sessions_ = 0;
