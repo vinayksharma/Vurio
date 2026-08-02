@@ -214,6 +214,16 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
   `ProcessingErrorsOpsTest.DeleteBySourceRemovesOnlyThatSource`.
 
 ### QW-8. Populate timestamps in the web preview handler's cache rows ✅ ~10 lines
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> New `PreviewCacheOps::makeRecord(source, cached)` fills source mtime, cached
+> file size, and created/last-accessed timestamps; ALL FIVE generation sites now
+> use it (both web handler sites — previously writing zeroed records — plus the
+> gRPC, media_processor, and media_backfill sites, which had three verbatim
+> copies of the population logic, now deleted). Tests:
+> `PreviewCacheOpsTest.MakeRecord_PopulatesFreshnessFields` (asserts the mtime
+> matches what ingest computes) + `MakeRecord_MissingSourceYieldsZeroMtime`.
+> Suite green (266 tests).
 - **File:** `src/core/webserver/web_handlers_preview.cpp:158-161` and `:208-211`.
 - **Problem:** `PreviewCacheRecord` is constructed with only `source_path`/`cached_path`;
   `source_modified_at` defaults to 0, so `media_processor.cpp:277`'s freshness check

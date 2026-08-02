@@ -4,6 +4,8 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <chrono>
+#include <filesystem>
 
 using Poco::Data::Session;
 using Poco::Data::Statement;
@@ -255,6 +257,42 @@ namespace MediaDedup
             Poco::Logger::get("PreviewCacheOps").error("Exception in updateCacheLocation: %s", std::string(e.what()));
             return false;
         }
+    }
+
+    PreviewCacheRecord PreviewCacheOps::makeRecord(const std::string &source_path,
+                                                   const std::string &cached_path)
+    {
+        PreviewCacheRecord record;
+        record.source_path = source_path;
+        record.cached_path = cached_path;
+
+        try
+        {
+            auto ftime = std::filesystem::last_write_time(source_path);
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            record.source_modified_at = std::chrono::system_clock::to_time_t(sctp);
+        }
+        catch (...)
+        {
+            record.source_modified_at = 0;
+        }
+
+        try
+        {
+            record.file_size_bytes = static_cast<int64_t>(std::filesystem::file_size(cached_path));
+        }
+        catch (...)
+        {
+            record.file_size_bytes = 0;
+        }
+
+        int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        record.created_at = now_ts;
+        record.last_accessed_at = now_ts;
+        return record;
     }
 
 } // namespace MediaDedup

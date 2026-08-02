@@ -118,34 +118,8 @@ namespace MediaDedup
                         std::string final_path;
                         if (backfill_trans_cache->moveToCache(temp_path, final_path))
                         {
-                            PreviewCacheRecord record;
-                            record.source_path = path;
-                            record.cached_path = final_path;
-                            try
-                            {
-                                auto ftime = std::filesystem::last_write_time(path);
-                                auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                                    ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-                                record.source_modified_at = std::chrono::system_clock::to_time_t(sctp);
-                            }
-                            catch (...)
-                            {
-                                record.source_modified_at = 0;
-                            }
-                            try
-                            {
-                                record.file_size_bytes = std::filesystem::file_size(final_path);
-                            }
-                            catch (...)
-                            {
-                                record.file_size_bytes = 0;
-                            }
-                            int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
-                                                 std::chrono::system_clock::now().time_since_epoch())
-                                                 .count();
-                            record.created_at = now_ts;
-                            record.last_accessed_at = now_ts;
-                            PreviewCacheOps::upsertPreview(*db, record);
+                            PreviewCacheOps::upsertPreview(
+                                *db, PreviewCacheOps::makeRecord(path, final_path));
                             MediaGenerationFailures::instance().recordSuccess(path, "preview");
                             MediaReadyBus::instance().publish({path, "preview", true, ""});
                         }

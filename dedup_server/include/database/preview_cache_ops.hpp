@@ -42,6 +42,19 @@ namespace MediaDedup
         static bool upsertPreview(DatabaseManager &db, const PreviewCacheRecord &record);
 
         /**
+         * @brief Build a fully populated record for a freshly generated preview.
+         *
+         * Fills source_modified_at (source file mtime), file_size_bytes (of the
+         * cached file), and created_at/last_accessed_at (now). QW-8
+         * (docs/backend_optimization_plan.md): every generation site MUST use
+         * this — a record written with source_modified_at = 0 permanently fails
+         * ingest's freshness check and the RAW is re-transcoded although a good
+         * preview exists.
+         */
+        static PreviewCacheRecord makeRecord(const std::string &source_path,
+                                             const std::string &cached_path);
+
+        /**
          * @brief Update the last_accessed_at timestamp for a preview
          */
         static bool updateAccessTime(DatabaseManager &db, const std::string &source_path, int64_t timestamp);
