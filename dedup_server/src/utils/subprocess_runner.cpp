@@ -9,12 +9,16 @@ namespace MediaDedup
 {
     SubprocessResult runProcessWithTimeout(const std::string &command,
                                            const std::vector<std::string> &args,
-                                           int timeout_ms)
+                                           int timeout_ms,
+                                           const std::map<std::string, std::string> &extra_env)
     {
         SubprocessResult result;
         Poco::Logger &logger = Poco::Logger::get("SubprocessRunner");
 
-        Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
+        Poco::ProcessHandle handle =
+            extra_env.empty()
+                ? Poco::Process::launch(command, args, nullptr, nullptr, nullptr)
+                : Poco::Process::launch(command, args, nullptr, nullptr, nullptr, extra_env);
 
         if (timeout_ms <= 0)
         {

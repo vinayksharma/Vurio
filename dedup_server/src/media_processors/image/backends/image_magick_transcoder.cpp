@@ -238,7 +238,8 @@ namespace MediaDedup
 
         try
         {
-            SubprocessResult run = runProcessWithTimeout(command, args, timeout_ms);
+            SubprocessResult run = runProcessWithTimeout(command, args, timeout_ms,
+                                                         ToolPaths::magickResourceEnv());
             if (run.timed_out)
             {
                 logger_.error("magick timed out after %d ms for file: %s", timeout_ms, file_path);

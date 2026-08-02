@@ -85,6 +85,23 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
   run is active; it completes instead of hanging.
 
 ### QW-4. Constrain the spawned `magick` subprocesses ✅ ~5 lines
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> Implemented as per-launch env (cleaner than global `setenv`, covers every
+> spawn path): `ToolPaths::magickResourceEnv()` returns the MAGICK_* limits
+> (THREAD=1, MEMORY=256MiB, MAP=512MiB, AREA=1GiB, DISK=2GiB, WIDTH/HEIGHT=65536);
+> `runProcessWithTimeout` gained an `extra_env` param; all four magick spawn
+> sites pass it (thumbnail_generator, image_magick_transcoder, and the two raw
+> launches in image_processor.cpp — the EXIF full-RAW decodes). Tests:
+> `MagickLimitsTest.EnvContainsAllResourceCaps` + `RealMagickHonorsLimits`
+> (spawns the real binary and asserts the reported caps).
+>
+> **QW-4b (contingency, NOT implemented):** if real-world magick timeouts appear
+> on legitimate huge files (fallback full-demosaic path only), implement
+> reactive escalation: retry once with elevated limits (~1GiB) + longer timeout,
+> serialized through a single large-decode slot. Prefer this over predictive
+> per-file sizing (keeps the concurrency memory budget intact, no dimension
+> heuristics). Do not build until the logs demonstrate the need.
 - **File:** `src/media_processors/image/backends/image_magick_transcoder.cpp:84-94`
   (in-process `SetMagickResourceLimit` block, including "1 thread is critical" comment).
 - **Problem (verified against `/opt/homebrew/bin/magick`):** all real decoding happens
