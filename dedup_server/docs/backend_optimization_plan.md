@@ -42,6 +42,13 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
   `Profile-*` entries; file size drops ~10×.
 
 ### QW-2. Stop wiping the QHD preview cache on shutdown ✅ 1 line
+
+> **STATUS: ✔ IMPLEMENTED 2026-08-02 — awaiting user validation.**
+> `MediaProcessor::shutdown()` no longer calls `disk_cache_->clearCache()` (comment
+> left in place explaining why). Regression test:
+> `MediaProcessorShutdownTest.ShutdownPreservesTranscodingDiskCache` in
+> `tests/unit/test_media_processor.cpp` (fixture split into `SetUpCore()` so the
+> test runs without the test-image assets). Full suite green (247 tests).
 - **File:** `src/media_processors/media_processor.cpp:107-113` (`MediaProcessor::shutdown()`).
 - **Problem:** unconditionally calls `disk_cache_->clearCache()` on the shared
   transcoding cache (the persistent preview store injected at
