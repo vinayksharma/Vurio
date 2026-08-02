@@ -121,6 +121,9 @@ namespace MediaDedup
             "INSERT INTO processing_errors(file_path, server_mode, error_code, error_message, error_source) "
             "VALUES(?, ?, ?, ?, ?)";
 
+        inline constexpr std::string_view kDeleteProcessingErrorsBySource =
+            "DELETE FROM processing_errors WHERE error_source = ?";
+
         // Image artifacts (metadata produced by image pipelines)
         inline constexpr std::string_view kCreateImageArtifactsTable =
             "CREATE TABLE IF NOT EXISTS image_artifacts (\n"

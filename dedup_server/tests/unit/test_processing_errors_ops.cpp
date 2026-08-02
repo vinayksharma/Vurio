@@ -57,6 +57,31 @@ namespace MediaDedup
             EXPECT_TRUE(result);
         }
 
+        // QW-9: ClearAllCaches purges the MediaGeneration-sourced error rows so
+        // negative-cached files retry cleanly; rows from other sources survive.
+        TEST(ProcessingErrorsOpsTest, DeleteBySourceRemovesOnlyThatSource)
+        {
+            std::string db_path = testDbPath("test_processing_errors_delete_by_source.sqlite");
+            removeDbAndWal(db_path);
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ProcessingErrorsOps::ensureTable(dbm));
+
+            ASSERT_TRUE(ProcessingErrorsOps::insertError(
+                dbm, "/a.jpg", ServerMode::EMBEDDING, -6, "gen failed", "MediaGeneration"));
+            ASSERT_TRUE(ProcessingErrorsOps::insertError(
+                dbm, "/b.jpg", ServerMode::EMBEDDING, -6, "gen failed", "MediaGeneration"));
+            ASSERT_TRUE(ProcessingErrorsOps::insertError(
+                dbm, "/c.jpg", ServerMode::EMBEDDING, -1, "decode failed", "OpenCV"));
+
+            EXPECT_EQ(ProcessingErrorsOps::deleteBySource(dbm, "MediaGeneration"), 2);
+            // Second pass: nothing left from that source.
+            EXPECT_EQ(ProcessingErrorsOps::deleteBySource(dbm, "MediaGeneration"), 0);
+            // The OpenCV row survived.
+            EXPECT_EQ(ProcessingErrorsOps::deleteBySource(dbm, "OpenCV"), 1);
+        }
+
         TEST(ProcessingErrorsOpsTest, InsertMultipleErrors)
         {
             std::string db_path = testDbPath("test_processing_errors_multiple.sqlite");

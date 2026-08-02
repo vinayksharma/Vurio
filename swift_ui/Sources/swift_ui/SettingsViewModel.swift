@@ -1,6 +1,12 @@
 import SwiftUI
 import Combine
 
+extension Notification.Name {
+    /// Posted after a successful server-side ClearAllCaches so every view
+    /// holding rendered media re-requests it fresh (thumbnails regenerate).
+    static let cachesCleared = Notification.Name("CachesCleared")
+}
+
 @MainActor
 class SettingsViewModel: ObservableObject {
     @Published var config: [String: String] = [:]
@@ -180,10 +186,15 @@ class SettingsViewModel: ObservableObject {
     func clearAllCaches() async {
         isAnyActionRunning = true
         defer { isAnyActionRunning = false }
-        
+
         do {
             let response = try await VurioGrpcClient.shared.advanced!.clearAllCaches(Vurio_Dedup_Empty())
             if response.success {
+                // The server wiped its caches; without dropping the client's
+                // decoded-image cache and re-requesting, the UI keeps showing
+                // pre-clear pixels and the reset looks like a no-op.
+                ImageCache.shared.clear()
+                NotificationCenter.default.post(name: .cachesCleared, object: nil)
                 MessageCenter.shared.post("Caches cleared successfully")
             } else {
                 MessageCenter.shared.post("Action failed: \(response.errorMessage)")

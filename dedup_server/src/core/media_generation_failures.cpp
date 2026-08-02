@@ -33,6 +33,12 @@ namespace MediaDedup
         failures_.erase(key(file_path, "preview"));
     }
 
+    void MediaGenerationFailures::clearAll()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        failures_.clear();
+    }
+
     std::optional<std::string> MediaGenerationFailures::permanentFailureReason(
         const std::string &file_path, const std::string &media_type) const
     {

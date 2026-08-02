@@ -159,6 +159,31 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
 - **Verify:** `PRAGMA busy_timeout` returns 5000 on a leased session; hammer
   concurrent ejects + scan without lost writes.
 
+### QW-9. Make user-initiated clear-cache a true reset (added 2026-08-02)
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+
+- **Problem found during QW-4 validation:** the ClearAllCaches RPC cleared the
+  disk caches + cache DB tables, but (a) `MediaGenerationFailures` (the 3-strike
+  negative cache) survived, so permanently failed files still answered
+  FAILED_PRECONDITION until a server restart; (b) the viewer's session-lifetime
+  full-res temp renders survived; (c) the SwiftUI client neither dropped
+  `ImageCache.shared` nor re-requested anything, so the UI kept showing
+  pre-clear pixels and the whole reset looked like a no-op.
+- **Server:** `MediaGenerationFailures::clearAll()` (new) called from
+  ClearAllCaches; `ProcessingErrorsOps::deleteBySource(db, "MediaGeneration")`
+  (new, with `kDeleteProcessingErrorsBySource`) purges the persisted error rows;
+  `fullResCache()`/`fullResMutex()` moved to file scope with a new
+  `clearFullResCache()` (deletes temp JPEGs + empties the index) also invoked.
+- **Client:** on RPC success `SettingsViewModel.clearAllCaches()` now clears
+  `ImageCache.shared` and posts `.cachesCleared`; `ThumbnailView` observes it and
+  resets its tile state (including stale "Unreadable" verdicts) and re-requests;
+  `VurioDuplicatesView` reloads loaded rows so `cached_thumbnail_path` fields
+  stop pointing at deleted files.
+- **Tests:** `MediaGenerationFailuresTest` (4 tests: threshold semantics,
+  success-reset, clearAll) and
+  `ProcessingErrorsOpsTest.DeleteBySourceRemovesOnlyThatSource`.
+
 ### QW-8. Populate timestamps in the web preview handler's cache rows ✅ ~10 lines
 - **File:** `src/core/webserver/web_handlers_preview.cpp:158-161` and `:208-211`.
 - **Problem:** `PreviewCacheRecord` is constructed with only `source_path`/`cached_path`;

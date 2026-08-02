@@ -98,4 +98,31 @@ namespace MediaDedup
             return false;
         }
     }
+
+    int ProcessingErrorsOps::deleteBySource(DatabaseManager &db, const std::string &error_source)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            std::string es = error_source;
+            Statement stmt(sess);
+            stmt << std::string(SQL::kDeleteProcessingErrorsBySource),
+                Keywords::use(es),
+                Keywords::now;
+
+            int changes = 0;
+            Statement count(sess);
+            count << "SELECT changes()", Keywords::into(changes), Keywords::now;
+
+            Poco::Logger::get("ProcessingErrorsOps").debug("Deleted " + std::to_string(changes) + " processing errors from source: " + error_source);
+            return changes;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ProcessingErrorsOps").error("Failed to delete processing errors for source " + error_source + ": " + std::string(e.what()));
+            return -1;
+        }
+    }
 }
