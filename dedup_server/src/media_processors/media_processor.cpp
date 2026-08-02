@@ -104,13 +104,11 @@ namespace MediaDedup
                 logger.information("Cleared processing flags for %d files during shutdown", cleared_count);
             }
 
-            // Clear the disk cache
-            if (disk_cache_)
-            {
-                logger.debug("Clearing disk cache during shutdown...");
-                disk_cache_->clearCache();
-                logger.debug("Disk cache cleared successfully");
-            }
+            // QW-2: the disk cache is deliberately NOT cleared here. It is the
+            // shared persistent QHD preview store (cache.disk); wiping it on
+            // shutdown while its preview_cache DB rows survive forced a full
+            // RAW re-transcode of the library on every restart. Persistence
+            // across restarts is the point of the cache.
 
             // Unsubscribe from configuration changes
             if (config_manager_)

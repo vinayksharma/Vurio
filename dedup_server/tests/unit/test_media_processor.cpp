@@ -7,6 +7,7 @@
 #include <fstream>
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
+#include "filesmanager/disk_cache.hpp"
 #include "config/unified_observable_config.hpp"
 #include "config/config_manager_factory.hpp"
 #include "database/database_manager.hpp"
@@ -34,6 +35,24 @@ class MediaProcessorTest : public ::testing::Test
 {
 protected:
     void SetUp() override
+    {
+        SetUpCore();
+
+        // Ensure test files exist (use build-relative test_data path)
+        std::string test_data = MediaDedup::Test::TestUtils::getTestDataPath();
+        std::filesystem::path test_image = std::filesystem::path(test_data) / "pictures" / "testset" / "test.jpg";
+        if (!std::filesystem::exists(test_image))
+            GTEST_SKIP() << "Test image missing: " << test_image.string() << " (add tests/test_data or run copy_test_data)";
+        std::filesystem::create_directories("/tmp/test_media_processor_files");
+        if (!std::filesystem::exists("/tmp/test_media_processor_files/image1.jpg"))
+            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image1.jpg");
+        if (!std::filesystem::exists("/tmp/test_media_processor_files/image2.png"))
+            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image2.png");
+    }
+
+    // Fixture core without the test-image dependency, reusable by tests that
+    // never route image files (e.g. shutdown behavior).
+    void SetUpCore()
     {
         // Create a test configuration manager (path relative to build dir)
         std::string test_data = MediaDedup::Test::TestUtils::getTestDataPath();
@@ -81,16 +100,6 @@ protected:
         // Create media processor
         media_processor_ = std::make_unique<MediaProcessor>(config_manager_, database_manager_, thread_pool_manager_);
         ASSERT_TRUE(media_processor_->initialize());
-
-        // Ensure test files exist (use build-relative test_data path)
-        std::filesystem::path test_image = std::filesystem::path(test_data) / "pictures" / "testset" / "test.jpg";
-        if (!std::filesystem::exists(test_image))
-            GTEST_SKIP() << "Test image missing: " << test_image.string() << " (add tests/test_data or run copy_test_data)";
-        std::filesystem::create_directories("/tmp/test_media_processor_files");
-        if (!std::filesystem::exists("/tmp/test_media_processor_files/image1.jpg"))
-            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image1.jpg");
-        if (!std::filesystem::exists("/tmp/test_media_processor_files/image2.png"))
-            std::filesystem::copy_file(test_image, "/tmp/test_media_processor_files/image2.png");
     }
 
     void TearDown() override
@@ -140,6 +149,46 @@ protected:
     std::unique_ptr<MediaProcessor> media_processor_;
     std::string db_path_;
 };
+
+// Shutdown-behavior tests need no test images, so they use the core fixture
+// directly and never skip.
+class MediaProcessorShutdownTest : public MediaProcessorTest
+{
+protected:
+    void SetUp() override { SetUpCore(); }
+};
+
+// QW-2 (backend_optimization_plan.md): shutdown() must NOT clear the
+// transcoding disk cache. It is the persistent QHD preview store shared with
+// the preview_cache DB table; wiping it on shutdown (while the DB rows
+// survive) forced a full RAW re-transcode of the library on every restart.
+TEST_F(MediaProcessorShutdownTest, ShutdownPreservesTranscodingDiskCache)
+{
+    auto cache = std::make_shared<DiskCache>(config_manager_, "cache.disk");
+
+    MediaProcessor processor(config_manager_, database_manager_, thread_pool_manager_,
+                             nullptr, cache);
+    ASSERT_TRUE(processor.initialize());
+
+    // Seed one cached "preview" file.
+    std::filesystem::path src = std::filesystem::temp_directory_path() / "qw2_preview_src.jpg";
+    {
+        std::ofstream out(src, std::ios::binary);
+        out << "preview-bytes";
+    }
+    std::string cached_path;
+    ASSERT_TRUE(cache->copyToCache(src.string(), cached_path));
+    ASSERT_TRUE(std::filesystem::exists(cached_path));
+
+    processor.shutdown();
+
+    EXPECT_TRUE(std::filesystem::exists(cached_path))
+        << "shutdown() cleared the persistent preview cache";
+
+    std::error_code ec;
+    std::filesystem::remove(src, ec);
+    std::filesystem::remove(cached_path, ec);
+}
 
 TEST_F(MediaProcessorTest, RouteToProcessor_SupportedImageFile_ReturnsTrue)
 {
