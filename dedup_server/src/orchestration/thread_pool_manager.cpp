@@ -225,9 +225,13 @@ namespace MediaDedup
             return;
         }
 
+        // QW-5: captured under the lock; the logging below must not touch
+        // type_to_queue_ unlocked (operator[] mutates and can rehash while
+        // schedule()/onTaskFinished mutate the map on worker threads).
+        size_t queued_for_type = 0;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            
+
             // Deduplication check
             if (!file_path.empty())
             {
@@ -239,7 +243,7 @@ namespace MediaDedup
                         return; // Already queued
                     }
                 }
-                
+
                 // Check if currently running
                 for (const auto &pair : active_runnables_)
                 {
@@ -251,6 +255,7 @@ namespace MediaDedup
             }
 
             type_to_queue_[type].emplace_back(std::move(fn), file_path);
+            queued_for_type = type_to_queue_[type].size();
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
             {
@@ -265,7 +270,7 @@ namespace MediaDedup
         thread_id << std::this_thread::get_id();
         std::string thread_id_str = thread_id.str();
         logger.debug("Submitted task for type '%s', queue size: %u, file: %s, calling thread: %s",
-                     type.c_str(), static_cast<unsigned int>(type_to_queue_[type].size()),
+                     type.c_str(), static_cast<unsigned int>(queued_for_type),
                      file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id_str.c_str());
         schedule();
     }

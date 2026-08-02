@@ -42,7 +42,55 @@ TEST(ThreadPoolManagerTest, SchedulesWithSharesAndDrains)
     EXPECT_EQ(st.runningTotal, 0u);
 }
 
-#include "test_utils.hpp"
+// QW-5 (backend_optimization_plan.md): submit() used to read
+// type_to_queue_[type] OUTSIDE the mutex for its debug log — a mutating
+// unordered_map::operator[] racing schedule()/onTaskFinished on worker
+// threads (torn reads / rehash corruption). This stress drives exactly that
+// interleaving: many submitters logging while workers drain and re-schedule.
+// Run under TSan/ASan it trips on the old code; unsanitized it pins that no
+// submission is lost or double-run.
+TEST(ThreadPoolManagerTest, ConcurrentSubmitWhileDrainingIsSafe)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("4"));
+    cfg->createProperty("tpm.killTimeoutMs", 200);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    constexpr int kSubmitters = 8;
+    constexpr int kTasksEach = 100;
+    std::atomic<int> ran{0};
+
+    std::vector<std::thread> submitters;
+    submitters.reserve(kSubmitters);
+    for (int t = 0; t < kSubmitters; ++t)
+    {
+        submitters.emplace_back([&tpm, &ran, t]()
+                                {
+            // Mixed types: same-type contention plus new-type insertion, both
+            // of which mutate type_to_queue_ under schedule() concurrently.
+            const std::string type = (t % 2 == 0) ? "stressA" : ("stress" + std::to_string(t));
+            for (int i = 0; i < kTasksEach; ++i)
+            {
+                // Unique file paths so the dedup check never drops any.
+                tpm.submit(type, [&ran]() { ran++; },
+                           "/stress/" + std::to_string(t) + "/" + std::to_string(i));
+            } });
+    }
+    for (auto &s : submitters)
+        s.join();
+
+    // Every submitted task runs exactly once.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (ran.load() < kSubmitters * kTasksEach && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_EQ(ran.load(), kSubmitters * kTasksEach);
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
+    EXPECT_EQ(tpm.getStatus().runningTotal, 0u);
+}
 
 TEST(ThreadPoolManagerTest, RespectsPerTypeSharesAtConcurrency)
 {

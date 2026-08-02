@@ -118,6 +118,13 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
   during a scan, per-`magick` CPU stays ≤ 100%.
 
 ### QW-5. Move the TPM submit logging inside the lock ✅ ~5 lines
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> `submit()` now captures `queued_for_type` under the mutex; the debug log uses
+> the local instead of touching `type_to_queue_` unlocked. Regression stress
+> test: `ThreadPoolManagerTest.ConcurrentSubmitWhileDrainingIsSafe` (8 threads ×
+> 100 mixed-type submissions racing the drain path; trips under TSan on the old
+> code, pins exactly-once execution on any build). Suite green (257 tests).
 - **File:** `src/orchestration/thread_pool_manager.cpp:228-270`.
 - **Problem (data race / UB):** the critical section ends at :261; :268 then calls
   `type_to_queue_[type]` (mutating `unordered_map::operator[]`, may rehash) with no
