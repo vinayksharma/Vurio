@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <vector>
 #include <Magick++.h>
 
 namespace MediaDedup
@@ -48,6 +49,24 @@ namespace MediaDedup
                              int size,
                              int quality = 85,
                              int timeout_ms = DEFAULT_TIMEOUT_MS);
+
+        /**
+         * @brief Build the magick CLI argument vector for one thumbnail render.
+         *
+         * Exposed for unit testing. `-strip` is load-bearing: without it the
+         * source's EXIF/XMP/ICC profiles are copied into every thumbnail and
+         * dwarf the pixel data at thumbnail sizes (measured 75-98% of output
+         * bytes); `-colorspace sRGB` already fixes the rendering intent.
+         *
+         * @param read_path Magick input spec (may carry a format prefix)
+         * @param output_path Output JPEG path (written with a jpeg: prefix)
+         * @param size Longest-edge target; <= 0 skips the resize (native)
+         * @param quality JPEG quality
+         */
+        static std::vector<std::string> buildMagickArgs(const std::string &read_path,
+                                                        const std::string &output_path,
+                                                        int size,
+                                                        int quality);
 
         /**
          * @brief Validate if a size is supported

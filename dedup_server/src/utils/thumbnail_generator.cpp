@@ -99,21 +99,8 @@ namespace MediaDedup
                        const std::string &source_for_log,
                        Poco::Logger &logger)
         {
-            std::vector<std::string> args;
-            args.push_back(read_path);
-            args.push_back("-depth");
-            args.push_back("8");
-            args.push_back("-auto-orient");
-            args.push_back("-colorspace");
-            args.push_back("sRGB");
-            if (size > 0)
-            {
-                args.push_back("-resize");
-                args.push_back(std::to_string(size) + "x" + std::to_string(size));
-            }
-            args.push_back("-quality");
-            args.push_back(std::to_string(quality));
-            args.push_back("jpeg:" + output_path);
+            std::vector<std::string> args =
+                ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality);
 
             SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms);
             if (result.timed_out)
@@ -133,6 +120,34 @@ namespace MediaDedup
             }
             return true;
         }
+    }
+
+    std::vector<std::string> ThumbnailGenerator::buildMagickArgs(const std::string &read_path,
+                                                                 const std::string &output_path,
+                                                                 int size,
+                                                                 int quality)
+    {
+        std::vector<std::string> args;
+        args.push_back(read_path);
+        // Drop EXIF/XMP/ICC/IPTC profiles from the output: at thumbnail sizes
+        // they are most of the bytes, and nothing reads metadata off a cached
+        // thumbnail. Placed right after the input so every later operator works
+        // on the stripped image.
+        args.push_back("-strip");
+        args.push_back("-depth");
+        args.push_back("8");
+        args.push_back("-auto-orient");
+        args.push_back("-colorspace");
+        args.push_back("sRGB");
+        if (size > 0)
+        {
+            args.push_back("-resize");
+            args.push_back(std::to_string(size) + "x" + std::to_string(size));
+        }
+        args.push_back("-quality");
+        args.push_back(std::to_string(quality));
+        args.push_back("jpeg:" + output_path);
+        return args;
     }
 
     bool ThumbnailGenerator::generate(const std::string &source_path,

@@ -124,6 +124,29 @@ namespace MediaDedup
         }
     }
 
+    std::vector<std::string> ImageMagickTranscoder::buildPreviewMagickArgs(const std::string &read_path,
+                                                                           const std::string &output_path)
+    {
+        std::vector<std::string> args;
+        args.push_back(read_path);
+        // Drop EXIF/XMP/ICC/IPTC profiles from the cached preview: metadata is
+        // always read from the original file, never from the preview, so the
+        // profiles are re-encoded dead weight. Placed right after the input so
+        // every later operator works on the stripped image.
+        args.push_back("-strip");
+        args.push_back("-depth");
+        args.push_back("8");
+        args.push_back("-auto-orient");
+        args.push_back("-colorspace");
+        args.push_back("sRGB");
+        args.push_back("-resize");
+        args.push_back(std::to_string(MAX_PREVIEW_DIMENSION) + "x" + std::to_string(MAX_PREVIEW_DIMENSION) + ">");
+        args.push_back("-quality");
+        args.push_back("85");
+        args.push_back("jpeg:" + output_path);
+        return args;
+    }
+
     bool ImageMagickTranscoder::transcodeToJpeg(const std::string &file_path, std::vector<std::uint8_t> &jpeg_data,
                                                 int timeout_ms)
     {
@@ -201,18 +224,7 @@ namespace MediaDedup
         }
 
         std::string command = ToolPaths::magickPath();
-        std::vector<std::string> args;
-        args.push_back(read_path);
-        args.push_back("-depth");
-        args.push_back("8");
-        args.push_back("-auto-orient");
-        args.push_back("-colorspace");
-        args.push_back("sRGB");
-        args.push_back("-resize");
-        args.push_back(std::to_string(MAX_PREVIEW_DIMENSION) + "x" + std::to_string(MAX_PREVIEW_DIMENSION) + ">");
-        args.push_back("-quality");
-        args.push_back("85");
-        args.push_back("jpeg:" + temp_out_path);
+        std::vector<std::string> args = buildPreviewMagickArgs(read_path, temp_out_path);
 
         struct EmbeddedCleanup {
             std::string path;
