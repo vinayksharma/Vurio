@@ -52,6 +52,19 @@ namespace MediaDedup
                              int timeout_ms = 60000);
 
         /**
+         * @brief Build the magick CLI argument vector for one QHD preview render.
+         *
+         * Exposed for unit testing. `-strip` drops the source's EXIF/XMP/ICC
+         * profiles from the cached preview (they are re-encoded dead weight;
+         * metadata is read from the original file, never from the preview).
+         *
+         * @param read_path Magick input spec (may carry a format prefix)
+         * @param output_path Output JPEG path (written with a jpeg: prefix)
+         */
+        static std::vector<std::string> buildPreviewMagickArgs(const std::string &read_path,
+                                                               const std::string &output_path);
+
+        /**
          * @brief Check if this transcoder instance is valid
          *
          * @return true if the transcoder is ready for use, false otherwise
