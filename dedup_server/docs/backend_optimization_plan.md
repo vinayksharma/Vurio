@@ -135,6 +135,15 @@ and exercise VU/BINNED/viewer from the SwiftUI app.
 - **Verify:** TSan build of the unit tests (`test_scheduler_concurrency.cpp`) is clean.
 
 ### QW-6. Hoist `Poco::Logger::get` out of the comparison inner loops ✅ ~5 lines
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> Cached accessors `similarityLogger()` / `finderLogger()` (magic statics)
+> replace every `Poco::Logger::get("SimilarityCalculator"/"DuplicateFinder")`
+> in both files — the per-pair global-mutex registry lookup is gone from the
+> hot loops. New `SimilarityCalculatorTest` (5 tests) pins cosine semantics
+> (identical=1, scale-invariant, orthogonal=0, opposite=-1, degenerate=0)
+> through this and future hot-loop refactors (the suite caught a recursive
+> static-init bug during development). Suite green (262 tests).
 - **Files:** `src/media_processors/similarity/similarity_calculator.cpp:137`;
   `src/orchestration/duplicate_finder.cpp:231` (`areMetadataCompatible`).
 - **Problem:** `Poco::Logger::get(name)` takes a **process-global mutex** and does a

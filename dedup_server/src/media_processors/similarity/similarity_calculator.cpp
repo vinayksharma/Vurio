@@ -6,6 +6,21 @@
 
 namespace MediaDedup
 {
+    namespace
+    {
+        // QW-6 (backend_optimization_plan.md): Poco::Logger::get takes a
+        // process-global mutex and does a registry lookup on every call, and
+        // the similarity functions run billions of times per dedup run across
+        // all worker threads — the lookup was the loop's serialization point.
+        // Logger references stay valid for the process lifetime, so resolve
+        // once (thread-safe via magic statics).
+        Poco::Logger &similarityLogger()
+        {
+            static Poco::Logger &logger = Poco::Logger::get("SimilarityCalculator");
+            return logger;
+        }
+    }
+
     int SimilarityCalculator::popcount(std::uint8_t byte)
     {
         // Brian Kernighan's algorithm for counting set bits
@@ -23,7 +38,7 @@ namespace MediaDedup
     {
         if (data1.size() != data2.size())
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Hamming distance: size mismatch (%zu vs %zu)", data1.size(), data2.size());
+            similarityLogger().warning("Hamming distance: size mismatch (%zu vs %zu)", data1.size(), data2.size());
             return -1;
         }
 
@@ -39,7 +54,7 @@ namespace MediaDedup
     double SimilarityCalculator::computePhashSimilarity(const std::vector<std::uint8_t> &hash1,
                                                         const std::vector<std::uint8_t> &hash2)
     {
-        Poco::Logger &logger = Poco::Logger::get("SimilarityCalculator");
+        Poco::Logger &logger = similarityLogger();
 
         if (hash1.empty() || hash2.empty())
         {
@@ -73,7 +88,7 @@ namespace MediaDedup
     {
         if (data.size() % 4 != 0)
         {
-            Poco::Logger::get("SimilarityCalculator").error("Byte array size %zu is not multiple of 4 for float32 conversion", data.size());
+            similarityLogger().error("Byte array size %zu is not multiple of 4 for float32 conversion", data.size());
             return {};
         }
 
@@ -88,14 +103,14 @@ namespace MediaDedup
     {
         if (embedding1.empty() || embedding2.empty())
         {
-            Poco::Logger::get("SimilarityCalculator").debug("Empty embedding provided");
+            similarityLogger().debug("Empty embedding provided");
             return 0.0;
         }
 
         size_t expected_size = static_cast<size_t>(dim) * 4; // float32 = 4 bytes
         if (embedding1.size() != expected_size || embedding2.size() != expected_size)
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Embedding size mismatch: expected %zu, got %zu and %zu", expected_size, embedding1.size(), embedding2.size());
+            similarityLogger().warning("Embedding size mismatch: expected %zu, got %zu and %zu", expected_size, embedding1.size(), embedding2.size());
             return 0.0;
         }
 
@@ -125,7 +140,7 @@ namespace MediaDedup
 
         if (norm1 < 1e-10 || norm2 < 1e-10)
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Zero-norm embedding detected");
+            similarityLogger().warning("Zero-norm embedding detected");
             return 0.0;
         }
 
@@ -134,7 +149,7 @@ namespace MediaDedup
         // Clamp to [-1, 1] due to floating point errors
         similarity = std::max(-1.0, std::min(1.0, similarity));
 
-        Poco::Logger::get("SimilarityCalculator").debug("Embedding similarity: %.4f (cosine similarity, dim=%d, dot=%.2f, norm1=%.2f, norm2=%.2f)", similarity, dim, dot_product, norm1, norm2);
+        similarityLogger().debug("Embedding similarity: %.4f (cosine similarity, dim=%d, dot=%.2f, norm1=%.2f, norm2=%.2f)", similarity, dim, dot_product, norm1, norm2);
 
         return similarity;
     }
@@ -148,7 +163,7 @@ namespace MediaDedup
 
         if (blob.size() < 12) // Minimum header size
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Feature blob too small: %zu bytes", blob.size());
+            similarityLogger().warning("Feature blob too small: %zu bytes", blob.size());
             return false;
         }
 
@@ -161,7 +176,7 @@ namespace MediaDedup
 
         if (count <= 0 || count > 10000) // Sanity check
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Invalid feature count: %d", count);
+            similarityLogger().warning("Invalid feature count: %d", count);
             return false;
         }
 
@@ -172,7 +187,7 @@ namespace MediaDedup
 
         if (kp_dim <= 0 || kp_dim > 10) // Sanity check
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Invalid keypoint dimension: %d", kp_dim);
+            similarityLogger().warning("Invalid keypoint dimension: %d", kp_dim);
             return false;
         }
 
@@ -183,14 +198,14 @@ namespace MediaDedup
 
         if (desc_bytes <= 0 || desc_bytes > 512) // Sanity check
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Invalid descriptor bytes: %d", desc_bytes);
+            similarityLogger().warning("Invalid descriptor bytes: %d", desc_bytes);
             return false;
         }
 
         size_t expected_size = 12 + (count * kp_dim * 4) + (count * desc_bytes);
         if (blob.size() < expected_size)
         {
-            Poco::Logger::get("SimilarityCalculator").warning("Feature blob size mismatch: expected at least %zu, got %zu", expected_size, blob.size());
+            similarityLogger().warning("Feature blob size mismatch: expected at least %zu, got %zu", expected_size, blob.size());
             return false;
         }
 
@@ -221,7 +236,7 @@ namespace MediaDedup
                                                           double ratio_threshold,
                                                           int min_good_matches)
     {
-        Poco::Logger &logger = Poco::Logger::get("SimilarityCalculator");
+        Poco::Logger &logger = similarityLogger();
 
         if (features1.empty() || features2.empty())
         {
