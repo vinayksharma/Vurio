@@ -350,13 +350,6 @@ namespace MediaDedup
                                             [fm = files_manager_]()
                                             { fm->runOnce(); });
 
-            // Ensure scans are aborted when scheduler is paused (e.g., during integrity checks)
-            scheduler_service_->setPauseCallback([fm = files_manager_, df = duplicate_finder_]()
-                                                 {
-                                                     if (fm) fm->abortCurrentScan();
-                                                     if (df) df->abortCurrentFind();
-                                                 });
-
             // Run an initial scan on startup so scan count reflects current directories without waiting for first interval
             if (scheduler_service_->triggerJob("fileScan"))
             {
@@ -406,6 +399,19 @@ namespace MediaDedup
             scheduler_service_->registerJob("duplicateFinder", std::chrono::milliseconds(dupIntervalMs), "duplicate_finder",
                                             [df = duplicate_finder_]()
                                             { df->findDuplicates(); });
+
+            // Ensure in-flight work is aborted when the scheduler is paused
+            // (e.g. during integrity checks). ORDERING IS LOAD-BEARING: the
+            // lambda captures the shared_ptrs BY VALUE, so this must run after
+            // BOTH files_manager_ and duplicate_finder_ are constructed —
+            // setting it earlier captures a null duplicate_finder_ and a pause
+            // can then never abort a running dedup (QW-3 in
+            // docs/backend_optimization_plan.md).
+            scheduler_service_->setPauseCallback([fm = files_manager_, df = duplicate_finder_]()
+                                                 {
+                                                     if (fm) fm->abortCurrentScan();
+                                                     if (df) df->abortCurrentFind();
+                                                 });
 
             // Subscribe to duplicate finder interval changes
             config_manager_->subscribeToConfigChanges([weakScheduler = std::weak_ptr<Orchestration::SchedulerService>(scheduler_service_),
