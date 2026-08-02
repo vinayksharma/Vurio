@@ -73,6 +73,7 @@ set(UNIT_TEST_SOURCES
     unit/test_eject_collision.cpp
     unit/test_grpc_media_service.cpp
     unit/test_magick_args.cpp
+    unit/test_magick_limits.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -166,6 +167,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_magick_args")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MagickArgsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_magick_limits")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MagickLimitsTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -711,7 +719,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_eject_collision" AND
       NOT ${test_name} STREQUAL "test_grpc_media_service" AND
       NOT ${test_name} STREQUAL "test_duplicates_reset_api" AND
-      NOT ${test_name} STREQUAL "test_magick_args")
+      NOT ${test_name} STREQUAL "test_magick_args" AND
+      NOT ${test_name} STREQUAL "test_magick_limits")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

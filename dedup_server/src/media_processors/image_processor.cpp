@@ -42,7 +42,8 @@ namespace MediaDedup
                 };
                 
                 Poco::Pipe out_pipe;
-                Poco::ProcessHandle handle = Poco::Process::launch(cmd_identify, args_identify, nullptr, &out_pipe, nullptr);
+                Poco::ProcessHandle handle = Poco::Process::launch(cmd_identify, args_identify, nullptr, &out_pipe, nullptr,
+                                                                   ToolPaths::magickResourceEnv());
                 Poco::PipeInputStream istr(out_pipe);
                 std::string output;
                 Poco::StreamCopier::copyToString(istr, output);
@@ -101,7 +102,8 @@ namespace MediaDedup
                 };
                 
                 try {
-                    Poco::ProcessHandle handle_exif = Poco::Process::launch(cmd_exif, args_exif, nullptr, nullptr, nullptr);
+                    Poco::ProcessHandle handle_exif = Poco::Process::launch(cmd_exif, args_exif, nullptr, nullptr, nullptr,
+                                                                            ToolPaths::magickResourceEnv());
                     int rc_exif = handle_exif.wait();
                     if (rc_exif == 0 && std::filesystem::exists(temp_exif_path)) {
                         std::ifstream file(temp_exif_path, std::ios::binary | std::ios::ate);

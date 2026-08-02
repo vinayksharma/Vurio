@@ -102,7 +102,8 @@ namespace MediaDedup
             std::vector<std::string> args =
                 ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality);
 
-            SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms);
+            SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
+                                                            ToolPaths::magickResourceEnv());
             if (result.timed_out)
             {
                 logger.error("magick timed out after %d ms for file: %s", timeout_ms, source_for_log);
