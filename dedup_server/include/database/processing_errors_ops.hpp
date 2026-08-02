@@ -45,5 +45,13 @@ namespace MediaDedup
             int error_code,
             const std::string &error_message,
             const std::string &error_source = "");
+
+        /**
+         * @brief Delete every error row recorded by one source
+         * @param db Database manager instance
+         * @param error_source The error_source value to purge (e.g. "MediaGeneration")
+         * @return number of rows deleted, or -1 on failure
+         */
+        static int deleteBySource(DatabaseManager &db, const std::string &error_source);
     };
 }

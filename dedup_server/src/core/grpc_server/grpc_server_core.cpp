@@ -598,6 +598,27 @@ static std::string calculateFileSHA1(const std::string& path) {
     return Poco::DigestEngine::digestToHex(sha1.digest());
 }
 
+// Session-lifetime index of generated full-resolution previews (temp files):
+// path -> {temp jpeg, source mtime}. Mirrors the web endpoint's
+// no-persistent-cache semantics while making repeat zooms instant within a
+// server run; temp files are reclaimed by the OS. File-scope so both
+// MediaServiceImpl (fills it) and AdvancedSettingsServiceImpl::ClearAllCaches
+// (resets it, QW-9) can reach it.
+struct FullResEntry { std::string temp_path; int64_t source_mtime; };
+static std::mutex& fullResMutex() { static std::mutex m; return m; }
+static std::unordered_map<std::string, FullResEntry>& fullResCache() {
+    static std::unordered_map<std::string, FullResEntry> c; return c;
+}
+// Deletes the temp renders and empties the index.
+static void clearFullResCache() {
+    std::lock_guard<std::mutex> lock(fullResMutex());
+    for (const auto& [path, entry] : fullResCache()) {
+        std::error_code ec;
+        std::filesystem::remove(entry.temp_path, ec);
+    }
+    fullResCache().clear();
+}
+
 class AdvancedSettingsServiceImpl final : public vurio::dedup::AdvancedSettingsService::Service {
     DatabaseManager* db_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
@@ -1255,6 +1276,20 @@ public:
                 // Ignore DB clear errors, similar to REST endpoint
             }
 
+            // QW-9: a user-initiated clear is a full reset, not just a disk
+            // wipe. Negative-cached files (3 failed generations) must get a
+            // fresh attempt — same as a server restart — including their
+            // persisted MediaGeneration error rows; and the viewer's
+            // session-lifetime full-res renders must go too, or it keeps
+            // serving pre-clear pixels.
+            MediaDedup::MediaGenerationFailures::instance().clearAll();
+            try {
+                MediaDedup::ProcessingErrorsOps::deleteBySource(*db_, "MediaGeneration");
+            } catch (...) {
+                // Same tolerance as the cache-table clears above.
+            }
+            clearFullResCache();
+
             reply->set_success(thumb_success && transcode_success);
             reply->set_thumbnail_cache_cleared(thumb_success);
             reply->set_disk_cache_cleared(transcode_success);
@@ -1398,16 +1433,6 @@ public:
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail generating");
         }
-    }
-
-    // Session-lifetime index of generated full-resolution previews (temp
-    // files): path -> {temp jpeg, source mtime}. Mirrors the web endpoint's
-    // no-persistent-cache semantics while making repeat zooms instant within
-    // a server run; temp files are reclaimed by the OS.
-    struct FullResEntry { std::string temp_path; int64_t source_mtime; };
-    static std::mutex& fullResMutex() { static std::mutex m; return m; }
-    static std::unordered_map<std::string, FullResEntry>& fullResCache() {
-        static std::unordered_map<std::string, FullResEntry> c; return c;
     }
 
     grpc::Status GetPreview(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,

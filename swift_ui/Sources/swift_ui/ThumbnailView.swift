@@ -64,6 +64,15 @@ struct ThumbnailView: View {
             isLoading = true
             unreadableReason = nil
         }
+        // A user-initiated clear-caches wiped the server assets and the shared
+        // ImageCache; drop this tile's state (including a stale "Unreadable"
+        // verdict — the server also reset its negative cache) and re-request.
+        .onReceive(NotificationCenter.default.publisher(for: .cachesCleared)) { _ in
+            thumbnail = nil
+            isLoading = true
+            unreadableReason = nil
+            Task { await generateThumbnail() }
+        }
     }
     
     private func generateThumbnail() async {

@@ -313,6 +313,15 @@ struct VurioDuplicatesView: View {
             await viewModel.fetchSettings()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .cachesCleared)) { _ in
+            // Server caches were wiped: re-fetch loaded rows so their
+            // cached_thumbnail_path fields stop pointing at deleted files
+            // (tiles themselves re-request via ThumbnailView's own observer).
+            Task {
+                await viewModel.reloadLoadedPages()
+                await allViewModel.reloadLoadedPages()
+            }
+        }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
             // A volume came online — re-fetch loaded pages so disconnected files
             // flip back to connected without waiting for the user to scroll.

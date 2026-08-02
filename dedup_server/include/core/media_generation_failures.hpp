@@ -35,6 +35,11 @@ namespace MediaDedup
         void recordSuccess(const std::string &file_path, const std::string &media_type);
         void clear(const std::string &file_path);
 
+        /// Drop every negative-cache entry. Part of the user-initiated
+        /// ClearAllCaches reset (QW-9): "clear caches" must grant permanently
+        /// failed files a fresh generation attempt, same as a server restart.
+        void clearAll();
+
         /// Reason string when the file has hit the failure threshold; nullopt otherwise.
         std::optional<std::string> permanentFailureReason(const std::string &file_path,
                                                           const std::string &media_type) const;
