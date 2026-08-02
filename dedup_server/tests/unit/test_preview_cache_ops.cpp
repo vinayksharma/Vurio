@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include "database/database_manager.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "database/scanned_files_ops.hpp"
@@ -98,6 +100,53 @@ TEST_F(PreviewCacheOpsTest, DeleteBySourcePath_RemovesEntry)
 
     auto result = PreviewCacheOps::getPreview(*db_manager_, source_path);
     EXPECT_FALSE(result.has_value());
+}
+
+// QW-8 (backend_optimization_plan.md): every generation site builds its record
+// via makeRecord so the freshness fields are populated. A record with
+// source_modified_at = 0 permanently fails ingest's `== source_mtime` check
+// and the RAW gets re-transcoded although a good preview exists.
+TEST_F(PreviewCacheOpsTest, MakeRecord_PopulatesFreshnessFields)
+{
+    namespace fs = std::filesystem;
+    fs::path source = fs::temp_directory_path() / "qw8_source.arw";
+    fs::path cached = fs::temp_directory_path() / "qw8_cached.jpg";
+    {
+        std::ofstream(source.string()) << "raw-bytes-raw-bytes";
+        std::ofstream(cached.string()) << "jpeg";
+    }
+
+    PreviewCacheRecord record = PreviewCacheOps::makeRecord(source.string(), cached.string());
+
+    EXPECT_EQ(record.source_path, source.string());
+    EXPECT_EQ(record.cached_path, cached.string());
+    EXPECT_GT(record.source_modified_at, 0) << "zeroed mtime defeats the freshness check";
+    EXPECT_EQ(record.file_size_bytes, static_cast<int64_t>(fs::file_size(cached)));
+    EXPECT_GT(record.created_at, 0);
+    EXPECT_EQ(record.last_accessed_at, record.created_at);
+
+    // And the mtime matches what ingest computes for the same file.
+    auto ftime = fs::last_write_time(source);
+    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+    EXPECT_NEAR(static_cast<double>(record.source_modified_at),
+                static_cast<double>(std::chrono::system_clock::to_time_t(sctp)), 1.0);
+
+    fs::remove(source);
+    fs::remove(cached);
+}
+
+TEST_F(PreviewCacheOpsTest, MakeRecord_MissingSourceYieldsZeroMtime)
+{
+    namespace fs = std::filesystem;
+    fs::path cached = fs::temp_directory_path() / "qw8_cached_only.jpg";
+    std::ofstream(cached.string()) << "jpeg";
+
+    PreviewCacheRecord record = PreviewCacheOps::makeRecord("/does/not/exist.arw", cached.string());
+    EXPECT_EQ(record.source_modified_at, 0);
+    EXPECT_GT(record.file_size_bytes, 0);
+
+    fs::remove(cached);
 }
 
 TEST_F(PreviewCacheOpsTest, GetBySourcePath_NotFound_ReturnsNullopt)

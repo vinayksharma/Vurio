@@ -1551,31 +1551,8 @@ public:
                         if (TranscodingPipeline::TranscodeToFile(path_copy, temp_path, transcode_config, temp_dir)) {
                             std::string final_path;
                             if (xcache_copy && xcache_copy->moveToCache(temp_path, final_path)) {
-                                PreviewCacheRecord new_record;
-                                new_record.source_path = path_copy;
-                                new_record.cached_path = final_path;
-
-                                try {
-                                    auto ftime = std::filesystem::last_write_time(path_copy);
-                                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                                        ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-                                    new_record.source_modified_at = std::chrono::system_clock::to_time_t(sctp);
-                                } catch (...) {
-                                    new_record.source_modified_at = 0;
-                                }
-
-                                try {
-                                    new_record.file_size_bytes = std::filesystem::file_size(final_path);
-                                } catch (...) {
-                                    new_record.file_size_bytes = 0;
-                                }
-
-                                int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
-                                                     std::chrono::system_clock::now().time_since_epoch()).count();
-                                new_record.created_at = now_ts;
-                                new_record.last_accessed_at = now_ts;
-
-                                PreviewCacheOps::upsertPreview(*db_copy, new_record);
+                                PreviewCacheOps::upsertPreview(
+                                    *db_copy, PreviewCacheOps::makeRecord(path_copy, final_path));
 
                                 nlohmann::json msg;
                                 msg["type"] = "media_ready";

@@ -291,17 +291,10 @@ namespace MediaDedup
                             {
                                 std::string final_cached_path;
                                 if (disk_cache->moveToCache(temp_filename, final_cached_path)) {
-                                    // Save to preview cache
-                                    PreviewCacheRecord preview_record;
-                                    preview_record.source_path = file_path_copy;
-                                    preview_record.cached_path = final_cached_path;
-                                    preview_record.file_size_bytes = std::filesystem::file_size(final_cached_path);
-                                    preview_record.source_modified_at = source_mtime;
-                                    int64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                                    preview_record.created_at = current_time;
-                                    preview_record.last_accessed_at = current_time;
-                                    
-                                    PreviewCacheOps::upsertPreview(*db_manager, preview_record);
+                                    // Save to preview cache (QW-8: shared helper fills
+                                    // the freshness fields consistently everywhere)
+                                    PreviewCacheOps::upsertPreview(
+                                        *db_manager, PreviewCacheOps::makeRecord(file_path_copy, final_cached_path));
                                     
                                     processing_file_path = final_cached_path;
                                     transcoded_preview_path = final_cached_path;

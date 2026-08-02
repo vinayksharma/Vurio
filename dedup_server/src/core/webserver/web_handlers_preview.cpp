@@ -155,10 +155,11 @@ namespace MediaDedup
                             {
                                 std::string final_path;
                                 if (cache_instance && cache_instance->moveToCache(temp_path, final_path)) {
-                                    PreviewCacheRecord new_record;
-                                    new_record.source_path = path_copy;
-                                    new_record.cached_path = final_path;
-                                    PreviewCacheOps::upsertPreview(*db_copy, new_record);
+                                    // QW-8: makeRecord fills source_modified_at etc. —
+                                    // a zeroed record permanently fails ingest's
+                                    // freshness check and forces re-transcodes.
+                                    PreviewCacheOps::upsertPreview(*db_copy,
+                                                                   PreviewCacheOps::makeRecord(path_copy, final_path));
                                     
                                     Poco::JSON::Object msg;
                                     msg.set("type", "media_ready");
@@ -203,12 +204,10 @@ namespace MediaDedup
                             std::string final_path;
                             if (transcoding_cache_ && transcoding_cache_->moveToCache(temp_path, final_path)) {
                                 logger.information("Successfully generated on-demand preview at: %s", final_path);
-                                
-                                // Upsert the new record
-                                PreviewCacheRecord new_record;
-                                new_record.source_path = source_path;
-                                new_record.cached_path = final_path;
-                                PreviewCacheOps::upsertPreview(*database_manager_, new_record);
+
+                                // QW-8: fully populated record (freshness fields).
+                                PreviewCacheOps::upsertPreview(*database_manager_,
+                                                               PreviewCacheOps::makeRecord(source_path, final_path));
                                 
                                 streamPreviewFile(final_path, response, source_modified);
                                 return;
