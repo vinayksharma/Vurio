@@ -28,6 +28,19 @@ namespace MediaDedup
         using Poco::Data::Keywords::now;
         using Poco::Data::Keywords::use;
 
+        namespace
+        {
+            // QW-6: Poco::Logger::get takes a process-global mutex per call;
+            // areMetadataCompatible &co. run once per candidate pair, so the
+            // registry lookup is resolved once (logger references stay valid
+            // for the process lifetime; magic statics make this thread-safe).
+            Poco::Logger &finderLogger()
+            {
+                static Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+                return logger;
+            }
+        }
+
         DuplicateFinder::DuplicateFinder(std::shared_ptr<UnifiedObservableConfigManager> cfg,
                                          DatabaseManager &db,
                                          std::shared_ptr<ThreadPoolManager> tpm)
@@ -39,7 +52,7 @@ namespace MediaDedup
 
         bool DuplicateFinder::initialize()
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
             logger.information("Initializing DuplicateFinder...");
 
             // Ensure duplicate tables exist
@@ -96,7 +109,7 @@ namespace MediaDedup
 
         void DuplicateFinder::findDuplicates()
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
 
             if (!enabled_)
             {
@@ -177,11 +190,11 @@ namespace MediaDedup
             }
             catch (const std::exception &e)
             {
-                Poco::Logger::get("DuplicateFinder").error("Exception in findDuplicates: %s", std::string(e.what()));
+                finderLogger().error("Exception in findDuplicates: %s", std::string(e.what()));
             }
             catch (...)
             {
-                Poco::Logger::get("DuplicateFinder").error("Unknown exception in findDuplicates");
+                finderLogger().error("Unknown exception in findDuplicates");
             }
 
             running_.store(false);
@@ -215,7 +228,7 @@ namespace MediaDedup
             }
             catch (const std::exception &e)
             {
-                Poco::Logger::get("DuplicateFinder").error("Exception in getGroupIdForFile: %s", std::string(e.what()));
+                finderLogger().error("Exception in getGroupIdForFile: %s", std::string(e.what()));
                 return std::nullopt;
             }
         }
@@ -228,7 +241,7 @@ namespace MediaDedup
                 return true;
             }
 
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
 
             // Check file format (extension) if required
             if (require_same_format_)
@@ -275,7 +288,7 @@ namespace MediaDedup
 
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id)
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
 
             try
             {
@@ -829,12 +842,12 @@ namespace MediaDedup
             }
             catch (const std::exception &e)
             {
-                Poco::Logger::get("DuplicateFinder").error("Exception in processBatch: %s", std::string(e.what()));
+                finderLogger().error("Exception in processBatch: %s", std::string(e.what()));
                 return 0;
             }
             catch (...)
             {
-                Poco::Logger::get("DuplicateFinder").error("Unknown exception in processBatch");
+                finderLogger().error("Unknown exception in processBatch");
                 return 0;
             }
         }
@@ -923,7 +936,7 @@ namespace MediaDedup
                     }
                     catch (const std::exception &e)
                     {
-                        Poco::Logger::get("DuplicateFinder").warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
+                        finderLogger().warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
                         artifact.file_size = 0;
                         artifact.created_date = "";
                     }
@@ -951,7 +964,7 @@ namespace MediaDedup
             }
             catch (const std::exception &e)
             {
-                Poco::Logger::get("DuplicateFinder").error("Exception in loadFileArtifacts: %s", std::string(e.what()));
+                finderLogger().error("Exception in loadFileArtifacts: %s", std::string(e.what()));
                 return false;
             }
         }
@@ -1046,7 +1059,7 @@ namespace MediaDedup
 
         bool DuplicateFinder::promoteNextBestRepresentative(DatabaseManager &db, int group_id, int file_id_to_exclude, const std::string &purity_str)
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
             
             auto members = DuplicateGroupsOps::getMembersByGroup(db, group_id);
             if (members.empty()) return false;
@@ -1146,7 +1159,7 @@ namespace MediaDedup
                 if (!DuplicateGroupsOps::addMember(db_, group_id, file.file_id, file.file_path,
                                                    sim, file.file_size, file.created_date, is_rep))
                 {
-                    Poco::Logger::get("DuplicateFinder").warning("Failed to add member file_id %d to group %d", file.file_id, group_id);
+                    finderLogger().warning("Failed to add member file_id %d to group %d", file.file_id, group_id);
                 }
             }
 
@@ -1230,7 +1243,7 @@ namespace MediaDedup
                                                               new_candidate.file_path, new_candidate.file_size,
                                                               new_candidate.created_date, new_member_count);
 
-                Poco::Logger::get("DuplicateFinder").information("Updated group %d representative from file_id %d to %d (exif/bigger/older)", group_id, current_rep.file_id, new_candidate.file_id);
+                finderLogger().information("Updated group %d representative from file_id %d to %d (exif/bigger/older)", group_id, current_rep.file_id, new_candidate.file_id);
             }
             else
             {
@@ -1258,7 +1271,7 @@ namespace MediaDedup
                                                       int &groups_created,
                                                       int &groups_updated)
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
             double threshold_duplicate = getDuplicateThreshold(mode);
 
             auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
@@ -1501,12 +1514,12 @@ namespace MediaDedup
             if (event.key == "duplicates.finder.enabled")
             {
                 enabled_ = cfg_->getPropertyValue<bool>(event.key, true);
-                Poco::Logger::get("DuplicateFinder").information("Updated enabled: " + std::string(enabled_ ? "true" : "false"));
+                finderLogger().information("Updated enabled: " + std::string(enabled_ ? "true" : "false"));
             }
             else if (event.key == "duplicates.finder.batchSize")
             {
                 batch_size_ = cfg_->getPropertyValue<int>(event.key, 1000);
-                Poco::Logger::get("DuplicateFinder").information("Updated batch_size: %d", batch_size_);
+                finderLogger().information("Updated batch_size: %d", batch_size_);
             }
             else if (event.key == "duplicates.threshold.similarity" || event.key == "duplicates.threshold.duplicate")
             {
@@ -1518,7 +1531,7 @@ namespace MediaDedup
 
                 if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
                 {
-                    Poco::Logger::get("DuplicateFinder").error("Invalid thresholds: similarity (%.3f) >= duplicate (%.3f). Reverting to defaults.",
+                    finderLogger().error("Invalid thresholds: similarity (%.3f) >= duplicate (%.3f). Reverting to defaults.",
                                                                embedding_threshold_similarity_, embedding_threshold_duplicate_);
                     embedding_threshold_similarity_ = 0.92;
                     embedding_threshold_duplicate_ = 0.96;
@@ -1528,53 +1541,53 @@ namespace MediaDedup
 
                 if (similarity_changed)
                 {
-                    Poco::Logger::get("DuplicateFinder").warning("Similarity threshold changed: %.3f->%.3f. Triggering full reprocessing.",
+                    finderLogger().warning("Similarity threshold changed: %.3f->%.3f. Triggering full reprocessing.",
                                                                   old_similarity, embedding_threshold_similarity_);
 
                     if (DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Deleted all EMBEDDING duplicate groups due to threshold change");
+                        finderLogger().information("Deleted all EMBEDDING duplicate groups due to threshold change");
                     }
 
                     if (DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING"))
                     {
-                        Poco::Logger::get("DuplicateFinder").information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new thresholds");
+                        finderLogger().information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new thresholds");
                     }
                 }
 
-                Poco::Logger::get("DuplicateFinder").information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
+                finderLogger().information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
                                                                  embedding_threshold_similarity_, embedding_threshold_duplicate_);
             }
             else if (event.key == "duplicates.purity.order")
             {
                 std::string purity_str = cfg_->getPropertyValue<std::string>(event.key, "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
                 purity_order_ = parsePurityOrder(purity_str);
-                Poco::Logger::get("DuplicateFinder").information("Updated duplicates.purity.order");
+                finderLogger().information("Updated duplicates.purity.order");
             }
             else if (event.key == "duplicates.metadata.filtering.enabled")
             {
                 metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>(event.key, true);
-                Poco::Logger::get("DuplicateFinder").information("Updated metadata_filtering_enabled: %s", metadata_filtering_enabled_ ? "true" : "false");
+                finderLogger().information("Updated metadata_filtering_enabled: %s", metadata_filtering_enabled_ ? "true" : "false");
             }
             else if (event.key == "duplicates.metadata.aspectRatioTolerance")
             {
                 aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.10);
-                Poco::Logger::get("DuplicateFinder").information("Updated aspect_ratio_tolerance: %.3f", aspect_ratio_tolerance_);
+                finderLogger().information("Updated aspect_ratio_tolerance: %.3f", aspect_ratio_tolerance_);
             }
             else if (event.key == "duplicates.metadata.dimensionTolerance")
             {
                 dimension_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.20);
-                Poco::Logger::get("DuplicateFinder").information("Updated dimension_tolerance: %.3f", dimension_tolerance_);
+                finderLogger().information("Updated dimension_tolerance: %.3f", dimension_tolerance_);
             }
             else if (event.key == "duplicates.metadata.fileSizeTolerance")
             {
                 file_size_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.50);
-                Poco::Logger::get("DuplicateFinder").information("Updated file_size_tolerance: %.3f", file_size_tolerance_);
+                finderLogger().information("Updated file_size_tolerance: %.3f", file_size_tolerance_);
             }
             else if (event.key == "duplicates.metadata.requireSameFormat")
             {
                 require_same_format_ = cfg_->getPropertyValue<bool>(event.key, false);
-                Poco::Logger::get("DuplicateFinder").information("Updated require_same_format: %s", require_same_format_ ? "true" : "false");
+                finderLogger().information("Updated require_same_format: %s", require_same_format_ ? "true" : "false");
             }
         }
 
@@ -1610,7 +1623,7 @@ namespace MediaDedup
 
         int DuplicateFinder::performCrossGroupChecking(const std::string &mode, double threshold_max)
         {
-            Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
+            Poco::Logger &logger = finderLogger();
             std::atomic<int> files_moved = 0;
 
             try
