@@ -469,6 +469,34 @@ page ≈ **1.3 s of DB work** under a single held lease.
 - **Verify:** `EXPLAIN QUERY PLAN` on each query; `sqlite_stat1` exists.
 
 ### DB-7. Transactions, batching, N+1s
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> All six sub-items landed:
+> 1. `removeByLocationKey`/`completelyRemoveById` restructured — cache paths
+>    read first, pure-DB transaction commits, unlinks run AFTER; both
+>    wrong-session rollbacks fixed (rollback now on the transaction's session).
+> 2. Scanner batching: `ScannedFilesOps::upsertBatch` (one transaction/WAL
+>    commit per batch) + FilesManager accumulates new-file rows (500/batch,
+>    flushed per root/pass/exit, per-row fallback if a batch fails). The
+>    changed-file "hard approach" path stays immediate (rare, ordering-
+>    sensitive). Scanner callback verified single-threaded.
+> 3. `getGroupsWithMembers`: one set-based members query per page (IN over
+>    integer group ids, ORDER BY group_id, similarity DESC) instead of one
+>    statement per group.
+> 4. `markProcessedWithEscalation`: single CASE UPDATE (was full-row read +
+>    second statement on every failure path); escalation semantics pinned by
+>    test.
+> 5. HTTP thumbnail cache hits no longer write `last_accessed_at` per hit
+>    (matches gRPC; MP-2 owns access-time tracking when eviction goes LRU).
+> 6. `loadEjectionPaths` cached (5 s TTL — changes only via settings UI);
+>    `GetServerStatus`'s five scanned_files COUNTs collapsed into one
+>    aggregated query/lease (`getStatusCounts`, poll runs every 2 s).
+> Tests: `UpsertBatchWritesAllRowsAtomically` (incl. conflict semantics),
+> `MarkProcessedWithEscalationSemantics` (fresh/escalate/recover/missing),
+> `StatusCountsMatchIndividualCounts` (agreement + absolute values),
+> `GroupsWithMembersBatchedFetch` (distribution + similarity ordering);
+> existing `RemoveByLocationKeyCascade` covers the restructured deletes.
+> Suite green (281 tests).
 - **Changes:**
   1. **Filesystem I/O inside transactions:** `scanned_files_ops.cpp:152-242`
      (`removeByLocationKey`-family: begin → loop of thumbnail/preview

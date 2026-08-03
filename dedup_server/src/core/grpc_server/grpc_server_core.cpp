@@ -187,17 +187,22 @@ public:
         }
         
         if (db_) {
-            reply->set_scanned_files_count(MediaDedup::ScannedFilesOps::count(*db_));
-            reply->set_processed_files_count(MediaDedup::ScannedFilesOps::countProcessed(*db_));
-            reply->set_error_files_count(MediaDedup::ScannedFilesOps::countError(*db_));
+            auto checkpoint = MediaDedup::DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
+            int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
+
+            // DB-7: one aggregated query + one lease for all five
+            // scanned_files counts (this poll runs every 2 s).
+            MediaDedup::ScannedFilesOps::ScanStatusCounts counts;
+            MediaDedup::ScannedFilesOps::getStatusCounts(*db_, last_processed_id, counts);
+            reply->set_scanned_files_count(counts.total);
+            reply->set_processed_files_count(counts.processed);
+            reply->set_error_files_count(counts.errors);
+            reply->set_duplicate_finding_total(counts.processed_success);
+            reply->set_duplicate_finding_completed(counts.processed_up_to);
+
             auto stats = MediaDedup::DuplicateGroupsOps::getStats(*db_, "EMBEDDING");
             reply->set_duplicate_groups_count(stats.total_groups);
             reply->set_duplicate_files_count(stats.total_duplicates);
-            
-            auto checkpoint = MediaDedup::DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
-            int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
-            reply->set_duplicate_finding_total(MediaDedup::ScannedFilesOps::countProcessedSuccess(*db_));
-            reply->set_duplicate_finding_completed(MediaDedup::ScannedFilesOps::countProcessedUpTo(*db_, last_processed_id));
             
             auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
             for (const auto& kv : user_settings) {
@@ -408,8 +413,23 @@ public:
     }
 
     // Ejection roots ("ejectionPath:" user settings, slashes normalized) used to
-    // flag day files already moved into an ejection bin.
+    // flag day files already moved into an ejection bin. DB-7: cached with a
+    // short TTL — this ran a full user_settings scan (plus a pool lease) on
+    // EVERY list RPC; ejection paths change only via the settings UI, and the
+    // frontend reloads its views after changing them anyway.
     std::vector<std::string> loadEjectionPaths() {
+        static std::mutex cache_mutex;
+        static std::vector<std::string> cached;
+        static std::chrono::steady_clock::time_point cached_at{};
+        constexpr auto kTtl = std::chrono::seconds(5);
+
+        const auto now_tp = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            if (cached_at != std::chrono::steady_clock::time_point{} && now_tp - cached_at < kTtl)
+                return cached;
+        }
+
         auto user_settings = MediaDedup::UserSettingsOps::list(*db_);
         std::vector<std::string> ejection_paths;
         for (const auto& kv : user_settings) {
@@ -418,6 +438,12 @@ public:
                 std::replace(ep.begin(), ep.end(), '\\', '/');
                 ejection_paths.push_back(ep);
             }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            cached = ejection_paths;
+            cached_at = now_tp;
         }
         return ejection_paths;
     }

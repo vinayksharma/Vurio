@@ -84,6 +84,32 @@ namespace MediaDedup
         // Update metadata for a file
         static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
         
+        /**
+         * @brief DB-7: all GetServerStatus scanned_files counts in ONE query.
+         *
+         * Predicates mirror count()/countProcessed()/countError()/
+         * countProcessedSuccess()/countProcessedUpTo() — previously the status
+         * poll (every 2 s) took five separate pool leases for five COUNTs.
+         */
+        struct ScanStatusCounts
+        {
+            int total = 0;
+            int processed = 0;        // processed = 2 or 3
+            int errors = 0;           // processed < 0, excluding -2 / -99
+            int processed_success = 0; // processed = 2
+            int processed_up_to = 0;   // processed = 2 AND id <= max_id
+        };
+        static bool getStatusCounts(DatabaseManager &db, int max_id, ScanStatusCounts &out);
+
+        /**
+         * @brief DB-7: upsert many rows in ONE transaction (one WAL commit).
+         *
+         * The scanner previously issued one autocommit upsert per file — a
+         * 160k-file rescan was 160k pool checkouts and WAL commits. Returns
+         * the number of rows written (0 on failure; all-or-nothing).
+         */
+        static int upsertBatch(DatabaseManager &db, const std::vector<ScannedFileRow> &rows);
+
         // Update EXIF metadata (parsed fields only; DB-2 removed the raw blob)
         static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path,
                                      const std::string &exif_datetime, const std::string &exif_camera,

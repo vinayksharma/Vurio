@@ -92,6 +92,110 @@ namespace MediaDedup
             std::remove(db_path.c_str());
         }
 
+        // DB-7: the scanner accumulates new files and writes them through
+        // upsertBatch — one transaction, one WAL commit — instead of one
+        // autocommit statement per file.
+        TEST(ScannedFilesOpsTest, UpsertBatchWritesAllRowsAtomically)
+        {
+            std::string db_path = testDbPath("test_scanned_files_batch.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            std::vector<ScannedFileRow> rows;
+            for (int i = 0; i < 25; ++i)
+                rows.push_back(makeRow("/batch/f" + std::to_string(i) + ".jpg"));
+            // Conflict semantics must match single upsert: same path twice ->
+            // last one wins, no duplicate row.
+            rows.push_back(makeRow("/batch/f0.jpg"));
+
+            EXPECT_EQ(ScannedFilesOps::upsertBatch(dbm, rows), 26);
+            EXPECT_EQ(ScannedFilesOps::count(dbm), 25);
+            EXPECT_TRUE(ScannedFilesOps::getByPath(dbm, "/batch/f24.jpg").has_value());
+
+            EXPECT_EQ(ScannedFilesOps::upsertBatch(dbm, {}), 0) << "empty batch is a no-op";
+        }
+
+        // DB-7: markProcessedWithEscalation was collapsed from a full-row read
+        // + second UPDATE into one CASE UPDATE. Pin the escalation semantics.
+        TEST(ScannedFilesOpsTest, MarkProcessedWithEscalationSemantics)
+        {
+            std::string db_path = testDbPath("test_scanned_files_escalation.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            auto row = makeRow("/esc/a.jpg");
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
+            auto status = [&]() { return ScannedFilesOps::getByPath(dbm, "/esc/a.jpg")->processed; };
+
+            // Fresh file + error -> plain error.
+            ASSERT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, "/esc/a.jpg", -6));
+            EXPECT_EQ(status(), -6);
+
+            // Error on an existing error -> escalated (state - 100).
+            ASSERT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, "/esc/a.jpg", -1));
+            EXPECT_EQ(status(), -101);
+
+            // Success recovers regardless of prior error.
+            ASSERT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, "/esc/a.jpg", 2));
+            EXPECT_EQ(status(), 2);
+
+            // Success -> error is a plain error again (no escalation).
+            ASSERT_TRUE(ScannedFilesOps::markProcessedWithEscalation(dbm, "/esc/a.jpg", -3));
+            EXPECT_EQ(status(), -3);
+
+            EXPECT_FALSE(ScannedFilesOps::markProcessedWithEscalation(dbm, "/esc/missing.jpg", -1));
+        }
+
+        // DB-7: GetServerStatus polls every 2 s; its five scanned_files counts
+        // now come from ONE aggregated query which must agree with the
+        // individual count functions.
+        TEST(ScannedFilesOpsTest, StatusCountsMatchIndividualCounts)
+        {
+            std::string db_path = testDbPath("test_scanned_files_statuscounts.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            auto add = [&](const std::string &p, int state) {
+                auto row = makeRow(p);
+                row.processed = state;
+                ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
+            };
+            add("/sc/done1.jpg", 2);
+            add("/sc/done2.jpg", 2);
+            add("/sc/ignored.jpg", 3);
+            add("/sc/pending.jpg", 0);
+            add("/sc/error.jpg", -6);
+            add("/sc/escalated.jpg", -101);
+            add("/sc/queued.jpg", -99);
+            add("/sc/backpressure.jpg", -2);
+
+            int mid_id = ScannedFilesOps::getByPath(dbm, "/sc/done1.jpg")->id;
+
+            ScannedFilesOps::ScanStatusCounts counts;
+            ASSERT_TRUE(ScannedFilesOps::getStatusCounts(dbm, mid_id, counts));
+
+            EXPECT_EQ(counts.total, ScannedFilesOps::count(dbm));
+            EXPECT_EQ(counts.processed, ScannedFilesOps::countProcessed(dbm));
+            EXPECT_EQ(counts.errors, ScannedFilesOps::countError(dbm));
+            EXPECT_EQ(counts.processed_success, ScannedFilesOps::countProcessedSuccess(dbm));
+            EXPECT_EQ(counts.processed_up_to, ScannedFilesOps::countProcessedUpTo(dbm, mid_id));
+
+            // Sanity on absolute values too, not just agreement.
+            EXPECT_EQ(counts.total, 8);
+            EXPECT_EQ(counts.processed, 3);
+            EXPECT_EQ(counts.errors, 2);
+            EXPECT_EQ(counts.processed_success, 2);
+        }
+
         // DB-5 (backend_optimization_plan.md): location keys are user-supplied
         // filesystem paths and can contain apostrophes (a real library here
         // has "/Volumes/Sapna's iPad"). Every location-scoped operation must

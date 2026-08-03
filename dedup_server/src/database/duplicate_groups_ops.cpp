@@ -920,6 +920,12 @@ namespace MediaDedup
 
             Poco::Data::RecordSet rs(groups_stmt);
 
+            // DB-7: collect the page's groups first, then fetch ALL their
+            // members in ONE set-based query — the old shape issued one
+            // members statement per group (N+1: ~100 prepare/execute cycles
+            // per page where a single IN(...) query takes ~1 ms).
+            std::map<int, std::size_t> group_index; // group id -> page.groups slot
+            std::string id_list;
             for (auto &row : rs)
             {
                 DuplicateGroupWithMembers group_with_members;
@@ -937,33 +943,53 @@ namespace MediaDedup
                 group.created_at = row[8].convert<std::string>();
                 group.updated_at = row[9].convert<std::string>();
 
-                // Get members for this group
-                Statement members_stmt = (sess << std::string(SQL::kSelectDuplicateMembersByGroupId),
-                                          use(group.id));
+                group_index[group.id] = page.groups.size();
+                if (!id_list.empty())
+                    id_list += ",";
+                id_list += std::to_string(group.id);
+                page.groups.push_back(std::move(group_with_members));
+            }
+
+            if (!page.groups.empty())
+            {
+                // Integer ids composed directly (no injection surface); the
+                // ORDER BY keeps each group's members similarity-sorted, the
+                // contract the per-group query provided.
+                std::string members_query =
+                    "SELECT dm.group_id, dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, "
+                    "dm.is_representative, dm.added_at, "
+                    VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path FROM duplicate_members dm "
+                    "WHERE dm.group_id IN (" + id_list + ") ORDER BY dm.group_id, dm.similarity_score DESC";
+
+                Statement members_stmt(sess);
+                members_stmt << members_query;
                 members_stmt.execute();
 
                 Poco::Data::RecordSet members_rs(members_stmt);
                 for (auto &member_row : members_rs)
                 {
                     DuplicateMemberRecord member;
-                    member.group_id = group.id;
-                    member.file_id = member_row[0].convert<int>();
-                    member.file_path = member_row[1].convert<std::string>();
-                    member.similarity_score = member_row[2].convert<double>();
-                    member.file_size = member_row[3].convert<int64_t>();
-                    member.created_date = member_row[4].convert<std::string>();
-                    member.is_representative = member_row[5].convert<bool>();
-                    member.added_at = member_row[6].convert<std::string>();
-                    
-                    if (!member_row[7].isEmpty()) {
-                        member.cached_thumbnail_path = member_row[7].convert<std::string>();
+                    member.group_id = member_row[0].convert<int>();
+                    member.file_id = member_row[1].convert<int>();
+                    member.file_path = member_row[2].convert<std::string>();
+                    member.similarity_score = member_row[3].convert<double>();
+                    member.file_size = member_row[4].convert<int64_t>();
+                    member.created_date = member_row[5].convert<std::string>();
+                    member.is_representative = member_row[6].convert<bool>();
+                    member.added_at = member_row[7].convert<std::string>();
+
+                    if (!member_row[8].isEmpty()) {
+                        member.cached_thumbnail_path = member_row[8].convert<std::string>();
                     }
 
-                    // Always add the member, including the representative, so the UI receives full metadata
-                    group_with_members.members.push_back(member);
+                    auto it = group_index.find(member.group_id);
+                    if (it != group_index.end())
+                    {
+                        // Always add the member, including the representative,
+                        // so the UI receives full metadata
+                        page.groups[it->second].members.push_back(std::move(member));
+                    }
                 }
-
-                page.groups.push_back(group_with_members);
             }
 
             page.returned = static_cast<int>(page.groups.size());
