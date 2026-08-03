@@ -42,6 +42,42 @@ namespace MediaDedup
             // Column likely already exists, ignore
         }
 
+        // DB-1: ensure the generated is_video column exists (migration; VIRTUAL,
+        // instant). The day-view filter and the taken_day partial index depend
+        // on it.
+        try {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << std::string(SQL::kAlterScannedFilesAddIsVideo), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").information("Added is_video generated column to scanned_files table.");
+        } catch (const std::exception &) {
+            // Column likely already exists, ignore
+        }
+
+        // DB-1: one-time index upgrade — an older idx_scanned_files_taken_day
+        // without the is_video predicate cannot exclude video rows index-side,
+        // and the new day-view filter (`is_video = 0`) would not match it.
+        // Detect by definition text and drop; the CREATE below rebuilds it.
+        try {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::string index_sql;
+            Poco::Data::Statement query(sess);
+            query << "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='index' AND name='idx_scanned_files_taken_day'",
+                Poco::Data::Keywords::into(index_sql), Poco::Data::Keywords::now;
+            if (!index_sql.empty() && index_sql.find("is_video") == std::string::npos)
+            {
+                Poco::Data::Statement drop(sess);
+                drop << "DROP INDEX idx_scanned_files_taken_day", Poco::Data::Keywords::now;
+                Poco::Logger::get("ScannedFilesOps").information(
+                    "Dropped pre-is_video taken_day index; rebuilding with the video-excluding predicate (one-time migration).");
+            }
+        } catch (const std::exception &e) {
+            // No such index / no row — the CREATE below handles creation.
+            Poco::Logger::get("ScannedFilesOps").debug("taken_day index upgrade check skipped: " + std::string(e.what()));
+        }
+
         // Create indexes for efficient lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try

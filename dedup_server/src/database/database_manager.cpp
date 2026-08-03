@@ -54,6 +54,36 @@ namespace MediaDedup
                 connected_ = true;
                 logger_.information("Database connected successfully: " + db_path_);
 
+                // DB-1/DB-6: give the query planner statistics. Without
+                // sqlite_stat1 every plan is chosen from defaults (measured:
+                // the day-view suppression subquery planned as a full
+                // duplicate_members scan). One-time full ANALYZE on a
+                // stats-less database (~0.5 s on a 5.6 GB library); cheap
+                // `PRAGMA optimize` keeps stats fresh on later startups.
+                try
+                {
+                    auto lease = session_manager_->acquireLease();
+                    Poco::Data::Session &sess = lease.get();
+                    int has_stats = 0;
+                    Poco::Data::Statement check(sess);
+                    check << "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sqlite_stat1'",
+                        Poco::Data::Keywords::into(has_stats), Poco::Data::Keywords::now;
+                    Poco::Data::Statement stmt(sess);
+                    if (has_stats == 0)
+                    {
+                        stmt << "ANALYZE", Poco::Data::Keywords::now;
+                        logger_.information("Ran one-time ANALYZE to seed query-planner statistics");
+                    }
+                    else
+                    {
+                        stmt << "PRAGMA optimize", Poco::Data::Keywords::now;
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    logger_.warning("ANALYZE/optimize skipped: " + std::string(e.what()));
+                }
+
                 // Optional vector index (sqlite-vec) for KNN duplicate search
                 if (config_manager_)
                 {

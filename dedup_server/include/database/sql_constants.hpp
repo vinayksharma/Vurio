@@ -54,6 +54,25 @@ namespace MediaDedup
 
 #define VURIO_TAKEN_TIME_EXPR VURIO_TAKEN_TIME_EXPR_P("sf.")
 
+// DB-1: video detection by extension, as the is_video generated column's
+// expression. Photos-only product — previously scanned video rows persist in
+// the database and must stay out of the day view. Extensions mirror the
+// media.video.* config keys. The column is VIRTUAL (no table rewrite, no
+// backfill); queries and the taken_day partial index reference the COLUMN
+// (`is_video = 0`), never this expression — that is what lets the day view be
+// served entirely from the index instead of evaluating 14 LIKEs against
+// 160k+ fetched rows per page (measured 536-733 ms/query before).
+// Drop when video support lands.
+#define VURIO_IS_VIDEO_EXPR \
+    "(CASE WHEN lower(file_name) LIKE '%.mp4' OR lower(file_name) LIKE '%.avi' " \
+    "OR lower(file_name) LIKE '%.mov' OR lower(file_name) LIKE '%.mkv' " \
+    "OR lower(file_name) LIKE '%.wmv' OR lower(file_name) LIKE '%.flv' " \
+    "OR lower(file_name) LIKE '%.webm' OR lower(file_name) LIKE '%.m4v' " \
+    "OR lower(file_name) LIKE '%.mpg' OR lower(file_name) LIKE '%.mpeg' " \
+    "OR lower(file_name) LIKE '%.ts' OR lower(file_name) LIKE '%.mts' " \
+    "OR lower(file_name) LIKE '%.m2ts' OR lower(file_name) LIKE '%.ogv' " \
+    "THEN 1 ELSE 0 END)"
+
         // Scanned Files. taken_day (materialized capture day for the VU day
         // view) is declared here for fresh installs AND applied via
         // kAlterScannedFilesAddTakenDay for pre-existing databases — keep the
@@ -76,7 +95,8 @@ namespace MediaDedup
             "    exif_resolution TEXT,\n"
             "    exif_blob BLOB,\n"
             "    ignore_reason TEXT,\n"
-            "    taken_day TEXT GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL\n"
+            "    taken_day TEXT GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL,\n"
+            "    is_video INTEGER GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL\n"
             ");";
 
         // Index for efficient file_path lookups during scan operations
@@ -412,6 +432,14 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateMembersIndexFilePath =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_members_file_path ON duplicate_members(file_path);";
 
+        // DB-1: covering index for the day view's suppressed-members subquery
+        // (non-representative members hidden from their own capture day). Lets
+        // the subquery run as covering-index probes per group instead of a
+        // full duplicate_members table scan per day-view query (measured
+        // ~200 ms -> ~90 ms per query on the live DB together with ANALYZE).
+        inline constexpr std::string_view kCreateDuplicateMembersIndexRepGroupFile =
+            "CREATE INDEX IF NOT EXISTS idx_dm_rep_group_file ON duplicate_members(is_representative, group_id, file_id);";
+
         inline constexpr std::string_view kCreateEjectedFilesHistoryIndexEjectedPath =
             "CREATE INDEX IF NOT EXISTS idx_ejected_files_history_path ON ejected_files_history(ejected_path);";
 
@@ -500,34 +528,31 @@ namespace MediaDedup
             "ALTER TABLE scanned_files ADD COLUMN taken_day TEXT "
             "GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL";
 
+        // DB-1 migration companion for older databases (VIRTUAL: instant, no
+        // table rewrite).
+        inline constexpr std::string_view kAlterScannedFilesAddIsVideo =
+            "ALTER TABLE scanned_files ADD COLUMN is_video INTEGER "
+            "GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL";
+
         // Partial index restricted to the day-view row filter so the planner can
         // serve count/paging/per-day lookups from the index alone. The predicate
-        // must stay textually equivalent to VURIO_DAY_VIEW_FILTER.
+        // must stay textually equivalent to VURIO_DAY_VIEW_FILTER — including
+        // `is_video = 0` (DB-1): video rows are simply absent from the index,
+        // which is what removed the per-row LIKE evaluation from the day view.
+        // ScannedFilesOps::ensureTable rebuilds this index when an existing
+        // definition lacks the is_video predicate.
         inline constexpr std::string_view kCreateScannedFilesIndexTakenDay =
             "CREATE INDEX IF NOT EXISTS idx_scanned_files_taken_day "
-            "ON scanned_files(taken_day) WHERE processed >= 0 AND processed <> 3";
-
-// Video files are excluded from the day view: only photos are supported at
-// this time (the scanner no longer ingests videos, but previously scanned
-// rows persist in the database). Extensions mirror the media.video.* config
-// keys. Drop this predicate when video support lands.
-#define VURIO_NOT_VIDEO_P(P) \
-    "lower(" P "file_name) NOT LIKE '%.mp4' AND lower(" P "file_name) NOT LIKE '%.avi' " \
-    "AND lower(" P "file_name) NOT LIKE '%.mov' AND lower(" P "file_name) NOT LIKE '%.mkv' " \
-    "AND lower(" P "file_name) NOT LIKE '%.wmv' AND lower(" P "file_name) NOT LIKE '%.flv' " \
-    "AND lower(" P "file_name) NOT LIKE '%.webm' AND lower(" P "file_name) NOT LIKE '%.m4v' " \
-    "AND lower(" P "file_name) NOT LIKE '%.mpg' AND lower(" P "file_name) NOT LIKE '%.mpeg' " \
-    "AND lower(" P "file_name) NOT LIKE '%.ts' AND lower(" P "file_name) NOT LIKE '%.mts' " \
-    "AND lower(" P "file_name) NOT LIKE '%.m2ts' AND lower(" P "file_name) NOT LIKE '%.ogv'"
+            "ON scanned_files(taken_day) WHERE processed >= 0 AND processed <> 3 AND is_video = 0";
 
 // Rows shown in the day view: anything scanned that is not ignored (3) and
-// not errored (<0), excluding videos. Unprocessed/in-progress files still
-// render (thumbnails generate on demand). P is the table alias prefix.
-// The processed conditions must stay textually equivalent to the
-// idx_scanned_files_taken_day partial-index predicate (extra conjuncts are
-// fine — the index stays usable).
+// not errored (<0), excluding videos (via the is_video generated column).
+// Unprocessed/in-progress files still render (thumbnails generate on demand).
+// P is the table alias prefix. All three conjuncts must stay textually
+// equivalent to the idx_scanned_files_taken_day partial-index predicate
+// (extra conjuncts are fine — the index stays usable).
 #define VURIO_DAY_VIEW_FILTER_P(P) \
-    P "processed >= 0 AND " P "processed <> 3 AND " VURIO_NOT_VIDEO_P(P)
+    P "processed >= 0 AND " P "processed <> 3 AND " P "is_video = 0"
 #define VURIO_DAY_VIEW_FILTER VURIO_DAY_VIEW_FILTER_P("sf.")
 
 // Day anchoring: a duplicate group appears on the day its REPRESENTATIVE was
