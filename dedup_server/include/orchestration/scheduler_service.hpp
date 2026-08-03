@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -27,7 +28,11 @@ namespace MediaDedup
             // No FAILED state - jobs don't remember failures
         };
 
-        class SchedulerService
+        // CC-4: enable_shared_from_this so job lambdas handed to the TPM can
+        // capture a weak_ptr instead of a raw `this` (they can outlive the
+        // scheduler through the shutdown drain window). Own instances through
+        // std::shared_ptr — production and tests both do.
+        class SchedulerService : public std::enable_shared_from_this<SchedulerService>
         {
         public:
             SchedulerService(std::shared_ptr<UnifiedObservableConfigManager> cfg,
@@ -86,8 +91,11 @@ namespace MediaDedup
                 std::atomic<bool> stopFlag{false};
                 std::thread worker;
                 std::mutex mutex;
-                std::chrono::milliseconds interval{0};
-                std::chrono::milliseconds backoff{0};
+                // CC-4: atomics — written by the worker (refreshJobConfig) and
+                // read/written under jobsMutex_ by status/update calls; the
+                // old plain chrono fields were a data race.
+                std::atomic<long long> interval_ms{0};
+                std::atomic<long long> backoff_ms{0};
 
                 // NEW: Enhanced state tracking
                 std::atomic<JobState> state{JobState::IDLE};
@@ -102,8 +110,11 @@ namespace MediaDedup
             void refreshJobConfig(Job &job);
             std::chrono::milliseconds computeNextDelay(const Job &job, std::chrono::milliseconds baseInterval);
 
-            // Job execution and failure handling
-            void executeJob(Job &job, const std::string &triggerType);
+            // Job execution and failure handling. CC-4: dispatch claims the
+            // IDLE->RUNNING transition atomically (compare_exchange), so two
+            // concurrent dispatch attempts can never double-run a job;
+            // returns false when the job was already running.
+            bool executeJobIfIdle(Job &job, const std::string &triggerType);
             void handleJobFailure(Job &job, const std::string &error);
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
@@ -114,6 +125,15 @@ namespace MediaDedup
 
             std::atomic<bool> running_{false};
             std::atomic<bool> paused_{false};
+
+            // CC-4: workers block here between runs and while paused instead
+            // of 50 ms sleep-polling; stop/resume/unregister notify.
+            std::mutex wakeMutex_;
+            std::condition_variable wakeCv_;
+
+            // CC-4: callbacks are set from the init thread and invoked from
+            // worker/TPM threads — copied under this mutex before invoking.
+            std::mutex callbackMutex_;
             std::function<void()> shutdownCallback_;
             std::function<void()> pauseCallback_;
         };

@@ -35,25 +35,34 @@ namespace MediaDedup::Orchestration
         logger.information("Stopping SchedulerService...");
 
         running_.store(false, std::memory_order_relaxed);
-        std::lock_guard<std::mutex> lock(jobsMutex_);
 
-        logger.debug("Stopping %u registered jobs", static_cast<unsigned int>(jobs_.size()));
-        for (auto &kv : jobs_)
+        // CC-4: move the jobs out under the lock, join OUTSIDE it. The old
+        // code joined workers while holding jobsMutex_, which the TPM job
+        // lambdas also take to record completion — a fragile non-deadlock
+        // that depended on the worker exit path never touching the mutex.
+        std::vector<std::unique_ptr<Job>> to_join;
         {
-            auto &job = *kv.second;
-            job.stopFlag.store(true, std::memory_order_relaxed);
-            logger.debug("Stopped job: %s", kv.first);
-        }
-        for (auto &kv : jobs_)
-        {
-            auto &job = *kv.second;
-            if (job.worker.joinable())
+            std::lock_guard<std::mutex> lock(jobsMutex_);
+            logger.debug("Stopping %u registered jobs", static_cast<unsigned int>(jobs_.size()));
+            for (auto &kv : jobs_)
             {
-                logger.debug("Joining worker thread for job: %s", kv.first);
-                job.worker.join();
+                kv.second->stopFlag.store(true, std::memory_order_relaxed);
+                logger.debug("Stopped job: %s", kv.first);
+            }
+            to_join.reserve(jobs_.size());
+            for (auto &kv : jobs_)
+                to_join.push_back(std::move(kv.second));
+            jobs_.clear();
+        }
+        wakeCv_.notify_all();
+        for (auto &job : to_join)
+        {
+            if (job->worker.joinable())
+            {
+                logger.debug("Joining worker thread for job: %s", job->jobId);
+                job->worker.join();
             }
         }
-        jobs_.clear();
 
         logger.information("SchedulerService stopped successfully");
     }
@@ -66,8 +75,14 @@ namespace MediaDedup::Orchestration
         if (tpm_) {
             tpm_->pause();
         }
-        if (pauseCallback_) {
-            pauseCallback_();
+        // CC-4: copy under the mutex, invoke outside it.
+        std::function<void()> cb;
+        {
+            std::lock_guard<std::mutex> lock(callbackMutex_);
+            cb = pauseCallback_;
+        }
+        if (cb) {
+            cb();
         }
     }
 
@@ -79,6 +94,7 @@ namespace MediaDedup::Orchestration
         if (tpm_) {
             tpm_->resume();
         }
+        wakeCv_.notify_all();
     }
 
     bool SchedulerService::isPaused() const
@@ -99,90 +115,93 @@ namespace MediaDedup::Orchestration
         job->jobId = jobId;
         job->typeKey = typeKey;
         job->callback = std::move(callback);
-        job->interval = interval;
-        job->backoff = milliseconds(0);
+        job->interval_ms.store(interval.count());
+        job->backoff_ms.store(0);
 
         // Load per-job failure limit at registration time
         std::string configKey = "scheduler.jobs." + jobId + ".maxConsecutiveFailures";
         job->maxConsecutiveFailures = cfg_->getPropertyValue<int>(configKey, 5);
         logger.debug("Job %s max consecutive failures: %d", jobId, job->maxConsecutiveFailures);
 
+        std::lock_guard<std::mutex> lock(jobsMutex_);
+
+        // CC-4: overwriting an existing entry destroyed a live Job whose
+        // worker thread still held a pointer into it (use-after-free, then
+        // std::terminate from the joinable thread's destructor).
+        if (jobs_.count(jobId) != 0)
         {
-            std::lock_guard<std::mutex> lock(jobsMutex_);
-            jobs_[jobId] = std::move(job);
+            logger.error("Job '%s' is already registered — ignoring duplicate registration", jobId);
+            return;
         }
 
-        // Launch worker thread
-        {
-            std::lock_guard<std::mutex> lock(jobsMutex_);
-            Job &ref = *jobs_[jobId];
-            logger.debug("Starting worker thread for job: %s", jobId);
-            Job* jobPtr = &ref;
-            ref.worker = std::thread([this, jobPtr]
-                                     {
-                                         Job &ref = *jobPtr;
-                                         std::mt19937 rng{std::random_device{}()};
-                                         while (running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
-                                         {
-                                             refreshJobConfig(ref);
+        Job &ref = *(jobs_[jobId] = std::move(job));
+        logger.debug("Starting worker thread for job: %s", jobId);
+        Job *jobPtr = &ref;
+        ref.worker = std::thread([this, jobPtr]
+                                 {
+            Job &ref = *jobPtr;
+            while (running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
+            {
+                refreshJobConfig(ref);
 
-                                             milliseconds base = ref.interval;
-                                             milliseconds delay = computeNextDelay(ref, base);
+                milliseconds base(ref.interval_ms.load(std::memory_order_relaxed));
+                milliseconds delay = computeNextDelay(ref, base);
 
-                                             // sleep respecting stop flag
-                                             auto slept = milliseconds(0);
-                                             const auto step = milliseconds(50);
-                                             while (slept < delay && running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
-                                             {
-                                                 std::this_thread::sleep_for(step);
-                                                 slept += step;
-                                             }
-                                             if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
+                // CC-4: block on the CV instead of 50 ms sleep-polling; stop
+                // and unregister wake us immediately.
+                {
+                    std::unique_lock<std::mutex> lk(wakeMutex_);
+                    wakeCv_.wait_for(lk, delay, [&]
+                                     { return !running_.load(std::memory_order_relaxed) ||
+                                              ref.stopFlag.load(std::memory_order_relaxed); });
+                }
+                if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed))
+                    break;
 
-                                             // wait if paused
-                                             while (paused_.load(std::memory_order_relaxed) && running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
-                                             {
-                                                 std::this_thread::sleep_for(step);
-                                             }
-                                             if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed)) break;
+                // Wait while paused (resume/stop notify).
+                {
+                    std::unique_lock<std::mutex> lk(wakeMutex_);
+                    wakeCv_.wait(lk, [&]
+                                 { return !paused_.load(std::memory_order_relaxed) ||
+                                          !running_.load(std::memory_order_relaxed) ||
+                                          ref.stopFlag.load(std::memory_order_relaxed); });
+                }
+                if (!running_.load(std::memory_order_relaxed) || ref.stopFlag.load(std::memory_order_relaxed))
+                    break;
 
-                                             // submit job using new executeJob method
-                                            try
-                                            {
-                                                if (ref.state.load() == JobState::RUNNING)
-                                                {
-                                                    Poco::Logger::get("SchedulerService").debug("Job %s is already running, skipping scheduled dispatch", ref.jobId);
-                                                    continue;
-                                                }
-                                                // Info log that a new job dispatch is starting
-                                                {
-                                                    Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-                                                    logger.information(std::string("Dispatching job: ") + ref.jobId +
-                                                                       ", typeKey=" + ref.typeKey +
-                                                                       ", intervalMs=" + std::to_string(ref.interval.count()));
-                                                    logger.trace("Submitting job '" + ref.jobId + "' to ThreadPoolManager for execution");
-                                                }
-                                                executeJob(ref, "scheduled");
-                                                // reset backoff on success path (submission OK)
-                                                ref.backoff = milliseconds(0);
-                                            }
-                                             catch (...)
-                                             {
-                                                 // submission failed, apply backoff
-                                                 if (cfg_->getPropertyValue<bool>("scheduler.backoff.enabled", true))
-                                                 {
-                                                     milliseconds initial(cfg_->getPropertyValue<int>("scheduler.backoff.initialMs", 1000));
-                                                     milliseconds maxB(cfg_->getPropertyValue<int>("scheduler.backoff.maxMs", 30000));
-                                                     double mult = 2.0;
-                                                     if (auto prop = cfg_->getProperty<double>("scheduler.backoff.multiplier"))
-                                                     {
-                                                         mult = std::any_cast<double>(prop->getValue());
-                                                     }
-                                                     if (ref.backoff.count() == 0) ref.backoff = initial; else ref.backoff = milliseconds(std::min<long long>(maxB.count(), static_cast<long long>(ref.backoff.count() * mult)));
-                                                 }
-                                             }
-                                         } });
-        }
+                try
+                {
+                    if (!executeJobIfIdle(ref, "scheduled"))
+                    {
+                        Poco::Logger::get("SchedulerService").debug("Job %s is already running, skipping scheduled dispatch", ref.jobId);
+                        continue;
+                    }
+                    Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+                    logger.information(std::string("Dispatched job: ") + ref.jobId +
+                                       ", typeKey=" + ref.typeKey +
+                                       ", intervalMs=" + std::to_string(ref.interval_ms.load()));
+                    // reset backoff on success path (submission OK)
+                    ref.backoff_ms.store(0);
+                }
+                catch (...)
+                {
+                    // submission failed, apply backoff
+                    if (cfg_->getPropertyValue<bool>("scheduler.backoff.enabled", true))
+                    {
+                        long long initial = cfg_->getPropertyValue<int>("scheduler.backoff.initialMs", 1000);
+                        long long maxB = cfg_->getPropertyValue<int>("scheduler.backoff.maxMs", 30000);
+                        double mult = 2.0;
+                        if (auto prop = cfg_->getProperty<double>("scheduler.backoff.multiplier"))
+                        {
+                            mult = std::any_cast<double>(prop->getValue());
+                        }
+                        long long current = ref.backoff_ms.load();
+                        ref.backoff_ms.store(current == 0
+                                                 ? initial
+                                                 : std::min<long long>(maxB, static_cast<long long>(current * mult)));
+                    }
+                }
+            } });
     }
 
     void SchedulerService::unregisterJob(const std::string &jobId)
@@ -197,6 +216,7 @@ namespace MediaDedup::Orchestration
             to_join = std::move(it->second);
             jobs_.erase(it);
         }
+        wakeCv_.notify_all();
         if (to_join && to_join->worker.joinable())
             to_join->worker.join();
     }
@@ -214,24 +234,24 @@ namespace MediaDedup::Orchestration
         }
 
         auto &job = *it->second;
-        std::chrono::milliseconds oldInterval = job.interval;
+        long long oldMs = job.interval_ms.load();
 
-        if (oldInterval == newInterval)
+        if (oldMs == newInterval.count())
         {
-            logger.debug("Job '%s' interval unchanged: %ld ms", jobId, oldInterval.count());
+            logger.debug("Job '%s' interval unchanged: %ld ms", jobId, static_cast<long>(oldMs));
             return true;
         }
 
-        job.interval = newInterval;
+        job.interval_ms.store(newInterval.count());
         logger.information("Job '%s' interval updated: %ld ms -> %ld ms",
-                           jobId, oldInterval.count(), newInterval.count());
+                           jobId, static_cast<long>(oldMs), static_cast<long>(newInterval.count()));
 
         return true;
     }
 
     void SchedulerService::refreshJobConfig(Job &job)
     {
-        int intervalMs = static_cast<int>(job.interval.count());
+        int intervalMs = static_cast<int>(job.interval_ms.load());
 
         // Check for job-specific configuration first: scheduler.jobs.<jobId>.intervalMs
         std::string jobKey = std::string("scheduler.jobs.") + job.jobId + ".intervalMs";
@@ -242,36 +262,27 @@ namespace MediaDedup::Orchestration
         // Special case for fileScan job: also check files.manager.scan.intervalMs
         else if (job.jobId == "fileScan")
         {
-            int originalInterval = intervalMs;
             intervalMs = cfg_->getPropertyValue<int>("files.manager.scan.intervalMs", intervalMs);
-            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-            logger.debug("fileScan job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
         // Special case for mediaProcessor job: also check media.processor.intervalMs
         else if (job.jobId == "mediaProcessor")
         {
-            int originalInterval = intervalMs;
             intervalMs = cfg_->getPropertyValue<int>("media.processor.intervalMs", intervalMs);
-            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-            logger.debug("mediaProcessor job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
         // Special case for duplicateFinder job: also check duplicates.finder.intervalMs
         else if (job.jobId == "duplicateFinder")
         {
-            int originalInterval = intervalMs;
             intervalMs = cfg_->getPropertyValue<int>("duplicates.finder.intervalMs", intervalMs);
-            Poco::Logger &logger = Poco::Logger::get("SchedulerService");
-            logger.debug("duplicateFinder job config refresh: original=%d, config value=%d", originalInterval, intervalMs);
         }
 
-        if (intervalMs != static_cast<int>(job.interval.count()))
+        if (intervalMs != static_cast<int>(job.interval_ms.load()))
         {
             Poco::Logger &logger = Poco::Logger::get("SchedulerService");
             logger.information("Job '%s' interval updated: %ld ms -> %d ms",
-                               job.jobId, job.interval.count(), intervalMs);
+                               job.jobId, static_cast<long>(job.interval_ms.load()), intervalMs);
         }
 
-        job.interval = milliseconds(intervalMs);
+        job.interval_ms.store(intervalMs);
     }
 
     std::chrono::milliseconds SchedulerService::computeNextDelay(const Job &job, std::chrono::milliseconds baseInterval)
@@ -280,9 +291,10 @@ namespace MediaDedup::Orchestration
         auto interval = baseInterval;
 
         // backoff
-        if (job.backoff.count() > 0)
+        long long backoff = job.backoff_ms.load(std::memory_order_relaxed);
+        if (backoff > 0)
         {
-            interval = min(interval + job.backoff, interval * 2);
+            interval = min(interval + milliseconds(backoff), interval * 2);
         }
 
         // jitter
@@ -305,9 +317,6 @@ namespace MediaDedup::Orchestration
             interval = milliseconds(dist(rng));
         }
 
-        // drift control (simplified anchor: no accumulated state here; future extension can store anchors)
-        // we rely on fixedDelay semantics; anchored mode to be handled by an anchor schedule in future revisions
-
         return interval;
     }
 
@@ -324,17 +333,13 @@ namespace MediaDedup::Orchestration
             return false;
         }
 
-        Job &job = *it->second;
-
-        // Skip if already running (log at debug level)
-        if (job.state.load() == JobState::RUNNING)
+        // CC-4: the IDLE->RUNNING claim happens atomically inside
+        // executeJobIfIdle — no check-then-act window against the worker.
+        if (!executeJobIfIdle(*it->second, "on-demand"))
         {
             logger.debug("Job %s is already running, skipping on-demand trigger", jobId);
             return false; // Not an error, just skipped
         }
-
-        // Execute job (same logic for scheduled and on-demand)
-        executeJob(job, "on-demand");
         logger.debug("Job %s triggered on-demand", jobId);
         return true;
     }
@@ -377,7 +382,7 @@ namespace MediaDedup::Orchestration
             JobStatus status;
             status.jobId = job.jobId;
             status.state = job.state.load();
-            status.interval = job.interval;
+            status.interval = milliseconds(job.interval_ms.load());
             status.lastRun = job.lastRun;
             status.nextRun = job.nextRun;
             status.consecutiveFailures = job.consecutiveFailures.load();
@@ -390,64 +395,68 @@ namespace MediaDedup::Orchestration
 
     void SchedulerService::setShutdownCallback(std::function<void()> callback)
     {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
         shutdownCallback_ = std::move(callback);
     }
 
     void SchedulerService::setPauseCallback(std::function<void()> callback)
     {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
         pauseCallback_ = std::move(callback);
     }
 
-    void SchedulerService::executeJob(Job &job, const std::string &triggerType)
+    bool SchedulerService::executeJobIfIdle(Job &job, const std::string &triggerType)
     {
-        job.state.store(JobState::RUNNING);
+        // CC-4: atomic claim — two dispatchers (worker loop + on-demand
+        // trigger) can never both pass a check-then-act gate again.
+        JobState expected = JobState::IDLE;
+        if (!job.state.compare_exchange_strong(expected, JobState::RUNNING))
+            return false;
 
-        // Capture job ID and callback by value to avoid reference issues
+        // Capture job ID and callback by value to avoid reference issues.
         std::string jobId = job.jobId;
         auto callback = job.callback;
 
+        // CC-4: the TPM lambda may outlive this object through the shutdown
+        // drain window — capture a weak_ptr, never raw `this`.
+        std::weak_ptr<SchedulerService> weak_self = weak_from_this();
+
         try
         {
-            tpm_->submit(job.typeKey, [this, jobId, callback, triggerType]()
+            tpm_->submit(job.typeKey, [weak_self, jobId, callback, triggerType]()
                          {
                 Poco::Logger &logger = Poco::Logger::get("SchedulerService");
+                bool ok = true;
+                std::string error;
                 try {
                     logger.debug("Executing job: %s (%s)", jobId, triggerType);
                     callback();
-                    
-                    // Update job state after successful execution
-                    {
-                        std::lock_guard<std::mutex> lock(jobsMutex_);
-                        auto it = jobs_.find(jobId);
-                        if (it != jobs_.end()) {
-                            Job& job = *it->second;
-                            job.state.store(JobState::IDLE);
-                            job.consecutiveFailures.store(0);
-                            job.lastRun = std::chrono::steady_clock::now();
-                            logger.debug("Job %s completed successfully", jobId);
-                        }
-                    }
-                    
                 } catch (const std::exception& e) {
-                    // Update job state after failure
-                    {
-                        std::lock_guard<std::mutex> lock(jobsMutex_);
-                        auto it = jobs_.find(jobId);
-                        if (it != jobs_.end()) {
-                            Job& job = *it->second;
-                            handleJobFailure(job, e.what());
-                        }
-                    }
+                    ok = false;
+                    error = e.what();
                 } catch (...) {
-                    // Update job state after unknown exception
-                    {
-                        std::lock_guard<std::mutex> lock(jobsMutex_);
-                        auto it = jobs_.find(jobId);
-                        if (it != jobs_.end()) {
-                            Job& job = *it->second;
-                            handleJobFailure(job, "Unknown exception");
-                        }
-                    }
+                    ok = false;
+                    error = "Unknown exception";
+                }
+
+                auto self = weak_self.lock();
+                if (!self) {
+                    logger.warning("Scheduler destroyed before job %s completed; state not recorded", jobId);
+                    return;
+                }
+
+                std::lock_guard<std::mutex> lock(self->jobsMutex_);
+                auto it = self->jobs_.find(jobId);
+                if (it == self->jobs_.end())
+                    return; // unregistered while running
+                Job &job = *it->second;
+                if (ok) {
+                    job.state.store(JobState::IDLE);
+                    job.consecutiveFailures.store(0);
+                    job.lastRun = std::chrono::steady_clock::now();
+                    logger.debug("Job %s completed successfully", jobId);
+                } else {
+                    self->handleJobFailure(job, error);
                 } });
         }
         catch (...)
@@ -455,6 +464,7 @@ namespace MediaDedup::Orchestration
             job.state.store(JobState::IDLE);
             throw;
         }
+        return true;
     }
 
     void SchedulerService::handleJobFailure(Job &job, const std::string &error)
@@ -474,9 +484,14 @@ namespace MediaDedup::Orchestration
             logger.error("Job %s has failed %d times consecutively, shutting down server",
                          job.jobId, job.consecutiveFailures.load());
 
-            if (shutdownCallback_)
+            std::function<void()> cb;
             {
-                shutdownCallback_();
+                std::lock_guard<std::mutex> lock(callbackMutex_);
+                cb = shutdownCallback_;
+            }
+            if (cb)
+            {
+                cb();
             }
             else
             {
