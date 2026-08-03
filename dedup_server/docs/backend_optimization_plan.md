@@ -325,6 +325,22 @@ page ≈ **1.3 s of DB work** under a single held lease.
   proportionally.
 
 ### DB-3. Stop the duplicate finder's nested-lease churn
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> New `loadFileArtifactsBatch(Session&, ids)` loads artifacts via chunked
+> (500-id) `IN` queries with bulk extraction on the ALREADY-HELD session;
+> `loadFileArtifacts` gained a `Session&` overload (old signature is now a
+> thin lease-acquiring wrapper around it, sharing one row→artifact converter).
+> `processBatch`'s representative and ungrouped loads both use the batch
+> loader — the tens of thousands of nested pool checkouts (+ per-checkout
+> statement) per finder batch are gone; the finder now holds exactly one
+> lease during loading. `FileArtifact` + the loaders made public for direct
+> testing. Per-file loads inside worker tasks (cross-group checking etc.)
+> unchanged — those are DF-phase work. Tests:
+> `BatchArtifactLoaderMatchesSingleLoader` (byte-identical embeddings incl.
+> NULL bytes — the historical truncation trap; missing-artifact ids skipped)
+> and `BatchArtifactLoaderSpansChunkBoundary` (510 ids across the 500 chunk).
+> Suite green (271 tests).
 - **Files:** `src/orchestration/duplicate_finder.cpp:283` (batch-scope lease),
   `:355-385` (per-representative loads), `:394-423` (per-ungrouped loads),
   `:842-957` (`loadFileArtifacts` — acquires **its own lease** at :846 per call).

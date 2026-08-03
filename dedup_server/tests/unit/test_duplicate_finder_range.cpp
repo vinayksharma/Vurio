@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 #include "orchestration/duplicate_finder.hpp"
 #include "database/duplicate_groups_ops.hpp"
+#include "database/image_artifacts_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "config/config_manager_factory.hpp"
 #include "test_utils.hpp"
+#include <cstdint>
 #include <memory>
+#include <set>
+#include <vector>
 
 using namespace MediaDedup;
 using namespace MediaDedup::Orchestration;
@@ -359,4 +363,86 @@ TEST_F(DuplicateFinderRangeTest, PromoteNextBestRepresentative)
     ASSERT_TRUE(group.has_value());
     EXPECT_EQ(id_mem1, group->representative_file_id); // mem1 successfully promoted
     EXPECT_EQ(2, group->member_count); // Decreased by 1
+}
+
+// DB-3 (backend_optimization_plan.md): the batch artifact loader replaces one
+// nested pool checkout + statement per file (tens of thousands per finder
+// batch, issued while already holding a lease). It must return byte-identical
+// artifacts to the single loader — embeddings INCLUDING NULL bytes, the
+// historical truncation trap — and skip ids without an embedding row.
+TEST_F(DuplicateFinderRangeTest, BatchArtifactLoaderMatchesSingleLoader)
+{
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    DuplicateFinder finder(config_, *db_manager_);
+
+    // Three files with embeddings that deliberately contain NULL bytes.
+    std::vector<int> ids;
+    for (int i = 0; i < 3; ++i)
+    {
+        std::string path = "/lib/batch_" + std::to_string(i) + ".jpg";
+        int id = mockScannedFile(path);
+        ids.push_back(id);
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = 4;
+        rec.embedding_blob = {0x00, static_cast<std::uint8_t>(i + 1), 0x00, 0xFF,
+                              0x00, 0x00, 0x42, static_cast<std::uint8_t>(i),
+                              0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F};
+        ASSERT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+    }
+    // One file WITHOUT an embedding row: must be skipped, not fail the batch.
+    int no_artifact_id = mockScannedFile("/lib/no_artifact.jpg");
+
+    auto lease = db_manager_->acquireSessionLease();
+    std::vector<int> request = ids;
+    request.push_back(no_artifact_id);
+    auto batch = finder.loadFileArtifactsBatch(lease.get(), request);
+
+    ASSERT_EQ(batch.size(), 3u) << "id without embedding row must be skipped";
+    for (const auto &artifact : batch)
+    {
+        DuplicateFinder::FileArtifact single;
+        ASSERT_TRUE(finder.loadFileArtifacts(lease.get(), artifact.file_id, "EMBEDDING", single));
+        EXPECT_EQ(artifact.file_path, single.file_path);
+        EXPECT_EQ(artifact.embedding, single.embedding)
+            << "batch embedding bytes must be identical (NULL bytes intact)";
+        EXPECT_EQ(artifact.embedding.size(), 16u) << "NULL bytes must not truncate the blob";
+        EXPECT_EQ(artifact.embedding_model, single.embedding_model);
+        EXPECT_EQ(artifact.embedding_dim, single.embedding_dim);
+    }
+}
+
+// The batch loader chunks its IN lists at 500 ids — verify a request spanning
+// the chunk boundary returns every artifact exactly once.
+TEST_F(DuplicateFinderRangeTest, BatchArtifactLoaderSpansChunkBoundary)
+{
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    DuplicateFinder finder(config_, *db_manager_);
+
+    constexpr int kCount = 510;
+    std::vector<int> ids;
+    ids.reserve(kCount);
+    for (int i = 0; i < kCount; ++i)
+    {
+        std::string path = "/lib/chunk_" + std::to_string(i) + ".jpg";
+        ids.push_back(mockScannedFile(path));
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = 1;
+        rec.embedding_blob = {static_cast<std::uint8_t>(i & 0xFF), 0x00,
+                              static_cast<std::uint8_t>((i >> 8) & 0xFF), 0x00};
+        ASSERT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+    }
+
+    auto lease = db_manager_->acquireSessionLease();
+    auto batch = finder.loadFileArtifactsBatch(lease.get(), ids);
+
+    ASSERT_EQ(batch.size(), static_cast<std::size_t>(kCount));
+    std::set<int> seen;
+    for (const auto &artifact : batch)
+        seen.insert(artifact.file_id);
+    EXPECT_EQ(seen.size(), static_cast<std::size_t>(kCount)) << "every id exactly once";
 }

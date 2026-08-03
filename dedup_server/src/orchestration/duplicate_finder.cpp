@@ -363,8 +363,11 @@ namespace MediaDedup
                 std::string mode_copy = mode;
                 int existing_last_id = last_processed_id;
 
-                // Query 1: Load group representatives for this mode
-                // CRITICAL FIX: Query IDs first, then use loadFileArtifacts to avoid NULL-byte truncation
+                // Query 1: Load group representatives for this mode.
+                // DB-3: ids first, then ONE set-based artifact load on the
+                // already-held session — previously this loop performed one
+                // nested pool checkout + statement per representative
+                // (tens of thousands per batch) while holding this lease.
                 try
                 {
                     std::string rep_id_query =
@@ -377,23 +380,26 @@ namespace MediaDedup
                     rep_id_stmt << rep_id_query, use(mode_copy);
                     rep_id_stmt.execute();
 
+                    // A file can represent more than one group; keep all.
+                    std::map<int, std::vector<int>> file_to_groups;
+                    std::vector<int> rep_file_ids;
                     Poco::Data::RecordSet rep_id_rs(rep_id_stmt);
                     for (auto &row : rep_id_rs)
                     {
                         int group_id = row[0].convert<int>();
                         int file_id = row[1].convert<int>();
-
-                        FileArtifact artifact;
-                        // Load artifacts using loadFileArtifacts (handles CLOBs correctly)
-                        if (loadFileArtifacts(file_id, mode, artifact))
-                        {
-                            group_representatives[group_id] = artifact;
-                        }
-                        else
-                        {
-                            logger.warning("Failed to load artifacts for representative file_id %d in group %d", file_id, group_id);
-                        }
+                        if (file_to_groups.find(file_id) == file_to_groups.end())
+                            rep_file_ids.push_back(file_id);
+                        file_to_groups[file_id].push_back(group_id);
                     }
+
+                    for (FileArtifact &artifact : loadFileArtifactsBatch(sess, rep_file_ids))
+                        for (int group_id : file_to_groups[artifact.file_id])
+                            group_representatives[group_id] = artifact;
+
+                    if (group_representatives.size() < file_to_groups.size())
+                        logger.warning("Artifacts missing for %zu representative file(s)",
+                                       file_to_groups.size() - group_representatives.size());
 
                     logger.information("Loaded %zu group representatives", group_representatives.size());
                 }
@@ -425,15 +431,9 @@ namespace MediaDedup
                         ungrouped_ids.push_back(row[0].convert<int>());
                     }
 
-                    // Load artifacts for each ungrouped file using loadFileArtifacts (handles CLOBs correctly)
-                    for (int ung_id : ungrouped_ids)
-                    {
-                        FileArtifact artifact;
-                        if (loadFileArtifacts(ung_id, mode, artifact))
-                        {
-                            ungrouped_files.push_back(artifact);
-                        }
-                    }
+                    // DB-3: one set-based load on the held session instead of
+                    // a nested pool checkout per file.
+                    ungrouped_files = loadFileArtifactsBatch(sess, ungrouped_ids);
 
                     logger.information("Loaded %zu ungrouped processed files", ungrouped_files.size());
                 }
@@ -852,15 +852,97 @@ namespace MediaDedup
             }
         }
 
-        bool DuplicateFinder::loadFileArtifacts(int file_id, const std::string & /* mode */, FileArtifact &artifact)
+        namespace
+        {
+            // Shared row -> FileArtifact conversion for the single and batch
+            // loaders: file_metadata JSON (size + created date, with EXIF
+            // datetime preferred) and the embedding CLOB.
+            void fillArtifactFromRow(DuplicateFinder::FileArtifact &artifact,
+                                     int id, const std::string &path,
+                                     const std::string &metadata, const std::string &exif_dt,
+                                     const Poco::Data::CLOB &embedding_blob,
+                                     const std::string &embedding_model, int embedding_dim)
+            {
+                artifact.file_id = id;
+                artifact.file_path = path;
+
+                try
+                {
+                    Poco::JSON::Parser parser;
+                    Poco::Dynamic::Var result = parser.parse(metadata);
+                    Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+
+                    artifact.file_size = obj->has("sizeBytes") ? obj->getValue<int64_t>("sizeBytes") : 0;
+
+                    if (!exif_dt.empty())
+                    {
+                        artifact.has_exif_date = true;
+                        // exif dates can sometimes be separated by colons in the date part (e.g. 2024:01:01 12:00:00)
+                        std::string cleaned_dt = exif_dt;
+                        if (cleaned_dt.size() >= 10 && cleaned_dt[4] == ':' && cleaned_dt[7] == ':')
+                        {
+                            cleaned_dt[4] = '-';
+                            cleaned_dt[7] = '-';
+                        }
+                        artifact.created_date = cleaned_dt;
+                    }
+                    else if (obj->has("createdAt"))
+                    {
+                        int64_t created_ns = obj->getValue<int64_t>("createdAt");
+                        int64_t created_s = created_ns / 1000000000LL;
+                        std::time_t created_time = static_cast<std::time_t>(created_s);
+                        std::tm *tm = std::gmtime(&created_time);
+                        std::stringstream ss;
+                        ss << std::put_time(tm, "%Y-%m-%d %H:%M:%S"); // store full time
+                        artifact.created_date = ss.str();
+                    }
+                    else
+                    {
+                        artifact.created_date = "";
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    finderLogger().warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
+                    artifact.file_size = 0;
+                    artifact.created_date = "";
+                }
+
+                // CRITICAL FIX: rawContent() + size(), never std::string
+                // conversion (which truncates at the first NULL byte).
+                const char *embedding_data = embedding_blob.rawContent();
+                std::size_t embedding_size = embedding_blob.size();
+                if (embedding_size > 0)
+                {
+                    artifact.embedding = std::vector<std::uint8_t>(
+                        reinterpret_cast<const std::uint8_t *>(embedding_data),
+                        reinterpret_cast<const std::uint8_t *>(embedding_data) + embedding_size);
+                }
+                artifact.embedding_model = embedding_model;
+                artifact.embedding_dim = embedding_dim;
+            }
+        }
+
+        bool DuplicateFinder::loadFileArtifacts(int file_id, const std::string &mode, FileArtifact &artifact)
         {
             try
             {
                 auto lease = db_.acquireSessionLease();
-                Session &sess = lease.get();
+                return loadFileArtifacts(lease.get(), file_id, mode, artifact);
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().error("Exception in loadFileArtifacts: %s", std::string(e.what()));
+                return false;
+            }
+        }
 
+        bool DuplicateFinder::loadFileArtifacts(Session &sess, int file_id, const std::string & /* mode */, FileArtifact &artifact)
+        {
+            try
+            {
                 std::string query =
-                    "SELECT sf.id, sf.file_path, sf.file_metadata, COALESCE(sf.exif_datetime, ''), "
+                    "SELECT sf.id, sf.file_path, COALESCE(sf.file_metadata, ''), COALESCE(sf.exif_datetime, ''), "
                     "ia.embedding, ia.embedding_model, ia.embedding_dim "
                     "FROM scanned_files sf "
                     "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
@@ -883,80 +965,8 @@ namespace MediaDedup
 
                 if (stmt.execute() > 0)
                 {
-                    artifact.file_id = id;
-                    artifact.file_path = path;
-
-                    // Parse file_metadata JSON to extract size and creation date
-                    try
-                    {
-                        Poco::JSON::Parser parser;
-                        Poco::Dynamic::Var result = parser.parse(metadata);
-                        Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
-
-                        // Extract sizeBytes
-                        if (obj->has("sizeBytes"))
-                        {
-                            artifact.file_size = obj->getValue<int64_t>("sizeBytes");
-                        }
-                        else
-                        {
-                            artifact.file_size = 0;
-                        }
-
-                        // Use EXIF datetime if available
-                        if (!exif_dt.empty())
-                        {
-                            artifact.has_exif_date = true;
-                            // exif dates can sometimes be separated by colons in the date part (e.g. 2024:01:01 12:00:00)
-                            std::string cleaned_dt = exif_dt;
-                            if (cleaned_dt.size() >= 10 && cleaned_dt[4] == ':' && cleaned_dt[7] == ':') {
-                                cleaned_dt[4] = '-';
-                                cleaned_dt[7] = '-';
-                            }
-                            // Only take the date part for grouping (up to first space) 
-                            // or keep the whole string for precise sorting later
-                            artifact.created_date = cleaned_dt;
-                        }
-                        // Fallback: Extract createdAt (nanosecond timestamp)
-                        else if (obj->has("createdAt"))
-                        {
-                            int64_t created_ns = obj->getValue<int64_t>("createdAt");
-                            // Convert nanoseconds to ISO date string (YYYY-MM-DD format)
-                            int64_t created_s = created_ns / 1000000000LL;
-                            std::time_t created_time = static_cast<std::time_t>(created_s);
-                            std::tm *tm = std::gmtime(&created_time);
-                            std::stringstream ss;
-                            ss << std::put_time(tm, "%Y-%m-%d %H:%M:%S"); // store full time
-                            artifact.created_date = ss.str();
-                        }
-                        else
-                        {
-                            artifact.created_date = "";
-                        }
-                    }
-                    catch (const std::exception &e)
-                    {
-                        finderLogger().warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
-                        artifact.file_size = 0;
-                        artifact.created_date = "";
-                    }
-
-                    // Convert CLOBs to byte vectors
-                    // CRITICAL FIX: rawContent() returns std::string which truncates at NULL bytes!
-                    // Use size() and direct pointer access to get raw binary data.
-                    const char *embedding_data = embedding_blob.rawContent();
-                    std::size_t embedding_size = embedding_blob.size();
-
-                    // Copy raw bytes using size(), not std::string length (which stops at NULL)
-                    if (embedding_size > 0)
-                    {
-                        artifact.embedding = std::vector<std::uint8_t>(
-                            reinterpret_cast<const std::uint8_t *>(embedding_data),
-                            reinterpret_cast<const std::uint8_t *>(embedding_data) + embedding_size);
-                    }
-
-                    artifact.embedding_model = embedding_model;
-                    artifact.embedding_dim = embedding_dim;
+                    fillArtifactFromRow(artifact, id, path, metadata, exif_dt,
+                                        embedding_blob, embedding_model, embedding_dim);
                     return true;
                 }
 
@@ -967,6 +977,67 @@ namespace MediaDedup
                 finderLogger().error("Exception in loadFileArtifacts: %s", std::string(e.what()));
                 return false;
             }
+        }
+
+        std::vector<DuplicateFinder::FileArtifact>
+        DuplicateFinder::loadFileArtifactsBatch(Session &sess, const std::vector<int> &file_ids)
+        {
+            std::vector<FileArtifact> artifacts;
+            artifacts.reserve(file_ids.size());
+
+            constexpr std::size_t kChunk = 500;
+            for (std::size_t start = 0; start < file_ids.size(); start += kChunk)
+            {
+                const std::size_t end = std::min(start + kChunk, file_ids.size());
+
+                // Integer id list composed directly into the SQL — values are
+                // ints, not user input, so there is no injection surface, and
+                // it avoids Poco's positional-bind limits for long IN lists.
+                std::ostringstream in_list;
+                for (std::size_t i = start; i < end; ++i)
+                {
+                    if (i != start)
+                        in_list << ',';
+                    in_list << file_ids[i];
+                }
+
+                try
+                {
+                    std::string query =
+                        "SELECT sf.id, sf.file_path, COALESCE(sf.file_metadata, ''), COALESCE(sf.exif_datetime, ''), "
+                        "ia.embedding, ia.embedding_model, ia.embedding_dim "
+                        "FROM scanned_files sf "
+                        "JOIN image_artifacts ia ON sf.file_path = ia.file_path "
+                        "WHERE sf.id IN (" + in_list.str() + ")";
+
+                    std::vector<int> ids;
+                    std::vector<std::string> paths, metadatas, exif_dts;
+                    std::vector<Poco::Data::CLOB> embedding_blobs;
+                    std::vector<std::string> embedding_models;
+                    std::vector<int> embedding_dims;
+
+                    Statement stmt(sess);
+                    stmt << query,
+                        into(ids), into(paths), into(metadatas), into(exif_dts),
+                        into(embedding_blobs), into(embedding_models), into(embedding_dims),
+                        now;
+
+                    for (std::size_t i = 0; i < ids.size(); ++i)
+                    {
+                        FileArtifact artifact;
+                        fillArtifactFromRow(artifact, ids[i], paths[i], metadatas[i], exif_dts[i],
+                                            embedding_blobs[i], embedding_models[i], embedding_dims[i]);
+                        artifacts.push_back(std::move(artifact));
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    finderLogger().error("Exception in loadFileArtifactsBatch (chunk %zu-%zu): %s",
+                                         start, end, std::string(e.what()));
+                }
+            }
+
+            return artifacts;
         }
 
         double DuplicateFinder::computeSimilarity(const FileArtifact &file1,
