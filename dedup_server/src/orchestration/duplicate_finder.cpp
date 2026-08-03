@@ -18,6 +18,8 @@
 #include <iomanip>
 #include <ctime>
 #include <map>
+#include <thread>
+#include <functional>
 
 namespace MediaDedup
 {
@@ -38,6 +40,45 @@ namespace MediaDedup
             {
                 static Poco::Logger &logger = Poco::Logger::get("DuplicateFinder");
                 return logger;
+            }
+
+            // CC-3: bounded, JOINED local worker set for the comparison
+            // fan-outs. The old shape submitted children to the same TPM
+            // type the parent occupied and blocked on a latch with no
+            // timeout — a pause() (or any sustained thumbnail burst, which
+            // deprioritizes all non-UI types) starved the children forever
+            // and hung the parent while it held a pool slot. Local threads
+            // remove the pool interaction entirely; `abort` is checked
+            // between items so aborts take effect promptly; the join
+            // guarantees no worker outlives the caller's stack captures.
+            void runFanOut(std::size_t item_count, const std::atomic<bool> &abort,
+                           const std::function<void(std::size_t)> &process_item)
+            {
+                if (item_count == 0)
+                    return;
+                const std::size_t hw = std::max(1u, std::thread::hardware_concurrency());
+                const std::size_t worker_count =
+                    std::min({item_count, static_cast<std::size_t>(4), std::max<std::size_t>(1, hw / 2)});
+
+                std::atomic<std::size_t> next{0};
+                std::vector<std::thread> workers;
+                workers.reserve(worker_count);
+                for (std::size_t w = 0; w < worker_count; ++w)
+                {
+                    workers.emplace_back([&]()
+                                         {
+                        for (;;)
+                        {
+                            if (abort.load())
+                                return;
+                            const std::size_t i = next.fetch_add(1);
+                            if (i >= item_count)
+                                return;
+                            process_item(i);
+                        } });
+                }
+                for (auto &w : workers)
+                    w.join();
             }
         }
 
@@ -461,42 +502,12 @@ namespace MediaDedup
                 std::atomic<int> new_last_processed_id{last_processed_id};
 
                 std::shared_mutex rw_mutex;
-                std::mutex latch_mutex;
-                std::condition_variable latch_cv;
-                std::atomic<int> pending_tasks(static_cast<int>(file_ids.size()));
-                std::atomic<bool> any_dropped(false);
 
-                struct TaskCompletionNotifier {
-                    std::mutex& latch_mutex;
-                    std::condition_variable& latch_cv;
-                    std::atomic<int>& pending_tasks;
-                    std::atomic<bool>& any_dropped;
-                    bool completed_normally = false;
-
-                    TaskCompletionNotifier(std::mutex& m, std::condition_variable& cv, std::atomic<int>& p, std::atomic<bool>& ad) 
-                        : latch_mutex(m), latch_cv(cv), pending_tasks(p), any_dropped(ad) {}
-                    
-                    void notify(bool normal) {
-                        if (!completed_normally) {
-                            completed_normally = true;
-                            if (!normal) any_dropped = true;
-                            std::lock_guard<std::mutex> lk(latch_mutex);
-                            pending_tasks--;
-                            if (pending_tasks == 0) latch_cv.notify_one();
-                        }
-                    }
-
-                    ~TaskCompletionNotifier() {
-                        notify(false); // If destroyed without normal completion, it was dropped
-                    }
-                };
-
-                for (size_t i = 0; i < file_ids.size(); ++i)
-                {
-                    int current_file_id = file_ids[i];
-                    auto notifier = std::make_shared<TaskCompletionNotifier>(latch_mutex, latch_cv, pending_tasks, any_dropped);
-
-                    auto task = [this, current_file_id, mode, &files_checked, &duplicates_found, &groups_created, &groups_updated, &new_last_processed_id, &batch_ungrouped_files, &group_representatives, &ungrouped_files, &rw_mutex, &latch_mutex, &latch_cv, &pending_tasks, &logger, last_processed_id, knn_k, vix, notifier]() {
+                // CC-3: one callable per file id, run by the joined local
+                // worker set below (runFanOut) — never via the TPM. All
+                // reference captures are safe because the workers are joined
+                // before this scope unwinds.
+                auto process_one = [&](int current_file_id) {
                         try
                         {
                             FileArtifact new_file;
@@ -707,21 +718,10 @@ namespace MediaDedup
                             int current_max = new_last_processed_id.load();
                             while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
                         }
-                        notifier->notify(true);
-                    };
+                };
 
-                    if (tpm_) {
-                        tpm_->submit("duplicate_finder", task);
-                    } else {
-                        task(); // Fallback if TPM is missing
-                    }
-                }
-
-                // Wait for all concurrent tasks to finish
-                {
-                    std::unique_lock<std::mutex> lk(latch_mutex);
-                    latch_cv.wait(lk, [&]{ return pending_tasks == 0; });
-                }
+                runFanOut(file_ids.size(), abort_, [&](std::size_t i)
+                          { process_one(file_ids[i]); });
 
                 // STEP 2: Create new groups from batch ungrouped files (2+ similar files required)
                 // CRITICAL FIX: Use ALL-pairs similarity check to avoid transitivity assumption bug
@@ -819,8 +819,10 @@ namespace MediaDedup
                     }
                 }
 
-                // Update checkpoint only if no tasks were dropped
-                if (!any_dropped.load()) {
+                // Update checkpoint only if the batch ran to completion — an
+                // abort leaves file ids unprocessed, and advancing the
+                // id-watermark checkpoint past them would skip them forever.
+                if (!abort_.load()) {
                     last_processed_id = new_last_processed_id.load();
                     bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
                         db_, mode, last_processed_id, files_checked.load(), duplicates_found.load(),
@@ -836,7 +838,7 @@ namespace MediaDedup
 
                     return static_cast<int>(file_ids.size());
                 } else {
-                    logger.warning("Tasks were dropped (e.g. queue cleared). Checkpoint will not be updated this run.");
+                    logger.warning("Batch aborted before completion. Checkpoint will not be updated this run.");
                     return 0; // Return 0 to stop findDuplicates from spinning
                 }
             }
@@ -1753,41 +1755,11 @@ namespace MediaDedup
 
                 logger.information("Found %zu low-similarity members to check concurrently", tasks.size());
 
-                std::mutex latch_mutex;
-                std::condition_variable latch_cv;
-                std::atomic<int> pending_tasks(static_cast<int>(tasks.size()));
                 std::shared_mutex local_rw_mutex; // Protects DB writes during checking
-                std::atomic<bool> any_dropped(false);
 
-                struct TaskCompletionNotifier {
-                    std::mutex& latch_mutex;
-                    std::condition_variable& latch_cv;
-                    std::atomic<int>& pending_tasks;
-                    std::atomic<bool>& any_dropped;
-                    bool completed_normally = false;
-
-                    TaskCompletionNotifier(std::mutex& m, std::condition_variable& cv, std::atomic<int>& p, std::atomic<bool>& ad) 
-                        : latch_mutex(m), latch_cv(cv), pending_tasks(p), any_dropped(ad) {}
-                    
-                    void notify(bool normal) {
-                        if (!completed_normally) {
-                            completed_normally = true;
-                            if (!normal) any_dropped = true;
-                            std::lock_guard<std::mutex> lk(latch_mutex);
-                            pending_tasks--;
-                            if (pending_tasks == 0) latch_cv.notify_one();
-                        }
-                    }
-
-                    ~TaskCompletionNotifier() {
-                        notify(false);
-                    }
-                };
-
-                for (const auto &task_data : tasks)
-                {
-                    auto notifier = std::make_shared<TaskCompletionNotifier>(latch_mutex, latch_cv, pending_tasks, any_dropped);
-                    auto task = [this, task_data, mode, &group_representatives, &local_rw_mutex, &files_moved, notifier]() {
+                // CC-3: joined local worker set (see runFanOut) instead of
+                // TPM submission + an unbounded latch wait.
+                auto process_task = [&](const auto &task_data) {
                         try
                         {
                             // Load artifacts for this member
@@ -1866,20 +1838,11 @@ namespace MediaDedup
                         }
                         catch (...) {}
 
-                    task_end:
-                        notifier->notify(true);
-                    };
+                    task_end:;
+                };
 
-                    if (tpm_) {
-                        tpm_->submit("duplicate_finder", task);
-                    } else {
-                        task(); // Fallback
-                    }
-                }
-
-                // Wait for all cross-group check tasks to finish
-                std::unique_lock<std::mutex> wait_lk(latch_mutex);
-                latch_cv.wait(wait_lk, [&]() { return pending_tasks == 0; });
+                runFanOut(tasks.size(), abort_, [&](std::size_t i)
+                          { process_task(tasks[i]); });
 
                 logger.information("Cross-group checking complete: moved %d files", files_moved.load());
                 return files_moved.load();
