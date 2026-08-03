@@ -65,7 +65,6 @@ namespace MediaDedup
         static int countQueuedAll(DatabaseManager &db);
 
         // Helper methods for location_key filtering
-        static std::vector<std::string> getRegisteredLocationKeys(DatabaseManager &db);
         static std::string getLocationKey(DatabaseManager &db, const std::string &file_path);
 
         // Processing state management
@@ -209,6 +208,5 @@ namespace MediaDedup
 
     private:
         // Helper function to execute filtered count queries
-        static int executeFilteredCount(DatabaseManager &db, const std::string &base_query);
     };
 }

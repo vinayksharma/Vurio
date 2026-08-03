@@ -987,40 +987,10 @@ namespace MediaDedup
         }
     }
 
-    std::vector<std::string> ScannedFilesOps::getRegisteredLocationKeys(DatabaseManager &db)
-    {
-        std::vector<std::string> result;
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-            std::string query = std::string(SQL::kGetRegisteredLocationKeys);
-            Poco::Logger::get("ScannedFilesOps").information("Executing query: " + query);
-            stmt << query, Keywords::now;
-            RecordSet rs(stmt);
-            bool more = rs.moveFirst();
-            while (more)
-            {
-                std::string key = rs[0].convert<std::string>();
-                Poco::Logger::get("ScannedFilesOps").information("Found key: " + key);
-                result.emplace_back(std::move(key));
-                more = rs.moveNext();
-            }
-            Poco::Logger::get("ScannedFilesOps").information("Total keys found: " + std::to_string(result.size()));
-        }
-        catch (const std::exception &e)
-        {
-            // Log the error for debugging
-            Poco::Logger::get("ScannedFilesOps").error("Error in getRegisteredLocationKeys: " + std::string(e.what()));
-        }
-        catch (...)
-        {
-            // Return empty vector on error
-            Poco::Logger::get("ScannedFilesOps").error("Unknown error in getRegisteredLocationKeys");
-        }
-        return result;
-    }
+    // DB-5: getRegisteredLocationKeys and executeFilteredCount are deleted.
+    // Both were dead (zero callers); executeFilteredCount string-concatenated
+    // unescaped user-supplied location keys into SQL — an injection surface
+    // that also produced wrong counts for any path containing an apostrophe.
 
     std::string ScannedFilesOps::getLocationKey(DatabaseManager &db, const std::string &file_path)
     {
@@ -1030,51 +1000,6 @@ namespace MediaDedup
             return file_record->location_key;
         }
         return "";
-    }
-
-    int ScannedFilesOps::executeFilteredCount(DatabaseManager &db, const std::string &base_query)
-    {
-        try
-        {
-            auto registered_keys = ScannedFilesOps::getRegisteredLocationKeys(db);
-            Poco::Logger::get("ScannedFilesOps").information("executeFilteredCount: found " + std::to_string(registered_keys.size()) + " registered keys");
-            if (registered_keys.empty())
-            {
-                return 0; // No registered locations = no files to count
-            }
-
-            auto lease = db.acquireSessionLease();
-            Session &sess = lease.get();
-            Statement stmt(sess);
-
-            // Build IN clause for location_key filtering
-            std::string in_clause = "";
-            for (size_t i = 0; i < registered_keys.size(); ++i)
-            {
-                if (i > 0)
-                    in_clause += ",";
-                in_clause += "'" + registered_keys[i] + "'";
-            }
-
-            std::string query = base_query;
-            // Replace ? with the IN clause
-            size_t pos = query.find("?");
-            if (pos != std::string::npos)
-            {
-                query.replace(pos, 1, in_clause);
-            }
-
-            stmt << query, Keywords::now;
-            RecordSet rs(stmt);
-            if (rs.moveFirst())
-            {
-                return rs[0].convert<int>();
-            }
-        }
-        catch (...)
-        {
-        }
-        return 0;
     }
 
     int ScannedFilesOps::countError(DatabaseManager &db)

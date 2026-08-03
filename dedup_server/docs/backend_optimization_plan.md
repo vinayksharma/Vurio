@@ -398,6 +398,20 @@ page ≈ **1.3 s of DB work** under a single held lease.
   no `SessionPoolExhaustedException` in logs.
 
 ### DB-5. Parameterize the string-concatenated `IN` clause (injection + breakage)
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> **Resolved by deletion, not parameterization:** investigation showed the
+> entire cluster was dead code — `executeFilteredCount`, its helper
+> `getRegisteredLocationKeys`, the four unusable `kCount*Filtered` constants
+> (`IN (?)` can never bind a list) and `kGetRegisteredLocationKeys` had ZERO
+> production callers. All deleted, removing the injection surface outright
+> (a tombstone comment in sql_constants.hpp records why). Two tests that
+> exercised only the dead helper were trimmed. New positive test:
+> `ScannedFilesOpsTest.LocationKeysWithApostrophesRoundTrip` pins that the
+> LIVE location-scoped paths (upsert/getByPath/getFilesByLocationKey/
+> getLocationKey) handle apostrophe-bearing keys via bound parameters. A
+> repo scan confirms no other quote-concatenation into SQL remains in
+> src/database. Suite green (275 tests).
 - **File:** `src/database/scanned_files/scanned_files_ops.cpp:1026-1041`
   (`executeFilteredCount`), constants `kCountScannedFilesFiltered` family at
   `sql_constants.hpp:246-253` (written as `location_key IN (?)` which can never
