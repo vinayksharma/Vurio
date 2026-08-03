@@ -614,6 +614,28 @@ page ≈ **1.3 s of DB work** under a single held lease.
 - **Verify:** scroll VU continuously during a dedup run; dedup progresses.
 
 ### CC-4. SchedulerService races and lifecycle
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> All seven sub-items landed (scheduler_service.cpp rewritten):
+> 1. `Job::interval/backoff` → atomic `interval_ms`/`backoff_ms`.
+> 2. `registerJob` rejects duplicate ids (was: destroyed a live Job under its
+>    own worker — UAF + std::terminate).
+> 3. `stop()` moves jobs out under `jobsMutex_` and joins OUTSIDE it.
+> 4. Dispatch claims IDLE→RUNNING via `compare_exchange_strong`
+>    (`executeJobIfIdle`), used by both the worker loop and `triggerJob` —
+>    the TOCTOU double-dispatch window is gone.
+> 5. TPM job lambdas capture `weak_ptr<SchedulerService>`
+>    (`enable_shared_from_this`) instead of raw `this`; expired ⇒ skip state
+>    recording. Test constructions switched to `make_shared` accordingly.
+> 6. The three per-job 50 ms sleep-poll loops replaced with `wakeCv_`
+>    waits (stop/resume/unregister notify) — 60 wakeups/s gone, stop is
+>    immediate even mid-interval or while paused.
+> 7. `shutdownCallback_`/`pauseCallback_` set/copied under `callbackMutex_`,
+>    invoked outside it.
+> Tests: `DuplicateRegistrationIsRejected`, `TriggerWhileRunningIsRejected-
+> Atomically`, `StopIsPromptWithLongIntervalsAndWhilePaused`; the existing
+> scheduler-concurrency / jobs-independence suites exercise the rewrite.
+> Suite green (286 tests).
 - **File:** `src/orchestration/scheduler_service.cpp`.
 - **Fixes:**
   1. `job.interval`/`job.backoff` written unlocked at :274/:167-181 vs locked
