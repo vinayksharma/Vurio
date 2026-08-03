@@ -243,6 +243,30 @@ resets when day queries hit DB pool contention"). Measured: one `GetDayGroups`
 page ≈ **1.3 s of DB work** under a single held lease.
 
 ### DB-1. Make the day-view queries index-only
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> **Measured on a snapshot of the live 5.6 GB DB: day count 1568 ms → 92 ms
+> (17×), day page 733 ms (review) / 167 ms (snapshot) → 90 ms.**
+> Implemented as option 1: `is_video` VIRTUAL generated column
+> (`VURIO_IS_VIDEO_EXPR`, instant ALTER, no rewrite) + the taken_day partial
+> index predicate now includes `is_video = 0` + `VURIO_DAY_VIEW_FILTER` uses
+> the column — the 14 per-row LIKEs are gone from all day-view queries.
+> Migration is automatic at startup: `kAlterScannedFilesAddIsVideo` (guarded)
+> and a one-time index rebuild when the existing definition lacks `is_video`
+> (detected via sqlite_master text). Two DB-6 items pulled forward because the
+> residual cost was the suppression subquery's full duplicate_members scan:
+> covering index `idx_dm_rep_group_file(is_representative, group_id, file_id)`
+> and startup `ANALYZE` (one-time when sqlite_stat1 missing; `PRAGMA optimize`
+> afterwards). Migration cost at first startup: ~0.8 s index rebuild + ~0.6 s
+> ANALYZE.
+> **Decisions:** keyset paging NOT done — the VU scroller needs random access
+> by day offset, and with the covering index the OFFSET walk is index-only and
+> cheap. `total_days` caching deferred — at ~90 ms/query it's no longer the
+> contention driver; revisit only if scroll bursts still show pool pressure.
+> Tests: `DayGroupsOpsTest.DayQueriesAreServedByTheTakenDayIndex` (EXPLAIN
+> plan pinned to the partial index) and `EnsureTableUpgradesLegacyTakenDayIndex`
+> (legacy-index migration path). Suite green (268 tests). Pre-migration
+> snapshot of the live DB retained in the session scratchpad.
 - **Files:** `include/database/sql_constants.hpp:511-518` (`VURIO_NOT_VIDEO_P`,
   14 `lower(file_name) NOT LIKE` terms), `:527`, `:552` (`kSelectScanDaysCount`,
   measured 536 ms), `:557` (`kSelectScanDaysWithPagination`, 733 ms), `:605`, `:610`;

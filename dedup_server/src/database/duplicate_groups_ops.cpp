@@ -59,6 +59,7 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateDuplicateGroupsIndexRepFileId), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFile), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
+            sess << std::string(SQL::kCreateDuplicateMembersIndexRepGroupFile), now;
 
             logger.debug("Successfully ensured all duplicate detection tables and indexes");
             return true;
