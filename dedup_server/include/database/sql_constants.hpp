@@ -300,6 +300,14 @@ namespace MediaDedup
             "SELECT id, file_path, relative_path, share_name, file_name, file_metadata, processed, links, is_network_file, location_key, created_at, exif_datetime, exif_camera, exif_resolution, ignore_reason\n"
             " FROM scanned_files WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0)";
 
+        // DB-6: partial index whose predicate is textually identical to
+        // kListUnprocessed's WHERE. The sweep runs on every scheduler tick and
+        // previously full-scanned scanned_files (measured 320 ms) to return —
+        // in steady state — nothing; with the index an empty result is ~0 ms.
+        inline constexpr std::string_view kCreateScannedFilesIndexUnprocessed =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_unprocessed ON scanned_files(id) "
+            "WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0);";
+
         inline constexpr std::string_view kUpdateExifMetadata =
             "UPDATE scanned_files SET exif_datetime=?, exif_camera=?, exif_resolution=? WHERE file_path=?";
 
@@ -401,8 +409,16 @@ namespace MediaDedup
         inline constexpr std::string_view kCreatePreviewCacheIndexLastAccessed =
             "CREATE INDEX IF NOT EXISTS idx_preview_last_accessed ON preview_cache(last_accessed_at);";
 
-        inline constexpr std::string_view kCreateDuplicateGroupsIndexMode =
-            "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_mode ON duplicate_groups(mode);";
+        // DB-6: composite (mode, representative_created_date DESC) serves the
+        // BINNED pagination as a covering SEARCH (was: index scan + sort). It
+        // supersedes the old single-column idx_duplicate_groups_mode (zero
+        // selectivity — one mode value — pure write overhead), which
+        // ensureTables drops on sight.
+        inline constexpr std::string_view kDropLegacyDuplicateGroupsIndexMode =
+            "DROP INDEX IF EXISTS idx_duplicate_groups_mode;";
+
+        inline constexpr std::string_view kCreateDuplicateGroupsIndexModeRepDate =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_mode_rep_date ON duplicate_groups(mode, representative_created_date DESC);";
 
         inline constexpr std::string_view kCreateDuplicateGroupsIndexCreatedAt =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_groups_created_at ON duplicate_groups(created_at);";

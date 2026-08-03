@@ -84,19 +84,27 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
-            Poco::Data::Statement stmt(sess);
+
+            // One fresh Statement per index (a reused named Statement
+            // accumulates SQL across executes and silently drops later
+            // statements — this bit DB-6's index until switched to the
+            // `sess <<` per-statement pattern the other ops files use).
 
             // Create file_path index
-            stmt << std::string(SQL::kCreateScannedFilesIndexFilePath), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexFilePath), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created index on scanned_files.file_path");
 
             // Create composite index for filtered queries
-            stmt << std::string(SQL::kCreateScannedFilesIndexLocationProcessed), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexLocationProcessed), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created composite index for location_key filtering");
 
             // Partial index on the generated taken_day column (day-view queries)
-            stmt << std::string(SQL::kCreateScannedFilesIndexTakenDay), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexTakenDay), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created taken_day index for day-view queries");
+
+            // DB-6: partial index for the unprocessed sweep (every tick)
+            sess << std::string(SQL::kCreateScannedFilesIndexUnprocessed), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created unprocessed partial index for the media sweep");
         }
         catch (const std::exception &e)
         {

@@ -5,6 +5,7 @@
 #include <Poco/Data/Statement.h>
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "database/sql_constants.hpp"
 #include "database/user_settings_ops.hpp"
 #include "test_utils.hpp"
 
@@ -29,6 +30,66 @@ namespace MediaDedup
             r.is_network_file = false;
             r.location_key = "mediaLocation:test123"; // Test location key
             return r;
+        }
+
+        // DB-6 (backend_optimization_plan.md): the unprocessed sweep runs every
+        // scheduler tick and used to full-scan scanned_files (measured 320 ms
+        // on the live DB) to return, in steady state, nothing. The partial
+        // index only helps while its predicate stays TEXTUALLY identical to
+        // kListUnprocessed's WHERE — if either drifts, SQLite silently stops
+        // using the index at scale (plan choice is size-dependent, so an
+        // EXPLAIN assertion on a small test DB cannot catch it; this textual
+        // invariant can).
+        TEST(ScannedFilesOpsTest, UnprocessedSweepIndexPredicateMatchesTheQuery)
+        {
+            std::string db_path = testDbPath("test_scanned_files_unproc_idx.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            // The query's WHERE clause, verbatim.
+            std::string query(SQL::kListUnprocessed);
+            auto where_pos = query.find("WHERE ");
+            ASSERT_NE(where_pos, std::string::npos);
+            std::string predicate = query.substr(where_pos + 6);
+
+            // The deployed index's definition, from the database itself.
+            auto lease = dbm.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::string index_sql;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='index' AND name='idx_scanned_files_unprocessed'",
+                Poco::Data::Keywords::into(index_sql), Poco::Data::Keywords::now;
+
+            if (index_sql.empty())
+            {
+                std::vector<std::string> names;
+                Poco::Data::Statement list_stmt(sess);
+                list_stmt << "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='scanned_files'",
+                    Poco::Data::Keywords::into(names), Poco::Data::Keywords::now;
+                std::string all;
+                for (const auto &n : names) all += n + ", ";
+                FAIL() << "unprocessed partial index missing; present: " << all;
+            }
+            EXPECT_NE(index_sql.find(predicate), std::string::npos)
+                << "index predicate no longer matches kListUnprocessed's WHERE.\n"
+                << "query WHERE: " << predicate << "\nindex: " << index_sql;
+
+            // And the sweep still behaves: pending rows returned, done rows not.
+            auto pending = makeRow("/lib/pending.jpg");
+            pending.processed = 0;
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, pending));
+            auto done = makeRow("/lib/done.jpg");
+            done.processed = 2;
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, done));
+
+            auto unprocessed = ScannedFilesOps::listUnprocessed(dbm);
+            ASSERT_EQ(unprocessed.size(), 1u);
+            EXPECT_EQ(unprocessed[0].file_path, "/lib/pending.jpg");
+
+            std::remove(db_path.c_str());
         }
 
         // DB-5 (backend_optimization_plan.md): location keys are user-supplied
@@ -546,8 +607,6 @@ TEST(ScannedFilesOpsTest, QueuedStatusCount)
 //     reset_count = MediaDedup::ScannedFilesOps::resetAllErrors(dbm);
 //     EXPECT_EQ(reset_count, 0);
 // }
-
-#include "database/sql_constants.hpp"
 
 TEST(ScannedFilesOpsTest, GlobalCountsIgnoreLocationKey)
 {

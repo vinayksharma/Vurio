@@ -52,7 +52,8 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
 
-            sess << std::string(SQL::kCreateDuplicateGroupsIndexMode), now;
+            sess << std::string(SQL::kDropLegacyDuplicateGroupsIndexMode), now;
+            sess << std::string(SQL::kCreateDuplicateGroupsIndexModeRepDate), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexCreatedAt), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexRepDate), now;
             sess << std::string(SQL::kCreateDuplicateGroupsIndexRepPath), now;
