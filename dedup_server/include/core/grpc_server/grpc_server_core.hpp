@@ -31,7 +31,7 @@ public:
 
     void start(const std::string& socket_path,
                std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-               DatabaseManager* database_manager,
+               std::shared_ptr<DatabaseManager> database_manager, // CC-5: real shared ownership
                std::shared_ptr<Orchestration::FilesManager> files_manager,
                std::shared_ptr<ThreadPoolManager> thread_pool_manager,
                std::shared_ptr<DiskCache> thumbnail_cache,
@@ -42,6 +42,9 @@ public:
 
 private:
     std::unique_ptr<grpc::Server> server_;
+    // CC-5: keep-alive share for the raw DatabaseManager* the service
+    // impls hold (they are members of services_ and die with us).
+    std::shared_ptr<DatabaseManager> database_manager_;
     std::string socket_path_;
     std::vector<std::unique_ptr<grpc::Service>> services_;
 };

@@ -105,7 +105,7 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailNotCachedReturnsUnavailable) {
     std::string socket_path = "/tmp/test_grpc_media_service.sock";
 
     GrpcServerCore server;
-    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
@@ -157,7 +157,7 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     EXPECT_TRUE(std::filesystem::exists(fake_thumb));
 
     GrpcServerCore server;
-    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);
@@ -183,7 +183,7 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     std::string socket_path = "/tmp/test_grpc_media_service_preview.sock";
 
     GrpcServerCore server;
-    server.start(socket_path, config_, db_.get(), files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
 
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
     auto stub = vurio::dedup::MediaService::NewStub(channel);

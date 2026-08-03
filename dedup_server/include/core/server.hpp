@@ -99,7 +99,7 @@ namespace MediaDedup
     private:
         // Configuration and components
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
-        std::unique_ptr<DatabaseManager> database_manager_;
+        std::shared_ptr<DatabaseManager> database_manager_; // CC-5: real shared ownership
 
         // Server components
         std::unique_ptr<WebServer> web_server_;

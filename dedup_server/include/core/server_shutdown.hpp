@@ -52,7 +52,7 @@ namespace MediaDedup
          * @param console_subscription_id Console subscription ID
          */
         void handleShutdown(
-            std::unique_ptr<DatabaseManager> &database_manager,
+            std::shared_ptr<DatabaseManager> &database_manager,
             std::unique_ptr<WebServer> &web_server,
             std::shared_ptr<ThreadPoolManager> &tpm,
             std::shared_ptr<Orchestration::SchedulerService> &scheduler_service,

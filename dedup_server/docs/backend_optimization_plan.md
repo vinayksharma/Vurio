@@ -659,6 +659,24 @@ page ≈ **1.3 s of DB work** under a single held lease.
      thread, read from workers → set before `start()`, or guard.
 
 ### CC-5. Shutdown lifetime: make `DatabaseManager` a real `shared_ptr`
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> `DatabaseManager` is now genuinely `std::shared_ptr`-owned end to end:
+> ServerInitializer/Server members, ServerShutdown signature, and
+> `GrpcServerCore::start` all take/hold real shares; **every no-op-deleter
+> `shared_ptr(raw, [](…){})` laundering site is deleted** (both initializer
+> aliases, the ThumbnailHandler construction, the integrity-check wrapper).
+> `MediaServiceImpl`/`AdvancedSettingsServiceImpl` ctors take the shared_ptr
+> (keeping a raw `db_` convenience pointer for their bodies); their
+> fire-and-forget generation lambdas and the detached integrity thread now
+> capture OWNING shares — abandoned drain-timeout tasks can no longer
+> dereference a freed DB. Integrity-check thread hardened: terminal
+> `catch (...)` (a non-std exception used to call std::terminate and leave
+> is_running=true + scheduler paused forever) and the unbounded 5 Hz drain
+> loop bounded at 60 s. Detached launch kept — now lifetime-safe since every
+> argument owns its dependency. Verified by compile-time enforcement plus the
+> gRPC media-service socket tests exercising the new ownership path.
+> Suite green (286 tests).
 - **Files:** `src/core/server_server_initializer.cpp:194` and `:325`
   (`std::shared_ptr<DatabaseManager>(raw, [](DatabaseManager*){})`), copied again at
   `grpc_server_core.cpp:1388`; `src/core/server.cpp:352` (`database_manager_.reset()`)

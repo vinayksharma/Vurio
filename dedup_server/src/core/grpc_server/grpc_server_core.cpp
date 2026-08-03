@@ -172,6 +172,7 @@ public:
 class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsService::Service {
     std::shared_ptr<FilesService> files_;
     std::shared_ptr<ThreadPoolManager> tpm_;
+    std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
     std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_;
 public:
@@ -275,6 +276,7 @@ public:
 };
 
 class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Service {
+    std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
 
     struct StreamQueue {
@@ -646,6 +648,7 @@ static void clearFullResCache() {
 }
 
 class AdvancedSettingsServiceImpl final : public vurio::dedup::AdvancedSettingsService::Service {
+    std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
     std::shared_ptr<DiskCache> thumbnail_cache_;
@@ -654,13 +657,15 @@ class AdvancedSettingsServiceImpl final : public vurio::dedup::AdvancedSettingsS
     std::shared_ptr<MediaDedup::ThreadPoolManager> tpm_;
 
 public:
-    explicit AdvancedSettingsServiceImpl(DatabaseManager* db, 
+    // CC-5: owns a real share of the DB; db_ stays as the raw convenience
+    // pointer the method bodies use.
+    explicit AdvancedSettingsServiceImpl(std::shared_ptr<DatabaseManager> db,
                                          std::shared_ptr<UnifiedObservableConfigManager> config, 
                                          std::shared_ptr<DiskCache> thumbnail_cache,
                                          std::shared_ptr<DiskCache> transcoding_cache,
                                          std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
                                          std::shared_ptr<MediaDedup::ThreadPoolManager> tpm)
-        : db_(db), config_(std::move(config)),
+        : db_owner_(std::move(db)), db_(db_owner_.get()), config_(std::move(config)),
           thumbnail_cache_(std::move(thumbnail_cache)), transcoding_cache_(std::move(transcoding_cache)),
           scheduler_(std::move(scheduler)), tpm_(std::move(tpm)) {}
 
@@ -1246,9 +1251,7 @@ public:
                                              vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string error;
-        // Wrap db_ in a shared_ptr with a no-op deleter since it's owned elsewhere
-        std::shared_ptr<MediaDedup::DatabaseManager> db_ptr(db_, [](MediaDedup::DatabaseManager*){});
-        if (MediaDedupServer::Core::DatabaseIntegrityCheckHandler::startIntegrityCheck(db_ptr, config_, scheduler_, tpm_, error)) {
+        if (MediaDedupServer::Core::DatabaseIntegrityCheckHandler::startIntegrityCheck(db_owner_, config_, scheduler_, tpm_, error)) {
             reply->set_success(true);
         } else {
             reply->set_success(false);
@@ -1366,18 +1369,22 @@ public:
 
 class MediaServiceImpl final : public vurio::dedup::MediaService::Service {
     std::shared_ptr<UnifiedObservableConfigManager> config_;
+    std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
     std::shared_ptr<DiskCache> thumbnail_cache_;
     std::shared_ptr<DiskCache> transcoding_cache_;
     std::shared_ptr<ThreadPoolManager> tpm_;
 
 public:
-    MediaServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> config, 
-                     DatabaseManager* db, 
+    // CC-5: owns a real share of the DB so the fire-and-forget generation
+    // lambdas below can capture genuine ownership instead of laundering a
+    // raw pointer through a no-op-deleter shared_ptr.
+    MediaServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> config,
+                     std::shared_ptr<DatabaseManager> db,
                      std::shared_ptr<DiskCache> thumb_cache, 
                      std::shared_ptr<DiskCache> trans_cache, 
                      std::shared_ptr<ThreadPoolManager> tpm)
-        : config_(config), db_(db), thumbnail_cache_(thumb_cache), transcoding_cache_(trans_cache), tpm_(tpm) {}
+        : config_(config), db_owner_(std::move(db)), db_(db_owner_.get()), thumbnail_cache_(thumb_cache), transcoding_cache_(trans_cache), tpm_(tpm) {}
 
     // mtime of the source file, or 0 when unreadable (e.g. its volume is
     // disconnected — cached assets are still served in that case).
@@ -1438,7 +1445,7 @@ public:
         } else {
             if (tpm_) {
                 auto config_copy = config_;
-                auto db_copy = db_;
+                auto db_copy = db_owner_; // CC-5: owning share
                 auto tcache_copy = thumbnail_cache_;
                 auto xcache_copy = transcoding_cache_;
                 auto tpm_copy = tpm_;
@@ -1446,13 +1453,13 @@ public:
                 int size_copy = normalized_size;
 
                 tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
-                    MediaDedup::ThumbnailHandler temp_handler(config_copy, std::shared_ptr<DatabaseManager>(db_copy, [](DatabaseManager*){}), tcache_copy, xcache_copy, tpm_copy);
+                    MediaDedup::ThumbnailHandler temp_handler(config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy);
                     std::string cached_path;
                     if (temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
                         MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
                         MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
                     } else {
-                        recordGenerationFailure(db_copy, path_copy, "thumbnail",
+                        recordGenerationFailure(db_copy.get(), path_copy, "thumbnail",
                                                 "Thumbnail generation failed (unsupported or corrupted file)");
                     }
                 }, file_path);
@@ -1492,7 +1499,7 @@ public:
             }
 
             if (tpm_) {
-                auto db_copy = db_;
+                auto db_copy = db_owner_; // CC-5: owning share
                 auto config_copy = config_;
                 std::string path_copy = file_path;
                 tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy]() {
@@ -1516,7 +1523,7 @@ public:
                             return;
                         }
                     }
-                    recordGenerationFailure(db_copy, path_copy, "preview_full",
+                    recordGenerationFailure(db_copy.get(), path_copy, "preview_full",
                                             "Full-resolution generation failed (unsupported or corrupted file)");
                 }, file_path);
             }
@@ -1565,7 +1572,7 @@ public:
         } else {
             if (tpm_) {
                 auto config_copy = config_;
-                auto db_copy = db_;
+                auto db_copy = db_owner_; // CC-5: owning share
                 auto xcache_copy = transcoding_cache_;
                 std::string path_copy = file_path;
                 
@@ -1590,11 +1597,11 @@ public:
                                 MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview", true, ""});
                             } else {
                                 std::filesystem::remove(temp_path);
-                                recordGenerationFailure(db_copy, path_copy, "preview",
+                                recordGenerationFailure(db_copy.get(), path_copy, "preview",
                                                         "Failed to cache transcoded preview");
                             }
                         } else {
-                            recordGenerationFailure(db_copy, path_copy, "preview",
+                            recordGenerationFailure(db_copy.get(), path_copy, "preview",
                                                     "Preview generation failed (unsupported or corrupted file)");
                         }
                     }
@@ -1661,7 +1668,7 @@ GrpcServerCore::~GrpcServerCore() {
 
 void GrpcServerCore::start(const std::string& socket_path,
                            std::shared_ptr<UnifiedObservableConfigManager> config_manager,
-                           DatabaseManager* database_manager,
+                           std::shared_ptr<DatabaseManager> database_manager,
                            std::shared_ptr<Orchestration::FilesManager> files_manager,
                            std::shared_ptr<ThreadPoolManager> thread_pool_manager,
                            std::shared_ptr<DiskCache> thumbnail_cache,
@@ -1707,14 +1714,15 @@ void GrpcServerCore::start(const std::string& socket_path,
         }
     }
 
+    database_manager_ = database_manager; // CC-5 keep-alive for raw db_ members
     auto security_service = std::make_unique<SecurityServiceImpl>();
     auto config_service = std::make_unique<ConfigServiceImpl>(config_manager);
     std::shared_ptr<MediaDedup::FilesService> files_service = nullptr;
     if (files_manager) {
         files_service = files_manager->getFilesService();
     }
-    auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_service, thread_pool_manager, database_manager, scheduler_service);
-    auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager);
+    auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_service, thread_pool_manager, database_manager.get(), scheduler_service);
+    auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager.get());
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
 
