@@ -530,6 +530,20 @@ page ≈ **1.3 s of DB work** under a single held lease.
 ## Phase 2 — Concurrency correctness (crashes, deadlocks, lost work)
 
 ### CC-1. `recreateThreadPool` deadlock
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> Took the plan's preferred option: **runtime pool recreation is deleted
+> entirely** (function + declaration; a tombstone comment records the
+> deadlock mechanics). `tpm.thread.idleTimeoutSeconds` changes now log
+> "takes effect after server restart" (Poco pools cannot change idle time
+> live — matches the DatabaseManager pool-size precedent) and the value is
+> stored under the mutex; `tpm.thread.stackSizeKB` is applied LIVE via
+> `pool_->setStackSize()` (affects only future threads — no recreation
+> needed). The silent queue-discard is gone with the function. Test:
+> `ChangingThreadSettingsMidFlightNeverStallsOrDropsWork` drives the exact
+> trigger — config changes while tasks run and the queue is non-empty —
+> and asserts nothing stalls and all queued work completes (the old code
+> hangs this test). Suite green (281 tests).
 - **File:** `src/orchestration/thread_pool_manager.cpp:624-651`; triggered from
   `onConfigChange` at :752 (`tpm.thread.idleTimeoutSeconds`) and :773
   (`tpm.thread.stackSizeKB`) — i.e. any config.yaml edit touching these.

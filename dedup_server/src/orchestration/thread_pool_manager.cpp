@@ -626,34 +626,14 @@ namespace MediaDedup
         return nullptr;
     }
 
-    void ThreadPoolManager::recreateThreadPool()
-    {
-        Poco::Logger &logger = Poco::Logger::get("ThreadPoolManager");
-        logger.information("Recreating thread pool with idle timeout: %d seconds", idle_timeout_seconds_);
-
-        // Wait for current tasks to complete
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this]()
-                 { return running_total_ == 0 && active_runnables_.empty(); });
-
-        // Clear queues
-        type_to_queue_.clear();
-        round_robin_types_.clear();
-
-        // Recreate the thread pool with new idle timeout
-        pool_ = std::make_unique<Poco::ThreadPool>(1, static_cast<int>(effective_max_), idle_timeout_seconds_);
-
-        // Apply configured stack size to recreated pool
-        std::string stackSizeKey = "tpm.thread.stackSizeKB";
-        int stackSizeKB = cfg_->getPropertyValue<int>(stackSizeKey, 1024); // Default 1MB (1024KB)
-        if (stackSizeKB <= 0)
-            stackSizeKB = 1024;
-        int stackSizeBytes = stackSizeKB * 1024;
-        pool_->setStackSize(stackSizeBytes);
-
-        logger.information("Thread pool recreated successfully with capacity: %d, idle timeout: %d seconds, stack size: %d KB",
-                           static_cast<int>(effective_max_), idle_timeout_seconds_, stackSizeKB);
-    }
+    // CC-1: recreateThreadPool() is deleted. It waited on cv_ (no timeout)
+    // while HOLDING mutex_, then destroyed the Poco pool — whose join waits
+    // for workers that were themselves blocked on mutex_ inside schedule():
+    // a hard deadlock of every TPM entry point, reachable from any config
+    // edit touching the thread settings. It also silently discarded every
+    // queued task. Idle timeout now requires a restart (Poco pools cannot
+    // change it live — the DatabaseManager pool-size precedent); stack size
+    // applies live via setStackSize (affects only future threads).
 
     void ThreadPoolManager::onConfigChange(const ConfigChangeEvent &event)
     {
@@ -752,9 +732,13 @@ namespace MediaDedup
 
                 if (newIdleTimeout > 0 && newIdleTimeout != idle_timeout_seconds_)
                 {
-                    idle_timeout_seconds_ = newIdleTimeout;
-                    Poco::Logger::get("ThreadPoolManager").information("Thread idle timeout changed to: %d seconds, recreating thread pool", newIdleTimeout);
-                    recreateThreadPool();
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        idle_timeout_seconds_ = newIdleTimeout;
+                    }
+                    Poco::Logger::get("ThreadPoolManager").information(
+                        "Thread idle timeout changed to: %d seconds — takes effect after server restart (live pool recreation was deadlock-prone, CC-1)",
+                        newIdleTimeout);
                 }
             }
             catch (...)
@@ -774,8 +758,11 @@ namespace MediaDedup
 
                 if (newStackSizeKB > 0)
                 {
-                    Poco::Logger::get("ThreadPoolManager").information("Thread stack size changed to: %d KB, recreating thread pool", newStackSizeKB);
-                    recreateThreadPool();
+                    // Applies to threads created from now on; running threads
+                    // keep their stacks. No recreation needed (CC-1).
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    pool_->setStackSize(newStackSizeKB * 1024);
+                    Poco::Logger::get("ThreadPoolManager").information("Thread stack size changed to: %d KB (applies to newly created pool threads)", newStackSizeKB);
                 }
                 else
                 {

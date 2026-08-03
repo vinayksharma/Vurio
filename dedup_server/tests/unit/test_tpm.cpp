@@ -160,48 +160,46 @@ TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_DefaultValue_Is120Seconds)
     tpm.shutdownAndDrain(std::chrono::milliseconds(100));
 }
 
-TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_ChangeValue_RecreatesThreadPool)
+// CC-1 (backend_optimization_plan.md): thread-setting config changes must
+// NEVER recreate the pool at runtime. The old recreateThreadPool() waited on
+// cv_ while holding mutex_ and then joined workers that were blocked on that
+// same mutex — a hard deadlock reachable from any config edit — and it
+// silently discarded all queued work. This drives the exact trigger (config
+// change while tasks are IN FLIGHT and QUEUED) and asserts nothing stalls
+// and nothing is lost. Under the old code this test hangs.
+TEST(ThreadPoolManagerTest, ChangingThreadSettingsMidFlightNeverStallsOrDropsWork)
 {
-    // Test that changing the idle timeout recreates the thread pool
     auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
     ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
 
     ThreadPoolManager tpm(cfg);
     tpm.initialize();
 
-    // Submit a task to ensure the pool is active
-    std::atomic<bool> taskCompleted{false};
-    tpm.submit("test", [&taskCompleted]()
-               {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        taskCompleted.store(true); });
+    // Occupy the pool with slow tasks and queue extras behind them.
+    std::atomic<bool> release{false};
+    std::atomic<int> completed{0};
+    for (int i = 0; i < 6; ++i)
+        tpm.submit("test", [&]()
+                   {
+            while (!release.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            completed.fetch_add(1); },
+                   "/cc1/" + std::to_string(i));
 
-    // Wait for task to complete
-    TestUtils::waitForCondition([&taskCompleted]()
-                                { return taskCompleted.load(); },
-                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
-
-    // Change the idle timeout configuration
+    // Config changes land while tasks run and the queue is non-empty.
+    // (Old code: idle-timeout change here deadlocks the whole TPM.)
     cfg->setPropertyValue<int>("tpm.thread.idleTimeoutSeconds", 60);
+    cfg->setPropertyValue<int>("tpm.thread.stackSizeKB", 2048);
 
-    // Wait a bit for the configuration change to be processed
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    release.store(true);
+    bool all_done = TestUtils::waitForCondition([&]()
+                                                { return completed.load() == 6; },
+                                                std::chrono::milliseconds(5000), std::chrono::milliseconds(10));
+    EXPECT_TRUE(all_done) << "config change stalled the pool or dropped queued work (completed="
+                          << completed.load() << "/6)";
 
-    // Submit another task to verify the pool is still working
-    std::atomic<bool> secondTaskCompleted{false};
-    tpm.submit("test", [&secondTaskCompleted]()
-               {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        secondTaskCompleted.store(true); });
-
-    // Wait for second task to complete
-    TestUtils::waitForCondition([&secondTaskCompleted]()
-                                { return secondTaskCompleted.load(); },
-                                std::chrono::milliseconds(1000), std::chrono::milliseconds(10));
-
-    EXPECT_TRUE(secondTaskCompleted.load());
-
-    tpm.shutdownAndDrain(std::chrono::milliseconds(100));
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
 }
 
 TEST(ThreadPoolManagerTest, IdleTimeoutConfiguration_InvalidValue_KeepsCurrentValue)
