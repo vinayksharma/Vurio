@@ -482,11 +482,14 @@ namespace MediaDedup
                 const std::string &type_ref = types_copy[(startIndex + i) % numTypes];
                 std::string type = type_ref; // Make a copy to avoid reference issues
                 
-                // Auto-prioritization: Skip background tasks if UI tasks are waiting right now
-                if (has_ui_tasks_fn() && type != "thumbnail_generator" && type != "preview_generator" && type != "fullres_generator")
-                {
-                    continue;
-                }
+                // Auto-prioritization: while UI tasks are waiting, background
+                // types are THROTTLED to one running task, not skipped. CC-3:
+                // the old unconditional skip starved fileScan/mediaProcessor/
+                // duplicateFinder for as long as the user kept scrolling
+                // (thumbnails queue continuously) — background work froze
+                // indefinitely under a busy UI.
+                const bool is_ui_type = (type == "thumbnail_generator" || type == "preview_generator" || type == "fullres_generator");
+                const bool ui_backlog = !is_ui_type && has_ui_tasks_fn();
 
             auto &queue = type_to_queue_[type];
             if (queue.empty())
@@ -494,6 +497,8 @@ namespace MediaDedup
 
             size_t runningForType = type_to_running_[type];
             size_t allowance = allowanceFor(type);
+            if (ui_backlog)
+                allowance = std::min<size_t>(allowance, 1);
 
             // Media generation (thumbnail/preview) spawns an external magick
             // decoder per task. It stays exempt from the per-type share slices

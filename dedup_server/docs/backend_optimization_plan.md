@@ -582,6 +582,23 @@ page ≈ **1.3 s of DB work** under a single held lease.
   and :589.
 
 ### CC-3. Dedup fan-out must not block a pool slot / be starved by UI tasks
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> Took the strongest of the plan's options: **both comparison fan-outs
+> (processBatch + performCrossGroupChecking) now run on a bounded, JOINED
+> local worker set** (`runFanOut`: ≤4 threads, abort_ checked between items)
+> — never on the TPM. This removes the entire deadlock/starvation class
+> (same-type parent+children, latch with no timeout, pause-hang) rather than
+> patching it; the join also keeps the tasks' stack-reference captures safe,
+> which is why bail-early latch patches were NOT viable. The
+> TaskCompletionNotifier latch machinery is deleted; the checkpoint now
+> withholds on `abort_` (an id-watermark advanced past aborted ids would
+> skip them forever). UI prioritization softened: background types are
+> THROTTLED to one running task while UI tasks queue, not skipped — scanning
+> /dedup keep trickling under continuous scrolling. Tests:
+> `BackgroundTypeIsThrottledNotStarvedByUIBacklog` (old code fails: bg task
+> never starts under a UI backlog); the fan-out rewrite is exercised by the
+> existing finder suite. Suite green (283 tests).
 - **Files:** `duplicate_finder.cpp:701-710` and `:1790-1798` (submit N children to
   the *same* TPM type, then `latch_cv.wait` with no timeout);
   `thread_pool_manager.cpp:481-484` (whenever any thumbnail/preview/fullres task is

@@ -696,3 +696,47 @@ TEST(ThreadPoolManagerTest, FailedStartRequeuesTaskIntact)
 
     tpm.shutdownAndDrain(std::chrono::milliseconds(500));
 }
+
+// CC-3 (backend_optimization_plan.md): while UI (thumbnail/preview) tasks are
+// queued, background types must be THROTTLED to one running task — not
+// skipped entirely. The old unconditional skip froze fileScan/mediaProcessor/
+// duplicateFinder for as long as the user kept scrolling. Old code fails
+// this: the background task never starts while the UI queue is non-empty.
+TEST(ThreadPoolManagerTest, BackgroundTypeIsThrottledNotStarvedByUIBacklog)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("8"));
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    // Saturate the media-generation cap and keep a UI backlog queued so
+    // has_ui_tasks stays true the whole time.
+    std::atomic<bool> release{false};
+    std::atomic<int> ui_started{0};
+    for (int i = 0; i < 8; ++i)
+        tpm.submit("thumbnail_generator", [&]()
+                   {
+            ui_started.fetch_add(1);
+            while (!release.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(5)); },
+                   "/ui/" + std::to_string(i));
+
+    ASSERT_TRUE(MediaDedup::Test::TestUtils::waitForCondition(
+        [&]() { return ui_started.load() >= 4; },
+        std::chrono::milliseconds(2000), std::chrono::milliseconds(10)))
+        << "media cap should admit 4 UI tasks";
+
+    // Background work must still trickle through while the UI backlog exists.
+    std::atomic<bool> bg_ran{false};
+    tpm.submit("fileScan", [&]() { bg_ran.store(true); }, "/bg/scan");
+
+    EXPECT_TRUE(MediaDedup::Test::TestUtils::waitForCondition(
+        [&]() { return bg_ran.load(); },
+        std::chrono::milliseconds(2000), std::chrono::milliseconds(10)))
+        << "background type starved by UI backlog";
+
+    release.store(true);
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
+}
