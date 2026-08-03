@@ -268,19 +268,12 @@ namespace MediaDedup
         inline constexpr std::string_view kCountQueuedFiles =
             "SELECT COUNT(*) FROM scanned_files WHERE processed = -99";
 
-        // Filtered count queries by registered location_key
-        inline constexpr std::string_view kCountScannedFilesFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE location_key IN (?)";
-        inline constexpr std::string_view kCountProcessedFilesFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE (processed=2 OR processed=3) AND location_key IN (?)";
-        inline constexpr std::string_view kCountErrorFilesFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed < 0 AND processed != -2 AND processed != -99 AND location_key IN (?)";
-        inline constexpr std::string_view kCountQueuedFilesFiltered =
-            "SELECT COUNT(*) FROM scanned_files WHERE processed = -99 AND location_key IN (?)";
-
-        // Query to get registered location keys
-        inline constexpr std::string_view kGetRegisteredLocationKeys =
-            "SELECT key FROM user_settings WHERE key LIKE 'mediaLocation:%'";
+        // DB-5: the k*FilesFiltered constants and kGetRegisteredLocationKeys
+        // are deleted. They had zero callers, and the only consumer
+        // (executeFilteredCount) worked around their unusable `IN (?)` shape
+        // by string-concatenating UNESCAPED user-supplied paths into SQL — an
+        // injection surface that also miscounted for any path containing an
+        // apostrophe. Location-scoped queries bind `location_key = ?`.
 
         inline constexpr std::string_view kClearProcessingFlags =
             "UPDATE scanned_files SET processed=CASE WHEN processed=1 THEN 0 ELSE processed END WHERE processed=1";

@@ -31,6 +31,37 @@ namespace MediaDedup
             return r;
         }
 
+        // DB-5 (backend_optimization_plan.md): location keys are user-supplied
+        // filesystem paths and can contain apostrophes (a real library here
+        // has "/Volumes/Sapna's iPad"). Every location-scoped operation must
+        // go through bound parameters — this pins the round trip end-to-end.
+        TEST(ScannedFilesOpsTest, LocationKeysWithApostrophesRoundTrip)
+        {
+            std::string db_path = testDbPath("test_scanned_files_apostrophe.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            const std::string quirky_key = "mediaLocation:/Volumes/Sapna's iPad";
+            auto row = makeRow("/Volumes/Sapna's iPad/photo's copy.jpg");
+            row.location_key = quirky_key;
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
+
+            auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
+            ASSERT_TRUE(fetched.has_value());
+            EXPECT_EQ(fetched->location_key, quirky_key);
+
+            auto by_location = ScannedFilesOps::getFilesByLocationKey(dbm, quirky_key);
+            ASSERT_EQ(by_location.size(), 1u) << "bound location_key lookup must survive apostrophes";
+            EXPECT_EQ(by_location[0].file_path, row.file_path);
+
+            EXPECT_EQ(ScannedFilesOps::getLocationKey(dbm, row.file_path), quirky_key);
+
+            std::remove(db_path.c_str());
+        }
+
         // DB-2 (backend_optimization_plan.md): the raw exif_blob is dead — it
         // was 2.83 GB of write-only data. Ingest must keep writing the PARSED
         // EXIF fields while leaving the legacy blob column NULL.
@@ -381,13 +412,8 @@ namespace MediaDedup
             int queued_count_all = ScannedFilesOps::countQueuedAll(dbm);
             EXPECT_EQ(queued_count_all, 1) << "Unfiltered queued count should be 1 for the -99 status file";
 
-            // Verify location keys are registered
-            auto registered_keys = ScannedFilesOps::getRegisteredLocationKeys(dbm);
-            EXPECT_EQ(registered_keys.size(), 1) << "Should have 1 registered location";
-            if (!registered_keys.empty())
-            {
-                EXPECT_EQ(registered_keys[0], "mediaLocation:test123") << "Registered key should be 'mediaLocation:test123'";
-            }
+            // (getRegisteredLocationKeys removed in DB-5 — dead helper whose
+            // only consumer string-concatenated keys into SQL.)
 
             // Now test the filtered versions (these use location_key filtering)
             int error_count = ScannedFilesOps::countError(dbm);
@@ -573,12 +599,6 @@ TEST(ScannedFilesOpsTest, GlobalCountsIgnoreLocationKey)
 
     int error_count = MediaDedup::ScannedFilesOps::countError(dbm);
     EXPECT_EQ(error_count, 1); // Only row2 has error
-
-    // Test getRegisteredLocationKeys
-    auto registered_keys = MediaDedup::ScannedFilesOps::getRegisteredLocationKeys(dbm);
-    EXPECT_EQ(registered_keys.size(), 2);
-    EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:abc123") != registered_keys.end());
-    EXPECT_TRUE(std::find(registered_keys.begin(), registered_keys.end(), "mediaLocation:def456") != registered_keys.end());
 
     // Test getLocationKey
     std::string location_key = MediaDedup::ScannedFilesOps::getLocationKey(dbm, "/tmp/test1.jpg");
