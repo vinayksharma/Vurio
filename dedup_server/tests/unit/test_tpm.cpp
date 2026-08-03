@@ -637,3 +637,62 @@ int main(int argc, char **argv) {
 }
 #endif
 
+
+// CC-2 (backend_optimization_plan.md): when pool_->start throws (e.g.
+// NoThreadAvailableException), the task must be re-queued INTACT. The old
+// code re-queued a moved-from shell whose std::function was empty: it later
+// "ran" as a swallowed bad_function_call, the work was silently lost, and
+// its file_path blocked resubmission via the dedup check. This injects the
+// throw through the startOnPool seam and asserts the work still executes.
+namespace
+{
+    class StartThrowingTpm : public ThreadPoolManager
+    {
+    public:
+        using ThreadPoolManager::ThreadPoolManager;
+        std::atomic<int> throws_remaining{0};
+
+    protected:
+        void startOnPool(Poco::Runnable &runnable) override
+        {
+            if (throws_remaining.fetch_sub(1) > 0)
+                throw Poco::NoThreadAvailableException();
+            ThreadPoolManager::startOnPool(runnable);
+        }
+    };
+} // namespace
+
+TEST(ThreadPoolManagerTest, FailedStartRequeuesTaskIntact)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("2"));
+
+    StartThrowingTpm tpm(cfg);
+    tpm.initialize();
+
+    std::atomic<int> ran{0};
+    tpm.throws_remaining.store(1);
+
+    // First scheduling attempt throws; the task must survive with its
+    // callable AND file_path intact.
+    tpm.submit("test", [&]() { ran.fetch_add(1); }, "/cc2/victim.jpg");
+
+    // A second submission triggers the next scheduling pass (the seam no
+    // longer throws), which must start BOTH tasks.
+    tpm.submit("test", [&]() { ran.fetch_add(1); }, "/cc2/other.jpg");
+
+    bool both_ran = MediaDedup::Test::TestUtils::waitForCondition(
+        [&]() { return ran.load() == 2; },
+        std::chrono::milliseconds(3000), std::chrono::milliseconds(10));
+    EXPECT_TRUE(both_ran) << "re-queued task lost its callable (ran=" << ran.load() << "/2)";
+
+    // The path must not be zombie-blocked: resubmitting it runs again.
+    tpm.submit("test", [&]() { ran.fetch_add(1); }, "/cc2/victim.jpg");
+    bool third_ran = MediaDedup::Test::TestUtils::waitForCondition(
+        [&]() { return ran.load() == 3; },
+        std::chrono::milliseconds(3000), std::chrono::milliseconds(10));
+    EXPECT_TRUE(third_ran) << "file_path still blocked by a zombie queue entry";
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
+}

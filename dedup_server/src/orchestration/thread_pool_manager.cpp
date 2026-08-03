@@ -524,10 +524,12 @@ namespace MediaDedup
                 continue; // only UI tasks can bypass effective_max_
             }
 
-            auto task = queue.front();
+            // Move (not copy) the task out of the queue; on a failed start the
+            // callable is reclaimed from the runnable via takeFn() (CC-2).
+            auto task = std::move(queue.front());
             queue.pop_front();
             auto fn = std::move(task.fn);
-            std::string task_file_path = task.file_path;
+            std::string task_file_path = std::move(task.file_path);
 
             // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
@@ -555,7 +557,7 @@ namespace MediaDedup
             logger.trace("Starting execution of task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "'");
             try
             {
-                pool_->start(*runnable);
+                startOnPool(*runnable);
                 tasksStarted++;
                 task_started_in_pass = true;
 
@@ -576,30 +578,42 @@ namespace MediaDedup
                 if (it != type_to_running_.end() && it->second > 0)
                     it->second -= 1;
                 active_runnables_.erase(id);
-                
-                // Put task back so it doesn't get dropped
-                queue.push_front(task);
+
+                // CC-2: reclaim the callable from the never-started runnable
+                // and re-queue an INTACT task. The old code pushed back the
+                // moved-from `task` whose fn was already empty — it later ran
+                // as bad_function_call (swallowed), the work was silently
+                // lost, and its file_path blocked resubmission via the dedup
+                // check until the zombie drained.
+                queue.emplace_front(runnable->takeFn(), runnable->file_path());
                 break; // Stop scheduling
             }
             catch (const std::exception& e)
             {
-                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "': " + e.what());
+                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "': " + std::string(e.what()) + " — re-queued for the next scheduling pass");
                 if (running_total_ > 0)
                     running_total_ -= 1;
                 auto it = type_to_running_.find(type);
                 if (it != type_to_running_.end() && it->second > 0)
                     it->second -= 1;
                 active_runnables_.erase(id);
+                // CC-2: these paths previously DROPPED the task with no
+                // re-queue and no signal to the submitter. Re-queue intact and
+                // stop this pass; the next schedule() event retries.
+                queue.emplace_front(runnable->takeFn(), runnable->file_path());
+                break;
             }
             catch (...)
             {
-                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "' due to unknown exception");
+                logger.error("Failed to start task " + std::to_string(static_cast<unsigned long long>(id)) + " for type '" + safe_type + "' due to unknown exception — re-queued for the next scheduling pass");
                 if (running_total_ > 0)
                     running_total_ -= 1;
                 auto it = type_to_running_.find(type);
                 if (it != type_to_running_.end() && it->second > 0)
                     it->second -= 1;
                 active_runnables_.erase(id);
+                queue.emplace_front(runnable->takeFn(), runnable->file_path());
+                break;
             }
 
             // record selection index
