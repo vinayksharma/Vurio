@@ -360,7 +360,8 @@ namespace MediaDedup
         // Create default database properties
         manager->createProperty<std::string>("database.path", "data/dedup_server.db", getDesc("database.path"), getLongDesc("database.path"));
         manager->createProperty<int>("database.session.acquireTimeoutMs", 3000, getDesc("database.session.acquireTimeoutMs"), getLongDesc("database.session.acquireTimeoutMs"));
-        manager->createProperty<int>("database.session.acquireBackoffMs", 50, getDesc("database.session.acquireBackoffMs"), getLongDesc("database.session.acquireBackoffMs"));
+        // DB-4: database.session.acquireBackoffMs removed — lease waiters
+        // block on a condition variable now; there is no poll interval.
         manager->createProperty<int>("database.session.poolMin", 4, getDesc("database.session.poolMin"), getLongDesc("database.session.poolMin"));
         // Must exceed the thread pool's burst limit (effective_max * 2, ~22 on a
         // typical machine) or background processing alone can exhaust the pool

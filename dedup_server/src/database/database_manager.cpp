@@ -148,6 +148,11 @@ namespace MediaDedup
 
     bool DatabaseManager::ensureSessionManagerReady()
     {
+        // DB-4: guarded — this was an unlocked check-then-act; two threads
+        // racing a failed/lazy init could construct two SessionManagers and
+        // destroy one out from under the other's callers.
+        static std::mutex init_mutex;
+        std::lock_guard<std::mutex> init_lock(init_mutex);
         if (!session_manager_)
         {
             try
@@ -219,12 +224,6 @@ namespace MediaDedup
     {
         if (session_manager_)
             session_manager_->setAcquireTimeoutMs(ms);
-    }
-
-    void DatabaseManager::setSessionAcquireBackoffMs(int ms)
-    {
-        if (session_manager_)
-            session_manager_->setBackoffMs(ms);
     }
 
     bool DatabaseManager::executeSQL(const std::string &sql)

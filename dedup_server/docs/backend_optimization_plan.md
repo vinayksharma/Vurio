@@ -357,6 +357,20 @@ page ≈ **1.3 s of DB work** under a single held lease.
   day queries stay responsive while dedup runs.
 
 ### DB-4. Fix `SessionManager` acquire path
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> All six items landed: (1) the slot is reserved under `lease_mutex_` and the
+> pool checkout happens OUTSIDE it (decrement-on-throw); (2) waiters block on
+> `lease_cv_.wait_until` — the 50 ms sleep-poll and its backoff knob are gone
+> (`database.session.acquireBackoffMs` removed from factory/config/server
+> wiring); (3) `Lease` holds `std::optional<Session>` and its dtor returns
+> the session to the Poco pool BEFORE freeing the counted slot; (4)
+> `acquire_timeout_ms_` is atomic; (5) dead `SessionLease` class deleted
+> (files + all CMake references) along with the one-arg counter-corrupting
+> `Lease(SessionManager&)` ctor; (6) `ensureSessionManagerReady` guarded by a
+> mutex. Tests (`SessionAcquireTest`): CV-driven wake on release with a
+> usable session, timeout honored on exhausted pool, 8-thread churn over a
+> 2-slot pool with zero lost slots. Suite green (274 tests).
 - **File:** `src/database/session/session_manager.cpp:64-134`.
 - **Problems:**
   1. `:71-79` — `getConnectedSession()` (real SQL round trip; may open a file-backed

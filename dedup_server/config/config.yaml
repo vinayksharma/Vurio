@@ -63,7 +63,6 @@ scheduler.jitter.enabled: false
 thumbnail.default.size: 256
 media.video.mts: true
 scheduler.drift.mode: anchored
-database.session.acquireBackoffMs: 50
 scheduler.drift.maxDriftMs: 60000
 server.instanceCheck.bufferSize: 128
 duplicates.metadata.fileSizeTolerance: 0.20000000000000001

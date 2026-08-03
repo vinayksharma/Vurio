@@ -238,7 +238,6 @@ add_executable(media_dedup_server
     src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
-    src/database/session/session_lease.cpp
     src/database/user_settings/user_settings_ops.cpp
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
