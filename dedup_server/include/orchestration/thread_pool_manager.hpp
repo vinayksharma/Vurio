@@ -40,7 +40,7 @@ namespace MediaDedup
         };
 
         explicit ThreadPoolManager(std::shared_ptr<UnifiedObservableConfigManager> cfg);
-        ~ThreadPoolManager();
+        virtual ~ThreadPoolManager(); // virtual: startOnPool is a test seam (CC-2)
 
         void initialize();
         void shutdownAndDrain(std::chrono::milliseconds killTimeout);
@@ -114,6 +114,11 @@ namespace MediaDedup
             const std::string &type() const { return type_; }
             const std::string &file_path() const { return file_path_; }
 
+            /// CC-2: reclaim the callable from a runnable that was never
+            /// started (pool_->start threw) so the task can be re-queued
+            /// INTACT. Only valid before run() executes.
+            std::function<void()> takeFn() { return std::move(fn_); }
+
         private:
             ThreadPoolManager &owner_;
             std::string type_;
@@ -122,6 +127,13 @@ namespace MediaDedup
             std::string file_path_;
         };
 
+    protected:
+        /// CC-2 test seam: the single point where a task crosses into Poco.
+        /// Tests override it to inject Poco::NoThreadAvailableException and
+        /// exercise the re-queue path deterministically.
+        virtual void startOnPool(Poco::Runnable &runnable) { pool_->start(runnable); }
+
+    private:
         void onTaskStarted(const std::string &type, uint64_t id);
         void onTaskFinished(const std::string &type, uint64_t id);
 

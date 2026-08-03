@@ -558,6 +558,19 @@ page ≈ **1.3 s of DB work** under a single held lease.
   holding `mutex_`.
 
 ### CC-2. Moved-from task re-queued on `NoThreadAvailableException`
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> `FunctionRunnable::takeFn()` (new) reclaims the callable from a
+> never-started runnable; all THREE start-failure catches
+> (NoThreadAvailable / std::exception / ...) now re-queue an intact
+> `QueuedTask{fn, file_path}` and stop the pass — the generic paths
+> previously DROPPED the task outright. The queue-front copy also became a
+> move. Testability seam: `startOnPool(Poco::Runnable&)` protected virtual
+> (single Poco crossing point; dtor made virtual). Test:
+> `FailedStartRequeuesTaskIntact` injects the throw and asserts the work
+> still executes AND the file_path isn't zombie-blocked — under the old
+> code the re-queued shell ran as a swallowed bad_function_call.
+> Suite green (282 tests).
 - **File:** `thread_pool_manager.cpp:522-577`.
 - **Problem:** `task.fn` is moved out at :524; the catch at :565 re-queues `task`
   (now holding an **empty** `std::function`) at :576. When later scheduled it throws
