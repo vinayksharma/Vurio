@@ -446,3 +446,37 @@ TEST_F(DuplicateFinderRangeTest, BatchArtifactLoaderSpansChunkBoundary)
         seen.insert(artifact.file_id);
     EXPECT_EQ(seen.size(), static_cast<std::size_t>(kCount)) << "every id exactly once";
 }
+
+// DB-6: BINNED group pagination must be a covering SEARCH on the composite
+// (mode, representative_created_date DESC) index — the legacy single-column
+// mode index forced an index scan + sort (temp B-tree) per page.
+TEST_F(DuplicateFinderRangeTest, GroupPaginationUsesCompositeModeDateIndex)
+{
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+
+    auto lease = db_manager_->acquireSessionLease();
+    Poco::Data::Session &sess = lease.get();
+
+    // The legacy index must be gone after ensureTables.
+    {
+        int legacy = -1;
+        Poco::Data::Statement q(sess);
+        q << "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_duplicate_groups_mode'",
+            Poco::Data::Keywords::into(legacy), Poco::Data::Keywords::now;
+        EXPECT_EQ(legacy, 0) << "legacy idx_duplicate_groups_mode must be dropped";
+    }
+
+    std::vector<int> ids, parents, unused;
+    std::vector<std::string> details;
+    Poco::Data::Statement stmt(sess);
+    stmt << "EXPLAIN QUERY PLAN SELECT id FROM duplicate_groups WHERE mode='EMBEDDING' "
+            "ORDER BY representative_created_date DESC LIMIT 30 OFFSET 0",
+        Poco::Data::Keywords::into(ids), Poco::Data::Keywords::into(parents),
+        Poco::Data::Keywords::into(unused), Poco::Data::Keywords::into(details),
+        Poco::Data::Keywords::now;
+    std::string plan;
+    for (const auto &d : details)
+        plan += d + "\n";
+    EXPECT_NE(plan.find("idx_duplicate_groups_mode_rep_date"), std::string::npos) << plan;
+    EXPECT_EQ(plan.find("TEMP B-TREE"), std::string::npos) << "pagination must not sort. Plan:\n" << plan;
+}

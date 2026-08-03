@@ -427,6 +427,29 @@ page ≈ **1.3 s of DB work** under a single held lease.
 - **Verify:** register a location containing `'` in the path; counts are correct.
 
 ### DB-6. Indices, ANALYZE, and remaining query gaps
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> (Items 2's covering dm-index and 4's ANALYZE landed early in DB-1.)
+> **Measured on the live-DB snapshot:** unprocessed sweep (runs EVERY
+> scheduler tick) 320 ms full scan → ~0 ms via new partial index
+> `idx_scanned_files_unprocessed` (predicate textually identical to
+> `kListUnprocessed`); BINNED pagination → covering SEARCH on new composite
+> `idx_duplicate_groups_mode_rep_date` (zero-selectivity legacy
+> `idx_duplicate_groups_mode` dropped on sight by ensureTables); item 3
+> (`kSelectDuplicateGroupsForFile`) needed NO new index — post-ANALYZE the
+> planner already runs it as a MULTI-INDEX OR (0.6 ms).
+> **Bug found & fixed while wiring:** the scanned_files index-creation block
+> reused one named Poco `Statement` across executes, which silently drops
+> later statements — the new index never got created. Switched to the
+> per-statement `sess <<` pattern (a comment marks the trap); verified
+> against the live DB that no OTHER index is missing from the remaining
+> multi-statement blocks. Tests:
+> `ScannedFilesOpsTest.UnprocessedSweepIndexPredicateMatchesTheQuery`
+> (textual index/query predicate invariant — plan choice is size-dependent,
+> so EXPLAIN on a small test DB can't guard this — plus sweep behavior) and
+> `DuplicateFinderRangeTest.GroupPaginationUsesCompositeModeDateIndex`
+> (legacy index gone, covering search, no TEMP B-TREE). Suite green
+> (277 tests).
 - **Changes:**
   1. Partial index for the unprocessed sweep: `kListUnprocessed`
      (`sql_constants.hpp:280`) currently plans a full table SCAN and runs **every
