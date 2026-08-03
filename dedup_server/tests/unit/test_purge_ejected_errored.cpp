@@ -54,9 +54,9 @@ protected:
 TEST_F(PurgeEjectedErroredTest, PurgesEjectedFilesAndPromotesRepresentative)
 {
     // Insert 3 files into scanned_files
-    ScannedFileRow r1{0, "/path/to/media/file1.jpg", "file1.jpg", "share", "file1.jpg", "{}", 100, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
-    ScannedFileRow r2{0, "/path/to/media/file2.jpg", "file2.jpg", "share", "file2.jpg", "{}", 200, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
-    ScannedFileRow r3{0, "/path/to/media/file3.jpg", "file3.jpg", "share", "file3.jpg", "{}", 50, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r1{0, "/path/to/media/file1.jpg", "file1.jpg", "share", "file1.jpg", "{}", 100, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r2{0, "/path/to/media/file2.jpg", "file2.jpg", "share", "file2.jpg", "{}", 200, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r3{0, "/path/to/media/file3.jpg", "file3.jpg", "share", "file3.jpg", "{}", 50, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
     
     ASSERT_TRUE(ScannedFilesOps::upsert(*db_manager, r1));
     ASSERT_TRUE(ScannedFilesOps::upsert(*db_manager, r2));
@@ -133,9 +133,9 @@ TEST_F(PurgeEjectedErroredTest, PurgesEjectedFilesAndPromotesRepresentative)
 TEST_F(PurgeEjectedErroredTest, PurgeCandidateGroupSurvives)
 {
     // Insert 3 files into scanned_files
-    ScannedFileRow r1{0, "/path/to/media/file1.jpg", "file1.jpg", "share", "file1.jpg", "{}", 100, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
-    ScannedFileRow r2{0, "/path/to/media/file2.jpg", "file2.jpg", "share", "file2.jpg", "{}", 200, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
-    ScannedFileRow r3{0, "/path/to/media/file3.jpg", "file3.jpg", "share", "file3.jpg", "{}", 50, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r1{0, "/path/to/media/file1.jpg", "file1.jpg", "share", "file1.jpg", "{}", 100, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r2{0, "/path/to/media/file2.jpg", "file2.jpg", "share", "file2.jpg", "{}", 200, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
+    ScannedFileRow r3{0, "/path/to/media/file3.jpg", "file3.jpg", "share", "file3.jpg", "{}", 50, std::nullopt, "[]", false, "loc1", "", std::nullopt, std::nullopt, std::nullopt};
     
     ASSERT_TRUE(ScannedFilesOps::upsert(*db_manager, r1));
     ASSERT_TRUE(ScannedFilesOps::upsert(*db_manager, r2));

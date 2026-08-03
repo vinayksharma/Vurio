@@ -167,10 +167,14 @@ namespace MediaDedup
             "  version=excluded.version,\n"
             "  updated_at=CURRENT_TIMESTAMP";
 
+        // DB-2: exif_blob is deliberately absent — the raw EXIF dump was 2.83 GB
+        // (half the database), written on every ingest and read by nothing.
+        // The schema column remains (NULL, costs ~1 byte/row); the parsed EXIF
+        // fields (exif_datetime/camera/resolution) are the real data.
         inline constexpr std::string_view kUpsertScannedFile =
             "INSERT INTO scanned_files (file_path, relative_path, share_name, file_name, file_metadata,\n"
-            " processed, links, is_network_file, location_key, exif_datetime, exif_camera, exif_resolution, exif_blob, ignore_reason)\n"
-            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
+            " processed, links, is_network_file, location_key, exif_datetime, exif_camera, exif_resolution, ignore_reason)\n"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n"
             " ON CONFLICT(file_path) DO UPDATE SET\n"
             "   relative_path=excluded.relative_path,\n"
             "   share_name=excluded.share_name,\n"
@@ -183,7 +187,6 @@ namespace MediaDedup
             "   exif_datetime=excluded.exif_datetime,\n"
             "   exif_camera=excluded.exif_camera,\n"
             "   exif_resolution=excluded.exif_resolution,\n"
-            "   exif_blob=excluded.exif_blob,\n"
             "   ignore_reason=excluded.ignore_reason";
 
         inline constexpr std::string_view kDeleteScannedFile =
@@ -305,7 +308,7 @@ namespace MediaDedup
             " FROM scanned_files WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0)";
 
         inline constexpr std::string_view kUpdateExifMetadata =
-            "UPDATE scanned_files SET exif_datetime=?, exif_camera=?, exif_resolution=?, exif_blob=? WHERE file_path=?";
+            "UPDATE scanned_files SET exif_datetime=?, exif_camera=?, exif_resolution=? WHERE file_path=?";
 
         // Image artifacts queries
         inline constexpr std::string_view kSelectImageArtifactsByFile =

@@ -92,39 +92,14 @@ namespace MediaDedup
                     if (!height_str.empty()) height = std::stoi(height_str);
                 } catch (...) {}
                 
-                std::vector<std::uint8_t> exif_blob;
-                std::string temp_exif_path = makeTempFilePath("exif_out", ".bin");
-                
-                std::string cmd_exif = ToolPaths::magickPath();
-                std::vector<std::string> args_exif = {
-                    original_file_path,
-                    "exif:" + temp_exif_path
-                };
-                
-                try {
-                    Poco::ProcessHandle handle_exif = Poco::Process::launch(cmd_exif, args_exif, nullptr, nullptr, nullptr,
-                                                                            ToolPaths::magickResourceEnv());
-                    int rc_exif = handle_exif.wait();
-                    if (rc_exif == 0 && std::filesystem::exists(temp_exif_path)) {
-                        std::ifstream file(temp_exif_path, std::ios::binary | std::ios::ate);
-                        if (file.is_open()) {
-                            std::streamsize size = file.tellg();
-                            file.seekg(0, std::ios::beg);
-                            if (size > 0) {
-                                exif_blob.resize(size);
-                                file.read(reinterpret_cast<char*>(exif_blob.data()), size);
-                            }
-                        }
-                    }
-                } catch (...) {}
-                
-                if (std::filesystem::exists(temp_exif_path)) {
-                    std::filesystem::remove(temp_exif_path);
-                }
-                
-                ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res, exif_blob);
-                Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s, Blob=%zu bytes", 
-                    original_file_path, exif_dt, exif_camera, exif_res, exif_blob.size());
+                // DB-2: the raw EXIF blob dump is gone. It required a second
+                // `magick <file> exif:` subprocess — a FULL decode of the
+                // original (RAW demosaic included) per ingested file — to
+                // produce 2.83 GB of data nothing ever read. The parsed
+                // fields above are the real product.
+                ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res);
+                Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s",
+                    original_file_path, exif_dt, exif_camera, exif_res);
 
                 // Tier 2 Filter logic: Resolution & Date
                 if (config_manager && config_manager->getPropertyValue<bool>("media.filter.enabled", true)) {
