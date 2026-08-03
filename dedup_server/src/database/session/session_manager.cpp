@@ -129,35 +129,32 @@ namespace MediaDedup
 
     SessionManager::Lease SessionManager::acquireLease()
     {
-        // Bounded wait on lease counter to avoid indefinite blocking
-        auto deadline = std::chrono::steady_clock::now() + acquire_timeout_;
-        for (;;)
+        // DB-4: block on the CV (woken by releaseLease) with a bounded
+        // deadline — no sleep-poll, no 0-50 ms latency quantum. The slot is
+        // reserved under the mutex; the pool checkout (which can open a
+        // file-backed connection and takes Poco's own pool mutex) happens
+        // OUTSIDE it so waiters and releasers never serialize on I/O.
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(acquire_timeout_ms_.load(std::memory_order_relaxed));
         {
-            {
-                std::unique_lock<std::mutex> lk(lease_mutex_);
-                if (leased_sessions_ < pool_max_)
-                {
-                    ++leased_sessions_;
-                    try
-                    {
-                        // Try to get the session while holding the lock
-                        Poco::Data::Session session = getConnectedSession();
-                        lk.unlock(); // Release lock before creating Lease
-                        return Lease(*this, std::move(session));
-                    }
-                    catch (...)
-                    {
-                        // If session creation fails, decrement the counter
-                        --leased_sessions_;
-                        throw;
-                    }
-                }
-            }
-            if (std::chrono::steady_clock::now() >= deadline)
+            std::unique_lock<std::mutex> lk(lease_mutex_);
+            if (!lease_cv_.wait_until(lk, deadline, [this]
+                                      { return leased_sessions_ < pool_max_; }))
             {
                 throw std::runtime_error("Timed out acquiring DB session from pool");
             }
-            std::this_thread::sleep_for(acquire_backoff_);
+            ++leased_sessions_;
+        }
+
+        try
+        {
+            return Lease(*this, getConnectedSession());
+        }
+        catch (...)
+        {
+            // Slot reserved but no session obtained: give it back.
+            releaseLease();
+            throw;
         }
     }
 
@@ -180,14 +177,18 @@ namespace MediaDedup
     }
 
     // Lease
-    SessionManager::Lease::Lease(SessionManager &manager)
-        : manager_(manager), session_(manager.getConnectedSession()) {}
-
     SessionManager::Lease::Lease(SessionManager &manager, Poco::Data::Session &&session)
         : manager_(manager), session_(std::move(session)) {}
 
-    Poco::Data::Session &SessionManager::Lease::get() { return session_; }
+    Poco::Data::Session &SessionManager::Lease::get() { return *session_; }
 
-    SessionManager::Lease::~Lease() { manager_.releaseLease(); }
+    SessionManager::Lease::~Lease()
+    {
+        // Ordering is the point (DB-4): return the session to the Poco pool
+        // FIRST, then free the counted slot — the reverse let another thread
+        // pass the counter gate while the pool was still exhausted.
+        session_.reset();
+        manager_.releaseLease();
+    }
 
 } // namespace MediaDedup

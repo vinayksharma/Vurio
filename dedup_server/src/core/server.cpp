@@ -205,7 +205,6 @@ namespace MediaDedup
                     uint16_t new_port = static_cast<uint16_t>(new_port_i);
                     std::string new_log_level = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
                     int new_acquire_timeout = config_manager_->getPropertyValue<int>("database.session.acquireTimeoutMs", 3000);
-                    int new_backoff = config_manager_->getPropertyValue<int>("database.session.acquireBackoffMs", 50);
                     std::string new_mode = config_manager_->getPropertyValue<std::string>("server.mode", server_mode_);
 
                     if (new_host != server_host_ || new_port != server_port_) {
@@ -233,11 +232,11 @@ namespace MediaDedup
                         logger_.information("Logging level successfully updated to: " + new_log_level);
                     }
 
-                    // Apply DB session timings live
+                    // Apply DB session timings live (DB-4: backoff is gone —
+                    // waiters block on a condition variable, nothing to tune)
                     if (database_manager_)
                     {
                         database_manager_->setSessionAcquireTimeoutMs(new_acquire_timeout);
-                        database_manager_->setSessionAcquireBackoffMs(new_backoff);
                     }
 
                     if (new_mode != server_mode_)

@@ -2,10 +2,12 @@
 
 #include <Poco/Data/Session.h>
 #include <Poco/Data/SessionPool.h>
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
 #include <memory>
+#include <optional>
 
 namespace MediaDedup
 {
@@ -16,7 +18,6 @@ namespace MediaDedup
         class Lease
         {
         public:
-            explicit Lease(SessionManager &manager);
             Lease(SessionManager &manager, Poco::Data::Session &&session);
             ~Lease();
 
@@ -31,7 +32,11 @@ namespace MediaDedup
 
         private:
             SessionManager &manager_;
-            Poco::Data::Session session_;
+            // Optional so ~Lease can return the session to the Poco pool
+            // BEFORE releasing the counted slot (DB-4): decrementing first
+            // let another thread pass the counter gate while the pool was
+            // still exhausted -> SessionPoolExhaustedException.
+            std::optional<Poco::Data::Session> session_;
         };
 
         SessionManager(const std::string &connector,
@@ -62,8 +67,10 @@ namespace MediaDedup
                                        int cache_size_pages,
                                        const std::string &temp_store);
 
-        void setAcquireTimeoutMs(int ms) { acquire_timeout_ = std::chrono::milliseconds(ms); }
-        void setBackoffMs(int ms) { acquire_backoff_ = std::chrono::milliseconds(ms); }
+        // Atomic: written by the config-monitor thread while workers read it
+        // (DB-4). The old 50 ms sleep-poll backoff is gone — waiters block on
+        // lease_cv_ and wake the moment a slot frees.
+        void setAcquireTimeoutMs(int ms) { acquire_timeout_ms_.store(ms, std::memory_order_relaxed); }
 
     private:
         friend class Lease;
@@ -86,8 +93,7 @@ namespace MediaDedup
         std::size_t leased_sessions_ = 0;
         std::mutex lease_mutex_;
         std::condition_variable lease_cv_;
-        std::chrono::milliseconds acquire_timeout_{3000};
-        std::chrono::milliseconds acquire_backoff_{50};
+        std::atomic<int> acquire_timeout_ms_{3000};
 
         Poco::Data::Session getConnectedSession();
         void releaseLease();

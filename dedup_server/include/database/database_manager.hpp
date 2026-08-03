@@ -163,7 +163,6 @@ namespace MediaDedup
 
         // Session pool tuning
         void setSessionAcquireTimeoutMs(int ms);
-        void setSessionAcquireBackoffMs(int ms);
 
         /** Optional vector index (sqlite-vec) for KNN duplicate search; null if disabled or init failed. */
         VectorIndex *getVectorIndex();
