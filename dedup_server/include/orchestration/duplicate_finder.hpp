@@ -122,7 +122,9 @@ namespace MediaDedup
             /** @deprecated Use getDuplicateThreshold */
             double getThresholdMax(const std::string &mode);
 
-        private:
+        public:
+            // Public (with the loaders below) so data-access can be unit
+            // tested; plain value type, no finder state.
             struct FileArtifact
             {
                 int file_id = 0;
@@ -138,7 +140,28 @@ namespace MediaDedup
                 int embedding_dim = 0;
             };
 
-        public:
+            /**
+             * @brief Load artifacts for a single file (acquires its own
+             * session lease — do NOT call in a loop; see the batch loader).
+             */
+            bool loadFileArtifacts(int file_id, const std::string &mode, FileArtifact &artifact);
+
+            /// Single-file load on an already-held session (no pool checkout).
+            bool loadFileArtifacts(Poco::Data::Session &sess, int file_id,
+                                   const std::string &mode, FileArtifact &artifact);
+
+            /**
+             * @brief DB-3: set-based batch load on an already-held session.
+             *
+             * One chunked `IN (...)` query per ~500 ids instead of one pool
+             * checkout + statement per file — processBatch previously issued
+             * tens of thousands of nested lease acquisitions per batch while
+             * already holding a lease, starving every other DB user. Ids
+             * without an embedding row are silently skipped (mirrors the
+             * single loader returning false).
+             */
+            std::vector<FileArtifact> loadFileArtifactsBatch(Poco::Data::Session &sess,
+                                                             const std::vector<int> &file_ids);
             struct RepresentativeInfo
             {
                 int file_id = 0;
@@ -159,16 +182,6 @@ namespace MediaDedup
              * @return Number of files processed
              */
             int processBatch(const std::string &mode, int batch_size, int &last_processed_id);
-
-            /**
-             * @brief Load artifacts for a single file
-             *
-             * @param file_id File ID in scanned_files table
-             * @param mode Server mode (EMBEDDING only)
-             * @param artifact Output artifact data
-             * @return True if artifacts loaded successfully
-             */
-            bool loadFileArtifacts(int file_id, const std::string &mode, FileArtifact &artifact);
 
             /**
              * @brief Compute similarity between two files using embedding-based matching
