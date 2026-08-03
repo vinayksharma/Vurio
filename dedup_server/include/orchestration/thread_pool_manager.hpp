@@ -128,7 +128,6 @@ namespace MediaDedup
         void schedule();
         size_t allowanceFor(const std::string &type) const;
         void onConfigChange(const ConfigChangeEvent &event);
-        void recreateThreadPool();
 
         // Config
         std::shared_ptr<UnifiedObservableConfigManager> cfg_;
