@@ -146,8 +146,11 @@ namespace MediaDedup
                     // Check if cached file still exists
                     if (std::filesystem::exists(cached->cached_path))
                     {
-                        // Cache hit! Update access time and serve
-                        ThumbnailCacheOps::updateAccessTime(*database_manager_, source_path, size, getCurrentTimestamp());
+                        // Cache hit — serve without a DB write. DB-7: the
+                        // per-hit updateAccessTime turned every scroll into a
+                        // write flood serializing against real writers (the
+                        // gRPC path already skips it); MP-2 owns access-time
+                        // tracking when eviction becomes LRU-driven.
                         logger.debug("Cache hit for: %s (size: %d)", source_path, size);
                         streamThumbnailFile(cached->cached_path, response, source_mtime);
                         return;

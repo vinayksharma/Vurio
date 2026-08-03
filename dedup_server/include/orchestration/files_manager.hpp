@@ -50,6 +50,15 @@ namespace MediaDedup
             std::atomic<bool> abortScan_{false};
             std::atomic<bool> pendingReRun_{false};
 
+            // DB-7: new-file rows accumulated during a scan pass and written
+            // in one transaction per batch (one WAL commit instead of one per
+            // file). Touched only from the scan thread (the scanner invokes
+            // the callback synchronously), flushed per batch / per root / on
+            // scan exit.
+            std::vector<ScannedFileRow> pending_upserts_;
+            static constexpr std::size_t kUpsertBatchSize = 500;
+            void flushPendingUpserts();
+
             void onFileEmitted(const std::string &root,
                                const MediaDedup::Files::FileRecord &rec);
         };

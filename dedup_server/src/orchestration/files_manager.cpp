@@ -225,9 +225,15 @@ namespace MediaDedup::Orchestration
 
             if (!exists)
             {
-                // New file - reset processing status to 0, or 3 if ignored
+                // New file - reset processing status to 0, or 3 if ignored.
+                // DB-7: accumulated and written in one transaction per batch —
+                // per-file autocommit upserts made a 160k-file scan cost 160k
+                // WAL commits. The changed-file path below stays immediate
+                // (rare, and ordered against the remove/re-insert sequence).
                 row.processed = is_ignored ? 3 : 0;
-                ScannedFilesOps::upsert(*db_, row);
+                pending_upserts_.push_back(row);
+                if (pending_upserts_.size() >= kUpsertBatchSize)
+                    flushPendingUpserts();
             }
             else
             {
@@ -350,6 +356,9 @@ namespace MediaDedup::Orchestration
                     logger.error(errorMsg);
                     // Continue with the next directory instead of failing the entire scan
                 }
+                // DB-7: write this root's remaining accumulated new files
+                // (also runs after an aborted/failed root scan).
+                flushPendingUpserts();
             }
 
             logger.information("FilesManager scan pass completed");
@@ -360,6 +369,29 @@ namespace MediaDedup::Orchestration
             logger.error("FilesManager scan failed: %s", e.what());
         }
 
+        // Safety net: nothing accumulated may outlive the scan pass.
+        flushPendingUpserts();
         running_ = false;
+    }
+
+    void FilesManager::flushPendingUpserts()
+    {
+        if (pending_upserts_.empty())
+            return;
+        const std::size_t count = pending_upserts_.size();
+        int written = ScannedFilesOps::upsertBatch(*db_, pending_upserts_);
+        if (written != static_cast<int>(count))
+        {
+            Poco::Logger::get("FilesManager").error(
+                "Batched upsert wrote %d of %zu scanned rows; falling back to per-row writes", written, count);
+            // All-or-nothing batch failed: write individually so one bad row
+            // cannot drop the whole batch.
+            if (written == 0)
+            {
+                for (const auto &row : pending_upserts_)
+                    ScannedFilesOps::upsert(*db_, row);
+            }
+        }
+        pending_upserts_.clear();
     }
 }

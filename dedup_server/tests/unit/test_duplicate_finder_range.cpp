@@ -480,3 +480,50 @@ TEST_F(DuplicateFinderRangeTest, GroupPaginationUsesCompositeModeDateIndex)
     EXPECT_NE(plan.find("idx_duplicate_groups_mode_rep_date"), std::string::npos) << plan;
     EXPECT_EQ(plan.find("TEMP B-TREE"), std::string::npos) << "pagination must not sort. Plan:\n" << plan;
 }
+
+// DB-7: getGroupsWithMembers fetches every page member in ONE set-based query
+// instead of one statement per group (N+1). Members must land on the right
+// groups, similarity-sorted, with the representative included.
+TEST_F(DuplicateFinderRangeTest, GroupsWithMembersBatchedFetch)
+{
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+
+    int rep1 = mockScannedFile("/g/rep1.jpg");
+    int mem1 = mockScannedFile("/g/mem1.jpg");
+    int rep2 = mockScannedFile("/g/rep2.jpg");
+    int mem2a = mockScannedFile("/g/mem2a.jpg");
+    int mem2b = mockScannedFile("/g/mem2b.jpg");
+
+    int g1 = DuplicateGroupsOps::createGroup(*db_manager_, "EMBEDDING", rep1, "/g/rep1.jpg", 100, "2025-01-01", 0.96);
+    int g2 = DuplicateGroupsOps::createGroup(*db_manager_, "EMBEDDING", rep2, "/g/rep2.jpg", 200, "2025-01-02", 0.96);
+    ASSERT_GT(g1, 0);
+    ASSERT_GT(g2, 0);
+
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, g1, rep1, "/g/rep1.jpg", 1.0, 100, "2025-01-01", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, g1, mem1, "/g/mem1.jpg", 0.97, 110, "2025-01-01", false));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, g2, rep2, "/g/rep2.jpg", 1.0, 200, "2025-01-02", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, g2, mem2a, "/g/mem2a.jpg", 0.93, 210, "2025-01-02", false));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, g2, mem2b, "/g/mem2b.jpg", 0.98, 220, "2025-01-02", false));
+
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 2u);
+
+    for (const auto &gwm : page.groups)
+    {
+        if (gwm.group.id == g1)
+        {
+            ASSERT_EQ(gwm.members.size(), 2u);
+            EXPECT_TRUE(gwm.members[0].is_representative) << "similarity DESC puts the rep (1.0) first";
+            EXPECT_EQ(gwm.members[1].file_id, mem1);
+        }
+        else
+        {
+            ASSERT_EQ(gwm.group.id, g2);
+            ASSERT_EQ(gwm.members.size(), 3u);
+            // similarity DESC within the group: 1.0, 0.98, 0.93
+            EXPECT_EQ(gwm.members[0].file_id, rep2);
+            EXPECT_EQ(gwm.members[1].file_id, mem2b);
+            EXPECT_EQ(gwm.members[2].file_id, mem2a);
+        }
+    }
+}

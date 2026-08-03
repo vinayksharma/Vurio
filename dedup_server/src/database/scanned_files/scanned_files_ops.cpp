@@ -164,6 +164,38 @@ namespace MediaDedup
         }
     }
 
+    int ScannedFilesOps::upsertBatch(DatabaseManager &db, const std::vector<ScannedFileRow> &rows)
+    {
+        if (rows.empty())
+            return 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            try
+            {
+                sess.begin();
+                for (const auto &row : rows)
+                {
+                    Statement stmt(sess);
+                    bindUpsertParams(stmt, row);
+                }
+                sess.commit();
+            }
+            catch (...)
+            {
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
+            return static_cast<int>(rows.size());
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("upsertBatch failed (%zu rows): %s", rows.size(), std::string(e.what()));
+            return 0;
+        }
+    }
+
     bool ScannedFilesOps::removeByPath(DatabaseManager &db, const std::string &file_path)
     {
         try
@@ -187,9 +219,25 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            sess.begin();
-
             std::string key = location_key;
+
+            // DB-7: collect the cache-file paths FIRST (plain reads). The
+            // unlinks run AFTER commit — previously thousands of filesystem
+            // removes executed inside the write transaction, holding the
+            // single SQLite writer lock across syscalls.
+            std::vector<std::string> cache_files;
+            {
+                Statement sel_thumbs(sess);
+                sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)",
+                    Keywords::into(cache_files), Keywords::use(key), Keywords::now;
+                Statement sel_previews(sess);
+                sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)",
+                    Keywords::into(cache_files), Keywords::use(key), Keywords::now;
+            }
+
+            try
+            {
+            sess.begin();
 
             // Delete from dependent tables using subqueries
             Statement del_members(sess);
@@ -219,54 +267,8 @@ namespace MediaDedup
             Statement del_errors(sess);
             del_errors << "DELETE FROM processing_errors WHERE file_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
-            // Delete physical cached thumbnails
-            Statement sel_thumbs(sess);
-            sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
-            RecordSet rs(sel_thumbs);
-            bool more = rs.moveFirst();
-            int deleted_thumbs = 0;
-            while (more)
-            {
-                std::string cached_path = rs[0].convert<std::string>();
-                try
-                {
-                    if (std::filesystem::exists(cached_path))
-                    {
-                        std::filesystem::remove(cached_path);
-                        deleted_thumbs++;
-                    }
-                }
-                catch (...) {}
-                more = rs.moveNext();
-            }
-            if (deleted_thumbs > 0)
-                Poco::Logger::get("ScannedFilesOps").information("Deleted %d physical thumbnail files for location key: %s", deleted_thumbs, location_key);
-
             Statement del_thumbs(sess);
             del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
-
-            // Delete physical cached previews
-            Statement sel_previews(sess);
-            sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
-            RecordSet rs_previews(sel_previews);
-            bool more_previews = rs_previews.moveFirst();
-            int deleted_previews = 0;
-            while (more_previews)
-            {
-                std::string cached_path = rs_previews[0].convert<std::string>();
-                try
-                {
-                    if (std::filesystem::exists(cached_path))
-                    {
-                        std::filesystem::remove(cached_path);
-                        deleted_previews++;
-                    }
-                }
-                catch (...) {}
-                more_previews = rs_previews.moveNext();
-            }
-            if (deleted_previews > 0)
-                Poco::Logger::get("ScannedFilesOps").information("Deleted %d physical preview files for location key: %s", deleted_previews, location_key);
 
             Statement del_previews(sess);
             del_previews << "DELETE FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
@@ -278,15 +280,38 @@ namespace MediaDedup
             del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
 
             sess.commit();
+            }
+            catch (...)
+            {
+                // DB-7: rollback on the SAME session — the old code acquired a
+                // NEW lease and rolled that one back (a no-op) while the real
+                // transaction unwound with the pool return.
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
+
+            // Unlink cached assets AFTER the commit, outside any transaction.
+            int deleted_files = 0;
+            for (const auto &cached_path : cache_files)
+            {
+                try
+                {
+                    if (std::filesystem::exists(cached_path))
+                    {
+                        std::filesystem::remove(cached_path);
+                        deleted_files++;
+                    }
+                }
+                catch (...) {}
+            }
+            if (deleted_files > 0)
+                Poco::Logger::get("ScannedFilesOps").information("Deleted %d cached media files for location key: %s", deleted_files, location_key);
+
             Poco::Logger::get("ScannedFilesOps").information("Successfully removed all references for location key: " + location_key);
             return true;
         }
         catch (const std::exception &e)
         {
-            try { 
-                auto lease = db.acquireSessionLease();
-                lease.get().rollback(); 
-            } catch(...) {}
             Poco::Logger::get("ScannedFilesOps").error("Failed to remove by location key: %s", std::string(e.what()));
             return false;
         }
@@ -298,84 +323,74 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            sess.begin();
 
+            // DB-7: plain reads first (path + cached assets); unlinks happen
+            // after commit so the write transaction is pure DB work.
             std::string file_path;
-            Statement sel_path(sess);
-            sel_path << "SELECT file_path FROM scanned_files WHERE id=?", Keywords::into(file_path), Keywords::use(file_id);
-            
-            if (sel_path.execute() == 0 || file_path.empty()) {
-                sess.rollback();
-                return false; // File doesn't exist
+            {
+                Statement sel_path(sess);
+                sel_path << "SELECT file_path FROM scanned_files WHERE id=?", Keywords::into(file_path), Keywords::use(file_id);
+                if (sel_path.execute() == 0 || file_path.empty())
+                    return false; // File doesn't exist
             }
 
-            // 1. Delete image artifacts
-            Statement del_artifacts(sess);
-            del_artifacts << "DELETE FROM image_artifacts WHERE file_path=?", Keywords::use(file_path);
-            del_artifacts.execute();
-
-            // 2. Delete processing errors
-            Statement del_errors(sess);
-            del_errors << "DELETE FROM processing_errors WHERE file_path=?", Keywords::use(file_path);
-            del_errors.execute();
-
-            // 3. Delete physical cached thumbnails & thumbnail_cache rows
-            Statement sel_thumbs(sess);
-            sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
-            RecordSet rs_thumbs(sel_thumbs);
-            bool more_thumbs = rs_thumbs.moveFirst();
-            while (more_thumbs)
+            std::vector<std::string> cache_files;
             {
-                std::string cached_path = rs_thumbs[0].convert<std::string>();
+                Statement sel_thumbs(sess);
+                sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path=?",
+                    Keywords::into(cache_files), Keywords::use(file_path), Keywords::now;
+                Statement sel_previews(sess);
+                sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path=?",
+                    Keywords::into(cache_files), Keywords::use(file_path), Keywords::now;
+            }
+
+            try
+            {
+                sess.begin();
+
+                Statement del_artifacts(sess);
+                del_artifacts << "DELETE FROM image_artifacts WHERE file_path=?", Keywords::use(file_path);
+                del_artifacts.execute();
+
+                Statement del_errors(sess);
+                del_errors << "DELETE FROM processing_errors WHERE file_path=?", Keywords::use(file_path);
+                del_errors.execute();
+
+                Statement del_thumbs(sess);
+                del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
+                del_thumbs.execute();
+
+                Statement del_previews(sess);
+                del_previews << "DELETE FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
+                del_previews.execute();
+
+                // Delete the scanned_file row itself. This will CASCADE DELETE
+                // to: duplicate_members, ejected_files_history.
+                Statement del_file(sess);
+                del_file << "DELETE FROM scanned_files WHERE id=?", Keywords::use(file_id);
+                del_file.execute();
+
+                sess.commit();
+            }
+            catch (...)
+            {
+                // Rollback on the SAME session (see removeByLocationKey).
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
+
+            for (const auto &cached_path : cache_files)
+            {
                 try {
                     if (std::filesystem::exists(cached_path)) {
                         std::filesystem::remove(cached_path);
                     }
                 } catch (...) {}
-                more_thumbs = rs_thumbs.moveNext();
             }
-
-            Statement del_thumbs(sess);
-            del_thumbs << "DELETE FROM thumbnail_cache WHERE source_path=?", Keywords::use(file_path);
-            del_thumbs.execute();
-
-            // 3.5 Delete physical cached previews & preview_cache rows
-            Statement sel_previews(sess);
-            sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
-            RecordSet rs_previews(sel_previews);
-            bool more_previews = rs_previews.moveFirst();
-            while (more_previews)
-            {
-                std::string cached_path = rs_previews[0].convert<std::string>();
-                try {
-                    if (std::filesystem::exists(cached_path)) {
-                        std::filesystem::remove(cached_path);
-                    }
-                } catch (...) {}
-                more_previews = rs_previews.moveNext();
-            }
-
-            Statement del_previews(sess);
-            del_previews << "DELETE FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
-            del_previews.execute();
-
-            // 4. Delete the scanned_file row itself
-            // This will CASCADE DELETE to:
-            // - duplicate_members
-            // - ejected_files_history
-            Statement del_file(sess);
-            del_file << "DELETE FROM scanned_files WHERE id=?", Keywords::use(file_id);
-            del_file.execute();
-
-            sess.commit();
             return true;
         }
         catch (const std::exception &e)
         {
-            try { 
-                auto lease = db.acquireSessionLease();
-                lease.get().rollback(); 
-            } catch(...) {}
             Poco::Logger::get("ScannedFilesOps").error("Failed to completely remove by id %d: %s", file_id, std::string(e.what()));
             return false;
         }
@@ -501,6 +516,32 @@ namespace MediaDedup
         return 0;
     }
 
+    bool ScannedFilesOps::getStatusCounts(DatabaseManager &db, int max_id, ScanStatusCounts &out)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            int m_id = max_id;
+            stmt << "SELECT COUNT(*), "
+                    "COALESCE(SUM(processed=2 OR processed=3),0), "
+                    "COALESCE(SUM(processed < 0 AND processed != -2 AND processed != -99),0), "
+                    "COALESCE(SUM(processed=2),0), "
+                    "COALESCE(SUM(processed=2 AND id <= ?),0) "
+                    "FROM scanned_files",
+                Keywords::into(out.total), Keywords::into(out.processed), Keywords::into(out.errors),
+                Keywords::into(out.processed_success), Keywords::into(out.processed_up_to),
+                Keywords::use(m_id), Keywords::now;
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").error("getStatusCounts failed: %s", std::string(e.what()));
+            return false;
+        }
+    }
+
     int ScannedFilesOps::countProcessedSuccess(DatabaseManager &db)
     {
         try
@@ -612,36 +653,32 @@ namespace MediaDedup
     {
         try
         {
-            // Get current status of the file
-            auto current_file = getByPath(db, file_path);
-            if (!current_file.has_value())
+            // DB-7: one UPDATE with the escalation folded into a CASE — the
+            // old shape read the FULL 15-column row (getByPath) purely to
+            // inspect `processed`, then issued a second statement, doubling
+            // the round trips on every processing-failure path. Escalation:
+            // an error landing on an existing error becomes state-100
+            // (e.g. -1 on -6 -> -101); anything else stores `state` as-is.
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            int s = state;
+            std::string p = file_path;
+            Statement stmt(sess);
+            stmt << "UPDATE scanned_files SET processed = CASE WHEN processed < 0 AND ? < 0 THEN ? - 100 ELSE ? END "
+                    "WHERE file_path = ?",
+                Keywords::use(s), Keywords::use(s), Keywords::use(s), Keywords::use(p);
+            stmt.execute();
+
+            int changed = 0;
+            Statement count(sess);
+            count << "SELECT changes()", Keywords::into(changed), Keywords::now;
+            if (changed == 0)
             {
                 Poco::Logger::get("ScannedFilesOps").error("File not found in database for escalation: " + file_path);
                 return false;
             }
-
-            // Get current status
-            int current_status = current_file->processed;
-
-            // Determine final status based on escalation logic
-            int final_status = state;
-
-            // If current status is already an error (< 0) and we're setting another error, escalate
-            if (current_status < 0 && state < 0)
-            {
-                // Escalate by subtracting 100 (e.g., -1 becomes -101, -6 becomes -106)
-                final_status = state - 100;
-                Poco::Logger::get("ScannedFilesOps").information("Escalating error for file " + file_path + " from " + std::to_string(current_status) + " to " + std::to_string(final_status) + " (original error: " + std::to_string(state) + ")");
-            }
-            else if (current_status < 0)
-            {
-                // If current status is error but new state is success, use success state
-                final_status = state;
-                Poco::Logger::get("ScannedFilesOps").information("File " + file_path + " recovered from error " + std::to_string(current_status) + " to success state " + std::to_string(state));
-            }
-
-            // Use the existing markProcessed method with the final status
-            return markProcessed(db, file_path, final_status);
+            return true;
         }
         catch (const std::exception &e)
         {
