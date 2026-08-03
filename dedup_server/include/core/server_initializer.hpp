@@ -76,7 +76,7 @@ namespace MediaDedup
 
         // Getters for initialized components
         std::shared_ptr<UnifiedObservableConfigManager> getConfigManager() const { return config_manager_; }
-        std::unique_ptr<DatabaseManager> &getDatabaseManager() { return database_manager_; }
+        std::shared_ptr<DatabaseManager> &getDatabaseManager() { return database_manager_; }
         std::unique_ptr<WebServer> &getWebServer() { return web_server_; }
         std::shared_ptr<ThreadPoolManager> &getTPM() { return tpm_; }
         std::shared_ptr<Orchestration::SchedulerService> &getSchedulerService() { return scheduler_service_; }
@@ -88,7 +88,10 @@ namespace MediaDedup
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
-        std::unique_ptr<DatabaseManager> database_manager_;
+        // CC-5: REAL shared ownership. The old unique_ptr was laundered
+        // through no-op-deleter shared_ptrs handed to every consumer and
+        // fire-and-forget task - lifetime safety that looked real but wasn't.
+        std::shared_ptr<DatabaseManager> database_manager_;
         std::unique_ptr<WebServer> web_server_;
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;

@@ -99,7 +99,7 @@ namespace MediaDedup
             }
 
             // Initialize database manager with config manager for reactive pool sizing
-            database_manager_ = std::make_unique<DatabaseManager>(db_path, config_manager_);
+            database_manager_ = std::make_shared<DatabaseManager>(db_path, config_manager_);
             if (!database_manager_->initialize())
             {
                 logger.error("Failed to initialize database manager");
@@ -191,7 +191,7 @@ namespace MediaDedup
             }
 
             // Set database manager and thumbnail cache on web server for thumbnail endpoint
-            auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+            auto db_shared = database_manager_; // CC-5: genuine shared ownership
             if (db_shared)
             {
                 web_server_->setDatabaseManager(db_shared);
@@ -322,7 +322,7 @@ namespace MediaDedup
             OnnxAdapter::initializeSessionManager(config_manager_);
 
             // Initialize MediaProcessor first (needed by FilesManager)
-            auto db_shared = std::shared_ptr<DatabaseManager>(database_manager_.get(), [](DatabaseManager *) {});
+            auto db_shared = database_manager_; // CC-5: genuine shared ownership
             media_processor_ = std::make_shared<MediaProcessor>(config_manager_, db_shared, tpm_, thumbnail_disk_cache_, transcoding_disk_cache_);
             if (!media_processor_->initialize())
             {

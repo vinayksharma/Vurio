@@ -1208,7 +1208,11 @@ namespace MediaDedupServer
 
             logger.information("Starting background database integrity check.");
 
-            // Launch detached thread
+            // Detached but lifetime-safe (CC-5): every argument is a REAL
+            // shared_ptr (DatabaseManager ownership is genuinely shared since
+            // CC-5), so the thread keeps its dependencies alive on its own.
+            // is_running gates re-entry; the catch handlers above/below
+            // guarantee it resets.
             std::thread t(performIntegrityCheck, db, cfg, scheduler, tpm);
             t.detach();
 
@@ -1294,10 +1298,19 @@ namespace MediaDedupServer
                 tpm->clearQueues();
 
                 logger.information("Waiting for ThreadPoolManager to drain running tasks...");
-                while (tpm->getStatus().runningTotal > 0) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                // CC-5: bounded — the old unbounded 5 Hz loop spun forever if
+                // anything wedged the pool, on a thread nobody could stop.
+                {
+                    const auto drain_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+                    while (tpm->getStatus().runningTotal > 0 &&
+                           std::chrono::steady_clock::now() < drain_deadline) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    }
+                    if (tpm->getStatus().runningTotal > 0)
+                        logger.warning("ThreadPoolManager did not fully drain within 60 s; proceeding with the check anyway.");
+                    else
+                        logger.information("All background threads halted successfully.");
                 }
-                logger.information("All background threads halted successfully.");
 
                 // Phase 2: Sweep Scanned Files
                 {
@@ -1511,6 +1524,16 @@ namespace MediaDedupServer
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 state_.is_running = false;
                 state_.current_phase = "Failed: " + std::string(e.what());
+            } catch (...) {
+                // CC-5: without this, a non-std exception escaping the thread
+                // function called std::terminate — and even short of that,
+                // is_running stayed true forever (blocking future checks) with
+                // the scheduler left paused.
+                logger.error("Unknown exception during database integrity check");
+                try { scheduler->resume(); } catch (...) {}
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                state_.is_running = false;
+                state_.current_phase = "Failed: unknown error";
             }
         }
         BackupDatabaseHandler::BackupDatabaseHandler(std::shared_ptr<MediaDedup::DatabaseManager> db)
