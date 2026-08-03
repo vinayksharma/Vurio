@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <set>
 #include <filesystem>
+#include <Poco/Data/Session.h>
+#include <Poco/Data/Statement.h>
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/user_settings_ops.hpp"
@@ -27,6 +29,43 @@ namespace MediaDedup
             r.is_network_file = false;
             r.location_key = "mediaLocation:test123"; // Test location key
             return r;
+        }
+
+        // DB-2 (backend_optimization_plan.md): the raw exif_blob is dead — it
+        // was 2.83 GB of write-only data. Ingest must keep writing the PARSED
+        // EXIF fields while leaving the legacy blob column NULL.
+        TEST(ScannedFilesOpsTest, IngestWritesParsedExifButNeverTheBlob)
+        {
+            std::string db_path = testDbPath("test_scanned_files_exif.sqlite");
+            std::remove(db_path.c_str());
+
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            auto row = makeRow("/tmp/exif.jpg");
+            ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
+            ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(
+                dbm, row.file_path, "2024:06:01 10:00:00", "TestCam", "6000x4000"));
+
+            auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
+            ASSERT_TRUE(fetched.has_value());
+            EXPECT_EQ(fetched->exif_datetime.value_or(""), "2024:06:01 10:00:00");
+            EXPECT_EQ(fetched->exif_camera.value_or(""), "TestCam");
+            EXPECT_EQ(fetched->exif_resolution.value_or(""), "6000x4000");
+
+            // The legacy column stays NULL through both write paths.
+            {
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int blob_is_null = 0;
+                Poco::Data::Statement stmt(sess);
+                std::string p = row.file_path;
+                stmt << "SELECT exif_blob IS NULL FROM scanned_files WHERE file_path = ?",
+                    Poco::Data::Keywords::into(blob_is_null), Poco::Data::Keywords::use(p),
+                    Poco::Data::Keywords::now;
+                EXPECT_EQ(blob_is_null, 1) << "exif_blob must never be written again (DB-2)";
+            }
         }
 
         TEST(ScannedFilesOpsTest, CrudAndProcessingStates)

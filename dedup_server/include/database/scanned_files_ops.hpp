@@ -28,7 +28,9 @@ namespace MediaDedup
         std::optional<std::string> exif_datetime;
         std::optional<std::string> exif_camera;
         std::optional<std::string> exif_resolution;
-        std::optional<std::vector<std::uint8_t>> exif_blob;
+        // DB-2: the raw exif_blob is no longer carried or written — it was
+        // 2.83 GB of write-only data (half the database). The schema column
+        // survives as NULL for old installs.
     };
 
     class ScannedFilesOps
@@ -83,10 +85,10 @@ namespace MediaDedup
         // Update metadata for a file
         static bool updateMetadata(DatabaseManager &db, const std::string &file_path, const std::string &file_metadata);
         
-        // Update EXIF metadata
-        static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path, 
-                                     const std::string &exif_datetime, const std::string &exif_camera, 
-                                     const std::string &exif_resolution, const std::vector<std::uint8_t> &exif_blob);
+        // Update EXIF metadata (parsed fields only; DB-2 removed the raw blob)
+        static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path,
+                                     const std::string &exif_datetime, const std::string &exif_camera,
+                                     const std::string &exif_resolution);
 
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);

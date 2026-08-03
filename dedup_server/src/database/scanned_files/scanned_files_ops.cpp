@@ -121,11 +121,6 @@ namespace MediaDedup
         std::string exif_dt = r.exif_datetime.value_or("");
         std::string exif_cam = r.exif_camera.value_or("");
         std::string exif_res = r.exif_resolution.value_or("");
-        
-        Poco::Data::BLOB blob_obj;
-        if (r.exif_blob.has_value() && !r.exif_blob->empty()) {
-            blob_obj.assignRaw(r.exif_blob->data(), r.exif_blob->size());
-        }
         std::string ignore_reason = r.ignore_reason.value_or("");
 
         stmt << std::string(SQL::kUpsertScannedFile),
@@ -141,7 +136,6 @@ namespace MediaDedup
             Keywords::use(exif_dt),
             Keywords::use(exif_cam),
             Keywords::use(exif_res),
-            Keywords::use(blob_obj),
             Keywords::use(ignore_reason),
             Keywords::now;
     }
@@ -875,20 +869,15 @@ namespace MediaDedup
         }
     }
 
-    bool ScannedFilesOps::updateExifMetadata(DatabaseManager &db, const std::string &file_path, 
-                                 const std::string &exif_datetime, const std::string &exif_camera, 
-                                 const std::string &exif_resolution, const std::vector<std::uint8_t> &exif_blob)
+    bool ScannedFilesOps::updateExifMetadata(DatabaseManager &db, const std::string &file_path,
+                                 const std::string &exif_datetime, const std::string &exif_camera,
+                                 const std::string &exif_resolution)
     {
         try
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            
-            Poco::Data::BLOB blob_obj;
-            if (!exif_blob.empty()) {
-                blob_obj.assignRaw(exif_blob.data(), exif_blob.size());
-            }
 
             // Bind references directly, they won't go out of scope before the execute
             std::string dt = exif_datetime;
@@ -896,13 +885,12 @@ namespace MediaDedup
             std::string res = exif_resolution;
             std::string p = file_path;
 
-            stmt << std::string(SQL::kUpdateExifMetadata), 
-                Keywords::use(dt), 
-                Keywords::use(cam), 
-                Keywords::use(res), 
-                Keywords::use(blob_obj),
+            stmt << std::string(SQL::kUpdateExifMetadata),
+                Keywords::use(dt),
+                Keywords::use(cam),
+                Keywords::use(res),
                 Keywords::use(p), Keywords::now;
-                
+
             return true;
         }
         catch (const std::exception &e)

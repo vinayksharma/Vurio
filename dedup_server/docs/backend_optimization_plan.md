@@ -294,6 +294,21 @@ page ≈ **1.3 s of DB work** under a single held lease.
   "Timed out acquiring DB session from pool".
 
 ### DB-2. Evict the 2.83 GB write-only `exif_blob`
+
+> **STATUS: ✅ DONE 2026-08-02 (validated).**
+> **Live DB: 5.65 GB → 2.53 GB (−3.1 GB, 55%); integrity_check ok; day
+> queries ~137 ms on the slimmed DB.** Chose "stop writing" over the side
+> table: the blob is regenerable from the originals and MP-1 replaces EXIF
+> extraction anyway. Code: `exif_blob` removed from `kUpsertScannedFile`,
+> `kUpdateExifMetadata`, `ScannedFileRow`, and `updateExifMetadata`'s
+> signature; the schema column survives as NULL. **Bonus: the second magick
+> subprocess (`magick <file> exif:`) existed solely to produce this blob — a
+> FULL decode of the original per ingested file — and is deleted outright
+> (half of MP-1's per-file win landed early).** One-time offline migration
+> executed on the live DB with the server stopped (UPDATE→NULL 3.3 s +
+> VACUUM 15 s); pre-migration snapshot retained in the session scratchpad.
+> Test: `ScannedFilesOpsTest.IngestWritesParsedExifButNeverTheBlob`.
+> Suite green (269 tests).
 - **Files:** written at `src/media_processors/image_processor.cpp:94-123` via
   `kUpsertScannedFile`/`kUpdateExifMetadata` (`sql_constants.hpp:149,285`).
 - **Problem (measured):** `sum(length(exif_blob)) = 2,831 MB` across 92,151 rows —
