@@ -76,9 +76,11 @@ TEST_F(DuplicateFinderRangeTest, LoadsThreshold)
 }
 
 /**
- * Test that decreasing threshold triggers reprocessing
+ * DF-3: decreasing the similarity threshold (within the edge floor) must NOT
+ * wipe groups or reset the checkpoint anymore — it only schedules a re-cluster
+ * from the persisted edge list, picked up by the next finder run.
  */
-TEST_F(DuplicateFinderRangeTest, ThresholdExpansionTriggersReprocess)
+TEST_F(DuplicateFinderRangeTest, ThresholdDecreaseSchedulesReclusterWithoutWipe)
 {
     DuplicateFinder finder(config_, *db_manager_);
     ASSERT_TRUE(finder.initialize());
@@ -96,28 +98,77 @@ TEST_F(DuplicateFinderRangeTest, ThresholdExpansionTriggersReprocess)
     ASSERT_TRUE(DuplicateGroupsOps::upsertCheckpoint(
         *db_manager_, "EMBEDDING", 100, 100, 5, 2, 0));
 
-    // Verify group and checkpoint exist
-    auto checkpoint_before = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
-    ASSERT_TRUE(checkpoint_before.has_value());
-    EXPECT_EQ(100, checkpoint_before->last_processed_id);
-
-    int groups_before = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
-    EXPECT_EQ(1, groups_before);
-
-    // Trigger threshold expansion by decreasing similarity threshold
+    // Decrease similarity threshold, staying above the edge floor (0.85)
     config_->setPropertyValue("duplicates.threshold.similarity", 0.90);
 
     // Give config change time to propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Verify groups were deleted
+    // Groups must survive the slider move
     int groups_after = DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING");
-    EXPECT_EQ(0, groups_after);
+    EXPECT_EQ(1, groups_after) << "threshold change must not wipe groups";
 
-    // Verify checkpoint was reset
+    // Checkpoint must be untouched (no re-discovery needed)
+    auto checkpoint_after = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint_after.has_value());
+    EXPECT_EQ(100, checkpoint_after->last_processed_id) << "checkpoint must not reset";
+}
+
+/**
+ * DF-3: dropping the similarity threshold BELOW the edge discovery floor is
+ * the one case where recorded edges cannot answer — legacy full reset applies
+ * (groups wiped, checkpoint reset, edges cleared for re-discovery).
+ */
+TEST_F(DuplicateFinderRangeTest, ThresholdBelowEdgeFloorTriggersFullReset)
+{
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+
+    int file_id = mockScannedFile("/test/file1.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_manager_, "EMBEDDING", file_id, "/test/file1.jpg", 1000, "2025-01-01", 0.96);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::upsertCheckpoint(
+        *db_manager_, "EMBEDDING", 100, 100, 5, 2, 0));
+
+    // 0.80 < edge floor 0.85: recorded edges are insufficient
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.80);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    EXPECT_EQ(0, DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"))
+        << "below-floor threshold requires full re-discovery";
     auto checkpoint_after = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
     ASSERT_TRUE(checkpoint_after.has_value());
     EXPECT_EQ(0, checkpoint_after->last_processed_id);
+}
+
+/**
+ * DF-3 migration: a pre-edge-list install (advanced watermark, groups, but an
+ * EMPTY duplicate_edges table) must get its checkpoint reset at initialize so
+ * discovery repopulates the edges — while the existing groups stay visible.
+ */
+TEST_F(DuplicateFinderRangeTest, EmptyEdgeTableBehindWatermarkResetsCheckpoint)
+{
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+
+    int file_id = mockScannedFile("/test/legacy_rep.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_manager_, "EMBEDDING", file_id, "/test/legacy_rep.jpg", 1000, "2025-01-01", 0.96);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::upsertCheckpoint(
+        *db_manager_, "EMBEDDING", 100, 100, 5, 2, 0));
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+
+    auto checkpoint = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint.has_value());
+    EXPECT_EQ(0, checkpoint->last_processed_id)
+        << "watermark with no edges must reset for one-time re-discovery";
+    EXPECT_EQ(1, DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"))
+        << "existing groups must stay visible through the migration";
 }
 
 /**
@@ -234,22 +285,6 @@ TEST_F(DuplicateFinderRangeTest, ResetCheckpointWorks)
     EXPECT_EQ(0, checkpoint_after->duplicates_found);
     EXPECT_EQ(0, checkpoint_after->groups_created);
     EXPECT_EQ(0, checkpoint_after->groups_updated);
-}
-
-/**
- * Test that performCrossGroupChecking can be invoked (uses duplicate threshold).
- * With no groups or a single group, no moves occur.
- */
-TEST_F(DuplicateFinderRangeTest, CrossGroupCheckingExecutes)
-{
-    config_->setPropertyValue("duplicates.threshold.similarity", 0.30);
-    config_->setPropertyValue("duplicates.threshold.duplicate", 0.80);
-
-    DuplicateFinder finder(config_, *db_manager_);
-    ASSERT_TRUE(finder.initialize());
-
-    int moves = finder.performCrossGroupChecking("EMBEDDING", 0.80);
-    EXPECT_EQ(0, moves);
 }
 
 /**
@@ -691,6 +726,110 @@ TEST_F(DuplicateFinderRangeTest, FindDuplicatesGroupsViaKnnIndexEndToEnd)
     EXPECT_TRUE(member_ids.count(id_a));
     EXPECT_TRUE(member_ids.count(id_a2));
     EXPECT_FALSE(member_ids.count(id_b));
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-3 end-to-end: moving the tightness slider re-clusters from the persisted
+// edge list — no group wipe, no checkpoint reset, no embedding re-comparison.
+// Three files: a and a2 are near-identical (cos ~0.9997); m sits at ~0.93 to
+// both. At similarity 0.95 the group is {a, a2}; edges to m are recorded at
+// discovery time (>= 0.85 floor) but below the grouping bar. Sliding the
+// threshold to 0.92 must grow the SAME group to {a, a2, m} purely from edges.
+TEST_F(DuplicateFinderRangeTest, SliderReclusterFromEdgesEndToEnd)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df3_slider_recluster.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.95);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    auto addProcessedFile = [&](const std::string &path, const std::vector<float> &vec) {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": 1000}";
+        row.processed = 2;
+        EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+        auto stored = ScannedFilesOps::getByPath(*db_manager_, path);
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+        return stored ? stored->id : 0;
+    };
+
+    // cos(a, a2) ~ 0.9997; cos(m, a) = cos(m, a2) ~ 0.93 (unit m by design)
+    std::vector<float> a  = {2.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> a2 = {3.0f, 0.0f, 0.06f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> m  = {0.93f, 0.0f, 0.0f, 0.36756f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+    int id_a  = addProcessedFile("/df3/a.jpg", a);
+    int id_a2 = addProcessedFile("/df3/a2.jpg", a2);
+    int id_m  = addProcessedFile("/df3/m.jpg", m);
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_a2, 0);
+    ASSERT_GT(id_m, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    // Tight threshold: one group of the two near-identical files.
+    auto page1 = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page1.groups.size(), 1u);
+    ASSERT_EQ(page1.groups[0].members.size(), 2u);
+    const int original_group_id = page1.groups[0].group.id;
+
+    // All three pairs cleared the discovery floor, so all edges are on disk.
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        int edge_count = 0;
+        Poco::Data::Statement q(lease.get());
+        q << "SELECT COUNT(*) FROM duplicate_edges",
+            Poco::Data::Keywords::into(edge_count), Poco::Data::Keywords::now;
+        EXPECT_EQ(edge_count, 3) << "a-a2, a-m, a2-m all >= edge floor";
+    }
+    auto checkpoint_before = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint_before.has_value());
+
+    // Slide the threshold looser. Groups must survive the config change...
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "slider must not wipe groups";
+
+    // ...and the next finder run re-clusters from edges: same group, now 3 members.
+    finder.findDuplicates();
+
+    auto page2 = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page2.groups.size(), 1u);
+    EXPECT_EQ(page2.groups[0].group.id, original_group_id) << "group id must be stable across re-cluster";
+    ASSERT_EQ(page2.groups[0].members.size(), 3u);
+    std::set<int> member_ids;
+    for (const auto &memb : page2.groups[0].members)
+        member_ids.insert(memb.file_id);
+    EXPECT_TRUE(member_ids.count(id_a));
+    EXPECT_TRUE(member_ids.count(id_a2));
+    EXPECT_TRUE(member_ids.count(id_m)) << "borderline file joins at the looser threshold";
+
+    auto checkpoint_after = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint_after.has_value());
+    EXPECT_EQ(checkpoint_after->last_processed_id, checkpoint_before->last_processed_id)
+        << "re-cluster must not re-discover: watermark untouched";
 
     db_manager_.reset();
     std::filesystem::remove(db_path);

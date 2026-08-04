@@ -354,6 +354,20 @@ namespace MediaDedup
             "    FOREIGN KEY (file_id) REFERENCES scanned_files(id) ON DELETE CASCADE\n"
             ");";
 
+        // DF-3: persisted similarity edges recorded at discovery time (score
+        // >= the edge floor). Grouping is a union-find re-cluster over this
+        // table, so moving the tightness slider never re-compares embeddings.
+        inline constexpr std::string_view kCreateDuplicateEdgesTable =
+            "CREATE TABLE IF NOT EXISTS duplicate_edges (\n"
+            "    file_a INTEGER NOT NULL,\n"
+            "    file_b INTEGER NOT NULL,\n"
+            "    score REAL NOT NULL,\n"
+            "    PRIMARY KEY (file_a, file_b)\n"
+            ") WITHOUT ROWID;";
+
+        inline constexpr std::string_view kCreateDuplicateEdgesIndexScore =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_score ON duplicate_edges(score);";
+
         inline constexpr std::string_view kCreateDuplicateProcessingCheckpointTable =
             "CREATE TABLE IF NOT EXISTS duplicate_processing_checkpoint (\n"
             "    mode TEXT PRIMARY KEY,\n"

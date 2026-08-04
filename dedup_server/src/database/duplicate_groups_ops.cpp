@@ -41,6 +41,13 @@ namespace MediaDedup
                 return false;
             }
 
+            // DF-3: persisted similarity edges (union-find re-cluster source)
+            if (!db.ensureTableExists("duplicate_edges", SQL::kCreateDuplicateEdgesTable))
+            {
+                logger.error("Failed to create duplicate_edges table");
+                return false;
+            }
+
             // Ensure thumbnail_cache table exists since we now join with it
             if (!ThumbnailCacheOps::ensureTable(db))
             {
@@ -61,6 +68,7 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateDuplicateMembersIndexFile), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexRepGroupFile), now;
+            sess << std::string(SQL::kCreateDuplicateEdgesIndexScore), now;
 
             logger.debug("Successfully ensured all duplicate detection tables and indexes");
             return true;

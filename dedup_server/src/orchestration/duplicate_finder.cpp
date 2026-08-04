@@ -13,6 +13,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Dynamic/Var.h>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <set>
 #include <sstream>
@@ -172,6 +173,16 @@ namespace MediaDedup
                 embedding_threshold_duplicate_ = 0.96;
             }
 
+            // DF-3: edge discovery floor — must sit at or below the similarity
+            // threshold so every group-relevant pair has a recorded edge.
+            edge_floor_ = cfg_->getPropertyValue<double>("duplicates.edges.floor", 0.85);
+            if (edge_floor_ > embedding_threshold_similarity_)
+            {
+                logger.warning("duplicates.edges.floor (%.3f) above similarity threshold (%.3f); clamping.",
+                               edge_floor_, embedding_threshold_similarity_);
+                edge_floor_ = embedding_threshold_similarity_;
+            }
+
             std::string purity_str = cfg_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
             purity_order_ = parsePurityOrder(purity_str);
             // Metadata filtering parameters
@@ -180,6 +191,36 @@ namespace MediaDedup
             dimension_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.dimensionTolerance", 0.20);
             file_size_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.fileSizeTolerance", 0.50);
             require_same_format_ = cfg_->getPropertyValue<bool>("duplicates.metadata.requireSameFormat", false);
+
+            // DF-3 migration: a pre-edge-list install has groups and an
+            // advanced watermark but an EMPTY duplicate_edges table — a
+            // re-cluster would wipe every group and re-discovery would never
+            // trigger. Reset the watermark once so discovery repopulates the
+            // edges; existing groups stay visible and the first rebuild
+            // reuses their ids via representative matching.
+            try
+            {
+                auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, "EMBEDDING");
+                if (checkpoint.has_value() && checkpoint->last_processed_id > 0)
+                {
+                    int edge_count = 0;
+                    {
+                        auto lease = db_.acquireSessionLease();
+                        Statement stmt(lease.get());
+                        stmt << "SELECT COUNT(*) FROM duplicate_edges", into(edge_count), now;
+                    }
+                    if (edge_count == 0)
+                    {
+                        logger.information("No recorded duplicate edges behind watermark %d: resetting checkpoint for one-time edge discovery.",
+                                           checkpoint->last_processed_id);
+                        DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
+                    }
+                }
+            }
+            catch (const std::exception &e)
+            {
+                logger.warning("Edge-list migration check failed: %s", std::string(e.what()));
+            }
 
             // Subscribe to config changes
             cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
@@ -216,68 +257,51 @@ namespace MediaDedup
 
             try
             {
-                // Use EMBEDDING mode (single mode operation)
                 std::string mode_str = "EMBEDDING";
 
-                logger.information("Running duplicate detection in %s mode", mode_str);
-
-                // Load checkpoint
                 auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, mode_str);
                 int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
-
                 logger.debug("Resuming from checkpoint: last_processed_id=%d", last_processed_id);
 
-                // DF-1: run-level state. The representative + ungrouped pool
-                // is loaded ONCE (on the first non-empty batch) and mutated in
-                // memory as files get grouped; the arena holds every embedding
-                // touched this run as normalized floats.
+                // DF-3: drop edges referencing deleted files BEFORE clustering
+                // — stale edges would resurrect their groups.
+                purgeOrphanEdges();
+
                 arena_.clear();
                 RunState run_state;
 
-                // Process batches until no more new files or aborted
+                // Phase 1 — DISCOVERY: record pair scores >= edge_floor_ as
+                // persistent edges (KNN-driven; batches advance the id
+                // watermark). Grouping no longer happens per file.
                 int total_processed = 0;
                 int batch_count = 0;
                 while (!abort_.load())
                 {
                     int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state);
                     if (processed == 0)
-                    {
-                        break; // No more files to process
-                    }
-
+                        break;
                     total_processed += processed;
                     batch_count++;
-                    // last_processed_id is updated by reference inside processBatch
-
                     logger.debug("Processed batch %d: %d files (total: %d)",
                                  batch_count, processed, total_processed);
                 }
 
                 if (abort_.load())
-                {
                     logger.information("Duplicate detection run aborted: processed %d files in %d batches",
                                        total_processed, batch_count);
-                }
                 else
-                {
                     logger.information("Duplicate detection run completed: processed %d files in %d batches",
                                        total_processed, batch_count);
-                }
 
-                // Perform cross-group checking exactly ONCE at the end of the run,
-                // but ONLY if new files were actually processed. If no new files were added,
-                // no new groups were created, so re-running the check will yield 0 moves.
-                if (total_processed > 0)
+                // Phase 2 — CLUSTERING: union-find over the recorded edges at
+                // the current similarity threshold. Runs when new edges were
+                // discovered OR a threshold change requested a re-cluster
+                // (the slider no longer wipes groups or the checkpoint).
+                if (!abort_.load() && (total_processed > 0 || regroup_requested_.exchange(false)))
                 {
-                    double threshold_max = getThresholdMax(mode_str);
-                    int cross_group_moves = performCrossGroupChecking(mode_str, threshold_max);
-                    if (cross_group_moves > 0)
-                    {
-                        logger.information("Cross-group optimization completed: moved %d files to better-matching groups", cross_group_moves);
-                    }
+                    rebuildGroupsFromEdges(mode_str);
                 }
 
-                // Log current statistics
                 auto stats = getStats();
                 logger.information("Current stats: %d groups, %d total files in groups, %d distinct duplicates",
                                    stats.total_groups, stats.total_duplicates, stats.files_with_duplicates);
@@ -296,90 +320,25 @@ namespace MediaDedup
             running_.store(false);
         }
 
-        std::optional<int> DuplicateFinder::getGroupIdForFile(int file_id, const std::string &mode)
+        void DuplicateFinder::purgeOrphanEdges()
         {
             try
             {
                 auto lease = db_.acquireSessionLease();
                 Session &sess = lease.get();
                 Statement stmt(sess);
-
-                int fid = file_id;
-                std::string mode_str = mode;
-                int group_id = 0;
-
-                // Query duplicate_members joined with duplicate_groups to ensure mode matches
-                std::string query =
-                    "SELECT dm.group_id FROM duplicate_members dm "
-                    "JOIN duplicate_groups dg ON dm.group_id = dg.id "
-                    "WHERE dm.file_id = ? AND dg.mode = ? LIMIT 1";
-
-                stmt << query, into(group_id), use(fid), use(mode_str), now;
-
-                if (stmt.execute() > 0 && group_id > 0)
-                {
-                    return group_id;
-                }
-                return std::nullopt;
+                stmt << "DELETE FROM duplicate_edges WHERE file_a NOT IN (SELECT id FROM scanned_files) "
+                        "OR file_b NOT IN (SELECT id FROM scanned_files)", now;
+                int changes = 0;
+                Statement count(sess);
+                count << "SELECT changes()", into(changes), now;
+                if (changes > 0)
+                    finderLogger().information("Purged %d orphan duplicate edge(s)", changes);
             }
             catch (const std::exception &e)
             {
-                finderLogger().error("Exception in getGroupIdForFile: %s", std::string(e.what()));
-                return std::nullopt;
+                finderLogger().warning("purgeOrphanEdges failed: %s", std::string(e.what()));
             }
-        }
-
-        bool DuplicateFinder::areMetadataCompatible(const FileArtifact &file1, const FileArtifact &file2)
-        {
-            // If metadata filtering is disabled, all files are compatible
-            if (!metadata_filtering_enabled_)
-            {
-                return true;
-            }
-
-            Poco::Logger &logger = finderLogger();
-
-            // Check file format (extension) if required
-            if (require_same_format_)
-            {
-                std::string ext1 = file1.file_path.substr(file1.file_path.find_last_of('.'));
-                std::string ext2 = file2.file_path.substr(file2.file_path.find_last_of('.'));
-
-                std::transform(ext1.begin(), ext1.end(), ext1.begin(), ::tolower);
-                std::transform(ext2.begin(), ext2.end(), ext2.begin(), ::tolower);
-
-                if (ext1 != ext2)
-                {
-                    logger.trace("Metadata filter: different formats (%s vs %s)", ext1.c_str(), ext2.c_str());
-                    return false;
-                }
-            }
-
-            // Extract dimensions from file_metadata (stored in FileArtifact during loading)
-            // For now, we'll use file_size as a proxy since we don't have dimensions in FileArtifact
-            // This is still effective for filtering very different images
-
-            // Check file size tolerance
-            if (file1.file_size > 0 && file2.file_size > 0)
-            {
-                double size_ratio = static_cast<double>(std::max(file1.file_size, file2.file_size)) /
-                                    static_cast<double>(std::min(file1.file_size, file2.file_size));
-
-                double max_ratio = 1.0 + file_size_tolerance_;
-
-                if (size_ratio > max_ratio)
-                {
-                    logger.trace("Metadata filter: file size too different (ratio=%.2f, max=%.2f)",
-                                 size_ratio, max_ratio);
-                    return false;
-                }
-            }
-
-            // TODO: Extract actual dimensions from metadata JSON for aspect ratio and dimension checks
-            // This would require parsing the metadata JSON here or passing parsed metadata
-            // For now, file size filtering alone provides significant improvement
-
-            return true;
         }
 
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id,
@@ -389,613 +348,187 @@ namespace MediaDedup
 
             try
             {
-                // Query for newly processed files (status=2) with id > last_processed_id
-                auto lease = db_.acquireSessionLease();
-                Session &sess = lease.get();
-
-                std::string query =
-                    "SELECT id, file_path, file_metadata FROM scanned_files "
-                    "WHERE id > ? AND ";
-
-                // Add processing status check (only processed files)
-                query += "processed = 2 ";
-
-                query += "ORDER BY id ASC LIMIT ?";
-
-                logger.information("Executing query for new files: %s", query);
-
-                Statement stmt(sess);
-                int last_id = last_processed_id;
-                int limit = batch_size;
-
+                // New fully-processed files past the watermark.
                 std::vector<int> file_ids;
-                std::vector<std::string> file_paths;
-                std::vector<std::string> metadata_strs;
-
-                // Use RecordSet for reliable row-by-row extraction
-                try
                 {
-                    stmt << query, use(last_id), use(limit);
-                    stmt.execute();
-
-                    Poco::Data::RecordSet rs(stmt);
-
-                    for (auto &row : rs)
-                    {
-                        file_ids.push_back(row[0].convert<int>());
-                        file_paths.push_back(row[1].convert<std::string>());
-
-                        // Handle NULL file_metadata (column can be NULL in schema)
-                        if (row[2].isEmpty())
-                        {
-                            metadata_strs.push_back("");
-                        }
-                        else
-                        {
-                            metadata_strs.push_back(row[2].convert<std::string>());
-                        }
-                    }
-
-                    logger.information("Query executed successfully, found %zu files", file_ids.size());
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    Statement stmt(sess);
+                    int last_id = last_processed_id;
+                    int limit = batch_size;
+                    stmt << "SELECT id FROM scanned_files WHERE id > ? AND processed = 2 ORDER BY id ASC LIMIT ?",
+                        into(file_ids), use(last_id), use(limit), now;
                 }
-                catch (const std::exception &e)
-                {
-                    logger.error("Error executing new files query: %s", std::string(e.what()));
-                    throw;
-                }
-
                 if (file_ids.empty())
                 {
                     logger.debug("No new files to process for mode %s", mode);
                     return 0;
                 }
+                logger.information("Edge discovery: %d new file(s) after id %d",
+                                   static_cast<int>(file_ids.size()), last_processed_id);
 
-                logger.information("Found %zu new files to process", file_ids.size());
-
-                // DF-1: the representative + ungrouped pool is run-level state,
-                // loaded ONCE on the first non-empty batch (previously reloaded
-                // from the DB on every batch) and mutated in memory as files
-                // are grouped. Representatives are the "drivers" of each group
-                // — we only compare against them.
-                std::map<int, FileArtifact> &group_representatives = run_state.group_representatives;
-                std::vector<FileArtifact> &ungrouped_files = run_state.ungrouped_files;
-
-                std::string mode_copy = mode;
-                int existing_last_id = last_processed_id;
-
-                if (!run_state.loaded)
-                {
-                // Query 1: Load group representatives for this mode.
-                // DB-3: ids first, then ONE set-based artifact load on the
-                // already-held session — previously this loop performed one
-                // nested pool checkout + statement per representative
-                // (tens of thousands per batch) while holding this lease.
-                try
-                {
-                    std::string rep_id_query =
-                        "SELECT dg.id, sf.id "
-                        "FROM duplicate_groups dg "
-                        "JOIN scanned_files sf ON dg.representative_file_id = sf.id "
-                        "WHERE dg.mode = ?";
-
-                    Statement rep_id_stmt(sess);
-                    rep_id_stmt << rep_id_query, use(mode_copy);
-                    rep_id_stmt.execute();
-
-                    // A file can represent more than one group; keep all.
-                    std::map<int, std::vector<int>> file_to_groups;
-                    std::vector<int> rep_file_ids;
-                    Poco::Data::RecordSet rep_id_rs(rep_id_stmt);
-                    for (auto &row : rep_id_rs)
-                    {
-                        int group_id = row[0].convert<int>();
-                        int file_id = row[1].convert<int>();
-                        if (file_to_groups.find(file_id) == file_to_groups.end())
-                            rep_file_ids.push_back(file_id);
-                        file_to_groups[file_id].push_back(group_id);
-                    }
-
-                    for (FileArtifact &artifact : loadFileArtifactsBatch(sess, rep_file_ids))
-                    {
-                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
-                        for (int group_id : file_to_groups[artifact.file_id])
-                            group_representatives[group_id] = artifact;
-                    }
-
-                    if (group_representatives.size() < file_to_groups.size())
-                        logger.warning("Artifacts missing for %zu representative file(s)",
-                                       file_to_groups.size() - group_representatives.size());
-
-                    logger.information("Loaded %zu group representatives", group_representatives.size());
-                }
-                catch (const std::exception &e)
-                {
-                    logger.error("Error loading group representatives: %s", std::string(e.what()));
-                }
-
-                // Query 2: Load ungrouped processed files (not in any duplicate group)
-                // CRITICAL FIX: Use loadFileArtifacts to avoid NULL-byte truncation in BLOBs
-                try
-                {
-                    // First query: Get IDs of ungrouped files
-                    std::string id_query =
-                        "SELECT sf.id "
-                        "FROM scanned_files sf "
-                        "WHERE sf.id <= ? "
-                        "AND sf.id NOT IN (SELECT file_id FROM duplicate_members) "
-                        "AND sf.processed = 2";
-
-                    Statement id_stmt(sess);
-                    id_stmt << id_query, use(existing_last_id);
-                    id_stmt.execute();
-
-                    Poco::Data::RecordSet id_rs(id_stmt);
-                    std::vector<int> ungrouped_ids;
-                    for (auto &row : id_rs)
-                    {
-                        ungrouped_ids.push_back(row[0].convert<int>());
-                    }
-
-                    // DB-3: one set-based load on the held session instead of
-                    // a nested pool checkout per file.
-                    ungrouped_files = loadFileArtifactsBatch(sess, ungrouped_ids);
-                    for (const FileArtifact &artifact : ungrouped_files)
-                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
-
-                    logger.information("Loaded %zu ungrouped processed files", ungrouped_files.size());
-                }
-                catch (const std::exception &e)
-                {
-                    logger.error("Error loading ungrouped files: %s", std::string(e.what()));
-                }
-
-                run_state.loaded = true;
-                logger.information("Run pool loaded once: %zu representatives, %zu ungrouped, arena=%zu vectors",
-                                   group_representatives.size(), ungrouped_files.size(), arena_.size());
-                } // !run_state.loaded
-
-                // DF-1: preload this batch's artifacts with ONE set-based query
-                // on the held session (the fan-out previously did a pool
-                // checkout + query per file) and seed the arena so every
-                // comparison below is a normalized dot product.
+                // Batch-preload the new files' artifacts (one set-based query).
                 std::unordered_map<int, FileArtifact> batch_artifacts;
-                batch_artifacts.reserve(file_ids.size());
-                for (FileArtifact &artifact : loadFileArtifactsBatch(sess, file_ids))
                 {
-                    arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
-                    batch_artifacts.emplace(artifact.file_id, std::move(artifact));
+                    auto lease = db_.acquireSessionLease();
+                    for (FileArtifact &artifact : loadFileArtifactsBatch(lease.get(), file_ids))
+                    {
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
+                        batch_artifacts.emplace(artifact.file_id, std::move(artifact));
+                    }
                 }
-
-                // Track new ungrouped files in this batch for potential group creation
-                std::vector<FileArtifact> batch_ungrouped_files;
 
                 int knn_k = cfg_->getPropertyValue<int>("duplicates.finder.knnK", 200);
                 VectorIndex *vix = db_.getVectorIndex();
-                if (vix && vix->isReady() && knn_k > 0)
-                    logger.information("Duplicate finder batch: using KNN (k=%d) for candidate search", knn_k);
-                else
-                    logger.information(std::string("Duplicate finder batch: using full scan (vector index ") +
-                                       ((vix && vix->isReady()) ? "ready" : "unavailable") +
-                                       ", knnK=" + std::to_string(knn_k) + ")");
+                const bool use_knn = vix && vix->isReady() && knn_k > 0;
+                const double max_distance = 1.0 - edge_floor_ + 1e-6;
 
-                // Process each new file concurrently using ThreadPoolManager
+                if (!use_knn && !run_state.loaded)
+                {
+                    // Fallback (no index): the comparison pool is EVERY
+                    // embedded processed file, loaded once per run.
+                    std::vector<int> pool_ids;
+                    {
+                        auto lease = db_.acquireSessionLease();
+                        Session &sess = lease.get();
+                        Statement stmt(sess);
+                        stmt << "SELECT sf.id FROM scanned_files sf JOIN image_artifacts ia ON ia.file_path = sf.file_path WHERE sf.processed = 2",
+                            into(pool_ids), now;
+                    }
+                    {
+                        auto lease = db_.acquireSessionLease();
+                        run_state.pool = loadFileArtifactsBatch(lease.get(), pool_ids);
+                    }
+                    for (FileArtifact &artifact : run_state.pool)
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
+                    run_state.loaded = true;
+                    logger.information("Fallback pool loaded once: %d embedded file(s)",
+                                       static_cast<int>(run_state.pool.size()));
+                }
+
+                struct Edge { int a; int b; double score; };
+                std::vector<Edge> edges;
+                std::mutex edges_mutex;
                 std::atomic<int> files_checked{0};
-                std::atomic<int> duplicates_found{0};
-                std::atomic<int> groups_created{0};
-                std::atomic<int> groups_updated{0};
                 std::atomic<int> new_last_processed_id{last_processed_id};
 
-                std::shared_mutex rw_mutex;
-
-                // CC-3: one callable per file id, run by the joined local
-                // worker set below (runFanOut) — never via the TPM. All
-                // reference captures are safe because the workers are joined
-                // before this scope unwinds.
-                auto process_one = [&](int current_file_id) {
-                        try
-                        {
-                            // DF-1: artifacts were batch-preloaded above; a
-                            // missing entry means no embedding row (mirrors the
-                            // old per-file loader returning false).
-                            FileArtifact new_file;
-                            {
-                                auto it = batch_artifacts.find(current_file_id);
-                                if (it == batch_artifacts.end())
-                                {
-                                    logger.warning("Failed to load artifacts for file_id %d, skipping", current_file_id);
-                                    goto task_end;
-                                }
-                                new_file = it->second;
-                            }
-
-                            files_checked++;
-
-                            // Check if already in a group (added earlier in this batch)
-                            auto existing_group_opt = getGroupIdForFile(new_file.file_id, mode);
-                            if (existing_group_opt.has_value())
-                            {
-                                logger.debug("File_id %d already in group %d, skipping", new_file.file_id, existing_group_opt.value());
-                                goto task_end;
-                            }
-
-                            double threshold_min = getThresholdMin(mode);
-                            double threshold_max = getThresholdMax(mode);
-
-                            // STEP 1: Compare against group representatives.
-                            // DF-2: ONE KNN query per new file drives BOTH the
-                            // representative search and the cross-batch pool
-                            // search, distance-filtered to the similarity
-                            // threshold (cosine distance = 1 - cos_sim). The
-                            // file's own row is inserted at embedding-upsert
-                            // time, so an empty result means the index itself
-                            // misbehaved — THAT falls back to a full scan with
-                            // a warning; an empty intersection with the reps
-                            // does NOT (the old code silently full-scanned
-                            // exactly when the library got large).
-                            int best_group_id = -1;
-                            double best_similarity = 0.0;
-
-                            std::optional<std::set<int>> knn_ids;
-                            if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
-                            {
-                                auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
-                                if (!knn.empty())
-                                {
-                                    const double max_distance = 1.0 - threshold_min + 1e-6;
-                                    knn_ids.emplace();
-                                    for (const auto &p : knn)
-                                        if (p.second <= max_distance)
-                                            knn_ids->insert(p.first);
-                                }
-                                else
-                                {
-                                    logger.warning("KNN returned no rows for file_id %d (index inconsistent?) — using full scan for this file", new_file.file_id);
-                                }
-                            }
-                            int metadata_filtered_count = 0;
-                            std::vector<FileArtifact> cross_batch_candidates;
-
-                            {
-                                std::shared_lock<std::shared_mutex> r_lock(rw_mutex);
-
-                                for (const auto &[group_id, representative] : group_representatives)
-                                {
-                                    // DF-2: the index is authoritative when
-                                    // available — reps outside the KNN result
-                                    // cannot clear the threshold.
-                                    if (knn_ids && knn_ids->count(representative.file_id) == 0)
-                                        continue;
-
-                                    // Metadata pre-filtering: Skip if files are incompatible
-                                    if (!areMetadataCompatible(new_file, representative))
-                                    {
-                                        metadata_filtered_count++;
-                                        continue;
-                                    }
-
-                                    double sim = computeSimilarity(new_file, representative, mode);
-                                    if (sim >= threshold_min && sim > best_similarity)
-                                    {
-                                        best_group_id = group_id;
-                                        best_similarity = sim;
-                                    }
-                                }
-
-                                // Search for cross batch candidates OUTSIDE the write lock if no existing group found
-                                if (best_group_id <= 0) {
-                                    cross_batch_candidates = findCrossBatchCandidates(
-                                        new_file, ungrouped_files, last_processed_id, mode, threshold_min,
-                                        knn_ids ? &*knn_ids : nullptr);
-                                }
-                            } // Read lock released
-
-                            if (metadata_filtered_count > 0)
-                            {
-                                logger.trace("Metadata filtering skipped %d group comparisons for file_id %d",
-                                             metadata_filtered_count, new_file.file_id);
-                            }
-
-                            // Write phase
-                            {
-                                std::unique_lock<std::shared_mutex> w_lock(rw_mutex);
-
-                                if (best_group_id > 0)
-                                {
-                                    // Two-tier logic: duplicate (>= threshold_max) or similar [threshold_min, threshold_max)
-                                    if (best_similarity >= threshold_max)
-                                    {
-                                        // Duplicate tier: add directly (no all-members check)
-                                        if (addToGroup(best_group_id, new_file, mode, best_similarity))
-                                        {
-                                            duplicates_found++;
-                                            groups_updated++;
-                                            logger.information("Added file_id %d to group %d (duplicate tier, similarity=%.3f)",
-                                                               new_file.file_id, best_group_id, best_similarity);
-
-                                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
-                                            if (group_opt.has_value() && group_opt->representative_file_id == new_file.file_id)
-                                            {
-                                                group_representatives[best_group_id] = new_file;
-                                                logger.information("Group %d representative swapped to file_id %d (larger/older)",
-                                                                   best_group_id, new_file.file_id);
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Similar tier: try split when new_file crosses duplicate threshold with a similar member
-                                        int local_dups = 0, local_created = 0, local_updated = 0;
-                                        if (trySplitAndRedistribute(best_group_id, new_file, best_similarity, mode,
-                                                                   group_representatives, local_dups,
-                                                                   local_created, local_updated))
-                                        {
-                                            duplicates_found += local_dups;
-                                            groups_created += local_created;
-                                            groups_updated += local_updated;
-                                            logger.information("Split and redistributed: file_id %d triggered new group from group %d",
-                                                               new_file.file_id, best_group_id);
-                                        }
-                                        else
-                                        {
-                                            // No split: add to similar list of best group
-                                            if (addToGroup(best_group_id, new_file, mode, best_similarity))
-                                            {
-                                                duplicates_found++;
-                                                groups_updated++;
-                                                logger.information("Added file_id %d to group %d (similar tier, similarity=%.3f)",
-                                                                   new_file.file_id, best_group_id, best_similarity);
-                                            }
-                                        }
-                                    }
-                                }
-                                else if (!cross_batch_candidates.empty())
-                                {
-                                    // Verify that candidates haven't been grouped concurrently by another thread
-                                    std::vector<FileArtifact> verified_candidates;
-                                    verified_candidates.push_back(new_file); // guaranteed ungrouped because we are processing it now
-                                    
-                                    for (const auto &candidate : cross_batch_candidates)
-                                    {
-                                        if (candidate.file_id == new_file.file_id) continue;
-                                        
-                                        // Quick verify via DB
-                                        if (!getGroupIdForFile(candidate.file_id, mode).has_value())
-                                        {
-                                            verified_candidates.push_back(candidate);
-                                        }
-                                        else
-                                        {
-                                            logger.debug("Cross-batch candidate %d was grouped concurrently, skipping", candidate.file_id);
-                                        }
-                                    }
-
-                                    if (verified_candidates.size() >= 2)
-                                    {
-                                        int cross_batch_group_id = createDuplicateGroup(verified_candidates, mode, threshold_min);
-
-                                        if (cross_batch_group_id > 0)
-                                        {
-                                            duplicates_found += static_cast<int>(verified_candidates.size());
-                                            groups_created++;
-
-                                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, cross_batch_group_id);
-                                            if (group_opt.has_value())
-                                            {
-                                                for (const auto &file : verified_candidates)
-                                                {
-                                                    if (file.file_id == group_opt->representative_file_id)
-                                                    {
-                                                        group_representatives[cross_batch_group_id] = file;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
-                                            // DF-1: the pool is run-level now — remove the
-                                            // freshly grouped members so later batches don't
-                                            // reconsider them (previously handled by the
-                                            // per-batch DB reload). Under the write lock.
-                                            {
-                                                std::set<int> grouped_ids;
-                                                for (const auto &file : verified_candidates)
-                                                    grouped_ids.insert(file.file_id);
-                                                ungrouped_files.erase(
-                                                    std::remove_if(ungrouped_files.begin(), ungrouped_files.end(),
-                                                                   [&grouped_ids](const FileArtifact &f)
-                                                                   { return grouped_ids.count(f.file_id) > 0; }),
-                                                    ungrouped_files.end());
-                                            }
-
-                                            logger.information("Created cross-batch group %d with %zu verified members (new_file_id=%d)",
-                                                               cross_batch_group_id, verified_candidates.size(), new_file.file_id);
-                                        }
-                                        else
-                                        {
-                                            batch_ungrouped_files.push_back(new_file);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // First match was stolen by another thread, fallback to batch-ungrouped
-                                        batch_ungrouped_files.push_back(new_file);
-                                        logger.trace("File_id %d cross-batch candidates stolen, marked as batch-ungrouped", new_file.file_id);
-                                    }
-                                }
-                                else
-                                {
-                                    // No cross-batch match found - add to batch ungrouped for within-batch grouping
-                                    batch_ungrouped_files.push_back(new_file);
-                                    logger.trace("File_id %d doesn't match any representative or ungrouped file, marked as batch-ungrouped",
-                                                 new_file.file_id);
-                                }
-                            } // Write lock released
-                        }
-                        catch (const std::exception &e)
-                        {
-                            logger.error("Exception in file processing task for file_id %d: %s", current_file_id, std::string(e.what()));
-                        }
-                        catch (...)
-                        {
-                            logger.error("Unknown exception in file processing task for file_id %d", current_file_id);
-                        }
-
-                    task_end:
-                        {
-                            int current_max = new_last_processed_id.load();
-                            while (current_file_id > current_max && !new_last_processed_id.compare_exchange_weak(current_max, current_file_id)) {}
-                        }
+                auto record_progress = [&](int id)
+                {
+                    int cur = new_last_processed_id.load();
+                    while (id > cur && !new_last_processed_id.compare_exchange_weak(cur, id)) {}
                 };
 
-                runFanOut(file_ids.size(), abort_, [&](std::size_t i)
-                          { process_one(file_ids[i]); });
-
-                // STEP 2: Create new groups from batch ungrouped files (2+ similar files required)
-                // CRITICAL FIX: Use ALL-pairs similarity check to avoid transitivity assumption bug
-                // (files A,B,C should only group if sim(A,B) >= threshold AND sim(A,C) >= threshold AND sim(B,C) >= threshold)
-                std::vector<bool> already_grouped(batch_ungrouped_files.size(), false);
-
-                for (size_t i = 0; i < batch_ungrouped_files.size(); ++i)
+                auto discover_one = [&](std::size_t idx)
                 {
-                    if (already_grouped[i])
-                        continue;
-
-                    double threshold_min = getThresholdMin(mode);
-                    std::vector<FileArtifact> similar_batch_files;
-                    similar_batch_files.push_back(batch_ungrouped_files[i]);
-                    std::vector<size_t> similar_indices;
-                    similar_indices.push_back(i);
-
-                    // Find all files in this batch similar to file i
-                    for (size_t j = i + 1; j < batch_ungrouped_files.size(); ++j)
+                    const int current_file_id = file_ids[idx];
+                    auto it = batch_artifacts.find(current_file_id);
+                    if (it == batch_artifacts.end())
                     {
-                        if (already_grouped[j])
-                            continue;
+                        // No embedding row: nothing to discover for this file.
+                        record_progress(current_file_id);
+                        return;
+                    }
+                    const FileArtifact &new_file = it->second;
+                    files_checked++;
 
-                        // Metadata pre-filtering
-                        if (!areMetadataCompatible(batch_ungrouped_files[i], batch_ungrouped_files[j]))
+                    std::vector<Edge> local;
+                    if (use_knn)
+                    {
+                        auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
+                        if (knn.empty())
+                            logger.warning("KNN returned no rows for file_id %d (index inconsistent?)", current_file_id);
+                        for (const auto &p : knn)
                         {
-                            continue;
+                            if (p.first == current_file_id)
+                                continue;
+                            if (p.second > max_distance)
+                                continue;
+                            // vec0 is EXACT KNN under the cosine metric: the
+                            // pair score is simply 1 - distance — neighbor
+                            // embeddings are never loaded.
+                            local.push_back({std::min(current_file_id, p.first),
+                                             std::max(current_file_id, p.first),
+                                             1.0 - p.second});
                         }
-
-                        double sim = computeSimilarity(batch_ungrouped_files[i], batch_ungrouped_files[j], mode);
-                        if (sim >= threshold_min)
+                    }
+                    else
+                    {
+                        for (const FileArtifact &other : run_state.pool)
                         {
-                            // Check if j is similar to ALL files already in similar_batch_files
-                            bool similar_to_all = true;
-                            int all_pairs_checked = 0;
-
-                            for (size_t k = 0; k < similar_batch_files.size(); ++k)
-                            {
-                                // Skip comparison with itself
-                                if (similar_indices[k] == j)
-                                    continue;
-
-                                // Already checked i vs j above
-                                if (similar_indices[k] == i)
-                                    continue;
-
-                                double sim_kj = computeSimilarity(similar_batch_files[k], batch_ungrouped_files[j], mode);
-                                all_pairs_checked++;
-
-                                if (sim_kj < threshold_min)
-                                {
-                                    similar_to_all = false;
-                                    logger.information("File %d REJECTED: similar to file %d (%.3f) but NOT to member %d (%.3f < %.3f)",
-                                                       batch_ungrouped_files[j].file_id, batch_ungrouped_files[i].file_id, sim,
-                                                       similar_batch_files[k].file_id, sim_kj, threshold_min);
-                                    break;
-                                }
-                            }
-
-                            if (similar_to_all)
-                            {
-                                similar_batch_files.push_back(batch_ungrouped_files[j]);
-                                similar_indices.push_back(j);
-                                already_grouped[j] = true;
-                            }
+                            if (other.file_id == current_file_id)
+                                continue;
+                            // Batch peers: record each pair once (from the
+                            // higher-id side) — both sides are "new".
+                            if (other.file_id > last_processed_id && other.file_id > current_file_id)
+                                continue;
+                            double sim = computeSimilarity(new_file, other, mode);
+                            if (sim >= edge_floor_)
+                                local.push_back({std::min(current_file_id, other.file_id),
+                                                 std::max(current_file_id, other.file_id), sim});
                         }
                     }
 
-                    // Only create group if 2+ similar files found
-                    if (similar_batch_files.size() >= 2)
+                    if (!local.empty())
                     {
-                        already_grouped[i] = true;
-                        int new_group_id = createDuplicateGroup(similar_batch_files, mode, threshold_min);
-                        if (new_group_id > 0)
-                        {
-                            duplicates_found += static_cast<int>(similar_batch_files.size());
-                            groups_created++;
-                            logger.information("Created new group %d with %zu members from batch ungrouped files (all-pairs check passed)",
-                                               new_group_id, similar_batch_files.size());
-
-                            // Add new group's representative to our cache
-                            auto group_opt = DuplicateGroupsOps::getGroupById(db_, new_group_id);
-                            if (group_opt.has_value())
-                            {
-                                for (const auto &file : similar_batch_files)
-                                {
-                                    if (file.file_id == group_opt->representative_file_id)
-                                    {
-                                        group_representatives[new_group_id] = file;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                        std::lock_guard<std::mutex> lk(edges_mutex);
+                        edges.insert(edges.end(), local.begin(), local.end());
                     }
-                }
+                    record_progress(current_file_id);
+                };
 
-                // DF-1: carry files that stayed ungrouped forward in the
-                // run-level pool so the next batch's cross-batch matching sees
-                // them (previously achieved by re-querying the DB per batch).
-                if (!abort_.load())
+                runFanOut(file_ids.size(), abort_, discover_one);
+
+                if (abort_.load())
                 {
-                    for (std::size_t i = 0; i < batch_ungrouped_files.size(); ++i)
-                    {
-                        if (!already_grouped[i])
-                            ungrouped_files.push_back(std::move(batch_ungrouped_files[i]));
-                    }
-                }
-
-                // Update checkpoint only if the batch ran to completion — an
-                // abort leaves file ids unprocessed, and advancing the
-                // id-watermark checkpoint past them would skip them forever.
-                if (!abort_.load()) {
-                    last_processed_id = new_last_processed_id.load();
-                    bool checkpoint_updated = DuplicateGroupsOps::upsertCheckpoint(
-                        db_, mode, last_processed_id, files_checked.load(), duplicates_found.load(),
-                        groups_created.load(), groups_updated.load());
-
-                    if (!checkpoint_updated)
-                    {
-                        logger.warning("Failed to update checkpoint for mode %s", mode);
-                    }
-                    
-                    logger.information("Batch complete: checked=%d, duplicates=%d, groups_created=%d, groups_updated=%d",
-                                       files_checked.load(), duplicates_found.load(), groups_created.load(), groups_updated.load());
-
-                    return static_cast<int>(file_ids.size());
-                } else {
                     logger.warning("Batch aborted before completion. Checkpoint will not be updated this run.");
-                    return 0; // Return 0 to stop findDuplicates from spinning
+                    return 0;
                 }
+
+                // Persist this batch's edges in ONE transaction.
+                if (!edges.empty())
+                {
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    try
+                    {
+                        sess.begin();
+                        for (const auto &e : edges)
+                        {
+                            Statement stmt(sess);
+                            int a = e.a, b = e.b;
+                            double score = e.score;
+                            stmt << "INSERT OR REPLACE INTO duplicate_edges(file_a, file_b, score) VALUES(?, ?, ?)",
+                                use(a), use(b), use(score), now;
+                        }
+                        sess.commit();
+                    }
+                    catch (...)
+                    {
+                        try { sess.rollback(); } catch (...) {}
+                        throw;
+                    }
+                    logger.information("Recorded %d edge(s) at floor %.2f",
+                                       static_cast<int>(edges.size()), edge_floor_);
+                }
+
+                last_processed_id = new_last_processed_id.load();
+                if (!DuplicateGroupsOps::upsertCheckpoint(db_, mode, last_processed_id,
+                                                          files_checked.load(), 0, 0, 0))
+                    logger.warning("Failed to update checkpoint for mode %s", mode);
+
+                return static_cast<int>(file_ids.size());
             }
             catch (const std::exception &e)
             {
-                finderLogger().error("Exception in processBatch: %s", std::string(e.what()));
-                return 0;
-            }
-            catch (...)
-            {
-                finderLogger().error("Unknown exception in processBatch");
+                logger.error("Exception in processBatch: %s", std::string(e.what()));
                 return 0;
             }
         }
 
         namespace
         {
-            // Shared row -> FileArtifact conversion for the single and batch
-            // loaders: file_metadata JSON (size + created date, with EXIF
+            // Shared row -> FileArtifact mapping for the loaders: parses the
+            // file_metadata JSON (size and created date, with the exif
             // datetime preferred) and the embedding CLOB.
             void fillArtifactFromRow(DuplicateFinder::FileArtifact &artifact,
                                      int id, const std::string &path,
@@ -1333,395 +866,255 @@ namespace MediaDedup
             return true;
         }
 
-        int DuplicateFinder::createDuplicateGroup(const std::vector<FileArtifact> &files,
-                                                  const std::string &mode,
-                                                  double threshold)
-        {
-            if (files.empty())
-            {
-                return -1;
-            }
-
-            // Select representative
-            RepresentativeInfo rep = selectRepresentative(files);
-
-            // Create group with max threshold (for backwards compatibility)
-            double max_threshold = getThresholdMax(mode);
-            int group_id = DuplicateGroupsOps::createGroup(
-                db_, mode, rep.file_id, rep.file_path, rep.file_size, rep.created_date, max_threshold);
-
-            if (group_id <= 0)
-            {
-                return -1;
-            }
-
-            // Find the representative file artifact to compute actual similarities
-            const FileArtifact *rep_artifact = nullptr;
-            for (const auto &file : files)
-            {
-                if (file.file_id == rep.file_id)
-                {
-                    rep_artifact = &file;
-                    break;
-                }
-            }
-
-            // Add all members
-            for (const auto &file : files)
-            {
-                double sim = 1.0; // Default for representative
-                if (file.file_id != rep.file_id && rep_artifact != nullptr)
-                {
-                    // Compute actual similarity between this file and the representative
-                    sim = computeSimilarity(file, *rep_artifact, mode);
-                }
-                bool is_rep = (file.file_id == rep.file_id);
-
-                if (!DuplicateGroupsOps::addMember(db_, group_id, file.file_id, file.file_path,
-                                                   sim, file.file_size, file.created_date, is_rep))
-                {
-                    finderLogger().warning("Failed to add member file_id %d to group %d", file.file_id, group_id);
-                }
-            }
-
-            // Update group member count to reflect all added members
-            if (files.size() > 1)
-            {
-                DuplicateGroupsOps::updateGroupRepresentative(db_, group_id, rep.file_id, rep.file_path,
-                                                              rep.file_size, rep.created_date, static_cast<int>(files.size()));
-            }
-
-            GroupEventCallback cb_new;
-            {
-                std::lock_guard<std::mutex> cb_lock(group_event_cb_mutex_);
-                cb_new = group_event_cb_;
-            }
-            if (cb_new)
-            {
-                cb_new(group_id, true);
-            }
-
-            return group_id;
-        }
-
-        bool DuplicateFinder::addToGroup(int group_id,
-                                         const FileArtifact &file,
-                                         const std::string & /* mode */,
-                                         double similarity_score)
-        {
-            // Get current group info
-            auto group_opt = DuplicateGroupsOps::getGroupById(db_, group_id);
-            if (!group_opt.has_value())
-            {
-                return false;
-            }
-
-            auto group = group_opt.value();
-
-            // Check if new file should be representative
-            RepresentativeInfo current_rep;
-            current_rep.file_id = group.representative_file_id;
-            current_rep.file_path = group.representative_file_path;
-            current_rep.file_size = group.representative_file_size;
-            current_rep.created_date = group.representative_created_date;
-
-            // Check if current rep has EXIF date
-            try {
-                auto lease = db_.acquireSessionLease();
-                Poco::Data::Session &sess = lease.get();
-                int has_exif_count = 0;
-                Poco::Data::Statement stmt(sess);
-                stmt << "SELECT COUNT(*) FROM scanned_files WHERE id = ? AND exif_datetime IS NOT NULL AND exif_datetime != ''",
-                        Poco::Data::Keywords::into(has_exif_count),
-                        Poco::Data::Keywords::use(current_rep.file_id),
-                        Poco::Data::Keywords::now;
-                current_rep.has_exif_date = (has_exif_count > 0);
-            } catch (...) {
-                current_rep.has_exif_date = false;
-            }
-
-            RepresentativeInfo new_candidate;
-            new_candidate.file_id = file.file_id;
-            new_candidate.file_path = file.file_path;
-            new_candidate.file_size = file.file_size;
-            new_candidate.created_date = file.created_date;
-            new_candidate.has_exif_date = file.has_exif_date;
-
-            bool should_update_rep = isBetterRepresentative(new_candidate, current_rep) &&
-                                     similarity_score >= getThresholdMax("EMBEDDING");
-
-            // Add member
-            if (!DuplicateGroupsOps::addMember(db_, group_id, file.file_id, file.file_path,
-                                               similarity_score, file.file_size, file.created_date, should_update_rep))
-            {
-                return false;
-            }
-
-            // Update representative if needed
-            if (should_update_rep)
-            {
-                // Clear old representative flag
-                DuplicateGroupsOps::updateMemberRepresentativeFlag(db_, group_id, current_rep.file_id, false);
-
-                // Update group representative
-                int new_member_count = group.member_count + 1;
-                DuplicateGroupsOps::updateGroupRepresentative(db_, group_id, new_candidate.file_id,
-                                                              new_candidate.file_path, new_candidate.file_size,
-                                                              new_candidate.created_date, new_member_count);
-
-                finderLogger().information("Updated group %d representative from file_id %d to %d (exif/bigger/older)", group_id, current_rep.file_id, new_candidate.file_id);
-            }
-            else
-            {
-                // Just update member count
-                DuplicateGroupsOps::updateGroupRepresentative(db_, group_id, current_rep.file_id,
-                                                              current_rep.file_path, current_rep.file_size,
-                                                              current_rep.created_date, group.member_count + 1);
-            }
-
-            if (group_event_cb_)
-            {
-                // Since this was an addition, we trigger an UPDATE event
-                group_event_cb_(group_id, false);
-            }
-
-            return true;
-        }
-
-        bool DuplicateFinder::trySplitAndRedistribute(int best_group_id,
-                                                      const FileArtifact &new_file,
-                                                      double best_similarity,
-                                                      const std::string &mode,
-                                                      std::map<int, FileArtifact> &group_representatives,
-                                                      int &duplicates_found,
-                                                      int &groups_created,
-                                                      int &groups_updated)
+        void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode)
         {
             Poco::Logger &logger = finderLogger();
-            double threshold_duplicate = getDuplicateThreshold(mode);
+            const auto t0 = std::chrono::steady_clock::now();
+            const double threshold = embedding_threshold_similarity_;
 
-            auto group_opt = DuplicateGroupsOps::getGroupById(db_, best_group_id);
-            if (!group_opt.has_value())
-                return false;
-
-            const auto &group = group_opt.value();
-            auto all_members = DuplicateGroupsOps::getMembersByGroup(db_, best_group_id);
-
-            // Similar members: not representative, and score < duplicate threshold
-            std::vector<DuplicateMemberRecord> similar_members;
-            for (const auto &m : all_members)
+            try
             {
-                if (!m.is_representative && m.similarity_score < threshold_duplicate)
-                    similar_members.push_back(m);
-            }
-
-            // Load orig key artifact for redistribution
-            FileArtifact orig_key_artifact;
-            if (!loadFileArtifacts(group.representative_file_id, mode, orig_key_artifact))
-            {
-                logger.warning("Failed to load representative for group %d", best_group_id);
-                return false;
-            }
-
-            // Find first similar member that crosses duplicate threshold with new_file
-            int split_member_file_id = -1;
-            double split_similarity = 0.0;
-            FileArtifact split_member_artifact;
-
-            for (const auto &member : similar_members)
-            {
-                FileArtifact member_artifact;
-                if (!loadFileArtifacts(member.file_id, mode, member_artifact))
-                    continue;
-
-                double sim = computeSimilarity(new_file, member_artifact, mode);
-                if (sim >= threshold_duplicate)
+                // 1. Load qualifying edges.
+                struct EdgeRow { int a; int b; double score; };
+                std::vector<EdgeRow> edges;
                 {
-                    split_member_file_id = member.file_id;
-                    split_similarity = sim;
-                    split_member_artifact = std::move(member_artifact);
-                    break;
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    std::vector<int> as, bs;
+                    std::vector<double> scores;
+                    Statement stmt(sess);
+                    double th = threshold;
+                    stmt << "SELECT file_a, file_b, score FROM duplicate_edges WHERE score >= ?",
+                        into(as), into(bs), into(scores), use(th), now;
+                    edges.reserve(as.size());
+                    for (std::size_t i = 0; i < as.size(); ++i)
+                        edges.push_back({as[i], bs[i], scores[i]});
                 }
-            }
 
-            if (split_member_file_id < 0)
-                return false; // No split triggered
-
-            // Pick new key: better of (new_file, split_member) by size/age
-            RepresentativeInfo new_key_candidate, other_candidate;
-            new_key_candidate.file_id = new_file.file_id;
-            new_key_candidate.file_path = new_file.file_path;
-            new_key_candidate.file_size = new_file.file_size;
-            new_key_candidate.created_date = new_file.created_date;
-            other_candidate.file_id = split_member_artifact.file_id;
-            other_candidate.file_path = split_member_artifact.file_path;
-            other_candidate.file_size = split_member_artifact.file_size;
-            other_candidate.created_date = split_member_artifact.created_date;
-
-            bool new_file_is_key = isBetterRepresentative(new_key_candidate, other_candidate);
-            const FileArtifact *new_key_artifact = new_file_is_key ? &new_file : &split_member_artifact;
-            const FileArtifact *other_artifact = new_file_is_key ? &split_member_artifact : &new_file;
-
-            // Create new group with new_key
-            double max_threshold = getDuplicateThreshold(mode);
-            int new_group_id = DuplicateGroupsOps::createGroup(
-                db_, mode, new_key_artifact->file_id, new_key_artifact->file_path,
-                new_key_artifact->file_size, new_key_artifact->created_date, max_threshold);
-
-            if (new_group_id <= 0)
-            {
-                logger.error("Failed to create new group for split");
-                return false;
-            }
-
-            // Add representative (new_key) and the other image to new group
-            DuplicateGroupsOps::addMember(db_, new_group_id, new_key_artifact->file_id, new_key_artifact->file_path,
-                                         1.0, new_key_artifact->file_size, new_key_artifact->created_date, true);
-            double other_sim = computeSimilarity(*other_artifact, *new_key_artifact, mode);
-            DuplicateGroupsOps::addMember(db_, new_group_id, other_artifact->file_id, other_artifact->file_path,
-                                         other_sim, other_artifact->file_size, other_artifact->created_date, false);
-            DuplicateGroupsOps::updateGroupRepresentative(db_, new_group_id, new_key_artifact->file_id,
-                                                         new_key_artifact->file_path, new_key_artifact->file_size,
-                                                         new_key_artifact->created_date, 2);
-
-            groups_created++;
-            duplicates_found += 2; // new_key + other
-
-            // Remove split member from original group
-            DuplicateGroupsOps::removeMember(db_, best_group_id, split_member_file_id);
-
-            // Redistribute remaining similar members (exclude the one we moved)
-            int orig_count = group.member_count - 1; // -1 for removed split member
-            int new_count = 2;
-
-            for (const auto &member : similar_members)
-            {
-                if (member.file_id == split_member_file_id)
-                    continue;
-
-                FileArtifact member_artifact;
-                if (!loadFileArtifacts(member.file_id, mode, member_artifact))
-                    continue;
-
-                double score_orig = member.similarity_score; // Already stored vs orig key
-                double score_new = computeSimilarity(member_artifact, *new_key_artifact, mode);
-
-                if (score_new > score_orig)
+                // 2. Union-find (path halving + union by size): deterministic,
+                // order-independent — the property the old greedy grouping
+                // lacked.
+                std::unordered_map<int, int> parent;
+                std::unordered_map<int, int> csize;
+                auto find_root = [&](int x)
                 {
-                    DuplicateGroupsOps::removeMember(db_, best_group_id, member.file_id);
-                    DuplicateGroupsOps::addMember(db_, new_group_id, member.file_id, member.file_path,
-                                                 score_new, member.file_size, member.created_date, false);
-                    orig_count--;
-                    new_count++;
-                    duplicates_found++;
-                    groups_updated++;
-                    logger.information("Redistributed file_id %d from group %d to new group %d (score %.3f -> %.3f)",
-                                       member.file_id, best_group_id, new_group_id, score_orig, score_new);
-                }
-            }
-
-            // If original group has only the key left, delete it so the key can be re-used via cross-batch (Option A)
-            if (orig_count == 1)
-            {
-                logger.information("Original group %d has only key (file_id %d) after split; deleting group so key can re-match via cross-batch",
-                                   best_group_id, group.representative_file_id);
-                DuplicateGroupsOps::deleteGroup(db_, best_group_id);
-                group_representatives.erase(best_group_id);
-            }
-            else
-            {
-                DuplicateGroupsOps::updateGroupMemberCount(db_, best_group_id, orig_count);
-            }
-
-            DuplicateGroupsOps::updateGroupRepresentative(db_, new_group_id, new_key_artifact->file_id,
-                                                         new_key_artifact->file_path, new_key_artifact->file_size,
-                                                         new_key_artifact->created_date, new_count);
-
-            group_representatives[new_group_id] = *new_key_artifact;
-
-            return true;
-        }
-
-        std::vector<DuplicateFinder::FileArtifact> DuplicateFinder::findCrossBatchCandidates(
-            const FileArtifact &new_file,
-            const std::vector<FileArtifact> &ungrouped_files,
-            int last_processed_id,
-            const std::string &mode,
-            double threshold_min,
-            const std::set<int> *knn_filter)
-        {
-            std::vector<FileArtifact> candidates;
-
-            // Compare against previously ungrouped files (from prior batches only)
-            // Iterate in reverse order (most recent first) for better locality
-            for (auto it = ungrouped_files.rbegin(); it != ungrouped_files.rend(); ++it)
-            {
-                const FileArtifact &first_match = *it;
-
-                // DF-2: with the index available only its neighbors can clear
-                // the threshold — this was the O(n) half of the old O(n^2).
-                if (knn_filter && knn_filter->count(first_match.file_id) == 0)
-                    continue;
-
-                // Skip files from current batch (they're handled in within-batch grouping)
-                if (first_match.file_id > last_processed_id)
-                    continue;
-
-                // Metadata pre-filtering
-                if (!areMetadataCompatible(new_file, first_match))
-                    continue;
-
-                double sim = computeSimilarity(new_file, first_match, mode);
-                if (sim >= threshold_min)
-                {
-                    // Start with the two matched files
-                    candidates = {first_match, new_file};
-                    std::set<int> grouped_file_ids = {first_match.file_id, new_file.file_id};
-
-                    // ALL-PAIRS EXPANSION: Check if any OTHER ungrouped files should join
-                    for (const auto &candidate : ungrouped_files)
+                    while (parent[x] != x)
                     {
-                        // Skip files already in the group
-                        if (grouped_file_ids.count(candidate.file_id) > 0)
-                            continue;
-
-                        // DF-2: expansion members must also clear the
-                        // threshold vs new_file — only its KNN neighbors can.
-                        if (knn_filter && knn_filter->count(candidate.file_id) == 0)
-                            continue;
-
-                        // Skip files from current batch
-                        if (candidate.file_id > last_processed_id)
-                            continue;
-
-                        // Metadata pre-filtering against first member
-                        if (!areMetadataCompatible(candidate, candidates[0]))
-                            continue;
-
-                        // Check similarity against ALL current group members
-                        bool similar_to_all = true;
-                        for (const auto &member : candidates)
-                        {
-                            double sim_to_member = computeSimilarity(candidate, member, mode);
-                            if (sim_to_member < threshold_min)
-                            {
-                                similar_to_all = false;
-                                break;
-                            }
-                        }
-
-                        if (similar_to_all)
-                        {
-                            candidates.push_back(candidate);
-                            grouped_file_ids.insert(candidate.file_id);
-                        }
+                        parent[x] = parent[parent[x]];
+                        x = parent[x];
                     }
-
-                    break; // Found one valid cross-batch group configuration, stop searching
+                    return x;
+                };
+                auto ensure_node = [&](int x)
+                {
+                    if (parent.find(x) == parent.end())
+                    {
+                        parent[x] = x;
+                        csize[x] = 1;
+                    }
+                };
+                for (const auto &e : edges)
+                {
+                    ensure_node(e.a);
+                    ensure_node(e.b);
+                    int ra = find_root(e.a), rb = find_root(e.b);
+                    if (ra != rb)
+                    {
+                        if (csize[ra] < csize[rb])
+                            std::swap(ra, rb);
+                        parent[rb] = ra;
+                        csize[ra] += csize[rb];
+                    }
                 }
-            }
 
-            return candidates;
+                std::unordered_map<int, std::vector<int>> components;
+                for (const auto &kv : parent)
+                    components[find_root(kv.first)].push_back(kv.first);
+
+                // Per-member best incident score (>= threshold) — stored as
+                // the member's similarity_score.
+                std::unordered_map<int, double> best_score;
+                for (const auto &e : edges)
+                {
+                    auto &sa = best_score[e.a];
+                    sa = std::max(sa, e.score);
+                    auto &sb = best_score[e.b];
+                    sb = std::max(sb, e.score);
+                }
+
+                // 3. Metadata for every grouped member, one set-based load.
+                std::vector<int> all_ids;
+                for (const auto &kv : components)
+                    if (kv.second.size() >= 2)
+                        all_ids.insert(all_ids.end(), kv.second.begin(), kv.second.end());
+                std::unordered_map<int, FileArtifact> artifacts;
+                {
+                    auto lease = db_.acquireSessionLease();
+                    for (FileArtifact &a : loadFileArtifactsBatch(lease.get(), all_ids))
+                        artifacts.emplace(a.file_id, std::move(a));
+                }
+
+                // 4. Group-id stability: a component reuses the id of the
+                // existing group whose representative (or, failing that, any
+                // member that heads a group) it contains.
+                std::unordered_map<int, int> rep_to_gid;
+                {
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    std::vector<int> gids, reps;
+                    Statement stmt(sess);
+                    std::string m = mode;
+                    stmt << "SELECT id, representative_file_id FROM duplicate_groups WHERE mode = ? ORDER BY id",
+                        into(gids), into(reps), use(m), now;
+                    for (std::size_t i = 0; i < gids.size(); ++i)
+                        rep_to_gid.emplace(reps[i], gids[i]);
+                }
+
+                int groups_total = 0, groups_new = 0, members_total = 0;
+                std::set<int> used_gids;
+                std::vector<int> kept_group_ids;
+                {
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    try
+                    {
+                        sess.begin();
+                        for (auto &kv : components)
+                        {
+                            auto &member_ids = kv.second;
+                            if (member_ids.size() < 2)
+                                continue;
+
+                            std::vector<FileArtifact> members;
+                            members.reserve(member_ids.size());
+                            for (int id : member_ids)
+                            {
+                                auto ait = artifacts.find(id);
+                                if (ait != artifacts.end())
+                                    members.push_back(ait->second);
+                            }
+                            if (members.size() < 2)
+                                continue;
+
+                            RepresentativeInfo rep = selectRepresentative(members);
+
+                            int gid = -1;
+                            auto rit = rep_to_gid.find(rep.file_id);
+                            if (rit != rep_to_gid.end() && used_gids.count(rit->second) == 0)
+                                gid = rit->second;
+                            else
+                            {
+                                for (int id : member_ids)
+                                {
+                                    auto mit = rep_to_gid.find(id);
+                                    if (mit != rep_to_gid.end() && used_gids.count(mit->second) == 0)
+                                    {
+                                        gid = mit->second;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            int member_count = static_cast<int>(members.size());
+                            std::string rep_path = rep.file_path;
+                            long long rep_size = rep.file_size;
+                            std::string rep_date = rep.created_date;
+                            int rep_id = rep.file_id;
+                            double th = threshold;
+
+                            if (gid > 0)
+                            {
+                                used_gids.insert(gid);
+                                Statement upd(sess);
+                                upd << "UPDATE duplicate_groups SET representative_file_id=?, representative_file_path=?, "
+                                       "representative_file_size=?, representative_created_date=?, similarity_threshold=?, "
+                                       "member_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                                    use(rep_id), use(rep_path), use(rep_size), use(rep_date), use(th),
+                                    use(member_count), use(gid), now;
+                                Statement delm(sess);
+                                delm << "DELETE FROM duplicate_members WHERE group_id = ?", use(gid), now;
+                            }
+                            else
+                            {
+                                std::string m = mode;
+                                Statement ins(sess);
+                                ins << "INSERT INTO duplicate_groups(mode, representative_file_id, representative_file_path, "
+                                       "representative_file_size, representative_created_date, similarity_threshold, member_count) "
+                                       "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                    use(m), use(rep_id), use(rep_path), use(rep_size), use(rep_date), use(th),
+                                    use(member_count), now;
+                                Statement rowid(sess);
+                                rowid << "SELECT last_insert_rowid()", into(gid), now;
+                                used_gids.insert(gid);
+                                groups_new++;
+                            }
+                            kept_group_ids.push_back(gid);
+
+                            for (const FileArtifact &memb : members)
+                            {
+                                int fid = memb.file_id;
+                                std::string fpath = memb.file_path;
+                                long long fsize = memb.file_size;
+                                std::string fdate = memb.created_date;
+                                int is_rep = (memb.file_id == rep.file_id) ? 1 : 0;
+                                auto sit = best_score.find(memb.file_id);
+                                double score = is_rep ? 1.0 : (sit != best_score.end() ? sit->second : threshold);
+                                Statement insm(sess);
+                                insm << "INSERT OR REPLACE INTO duplicate_members(group_id, file_id, file_path, "
+                                        "similarity_score, file_size, created_date, is_representative) "
+                                        "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                    use(gid), use(fid), use(fpath), use(score), use(fsize), use(fdate), use(is_rep), now;
+                                members_total++;
+                            }
+                            groups_total++;
+                        }
+
+                        // Drop groups that no longer map to any component.
+                        {
+                            std::string keep_list;
+                            for (int id : kept_group_ids)
+                            {
+                                if (!keep_list.empty())
+                                    keep_list += ",";
+                                keep_list += std::to_string(id);
+                            }
+                            std::string m = mode;
+                            std::string sql = "DELETE FROM duplicate_groups WHERE mode = ?";
+                            if (!keep_list.empty())
+                                sql += " AND id NOT IN (" + keep_list + ")";
+                            Statement delg(sess);
+                            delg << sql, use(m), now;
+                            Statement delm(sess);
+                            delm << "DELETE FROM duplicate_members WHERE group_id NOT IN (SELECT id FROM duplicate_groups)", now;
+                        }
+
+                        sess.commit();
+                    }
+                    catch (...)
+                    {
+                        try { sess.rollback(); } catch (...) {}
+                        throw;
+                    }
+                }
+
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - t0)
+                                    .count();
+                logger.information("Re-clustered from %d edge(s) in %ld ms: %d group(s) (%d new), %d member(s), threshold=%.3f",
+                                   static_cast<int>(edges.size()), static_cast<long>(ms),
+                                   groups_total, groups_new, members_total, threshold);
+
+                // Refresh last-run stats on the checkpoint.
+                auto cp = DuplicateGroupsOps::getCheckpoint(db_, mode);
+                if (cp.has_value())
+                    DuplicateGroupsOps::upsertCheckpoint(db_, mode, cp->last_processed_id, cp->files_checked,
+                                                         members_total - groups_total, groups_new,
+                                                         groups_total - groups_new);
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in rebuildGroupsFromEdges: %s", std::string(e.what()));
+            }
         }
 
         double DuplicateFinder::getSimilarityThreshold(const std::string & /* mode */)
@@ -1761,70 +1154,64 @@ namespace MediaDedup
             else if (event.key == "duplicates.threshold.similarity" || event.key == "duplicates.threshold.duplicate")
             {
                 double old_similarity = embedding_threshold_similarity_;
-                double old_duplicate = embedding_threshold_duplicate_;
-                
+
                 embedding_threshold_similarity_ = cfg_->getPropertyValue<double>("duplicates.threshold.similarity", 0.92);
                 embedding_threshold_duplicate_ = cfg_->getPropertyValue<double>("duplicates.threshold.duplicate", 0.97);
 
                 if (embedding_threshold_similarity_ >= embedding_threshold_duplicate_)
                 {
                     finderLogger().error("Invalid thresholds: similarity (%.3f) >= duplicate (%.3f). Reverting to defaults.",
-                                                               embedding_threshold_similarity_, embedding_threshold_duplicate_);
+                                         embedding_threshold_similarity_, embedding_threshold_duplicate_);
                     embedding_threshold_similarity_ = 0.92;
                     embedding_threshold_duplicate_ = 0.96;
                 }
 
                 bool similarity_changed = std::abs(embedding_threshold_similarity_ - old_similarity) > 0.001;
-
                 if (similarity_changed)
                 {
-                    finderLogger().warning("Similarity threshold changed: %.3f->%.3f. Triggering full reprocessing.",
-                                                                  old_similarity, embedding_threshold_similarity_);
-
-                    if (DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING"))
+                    if (embedding_threshold_similarity_ + 1e-9 < edge_floor_)
                     {
-                        finderLogger().information("Deleted all EMBEDDING duplicate groups due to threshold change");
+                        // DF-3: below the discovery floor the recorded edges
+                        // cannot answer — full re-discovery (rare; the floor
+                        // sits below every sane slider position).
+                        finderLogger().warning("Similarity threshold %.3f is below the edge floor %.3f: full re-discovery required.",
+                                               embedding_threshold_similarity_, edge_floor_);
+                        try
+                        {
+                            auto lease = db_.acquireSessionLease();
+                            Session &sess = lease.get();
+                            Statement stmt(sess);
+                            stmt << "DELETE FROM duplicate_edges", now;
+                        }
+                        catch (const std::exception &e)
+                        {
+                            finderLogger().error("Failed to clear duplicate_edges: %s", std::string(e.what()));
+                        }
+                        DuplicateGroupsOps::deleteGroupsByMode(db_, "EMBEDDING");
+                        DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
                     }
-
-                    if (DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING"))
+                    else
                     {
-                        finderLogger().information("Reset EMBEDDING checkpoint to 0 - will reprocess all files with new thresholds");
+                        // DF-3: the slider is now a re-cluster over recorded
+                        // edges — no group wipe, no checkpoint reset, no
+                        // re-comparison of embeddings. The next finder run
+                        // (or the one already scheduled) picks up the flag.
+                        regroup_requested_.store(true);
+                        finderLogger().information("Similarity threshold changed %.3f -> %.3f: re-cluster scheduled from recorded edges (no wipe).",
+                                                   old_similarity, embedding_threshold_similarity_);
                     }
                 }
 
                 finderLogger().information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
-                                                                 embedding_threshold_similarity_, embedding_threshold_duplicate_);
+                                           embedding_threshold_similarity_, embedding_threshold_duplicate_);
             }
             else if (event.key == "duplicates.purity.order")
             {
                 std::string purity_str = cfg_->getPropertyValue<std::string>(event.key, "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
                 purity_order_ = parsePurityOrder(purity_str);
-                finderLogger().information("Updated duplicates.purity.order");
-            }
-            else if (event.key == "duplicates.metadata.filtering.enabled")
-            {
-                metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>(event.key, true);
-                finderLogger().information("Updated metadata_filtering_enabled: %s", metadata_filtering_enabled_ ? "true" : "false");
-            }
-            else if (event.key == "duplicates.metadata.aspectRatioTolerance")
-            {
-                aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.10);
-                finderLogger().information("Updated aspect_ratio_tolerance: %.3f", aspect_ratio_tolerance_);
-            }
-            else if (event.key == "duplicates.metadata.dimensionTolerance")
-            {
-                dimension_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.20);
-                finderLogger().information("Updated dimension_tolerance: %.3f", dimension_tolerance_);
-            }
-            else if (event.key == "duplicates.metadata.fileSizeTolerance")
-            {
-                file_size_tolerance_ = cfg_->getPropertyValue<double>(event.key, 0.50);
-                finderLogger().information("Updated file_size_tolerance: %.3f", file_size_tolerance_);
-            }
-            else if (event.key == "duplicates.metadata.requireSameFormat")
-            {
-                require_same_format_ = cfg_->getPropertyValue<bool>(event.key, false);
-                finderLogger().information("Updated require_same_format: %s", require_same_format_ ? "true" : "false");
+                // Representative choice depends on purity: re-cluster.
+                regroup_requested_.store(true);
+                finderLogger().information("Updated duplicates.purity.order (re-cluster scheduled)");
             }
         }
 
@@ -1858,204 +1245,5 @@ namespace MediaDedup
             return stats;
         }
 
-        int DuplicateFinder::performCrossGroupChecking(const std::string &mode, double threshold_max)
-        {
-            Poco::Logger &logger = finderLogger();
-            std::atomic<int> files_moved = 0;
-
-            try
-            {
-                // Get all groups for this mode
-                auto groups = DuplicateGroupsOps::getGroupsByMode(db_, mode);
-                if (groups.empty())
-                {
-                    logger.debug("No groups found for cross-group checking");
-                    return 0;
-                }
-
-                logger.information("Starting cross-group checking for %zu groups (threshold_max=%.3f)",
-                                   groups.size(), threshold_max);
-
-                // Build representative cache for efficient lookup.
-                // DF-1: one set-based load (previously one pool checkout +
-                // query per group — tens of thousands of leases per run) and
-                // arena seeding so the comparisons below are dot products.
-                std::unordered_map<int, FileArtifact> group_representatives;
-                {
-                    std::map<int, std::vector<int>> rep_file_to_groups;
-                    std::vector<int> rep_file_ids;
-                    for (const auto &group : groups)
-                    {
-                        if (rep_file_to_groups.find(group.representative_file_id) == rep_file_to_groups.end())
-                            rep_file_ids.push_back(group.representative_file_id);
-                        rep_file_to_groups[group.representative_file_id].push_back(group.id);
-                    }
-
-                    auto lease = db_.acquireSessionLease();
-                    for (FileArtifact &artifact : loadFileArtifactsBatch(lease.get(), rep_file_ids))
-                    {
-                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
-                        for (int group_id : rep_file_to_groups[artifact.file_id])
-                            group_representatives[group_id] = artifact;
-                    }
-                }
-
-                struct CheckTask {
-                    int original_group_id;
-                    DuplicateMemberRecord member;
-                };
-                std::vector<CheckTask> tasks;
-
-                // For each group, find members with low similarity scores
-                for (const auto &group : groups)
-                {
-                    auto members = DuplicateGroupsOps::getMembersByGroup(db_, group.id);
-
-                    for (const auto &member : members)
-                    {
-                        // Skip representative (it has perfect similarity to itself)
-                        if (member.is_representative)
-                            continue;
-
-                        // Check if this member has low similarity score
-                        if (member.similarity_score >= threshold_max)
-                            continue;
-                            
-                        tasks.push_back({group.id, member});
-                    }
-                }
-                
-                if (tasks.empty())
-                {
-                    return 0;
-                }
-
-                logger.information("Found %zu low-similarity members to check concurrently", tasks.size());
-
-                // DF-1: preload all task members with one set-based query
-                // (previously one pool checkout + query per member, inside the
-                // fan-out) and seed the arena before the workers start reading.
-                std::unordered_map<int, FileArtifact> member_artifacts;
-                {
-                    std::vector<int> member_ids;
-                    member_ids.reserve(tasks.size());
-                    for (const auto &task : tasks)
-                        member_ids.push_back(task.member.file_id);
-
-                    auto lease = db_.acquireSessionLease();
-                    for (FileArtifact &artifact : loadFileArtifactsBatch(lease.get(), member_ids))
-                    {
-                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
-                        member_artifacts.emplace(artifact.file_id, std::move(artifact));
-                    }
-                }
-
-                std::shared_mutex local_rw_mutex; // Protects DB writes during checking
-
-                // CC-3: joined local worker set (see runFanOut) instead of
-                // TPM submission + an unbounded latch wait.
-                auto process_task = [&](const auto &task_data) {
-                        try
-                        {
-                            // Artifacts preloaded above; missing = no embedding row.
-                            FileArtifact member_artifact;
-                            {
-                                auto it = member_artifacts.find(task_data.member.file_id);
-                                if (it == member_artifacts.end())
-                                {
-                                    goto task_end;
-                                }
-                                member_artifact = it->second;
-                            }
-
-                            // Check against representatives of other groups
-                            int best_other_group = -1;
-                            double best_other_similarity = 0.0;
-
-                            for (const auto &[other_group_id, other_rep] : group_representatives)
-                            {
-                                // Skip same group
-                                if (other_group_id == task_data.original_group_id)
-                                    continue;
-
-                                // Skip if metadata incompatible
-                                if (!areMetadataCompatible(member_artifact, other_rep))
-                                    continue;
-
-                                // Check similarity
-                                double sim = computeSimilarity(member_artifact, other_rep, mode);
-                                if (sim > best_other_similarity)
-                                {
-                                    best_other_similarity = sim;
-                                    best_other_group = other_group_id;
-                                }
-                            }
-
-                            // If we found a better match, move the file
-                            if (best_other_group > 0 && best_other_similarity > task_data.member.similarity_score)
-                            {
-                                std::unique_lock<std::shared_mutex> w_lock(local_rw_mutex);
-                                
-                                auto old_group_opt = DuplicateGroupsOps::getGroupById(db_, task_data.original_group_id);
-                                auto new_group_opt = DuplicateGroupsOps::getGroupById(db_, best_other_group);
-
-                                if (old_group_opt.has_value() && new_group_opt.has_value())
-                                {
-                                    // Remove from current group
-                                    if (DuplicateGroupsOps::removeMember(db_, task_data.original_group_id, task_data.member.file_id))
-                                    {
-                                        // Add to new group
-                                        if (addToGroup(best_other_group, member_artifact, mode, best_other_similarity))
-                                        {
-                                            files_moved++;
-
-                                            int new_count = old_group_opt->member_count - 1;
-                                            if (new_count <= 1)
-                                            {
-                                                // Empty or single-member group: delete so the key can re-match
-                                                DuplicateGroupsOps::deleteGroup(db_, task_data.original_group_id);
-                                                // Note: we do NOT erase from group_representatives because it is read concurrently by other threads.
-                                                // The DB delete prevents real grouping, and group_representatives is transient.
-                                            }
-                                            else
-                                            {
-                                                DuplicateGroupsOps::updateGroupMemberCount(db_, task_data.original_group_id, new_count);
-                                            }
-
-                                            DuplicateGroupsOps::updateGroupMemberCount(db_, best_other_group, new_group_opt->member_count + 1);
-                                        }
-                                        else
-                                        {
-                                            // Failed to add to new group, restore to original
-                                            DuplicateGroupsOps::addMember(db_, task_data.original_group_id, task_data.member.file_id, task_data.member.file_path,
-                                                                          task_data.member.similarity_score, task_data.member.file_size,
-                                                                          task_data.member.created_date, task_data.member.is_representative);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (...) {}
-
-                    task_end:;
-                };
-
-                runFanOut(tasks.size(), abort_, [&](std::size_t i)
-                          { process_task(tasks[i]); });
-
-                logger.information("Cross-group checking complete: moved %d files", files_moved.load());
-                return files_moved.load();
-            }
-            catch (const std::exception &e)
-            {
-                logger.error("Exception in performCrossGroupChecking: %s", std::string(e.what()));
-                return files_moved.load();
-            }
-            catch (...)
-            {
-                logger.error("Unknown exception in performCrossGroupChecking");
-                return files_moved.load();
-            }
-        }
     } // namespace Orchestration
 } // namespace MediaDedup
