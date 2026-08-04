@@ -692,6 +692,36 @@ page ≈ **1.3 s of DB work** under a single held lease.
   :1296-1300 needs a timeout).
 
 ### CC-6. Smaller concurrency items (batch into one PR)
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> All items landed except two deliberately skipped:
+> - **TPM:** `kill_timeout_` → atomic; `has_ui_tasks_fn` uses `find()` (no
+>   phantom deque insertion); `TaskCleanupHelper` is stack-scoped (was
+>   thread_local: guard deferred to THREAD exit, stale state across tasks);
+>   submit dedup is an O(1) `inflight_paths_` set ("type|path", maintained in
+>   submit/finish/cancel/clearQueues) replacing the O(queue)+O(active) scan
+>   under mutex_ per submit.
+> - **FilesManager:** `running_` reset by scope guard + `catch (...)` — a
+>   non-std exception can no longer permanently disable scanning.
+> - **Initializer:** mediaProcessor job typeKey "fileScan" → "media_processor"
+>   (copy-paste fix; now matches the share MediaProcessor configures).
+> - **Thumbnail generation locks:** per-key map (erase-while-held race +
+>   leaked entries) → fixed 64-stripe mutex array.
+> - **HEIC:** `makeTempFilePath` (shared racy mt19937 gone), hard 60 s
+>   timeout via runProcessWithTimeout (was untimed wait), `-Z 2560` so HEIC
+>   previews respect the QHD cap.
+> - **subprocess_runner:** adaptive 1→50 ms poll backoff (−~25 ms/spawn).
+> - **gRPC:** `Shutdown(now+5s)` deadline; `GrpcServerCore::stop` detaches
+>   the finder's group-event callback BEFORE tearing down the service it
+>   points at; `DuplicateFinder::group_event_cb_` set/copied under a mutex.
+> - **MediaReadyBus:** per-subscriber queue bounded at 1024, drop-oldest
+>   (events are invalidation hints; the client re-fetches).
+> - *Skipped:* image_task.cpp retry sleeps (dead code — CL-2 deletes the
+>   file); ConsoleInputManager signal-handler rework deferred to CL/AR
+>   phases (touching signal semantics without live shutdown testing is
+>   riskier than the bug).
+> Suite green (286 tests); one test-target source list fixed (heic's new
+> deps). Existing TPM/scheduler suites exercise the changed paths.
 - `ConsoleInputManager::stop()`/`waitForShutdown()` unlocked concurrent join/reset
   (`server_console_input_manager.cpp:163-200`); signal handler uses
   async-signal-unsafe Poco logging and `std::_Exit(0)` on SIGINT bypassing graceful
@@ -732,6 +762,41 @@ linear scan; sqlite-vec `VectorIndex` exists but is effectively unused; a
 threshold change wipes all groups and reprocesses from id 0.
 
 ### DF-1. Load once, compare cheap (prerequisite for everything else)
+
+> **STATUS: ✔ IMPLEMENTED 2026-08-03 — awaiting user validation.**
+> - **Arena + load-once:** `DuplicateFinder::EmbeddingArena` (contiguous
+>   `std::vector<float>` + parallel id array, all rows L2-normalized on
+>   insert) lives for one `findDuplicates()` run and is freed at run end.
+>   The representative + ungrouped pool is loaded ONCE per run (`RunState`,
+>   first non-empty batch) and mutated in memory: cross-batch-grouped files
+>   are erased from the pool under the batch write lock; files that stay
+>   ungrouped are appended at batch end. Batch files are preloaded with one
+>   set-based query (the fan-out previously did a pool checkout + query per
+>   file), as are `performCrossGroupChecking`'s representatives (was one
+>   lease per group) and its low-similarity members (was one lease per
+>   member, inside the fan-out).
+> - **Compare cheap:** `computeSimilarity` uses
+>   `SimilarityCalculator::dotSimilarity` (bare dot product over normalized
+>   arena rows, no copies/norms/sqrts) whenever both files are in the arena;
+>   legacy blob-based cosine remains as the fallback (ad-hoc loads inside
+>   `trySplitAndRedistribute`, zero-norm/mixed-dim rows). Arena mutation
+>   happens only in single-threaded sections; fan-outs strictly read.
+> - **Normalize at write:** `ImageArtifactsOps::upsertEmbedding` L2-normalizes
+>   the blob before storing and feeds the SAME normalized vector to the
+>   vector index (local 10-line helper — no database→media_processors
+>   include edge). Legacy unnormalized rows stay valid: the arena
+>   re-normalizes on load and the fallback normalizes per pair.
+> - **Dead fields dropped:** `FileArtifact.phash/features/features_method`
+>   (never populated by any loader).
+> - **Tests:** 3 new SimilarityCalculatorTest cases pin dotSimilarity ==
+>   legacy cosine (1e-5), unit-norm invariant, zero-vector rejection. Full
+>   suite: 321 tests, 289 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** run a dedup pass over new files and compare wall-clock of
+>   `processBatch` log lines vs. before; groups produced should be identical
+>   (same thresholds, same cosine within float tolerance). Expect the
+>   per-batch "Loaded N group representatives / M ungrouped" lines to appear
+>   only once per run now.
+
 - **Files:** `duplicate_finder.cpp:342-430` (per-batch pool reload),
   `similarity_calculator.cpp:72-140` (`bytesToFloat32` copies, per-pair
   re-normalization in double).

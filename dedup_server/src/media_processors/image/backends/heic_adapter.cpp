@@ -4,9 +4,10 @@
 #include <Poco/Pipe.h>
 #include <Poco/PipeStream.h>
 #include <Poco/StreamCopier.h>
+#include "utils/subprocess_runner.hpp"
+#include "utils/temp_paths.hpp"
 #include <filesystem>
 #include <fstream>
-#include <random>
 
 namespace MediaDedup
 {
@@ -20,38 +21,41 @@ namespace MediaDedup
             return false;
         }
 
-        // Generate a temporary file path
-        std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
-        
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<> dis(0, 15);
-        
-        std::string uuid;
-        const char *hex_chars = "0123456789abcdef";
-        for (int i = 0; i < 8; ++i) uuid += hex_chars[dis(gen)];
-        
-        std::string temp_out_path = (temp_dir / ("heic_out_" + uuid + ".jpg")).string();
+        // CC-6: collision-free temp name from the shared atomic-sequence
+        // helper — the old shared unguarded mt19937 was a data race whose
+        // practical failure was two concurrent conversions clobbering each
+        // other's 8-hex temp file.
+        std::string temp_out_path = makeTempFilePath("heic_out", ".jpg");
 
-        // Use macOS sips
+        // Use macOS sips. -Z caps the long edge at the QHD preview target —
+        // previously the full-resolution JPEG was stored as the "preview",
+        // 3-5x larger than every other format's.
         std::string command = "sips";
         std::vector<std::string> args;
         args.push_back("-s");
         args.push_back("format");
         args.push_back("jpeg");
+        args.push_back("-Z");
+        args.push_back("2560");
         args.push_back(file_path);
         args.push_back("--out");
         args.push_back(temp_out_path);
 
         try
         {
-            Poco::ProcessHandle handle = Poco::Process::launch(command, args, nullptr, nullptr, nullptr);
-            
-            // Wait for completion (could add timeout here if necessary)
-            int rc = handle.wait();
-            if (rc != 0)
+            // CC-6: hard timeout — this was the only subprocess call with an
+            // untimed wait(); a hung sips pinned a preview_generator pool
+            // thread forever.
+            SubprocessResult run = runProcessWithTimeout(command, args, 60000);
+            if (run.timed_out)
             {
-                logger.error("sips command failed with exit code %d for file: %s", rc, file_path);
+                logger.error("sips timed out for file: %s", file_path);
+                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
+                return false;
+            }
+            if (run.exit_code != 0)
+            {
+                logger.error("sips command failed with exit code %d for file: %s", run.exit_code, file_path);
                 if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
                 return false;
             }

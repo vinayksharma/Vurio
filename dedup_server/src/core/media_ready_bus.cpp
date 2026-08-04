@@ -37,6 +37,14 @@ namespace MediaDedup
         {
             {
                 std::lock_guard<std::mutex> lock(subscription->mutex);
+                // CC-6: bound the queue; drop the oldest (the client treats
+                // events as invalidation hints and re-fetches, so losing an
+                // old hint is benign — unbounded growth is not).
+                while (subscription->events.size() >= kMaxQueuedEvents)
+                {
+                    subscription->events.pop();
+                    ++subscription->dropped;
+                }
                 subscription->events.push(event);
             }
             subscription->cv.notify_one();

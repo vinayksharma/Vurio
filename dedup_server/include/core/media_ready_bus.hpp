@@ -35,7 +35,13 @@ namespace MediaDedup
             std::mutex mutex;
             std::condition_variable cv;
             std::queue<Event> events;
+            // CC-6: dropped-oldest count when the queue hits kMaxQueuedEvents
+            // (a subscriber whose Write stalls must not accumulate memory
+            // without bound).
+            size_t dropped = 0;
         };
+
+        static constexpr size_t kMaxQueuedEvents = 1024;
 
         static MediaReadyBus &instance();
 

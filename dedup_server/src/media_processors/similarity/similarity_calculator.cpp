@@ -97,6 +97,35 @@ namespace MediaDedup
         return result;
     }
 
+    double SimilarityCalculator::dotSimilarity(const float *a, const float *b, int dim)
+    {
+        double dot = 0.0;
+        for (int i = 0; i < dim; ++i)
+        {
+            dot += static_cast<double>(a[i]) * static_cast<double>(b[i]);
+        }
+        return std::max(-1.0, std::min(1.0, dot));
+    }
+
+    bool SimilarityCalculator::l2NormalizeInPlace(float *v, int dim)
+    {
+        double norm_sq = 0.0;
+        for (int i = 0; i < dim; ++i)
+        {
+            norm_sq += static_cast<double>(v[i]) * static_cast<double>(v[i]);
+        }
+        if (norm_sq < 1e-20)
+        {
+            return false;
+        }
+        const float inv = static_cast<float>(1.0 / std::sqrt(norm_sq));
+        for (int i = 0; i < dim; ++i)
+        {
+            v[i] *= inv;
+        }
+        return true;
+    }
+
     double SimilarityCalculator::computeEmbeddingSimilarity(const std::vector<std::uint8_t> &embedding1,
                                                             const std::vector<std::uint8_t> &embedding2,
                                                             int dim)

@@ -379,7 +379,10 @@ namespace MediaDedup
             // Register mediaProcessor job
             int mediaIntervalMs = config_manager_->getPropertyValue<int>("media.processor.intervalMs", 30000);
             logger.information("Loading mediaProcessor interval from config: %d ms", mediaIntervalMs);
-            scheduler_service_->registerJob("mediaProcessor", std::chrono::milliseconds(mediaIntervalMs), "fileScan",
+            // CC-6: was "fileScan" (copy-paste) — the media sweep shared the
+            // scanner's per-type allowance. "media_processor" matches the
+            // share MediaProcessor::initialize configures.
+            scheduler_service_->registerJob("mediaProcessor", std::chrono::milliseconds(mediaIntervalMs), "media_processor",
                                             [mp = media_processor_]()
                                             { mp->ProcessMedia(); });
 

@@ -1726,9 +1726,10 @@ void GrpcServerCore::start(const std::string& socket_path,
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
 
+    duplicate_finder_ = duplicate_finder; // CC-6: for callback teardown in stop()
     if (duplicate_finder) {
-        // We use a raw pointer to the service because it's managed by services_ below,
-        // and its lifetime is tied to the gRPC server which lives alongside DuplicateFinder
+        // We use a raw pointer to the service because it's managed by services_ below;
+        // stop() clears this callback before services_ teardown (CC-6).
         DuplicatesServiceImpl* dup_svc = duplicates_service.get();
         duplicate_finder->setGroupEventCallback([dup_svc](int group_id, bool is_new) {
             dup_svc->OnDuplicateGroupEvent(group_id, is_new);
@@ -1765,8 +1766,19 @@ void GrpcServerCore::start(const std::string& socket_path,
 }
 
 void GrpcServerCore::stop() {
+    // CC-6: detach the finder's group-event callback BEFORE tearing down the
+    // service it points at — a still-running dedup task could otherwise call
+    // into freed memory during the shutdown drain window.
+    if (duplicate_finder_) {
+        duplicate_finder_->setGroupEventCallback(nullptr);
+        duplicate_finder_.reset();
+    }
     if (server_) {
-        server_->Shutdown();
+        // CC-6: deadline — an un-deadlined Shutdown blocks until every RPC
+        // returns; the 1 s-polling streams alone stall it, and a stuck unary
+        // handler hangs shutdown forever. In-flight RPCs get 5 s, then are
+        // cancelled.
+        server_->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
         server_.reset();
         services_.clear();
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");

@@ -79,3 +79,44 @@ TEST(SimilarityCalculatorTest, DegenerateInputsScoreZero)
     auto zeros = toBytes(std::vector<float>(512, 0.0f));
     EXPECT_EQ(SimilarityCalculator::computeEmbeddingSimilarity(zeros, good, 512), 0.0);
 }
+
+// ---- DF-1: normalized dot-product fast path ------------------------------
+
+TEST(SimilarityCalculatorTest, DotSimilarityMatchesLegacyCosine)
+{
+    // Two arbitrary (unnormalized) vectors: normalizing then taking the bare
+    // dot product must agree with the legacy blob-based cosine.
+    std::vector<float> v1(512), v2(512);
+    for (int i = 0; i < 512; ++i)
+    {
+        v1[i] = 0.001f * static_cast<float>((i * 37) % 101) - 0.05f;
+        v2[i] = 0.002f * static_cast<float>((i * 53) % 89) - 0.07f;
+    }
+
+    const double legacy = SimilarityCalculator::computeEmbeddingSimilarity(toBytes(v1), toBytes(v2), 512);
+
+    std::vector<float> n1 = v1, n2 = v2;
+    ASSERT_TRUE(SimilarityCalculator::l2NormalizeInPlace(n1.data(), 512));
+    ASSERT_TRUE(SimilarityCalculator::l2NormalizeInPlace(n2.data(), 512));
+    const double fast = SimilarityCalculator::dotSimilarity(n1.data(), n2.data(), 512);
+
+    EXPECT_NEAR(fast, legacy, 1e-5);
+}
+
+TEST(SimilarityCalculatorTest, L2NormalizeProducesUnitNorm)
+{
+    std::vector<float> v(64, 3.0f);
+    ASSERT_TRUE(SimilarityCalculator::l2NormalizeInPlace(v.data(), 64));
+    double norm_sq = 0.0;
+    for (float x : v)
+        norm_sq += static_cast<double>(x) * x;
+    EXPECT_NEAR(norm_sq, 1.0, 1e-6);
+    // Self-similarity of a unit vector is exactly 1 (post-clamp).
+    EXPECT_NEAR(SimilarityCalculator::dotSimilarity(v.data(), v.data(), 64), 1.0, 1e-6);
+}
+
+TEST(SimilarityCalculatorTest, L2NormalizeRejectsZeroVector)
+{
+    std::vector<float> zeros(128, 0.0f);
+    EXPECT_FALSE(SimilarityCalculator::l2NormalizeInPlace(zeros.data(), 128));
+}
