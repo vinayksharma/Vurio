@@ -8,6 +8,7 @@
 #include <vector>
 #include <filesystem>
 #include "config/unified_observable_config.hpp"
+#include "services/eject_service.hpp"
 
 namespace MediaDedup
 {
@@ -23,46 +24,16 @@ namespace MediaDedupServer
 {
     namespace Core
     {
-        // ---------------------------------------------------------------------
-        // File-move utilities used by eject/restore. Exposed here so they can be
-        // unit tested directly (the cross-device copy+verify fallback is otherwise
-        // hard to reach without a second mounted volume).
-        // ---------------------------------------------------------------------
-        struct VerifiedMoveResult {
-            bool ok = false;
-            bool wasRename = false; // true: atomic rename (source already relocated)
-            std::string error;
-        };
-
-        // Copy src -> dest reading the source exactly once (single-pass hashing),
-        // then verify the written destination matches. The source is left in place;
-        // callers delete it only after committing dependent state. On any error or
-        // hash mismatch the partial destination is removed. Always reports
-        // wasRename == false.
-        VerifiedMoveResult copyFileVerified(const std::filesystem::path& src,
-                                            const std::filesystem::path& dest);
-
-        // Move src -> dest. Fast path: atomic same-filesystem rename - no bytes are
-        // copied, so there is nothing to corrupt and no hashing is needed. Genuine
-        // cross-device moves (EXDEV) fall back to copyFileVerified.
-        VerifiedMoveResult moveFileVerified(const std::filesystem::path& src,
-                                            const std::filesystem::path& dest);
-
-        struct BulkOpResult {
-            int successCount = 0;
-            int failureCount = 0;
-            int skippedUnavailable = 0;
-            std::string lastError;
-        };
-
-        // Bulk eject / restore, shared by BOTH the HTTP handlers and the gRPC
-        // server so the optimized move + single-transaction logic lives in exactly
-        // one place (avoids the HTTP/gRPC implementations drifting apart).
-        BulkOpResult bulkEject(MediaDedup::DatabaseManager& db,
-                               const std::vector<std::string>& filePaths);
-        BulkOpResult bulkUndoEject(MediaDedup::DatabaseManager& db,
-                                   const std::vector<std::string>& filePaths,
-                                   bool undoAll);
+        // AR-2: the eject/restore/purge logic (VerifiedMove*, BulkOpResult,
+        // bulkEject/bulkUndoEject, category ejects) moved to
+        // services/eject_service.hpp. Aliases keep this legacy surface
+        // compiling until AR-3 deletes it.
+        using MediaDedup::Services::VerifiedMoveResult;
+        using MediaDedup::Services::copyFileVerified;
+        using MediaDedup::Services::moveFileVerified;
+        using MediaDedup::Services::BulkOpResult;
+        using MediaDedup::Services::bulkEject;
+        using MediaDedup::Services::bulkUndoEject;
 
         /**
          * @brief Handler for GET /api/v1/duplicates/groups

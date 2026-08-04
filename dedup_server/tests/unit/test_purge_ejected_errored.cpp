@@ -2,6 +2,7 @@
 #include <Poco/File.h>
 
 #include "database/database_manager.hpp"
+#include "services/eject_service.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
 #include "database/ejected_files_ops.hpp"
@@ -84,30 +85,10 @@ TEST_F(PurgeEjectedErroredTest, PurgesEjectedFilesAndPromotesRepresentative)
     ASSERT_TRUE(EjectedFilesOps::insert(*db_manager, h3));
 
         // Execute Handler Logic directly to avoid POCO HTTP Mock overhead
-    auto all_histories = EjectedFilesOps::getAll(*db_manager);
-    std::string purity_str = config_manager->getPropertyValue<std::string>("duplicates.purity.order", "FILE_SIZE");
-
-    for (const auto& hist : all_histories) {
-        if (hist.ejected_path.find("/ejected_") != std::string::npos ||
-            hist.ejected_path.find("/errored_") != std::string::npos) {
-            
-            auto groups = DuplicateGroupsOps::getGroupsForFile(*db_manager, hist.file_id, "EMBEDDING");
-            for (const auto& g : groups) {
-                if (g.representative_file_id == hist.file_id) {
-                    Orchestration::DuplicateFinder::promoteNextBestRepresentative(
-                        *db_manager, g.id, hist.file_id, purity_str
-                    );
-                }
-            }
-            bool removed = ScannedFilesOps::completelyRemoveById(*db_manager, hist.file_id);
-            ASSERT_TRUE(removed);
-            
-            // Re-evaluate group size
-            for (const auto& g : groups) {
-                DuplicateGroupsOps::syncGroupMemberCount(*db_manager, g.id);
-            }
-        }
-    }
+    // AR-2: run the REAL shared purge (rep promotion + member-count sync) —
+    // this is the code path both the gRPC and HTTP surfaces call.
+    auto purge_result = MediaDedup::Services::purgeEjected(*db_manager, config_manager);
+    ASSERT_EQ(purge_result.failureCount, 0);
 
     // Verify f1 and f3 are deleted from scanned_files
     ASSERT_FALSE(ScannedFilesOps::getByPath(*db_manager, f1.file_path).has_value());
@@ -160,30 +141,10 @@ TEST_F(PurgeEjectedErroredTest, PurgeCandidateGroupSurvives)
     ASSERT_TRUE(EjectedFilesOps::insert(*db_manager, h3));
 
     // Execute Handler Logic
-    auto all_histories = EjectedFilesOps::getAll(*db_manager);
-    std::string purity_str = config_manager->getPropertyValue<std::string>("duplicates.purity.order", "FILE_SIZE");
-
-    for (const auto& hist : all_histories) {
-        if (hist.ejected_path.find("/ejected_") != std::string::npos ||
-            hist.ejected_path.find("/errored_") != std::string::npos) {
-            
-            auto groups = DuplicateGroupsOps::getGroupsForFile(*db_manager, hist.file_id, "EMBEDDING");
-            for (const auto& g : groups) {
-                if (g.representative_file_id == hist.file_id) {
-                    Orchestration::DuplicateFinder::promoteNextBestRepresentative(
-                        *db_manager, g.id, hist.file_id, purity_str
-                    );
-                }
-            }
-            bool removed = ScannedFilesOps::completelyRemoveById(*db_manager, hist.file_id);
-            ASSERT_TRUE(removed);
-            
-            // Re-evaluate group size
-            for (const auto& g : groups) {
-                DuplicateGroupsOps::syncGroupMemberCount(*db_manager, g.id);
-            }
-        }
-    }
+    // AR-2: run the REAL shared purge (rep promotion + member-count sync) —
+    // this is the code path both the gRPC and HTTP surfaces call.
+    auto purge_result = MediaDedup::Services::purgeEjected(*db_manager, config_manager);
+    ASSERT_EQ(purge_result.failureCount, 0);
 
     // Verify f3 is deleted
     ASSERT_FALSE(ScannedFilesOps::getByPath(*db_manager, f3.file_path).has_value());

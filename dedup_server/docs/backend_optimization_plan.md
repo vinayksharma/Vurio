@@ -1379,6 +1379,43 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   transitively including orchestration/config headers.
 
 ### AR-2. Extract shared services for the drifted gRPC/HTTP clones — keep the HTTP logic, it is the correct fork
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> - **`src/services/eject_service.{hpp,cpp}`** created (namespace
+>   `MediaDedup::Services`) holding: `VerifiedMoveResult` +
+>   `copyFileVerified`/`moveFileVerified`, `BulkOpResult`,
+>   `bulkEject`/`bulkUndoEject` (moved verbatim from
+>   web_handlers_duplicates), `ejectErrored`/`undoEjectErrored`/
+>   `ejectIgnored`/`undoEjectIgnored` (the HTTP fork — collision-safe
+>   `name_1/` folders, SHA1-verified copies, transactional DB updates with
+>   file rollback, pre-existing-row + eject-history cleanup — moved in and
+>   de-duplicated into one parameterized core), and `purgeEjected` (merged:
+>   gRPC's complete /ignored_ coverage + HTTP's member-count sync).
+> - **All three data-loss bugs fixed** by deletion of the gRPC clones
+>   (~500 lines): collision overwrites, counted-successful failed DB writes
+>   that still deleted sources, skipped row/history cleanup. Both surfaces
+>   now marshal only (`fillBulkReply` / `sendBulkResult`).
+> - **gRPC now has ZERO `core/web` includes** — AR-1's last marked edge is
+>   gone. `web_handlers_reset_errors.cpp`: 756 → 198 lines.
+> - **Tests repointed at the service** (survive AR-3):
+>   `test_eject_collision` drives `Services::bulkEject/bulkUndoEject/
+>   moveFileVerified/copyFileVerified` directly (HTTP mocks deleted);
+>   `test_purge_ejected_errored`'s hand-rolled purge loops replaced with
+>   the real `Services::purgeEjected`; `test_duplicates_reset_api` already
+>   tested the ops layer. The legacy hpp keeps `using`-aliases so the HTTP
+>   surface compiles until AR-3 deletes it.
+> - **Deferred to AR-3 (with reasoning):** the listing / preview-generation
+>   / server-status / reset / clear-caches pairs. None carries a named
+>   correctness divergence (the data-loss trio was all in the eject
+>   family); their heavy logic already lives in the shared Ops layer, and
+>   AR-3 deletes the HTTP copies wholesale — extracting services for them
+>   now would only create indirection AR-3 immediately strands.
+> - **Suite:** 338 tests, 306 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; from the app run: eject errored files,
+>   undo; eject ignored, undo; eject selected duplicates with two
+>   same-named files (collision folders appear), undo-all; purge ejected —
+>   all through gRPC, all now on the safe code path.
+
 - **Evidence of drift with data loss** (gRPC `EjectErrors` at
   `grpc_server_core.cpp:634-770` vs HTTP at `web_handlers_reset_errors.cpp:96-274`;
   same four deltas again in `EjectIgnored` `:876-1013` vs `:430-614`):

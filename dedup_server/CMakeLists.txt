@@ -234,6 +234,7 @@ add_executable(media_dedup_server
     src/core/webserver/web_handlers_thumbnail.cpp
     src/core/webserver/web_handlers_preview.cpp
     src/core/webserver/web_handlers_duplicates.cpp
+    src/services/eject_service.cpp
     src/orchestration/integrity_check_service.cpp
     src/core/webserver/web_handlers_cache.cpp
     src/core/server_static_file_handler.cpp
