@@ -40,7 +40,7 @@ namespace MediaDedup::Orchestration
         // code joined workers while holding jobsMutex_, which the TPM job
         // lambdas also take to record completion — a fragile non-deadlock
         // that depended on the worker exit path never touching the mutex.
-        std::vector<std::unique_ptr<Job>> to_join;
+        std::vector<std::shared_ptr<Job>> to_join;
         {
             std::lock_guard<std::mutex> lock(jobsMutex_);
             logger.debug("Stopping %u registered jobs", static_cast<unsigned int>(jobs_.size()));
@@ -111,7 +111,7 @@ namespace MediaDedup::Orchestration
         logger.information("Registering job: %s (type: %s, interval: %ld ms)",
                            jobId, typeKey, static_cast<long>(interval.count()));
 
-        auto job = std::make_unique<Job>();
+        auto job = std::make_shared<Job>();
         job->jobId = jobId;
         job->typeKey = typeKey;
         job->callback = std::move(callback);
@@ -134,12 +134,12 @@ namespace MediaDedup::Orchestration
             return;
         }
 
-        Job &ref = *(jobs_[jobId] = std::move(job));
+        std::shared_ptr<Job> jobShared = (jobs_[jobId] = std::move(job));
+        Job &ref = *jobShared;
         logger.debug("Starting worker thread for job: %s", jobId);
-        Job *jobPtr = &ref;
-        ref.worker = std::thread([this, jobPtr]
+        ref.worker = std::thread([this, jobShared]
                                  {
-            Job &ref = *jobPtr;
+            Job &ref = *jobShared;
             while (running_.load(std::memory_order_relaxed) && !ref.stopFlag.load(std::memory_order_relaxed))
             {
                 refreshJobConfig(ref);
@@ -171,7 +171,7 @@ namespace MediaDedup::Orchestration
 
                 try
                 {
-                    if (!executeJobIfIdle(ref, "scheduled"))
+                    if (!executeJobIfIdle(jobShared, "scheduled"))
                     {
                         Poco::Logger::get("SchedulerService").debug("Job %s is already running, skipping scheduled dispatch", ref.jobId);
                         continue;
@@ -206,7 +206,7 @@ namespace MediaDedup::Orchestration
 
     void SchedulerService::unregisterJob(const std::string &jobId)
     {
-        std::unique_ptr<Job> to_join;
+        std::shared_ptr<Job> to_join;
         {
             std::lock_guard<std::mutex> lock(jobsMutex_);
             auto it = jobs_.find(jobId);
@@ -335,7 +335,7 @@ namespace MediaDedup::Orchestration
 
         // CC-4: the IDLE->RUNNING claim happens atomically inside
         // executeJobIfIdle — no check-then-act window against the worker.
-        if (!executeJobIfIdle(*it->second, "on-demand"))
+        if (!executeJobIfIdle(it->second, "on-demand"))
         {
             logger.debug("Job %s is already running, skipping on-demand trigger", jobId);
             return false; // Not an error, just skipped
@@ -405,8 +405,10 @@ namespace MediaDedup::Orchestration
         pauseCallback_ = std::move(callback);
     }
 
-    bool SchedulerService::executeJobIfIdle(Job &job, const std::string &triggerType)
+    bool SchedulerService::executeJobIfIdle(const std::shared_ptr<Job> &job_ptr, const std::string &triggerType)
     {
+        Job &job = *job_ptr;
+
         // CC-4: atomic claim — two dispatchers (worker loop + on-demand
         // trigger) can never both pass a check-then-act gate again.
         JobState expected = JobState::IDLE;
@@ -421,10 +423,49 @@ namespace MediaDedup::Orchestration
         // drain window — capture a weak_ptr, never raw `this`.
         std::weak_ptr<SchedulerService> weak_self = weak_from_this();
 
+        // The lambda below is the ONLY thing that resets job.state back to
+        // IDLE — and it lives in a TPM queue that clearQueues() (deregister
+        // location, integrity check, cache reset) wipes wholesale, and that
+        // submit() rejects while draining. When the callable was destroyed
+        // without ever executing, the job stayed RUNNING forever and every
+        // later tick "skipped" it — after a deregister + re-register, media
+        // processing silently never started again. This guard rides in the
+        // lambda's captures: destroyed-without-execution restores IDLE so the
+        // next tick redispatches. It resets via an atomic CAS on a
+        // weak_ptr<Job> — deliberately NO jobsMutex_, because the destructor
+        // can run inside the TPM mutex (clearQueues) and triggerJob holds
+        // jobsMutex_ while entering the TPM (ABBA otherwise).
+        struct DispatchDropGuard
+        {
+            std::weak_ptr<Job> job;
+            std::string jobId;
+            std::atomic<bool> executed{false};
+
+            ~DispatchDropGuard()
+            {
+                if (executed.load())
+                    return;
+                if (auto j = job.lock())
+                {
+                    JobState expected_state = JobState::RUNNING;
+                    if (j->state.compare_exchange_strong(expected_state, JobState::IDLE))
+                    {
+                        Poco::Logger::get("SchedulerService").warning(
+                            "Job %s dispatch was dropped before execution (queue cleared or submission rejected); reset to IDLE",
+                            jobId);
+                    }
+                }
+            }
+        };
+        auto drop_guard = std::make_shared<DispatchDropGuard>();
+        drop_guard->job = job_ptr;
+        drop_guard->jobId = jobId;
+
         try
         {
-            tpm_->submit(job.typeKey, [weak_self, jobId, callback, triggerType]()
+            tpm_->submit(job.typeKey, [weak_self, jobId, callback, triggerType, drop_guard]()
                          {
+                drop_guard->executed.store(true);
                 Poco::Logger &logger = Poco::Logger::get("SchedulerService");
                 bool ok = true;
                 std::string error;

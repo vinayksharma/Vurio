@@ -114,14 +114,18 @@ namespace MediaDedup
             // IDLE->RUNNING transition atomically (compare_exchange), so two
             // concurrent dispatch attempts can never double-run a job;
             // returns false when the job was already running.
-            bool executeJobIfIdle(Job &job, const std::string &triggerType);
+            bool executeJobIfIdle(const std::shared_ptr<Job> &job, const std::string &triggerType);
             void handleJobFailure(Job &job, const std::string &error);
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             std::shared_ptr<ThreadPoolManager> tpm_;
 
             std::mutex jobsMutex_;
-            std::unordered_map<std::string, std::unique_ptr<Job>> jobs_;
+            // shared_ptr (was unique_ptr): the dispatch-drop guard holds a
+            // weak_ptr<Job> so it can reset job state lock-free from inside
+            // ThreadPoolManager::clearQueues() — taking jobsMutex_ there would
+            // deadlock against triggerJob's jobsMutex_ -> TPM-mutex order.
+            std::unordered_map<std::string, std::shared_ptr<Job>> jobs_;
 
             std::atomic<bool> running_{false};
             std::atomic<bool> paused_{false};

@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 #include "orchestration/duplicate_finder.hpp"
+#include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
 #include "database/duplicate_groups_ops.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "config/config_manager_factory.hpp"
 #include "test_utils.hpp"
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <memory>
 #include <set>
 #include <vector>
@@ -526,4 +530,83 @@ TEST_F(DuplicateFinderRangeTest, GroupsWithMembersBatchedFetch)
             EXPECT_EQ(gwm.members[2].file_id, mem2a);
         }
     }
+}
+
+// DF-1 end-to-end: a full findDuplicates() run over fabricated embeddings.
+// The two near-identical embeddings must group via the arena fast path
+// (normalized dot product), the distinct one must stay ungrouped, and the
+// checkpoint must advance. Runs the REAL pipeline: run-state load, batch
+// preload into the arena, local-worker fan-out (CC-3), group creation.
+TEST_F(DuplicateFinderRangeTest, FindDuplicatesGroupsSimilarEmbeddingsEndToEnd)
+{
+    // A full findDuplicates run leases many pooled sessions. The fixture's
+    // ":memory:" DB gives every pooled connection its OWN empty database, so
+    // this end-to-end test uses a file-backed DB instead.
+    std::string db_path = (std::filesystem::temp_directory_path() / "df1_end_to_end.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+
+    auto addProcessedFile = [&](const std::string &path, const std::vector<float> &vec) {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": 1000}";
+        row.processed = 2; // finder only considers fully processed files
+        EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+        auto stored = ScannedFilesOps::getByPath(*db_manager_, path);
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+        return stored ? stored->id : 0;
+    };
+
+    // 8-dim embeddings, deliberately UNNORMALIZED (magnitudes 2.0 / 3.0) —
+    // the arena must normalize at load for the dot product to be a cosine.
+    std::vector<float> a  = {2.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> a2 = {3.0f, 0.0f, 0.06f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}; // cos(a,a2) ~ 0.9995
+    std::vector<float> b  = {0.0f, 2.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};  // cos(a,b) ~ 0.01
+
+    int id_a  = addProcessedFile("/df1/a.jpg", a);
+    int id_a2 = addProcessedFile("/df1/a2.jpg", a2);
+    int id_b  = addProcessedFile("/df1/b.jpg", b);
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_a2, 0);
+    ASSERT_GT(id_b, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "exactly one group: the two near-identical embeddings";
+
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 1u);
+    ASSERT_EQ(page.groups[0].members.size(), 2u);
+    std::set<int> member_ids;
+    for (const auto &m : page.groups[0].members)
+        member_ids.insert(m.file_id);
+    EXPECT_TRUE(member_ids.count(id_a));
+    EXPECT_TRUE(member_ids.count(id_a2));
+    EXPECT_FALSE(member_ids.count(id_b)) << "the dissimilar file must stay ungrouped";
+
+    auto checkpoint = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint.has_value());
+    EXPECT_GE(checkpoint->last_processed_id, id_b) << "checkpoint must advance past the batch";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
 }
