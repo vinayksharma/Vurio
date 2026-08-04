@@ -1508,7 +1508,7 @@ public:
                         : ThumbnailGenerator::DEFAULT_TIMEOUT_MS;
                     Magick::Blob blob;
                     // size 0 = native resolution, quality 95 — matches the web endpoint
-                    if (ThumbnailGenerator::generateToBlob(path_copy, 0, blob, 95, timeout_ms)) {
+                    if (ThumbnailGenerator::generateToBlob(path_copy, ThumbnailGenerator::kNativeResolution, blob, 95, timeout_ms)) {
                         std::string out_path = MediaDedup::makeTempFilePath("fullres", ".jpg");
                         std::ofstream out(out_path, std::ios::binary);
                         out.write(static_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.length()));

@@ -69,22 +69,35 @@ namespace MediaDedup
                                                         int quality);
 
         /**
-         * @brief Validate if a size is supported
+         * @brief MP-3: explicit native-resolution sentinel.
+         *
+         * Renders at source resolution and is ONLY for the full-res viewer
+         * paths, which stream/hold the result themselves and never store it
+         * in the thumbnail cache. It is deliberately NOT a valid cached
+         * thumbnail size: size=0 used to pass validation and produce
+         * full-resolution "thumbnails" cached forever that the best-fit
+         * query could never serve.
+         */
+        static constexpr int kNativeResolution = 0;
+
+        /**
+         * @brief Validate if a size is supported for CACHED thumbnails
          * @param size Size to validate
          * @return true if size is one of: 128, 256, 512, 1024
          */
         static bool isValidSize(int size);
 
         /**
-         * @brief Get the closest valid size
+         * @brief Get the closest valid cached-thumbnail size
          * @param requested_size Requested size
          * @return Closest valid size (128, 256, 512, or 1024)
          */
         static int getClosestValidSize(int requested_size);
 
     private:
-        // Supported thumbnail sizes (0 means native resolution)
-        static constexpr int VALID_SIZES[] = {0, 128, 256, 512, 1024};
+        // Supported CACHED thumbnail sizes (native resolution is the
+        // kNativeResolution sentinel, never cached)
+        static constexpr int VALID_SIZES[] = {128, 256, 512, 1024};
         static constexpr int DEFAULT_SIZE = 256;
         static constexpr int DEFAULT_QUALITY = 85;
 

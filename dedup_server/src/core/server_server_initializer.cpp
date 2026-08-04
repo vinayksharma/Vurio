@@ -326,6 +326,18 @@ namespace MediaDedup
                     { PreviewCacheOps::deleteByCachedPaths(*db_for_hooks, paths); });
             }
 
+            // MP-3: purge poisoned size=0 rows — full-resolution renders that
+            // leaked past validation, were cached forever, and could never be
+            // served by the best-fit query. One-time cost proportional to the
+            // damage; a clean install pays a single indexed query.
+            {
+                auto poisoned = ThumbnailCacheOps::purgeSizeZeroThumbnails(*database_manager_);
+                for (const auto &p : poisoned)
+                    thumbnail_disk_cache_->deleteFromCacheImmediately(p);
+                if (!poisoned.empty())
+                    logger.information("Purged %z size=0 full-resolution thumbnail(s)", poisoned.size());
+            }
+
             // MP-2: register the backfill with the REAL cache instances — the
             // previous hook built a second DiskCache pair over the same
             // directories (split-brain accounting, void in-use protection).

@@ -73,10 +73,34 @@ TEST(MagickArgsTest, ThumbnailArgsPropagateSizeAndQuality)
 
 TEST(MagickArgsTest, ThumbnailArgsNativeSizeSkipsResizeButStillStrips)
 {
-    auto args = ThumbnailGenerator::buildMagickArgs("/in/c.jpg", "/out/t.jpg", 0, 85);
+    auto args = ThumbnailGenerator::buildMagickArgs("/in/c.jpg", "/out/t.jpg",
+                                                    ThumbnailGenerator::kNativeResolution, 85);
 
     EXPECT_EQ(countOf(args, "-resize"), 0);
     EXPECT_EQ(countOf(args, "-strip"), 1);
+}
+
+// MP-3: size=0 is no longer a valid CACHED thumbnail size. It used to pass
+// validation and produce full-resolution "thumbnails" cached forever that the
+// best-fit query (thumbnail_size >= ?) could never serve — the gRPC default
+// size=80 normalized straight into that hole.
+TEST(MagickArgsTest, SizeZeroIsNotAValidCachedThumbnailSize)
+{
+    EXPECT_FALSE(ThumbnailGenerator::isValidSize(0));
+    EXPECT_FALSE(ThumbnailGenerator::isValidSize(-1));
+    EXPECT_TRUE(ThumbnailGenerator::isValidSize(128));
+    EXPECT_TRUE(ThumbnailGenerator::isValidSize(1024));
+}
+
+TEST(MagickArgsTest, SmallSizeRequestsSnapToRealSizesNotNative)
+{
+    // The live bug: 80 (gRPC default) snapped to 0 = full resolution.
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(80), 128);
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(1), 128);
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(0), 256) << "0/negative fall back to the default size";
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(-5), 256);
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(300), 256);
+    EXPECT_EQ(ThumbnailGenerator::getClosestValidSize(5000), 1024);
 }
 
 TEST(MagickArgsTest, PreviewArgsStripMetadataExactlyOnce)

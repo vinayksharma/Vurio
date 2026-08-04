@@ -1203,6 +1203,32 @@ threshold change wipes all groups and reprocesses from id 0.
   basename-only naming silently collides).
 
 ### MP-3. Close the `size=0` thumbnail hole
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> - **0 dropped from `VALID_SIZES`** — `isValidSize(0)` is now false, so the
+>   web thumbnail gate 400s size=0 requests. `getClosestValidSize` snaps
+>   small requests to real sizes: the LIVE bug was the gRPC default
+>   `size=80` normalizing to 0 → full-resolution renders cached forever
+>   that `kSelectBestFitThumbnail` could never serve. 80 → 128 now; 0 and
+>   negatives → the 256 default.
+> - **`ThumbnailGenerator::kNativeResolution` sentinel** for the two
+>   full-res viewer paths (`grpc_server_core.cpp` full-res viewer,
+>   `web_handlers_preview.cpp` `size=full`) — renders at source resolution,
+>   bypasses size snapping, and by construction never touches the
+>   thumbnail cache (both paths stream/hold the result themselves).
+> - **Startup purge:** `ThumbnailCacheOps::purgeSizeZeroThumbnails`
+>   deletes the poisoned `thumbnail_size=0` rows and the initializer
+>   unlinks their files — the accumulated ~300 KB-each dead weight goes
+>   away on first start.
+> - **Tests:** `SizeZeroIsNotAValidCachedThumbnailSize`,
+>   `SmallSizeRequestsSnapToRealSizesNotNative` (pins 80→128, 0/neg→256,
+>   5000→1024); the native-args test now uses the sentinel. Suite: 329
+>   tests, 297 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; first start logs
+>   "Purged N size=0 full-resolution thumbnail(s)" if any existed; grid
+>   thumbnails at default sizes render as before; the full-size viewer
+>   still shows native resolution.
+
 - **Files:** `include/utils/thumbnail_generator.hpp:68` (`VALID_SIZES` includes 0),
   `thumbnail_generator.cpp:109` (skips `-resize` when ≤0), `:243-265`
   (`getClosestValidSize` returns 0 for requests ≤64), gate at
