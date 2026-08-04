@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <set>
 #include <vector>
 #include <atomic>
 #include <mutex>
@@ -381,7 +382,8 @@ namespace MediaDedup
                 const std::vector<FileArtifact> &ungrouped_files,
                 int last_processed_id,
                 const std::string &mode,
-                double threshold_min);
+                double threshold_min,
+                const std::set<int> *knn_filter = nullptr);
 
             /**
              * @brief Attempt split and redistribution when new_file is in similar tier

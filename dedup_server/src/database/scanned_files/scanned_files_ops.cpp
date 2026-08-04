@@ -1,6 +1,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
+#include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
@@ -202,9 +203,24 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
-            Statement stmt(sess);
             std::string p = file_path;
+
+            // DF-2: capture the id first so the KNN index row can be removed.
+            int file_id = 0;
+            {
+                Statement sel(sess);
+                sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::into(file_id), Keywords::use(p);
+                sel.execute();
+            }
+
+            Statement stmt(sess);
             stmt << std::string(SQL::kDeleteScannedFile), Keywords::use(p), Keywords::now;
+
+            if (file_id > 0)
+            {
+                if (VectorIndex *vix = db.getVectorIndex())
+                    vix->remove(file_id);
+            }
             return true;
         }
         catch (...)
@@ -226,6 +242,7 @@ namespace MediaDedup
             // removes executed inside the write transaction, holding the
             // single SQLite writer lock across syscalls.
             std::vector<std::string> cache_files;
+            std::vector<int> removed_ids; // DF-2: for vector-index cleanup
             {
                 Statement sel_thumbs(sess);
                 sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)",
@@ -233,6 +250,9 @@ namespace MediaDedup
                 Statement sel_previews(sess);
                 sel_previews << "SELECT cached_path FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)",
                     Keywords::into(cache_files), Keywords::use(key), Keywords::now;
+                Statement sel_ids(sess);
+                sel_ids << "SELECT id FROM scanned_files WHERE location_key=?",
+                    Keywords::into(removed_ids), Keywords::use(key), Keywords::now;
             }
 
             try
@@ -306,6 +326,13 @@ namespace MediaDedup
             }
             if (deleted_files > 0)
                 Poco::Logger::get("ScannedFilesOps").information("Deleted %d cached media files for location key: %s", deleted_files, location_key);
+
+            // DF-2: purge the deleted files' vectors from the KNN index.
+            if (!removed_ids.empty())
+            {
+                if (VectorIndex *vix = db.getVectorIndex())
+                    vix->removeMany(removed_ids);
+            }
 
             Poco::Logger::get("ScannedFilesOps").information("Successfully removed all references for location key: " + location_key);
             return true;
@@ -387,6 +414,11 @@ namespace MediaDedup
                     }
                 } catch (...) {}
             }
+
+            // DF-2: keep the KNN index honest — stale vectors for deleted
+            // files poisoned every neighbor search (remove() had no callers).
+            if (VectorIndex *vix = db.getVectorIndex())
+                vix->remove(file_id);
             return true;
         }
         catch (const std::exception &e)

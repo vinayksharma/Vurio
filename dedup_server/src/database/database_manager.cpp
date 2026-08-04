@@ -94,7 +94,16 @@ namespace MediaDedup
                     {
                         vector_index_ = std::make_unique<VectorIndex>();
                         if (vector_index_->init(db_path_, vec_path, embedding_dim))
+                        {
                             logger_.information("Vector index enabled: extension=%s, dim=%d", vec_path.c_str(), embedding_dim);
+                            // DF-2: bring the index in sync with reality —
+                            // backfill embeddings that predate the index and
+                            // purge vectors for deleted files. One-time cost
+                            // proportional to the drift, ~free when in sync.
+                            VectorIndex::ReconcileStats stats;
+                            if (!vector_index_->reconcile(stats))
+                                logger_.warning("Vector index reconcile failed; KNN results may be incomplete this run.");
+                        }
                         else
                         {
                             logger_.warning("Vector index init failed; duplicate finder will use linear scan.");

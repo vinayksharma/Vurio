@@ -161,6 +161,92 @@ namespace MediaDedup
         return (rc == SQLITE_DONE);
     }
 
+    bool VectorIndex::removeMany(const std::vector<int> &file_ids)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (db_ == nullptr || file_ids.empty())
+            return db_ != nullptr;
+
+        sqlite3_exec(db_, "BEGIN", nullptr, nullptr, nullptr);
+        sqlite3_stmt *stmt = nullptr;
+        std::string sql = "DELETE FROM " + table_name_ + " WHERE file_id = ?";
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            return false;
+        }
+        for (int id : file_ids)
+        {
+            sqlite3_bind_int(stmt, 1, id);
+            sqlite3_step(stmt);
+            sqlite3_reset(stmt);
+        }
+        sqlite3_finalize(stmt);
+        sqlite3_exec(db_, "COMMIT", nullptr, nullptr, nullptr);
+        return true;
+    }
+
+    bool VectorIndex::reconcile(ReconcileStats &out)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        out = ReconcileStats{};
+        if (db_ == nullptr)
+            return false;
+
+        // Fresh databases may not have the main tables yet; skip quietly.
+        {
+            sqlite3_stmt *check = nullptr;
+            if (sqlite3_prepare_v2(db_,
+                                   "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('scanned_files','image_artifacts')",
+                                   -1, &check, nullptr) != SQLITE_OK)
+                return false;
+            int have = 0;
+            if (sqlite3_step(check) == SQLITE_ROW)
+                have = sqlite3_column_int(check, 0);
+            sqlite3_finalize(check);
+            if (have < 2)
+            {
+                Poco::Logger::get("VectorIndex").debug("reconcile skipped: main tables not present yet");
+                return true;
+            }
+        }
+
+        const std::string expected_len = std::to_string(static_cast<long long>(embedding_dim_) * 4);
+        char *err = nullptr;
+
+        // Purge rows whose file (or embedding) no longer exists.
+        std::string purge_sql =
+            "DELETE FROM " + table_name_ + " WHERE file_id NOT IN ("
+            "SELECT sf.id FROM scanned_files sf JOIN image_artifacts ia ON ia.file_path = sf.file_path)";
+        if (sqlite3_exec(db_, purge_sql.c_str(), nullptr, nullptr, &err) != SQLITE_OK)
+        {
+            Poco::Logger::get("VectorIndex").error("reconcile purge failed: %s", std::string(err ? err : sqlite3_errmsg(db_)));
+            if (err) sqlite3_free(err);
+            return false;
+        }
+        out.purged = sqlite3_changes(db_);
+
+        // Backfill every embedded file missing from the index.
+        std::string backfill_sql =
+            "INSERT INTO " + table_name_ + "(file_id, embedding) "
+            "SELECT sf.id, ia.embedding FROM image_artifacts ia "
+            "JOIN scanned_files sf ON sf.file_path = ia.file_path "
+            "WHERE length(ia.embedding) = " + expected_len + " "
+            "AND sf.id NOT IN (SELECT file_id FROM " + table_name_ + ")";
+        if (sqlite3_exec(db_, backfill_sql.c_str(), nullptr, nullptr, &err) != SQLITE_OK)
+        {
+            Poco::Logger::get("VectorIndex").error("reconcile backfill failed: %s", std::string(err ? err : sqlite3_errmsg(db_)));
+            if (err) sqlite3_free(err);
+            return false;
+        }
+        out.inserted = sqlite3_changes(db_);
+
+        Poco::Logger::get("VectorIndex").information(
+            "reconcile complete: backfilled %ld vector(s), purged %ld stale row(s)",
+            static_cast<long>(out.inserted), static_cast<long>(out.purged));
+        return true;
+    }
+
     std::vector<std::pair<int, double>> VectorIndex::queryKnn(const void *embedding_data,
                                                              std::size_t size_bytes,
                                                              int k)
