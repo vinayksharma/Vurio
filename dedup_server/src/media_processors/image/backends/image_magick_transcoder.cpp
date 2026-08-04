@@ -128,6 +128,16 @@ namespace MediaDedup
                                                                            const std::string &output_path)
     {
         std::vector<std::string> args;
+        // MP-1: for JPEG inputs, let libjpeg decode at the smallest scale
+        // that still covers 2x the preview target instead of full
+        // resolution (2-4x faster on large camera JPEGs). Must precede the
+        // input argument to affect the decoder.
+        if (read_path.rfind("jpeg:", 0) == 0)
+        {
+            const std::string hint = std::to_string(2 * MAX_PREVIEW_DIMENSION);
+            args.push_back("-define");
+            args.push_back("jpeg:size=" + hint + "x" + hint);
+        }
         args.push_back(read_path);
         // Drop EXIF/XMP/ICC/IPTC profiles from the cached preview: metadata is
         // always read from the original file, never from the preview, so the
