@@ -458,11 +458,6 @@ namespace MediaDedup
         // loosest position, so no slider move ever needs re-discovery.
         manager->createProperty<double>("duplicates.edges.floor", 0.80, getDesc("duplicates.edges.floor"), getLongDesc("duplicates.edges.floor"));
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age", getDesc("duplicates.representative.strategy"), getLongDesc("duplicates.representative.strategy"));
-        manager->createProperty<bool>("duplicates.metadata.filtering.enabled", false, getDesc("duplicates.metadata.filtering.enabled"), getLongDesc("duplicates.metadata.filtering.enabled"));
-        manager->createProperty<double>("duplicates.metadata.fileSizeTolerance", 0.20000000000000001, getDesc("duplicates.metadata.fileSizeTolerance"), getLongDesc("duplicates.metadata.fileSizeTolerance"));
-        manager->createProperty<double>("duplicates.metadata.dimensionTolerance", 0.10000000000000001, getDesc("duplicates.metadata.dimensionTolerance"), getLongDesc("duplicates.metadata.dimensionTolerance"));
-        manager->createProperty<double>("duplicates.metadata.aspectRatioTolerance", 0.050000000000000003, getDesc("duplicates.metadata.aspectRatioTolerance"), getLongDesc("duplicates.metadata.aspectRatioTolerance"));
-        manager->createProperty<bool>("duplicates.metadata.requireSameFormat", false, getDesc("duplicates.metadata.requireSameFormat"), getLongDesc("duplicates.metadata.requireSameFormat"));
 
         // TPM share for duplicate finder
         manager->createProperty<double>("tpm.types.duplicate_finder.share", 1.0, getDesc("tpm.types.duplicate_finder.share"), getLongDesc("tpm.types.duplicate_finder.share"));

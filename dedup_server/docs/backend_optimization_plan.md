@@ -1030,6 +1030,32 @@ threshold change wipes all groups and reprocesses from id 0.
   (`quality_pipeline.cpp:70,142,195`) → hoist to init.
 
 ### DF-5. Optional: cheap pre-filter
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> **Decision: DELETE, not revive.** With the vec0 exact-KNN index primary
+> (DF-2) and persisted edges (DF-3), a Hamming pre-filter would only
+> accelerate the rare no-index linear fallback — and reviving dHash would
+> ADD per-photo ingest work, the opposite of MP-1's direction.
+> - **Deleted (~1,050 lines):** `opencv_adapter.cpp/hpp`
+>   (`ComputePhash`, both overloads), `features_adapter.cpp/hpp` (the
+>   BALANCED-mode sibling, zero callers, not even tested),
+>   `test_phash_quality.cpp` (15 tests of the dead subject),
+>   `upsertPhash`/`upsertFeatures` warn-stubs +
+>   `ImagePhashRecord`/`ImageFeaturesRecord`, and every CMake reference.
+> - **areMetadataCompatible fate:** the function itself died in DF-3; this
+>   step removed the leftover inert config surface — the five finder fields
+>   + initialize() reads, the five `duplicates.metadata.*` factory
+>   registrations, their config.yaml keys, and their
+>   config.descriptions.json entries (10). The extension-parsing crash and
+>   RAW↔JPEG-tolerance contradiction died with the code.
+> - CL-2's `features_adapter`/`ComputePhash`/`duplicates.metadata.*` items
+>   are hereby done; the rest of CL-2 remains.
+> - **Tests:** suite 318 tests (was 333 — the 15 PhashQualityTest cases
+>   left with their subject), 286 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b` — behavior is identical by construction
+>   (everything removed was unreachable from production); grep confirms
+>   zero references to the deleted symbols remain.
+
 - pHash plumbing is dead (`OpenCvAdapter::ComputePhash` has no production callers;
   `upsertPhash`/`upsertFeatures` are warn-and-return-false stubs). Either delete it
   (see CL-2) or resurrect a 64-bit dHash stored beside the embedding as a Hamming
@@ -1261,8 +1287,8 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
 
 ### CL-2. Dead code inventory (verified zero production references)
 - `src/media_processors/image/image_task.cpp` (whole file; also has the sleep issue
-  in CC-6), `features_adapter.cpp`, `OpenCvAdapter::ComputePhash` (tests only —
-  decide with DF-5), `TranscodingPipeline::TranscodeToMemory` (tests only),
+  in CC-6), ~~`features_adapter.cpp`, `OpenCvAdapter::ComputePhash`~~ (✅ deleted
+  in DF-5), `TranscodingPipeline::TranscodeToMemory` (tests only),
   `ImageMagickTranscoder::{configureImageProperties,setJpegFormatOptions}`,
   `ThumbnailGenerator::generate` file-variant (prod uses `generateToBlob`),
   `src/utils/stderr_capture.cpp` (unreferenced; would deadlock stderr if used),
@@ -1273,7 +1299,7 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
 - Dead config keys: `thumbnail.generation.timeoutMs` (real timeout comes from
   `media.image.transcoding.timeoutMs`), `thumbnail.allowed.sizes` (real list is
   hard-coded `VALID_SIZES`), `database.sqlite.cacheSize`, `database.sqlite.tempStore`
-  (QW-7), `duplicates.metadata.aspectRatioTolerance`/`dimensionTolerance` (DF-5).
+  (QW-7), ~~`duplicates.metadata.*`~~ (✅ removed in DF-5).
   Wire or delete each.
 - Working-tree litter: `src/filesmanager/disk_cache.cpp.bak`; root-level empty DBs
   (`database.db`, `database.sqlite`, `media_dedup.db`, `storage.db` — all 0 bytes,

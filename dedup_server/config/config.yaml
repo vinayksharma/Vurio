@@ -21,7 +21,6 @@ scheduler.backoff.enabled: true
 media.audio.wav: true
 debug.enabled: false
 media.images.bmp: true
-duplicates.metadata.dimensionTolerance: 0.10000000000000001
 media.audio.flac: true
 media.images.raw.raf: true
 database.path: data/dedup_server.db
@@ -40,7 +39,6 @@ media.images.png: true
 media.images.raw.cr2: true
 duplicates.finder.intervalMs: 5000
 database.session.poolMin: 8
-duplicates.metadata.aspectRatioTolerance: 0.050000000000000003
 duplicates.threshold.duplicate: 0.95999999999999996
 media.images.exr: true
 database.session.poolMax: 32
@@ -67,7 +65,6 @@ media.video.mts: true
 scheduler.drift.mode: anchored
 scheduler.drift.maxDriftMs: 60000
 server.instanceCheck.bufferSize: 128
-duplicates.metadata.fileSizeTolerance: 0.20000000000000001
 media.images.tif: true
 tpm.types.media_processor.share: 1
 media.images.exr.transcode: true
@@ -113,9 +110,7 @@ scheduler.maxConsecutiveFailures: 5
 scheduler.backoff.maxMs: 30000
 media.video.flv: true
 media.audio.opus: true
-duplicates.metadata.filtering.enabled: false
 debug.verbose: false
-duplicates.metadata.requireSameFormat: false
 scheduler.jobs: ""
 media.video.wmv: true
 thumbnail.pipeline.enabled: true

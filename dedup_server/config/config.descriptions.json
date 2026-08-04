@@ -1174,41 +1174,6 @@
             "text": "The algorithmic strategy used to determine which file in a duplicate group should be considered the primary or 'best' file."
         }
     ],
-    "duplicates.metadata.filtering.enabled": "Enable Metadata-Based Filtering",
-    "duplicates.metadata.filtering.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Activates secondary checks using metadata (file size, dimensions) to refine duplicate search results."
-        }
-    ],
-    "duplicates.metadata.fileSizeTolerance": "Duplicate File Size Tolerance",
-    "duplicates.metadata.fileSizeTolerance.long": [
-        {
-            "type": "paragraph",
-            "text": "The acceptable difference in file size (as a percentage or ratio) for two files to still be considered potential duplicates."
-        }
-    ],
-    "duplicates.metadata.dimensionTolerance": "Duplicate Image Dimension Tolerance",
-    "duplicates.metadata.dimensionTolerance.long": [
-        {
-            "type": "paragraph",
-            "text": "The acceptable difference in image resolution or dimensions for two images to still be considered potential duplicates."
-        }
-    ],
-    "duplicates.metadata.aspectRatioTolerance": "Duplicate Image Aspect Ratio Tolerance",
-    "duplicates.metadata.aspectRatioTolerance.long": [
-        {
-            "type": "paragraph",
-            "text": "The acceptable difference in aspect ratio for two images to still be considered potential duplicates."
-        }
-    ],
-    "duplicates.metadata.requireSameFormat": "Require Matching Formats for Duplicates",
-    "duplicates.metadata.requireSameFormat.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, two files will only be considered duplicates if they are of the exact same media format."
-        }
-    ],
     "cache.thumbnail.clearOnStartup": "Clear Thumbnail Cache on Startup",
     "cache.thumbnail.clearOnStartup.long": [
         {
