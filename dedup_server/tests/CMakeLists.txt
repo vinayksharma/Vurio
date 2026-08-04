@@ -77,6 +77,7 @@ set(UNIT_TEST_SOURCES
     unit/test_media_generation_failures.cpp
     unit/test_similarity_calculator.cpp
     unit/test_session_pragmas.cpp
+    unit/test_vector_index.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -198,6 +199,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_session_pragmas")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SessionPragmasTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_vector_index")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="VectorIndexTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -740,7 +748,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_magick_limits" AND
       NOT ${test_name} STREQUAL "test_media_generation_failures" AND
       NOT ${test_name} STREQUAL "test_similarity_calculator" AND
-      NOT ${test_name} STREQUAL "test_session_pragmas")
+      NOT ${test_name} STREQUAL "test_session_pragmas" AND
+      NOT ${test_name} STREQUAL "test_vector_index")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

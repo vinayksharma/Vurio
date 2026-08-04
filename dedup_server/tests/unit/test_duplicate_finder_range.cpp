@@ -5,6 +5,7 @@
 #include "database/duplicate_groups_ops.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "database/vector_index.hpp"
 #include "config/config_manager_factory.hpp"
 #include "test_utils.hpp"
 #include <cstdint>
@@ -606,6 +607,90 @@ TEST_F(DuplicateFinderRangeTest, FindDuplicatesGroupsSimilarEmbeddingsEndToEnd)
     auto checkpoint = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
     ASSERT_TRUE(checkpoint.has_value());
     EXPECT_GE(checkpoint->last_processed_id, id_b) << "checkpoint must advance past the batch";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-2 end-to-end: the same grouping scenario, but with the sqlite-vec index
+// ENABLED — candidates come from the KNN query (distance-filtered, no silent
+// full-scan fallback). Results must be identical to the linear-scan run.
+// Skips when the vec0 extension is not present.
+TEST_F(DuplicateFinderRangeTest, FindDuplicatesGroupsViaKnnIndexEndToEnd)
+{
+    std::string ext;
+    for (const char *p : {"extensions/vec0.dylib", "../extensions/vec0.dylib",
+                          "../../dedup_server/extensions/vec0.dylib"})
+        if (std::filesystem::exists(p)) { ext = std::filesystem::absolute(p).string(); break; }
+    if (ext.empty())
+        GTEST_SKIP() << "vec0 extension not found";
+
+    auto ensureProp = [&](const char *key, auto value) {
+        if (!config_->hasProperty(key))
+            config_->createProperty(key, value, "test");
+        config_->setPropertyValue(key, value);
+    };
+    ensureProp("database.vector.enabled", true);
+    ensureProp("database.vector.extensionPath", ext);
+    ensureProp("media.image.embeddingDim", 8);
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+
+    std::string db_path = (std::filesystem::temp_directory_path() / "df2_knn_end_to_end.sqlite").string();
+    std::filesystem::remove(db_path);
+    // Config-carrying DatabaseManager: initializes AND reconciles the index.
+    db_manager_ = std::make_unique<DatabaseManager>(db_path, config_);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_NE(db_manager_->getVectorIndex(), nullptr) << "vector index must be active";
+    ASSERT_TRUE(db_manager_->getVectorIndex()->isReady());
+
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+
+    auto addProcessedFile = [&](const std::string &path, const std::vector<float> &vec) {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": 1000}";
+        row.processed = 2;
+        EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+        auto stored = ScannedFilesOps::getByPath(*db_manager_, path);
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec)); // also feeds the index
+        return stored ? stored->id : 0;
+    };
+
+    std::vector<float> a  = {2.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> a2 = {3.0f, 0.0f, 0.06f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> b  = {0.0f, 2.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+    int id_a  = addProcessedFile("/df2/a.jpg", a);
+    int id_a2 = addProcessedFile("/df2/a2.jpg", a2);
+    int id_b  = addProcessedFile("/df2/b.jpg", b);
+    ASSERT_GT(id_a, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 1u);
+    ASSERT_EQ(page.groups[0].members.size(), 2u);
+    std::set<int> member_ids;
+    for (const auto &m : page.groups[0].members)
+        member_ids.insert(m.file_id);
+    EXPECT_TRUE(member_ids.count(id_a));
+    EXPECT_TRUE(member_ids.count(id_a2));
+    EXPECT_FALSE(member_ids.count(id_b));
 
     db_manager_.reset();
     std::filesystem::remove(db_path);

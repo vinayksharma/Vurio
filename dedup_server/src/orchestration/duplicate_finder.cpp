@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <ctime>
 #include <map>
+#include <optional>
 #include <thread>
 #include <functional>
 
@@ -573,8 +574,9 @@ namespace MediaDedup
                 if (vix && vix->isReady() && knn_k > 0)
                     logger.information("Duplicate finder batch: using KNN (k=%d) for candidate search", knn_k);
                 else
-                    logger.information("Duplicate finder batch: using full scan (vector index %s, knnK=%d)",
-                                      (vix && vix->isReady()) ? "ready" : "unavailable", knn_k);
+                    logger.information(std::string("Duplicate finder batch: using full scan (vector index ") +
+                                       ((vix && vix->isReady()) ? "ready" : "unavailable") +
+                                       ", knnK=" + std::to_string(knn_k) + ")");
 
                 // Process each new file concurrently using ThreadPoolManager
                 std::atomic<int> files_checked{0};
@@ -619,32 +621,51 @@ namespace MediaDedup
                             double threshold_min = getThresholdMin(mode);
                             double threshold_max = getThresholdMax(mode);
 
-                            // STEP 1: Compare against group representatives (or KNN candidates when vector index is enabled)
+                            // STEP 1: Compare against group representatives.
+                            // DF-2: ONE KNN query per new file drives BOTH the
+                            // representative search and the cross-batch pool
+                            // search, distance-filtered to the similarity
+                            // threshold (cosine distance = 1 - cos_sim). The
+                            // file's own row is inserted at embedding-upsert
+                            // time, so an empty result means the index itself
+                            // misbehaved — THAT falls back to a full scan with
+                            // a warning; an empty intersection with the reps
+                            // does NOT (the old code silently full-scanned
+                            // exactly when the library got large).
                             int best_group_id = -1;
                             double best_similarity = 0.0;
+
+                            std::optional<std::set<int>> knn_ids;
+                            if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
+                            {
+                                auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
+                                if (!knn.empty())
+                                {
+                                    const double max_distance = 1.0 - threshold_min + 1e-6;
+                                    knn_ids.emplace();
+                                    for (const auto &p : knn)
+                                        if (p.second <= max_distance)
+                                            knn_ids->insert(p.first);
+                                }
+                                else
+                                {
+                                    logger.warning("KNN returned no rows for file_id %d (index inconsistent?) — using full scan for this file", new_file.file_id);
+                                }
+                            }
                             int metadata_filtered_count = 0;
                             std::vector<FileArtifact> cross_batch_candidates;
 
                             {
                                 std::shared_lock<std::shared_mutex> r_lock(rw_mutex);
 
-                                const std::map<int, FileArtifact> *reps_to_use = &group_representatives;
-                                std::map<int, FileArtifact> candidate_representatives;
-                                if (vix && vix->isReady() && knn_k > 0 && !new_file.embedding.empty())
+                                for (const auto &[group_id, representative] : group_representatives)
                                 {
-                                    auto knn = vix->queryKnn(new_file.embedding.data(), new_file.embedding.size(), knn_k);
-                                    std::set<int> knn_ids;
-                                    for (const auto &p : knn)
-                                        knn_ids.insert(p.first);
-                                    for (const auto &[gid, rep] : group_representatives)
-                                        if (knn_ids.count(rep.file_id))
-                                            candidate_representatives[gid] = rep;
-                                    if (!candidate_representatives.empty())
-                                        reps_to_use = &candidate_representatives;
-                                }
+                                    // DF-2: the index is authoritative when
+                                    // available — reps outside the KNN result
+                                    // cannot clear the threshold.
+                                    if (knn_ids && knn_ids->count(representative.file_id) == 0)
+                                        continue;
 
-                                for (const auto &[group_id, representative] : *reps_to_use)
-                                {
                                     // Metadata pre-filtering: Skip if files are incompatible
                                     if (!areMetadataCompatible(new_file, representative))
                                     {
@@ -663,7 +684,8 @@ namespace MediaDedup
                                 // Search for cross batch candidates OUTSIDE the write lock if no existing group found
                                 if (best_group_id <= 0) {
                                     cross_batch_candidates = findCrossBatchCandidates(
-                                        new_file, ungrouped_files, last_processed_id, mode, threshold_min);
+                                        new_file, ungrouped_files, last_processed_id, mode, threshold_min,
+                                        knn_ids ? &*knn_ids : nullptr);
                                 }
                             } // Read lock released
 
@@ -1625,7 +1647,8 @@ namespace MediaDedup
             const std::vector<FileArtifact> &ungrouped_files,
             int last_processed_id,
             const std::string &mode,
-            double threshold_min)
+            double threshold_min,
+            const std::set<int> *knn_filter)
         {
             std::vector<FileArtifact> candidates;
 
@@ -1634,6 +1657,11 @@ namespace MediaDedup
             for (auto it = ungrouped_files.rbegin(); it != ungrouped_files.rend(); ++it)
             {
                 const FileArtifact &first_match = *it;
+
+                // DF-2: with the index available only its neighbors can clear
+                // the threshold — this was the O(n) half of the old O(n^2).
+                if (knn_filter && knn_filter->count(first_match.file_id) == 0)
+                    continue;
 
                 // Skip files from current batch (they're handled in within-batch grouping)
                 if (first_match.file_id > last_processed_id)
@@ -1655,6 +1683,11 @@ namespace MediaDedup
                     {
                         // Skip files already in the group
                         if (grouped_file_ids.count(candidate.file_id) > 0)
+                            continue;
+
+                        // DF-2: expansion members must also clear the
+                        // threshold vs new_file — only its KNN neighbors can.
+                        if (knn_filter && knn_filter->count(candidate.file_id) == 0)
                             continue;
 
                         // Skip files from current batch

@@ -46,6 +46,20 @@ namespace MediaDedup
          */
         bool remove(int file_id);
 
+        /// DF-2: bulk removal in one transaction (location deregistration).
+        bool removeMany(const std::vector<int> &file_ids);
+
+        /**
+         * DF-2: one-time index reconciliation at startup. Backfills vectors
+         * for every scanned file that has an embedding but no index row
+         * (libraries embedded before the index existed had an EMPTY index —
+         * KNN silently degraded to full scan), and purges rows whose file no
+         * longer exists (deleted files poisoned KNN results; remove() had no
+         * callers before DF-2). Tolerant of missing tables (fresh DB).
+         */
+        struct ReconcileStats { long long inserted = 0; long long purged = 0; };
+        bool reconcile(ReconcileStats &out);
+
         /**
          * K-nearest neighbors using cosine distance.
          * @return Pairs (file_id, distance) ordered by distance ascending (smaller = more similar).
