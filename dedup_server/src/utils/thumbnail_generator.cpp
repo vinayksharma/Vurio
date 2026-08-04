@@ -6,10 +6,14 @@
 #include "utils/temp_paths.hpp"
 #include "utils/tool_paths.hpp"
 #include <Poco/Logger.h>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <vector>
 #include <Magick++.h>
+#if defined(HAVE_OPENCV)
+#include <opencv2/opencv.hpp>
+#endif
 
 namespace MediaDedup
 {
@@ -88,6 +92,60 @@ namespace MediaDedup
                 read_path = "tiff:" + source_path;
             return true;
         }
+
+#if defined(HAVE_OPENCV)
+        /// MP-1: in-process thumbnail for JPEG/PNG inputs — no subprocess, no
+        /// temp output file. Decodes at 1/4 resolution when the source is
+        /// comfortably larger than the thumbnail (libjpeg scaled decode),
+        /// resizes to fit `size` (matching magick's "SxS" geometry), and
+        /// encodes a metadata-free JPEG. EXIF orientation is applied by
+        /// cv::imread. Returns false on any failure — the caller falls back
+        /// to the magick subprocess path.
+        bool encodeThumbnailWithOpenCv(const std::string &path,
+                                       int size,
+                                       int quality,
+                                       Magick::Blob &blob,
+                                       Poco::Logger &logger)
+        {
+            try
+            {
+                cv::setNumThreads(0);
+                cv::Mat img;
+                if (size > 0)
+                {
+                    img = cv::imread(path, cv::IMREAD_REDUCED_COLOR_4);
+                    if (!img.empty() && std::min(img.rows, img.cols) < size)
+                        img = cv::Mat();
+                }
+                if (img.empty())
+                    img = cv::imread(path, cv::IMREAD_COLOR);
+                if (img.empty())
+                    return false;
+
+                if (size > 0)
+                {
+                    double scale = std::min(static_cast<double>(size) / img.cols,
+                                            static_cast<double>(size) / img.rows);
+                    int nw = std::max(1, static_cast<int>(std::lround(img.cols * scale)));
+                    int nh = std::max(1, static_cast<int>(std::lround(img.rows * scale)));
+                    if (nw != img.cols || nh != img.rows)
+                        cv::resize(img, img, cv::Size(nw, nh), 0, 0,
+                                   scale < 1.0 ? cv::INTER_AREA : cv::INTER_LINEAR);
+                }
+
+                std::vector<uchar> encoded;
+                if (!cv::imencode(".jpg", img, encoded, {cv::IMWRITE_JPEG_QUALITY, quality}) || encoded.empty())
+                    return false;
+                blob.update(encoded.data(), encoded.size());
+                logger.debug("Generated thumbnail in-process (OpenCV): %s (%zu bytes)", path, encoded.size());
+                return true;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+#endif
 
         /// Shared back half: run magick with a hard timeout to produce the
         /// output JPEG.
@@ -205,6 +263,28 @@ namespace MediaDedup
             std::string read_path;
             if (!resolveInputPath(source_path, read_path, cleanup, logger))
                 return false;
+
+#if defined(HAVE_OPENCV)
+            // MP-1: JPEG/PNG inputs (previews, RAW-embedded JPEGs, ordinary
+            // photos — the overwhelming majority) encode in-process; magick
+            // remains the fallback and the path for TIFF/HEIC/exotics.
+            {
+                std::string plain_path = read_path;
+                bool opencv_ok_format = false;
+                if (plain_path.rfind("jpeg:", 0) == 0)
+                {
+                    plain_path = plain_path.substr(5);
+                    opencv_ok_format = true;
+                }
+                else if (plain_path.rfind("png:", 0) == 0)
+                {
+                    plain_path = plain_path.substr(4);
+                    opencv_ok_format = true;
+                }
+                if (opencv_ok_format && encodeThumbnailWithOpenCv(plain_path, size, quality, blob, logger))
+                    return true;
+            }
+#endif
 
             TempFileCleanup out_cleanup;
             out_cleanup.path = makeTempFilePath("thumb_out", ".jpg");

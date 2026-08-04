@@ -1071,6 +1071,50 @@ threshold change wipes all groups and reprocesses from id 0.
 ## Phase 4 — Media pipeline & caching
 
 ### MP-1. Cut per-photo ingest work (currently 4 subprocess spawns, 2 full RAW demosaics)
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> Per-RAW ingest is now ONE subprocess and ZERO full demosaics (when the
+> camera embedded a preview JPEG, i.e. virtually always):
+> - **EXIF without pixel decode (item 1):** new `ExifReader` backend.
+>   RAW → LibRaw `open_file()` metadata-only (make/model/capture
+>   time/output dims incl. 90° flip handling) — no unpack, no demosaic, no
+>   subprocess; the old `magick identify` full-demosaiced every RAW just to
+>   report dimensions. Non-RAW → `identify -ping` (header/EXIF read only —
+>   the old call decoded the whole JPEG). `image_processor.cpp`'s 70-line
+>   inline subprocess block replaced by the call; tier-2 low-res filter
+>   unchanged.
+> - **Thumbnail in-process (item 2, reinterpreted):** the plan's
+>   `-write`-merge is unnecessary — `ThumbnailGenerator::generateToBlob`
+>   now encodes JPEG/PNG inputs (previews, RAW-embedded JPEGs, ordinary
+>   photos) with OpenCV in-process: reduced decode when profitable,
+>   fit-to-box resize matching magick's "SxS" geometry (incl. upscale
+>   parity), quality-controlled `imencode`, EXIF orientation honored by
+>   imread, metadata-free by construction. No subprocess, no temp output
+>   file (~4 ms vs a ~100-300 ms spawn). magick remains the fallback and
+>   the TIFF/HEIC/exotics path. ONNX already reads the preview in-process
+>   (DF-4), so preview decode-count is: transcode(1) + embed(¼-scale) +
+>   thumb(¼-scale) — no full re-decodes.
+> - **Scaled decode for large JPEGs (item 3):** `buildPreviewMagickArgs`
+>   emits `-define jpeg:size=5120x5120` (2× the 2560 preview target)
+>   BEFORE jpeg inputs — libjpeg decodes at the smallest sufficient scale,
+>   2-4× faster on big camera JPEGs; non-jpeg inputs unaffected.
+> - **Spawn accounting:** RAW: 3 spawns + 1-2 demosaics → 1 spawn +
+>   0 demosaics. Large JPEG: 3 spawns (one full-decode identify) →
+>   1 faster spawn + 1 cheap `-ping` spawn. Small JPEG: 2 spawns →
+>   1 cheap `-ping` spawn.
+> - **Caveat noted:** the OpenCV thumbnail path ignores ICC profiles
+>   (wide-gamut sources render slightly less saturated at 256px); our own
+>   previews are already sRGB-converted at transcode, so this only touches
+>   direct thumbnails of wide-gamut originals.
+> - **Tests:** arg-shape tests updated + new (`-define` before jpeg input,
+>   absent for non-jpeg), `ExifReaderTest` (ping dims, missing file),
+>   `ThumbnailFastPathTest` (blob decodes back at 256 long edge with
+>   aspect preserved; small-source upscale parity). Suite: 324 tests,
+>   292 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`, ingest a batch with RAWs and watch
+>   processing throughput; log should show no `magick identify` storms,
+>   and thumbnails should appear noticeably faster after processing
+>   (log line "Generated thumbnail in-process (OpenCV)").
 - **Files:** `src/media_processors/image_processor.cpp:36-50` (`magick identify` on
   the original — a **full RAW decode**), `:97-105` (`magick <raw> exif:<tmp>` —
   another full decode); `pipeline_thumbnail_helper.cpp:90` + `thumbnail_generator.cpp:118`

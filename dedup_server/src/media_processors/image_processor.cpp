@@ -1,17 +1,9 @@
 #include "media_processors/image_processor.hpp"
 #include "media_processors/image/pipelines/quality_pipeline.hpp"
+#include "media_processors/image/backends/exif_reader.hpp"
 #include "database/database_manager.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
-#include <Poco/Process.h>
-#include <Poco/Pipe.h>
-#include <Poco/PipeStream.h>
-#include <Poco/StreamCopier.h>
-#include "utils/tool_paths.hpp"
-#include "utils/temp_paths.hpp"
-#include <fstream>
-#include <sstream>
-#include <filesystem>
 #include <algorithm>
 #include "database/scanned_files_ops.hpp"
 
@@ -31,72 +23,22 @@ namespace MediaDedup
             // Note: Transcoding is now handled at the MediaProcessor level
             // ImageProcessor receives pre-transcoded files from the cache
 
-            // Extract EXIF data from the original file using ImageMagick identify subprocess
+            // MP-1: metadata without decoding pixels — LibRaw metadata-only
+            // for RAW (the old `magick identify` full-demosaiced every RAW
+            // just to report dimensions), `identify -ping` for the rest.
+            // (DB-2 already removed the raw EXIF blob dump, which cost a
+            // second full decode per file.)
             try {
-                std::string cmd_identify = ToolPaths::magickPath();
-                std::vector<std::string> args_identify = {
-                    "identify",
-                    "-format",
-                    "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n",
-                    original_file_path
-                };
-                
-                Poco::Pipe out_pipe;
-                Poco::ProcessHandle handle = Poco::Process::launch(cmd_identify, args_identify, nullptr, &out_pipe, nullptr,
-                                                                   ToolPaths::magickResourceEnv());
-                Poco::PipeInputStream istr(out_pipe);
-                std::string output;
-                Poco::StreamCopier::copyToString(istr, output);
-                int rc = handle.wait();
-                
-                if (rc != 0) {
-                    throw std::runtime_error("magick identify failed with exit code " + std::to_string(rc));
-                }
-                
-                std::vector<std::string> lines;
-                std::string line;
-                std::istringstream stream(output);
-                while (std::getline(stream, line)) {
-                    if (!line.empty() && line.back() == '\r') {
-                        line.pop_back();
-                    }
-                    lines.push_back(line);
-                }
-                while (lines.size() < 6) {
-                    lines.push_back("");
-                }
-                
-                std::string width_str = lines[0];
-                std::string height_str = lines[1];
-                std::string exif_dt = lines[2];
-                if (exif_dt.empty()) {
-                    exif_dt = lines[3];
-                }
-                
-                std::string exif_make = lines[4];
-                std::string exif_model = lines[5];
-                std::string exif_camera = exif_make;
-                if (!exif_model.empty()) {
-                    if (!exif_camera.empty()) exif_camera += " ";
-                    exif_camera += exif_model;
-                }
-                
-                std::string exif_res = width_str + "x" + height_str;
-                
-                int width = 0;
-                int height = 0;
-                try {
-                    if (!width_str.empty()) width = std::stoi(width_str);
-                } catch (...) {}
-                try {
-                    if (!height_str.empty()) height = std::stoi(height_str);
-                } catch (...) {}
-                
-                // DB-2: the raw EXIF blob dump is gone. It required a second
-                // `magick <file> exif:` subprocess — a FULL decode of the
-                // original (RAW demosaic included) per ingested file — to
-                // produce 2.83 GB of data nothing ever read. The parsed
-                // fields above are the real product.
+                auto exif = ExifReader::read(original_file_path);
+                if (!exif)
+                    throw std::runtime_error("no metadata readable");
+
+                const std::string &exif_dt = exif->datetime;
+                const std::string &exif_camera = exif->camera;
+                int width = exif->width;
+                int height = exif->height;
+                std::string exif_res = std::to_string(width) + "x" + std::to_string(height);
+
                 ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res);
                 Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s",
                     original_file_path, exif_dt, exif_camera, exif_res);
