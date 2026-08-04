@@ -3,6 +3,7 @@
 #include <string>
 #include <optional>
 #include <cstdint>
+#include <vector>
 
 namespace MediaDedup
 {
@@ -118,6 +119,18 @@ namespace MediaDedup
          * @return true if successful, false otherwise
          */
         static bool updateCacheLocation(DatabaseManager &db, const std::string &old_base_path, const std::string &new_base_path);
-    };
+    
+        /**
+         * @brief MP-2: cached-file paths in least-recently-used order (for
+         * DiskCache eviction).
+         */
+        static std::vector<std::string> lruCachedPaths(DatabaseManager &db, int limit);
+
+        /**
+         * @brief MP-2: delete rows whose files were evicted from disk, so no
+         * dangling rows survive (dangling rows caused regeneration storms).
+         */
+        static bool deleteByCachedPaths(DatabaseManager &db, const std::vector<std::string> &cached_paths);
+};
 
 } // namespace MediaDedup

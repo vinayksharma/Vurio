@@ -1131,6 +1131,56 @@ threshold change wipes all groups and reprocesses from id 0.
 - **Expected:** per-RAW ingest cost roughly halved; spawns 4 → 2 (→ 1 with #2).
 
 ### MP-2. DiskCache: incremental accounting + DB-driven LRU eviction
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> Full DiskCache rework; every plan item landed:
+> - **In-memory index:** `index_` (path → size + insert time) built ONCE at
+>   initialize() via one recursive scan; every insert/delete/eviction
+>   maintains it incrementally. The per-insert readdir + per-file stat +
+>   sort (~180 ms at 59k files, under the mutex) is gone.
+> - **Copies outside the mutex:** copy/move/stream operations are now
+>   3-phase — (locked) admission + eviction + destination claim via a
+>   `pending_writes_` guard; (UNLOCKED) the multi-MB file copy; (locked)
+>   index update. The mutex is held for microseconds, not for I/O — the
+>   ~5 thumbnails/s ceiling is gone.
+> - **DB-driven LRU eviction:** injectable hooks
+>   (`setEvictionHooks(lru_query, evicted_notify)`); the initializer wires
+>   thumbnail_cache/preview_cache `ORDER BY last_accessed_at` queries in
+>   (new `ThumbnailCacheOps`/`PreviewCacheOps::lruCachedPaths` +
+>   `deleteByCachedPaths`, chunked parameterized IN). Evicted files' rows
+>   are deleted in the same pass — no more dangling rows / regeneration
+>   storms. Insert-order fallback (seeded from mtimes at startup) covers
+>   hook-less use and shortfalls.
+> - **Batched eviction:** frees the overflow + 10% of the limit as
+>   headroom, so eviction doesn't re-trigger on every subsequent insert.
+> - **Underflow guard:** all size decrements clamp at 0 (`indexEraseLocked`)
+>   — the wrap that projected an astronomical size and nuked the cache
+>   can't happen.
+> - **MediaBackfill split-brain fixed:** `installHook` now captures the
+>   initializer's REAL cache instances (hook registration moved to after
+>   cache construction); the backfill no longer builds a second DiskCache
+>   pair over the same directories.
+> - **Sharding + collision-free naming:** cached files live at
+>   `<2-hex>/<stem>_<16-hex-hash-of-FULL-path><ext>` — 256 shards keep
+>   directory fan-out flat at 59k+ files, and hashing the full source path
+>   ends the silent basename collisions. (One shard level, not the plan's
+>   `ab/cd/`: two levels would mean ~1 file/dir at current scale.)
+>   Existing flat files are still indexed/evicted; lookups go through DB
+>   rows, so no migration is needed.
+> - **Behavior change:** `deleteFromCache` now also refuses files that are
+>   mid-write or marked in use (previously unguarded).
+> - **Tests:** all 24 existing DiskCacheTest cases pass (one rewritten:
+>   same-basename sources must NOT collide anymore + a deterministic
+>   same-source re-cache test), plus new `EvictionHooks_LruOrderAndNotification`
+>   (hook-designated LRU file evicted first, owner notified of exactly the
+>   deleted paths) and `ShardedLayout_ClearAndAccountingWork`. Suite: 327
+>   tests, 295 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; browse enough thumbnails to push the
+>   cache toward its limit — eviction log lines now read
+>   "Evicted N file(s), freed M MB (LRU)" and evicted thumbnails should
+>   regenerate on demand without storms. New cache files appear under
+>   2-hex shard subdirectories.
+
 - **File:** `src/filesmanager/disk_cache.cpp`.
 - **Problems:** every insert runs `enforceSizeLimit` → full `readdir` + per-file
   `stat` + sort (**~180 ms for 59k files, measured**) under `cache_mutex_`, which is

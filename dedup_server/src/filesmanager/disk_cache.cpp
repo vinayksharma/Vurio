@@ -1,19 +1,35 @@
 #include "filesmanager/disk_cache.hpp"
 #include <Poco/Logger.h>
-#include <Poco/LogStream.h>
 #include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <functional>
-#include <iostream>
 #include <filesystem>
 #include <mutex>
 #include <set>
 
 namespace MediaDedup
 {
-    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager, 
+    namespace
+    {
+        Poco::Logger &cacheLogger()
+        {
+            static Poco::Logger &logger = Poco::Logger::get("DiskCache");
+            return logger;
+        }
+
+        // Lexical containment check: is `path` inside `root`?
+        bool isUnderDirectory(const std::filesystem::path &path, const std::filesystem::path &root)
+        {
+            auto norm_path = path.lexically_normal();
+            auto norm_root = root.lexically_normal();
+            auto rel = norm_path.lexically_relative(norm_root);
+            return !rel.empty() && rel.native().rfind("..", 0) != 0;
+        }
+    }
+
+    DiskCache::DiskCache(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                          const std::string &config_prefix)
         : config_manager_(config_manager),
           cache_location_(DEFAULT_CACHE_LOCATION),
@@ -32,13 +48,20 @@ namespace MediaDedup
         shutdown();
     }
 
+    void DiskCache::setEvictionHooks(LruQueryFn lru_query, EvictedNotifyFn evicted_notify)
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+        lru_query_ = std::move(lru_query);
+        evicted_notify_ = std::move(evicted_notify);
+    }
+
     bool DiskCache::initialize()
     {
         std::lock_guard<std::mutex> lock(cache_mutex_);
 
         if (initialized_)
         {
-            Poco::Logger::get("DiskCache").warning("DiskCache already initialized");
+            cacheLogger().warning("DiskCache already initialized");
             return true;
         }
 
@@ -47,7 +70,7 @@ namespace MediaDedup
             // Get cache location from config
             std::string config_key_location = config_prefix_ + ".location";
             std::string location = config_manager_->getPropertyValue<std::string>(config_key_location, "./" + config_prefix_);
-            
+
             std::filesystem::path base_path(location);
             if (!base_path.is_absolute()) {
                 base_path = std::filesystem::current_path() / base_path;
@@ -69,13 +92,13 @@ namespace MediaDedup
                 if (clear_on_startup)
                 {
                     // Clear existing cache on initialization (for temporary caches like transcoding)
-                    Poco::Logger::get("DiskCache").information("Clearing existing cache directory: " + cache_location_.string());
+                    cacheLogger().information("Clearing existing cache directory: " + cache_location_.string());
                     try
                     {
                         size_t files_deleted = 0;
                         size_t bytes_freed = 0;
 
-                        for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
+                        for (const auto &entry : std::filesystem::recursive_directory_iterator(cache_location_))
                         {
                             if (entry.is_regular_file())
                             {
@@ -85,37 +108,38 @@ namespace MediaDedup
                             }
                         }
 
-                        Poco::Logger::get("DiskCache").information("Cache cleared during initialization: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
+                        cacheLogger().information("Cache cleared during initialization: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
                     }
                     catch (const std::exception &e)
                     {
-                        Poco::Logger::get("DiskCache").error("Failed to clear cache during initialization: " + std::string(e.what()));
+                        cacheLogger().error("Failed to clear cache during initialization: " + std::string(e.what()));
                     }
                 }
                 else
                 {
                     // Cache directory exists - preserve existing cache files (for persistent caches like thumbnails)
-                    Poco::Logger::get("DiskCache").information("Using existing cache directory: " + cache_location_.string());
+                    cacheLogger().information("Using existing cache directory: " + cache_location_.string());
                 }
             }
             else
             {
                 // Create directory if it doesn't exist so the user can easily find it
-                Poco::Logger::get("DiskCache").information("Creating cache directory on initialization: " + cache_location_.string());
+                cacheLogger().information("Creating cache directory on initialization: " + cache_location_.string());
                 std::filesystem::create_directories(cache_location_);
             }
 
-            // Calculate current cache size
-            current_size_bytes_ = calculateCacheSize();
+            // MP-2: the ONE full scan — every later size question is answered
+            // from the in-memory index.
+            rebuildIndexLocked();
 
-            Poco::Logger::get("DiskCache").information("DiskCache initialized at: " + cache_location_.string() + " (Size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB / " + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB)");
+            cacheLogger().information("DiskCache initialized at: " + cache_location_.string() + " (Size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB / " + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB, " + std::to_string(index_.size()) + " files)");
 
             // Enforce limit on startup if cache is already overgrown
             if (current_size_bytes_ > size_limit_bytes_)
             {
                 size_t bytes_to_free = current_size_bytes_ - size_limit_bytes_;
-                Poco::Logger::get("DiskCache").information("Startup check: Cache size exceeds limit. Freeing " + std::to_string(bytes_to_free / (1024 * 1024)) + " MB");
-                removeOldestFiles(bytes_to_free);
+                cacheLogger().information("Startup check: Cache size exceeds limit. Freeing " + std::to_string(bytes_to_free / (1024 * 1024)) + " MB");
+                removeOldestFilesLocked(bytes_to_free);
             }
 
             // Subscribe to configuration changes
@@ -142,7 +166,7 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to initialize DiskCache: " + std::string(e.what()));
+            cacheLogger().error("Failed to initialize DiskCache: " + std::string(e.what()));
             return false;
         }
     }
@@ -156,308 +180,276 @@ namespace MediaDedup
             return;
         }
 
-        Poco::Logger::get("DiskCache").information("DiskCache shutting down");
+        cacheLogger().information("DiskCache shutting down");
         initialized_ = false;
     }
 
     bool DiskCache::copyToCache(const std::string &source_path, std::string &cached_path)
     {
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-
-        if (!initialized_)
-        {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
-            return false;
-        }
-
         try
         {
-            // Check if source file exists
+            // Source inspection happens before any locking.
             if (!std::filesystem::exists(source_path))
             {
-                Poco::Logger::get("DiskCache").error("Source file not found: " + source_path);
+                cacheLogger().error("Source file not found: " + source_path);
                 return false;
             }
-
-            // Get file size
             size_t file_size = std::filesystem::file_size(source_path);
-            Poco::Logger::get("DiskCache").debug("File size: " + std::to_string(file_size) + " bytes, current cache size: " + std::to_string(current_size_bytes_) + " bytes, limit: " + std::to_string(size_limit_bytes_) + " bytes");
 
-            if (file_size > size_limit_bytes_)
+            std::filesystem::path dest_path;
+            std::string dest_path_str;
+
+            // Phase 1 (locked): admission, eviction, claim the destination.
             {
-                Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
-                return false;
-            }
-
-            // Enforce size limit
-            enforceSizeLimit(file_size);
-            Poco::Logger::get("DiskCache").debug("Size limit enforced successfully");
-
-            // Generate cache filename
-            std::string cache_filename = generateCacheFilename(source_path);
-            
-            if (!std::filesystem::exists(cache_location_)) {
-                std::filesystem::create_directories(cache_location_);
-            }
-            
-            std::filesystem::path dest_path = cache_location_ / cache_filename;
-            std::string dest_path_str = dest_path.string();
-            Poco::Logger::get("DiskCache").debug("Generated cache filename: " + cache_filename + ", dest path: " + dest_path_str);
-
-            // Check if file is currently in use
-            if (files_in_use_.find(dest_path_str) != files_in_use_.end())
-            {
-                Poco::Logger::get("DiskCache").warning("Cannot overwrite file currently in use: " + dest_path_str);
-                return false;
-            }
-
-            // Remove existing file if it exists to prevent copy_file issues
-            if (std::filesystem::exists(dest_path))
-            {
-                try
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                if (!initialized_)
                 {
-                    std::filesystem::remove(dest_path);
-                    Poco::Logger::get("DiskCache").debug("Removed existing file before copy: " + dest_path_str);
+                    cacheLogger().error("DiskCache not initialized");
+                    return false;
                 }
-                catch (const std::exception &e)
+                if (file_size > size_limit_bytes_)
                 {
-                    Poco::Logger::get("DiskCache").warning("Failed to remove existing file %s: %s", dest_path_str, e.what());
-                    // Continue with copy attempt - copy_file with overwrite_existing should handle this
+                    cacheLogger().warning("File size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
+                    return false;
                 }
+
+                enforceSizeLimitLocked(file_size);
+
+                dest_path = cache_location_ / generateCacheFilename(source_path);
+                dest_path_str = dest_path.string();
+
+                if (isBusyLocked(dest_path_str))
+                {
+                    cacheLogger().warning("Cannot overwrite file currently in use: " + dest_path_str);
+                    return false;
+                }
+                // Re-caching the same source: uncount the entry being replaced.
+                indexEraseLocked(dest_path_str);
+                pending_writes_.insert(dest_path_str);
             }
 
-            // Copy file (overwrite existing)
-            Poco::Logger::get("DiskCache").debug("About to copy file from " + source_path + " to " + dest_path_str);
-            std::filesystem::copy_file(source_path, dest_path,
-                                       std::filesystem::copy_options::overwrite_existing);
-            Poco::Logger::get("DiskCache").debug("File copy completed successfully");
+            // Phase 2 (UNLOCKED): the multi-MB copy no longer stalls every
+            // other cache user (previously the effective throughput ceiling).
+            bool copied = false;
+            try
+            {
+                std::filesystem::create_directories(dest_path.parent_path());
+                std::filesystem::copy_file(source_path, dest_path,
+                                           std::filesystem::copy_options::overwrite_existing);
+                copied = true;
+            }
+            catch (const std::exception &e)
+            {
+                cacheLogger().error("Failed to copy to cache: " + std::string(e.what()));
+            }
 
-            // Update cache size
-            current_size_bytes_ += file_size;
+            // Phase 3 (locked): account the result, release the claim.
+            {
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                pending_writes_.erase(dest_path_str);
+                if (copied)
+                    indexInsertLocked(dest_path_str, file_size);
+            }
 
-            cached_path = dest_path.string();
+            if (!copied)
+                return false;
 
-            Poco::Logger::get("DiskCache").debug("Copied to cache: " + source_path + " -> " + cached_path + " (" + std::to_string(file_size / 1024) + " KB)");
-
+            cached_path = dest_path_str;
+            cacheLogger().debug("Copied to cache: " + source_path + " -> " + cached_path + " (" + std::to_string(file_size / 1024) + " KB)");
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to copy to cache: " + std::string(e.what())); std::cerr << "COPY EXCEPTION: " << e.what() << std::endl;
+            cacheLogger().error("Failed to copy to cache: " + std::string(e.what()));
             return false;
         }
     }
 
     bool DiskCache::moveToCache(const std::string &source_path, std::string &cached_path)
     {
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-
-        if (!initialized_)
-        {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
-            return false;
-        }
-
         try
         {
-            // Check if source file exists
             if (!std::filesystem::exists(source_path))
             {
-                Poco::Logger::get("DiskCache").error("Source file not found: " + source_path);
+                cacheLogger().error("Source file not found: " + source_path);
                 return false;
             }
-
-            // Get file size
             size_t file_size = std::filesystem::file_size(source_path);
 
-            if (file_size > size_limit_bytes_)
+            std::filesystem::path dest_path;
+            std::string dest_path_str;
+
             {
-                Poco::Logger::get("DiskCache").warning("File size exceeds total cache limit. Refusing to cache.");
-                return false;
-            }
-
-            // Enforce size limit
-            enforceSizeLimit(file_size);
-
-            // Generate cache filename
-            std::string cache_filename = generateCacheFilename(source_path);
-            
-            if (!std::filesystem::exists(cache_location_)) {
-                std::filesystem::create_directories(cache_location_);
-            }
-            
-            std::filesystem::path dest_path = cache_location_ / cache_filename;
-            std::string dest_path_str = dest_path.string();
-
-            // Check if file is currently in use
-            if (files_in_use_.find(dest_path_str) != files_in_use_.end())
-            {
-                Poco::Logger::get("DiskCache").warning("Cannot overwrite file currently in use: " + dest_path_str);
-                return false;
-            }
-
-            // Remove existing file if it exists to prevent rename issues
-            if (std::filesystem::exists(dest_path))
-            {
-                try
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                if (!initialized_)
                 {
-                    std::filesystem::remove(dest_path);
+                    cacheLogger().error("DiskCache not initialized");
+                    return false;
                 }
-                catch (const std::exception &e)
+                if (file_size > size_limit_bytes_)
                 {
-                    Poco::Logger::get("DiskCache").warning("Failed to remove existing file %s: %s", dest_path_str, e.what());
+                    cacheLogger().warning("File size exceeds total cache limit. Refusing to cache.");
+                    return false;
                 }
+
+                enforceSizeLimitLocked(file_size);
+
+                dest_path = cache_location_ / generateCacheFilename(source_path);
+                dest_path_str = dest_path.string();
+
+                if (isBusyLocked(dest_path_str))
+                {
+                    cacheLogger().warning("Cannot overwrite file currently in use: " + dest_path_str);
+                    return false;
+                }
+                indexEraseLocked(dest_path_str);
+                pending_writes_.insert(dest_path_str);
             }
 
-            // Move file
-            std::filesystem::rename(source_path, dest_path);
+            bool moved = false;
+            try
+            {
+                std::filesystem::create_directories(dest_path.parent_path());
+                std::filesystem::rename(source_path, dest_path);
+                moved = true;
+            }
+            catch (const std::exception &e)
+            {
+                cacheLogger().error("Failed to move to cache: " + std::string(e.what()));
+            }
 
-            // Update cache size
-            current_size_bytes_ += file_size;
+            {
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                pending_writes_.erase(dest_path_str);
+                if (moved)
+                    indexInsertLocked(dest_path_str, file_size);
+            }
 
-            cached_path = dest_path.string();
+            if (!moved)
+                return false;
 
-            Poco::Logger::get("DiskCache").debug("Moved to cache: " + source_path + " -> " + cached_path);
-
+            cached_path = dest_path_str;
+            cacheLogger().debug("Moved to cache: " + source_path + " -> " + cached_path);
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to move to cache: " + std::string(e.what()));
+            cacheLogger().error("Failed to move to cache: " + std::string(e.what()));
             return false;
         }
     }
 
     bool DiskCache::saveStreamToCache(std::istream &stream, const std::string &filename, std::string &cached_path)
     {
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-
-        if (!initialized_)
-        {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
-            return false;
-        }
-
         try
         {
-            // Generate cache filename
-            std::string cache_filename = generateCacheFilename(filename);
-            
-            if (!std::filesystem::exists(cache_location_)) {
-                std::filesystem::create_directories(cache_location_);
-            }
+            std::filesystem::path dest_path;
+            std::string dest_path_str;
+            std::filesystem::path temp_path;
 
-            std::filesystem::path dest_path = cache_location_ / cache_filename;
-            std::string dest_path_str = dest_path.string();
-
-            // Check if file is currently in use
-            if (files_in_use_.find(dest_path_str) != files_in_use_.end())
+            // Phase 1 (locked): claim the destination before writing.
             {
-                Poco::Logger::get("DiskCache").warning("Cannot overwrite file currently in use: " + dest_path_str);
-                return false;
-            }
-
-            // Write stream to temporary file first to get size
-            std::filesystem::path temp_path = cache_location_ / (cache_filename + ".tmp");
-
-            {
-                std::ofstream out_file(temp_path, std::ios::binary);
-                if (!out_file)
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                if (!initialized_)
                 {
-                    Poco::Logger::get("DiskCache").error("Failed to create temporary file: " + temp_path.string());
+                    cacheLogger().error("DiskCache not initialized");
                     return false;
                 }
 
-                // Read from stream and write to file
-                // Reset stream position to beginning and clear any error states
-                stream.clear(); // Clear any error flags (eofbit, failbit, badbit)
-                stream.seekg(0, std::ios::beg);
+                dest_path = cache_location_ / generateCacheFilename(filename);
+                dest_path_str = dest_path.string();
 
-                // Verify stream is in good state before reading
-                if (!stream.good())
+                if (isBusyLocked(dest_path_str))
                 {
-                    Poco::Logger::get("DiskCache").error("Stream is not in good state before reading: " + temp_path.string());
+                    cacheLogger().warning("Cannot overwrite file currently in use: " + dest_path_str);
                     return false;
                 }
+                pending_writes_.insert(dest_path_str);
+            }
 
-                // Get stream size for logging (try to calculate, but don't fail if it doesn't work)
-                std::streampos stream_size = -1;
-                auto pos_before = stream.tellg();
-                if (pos_before != std::streampos(-1))
+            temp_path = dest_path;
+            temp_path += ".tmp";
+
+            // Phase 2 (UNLOCKED): stream the payload to a temp file.
+            size_t file_size = 0;
+            bool written = false;
+            try
+            {
+                std::filesystem::create_directories(dest_path.parent_path());
                 {
-                    stream.seekg(0, std::ios::end);
-                    auto pos_end = stream.tellg();
-                    if (pos_end != std::streampos(-1))
+                    std::ofstream out_file(temp_path, std::ios::binary);
+                    if (out_file)
                     {
-                        stream_size = pos_end - pos_before;
+                        stream.clear();
+                        stream.seekg(0, std::ios::beg);
+                        if (stream.good())
+                        {
+                            out_file << stream.rdbuf();
+                            out_file.flush();
+                            written = out_file.good();
+                        }
                     }
-                    stream.seekg(0, std::ios::beg);
-                    stream.clear(); // Clear any flags set by seek operations
                 }
-
-                if (stream_size >= 0)
+                if (written)
                 {
-                    Poco::Logger::get("DiskCache").debug("Reading stream: %lld bytes for %s", static_cast<long long>(stream_size), filename);
+                    file_size = std::filesystem::file_size(temp_path);
+                    if (file_size == 0)
+                    {
+                        cacheLogger().error("Stream resulted in empty file: " + temp_path.string());
+                        written = false;
+                    }
                 }
                 else
                 {
-                    Poco::Logger::get("DiskCache").debug("Reading stream (size unknown) for %s", filename);
+                    cacheLogger().error("Failed to write stream data to temporary file: " + temp_path.string());
                 }
+            }
+            catch (const std::exception &e)
+            {
+                cacheLogger().error("Failed to save stream to cache: " + std::string(e.what()));
+                written = false;
+            }
 
-                // Write stream to file
-                out_file << stream.rdbuf();
-
-                // Flush to ensure data is written
-                out_file.flush();
-
-                // Check if write was successful
-                if (!out_file.good())
+            bool finalized = false;
+            {
+                std::lock_guard<std::mutex> lock(cache_mutex_);
+                if (written && file_size > size_limit_bytes_)
                 {
-                    Poco::Logger::get("DiskCache").error("Failed to write stream data to temporary file: " + temp_path.string());
-                    return false;
+                    cacheLogger().warning("Stream size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
+                    written = false;
                 }
+                if (written)
+                {
+                    enforceSizeLimitLocked(file_size);
+                    indexEraseLocked(dest_path_str); // replacing an existing entry
+                    try
+                    {
+                        std::filesystem::rename(temp_path, dest_path);
+                        indexInsertLocked(dest_path_str, file_size);
+                        finalized = true;
+                    }
+                    catch (const std::exception &e)
+                    {
+                        cacheLogger().error("Failed to finalize cached stream: " + std::string(e.what()));
+                    }
+                }
+                pending_writes_.erase(dest_path_str);
             }
 
-            // Get file size
-            size_t file_size = std::filesystem::file_size(temp_path);
-
-            // Verify file was actually written (not empty)
-            if (file_size == 0)
+            if (!finalized)
             {
-                Poco::Logger::get("DiskCache").error("Stream resulted in empty file: " + temp_path.string());
-                std::filesystem::remove(temp_path);
+                std::error_code ec;
+                std::filesystem::remove(temp_path, ec);
                 return false;
             }
 
-            if (file_size > size_limit_bytes_)
-            {
-                Poco::Logger::get("DiskCache").warning("Stream size (" + std::to_string(file_size / (1024 * 1024)) + " MB) exceeds total cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Refusing to cache.");
-                std::filesystem::remove(temp_path);
-                return false;
-            }
-
-            Poco::Logger::get("DiskCache").debug("Temporary file written: %s (%zu bytes)", temp_path.string(), file_size);
-
-            // Enforce size limit
-            enforceSizeLimit(file_size);
-
-            // Rename temp file to final name
-            std::filesystem::rename(temp_path, dest_path);
-
-            Poco::Logger::get("DiskCache").debug("Renamed temp file to: %s", dest_path.string());
-
-            // Update cache size
-            current_size_bytes_ += file_size;
-
-            cached_path = dest_path.string();
-
-            Poco::Logger::get("DiskCache").debug("Saved stream to cache: " + filename + " -> " + cached_path + " (" + std::to_string(file_size / 1024) + " KB)");
-
+            cached_path = dest_path_str;
+            cacheLogger().debug("Saved stream to cache: " + filename + " -> " + cached_path + " (" + std::to_string(file_size / 1024) + " KB)");
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to save stream to cache: " + std::string(e.what()));
+            cacheLogger().error("Failed to save stream to cache: " + std::string(e.what()));
             return false;
         }
     }
@@ -468,7 +460,7 @@ namespace MediaDedup
 
         if (!initialized_)
         {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
+            cacheLogger().error("DiskCache not initialized");
             return false;
         }
 
@@ -477,33 +469,33 @@ namespace MediaDedup
             std::filesystem::path path(cached_path);
 
             // Verify the file is in the cache directory
-            if (path.string().find(cache_location_.string()) != 0)
+            if (!isUnderDirectory(path, cache_location_))
             {
-                Poco::Logger::get("DiskCache").error("File is not in cache directory: " + cached_path);
+                cacheLogger().error("File is not in cache directory: " + cached_path);
+                return false;
+            }
+
+            if (isBusyLocked(cached_path))
+            {
+                cacheLogger().warning("Cannot delete file currently in use: " + cached_path);
                 return false;
             }
 
             if (!std::filesystem::exists(path))
             {
-                return false; 
+                indexEraseLocked(cached_path);
+                return false;
             }
 
-            // Get file size before deletion
-            size_t file_size = std::filesystem::file_size(path);
-
-            // Delete file
             std::filesystem::remove(path);
+            indexEraseLocked(cached_path);
 
-            // Update cache size
-            current_size_bytes_ -= file_size;
-
-            Poco::Logger::get("DiskCache").debug("Deleted from cache: " + cached_path);
-
+            cacheLogger().debug("Deleted from cache: " + cached_path);
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to delete from cache: " + std::string(e.what()));
+            cacheLogger().error("Failed to delete from cache: " + std::string(e.what()));
             return false;
         }
     }
@@ -514,7 +506,7 @@ namespace MediaDedup
 
         if (!initialized_)
         {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
+            cacheLogger().error("DiskCache not initialized");
             return false;
         }
 
@@ -522,31 +514,40 @@ namespace MediaDedup
         {
             size_t files_deleted = 0;
             size_t bytes_freed = 0;
+            std::vector<std::string> deleted_paths;
 
             if (std::filesystem::exists(cache_location_)) {
-                for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(cache_location_))
                 {
                     if (entry.is_regular_file())
                     {
                         bytes_freed += entry.file_size();
+                        deleted_paths.push_back(entry.path().string());
                         std::filesystem::remove(entry.path());
                         files_deleted++;
                     }
                 }
             }
 
+            index_.clear();
             current_size_bytes_ = 0;
 
             // Clear the files_in_use_ set since all files have been deleted
             files_in_use_.clear();
 
-            Poco::Logger::get("DiskCache").information("Cache cleared: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
+            // Keep the owning tables consistent with the emptied directory.
+            if (evicted_notify_ && !deleted_paths.empty())
+            {
+                try { evicted_notify_(deleted_paths); } catch (...) {}
+            }
+
+            cacheLogger().information("Cache cleared: " + std::to_string(files_deleted) + " files deleted, " + std::to_string(bytes_freed / (1024 * 1024)) + " MB freed");
 
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to clear cache: " + std::string(e.what()));
+            cacheLogger().error("Failed to clear cache: " + std::string(e.what()));
             return false;
         }
     }
@@ -569,159 +570,185 @@ namespace MediaDedup
         return cache_location_.string();
     }
 
-    void DiskCache::enforceSizeLimit(size_t required_space_bytes)
+    void DiskCache::enforceSizeLimitLocked(size_t required_space_bytes)
     {
-        // If file is larger than limit, clear cache and log warning
-        if (required_space_bytes > size_limit_bytes_)
-        {
-            Poco::Logger::get("DiskCache").warning("File size (" + std::to_string(required_space_bytes / (1024 * 1024)) + " MB) exceeds cache limit (" + std::to_string(size_limit_bytes_ / (1024 * 1024)) + " MB). Removing all cached files to accommodate.");
-
-            if (std::filesystem::exists(cache_location_)) {
-                // Remove all cached files (but keep the cache directory)
-                for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
-                {
-                    if (entry.is_regular_file())
-                    {
-                        std::filesystem::remove(entry.path());
-                    }
-                }
-            }
-            current_size_bytes_ = 0;
-
-            // Clear the files_in_use_ set since all files have been deleted
-            files_in_use_.clear();
-
-            Poco::Logger::get("DiskCache").information("All cached files removed due to file size exceeding limit (cache directory preserved)");
-            return;
-        }
-
-        // Calculate space needed to ensure the new size stays within the limit
         size_t projected_size = current_size_bytes_ + required_space_bytes;
+        if (projected_size <= size_limit_bytes_)
+            return;
 
-        if (projected_size > size_limit_bytes_)
-        {
-            size_t bytes_to_free = projected_size - size_limit_bytes_;
-            removeOldestFiles(bytes_to_free);
-        }
+        // MP-2: batch to 10% headroom below the limit so eviction doesn't
+        // re-trigger on every subsequent insert.
+        size_t bytes_to_free = (projected_size - size_limit_bytes_) + size_limit_bytes_ / 10;
+        removeOldestFilesLocked(bytes_to_free);
     }
 
-    void DiskCache::removeOldestFiles(size_t bytes_to_free)
+    void DiskCache::removeOldestFilesLocked(size_t bytes_to_free)
     {
-        auto files_by_age = getFilesByAge();
-
-        // Debug: Log files in use
-        Poco::Logger::get("DiskCache").debug("Files in use set contains:");
-        for (const auto &file : files_in_use_)
-        {
-            Poco::Logger::get("DiskCache").debug("  - " + file);
-        }
-
         size_t bytes_freed = 0;
         size_t files_removed = 0;
+        std::vector<std::string> deleted_paths;
 
-        for (const auto &[path, time] : files_by_age)
+        auto delete_one = [&](const std::string &path_str) -> bool
         {
-            if (bytes_freed >= bytes_to_free)
+            auto it = index_.find(path_str);
+            if (it == index_.end())
+                return false;
+            if (isBusyLocked(path_str))
+                return false;
+            std::error_code ec;
+            std::filesystem::remove(path_str, ec);
+            if (ec)
             {
-                break;
+                cacheLogger().error("Failed to remove file: " + path_str + " - " + ec.message());
+                return false;
             }
+            bytes_freed += it->second.size;
+            indexEraseLocked(path_str);
+            deleted_paths.push_back(path_str);
+            files_removed++;
+            return true;
+        };
 
-            // Skip files that are currently in use
-            if (files_in_use_.find(path.string()) != files_in_use_.end())
-            {
-                Poco::Logger::get("DiskCache").debug("Skipping file currently in use: " + path.string());
-                continue;
-            }
-
-            // Debug: Log all files being considered for deletion
-            Poco::Logger::get("DiskCache").debug("Considering file for deletion: " + path.string());
-
+        // 1) DB-driven LRU: the owning table knows real access recency.
+        if (lru_query_)
+        {
             try
             {
-                size_t file_size = std::filesystem::file_size(path);
-                std::filesystem::remove(path);
-                bytes_freed += file_size;
-                current_size_bytes_ -= file_size;
-                files_removed++;
-                Poco::Logger::get("DiskCache").debug("Deleted file: " + path.string());
+                // Estimate how many rows cover the target, with slack for
+                // rows that are busy/missing.
+                size_t avg = index_.empty() ? 0 : current_size_bytes_ / index_.size();
+                size_t want = avg ? (bytes_to_free / avg) * 3 / 2 + 16 : 256;
+                want = std::min<size_t>(std::max<size_t>(want, 16), 4096);
+
+                for (const auto &candidate : lru_query_(want))
+                {
+                    if (bytes_freed >= bytes_to_free)
+                        break;
+                    delete_one(candidate);
+                }
             }
             catch (const std::exception &e)
             {
-                Poco::Logger::get("DiskCache").error("Failed to remove file: " + path.string() + " - " + e.what());
+                cacheLogger().warning("LRU eviction query failed, using insert-order fallback: " + std::string(e.what()));
             }
         }
 
-        Poco::Logger::get("DiskCache").information("Removed " + std::to_string(files_removed) + " oldest files, freed " + std::to_string(bytes_freed / (1024 * 1024)) + " MB");
+        // 2) Fallback / remainder: index entries oldest-inserted first.
+        if (bytes_freed < bytes_to_free)
+        {
+            std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> by_age;
+            by_age.reserve(index_.size());
+            for (const auto &kv : index_)
+                by_age.emplace_back(kv.first, kv.second.inserted_at);
+            std::sort(by_age.begin(), by_age.end(),
+                      [](const auto &a, const auto &b) { return a.second < b.second; });
+
+            for (const auto &[path_str, when] : by_age)
+            {
+                if (bytes_freed >= bytes_to_free)
+                    break;
+                delete_one(path_str);
+            }
+        }
+
+        // Tell the owner which rows just lost their files — dangling rows
+        // caused regeneration storms.
+        if (evicted_notify_ && !deleted_paths.empty())
+        {
+            try { evicted_notify_(deleted_paths); } catch (...) {}
+        }
+
+        cacheLogger().information("Evicted " + std::to_string(files_removed) + " file(s), freed " + std::to_string(bytes_freed / (1024 * 1024)) + " MB" + (lru_query_ ? " (LRU)" : " (insert-order)"));
     }
 
-    size_t DiskCache::calculateCacheSize()
+    void DiskCache::rebuildIndexLocked()
     {
-        size_t total_size = 0;
+        index_.clear();
+        current_size_bytes_ = 0;
 
         try
         {
             if (!std::filesystem::exists(cache_location_))
-            {
-                return 0;
-            }
+                return;
 
-            for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
+            const auto now = std::chrono::steady_clock::now();
+            for (const auto &entry : std::filesystem::recursive_directory_iterator(cache_location_))
             {
-                if (entry.is_regular_file())
+                if (!entry.is_regular_file())
+                    continue;
+                IndexEntry ie;
+                ie.size = entry.file_size();
+                // Preserve on-disk age ordering for the fallback eviction:
+                // rank existing files by mtime, mapped into steady_clock.
+                std::error_code ec;
+                auto mtime = std::filesystem::last_write_time(entry.path(), ec);
+                if (!ec)
                 {
-                    total_size += entry.file_size();
+                    auto age = std::filesystem::file_time_type::clock::now() - mtime;
+                    ie.inserted_at = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(age);
                 }
+                else
+                {
+                    ie.inserted_at = now;
+                }
+                current_size_bytes_ += ie.size;
+                index_.emplace(entry.path().string(), ie);
             }
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to calculate cache size: " + std::string(e.what()));
+            cacheLogger().error("Failed to index cache directory: " + std::string(e.what()));
         }
-
-        return total_size;
     }
 
-    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> DiskCache::getFilesByAge()
+    void DiskCache::indexInsertLocked(const std::string &path, std::size_t size)
     {
-        std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> files;
+        auto [it, inserted] = index_.insert_or_assign(path, IndexEntry{size, std::chrono::steady_clock::now()});
+        (void)it;
+        (void)inserted;
+        current_size_bytes_ += size;
+    }
 
-        try
-        {
-            for (const auto &entry : std::filesystem::directory_iterator(cache_location_))
-            {
-                if (entry.is_regular_file())
-                {
-                    files.emplace_back(entry.path(), std::filesystem::last_write_time(entry.path()));
-                }
-            }
+    void DiskCache::indexEraseLocked(const std::string &path)
+    {
+        auto it = index_.find(path);
+        if (it == index_.end())
+            return;
+        // Underflow guard: a wrapped counter previously projected the cache
+        // as astronomically over-limit and nuked it.
+        current_size_bytes_ = current_size_bytes_ >= it->second.size
+                                  ? current_size_bytes_ - it->second.size
+                                  : 0;
+        index_.erase(it);
+    }
 
-            // Sort by time (oldest first) - FIFO
-            std::sort(files.begin(), files.end(),
-                      [](const auto &a, const auto &b)
-                      {
-                          return a.second < b.second;
-                      });
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("DiskCache").error("Failed to get files by age: " + std::string(e.what()));
-        }
-
-        return files;
+    bool DiskCache::isBusyLocked(const std::string &path) const
+    {
+        return files_in_use_.count(path) > 0 || pending_writes_.count(path) > 0;
     }
 
     std::string DiskCache::generateCacheFilename(const std::string &original_path)
     {
-        // Extract filename from path (use original filename directly)
         std::filesystem::path path(original_path);
-        return path.filename().string();
+        std::string stem = path.stem().string();
+        std::string ext = path.extension().string();
+
+        const std::size_t h = std::hash<std::string>{}(original_path);
+        std::ostringstream hex;
+        hex << std::hex << std::setfill('0') << std::setw(16) << static_cast<unsigned long long>(h);
+        const std::string digest = hex.str();
+
+        // "<2-hex shard>/<stem>_<digest><ext>": 256 shards keep directory
+        // fan-out flat at scale; the full-path hash makes distinct sources
+        // (same basename, different folders) collision-free.
+        return digest.substr(0, 2) + "/" + stem + "_" + digest + ext;
     }
 
     void DiskCache::onCacheLocationChanged(const std::string &new_location)
     {
         std::lock_guard<std::mutex> lock(cache_mutex_);
 
-        Poco::Logger::get("DiskCache").information("Cache location changed from " + cache_location_.string() + " to " + new_location);
+        cacheLogger().information("Cache location changed from " + cache_location_.string() + " to " + new_location);
 
         try
         {
@@ -741,41 +768,43 @@ namespace MediaDedup
                 std::filesystem::create_directories(cache_location_);
             }
 
-            // Move contents from old location to new location
+            // Move contents from old location to new location (preserving
+            // the shard-relative layout)
             if (!old_location.empty() && old_location != cache_location_ && std::filesystem::exists(old_location))
             {
-                Poco::Logger::get("DiskCache").information("Moving cache contents from " + old_location.string() + " to " + cache_location_.string());
-                
-                for (const auto& entry : std::filesystem::directory_iterator(old_location))
+                cacheLogger().information("Moving cache contents from " + old_location.string() + " to " + cache_location_.string());
+
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(old_location))
                 {
                     if (entry.is_regular_file())
                     {
                         try {
-                            std::filesystem::rename(entry.path(), cache_location_ / entry.path().filename());
+                            auto rel = entry.path().lexically_relative(old_location);
+                            auto dest = cache_location_ / rel;
+                            std::filesystem::create_directories(dest.parent_path());
+                            std::filesystem::rename(entry.path(), dest);
                         } catch (const std::exception& e) {
-                            Poco::Logger::get("DiskCache").warning("Failed to move file " + entry.path().string() + ": " + e.what());
+                            cacheLogger().warning("Failed to move file " + entry.path().string() + ": " + e.what());
                         }
                     }
                 }
-                
-                // Try to remove old directory if empty
+
+                // Try to remove old directory tree if empty
                 try {
-                    if (std::filesystem::is_empty(old_location)) {
-                        std::filesystem::remove(old_location);
-                    }
+                    std::filesystem::remove_all(old_location);
                 } catch (const std::exception& e) {
-                    Poco::Logger::get("DiskCache").warning("Failed to remove old cache directory: " + std::string(e.what()));
+                    cacheLogger().warning("Failed to remove old cache directory: " + std::string(e.what()));
                 }
             }
 
-            // Recalculate cache size for new location
-            current_size_bytes_ = calculateCacheSize();
+            // Re-index the new location
+            rebuildIndexLocked();
 
-            Poco::Logger::get("DiskCache").information("Cache relocated successfully. New size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB");
+            cacheLogger().information("Cache relocated successfully. New size: " + std::to_string(current_size_bytes_ / (1024 * 1024)) + " MB");
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Failed to change cache location: " + std::string(e.what()));
+            cacheLogger().error("Failed to change cache location: " + std::string(e.what()));
         }
     }
 
@@ -786,16 +815,16 @@ namespace MediaDedup
         size_t old_limit_mb = size_limit_bytes_ / (1024 * 1024);
         size_t new_limit_bytes = new_limit_mb * 1024ULL * 1024ULL;
 
-        Poco::Logger::get("DiskCache").information("Cache size limit changed from " + std::to_string(old_limit_mb) + " MB to " + std::to_string(new_limit_mb) + " MB");
+        cacheLogger().information("Cache size limit changed from " + std::to_string(old_limit_mb) + " MB to " + std::to_string(new_limit_mb) + " MB");
 
         size_limit_bytes_ = new_limit_bytes;
 
-        // If current size exceeds new limit, remove oldest files
+        // If current size exceeds new limit, evict down to it
         if (current_size_bytes_ > size_limit_bytes_)
         {
             size_t bytes_to_free = current_size_bytes_ - size_limit_bytes_;
-            Poco::Logger::get("DiskCache").information("Current cache size exceeds new limit. Freeing " + std::to_string(bytes_to_free / (1024 * 1024)) + " MB");
-            removeOldestFiles(bytes_to_free);
+            cacheLogger().information("Current cache size exceeds new limit. Freeing " + std::to_string(bytes_to_free / (1024 * 1024)) + " MB");
+            removeOldestFilesLocked(bytes_to_free);
         }
     }
 
@@ -803,14 +832,14 @@ namespace MediaDedup
     {
         std::lock_guard<std::mutex> lock(cache_mutex_);
         files_in_use_.insert(cached_path);
-        Poco::Logger::get("DiskCache").debug("Marked file as in use: " + cached_path);
+        cacheLogger().debug("Marked file as in use: " + cached_path);
     }
 
     void DiskCache::markFileNotInUse(const std::string &cached_path)
     {
         std::lock_guard<std::mutex> lock(cache_mutex_);
         files_in_use_.erase(cached_path);
-        Poco::Logger::get("DiskCache").debug("Marked file as not in use: " + cached_path);
+        cacheLogger().debug("Marked file as not in use: " + cached_path);
     }
 
     bool DiskCache::deleteFromCacheImmediately(const std::string &cached_path)
@@ -819,14 +848,14 @@ namespace MediaDedup
 
         if (!initialized_)
         {
-            Poco::Logger::get("DiskCache").error("DiskCache not initialized");
+            cacheLogger().error("DiskCache not initialized");
             return false;
         }
 
-        // Check if file is currently in use
-        if (files_in_use_.find(cached_path) != files_in_use_.end())
+        // Check if file is currently in use (or mid-write)
+        if (isBusyLocked(cached_path))
         {
-            Poco::Logger::get("DiskCache").warning("Cannot delete file currently in use: " + cached_path);
+            cacheLogger().warning("Cannot delete file currently in use: " + cached_path);
             return false;
         }
 
@@ -834,42 +863,31 @@ namespace MediaDedup
         {
             std::filesystem::path file_path(cached_path);
 
-            // Check if file exists first
-            if (!std::filesystem::exists(file_path))
+            // Verify file is within the cache directory tree for security
+            // (any shard depth — the old parent==root check broke sharding)
+            if (!isUnderDirectory(file_path, cache_location_))
             {
-                Poco::Logger::get("DiskCache").debug("File not found in cache (already deleted): " + cached_path);
-                return true; // Consider it successfully deleted
-            }
-
-            // Verify file is within cache directory for security
-            std::filesystem::path canonical_file_path = std::filesystem::canonical(file_path);
-            std::filesystem::path canonical_cache_path = std::filesystem::canonical(cache_location_);
-
-            if (!std::filesystem::equivalent(canonical_file_path.parent_path(), canonical_cache_path))
-            {
-                Poco::Logger::get("DiskCache").error("File path outside cache directory: " + cached_path);
+                cacheLogger().error("File path outside cache directory: " + cached_path);
                 return false;
             }
 
-            auto file_size = std::filesystem::file_size(file_path);
+            // Check if file exists first
+            if (!std::filesystem::exists(file_path))
+            {
+                indexEraseLocked(cached_path);
+                cacheLogger().debug("File not found in cache (already deleted): " + cached_path);
+                return true; // Consider it successfully deleted
+            }
+
             std::filesystem::remove(file_path);
+            indexEraseLocked(cached_path);
 
-            // Update current size
-            if (current_size_bytes_ >= file_size)
-            {
-                current_size_bytes_ -= file_size;
-            }
-            else
-            {
-                current_size_bytes_ = 0; // Should not happen, but be safe
-            }
-
-            Poco::Logger::get("DiskCache").debug("Deleted file from cache: " + cached_path + " (freed " + std::to_string(file_size / (1024 * 1024)) + " MB)");
+            cacheLogger().debug("Deleted file from cache: " + cached_path);
             return true;
         }
         catch (const std::exception &e)
         {
-            Poco::Logger::get("DiskCache").error("Error deleting file from cache " + cached_path + ": " + e.what());
+            cacheLogger().error("Error deleting file from cache " + cached_path + ": " + e.what());
             return false;
         }
     }

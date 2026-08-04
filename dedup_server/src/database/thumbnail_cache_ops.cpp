@@ -326,4 +326,54 @@ namespace MediaDedup
         }
     }
 
+
+    std::vector<std::string> ThumbnailCacheOps::lruCachedPaths(DatabaseManager &db, int limit)
+    {
+        std::vector<std::string> paths;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            stmt << "SELECT cached_path FROM thumbnail_cache ORDER BY last_accessed_at ASC LIMIT ?",
+                into(paths), use(limit), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("lruCachedPaths failed: %s", std::string(e.what()));
+        }
+        return paths;
+    }
+
+    bool ThumbnailCacheOps::deleteByCachedPaths(DatabaseManager &db, const std::vector<std::string> &cached_paths)
+    {
+        if (cached_paths.empty())
+            return true;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            constexpr std::size_t kChunk = 500;
+            for (std::size_t start = 0; start < cached_paths.size(); start += kChunk)
+            {
+                std::vector<std::string> chunk(cached_paths.begin() + start,
+                                               cached_paths.begin() + std::min(cached_paths.size(), start + kChunk));
+                std::string placeholders;
+                for (std::size_t i = 0; i < chunk.size(); ++i)
+                    placeholders += i ? ",?" : "?";
+                Statement stmt(sess);
+                stmt << "DELETE FROM thumbnail_cache WHERE cached_path IN (" + placeholders + ")";
+                for (auto &p : chunk)
+                    stmt, use(p);
+                stmt.execute();
+            }
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("deleteByCachedPaths failed: %s", std::string(e.what()));
+            return false;
+        }
+    }
+
 } // namespace MediaDedup
