@@ -234,6 +234,7 @@ add_executable(media_dedup_server
     src/core/webserver/web_handlers_thumbnail.cpp
     src/core/webserver/web_handlers_preview.cpp
     src/core/webserver/web_handlers_duplicates.cpp
+    src/orchestration/integrity_check_service.cpp
     src/core/webserver/web_handlers_cache.cpp
     src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
@@ -265,6 +266,7 @@ add_executable(media_dedup_server
     src/media_processors/image_processor.cpp
     src/media_processors/image/image_task.cpp
     src/media_processors/image/pipeline_thumbnail_helper.cpp
+    src/media_processors/thumbnail_service.cpp
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp

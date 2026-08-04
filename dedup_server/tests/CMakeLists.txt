@@ -314,6 +314,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
+    ${CMAKE_SOURCE_DIR}/src/orchestration/integrity_check_service.cpp
             ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/scheduler_service.cpp
@@ -561,8 +562,10 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_thumbnail.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/thumbnail_service.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
     ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
+    ${CMAKE_SOURCE_DIR}/src/orchestration/integrity_check_service.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp

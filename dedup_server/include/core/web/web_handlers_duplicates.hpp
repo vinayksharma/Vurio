@@ -197,32 +197,8 @@ namespace MediaDedupServer
             std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> config_manager_;
         };
 
-        struct IntegrityCheckState {
-            std::atomic<bool> is_running{false};
-            std::atomic<int> progress{0};
-            std::atomic<int> total_files{0};
-            std::atomic<int> processed_files{0};
-            std::atomic<int> files_removed{0};
-            std::atomic<int> groups_removed{0};
-            std::atomic<int> thumbnails_removed{0};
-            std::atomic<int> artifacts_removed{0};
-            std::atomic<int> errors_removed{0};
-            std::string current_phase;
-        };
-
-        struct IntegrityCheckStatusSnapshot {
-            bool is_running;
-            int progress;
-            int total_files;
-            int processed_files;
-            int files_removed;
-            int groups_removed;
-            int thumbnails_removed;
-            int artifacts_removed;
-            int errors_removed;
-            std::string current_phase;
-        };
-
+        // AR-1: IntegrityCheckState/Snapshot and the runner moved to
+        // MediaDedup::Orchestration::IntegrityCheckService.
         class DatabaseIntegrityCheckHandler : public Poco::Net::HTTPRequestHandler
         {
         public:
@@ -235,31 +211,11 @@ namespace MediaDedupServer
             void handleRequest(Poco::Net::HTTPServerRequest &request,
                                Poco::Net::HTTPServerResponse &response) override;
 
-            static bool startIntegrityCheck(
-                std::shared_ptr<MediaDedup::DatabaseManager> db,
-                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
-                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
-                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm,
-                std::string& out_error);
-
-            static IntegrityCheckStatusSnapshot getIntegrityCheckStatus();
-
-            // The actual background task
-            static void performIntegrityCheck(
-                std::shared_ptr<MediaDedup::DatabaseManager> db,
-                std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> cfg,
-                std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
-                std::shared_ptr<MediaDedup::ThreadPoolManager> tpm);
-
         private:
             std::shared_ptr<MediaDedup::DatabaseManager> database_manager_;
             std::shared_ptr<MediaDedup::UnifiedObservableConfigManager> config_manager_;
             std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_service_;
             std::shared_ptr<MediaDedup::ThreadPoolManager> tpm_;
-
-            // Global state for the async operation (shared across all requests)
-            static IntegrityCheckState state_;
-            static std::mutex state_mutex_;
 
             void handleStart(Poco::Net::HTTPServerResponse &response);
             void handleStatus(Poco::Net::HTTPServerResponse &response);
