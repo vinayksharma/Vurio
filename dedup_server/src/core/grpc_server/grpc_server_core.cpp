@@ -25,10 +25,7 @@
 #include "filesmanager/disk_cache.hpp"
 #include "filesmanager/media_availability.hpp"
 #include "orchestration/integrity_check_service.hpp"
-// AR-2 (pending): the LAST upward edge into core/web — bulkEject/bulkUndoEject
-// live in the HTTP duplicates handler and are shared by this service. AR-2
-// extracts them into a shared eject service; this include dies with it.
-#include "core/web/web_handlers_duplicates.hpp"
+#include "services/eject_service.hpp"
 #include "media_processors/media_processor.hpp"
 #include "media_processors/thumbnail_service.hpp"
 #include "database/thumbnail_cache_ops.hpp"
@@ -556,7 +553,7 @@ public:
         // Delegate to the shared, optimized bulk eject (rename fast path,
         // single batched transaction) used by the HTTP handler too.
         std::vector<std::string> paths(request->file_paths().begin(), request->file_paths().end());
-        auto r = MediaDedupServer::Core::bulkEject(*db_, paths);
+        auto r = MediaDedup::Services::bulkEject(*db_, paths);
         reply->set_success(r.successCount > 0 || (r.failureCount == 0 && r.skippedUnavailable > 0));
         reply->set_success_count(r.successCount);
         reply->set_failure_count(r.failureCount);
@@ -569,7 +566,7 @@ public:
                                      vurio::dedup::UndoEjectDuplicatesResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::vector<std::string> paths(request->file_paths().begin(), request->file_paths().end());
-        auto r = MediaDedupServer::Core::bulkUndoEject(*db_, paths, request->undo_all());
+        auto r = MediaDedup::Services::bulkUndoEject(*db_, paths, request->undo_all());
         reply->set_success(r.successCount > 0 || (r.failureCount == 0));
         reply->set_success_count(r.successCount);
         reply->set_failure_count(r.failureCount);
@@ -682,137 +679,26 @@ public:
         return grpc::Status::OK;
     }
 
+    // AR-2: category ejects + purge delegate to the shared eject service —
+    // the previous inline clones lacked filename-collision handling, ignored
+    // DB-write failures (still deleting sources), and skipped row/history
+    // cleanup. The service carries the correct (former HTTP) logic.
+
+    static void fillBulkReply(vurio::dedup::AdvancedActionResponse* reply,
+                              const MediaDedup::Services::BulkOpResult& r) {
+        reply->set_success(r.successCount > 0 || r.failureCount == 0);
+        reply->set_success_count(r.successCount);
+        reply->set_failure_count(r.failureCount);
+        if (r.successCount == 0 && !r.lastError.empty()) {
+            reply->set_error_message(r.lastError);
+        }
+    }
+
     grpc::Status EjectErrors(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                              vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
-            auto errored_files = MediaDedup::ScannedFilesOps::listErroredFiles(*db_);
-            int success_count = 0;
-            int failure_count = 0;
-            std::string last_error = "";
-
-            for (const auto& file_opt : errored_files) {
-                std::string file_path = file_opt.file_path;
-                std::string location_key = file_opt.location_key;
-                std::string ejection_path;
-
-                if (!MediaDedup::UserSettingsOps::get(*db_, "ejectionPathErrored:" + location_key, ejection_path)) {
-                    std::string media_location_path;
-                    if (!MediaDedup::UserSettingsOps::get(*db_, location_key, media_location_path)) {
-                        last_error = "Cannot find registered media location for key: " + location_key;
-                        failure_count++;
-                        continue;
-                    }
-                    Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                    std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / ("errored_" + uuid.toString());
-                    ejection_path = ejected.string();
-                    std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
-                    
-                    try {
-                        std::filesystem::create_directories(ejected);
-                        MediaDedup::UserSettingsOps::upsert(*db_, "ejectionPathErrored:" + location_key, ejection_path);
-                    } catch (const std::exception& e) {
-                        last_error = "Failed to create ejection directory: " + std::string(e.what());
-                        failure_count++;
-                        continue;
-                    }
-                } else {
-                    std::filesystem::path ejected(ejection_path);
-                    if (!std::filesystem::exists(ejected)) {
-                        try {
-                            std::filesystem::create_directories(ejected);
-                        } catch (const std::exception& e) {
-                            last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
-                            failure_count++;
-                            continue;
-                        }
-                    }
-                }
-
-                std::string normalized_file_path = file_path;
-                std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
-                if (normalized_file_path.find(ejection_path) == 0) {
-                    success_count++;
-                    continue;
-                }
-
-                std::filesystem::path src(file_path);
-                if (!std::filesystem::exists(src)) {
-                    last_error = "File does not exist on disk: " + file_path;
-                    failure_count++;
-                    continue;
-                }
-
-                std::string dest_filename = src.filename().string();
-                std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string new_file_path = dest.string();
-                        std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
-
-                        std::string new_relative_path;
-                        std::string media_location_path;
-                        if (MediaDedup::UserSettingsOps::get(*db_, location_key, media_location_path)) {
-                            new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
-                            std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
-                        }
-
-                        MediaDedup::EjectedFileHistory history;
-                        history.file_id = file_opt.id;
-                        history.ejected_path = new_file_path;
-                        history.original_file_path = file_opt.file_path;
-                        history.original_relative_path = file_opt.relative_path;
-                        history.original_location_key = location_key;
-
-                        try {
-                            auto lease = db_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            MediaDedup::EjectedFilesOps::insert(sess, history);
-                            MediaDedup::ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        last_error = "SHA1 mismatch after copy - file corruption prevented.";
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    last_error = "Error copying file: " + std::string(e.what());
-                    failure_count++;
-                }
-            }
-            
-            reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0));
-            reply->set_success_count(success_count);
-            reply->set_failure_count(failure_count);
-            if (success_count == 0 && !last_error.empty()) {
-                reply->set_error_message(last_error);
-            }
+            fillBulkReply(reply, MediaDedup::Services::ejectErrored(*db_));
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
@@ -824,99 +710,7 @@ public:
                                  vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
-            auto all_histories = MediaDedup::EjectedFilesOps::getAll(*db_);
-            std::vector<MediaDedup::EjectedFileHistory> histories;
-            for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("/errored_") != std::string::npos) {
-                    histories.push_back(hist);
-                }
-            }
-
-            int success_count = 0;
-            int failure_count = 0;
-
-            for (const auto& history : histories) {
-                std::string ejected_path = history.ejected_path;
-                std::string original_path = history.original_file_path;
-
-                std::filesystem::path src(ejected_path);
-                std::filesystem::path dest(original_path);
-
-                if (!std::filesystem::exists(src)) {
-                    MediaDedup::EjectedFilesOps::deleteByEjectedPath(*db_, ejected_path);
-                    failure_count++;
-                    continue;
-                }
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string dest_path_str = dest.string();
-                        std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
-
-                        try {
-                            auto lease = db_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
-
-                            std::string dest_p = dest_path_str;
-                            Poco::Data::Statement stmt_update_state(sess);
-                            int unproc = 0;
-                            stmt_update_state << "UPDATE scanned_files SET processed=? WHERE file_path=?", Poco::Data::Keywords::use(unproc), Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            Poco::Data::Statement stmt_del_err(sess);
-                            stmt_del_err << "DELETE FROM processing_errors WHERE file_path=?", Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-
-                        try {
-                            std::filesystem::path parent = src.parent_path();
-                            std::filesystem::path ds_store = parent / ".DS_Store";
-                            if (std::filesystem::exists(ds_store)) {
-                                std::filesystem::remove(ds_store);
-                            }
-                            if (std::filesystem::is_empty(parent)) {
-                                std::filesystem::remove(parent);
-                                MediaDedup::UserSettingsOps::remove(*db_, "ejectionPathErrored:" + history.original_location_key);
-                            }
-                        } catch (...) {}
-
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    failure_count++;
-                }
-            }
-
-            reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
-            reply->set_success_count(success_count);
-            reply->set_failure_count(failure_count);
+            fillBulkReply(reply, MediaDedup::Services::undoEjectErrored(*db_));
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
@@ -928,133 +722,7 @@ public:
                               vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
-            auto ignored_files = MediaDedup::ScannedFilesOps::listIgnoredFiles(*db_);
-            int success_count = 0;
-            int failure_count = 0;
-            std::string last_error = "";
-
-            for (const auto& file_opt : ignored_files) {
-                std::string file_path = file_opt.file_path;
-                std::string location_key = file_opt.location_key;
-                std::string ejection_path;
-
-                if (!MediaDedup::UserSettingsOps::get(*db_, "ejectionPathIgnored:" + location_key, ejection_path)) {
-                    std::string media_location_path;
-                    if (!MediaDedup::UserSettingsOps::get(*db_, location_key, media_location_path)) {
-                        last_error = "Cannot find registered media location for key: " + location_key;
-                        failure_count++;
-                        continue;
-                    }
-                    Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                    std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / ("ignored_" + uuid.toString());
-                    ejection_path = ejected.string();
-                    std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
-                    
-                    try {
-                        std::filesystem::create_directories(ejected);
-                        MediaDedup::UserSettingsOps::upsert(*db_, "ejectionPathIgnored:" + location_key, ejection_path);
-                    } catch (const std::exception& e) {
-                        last_error = "Failed to create ejection directory: " + std::string(e.what());
-                        failure_count++;
-                        continue;
-                    }
-                } else {
-                    std::filesystem::path ejected(ejection_path);
-                    if (!std::filesystem::exists(ejected)) {
-                        try {
-                            std::filesystem::create_directories(ejected);
-                        } catch (const std::exception& e) {
-                            last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
-                            failure_count++;
-                            continue;
-                        }
-                    }
-                }
-
-                std::string normalized_file_path = file_path;
-                std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
-                if (normalized_file_path.find(ejection_path) == 0) {
-                    success_count++;
-                    continue;
-                }
-
-                std::filesystem::path src(file_path);
-                if (!std::filesystem::exists(src)) {
-                    last_error = "File does not exist on disk: " + file_path;
-                    failure_count++;
-                    continue;
-                }
-
-                std::string dest_filename = src.filename().string();
-                std::filesystem::path dest = std::filesystem::path(ejection_path) / dest_filename;
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string new_file_path = dest.string();
-                        std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
-
-                        std::string new_relative_path;
-                        std::string media_location_path;
-                        if (MediaDedup::UserSettingsOps::get(*db_, location_key, media_location_path)) {
-                            new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
-                            std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
-                        }
-
-                        MediaDedup::EjectedFileHistory history;
-                        history.file_id = file_opt.id;
-                        history.ejected_path = new_file_path;
-                        history.original_file_path = file_opt.file_path;
-                        history.original_relative_path = file_opt.relative_path;
-                        history.original_location_key = location_key;
-
-                        try {
-                            auto lease = db_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            MediaDedup::EjectedFilesOps::insert(sess, history);
-                            MediaDedup::ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        last_error = "SHA1 mismatch after copy - file corruption prevented.";
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    last_error = "Error copying file: " + std::string(e.what());
-                    failure_count++;
-                }
-            }
-            
-            reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0));
-            reply->set_success_count(success_count);
-            reply->set_failure_count(failure_count);
-            if (success_count == 0 && !last_error.empty()) {
-                reply->set_error_message(last_error);
-            }
+            fillBulkReply(reply, MediaDedup::Services::ejectIgnored(*db_));
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
@@ -1066,96 +734,7 @@ public:
                                   vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
-            auto all_histories = MediaDedup::EjectedFilesOps::getAll(*db_);
-            std::vector<MediaDedup::EjectedFileHistory> histories;
-            for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("/ignored_") != std::string::npos) {
-                    histories.push_back(hist);
-                }
-            }
-
-            int success_count = 0;
-            int failure_count = 0;
-
-            for (const auto& history : histories) {
-                std::string ejected_path = history.ejected_path;
-                std::string original_path = history.original_file_path;
-
-                std::filesystem::path src(ejected_path);
-                std::filesystem::path dest(original_path);
-
-                if (!std::filesystem::exists(src)) {
-                    MediaDedup::EjectedFilesOps::deleteByEjectedPath(*db_, ejected_path);
-                    failure_count++;
-                    continue;
-                }
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string dest_path_str = dest.string();
-                        std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
-
-                        try {
-                            auto lease = db_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            MediaDedup::ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key);
-                            MediaDedup::ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
-                            MediaDedup::ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
-
-                            std::string dest_p = dest_path_str;
-                            Poco::Data::Statement stmt_update_state(sess);
-                            int unproc = 0;
-                            stmt_update_state << "UPDATE scanned_files SET processed=? WHERE file_path=?", Poco::Data::Keywords::use(unproc), Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            MediaDedup::EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-
-                        try {
-                            std::filesystem::path parent = src.parent_path();
-                            std::filesystem::path ds_store = parent / ".DS_Store";
-                            if (std::filesystem::exists(ds_store)) {
-                                std::filesystem::remove(ds_store);
-                            }
-                            if (std::filesystem::is_empty(parent)) {
-                                std::filesystem::remove(parent);
-                                MediaDedup::UserSettingsOps::remove(*db_, "ejectionPathIgnored:" + history.original_location_key);
-                            }
-                        } catch (...) {}
-
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    failure_count++;
-                }
-            }
-
-            reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
-            reply->set_success_count(success_count);
-            reply->set_failure_count(failure_count);
+            fillBulkReply(reply, MediaDedup::Services::undoEjectIgnored(*db_));
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
@@ -1167,41 +746,14 @@ public:
                                         vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
-            auto all_histories = MediaDedup::EjectedFilesOps::getAll(*db_);
-            int success_count = 0;
-            int failure_count = 0;
-
-            std::string purity_str = config_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
-
-            for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("/ejected_") != std::string::npos ||
-                    hist.ejected_path.find("/errored_") != std::string::npos ||
-                    hist.ejected_path.find("/ignored_") != std::string::npos) {
-                    
-                    auto groups = MediaDedup::DuplicateGroupsOps::getGroupsForFile(*db_, hist.file_id, "EMBEDDING");
-                    for (const auto& g : groups) {
-                        if (g.representative_file_id == hist.file_id) {
-                            MediaDedup::Orchestration::DuplicateFinder::promoteNextBestRepresentative(*db_, g.id, hist.file_id, purity_str);
-                        }
-                    }
-
-                    if (MediaDedup::ScannedFilesOps::completelyRemoveById(*db_, hist.file_id)) {
-                        success_count++;
-                    } else {
-                        failure_count++;
-                    }
-                }
-            }
-
-            reply->set_success(success_count > 0 || (success_count == 0 && failure_count == 0));
-            reply->set_success_count(success_count);
-            reply->set_failure_count(failure_count);
+            fillBulkReply(reply, MediaDedup::Services::purgeEjected(*db_, config_));
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
         }
         return grpc::Status::OK;
     }
+
 
     grpc::Status ResetDuplicates(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::AdvancedActionResponse* reply) override {
@@ -1454,14 +1006,21 @@ public:
                 tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, path_copy, size_copy]() {
                     MediaDedup::ThumbnailService service(config_copy, db_copy, tcache_copy);
                     std::string cached_path;
-                    if (service.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
+                    MediaDedup::ThumbnailService::GenerationFailure kind;
+                    if (service.generateAndCacheThumbnail(path_copy, size_copy, cached_path, &kind)) {
                         MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
                         MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
-                    } else {
+                    } else if (kind == MediaDedup::ThumbnailService::GenerationFailure::Decode) {
                         recordGenerationFailure(db_copy.get(), path_copy, "thumbnail",
                                                 "Thumbnail generation failed (unsupported or corrupted file)");
+                    } else {
+                        // Infrastructure trouble (offline volume, cache write
+                        // error): wake waiters so the client can retry later,
+                        // but never count it toward the negative cache.
+                        MediaDedup::MediaReadyBus::instance().publish(
+                            {path_copy, "thumbnail", false, "Thumbnail generation failed (transient server error)"});
                     }
-                }, file_path);
+                }, file_path, /*urgent=*/true);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail generating");
         }
@@ -1513,7 +1072,7 @@ public:
                     }
                     recordGenerationFailure(db_copy.get(), path_copy, "preview_full",
                                             "Full-resolution generation failed (unsupported or corrupted file)");
-                }, file_path);
+                }, file_path, /*urgent=*/true);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Full resolution generating");
         }
@@ -1582,7 +1141,7 @@ public:
                                                     "Preview generation failed (unsupported or corrupted file)");
                         }
                     }
-                }, file_path);
+                }, file_path, /*urgent=*/true);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Preview generating");
         }

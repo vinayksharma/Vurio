@@ -1,4 +1,5 @@
 #include "core/web/web_handlers_reset_errors.hpp"
+#include "services/eject_service.hpp"
 #include "config/config_enums.hpp"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -79,13 +80,26 @@ namespace MediaDedup
         }
     }
 
-    static std::string calculateFileSHA1(const std::string& path) {
-        Poco::SHA1Engine sha1;
-        Poco::DigestOutputStream dos(sha1);
-        Poco::FileInputStream fis(path);
-        Poco::StreamCopier::copyStream(fis, dos);
-        dos.close();
-        return Poco::DigestEngine::digestToHex(sha1.digest());
+    // AR-2: the eject/undo logic lives in Services::EjectService (the HTTP
+    // fork was the correct one and moved there verbatim); these handlers
+    // marshal JSON only.
+
+    namespace
+    {
+        void sendBulkResult(Poco::Net::HTTPServerResponse &response,
+                            const MediaDedup::Services::BulkOpResult &r)
+        {
+            Poco::JSON::Object result_obj;
+            result_obj.set("success", r.successCount > 0 || r.failureCount == 0);
+            result_obj.set("success_count", r.successCount);
+            result_obj.set("failure_count", r.failureCount);
+            if (r.successCount == 0 && !r.lastError.empty()) {
+                result_obj.set("error", r.lastError);
+            }
+            std::ostringstream oss;
+            result_obj.stringify(oss);
+            sendJsonResponse(response, oss.str());
+        }
     }
 
     EjectErrorsHandler::EjectErrorsHandler(std::shared_ptr<DatabaseManager> db)
@@ -101,171 +115,9 @@ namespace MediaDedup
             sendErrorResponse(response, "Method not allowed", 405);
             return;
         }
-
         try
         {
-            auto errored_files = ScannedFilesOps::listErroredFiles(*database_manager_);
-
-            int success_count = 0;
-            int failure_count = 0;
-            std::string last_error = "";
-
-            for (const auto& file_opt : errored_files)
-            {
-                std::string file_path = file_opt.file_path;
-                std::string location_key = file_opt.location_key;
-                std::string ejection_path;
-
-                if (!UserSettingsOps::get(*database_manager_, "ejectionPathErrored:" + location_key, ejection_path)) {
-                    std::string media_location_path;
-                    if (!UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                        last_error = "Cannot find registered media location for key: " + location_key;
-                        failure_count++;
-                        continue;
-                    }
-                    Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                    std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / ("errored_" + uuid.toString());
-                    ejection_path = ejected.string();
-                    std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
-                    
-                    try {
-                        std::filesystem::create_directories(ejected);
-                        UserSettingsOps::upsert(*database_manager_, "ejectionPathErrored:" + location_key, ejection_path);
-                    } catch (const std::exception& e) {
-                        last_error = "Failed to create ejection directory: " + std::string(e.what());
-                        failure_count++;
-                        continue;
-                    }
-                } else {
-                    std::filesystem::path ejected(ejection_path);
-                    if (!std::filesystem::exists(ejected)) {
-                        try {
-                            std::filesystem::create_directories(ejected);
-                        } catch (const std::exception& e) {
-                            last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
-                            failure_count++;
-                            continue;
-                        }
-                    }
-                }
-
-                std::string normalized_file_path = file_path;
-                std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
-                if (normalized_file_path.find(ejection_path) == 0) {
-                    success_count++;
-                    continue;
-                }
-
-                std::filesystem::path src(file_path);
-                if (!std::filesystem::exists(src)) {
-                    last_error = "File does not exist on disk: " + file_path;
-                    failure_count++;
-                    continue;
-                }
-
-                std::string dest_filename = src.filename().string();
-                std::filesystem::path base_eject = std::filesystem::path(ejection_path);
-                std::filesystem::path dest = base_eject / dest_filename;
-
-                int counter = 0;
-                while (std::filesystem::exists(dest)) {
-                    counter++;
-                    std::string folder_name = dest_filename + "_" + std::to_string(counter);
-                    std::filesystem::path collision_folder = base_eject / folder_name;
-                    
-                    if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
-                        continue;
-                    }
-                    
-                    dest = collision_folder / dest_filename;
-                }
-
-                if (dest.has_parent_path()) {
-                    std::filesystem::create_directories(dest.parent_path());
-                }
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string new_file_path = dest.string();
-                        std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
-
-                        std::string new_relative_path;
-                        std::string media_location_path;
-                        if (UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                            new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
-                            std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
-                        }
-
-                        EjectedFileHistory history;
-                        history.file_id = file_opt.id;
-                        history.ejected_path = new_file_path;
-                        history.original_file_path = file_opt.file_path;
-                        history.original_relative_path = file_opt.relative_path;
-                        history.original_location_key = location_key;
-
-                        auto existing = ScannedFilesOps::getByPath(*database_manager_, new_file_path);
-                        if (existing) {
-                            ScannedFilesOps::completelyRemoveById(*database_manager_, existing->id);
-                        }
-
-                        try {
-                            auto lease = database_manager_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            EjectedFilesOps::deleteByEjectedPath(sess, new_file_path);
-                            if (!EjectedFilesOps::insert(sess, history)) {
-                                throw std::runtime_error("Failed to insert ejected file history");
-                            }
-                            if (!ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key)) {
-                                throw std::runtime_error("Failed to update file path");
-                            }
-                            ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        last_error = "SHA1 mismatch after copy - file corruption prevented.";
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    last_error = "Error copying file: " + std::string(e.what());
-                    failure_count++;
-                }
-            }
-
-            Poco::JSON::Object result_obj;
-            result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0));
-            result_obj.set("success_count", success_count);
-            result_obj.set("failure_count", failure_count);
-            if (success_count == 0 && !last_error.empty()) {
-                result_obj.set("error", last_error);
-            }
-
-            std::ostringstream oss;
-            result_obj.stringify(oss);
-            sendJsonResponse(response, oss.str());
+            sendBulkResult(response, Services::ejectErrored(*database_manager_));
         }
         catch (const std::exception &e)
         {
@@ -286,135 +138,9 @@ namespace MediaDedup
             sendErrorResponse(response, "Method not allowed", 405);
             return;
         }
-
         try
         {
-            auto all_histories = EjectedFilesOps::getAll(*database_manager_);
-            std::vector<EjectedFileHistory> histories;
-            for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("/errored_") != std::string::npos) {
-                    histories.push_back(hist);
-                }
-            }
-
-            int success_count = 0;
-            int failure_count = 0;
-
-            for (const auto& history : histories)
-            {
-                std::string ejected_path = history.ejected_path;
-                std::string original_path = history.original_file_path;
-
-                std::filesystem::path src(ejected_path);
-                std::filesystem::path dest(original_path);
-
-                if (!std::filesystem::exists(src))
-                {
-                    EjectedFilesOps::deleteByEjectedPath(*database_manager_, ejected_path);
-                    failure_count++;
-                    continue;
-                }
-
-                try
-                {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1)
-                    {
-                        std::string dest_path_str = dest.string();
-                        std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
-
-                        try {
-                            auto lease = database_manager_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            if (!ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key)) {
-                                throw std::runtime_error("Failed to update file path during undo eject");
-                            }
-                            ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
-
-                            // The user requested that we treat them as if we just cleared the errors.
-                            // Set `processed=0` and remove from `processing_errors`.
-                            std::string dest_p = dest_path_str;
-                            Poco::Data::Statement stmt_update_state(sess);
-                            int unproc = 0;
-                            stmt_update_state << "UPDATE scanned_files SET processed=? WHERE file_path=?", Poco::Data::Keywords::use(unproc), Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            Poco::Data::Statement stmt_del_err(sess);
-                            stmt_del_err << "DELETE FROM processing_errors WHERE file_path=?", Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-
-                        try {
-                            std::filesystem::path parent = src.parent_path();
-                            std::filesystem::path ds_store = parent / ".DS_Store";
-                            if (std::filesystem::exists(ds_store)) {
-                                std::filesystem::remove(ds_store);
-                            }
-                            if (std::filesystem::is_empty(parent)) {
-                                std::filesystem::remove(parent);
-                                
-                                std::filesystem::path grandparent = parent.parent_path();
-                                std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
-                                if (std::filesystem::exists(gp_ds_store)) {
-                                    std::filesystem::remove(gp_ds_store);
-                                }
-                                if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
-                                    std::filesystem::remove(grandparent);
-                                }
-                                
-                                std::string ejection_key = "ejectionPathErrored:" + history.original_location_key;
-                                std::string registered_path;
-                                if (UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
-                                    if (!std::filesystem::exists(registered_path)) {
-                                        UserSettingsOps::remove(*database_manager_, ejection_key);
-                                    }
-                                }
-                            }
-                        } catch (...) {}
-
-                        success_count++;
-                    }
-                    else
-                    {
-                        std::filesystem::remove(dest);
-                        failure_count++;
-                    }
-                }
-                catch (const std::exception& e)
-                {
-                    failure_count++;
-                }
-            }
-
-            Poco::JSON::Object result_obj;
-            result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
-            result_obj.set("success_count", success_count);
-            result_obj.set("failure_count", failure_count);
-
-            std::ostringstream oss;
-            result_obj.stringify(oss);
-            sendJsonResponse(response, oss.str());
+            sendBulkResult(response, Services::undoEjectErrored(*database_manager_));
         }
         catch (const std::exception &e)
         {
@@ -435,171 +161,9 @@ namespace MediaDedup
             sendErrorResponse(response, "Method not allowed", 405);
             return;
         }
-
         try
         {
-            auto ignored_files = ScannedFilesOps::listIgnoredFiles(*database_manager_);
-
-            int success_count = 0;
-            int failure_count = 0;
-            std::string last_error = "";
-
-            for (const auto& file_opt : ignored_files)
-            {
-                std::string file_path = file_opt.file_path;
-                std::string location_key = file_opt.location_key;
-                std::string ejection_path;
-
-                if (!UserSettingsOps::get(*database_manager_, "ejectionPathIgnored:" + location_key, ejection_path)) {
-                    std::string media_location_path;
-                    if (!UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                        last_error = "Cannot find registered media location for key: " + location_key;
-                        failure_count++;
-                        continue;
-                    }
-                    Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().create();
-                    std::filesystem::path root(media_location_path);
-                    std::filesystem::path ejected = root / ("ignored_" + uuid.toString());
-                    ejection_path = ejected.string();
-                    std::replace(ejection_path.begin(), ejection_path.end(), '\\', '/');
-                    
-                    try {
-                        std::filesystem::create_directories(ejected);
-                        UserSettingsOps::upsert(*database_manager_, "ejectionPathIgnored:" + location_key, ejection_path);
-                    } catch (const std::exception& e) {
-                        last_error = "Failed to create ejection directory: " + std::string(e.what());
-                        failure_count++;
-                        continue;
-                    }
-                } else {
-                    std::filesystem::path ejected(ejection_path);
-                    if (!std::filesystem::exists(ejected)) {
-                        try {
-                            std::filesystem::create_directories(ejected);
-                        } catch (const std::exception& e) {
-                            last_error = "Failed to recreate missing ejection directory: " + std::string(e.what());
-                            failure_count++;
-                            continue;
-                        }
-                    }
-                }
-
-                std::string normalized_file_path = file_path;
-                std::replace(normalized_file_path.begin(), normalized_file_path.end(), '\\', '/');
-                if (normalized_file_path.find(ejection_path) == 0) {
-                    success_count++;
-                    continue;
-                }
-
-                std::filesystem::path src(file_path);
-                if (!std::filesystem::exists(src)) {
-                    last_error = "File does not exist on disk: " + file_path;
-                    failure_count++;
-                    continue;
-                }
-
-                std::string dest_filename = src.filename().string();
-                std::filesystem::path base_eject = std::filesystem::path(ejection_path);
-                std::filesystem::path dest = base_eject / dest_filename;
-
-                int counter = 0;
-                while (std::filesystem::exists(dest)) {
-                    counter++;
-                    std::string folder_name = dest_filename + "_" + std::to_string(counter);
-                    std::filesystem::path collision_folder = base_eject / folder_name;
-                    
-                    if (std::filesystem::exists(collision_folder) && !std::filesystem::is_directory(collision_folder)) {
-                        continue;
-                    }
-                    
-                    dest = collision_folder / dest_filename;
-                }
-
-                if (dest.has_parent_path()) {
-                    std::filesystem::create_directories(dest.parent_path());
-                }
-
-                try {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1) {
-                        std::string new_file_path = dest.string();
-                        std::replace(new_file_path.begin(), new_file_path.end(), '\\', '/');
-
-                        std::string new_relative_path;
-                        std::string media_location_path;
-                        if (UserSettingsOps::get(*database_manager_, location_key, media_location_path)) {
-                            new_relative_path = std::filesystem::relative(dest, std::filesystem::path(media_location_path)).string();
-                            std::replace(new_relative_path.begin(), new_relative_path.end(), '\\', '/');
-                        }
-
-                        EjectedFileHistory history;
-                        history.file_id = file_opt.id;
-                        history.ejected_path = new_file_path;
-                        history.original_file_path = file_opt.file_path;
-                        history.original_relative_path = file_opt.relative_path;
-                        history.original_location_key = location_key;
-
-                        auto existing = ScannedFilesOps::getByPath(*database_manager_, new_file_path);
-                        if (existing) {
-                            ScannedFilesOps::completelyRemoveById(*database_manager_, existing->id);
-                        }
-
-                        try {
-                            auto lease = database_manager_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            EjectedFilesOps::deleteByEjectedPath(sess, new_file_path);
-                            if (!EjectedFilesOps::insert(sess, history)) {
-                                throw std::runtime_error("Failed to insert ejected file history");
-                            }
-                            if (!ScannedFilesOps::updateFilePath(sess, file_opt.id, new_file_path, new_relative_path, location_key)) {
-                                throw std::runtime_error("Failed to update file path");
-                            }
-                            ScannedFilesOps::updateFilePathInImageArtifacts(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInProcessingErrors(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInDuplicateGroups(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInDuplicateMembers(sess, file_path, new_file_path);
-                            ScannedFilesOps::updateFilePathInThumbnailCache(sess, file_path, new_file_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-                        success_count++;
-                    } else {
-                        std::filesystem::remove(dest);
-                        last_error = "SHA1 mismatch after copy - file corruption prevented.";
-                        failure_count++;
-                    }
-                } catch (const std::exception& e) {
-                    last_error = "Error copying file: " + std::string(e.what());
-                    failure_count++;
-                }
-            }
-
-            Poco::JSON::Object result_obj;
-            result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0));
-            result_obj.set("success_count", success_count);
-            result_obj.set("failure_count", failure_count);
-            if (success_count == 0 && !last_error.empty()) {
-                result_obj.set("error", last_error);
-            }
-
-            std::ostringstream oss;
-            result_obj.stringify(oss);
-            sendJsonResponse(response, oss.str());
+            sendBulkResult(response, Services::ejectIgnored(*database_manager_));
         }
         catch (const std::exception &e)
         {
@@ -620,131 +184,9 @@ namespace MediaDedup
             sendErrorResponse(response, "Method not allowed", 405);
             return;
         }
-
         try
         {
-            auto all_histories = EjectedFilesOps::getAll(*database_manager_);
-            std::vector<EjectedFileHistory> histories;
-            for (const auto& hist : all_histories) {
-                if (hist.ejected_path.find("/ignored_") != std::string::npos) {
-                    histories.push_back(hist);
-                }
-            }
-
-            int success_count = 0;
-            int failure_count = 0;
-
-            for (const auto& history : histories)
-            {
-                std::string ejected_path = history.ejected_path;
-                std::string original_path = history.original_file_path;
-
-                std::filesystem::path src(ejected_path);
-                std::filesystem::path dest(original_path);
-
-                if (!std::filesystem::exists(src))
-                {
-                    EjectedFilesOps::deleteByEjectedPath(*database_manager_, ejected_path);
-                    failure_count++;
-                    continue;
-                }
-
-                try
-                {
-                    std::filesystem::copy_file(src, dest, std::filesystem::copy_options::overwrite_existing);
-                    try {
-                        std::error_code ec;
-                        std::filesystem::last_write_time(dest, std::filesystem::last_write_time(src, ec), ec);
-                    } catch (...) {}
-
-                    std::string src_sha1 = calculateFileSHA1(src.string());
-                    std::string dest_sha1 = calculateFileSHA1(dest.string());
-
-                    if (src_sha1 == dest_sha1)
-                    {
-                        std::string dest_path_str = dest.string();
-                        std::replace(dest_path_str.begin(), dest_path_str.end(), '\\', '/');
-
-                        try {
-                            auto lease = database_manager_->acquireSessionLease();
-                            Poco::Data::Session& sess = lease.get();
-                            sess.begin();
-
-                            if (!ScannedFilesOps::updateFilePath(sess, history.file_id, dest_path_str, history.original_relative_path, history.original_location_key)) {
-                                throw std::runtime_error("Failed to update file path during undo eject");
-                            }
-                            ScannedFilesOps::updateFilePathInImageArtifacts(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInProcessingErrors(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInDuplicateGroups(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInDuplicateMembers(sess, ejected_path, dest_path_str);
-                            ScannedFilesOps::updateFilePathInThumbnailCache(sess, ejected_path, dest_path_str);
-
-                            // For ignored files, returning them back to unprocessed so they get correctly evaluated again
-                            std::string dest_p = dest_path_str;
-                            Poco::Data::Statement stmt_update_state(sess);
-                            int unproc = 0;
-                            stmt_update_state << "UPDATE scanned_files SET processed=? WHERE file_path=?", Poco::Data::Keywords::use(unproc), Poco::Data::Keywords::use(dest_p), Poco::Data::Keywords::now;
-
-                            EjectedFilesOps::deleteByEjectedPath(sess, ejected_path);
-
-                            sess.commit();
-                        } catch (...) {
-                            std::filesystem::remove(dest);
-                            throw;
-                        }
-
-                        std::filesystem::remove(src);
-
-                        try {
-                            std::filesystem::path parent = src.parent_path();
-                            std::filesystem::path ds_store = parent / ".DS_Store";
-                            if (std::filesystem::exists(ds_store)) {
-                                std::filesystem::remove(ds_store);
-                            }
-                            if (std::filesystem::is_empty(parent)) {
-                                std::filesystem::remove(parent);
-                                
-                                std::filesystem::path grandparent = parent.parent_path();
-                                std::filesystem::path gp_ds_store = grandparent / ".DS_Store";
-                                if (std::filesystem::exists(gp_ds_store)) {
-                                    std::filesystem::remove(gp_ds_store);
-                                }
-                                if (std::filesystem::exists(grandparent) && std::filesystem::is_empty(grandparent)) {
-                                    std::filesystem::remove(grandparent);
-                                }
-                                
-                                std::string ejection_key = "ejectionPathIgnored:" + history.original_location_key;
-                                std::string registered_path;
-                                if (UserSettingsOps::get(*database_manager_, ejection_key, registered_path)) {
-                                    if (!std::filesystem::exists(registered_path)) {
-                                        UserSettingsOps::remove(*database_manager_, ejection_key);
-                                    }
-                                }
-                            }
-                        } catch (...) {}
-
-                        success_count++;
-                    }
-                    else
-                    {
-                        std::filesystem::remove(dest);
-                        failure_count++;
-                    }
-                }
-                catch (const std::exception& e)
-                {
-                    failure_count++;
-                }
-            }
-
-            Poco::JSON::Object result_obj;
-            result_obj.set("success", success_count > 0 || (success_count == 0 && failure_count == 0 && histories.empty()));
-            result_obj.set("success_count", success_count);
-            result_obj.set("failure_count", failure_count);
-
-            std::ostringstream oss;
-            result_obj.stringify(oss);
-            sendJsonResponse(response, oss.str());
+            sendBulkResult(response, Services::undoEjectIgnored(*database_manager_));
         }
         catch (const std::exception &e)
         {
