@@ -55,7 +55,13 @@ namespace MediaDedup
             /**
              * @brief Set the callback for duplicate group events
              */
-            void setGroupEventCallback(GroupEventCallback cb) { group_event_cb_ = cb; }
+            // CC-6: guarded — assigned from the gRPC start/stop thread while
+            // finder worker threads invoke it.
+            void setGroupEventCallback(GroupEventCallback cb)
+            {
+                std::lock_guard<std::mutex> lock(group_event_cb_mutex_);
+                group_event_cb_ = std::move(cb);
+            }
 
             /**
              * @brief Main duplicate finding operation (called by scheduler)
@@ -125,6 +131,8 @@ namespace MediaDedup
         public:
             // Public (with the loaders below) so data-access can be unit
             // tested; plain value type, no finder state.
+            // DF-1: dead fields phash/features/features_method removed — no
+            // loader ever populated them (FAST/BALANCED modes were excised).
             struct FileArtifact
             {
                 int file_id = 0;
@@ -132,9 +140,6 @@ namespace MediaDedup
                 int64_t file_size = 0;
                 std::string created_date;
                 bool has_exif_date = false;
-                std::vector<std::uint8_t> phash;
-                std::vector<std::uint8_t> features;
-                std::string features_method;
                 std::vector<std::uint8_t> embedding;
                 std::string embedding_model;
                 int embedding_dim = 0;
@@ -174,14 +179,60 @@ namespace MediaDedup
         private:
 
             /**
+             * @brief DF-1: per-run contiguous embedding store.
+             *
+             * All embeddings touched during one findDuplicates() run live here
+             * as L2-normalized float rows, so every pairwise similarity is a
+             * bare dot product (SimilarityCalculator::dotSimilarity) — no blob
+             * copies, no per-pair normalization. Populated only from
+             * single-threaded sections (run start, batch preload, cross-group
+             * preload); the comparison fan-outs strictly read.
+             */
+            class EmbeddingArena
+            {
+            public:
+                void clear();
+                /// Normalizes and stores; returns false (and stores nothing)
+                /// on empty/mismatched/zero-norm embeddings — comparisons for
+                /// such files fall back to the legacy blob path.
+                bool insert(int file_id, const std::vector<std::uint8_t> &blob, int dim);
+                /// Row pointer for a file, or nullptr when absent.
+                const float *vecFor(int file_id) const;
+                int dim() const { return dim_; }
+                std::size_t size() const { return ids_.size(); }
+
+            private:
+                int dim_ = 0;
+                std::vector<float> vectors_;                   // size() * dim_
+                std::vector<int> ids_;                         // parallel id array
+                std::unordered_map<int, std::size_t> index_by_id_;
+            };
+
+            /**
+             * @brief DF-1: run-level comparison state, loaded once per run.
+             *
+             * Previously processBatch re-loaded every representative and every
+             * ungrouped file from the DB on EVERY batch; now the pool is loaded
+             * once and mutated in memory as files get grouped.
+             */
+            struct RunState
+            {
+                std::map<int, FileArtifact> group_representatives; // group_id -> rep
+                std::vector<FileArtifact> ungrouped_files;         // prior-batch/pre-run pool
+                bool loaded = false;
+            };
+
+            /**
              * @brief Process a batch of files for duplicate detection
              *
              * @param mode Current server mode (EMBEDDING only)
              * @param batch_size Maximum files to process
              * @param last_processed_id Start processing from this ID + 1
+             * @param run_state Run-level pool, loaded on the first non-empty batch
              * @return Number of files processed
              */
-            int processBatch(const std::string &mode, int batch_size, int &last_processed_id);
+            int processBatch(const std::string &mode, int batch_size, int &last_processed_id,
+                             RunState &run_state);
 
             /**
              * @brief Compute similarity between two files using embedding-based matching
@@ -353,10 +404,15 @@ namespace MediaDedup
             DatabaseManager &db_;
             std::shared_ptr<ThreadPoolManager> tpm_;
 
+            // DF-1: valid only within one findDuplicates() run (guarded by
+            // running_); cleared at run start and end.
+            EmbeddingArena arena_;
+
             std::atomic<bool> running_{false};
             std::atomic<bool> abort_{false};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;
+            std::mutex group_event_cb_mutex_;
 
             // Configuration cache
             bool enabled_ = true;

@@ -13,8 +13,10 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Dynamic/Var.h>
 #include <algorithm>
+#include <cstring>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 #include <iomanip>
 #include <ctime>
 #include <map>
@@ -80,6 +82,49 @@ namespace MediaDedup
                 for (auto &w : workers)
                     w.join();
             }
+        }
+
+        void DuplicateFinder::EmbeddingArena::clear()
+        {
+            dim_ = 0;
+            vectors_.clear();
+            vectors_.shrink_to_fit();
+            ids_.clear();
+            ids_.shrink_to_fit();
+            index_by_id_.clear();
+        }
+
+        bool DuplicateFinder::EmbeddingArena::insert(int file_id, const std::vector<std::uint8_t> &blob, int dim)
+        {
+            if (dim <= 0 || blob.size() != static_cast<std::size_t>(dim) * sizeof(float))
+                return false;
+            if (dim_ == 0)
+                dim_ = dim;
+            else if (dim != dim_)
+                return false; // mixed dims fall back to the legacy blob path
+            if (index_by_id_.count(file_id))
+                return true; // already present (e.g. a rep that is also in a pool)
+
+            const std::size_t row = ids_.size();
+            vectors_.resize((row + 1) * static_cast<std::size_t>(dim_));
+            float *dst = vectors_.data() + row * static_cast<std::size_t>(dim_);
+            std::memcpy(dst, blob.data(), blob.size());
+            if (!SimilarityCalculator::l2NormalizeInPlace(dst, dim_))
+            {
+                vectors_.resize(row * static_cast<std::size_t>(dim_));
+                return false; // zero-norm: unusable, keep out of the arena
+            }
+            ids_.push_back(file_id);
+            index_by_id_.emplace(file_id, row);
+            return true;
+        }
+
+        const float *DuplicateFinder::EmbeddingArena::vecFor(int file_id) const
+        {
+            auto it = index_by_id_.find(file_id);
+            if (it == index_by_id_.end())
+                return nullptr;
+            return vectors_.data() + it->second * static_cast<std::size_t>(dim_);
         }
 
         DuplicateFinder::DuplicateFinder(std::shared_ptr<UnifiedObservableConfigManager> cfg,
@@ -181,12 +226,19 @@ namespace MediaDedup
 
                 logger.debug("Resuming from checkpoint: last_processed_id=%d", last_processed_id);
 
+                // DF-1: run-level state. The representative + ungrouped pool
+                // is loaded ONCE (on the first non-empty batch) and mutated in
+                // memory as files get grouped; the arena holds every embedding
+                // touched this run as normalized floats.
+                arena_.clear();
+                RunState run_state;
+
                 // Process batches until no more new files or aborted
                 int total_processed = 0;
                 int batch_count = 0;
                 while (!abort_.load())
                 {
-                    int processed = processBatch(mode_str, batch_size_, last_processed_id);
+                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state);
                     if (processed == 0)
                     {
                         break; // No more files to process
@@ -238,6 +290,8 @@ namespace MediaDedup
                 finderLogger().error("Unknown exception in findDuplicates");
             }
 
+            // Release the arena's memory (up to ~200 MB at 100k files).
+            arena_.clear();
             running_.store(false);
         }
 
@@ -327,7 +381,8 @@ namespace MediaDedup
             return true;
         }
 
-        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id)
+        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id,
+                                          RunState &run_state)
         {
             Poco::Logger &logger = finderLogger();
 
@@ -396,14 +451,19 @@ namespace MediaDedup
 
                 logger.information("Found %zu new files to process", file_ids.size());
 
-                // Load group representatives and ungrouped files for representative-based comparison
-                // Representatives are the "drivers" of each group - we only compare against them
-                std::map<int, FileArtifact> group_representatives; // group_id -> representative artifact
-                std::vector<FileArtifact> ungrouped_files;         // processed files not in any group
+                // DF-1: the representative + ungrouped pool is run-level state,
+                // loaded ONCE on the first non-empty batch (previously reloaded
+                // from the DB on every batch) and mutated in memory as files
+                // are grouped. Representatives are the "drivers" of each group
+                // — we only compare against them.
+                std::map<int, FileArtifact> &group_representatives = run_state.group_representatives;
+                std::vector<FileArtifact> &ungrouped_files = run_state.ungrouped_files;
 
                 std::string mode_copy = mode;
                 int existing_last_id = last_processed_id;
 
+                if (!run_state.loaded)
+                {
                 // Query 1: Load group representatives for this mode.
                 // DB-3: ids first, then ONE set-based artifact load on the
                 // already-held session — previously this loop performed one
@@ -435,8 +495,11 @@ namespace MediaDedup
                     }
 
                     for (FileArtifact &artifact : loadFileArtifactsBatch(sess, rep_file_ids))
+                    {
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
                         for (int group_id : file_to_groups[artifact.file_id])
                             group_representatives[group_id] = artifact;
+                    }
 
                     if (group_representatives.size() < file_to_groups.size())
                         logger.warning("Artifacts missing for %zu representative file(s)",
@@ -475,12 +538,31 @@ namespace MediaDedup
                     // DB-3: one set-based load on the held session instead of
                     // a nested pool checkout per file.
                     ungrouped_files = loadFileArtifactsBatch(sess, ungrouped_ids);
+                    for (const FileArtifact &artifact : ungrouped_files)
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
 
                     logger.information("Loaded %zu ungrouped processed files", ungrouped_files.size());
                 }
                 catch (const std::exception &e)
                 {
                     logger.error("Error loading ungrouped files: %s", std::string(e.what()));
+                }
+
+                run_state.loaded = true;
+                logger.information("Run pool loaded once: %zu representatives, %zu ungrouped, arena=%zu vectors",
+                                   group_representatives.size(), ungrouped_files.size(), arena_.size());
+                } // !run_state.loaded
+
+                // DF-1: preload this batch's artifacts with ONE set-based query
+                // on the held session (the fan-out previously did a pool
+                // checkout + query per file) and seed the arena so every
+                // comparison below is a normalized dot product.
+                std::unordered_map<int, FileArtifact> batch_artifacts;
+                batch_artifacts.reserve(file_ids.size());
+                for (FileArtifact &artifact : loadFileArtifactsBatch(sess, file_ids))
+                {
+                    arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
+                    batch_artifacts.emplace(artifact.file_id, std::move(artifact));
                 }
 
                 // Track new ungrouped files in this batch for potential group creation
@@ -510,11 +592,18 @@ namespace MediaDedup
                 auto process_one = [&](int current_file_id) {
                         try
                         {
+                            // DF-1: artifacts were batch-preloaded above; a
+                            // missing entry means no embedding row (mirrors the
+                            // old per-file loader returning false).
                             FileArtifact new_file;
-                            if (!loadFileArtifacts(current_file_id, mode, new_file))
                             {
-                                logger.warning("Failed to load artifacts for file_id %d, skipping", current_file_id);
-                                goto task_end;
+                                auto it = batch_artifacts.find(current_file_id);
+                                if (it == batch_artifacts.end())
+                                {
+                                    logger.warning("Failed to load artifacts for file_id %d, skipping", current_file_id);
+                                    goto task_end;
+                                }
+                                new_file = it->second;
                             }
 
                             files_checked++;
@@ -661,12 +750,12 @@ namespace MediaDedup
                                     if (verified_candidates.size() >= 2)
                                     {
                                         int cross_batch_group_id = createDuplicateGroup(verified_candidates, mode, threshold_min);
-                                        
+
                                         if (cross_batch_group_id > 0)
                                         {
                                             duplicates_found += static_cast<int>(verified_candidates.size());
                                             groups_created++;
-                                            
+
                                             auto group_opt = DuplicateGroupsOps::getGroupById(db_, cross_batch_group_id);
                                             if (group_opt.has_value())
                                             {
@@ -679,7 +768,22 @@ namespace MediaDedup
                                                     }
                                                 }
                                             }
-                                            
+
+                                            // DF-1: the pool is run-level now — remove the
+                                            // freshly grouped members so later batches don't
+                                            // reconsider them (previously handled by the
+                                            // per-batch DB reload). Under the write lock.
+                                            {
+                                                std::set<int> grouped_ids;
+                                                for (const auto &file : verified_candidates)
+                                                    grouped_ids.insert(file.file_id);
+                                                ungrouped_files.erase(
+                                                    std::remove_if(ungrouped_files.begin(), ungrouped_files.end(),
+                                                                   [&grouped_ids](const FileArtifact &f)
+                                                                   { return grouped_ids.count(f.file_id) > 0; }),
+                                                    ungrouped_files.end());
+                                            }
+
                                             logger.information("Created cross-batch group %d with %zu verified members (new_file_id=%d)",
                                                                cross_batch_group_id, verified_candidates.size(), new_file.file_id);
                                         }
@@ -816,6 +920,18 @@ namespace MediaDedup
                                 }
                             }
                         }
+                    }
+                }
+
+                // DF-1: carry files that stayed ungrouped forward in the
+                // run-level pool so the next batch's cross-batch matching sees
+                // them (previously achieved by re-querying the DB per batch).
+                if (!abort_.load())
+                {
+                    for (std::size_t i = 0; i < batch_ungrouped_files.size(); ++i)
+                    {
+                        if (!already_grouped[i])
+                            ungrouped_files.push_back(std::move(batch_ungrouped_files[i]));
                     }
                 }
 
@@ -1046,7 +1162,17 @@ namespace MediaDedup
                                                   const FileArtifact &file2,
                                                   const std::string & /* mode */)
         {
-            // Single mode operation - only EMBEDDING mode is supported
+            // DF-1 fast path: both embeddings live in the run arena as
+            // L2-normalized floats — similarity is a bare dot product with no
+            // copies and no per-pair normalization. The arena is only mutated
+            // in single-threaded sections, so concurrent reads here are safe.
+            const float *v1 = arena_.vecFor(file1.file_id);
+            const float *v2 = arena_.vecFor(file2.file_id);
+            if (v1 && v2)
+                return SimilarityCalculator::dotSimilarity(v1, v2, arena_.dim());
+
+            // Fallback (artifact loaded outside the run's preload sections,
+            // zero-norm/mixed-dim embeddings): legacy blob-based cosine.
             return SimilarityCalculator::computeEmbeddingSimilarity(
                 file1.embedding, file2.embedding, file1.embedding_dim);
         }
@@ -1243,9 +1369,14 @@ namespace MediaDedup
                                                               rep.file_size, rep.created_date, static_cast<int>(files.size()));
             }
 
-            if (group_event_cb_)
+            GroupEventCallback cb_new;
             {
-                group_event_cb_(group_id, true);
+                std::lock_guard<std::mutex> cb_lock(group_event_cb_mutex_);
+                cb_new = group_event_cb_;
+            }
+            if (cb_new)
+            {
+                cb_new(group_id, true);
             }
 
             return group_id;
@@ -1712,14 +1843,27 @@ namespace MediaDedup
                 logger.information("Starting cross-group checking for %zu groups (threshold_max=%.3f)",
                                    groups.size(), threshold_max);
 
-                // Build representative cache for efficient lookup
+                // Build representative cache for efficient lookup.
+                // DF-1: one set-based load (previously one pool checkout +
+                // query per group — tens of thousands of leases per run) and
+                // arena seeding so the comparisons below are dot products.
                 std::unordered_map<int, FileArtifact> group_representatives;
-                for (const auto &group : groups)
                 {
-                    FileArtifact rep_artifact;
-                    if (loadFileArtifacts(group.representative_file_id, mode, rep_artifact))
+                    std::map<int, std::vector<int>> rep_file_to_groups;
+                    std::vector<int> rep_file_ids;
+                    for (const auto &group : groups)
                     {
-                        group_representatives[group.id] = rep_artifact;
+                        if (rep_file_to_groups.find(group.representative_file_id) == rep_file_to_groups.end())
+                            rep_file_ids.push_back(group.representative_file_id);
+                        rep_file_to_groups[group.representative_file_id].push_back(group.id);
+                    }
+
+                    auto lease = db_.acquireSessionLease();
+                    for (FileArtifact &artifact : loadFileArtifactsBatch(lease.get(), rep_file_ids))
+                    {
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
+                        for (int group_id : rep_file_to_groups[artifact.file_id])
+                            group_representatives[group_id] = artifact;
                     }
                 }
 
@@ -1755,6 +1899,24 @@ namespace MediaDedup
 
                 logger.information("Found %zu low-similarity members to check concurrently", tasks.size());
 
+                // DF-1: preload all task members with one set-based query
+                // (previously one pool checkout + query per member, inside the
+                // fan-out) and seed the arena before the workers start reading.
+                std::unordered_map<int, FileArtifact> member_artifacts;
+                {
+                    std::vector<int> member_ids;
+                    member_ids.reserve(tasks.size());
+                    for (const auto &task : tasks)
+                        member_ids.push_back(task.member.file_id);
+
+                    auto lease = db_.acquireSessionLease();
+                    for (FileArtifact &artifact : loadFileArtifactsBatch(lease.get(), member_ids))
+                    {
+                        arena_.insert(artifact.file_id, artifact.embedding, artifact.embedding_dim);
+                        member_artifacts.emplace(artifact.file_id, std::move(artifact));
+                    }
+                }
+
                 std::shared_mutex local_rw_mutex; // Protects DB writes during checking
 
                 // CC-3: joined local worker set (see runFanOut) instead of
@@ -1762,11 +1924,15 @@ namespace MediaDedup
                 auto process_task = [&](const auto &task_data) {
                         try
                         {
-                            // Load artifacts for this member
+                            // Artifacts preloaded above; missing = no embedding row.
                             FileArtifact member_artifact;
-                            if (!loadFileArtifacts(task_data.member.file_id, mode, member_artifact))
                             {
-                                goto task_end;
+                                auto it = member_artifacts.find(task_data.member.file_id);
+                                if (it == member_artifacts.end())
+                                {
+                                    goto task_end;
+                                }
+                                member_artifact = it->second;
                             }
 
                             // Check against representatives of other groups

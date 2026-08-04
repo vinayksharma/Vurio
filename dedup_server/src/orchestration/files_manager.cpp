@@ -287,6 +287,15 @@ namespace MediaDedup::Orchestration
         }
         running_ = true;
         abortScan_.store(false);
+        // CC-6: reset running_ on EVERY exit path. Previously a non-std
+        // exception escaping the scan skipped the trailing `running_ = false`
+        // and permanently disabled scanning (every later runOnce hit the
+        // in-progress guard and returned).
+        struct RunningGuard
+        {
+            FilesManager &fm;
+            ~RunningGuard() { fm.running_ = false; }
+        } running_guard{*this};
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
         logger.information("FilesManager scan started");
 
@@ -368,10 +377,13 @@ namespace MediaDedup::Orchestration
         {
             logger.error("FilesManager scan failed: %s", e.what());
         }
+        catch (...)
+        {
+            logger.error("FilesManager scan failed: unknown exception");
+        }
 
         // Safety net: nothing accumulated may outlive the scan pass.
         flushPendingUpserts();
-        running_ = false;
     }
 
     void FilesManager::flushPendingUpserts()

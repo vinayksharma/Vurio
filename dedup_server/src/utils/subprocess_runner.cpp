@@ -27,7 +27,10 @@ namespace MediaDedup
         }
 
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-        const auto poll_interval = std::chrono::milliseconds(50);
+        // CC-6: adaptive backoff (1->2->4...->50 ms). The fixed 50 ms poll
+        // added ~25 ms mean latency to EVERY spawn — 40-80% overhead on a
+        // typical 30-60 ms thumbnail render, on a counted pool slot.
+        auto poll_interval = std::chrono::milliseconds(1);
 
         while (true)
         {
@@ -62,6 +65,7 @@ namespace MediaDedup
             }
 
             std::this_thread::sleep_for(poll_interval);
+            poll_interval = std::min(poll_interval * 2, std::chrono::milliseconds(50));
         }
     }
 

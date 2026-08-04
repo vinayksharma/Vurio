@@ -45,6 +45,9 @@ private:
     // CC-5: keep-alive share for the raw DatabaseManager* the service
     // impls hold (they are members of services_ and die with us).
     std::shared_ptr<DatabaseManager> database_manager_;
+    // CC-6: held so stop() can clear the group-event callback BEFORE
+    // services_ teardown (the callback captures a raw service pointer).
+    std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder_;
     std::string socket_path_;
     std::vector<std::unique_ptr<grpc::Service>> services_;
 };

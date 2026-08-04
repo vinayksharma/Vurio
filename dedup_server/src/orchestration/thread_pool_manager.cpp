@@ -9,7 +9,7 @@
 namespace MediaDedup
 {
     ThreadPoolManager::ThreadPoolManager(std::shared_ptr<UnifiedObservableConfigManager> cfg)
-        : cfg_(std::move(cfg)), effective_max_(0), kill_timeout_(std::chrono::seconds(10)), idle_timeout_seconds_(60), pool_(std::make_unique<Poco::ThreadPool>(1, 1, 60))
+        : cfg_(std::move(cfg)), effective_max_(0), idle_timeout_seconds_(60), pool_(std::make_unique<Poco::ThreadPool>(1, 1, 60))
     {
     }
 
@@ -17,7 +17,7 @@ namespace MediaDedup
     {
         try
         {
-            shutdownAndDrain(kill_timeout_);
+            shutdownAndDrain(std::chrono::milliseconds(kill_timeout_ms_.load()));
         }
         catch (...)
         {
@@ -75,7 +75,7 @@ namespace MediaDedup
         int killMs = cfg_->getPropertyValue<int>(killKey, 10000);
         if (killMs < 0)
             killMs = 10000;
-        kill_timeout_ = std::chrono::milliseconds(killMs);
+        kill_timeout_ms_.store(killMs);
         logger.debug("Kill timeout set to: %d ms", killMs);
 
         // Read idle timeout configuration
@@ -183,6 +183,13 @@ namespace MediaDedup
         std::lock_guard<std::mutex> lock(mutex_);
         type_to_queue_.clear();
         round_robin_types_.clear();
+        // CC-6: rebuild the dedup index from the tasks still RUNNING.
+        inflight_paths_.clear();
+        for (const auto &pair : active_runnables_)
+        {
+            if (!pair.second->file_path().empty())
+                inflight_paths_.insert(pair.second->type() + "|" + pair.second->file_path());
+        }
         Poco::Logger::get("ThreadPoolManager").information("Queues cleared successfully");
     }
 
@@ -232,25 +239,14 @@ namespace MediaDedup
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            // Deduplication check
+            // Deduplication check — CC-6: O(1) set membership instead of a
+            // linear scan of the queue AND every active runnable under mutex_
+            // (O(n^2) across a bulk submission of n files).
             if (!file_path.empty())
             {
-                // Check if already in queue
-                for (const auto &task : type_to_queue_[type])
+                if (!inflight_paths_.insert(type + "|" + file_path).second)
                 {
-                    if (task.file_path == file_path)
-                    {
-                        return; // Already queued
-                    }
-                }
-
-                // Check if currently running
-                for (const auto &pair : active_runnables_)
-                {
-                    if (pair.second->type() == type && pair.second->file_path() == file_path)
-                    {
-                        return; // Already running
-                    }
+                    return; // Already queued or running
                 }
             }
 
@@ -305,6 +301,7 @@ namespace MediaDedup
             {
                 size_t removed_count = std::distance(remove_it, queue.end());
                 queue.erase(remove_it, queue.end());
+                inflight_paths_.erase(type + "|" + file_path);
                 Poco::Logger::get("ThreadPoolManager").debug("Cancelled %lu task(s) of type '%s' for file '%s'", 
                                                             (unsigned long)removed_count, type.c_str(), file_path.c_str());
                 return true;
@@ -355,7 +352,9 @@ namespace MediaDedup
         // Keep this runnable alive for the duration of run to avoid self-destruction
         auto keepAlive = owner_.lockRunnable(id_);
         
-        thread_local TaskCleanupHelper cleanup;
+        // CC-6: stack-scoped — thread_local deferred the abrupt-exit guard
+        // to THREAD exit and carried stale owner/type/id across tasks.
+        TaskCleanupHelper cleanup;
         cleanup.owner = &owner_;
         cleanup.type = type_;
         cleanup.id = id_;
@@ -389,7 +388,13 @@ namespace MediaDedup
             auto it = type_to_running_.find(type);
             if (it != type_to_running_.end() && it->second > 0)
                 it->second -= 1;
-            active_runnables_.erase(id);
+            auto rit = active_runnables_.find(id);
+            if (rit != active_runnables_.end())
+            {
+                if (!rit->second->file_path().empty())
+                    inflight_paths_.erase(type + "|" + rit->second->file_path());
+                active_runnables_.erase(rit);
+            }
         }
         cv_.notify_all();
         schedule();
@@ -438,7 +443,13 @@ namespace MediaDedup
 
         // Check for high-priority UI tasks dynamically
         auto has_ui_tasks_fn = [this]() {
-            return !type_to_queue_["thumbnail_generator"].empty() || !type_to_queue_["preview_generator"].empty() || !type_to_queue_["fullres_generator"].empty();
+            // CC-6: find(), not operator[] — the old form permanently inserted
+            // three empty deques that skewed status reporting.
+            for (const char *t : {"thumbnail_generator", "preview_generator", "fullres_generator"}) {
+                auto it = type_to_queue_.find(t);
+                if (it != type_to_queue_.end() && !it->second.empty()) return true;
+            }
+            return false;
         };
 
         size_t current_limit = effective_max_;
@@ -731,9 +742,9 @@ namespace MediaDedup
             try
             {
                 if (event.new_value.type() == typeid(int))
-                    kill_timeout_ = std::chrono::milliseconds(std::any_cast<int>(event.new_value));
+                    kill_timeout_ms_.store(std::any_cast<int>(event.new_value));
                 else if (event.new_value.type() == typeid(std::string))
-                    kill_timeout_ = std::chrono::milliseconds(std::stoi(std::any_cast<std::string>(event.new_value)));
+                    kill_timeout_ms_.store(std::stoi(std::any_cast<std::string>(event.new_value)));
             }
             catch (...)
             {

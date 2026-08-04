@@ -328,6 +328,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_file_detector.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS} ${LIBRAW_INCLUDE_DIRS} ${LIBTIFF_INCLUDE_DIRS})
         target_link_directories(${test_name} PRIVATE ${LIBRAW_LIBRARY_DIRS} ${LIBTIFF_LIBRARY_DIRS})

@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "config/unified_observable_config.hpp"
@@ -147,7 +148,9 @@ namespace MediaDedup
         // Combined running-task cap for thumbnail_generator + preview_generator
         // (each task shells out to magick; unbounded bursts OOM the host).
         size_t media_generation_cap_ = 4;
-        std::chrono::milliseconds kill_timeout_;
+        // CC-6: atomic — written by the config-monitor thread, read by
+        // shutdownAndDrain and the dtor.
+        std::atomic<long long> kill_timeout_ms_{10000};
         int idle_timeout_seconds_;
 
         // Pool and bookkeeping
@@ -162,6 +165,10 @@ namespace MediaDedup
         std::unordered_map<std::string, double> type_to_temp_override_;
         std::unordered_map<std::string, size_t> type_to_running_;
         std::unordered_map<std::string, std::deque<QueuedTask>> type_to_queue_;
+        // CC-6: O(1) dedup index over queued+running tasks that carry a
+        // file_path (key: "type|path"). Replaces an O(queue)+O(active)
+        // linear scan under mutex_ on EVERY submit.
+        std::unordered_set<std::string> inflight_paths_;
         std::vector<std::string> round_robin_types_;
         size_t rr_index_ = 0;
         size_t running_total_ = 0;

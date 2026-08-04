@@ -84,6 +84,24 @@ namespace MediaDedup
         static std::vector<float> bytesToFloat32(const std::vector<std::uint8_t> &data);
 
         /**
+         * @brief DF-1: cosine similarity of two L2-NORMALIZED float vectors.
+         *
+         * A bare dot product — no copies, no norms, no sqrt. Both inputs MUST
+         * already be unit vectors (see l2NormalizeInPlace); the duplicate
+         * finder's embedding arena guarantees this. Result clamped to [-1, 1].
+         */
+        static double dotSimilarity(const float *a, const float *b, int dim);
+
+        /**
+         * @brief L2-normalize a float vector in place.
+         *
+         * @return false when the vector has (near-)zero norm — the caller must
+         * then treat the embedding as unusable, matching
+         * computeEmbeddingSimilarity's zero-norm behavior.
+         */
+        static bool l2NormalizeInPlace(float *v, int dim);
+
+        /**
          * @brief Deserialize OpenCV features from blob
          *
          * Format: [count:4bytes][kp1_data...][desc1_data...][kp2_data...][desc2_data...]
