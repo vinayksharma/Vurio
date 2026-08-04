@@ -342,12 +342,6 @@ namespace MediaDedup
             double edge_floor_ = 0.80;
             std::vector<PurityCriterion> purity_order_ = {PurityCriterion::CAMERA_RAW, PurityCriterion::EXIF_CAPTURE_DATE, PurityCriterion::FILE_SIZE};
 
-            // Metadata filtering parameters
-            bool metadata_filtering_enabled_ = true;
-            double aspect_ratio_tolerance_ = 0.10;
-            double dimension_tolerance_ = 0.20;
-            double file_size_tolerance_ = 0.50;
-            bool require_same_format_ = false;
         };
     } // namespace Orchestration
 } // namespace MediaDedup

@@ -56,20 +56,6 @@ namespace MediaDedup
         }
     }
 
-    bool ImageArtifactsOps::upsertPhash(DatabaseManager &db, const ImagePhashRecord &r)
-    {
-        // REMOVED: FAST mode (pHash) not supported - only EMBEDDING mode (CLIP) supported
-        Poco::Logger::get("ImageArtifactsOps").warning("upsertPhash called but FAST mode not supported");
-        return false;
-    }
-
-    bool ImageArtifactsOps::upsertFeatures(DatabaseManager &db, const ImageFeaturesRecord &r)
-    {
-        // REMOVED: BALANCED mode (features) not supported - only EMBEDDING mode (CLIP) supported
-        Poco::Logger::get("ImageArtifactsOps").warning("upsertFeatures called but BALANCED mode not supported");
-        return false;
-    }
-
     bool ImageArtifactsOps::upsertEmbedding(DatabaseManager &db, const ImageEmbeddingRecord &r)
     {
         try

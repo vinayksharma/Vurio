@@ -65,7 +65,6 @@ set(UNIT_TEST_SOURCES
     unit/test_scheduler_concurrency.cpp
     unit/test_quality_pipeline_memory.cpp
     unit/test_onnx_session_manager.cpp
-    unit/test_phash_quality.cpp
     unit/test_duplicate_finder_range.cpp
     unit/test_purge_ejected_errored.cpp
     unit/test_duplicates_reset_api.cpp
@@ -157,13 +156,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_onnx_session_manager")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="OnnxSessionManagerTest.*")
-        set_tests_properties(${test_name} PROPERTIES
-            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
-            TIMEOUT 300
-        )
-    elseif(${test_name} STREQUAL "test_phash_quality")
-        # Skip creating standalone executable for this test - it's only part of all_unit_tests
-        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PhashQualityTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -443,8 +435,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -486,8 +476,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -608,8 +596,6 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/opencv_adapter.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/features_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
@@ -734,7 +720,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_disk_cache" AND
       NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
       NOT ${test_name} STREQUAL "test_stderr_capture" AND
-      NOT ${test_name} STREQUAL "test_phash_quality" AND
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND

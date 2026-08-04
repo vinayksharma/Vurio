@@ -265,7 +265,6 @@ add_executable(media_dedup_server
     src/media_processors/image_processor.cpp
     src/media_processors/image/image_task.cpp
     src/media_processors/image/pipeline_thumbnail_helper.cpp
-    src/media_processors/image/backends/opencv_adapter.cpp
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp
@@ -274,7 +273,6 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/tiff_validator.cpp
     src/media_processors/image/backends/transcoding_pipeline.cpp
     src/media_processors/image/pipelines/quality_pipeline.cpp
-    src/media_processors/image/backends/features_adapter.cpp
     src/media_processors/image/backends/onnx_adapter.cpp
     src/media_processors/image/backends/onnx_session_manager.cpp
     src/database/image_artifacts_ops.cpp

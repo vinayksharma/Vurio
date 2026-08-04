@@ -186,12 +186,6 @@ namespace MediaDedup
 
             std::string purity_str = cfg_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
             purity_order_ = parsePurityOrder(purity_str);
-            // Metadata filtering parameters
-            metadata_filtering_enabled_ = cfg_->getPropertyValue<bool>("duplicates.metadata.filtering.enabled", true);
-            aspect_ratio_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.aspectRatioTolerance", 0.10);
-            dimension_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.dimensionTolerance", 0.20);
-            file_size_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.fileSizeTolerance", 0.50);
-            require_same_format_ = cfg_->getPropertyValue<bool>("duplicates.metadata.requireSameFormat", false);
 
             // DF-3 migration + floor provenance. The edge list is only usable
             // if it is COMPLETE down to the current discovery floor; the floor
@@ -263,7 +257,6 @@ namespace MediaDedup
             logger.information("DuplicateFinder initialized successfully (enabled=" +
                                std::string(enabled_ ? "true" : "false") +
                                ", batch_size=" + std::to_string(batch_size_) +
-                               ", metadata_filtering=" + std::string(metadata_filtering_enabled_ ? "true" : "false") +
                                ", threshold_similarity=" + std::to_string(embedding_threshold_similarity_) +
                                ", threshold_duplicate=" + std::to_string(embedding_threshold_duplicate_) + ")");
             return true;
