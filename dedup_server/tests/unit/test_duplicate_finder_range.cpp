@@ -23,8 +23,11 @@ class DuplicateFinderRangeTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        // Create test database
-        db_manager_ = std::make_unique<DatabaseManager>(":memory:");
+        // File-backed test database: a ":memory:" DatabaseManager is broken
+        // under the connection pool (each pooled connection is its own empty
+        // DB) — tests only ever passed by connection-reuse luck.
+        fixture_db_path_ = ::MediaDedup::Test::TestUtils::generateTempFilePath("test_dupfinder_range", "db");
+        db_manager_ = std::make_unique<DatabaseManager>(fixture_db_path_);
         ASSERT_TRUE(db_manager_->initialize());
 
         // Create test config
@@ -42,6 +45,12 @@ protected:
     {
         db_manager_.reset();
         config_.reset();
+        if (!fixture_db_path_.empty())
+        {
+            ::MediaDedup::Test::TestUtils::deleteFile(fixture_db_path_);
+            ::MediaDedup::Test::TestUtils::deleteFile(fixture_db_path_ + "-wal");
+            ::MediaDedup::Test::TestUtils::deleteFile(fixture_db_path_ + "-shm");
+        }
     }
 
     int mockScannedFile(const std::string& path) {
@@ -56,6 +65,7 @@ protected:
         return opt ? opt->id : 1;
     }
 
+    std::string fixture_db_path_;
     std::unique_ptr<DatabaseManager> db_manager_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
 };
@@ -98,7 +108,7 @@ TEST_F(DuplicateFinderRangeTest, ThresholdDecreaseSchedulesReclusterWithoutWipe)
     ASSERT_TRUE(DuplicateGroupsOps::upsertCheckpoint(
         *db_manager_, "EMBEDDING", 100, 100, 5, 2, 0));
 
-    // Decrease similarity threshold, staying above the edge floor (0.85)
+    // Decrease similarity threshold, staying above the edge floor (0.80)
     config_->setPropertyValue("duplicates.threshold.similarity", 0.90);
 
     // Give config change time to propagate
@@ -133,8 +143,8 @@ TEST_F(DuplicateFinderRangeTest, ThresholdBelowEdgeFloorTriggersFullReset)
     ASSERT_TRUE(DuplicateGroupsOps::upsertCheckpoint(
         *db_manager_, "EMBEDDING", 100, 100, 5, 2, 0));
 
-    // 0.80 < edge floor 0.85: recorded edges are insufficient
-    config_->setPropertyValue("duplicates.threshold.similarity", 0.80);
+    // 0.75 < edge floor 0.80: recorded edges are insufficient
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.75);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     EXPECT_EQ(0, DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"))
@@ -735,7 +745,7 @@ TEST_F(DuplicateFinderRangeTest, FindDuplicatesGroupsViaKnnIndexEndToEnd)
 // edge list — no group wipe, no checkpoint reset, no embedding re-comparison.
 // Three files: a and a2 are near-identical (cos ~0.9997); m sits at ~0.93 to
 // both. At similarity 0.95 the group is {a, a2}; edges to m are recorded at
-// discovery time (>= 0.85 floor) but below the grouping bar. Sliding the
+// discovery time (>= 0.80 floor) but below the grouping bar. Sliding the
 // threshold to 0.92 must grow the SAME group to {a, a2, m} purely from edges.
 TEST_F(DuplicateFinderRangeTest, SliderReclusterFromEdgesEndToEnd)
 {

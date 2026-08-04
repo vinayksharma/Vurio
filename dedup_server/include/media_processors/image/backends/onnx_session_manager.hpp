@@ -17,23 +17,58 @@ namespace MediaDedup
 
 #if defined(HAVE_ONNXRUNTIME)
     /**
-     * @brief Wrapper for ONNX Runtime session with environment
-     * Encapsulates both Ort::Env and Ort::Session for complete session lifecycle
+     * @brief Wrapper for an ONNX Runtime session
+     *
+     * DF-4: sessions share ONE process-wide Ort::Env (sharedEnv()) instead of
+     * one env per session, and the model's I/O layout is introspected ONCE at
+     * creation — the adapter previously re-queried input names/shapes/types
+     * (with allocations) on every single inference.
      */
     struct OnnxSessionWrapper
     {
-        std::unique_ptr<Ort::Env> env;
         std::unique_ptr<Ort::Session> session;
         std::string model_path;
+        bool coreml_active = false;
 
-        OnnxSessionWrapper(const std::string &model_path_param);
+        /// Model I/O layout, resolved once at session creation.
+        struct IoSpec
+        {
+            size_t num_inputs = 0;
+            std::vector<std::string> input_names;
+            std::vector<const char *> input_name_ptrs; // stable views into input_names
+            std::vector<std::vector<int64_t>> input_dims;
+            std::vector<ONNXTensorElementDataType> input_types;
+            size_t image_input_index = 0;
+            bool found_image_input = false;
+            bool image_input_nhwc = false;
+            std::string output_name;
+        };
+        IoSpec io;
+
+        /// The single process-wide ONNX Runtime environment.
+        static Ort::Env &sharedEnv();
+
+        /**
+         * @param try_coreml append the CoreML execution provider; on ANY
+         *        failure the session falls back to CPU-only (never throws
+         *        for CoreML reasons alone)
+         * @param coreml_cache_dir where CoreML stores compiled models so
+         *        pooled sessions/restarts skip recompilation ("" = no cache)
+         */
+        OnnxSessionWrapper(const std::string &model_path_param,
+                           bool try_coreml = false,
+                           const std::string &coreml_cache_dir = "");
         ~OnnxSessionWrapper() = default;
 
-        // Non-copyable, movable
+        // Non-copyable, non-movable: io.input_name_ptrs points into
+        // input_names, and wrappers always live behind unique_ptr anyway.
         OnnxSessionWrapper(const OnnxSessionWrapper &) = delete;
         OnnxSessionWrapper &operator=(const OnnxSessionWrapper &) = delete;
-        OnnxSessionWrapper(OnnxSessionWrapper &&) = default;
-        OnnxSessionWrapper &operator=(OnnxSessionWrapper &&) = default;
+        OnnxSessionWrapper(OnnxSessionWrapper &&) = delete;
+        OnnxSessionWrapper &operator=(OnnxSessionWrapper &&) = delete;
+
+    private:
+        void introspect();
     };
 
     /**
@@ -67,7 +102,9 @@ namespace MediaDedup
         OnnxSessionLease &operator=(OnnxSessionLease &&) = delete;
 
         Ort::Session *getSession() { return session_ ? session_->session.get() : nullptr; }
-        Ort::Env *getEnv() { return session_ ? session_->env.get() : nullptr; }
+        Ort::Env *getEnv() { return session_ ? &OnnxSessionWrapper::sharedEnv() : nullptr; }
+        /// DF-4: full wrapper access for the cached I/O spec.
+        OnnxSessionWrapper *getWrapper() { return session_; }
         const std::string &getModelPath() const { return session_->model_path; }
 
     private:
@@ -85,8 +122,8 @@ namespace MediaDedup
      * Thread Safety: All public methods are thread-safe
      *
      * Configuration:
-     * - media.image.quality.onnx.sessionCache.enabled: Enable/disable caching
-     * - media.image.quality.onnx.sessionCache.maxSessions: Max sessions per model
+     * - media.image.onnx.sessionCache.enabled: Enable/disable caching
+     * - media.image.onnx.sessionCache.maxSessions: Max sessions per model
      */
     class OnnxSessionManager
     {
@@ -136,6 +173,10 @@ namespace MediaDedup
         // Configuration cache (observable)
         bool cache_enabled_ = true;
         size_t max_sessions_per_model_ = 4;
+        // DF-4: CoreML execution provider (read once at startup; sessions are
+        // pooled, so flipping it live would give a mixed pool)
+        bool coreml_enabled_ = false;
+        std::string coreml_cache_dir_;
 
         // Create a new session wrapper
         std::unique_ptr<OnnxSessionWrapper> createSession(const std::string &model_path);
@@ -158,6 +199,7 @@ namespace MediaDedup
         OnnxSessionLease(void *, std::function<void(void *)>) {}
         void *getSession() { return nullptr; }
         void *getEnv() { return nullptr; }
+        void *getWrapper() { return nullptr; }
         const std::string &getModelPath() const
         {
             static std::string empty;

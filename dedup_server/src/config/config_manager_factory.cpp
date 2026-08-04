@@ -427,6 +427,10 @@ namespace MediaDedup
         manager->createProperty<int>("media.image.onnx.inputSize", 224, getDesc("media.image.onnx.inputSize"), getLongDesc("media.image.onnx.inputSize"));
         manager->createProperty<bool>("media.image.onnx.sessionCache.enabled", true, getDesc("media.image.onnx.sessionCache.enabled"), getLongDesc("media.image.onnx.sessionCache.enabled"));
         manager->createProperty<int>("media.image.onnx.sessionCache.maxSessions", 4, getDesc("media.image.onnx.sessionCache.maxSessions"), getLongDesc("media.image.onnx.sessionCache.maxSessions"));
+        // DF-4: CoreML execution provider (ANE/GPU) with automatic CPU
+        // fallback. Registered default is off; production config.yaml enables.
+        manager->createProperty<bool>("media.image.onnx.coreml.enabled", false, getDesc("media.image.onnx.coreml.enabled"), getLongDesc("media.image.onnx.coreml.enabled"));
+        manager->createProperty<std::string>("media.image.onnx.coreml.cacheDir", "cache/coreml", getDesc("media.image.onnx.coreml.cacheDir"), getLongDesc("media.image.onnx.coreml.cacheDir"));
         manager->createProperty<int>("media.image.embeddingDim", 512, getDesc("media.image.embeddingDim"), getLongDesc("media.image.embeddingDim"));
         manager->createProperty<bool>("media.image.transcoding.enabled", true, getDesc("media.image.transcoding.enabled"), getLongDesc("media.image.transcoding.enabled"));
         manager->createProperty<int>("media.image.transcoding.timeoutMs", 120000, getDesc("media.image.transcoding.timeoutMs"), getLongDesc("media.image.transcoding.timeoutMs"));
@@ -450,6 +454,9 @@ namespace MediaDedup
         manager->createProperty<int>("duplicates.finder.batchSize", 1000, getDesc("duplicates.finder.batchSize"), getLongDesc("duplicates.finder.batchSize"));
         manager->createProperty<int>("duplicates.finder.maxGroupSize", 100, getDesc("duplicates.finder.maxGroupSize"), getLongDesc("duplicates.finder.maxGroupSize"));
         manager->createProperty<int>("duplicates.finder.knnK", 200, getDesc("duplicates.finder.knnK"), getLongDesc("duplicates.finder.knnK"));
+        // DF-3: similarity-edge discovery floor; 0.80 = the UI slider's
+        // loosest position, so no slider move ever needs re-discovery.
+        manager->createProperty<double>("duplicates.edges.floor", 0.80, getDesc("duplicates.edges.floor"), getLongDesc("duplicates.edges.floor"));
         manager->createProperty<std::string>("duplicates.representative.strategy", "size_then_age", getDesc("duplicates.representative.strategy"), getLongDesc("duplicates.representative.strategy"));
         manager->createProperty<bool>("duplicates.metadata.filtering.enabled", false, getDesc("duplicates.metadata.filtering.enabled"), getLongDesc("duplicates.metadata.filtering.enabled"));
         manager->createProperty<double>("duplicates.metadata.fileSizeTolerance", 0.20000000000000001, getDesc("duplicates.metadata.fileSizeTolerance"), getLongDesc("duplicates.metadata.fileSizeTolerance"));

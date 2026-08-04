@@ -1,38 +1,141 @@
 #include "media_processors/image/backends/onnx_session_manager.hpp"
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
+#include <filesystem>
+#include <unordered_map>
 
 namespace MediaDedup
 {
 
 #if defined(HAVE_ONNXRUNTIME)
 
-    OnnxSessionWrapper::OnnxSessionWrapper(const std::string& model_path_param)
+    Ort::Env &OnnxSessionWrapper::sharedEnv()
+    {
+        // DF-4: ONE environment for the whole process. An Ort::Env owns
+        // thread pools and telemetry state — one per pooled session was
+        // pure duplication.
+        static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "MediaDedup");
+        return env;
+    }
+
+    OnnxSessionWrapper::OnnxSessionWrapper(const std::string& model_path_param,
+                                           bool try_coreml,
+                                           const std::string& coreml_cache_dir)
         : model_path(model_path_param)
     {
         Poco::Logger& logger = Poco::Logger::get("OnnxSessionManager");
-        
-        try
+
+        auto buildOptions = [&](bool with_coreml)
         {
-            // Create ONNX Runtime environment
-            env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "MediaDedup");
-            
-            // Configure session options for optimal performance
             Ort::SessionOptions session_options;
-            session_options.SetIntraOpNumThreads(1);  // Single thread per session
+            session_options.SetIntraOpNumThreads(1); // Single thread per session
             session_options.SetInterOpNumThreads(1);
-            session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
-            
-            // Create session with model
-            session = std::make_unique<Ort::Session>(*env, model_path.c_str(), session_options);
-            
-            logger.information("Created ONNX session for model: " + model_path);
-        }
-        catch (const std::exception& e)
+            // DF-4: was ORT_ENABLE_BASIC — ALL adds the extended/layout fusions
+            session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+            if (with_coreml)
+            {
+                std::unordered_map<std::string, std::string> coreml_options{
+                    {"MLComputeUnits", "MLComputeUnitsAll"}, // ANE/GPU/CPU, CoreML picks
+                    {"ModelFormat", "MLProgram"},
+                };
+                if (!coreml_cache_dir.empty())
+                {
+                    std::error_code ec;
+                    std::filesystem::create_directories(coreml_cache_dir, ec);
+                    if (!ec)
+                        coreml_options["ModelCacheDirectory"] = coreml_cache_dir;
+                }
+                session_options.AppendExecutionProvider("CoreML", coreml_options);
+            }
+            return session_options;
+        };
+
+        if (try_coreml)
         {
-            logger.error("Failed to create ONNX session for " + model_path + ": " + std::string(e.what()));
-            throw;
+            // DF-4: CoreML runs compatible subgraphs on ANE/GPU and falls back
+            // per-node to CPU on its own; a hard failure here (EP not compiled
+            // in, unsupported OS) downgrades the whole session to CPU-only.
+            try
+            {
+                auto session_options = buildOptions(true);
+                session = std::make_unique<Ort::Session>(sharedEnv(), model_path.c_str(), session_options);
+                coreml_active = true;
+                logger.information("Created ONNX session (CoreML EP) for model: " + model_path);
+            }
+            catch (const std::exception& e)
+            {
+                logger.warning("CoreML EP unavailable, falling back to CPU: " + std::string(e.what()));
+            }
         }
+
+        if (!session)
+        {
+            try
+            {
+                auto session_options = buildOptions(false);
+                session = std::make_unique<Ort::Session>(sharedEnv(), model_path.c_str(), session_options);
+                logger.information("Created ONNX session (CPU) for model: " + model_path);
+            }
+            catch (const std::exception& e)
+            {
+                logger.error("Failed to create ONNX session for " + model_path + ": " + std::string(e.what()));
+                throw;
+            }
+        }
+
+        introspect();
+    }
+
+    void OnnxSessionWrapper::introspect()
+    {
+        // DF-4: resolve the model's I/O layout once; inference only reads it.
+        Ort::AllocatorWithDefaultOptions allocator;
+        io.num_inputs = session->GetInputCount();
+        io.input_names.reserve(io.num_inputs);
+        io.input_dims.reserve(io.num_inputs);
+        io.input_types.reserve(io.num_inputs);
+
+        for (size_t i = 0; i < io.num_inputs; ++i)
+        {
+            auto name_ptr = session->GetInputNameAllocated(i, allocator);
+            io.input_names.emplace_back(name_ptr.get());
+            auto tensor_info = session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
+            io.input_dims.push_back(tensor_info.GetShape());
+            io.input_types.push_back(tensor_info.GetElementType());
+        }
+
+        // Image input: 4D tensor, NCHW (?,3,?,?) or NHWC (?,?,?,3); -1 = dynamic.
+        for (size_t i = 0; i < io.num_inputs; ++i)
+        {
+            const auto &dims = io.input_dims[i];
+            if (dims.size() != 4)
+                continue;
+            if (dims[1] == 3 || dims[1] == -1)
+            {
+                io.image_input_index = i;
+                io.found_image_input = true;
+                break;
+            }
+            if (dims[3] == 3 || dims[3] == -1)
+            {
+                io.image_input_index = i;
+                io.found_image_input = true;
+                io.image_input_nhwc = true;
+                break;
+            }
+        }
+
+        if (session->GetOutputCount() > 0)
+        {
+            auto out_ptr = session->GetOutputNameAllocated(0, allocator);
+            io.output_name = out_ptr.get();
+        }
+
+        // Built LAST: input_names is complete, so the c_str() views are stable
+        // (the wrapper is non-movable).
+        io.input_name_ptrs.reserve(io.num_inputs);
+        for (const auto &n : io.input_names)
+            io.input_name_ptrs.push_back(n.c_str());
     }
 
     OnnxSessionManager::OnnxSessionManager(std::shared_ptr<UnifiedObservableConfigManager> config)
@@ -41,12 +144,16 @@ namespace MediaDedup
         if (config_)
         {
             // Load configuration
-            cache_enabled_ = config_->getPropertyValue<bool>("media.image.quality.onnx.sessionCache.enabled", true);
-            max_sessions_per_model_ = static_cast<size_t>(config_->getPropertyValue<int>("media.image.quality.onnx.sessionCache.maxSessions", 4));
-            
+            cache_enabled_ = config_->getPropertyValue<bool>("media.image.onnx.sessionCache.enabled", true);
+            max_sessions_per_model_ = static_cast<size_t>(config_->getPropertyValue<int>("media.image.onnx.sessionCache.maxSessions", 4));
+            // DF-4: default OFF in code so tests/headless runs stay CPU;
+            // production config.yaml turns it on.
+            coreml_enabled_ = config_->getPropertyValue<bool>("media.image.onnx.coreml.enabled", false);
+            coreml_cache_dir_ = config_->getPropertyValue<std::string>("media.image.onnx.coreml.cacheDir", "cache/coreml");
+
             // Subscribe to configuration changes
             config_->subscribeToConfigChanges([this](const ConfigChangeEvent& event) {
-                if (event.key.find("media.image.quality.onnx.sessionCache") != std::string::npos)
+                if (event.key.find("media.image.onnx.sessionCache") != std::string::npos)
                 {
                     onConfigChange();
                 }
@@ -83,7 +190,7 @@ namespace MediaDedup
         try
         {
             logger.debug("Creating new ONNX session for model: " + model_path);
-            return std::make_unique<OnnxSessionWrapper>(model_path);
+            return std::make_unique<OnnxSessionWrapper>(model_path, coreml_enabled_, coreml_cache_dir_);
         }
         catch (const std::exception& e)
         {
@@ -214,8 +321,8 @@ namespace MediaDedup
     {
         if (!config_) return;
         
-        bool new_cache_enabled = config_->getPropertyValue<bool>("media.image.quality.onnx.sessionCache.enabled", true);
-        size_t new_max_sessions = static_cast<size_t>(config_->getPropertyValue<int>("media.image.quality.onnx.sessionCache.maxSessions", 4));
+        bool new_cache_enabled = config_->getPropertyValue<bool>("media.image.onnx.sessionCache.enabled", true);
+        size_t new_max_sessions = static_cast<size_t>(config_->getPropertyValue<int>("media.image.onnx.sessionCache.maxSessions", 4));
         
         std::lock_guard<std::mutex> lock(mutex_);
         

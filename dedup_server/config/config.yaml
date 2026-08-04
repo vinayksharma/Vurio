@@ -13,6 +13,8 @@ server.timeout: 30
 media.images.hdr: true
 files.service.immediateJobTrigger.enabled: true
 media.image.onnx.inputSize: 224
+media.image.onnx.coreml.enabled: true
+media.image.onnx.coreml.cacheDir: cache/coreml
 scheduler.backoff.jitterPercent: 10
 media.images.raw.raw: true
 scheduler.backoff.enabled: true
@@ -104,6 +106,7 @@ validation.strict: true
 tpm.types.video_processor.share: 1
 duplicates.finder.batchSize: 1000
 duplicates.finder.knnK: 200
+duplicates.edges.floor: 0.8
 media.image.transcoding.enabled: true
 thumbnail.pipeline.size: 128
 scheduler.maxConsecutiveFailures: 5
