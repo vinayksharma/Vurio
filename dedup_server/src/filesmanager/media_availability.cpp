@@ -71,8 +71,10 @@ namespace MediaDedup
         if (n <= 0)
             return result;
         result.reserve(static_cast<size_t>(n));
+        // MP-5: normalize at collection — isPathAvailable used to re-normalize
+        // every mount for EVERY file of a list RPC (mounts × 17k files).
         for (int i = 0; i < n; ++i)
-            result.emplace_back(buf[static_cast<size_t>(i)].f_mntonname);
+            result.emplace_back(normalize(buf[static_cast<size_t>(i)].f_mntonname));
 #else
         std::ifstream mounts("/proc/self/mounts");
         std::string line;
@@ -81,7 +83,7 @@ namespace MediaDedup
             std::istringstream iss(line);
             std::string device, mountpoint;
             if (iss >> device >> mountpoint)
-                result.push_back(mountpoint);
+                result.push_back(normalize(mountpoint));
         }
 #endif
         return result;
@@ -122,9 +124,13 @@ namespace MediaDedup
         if (volume_root == "/")
             return true; // boot volume is always mounted
 
+        // MP-5: mounts from mountedFilesystems() arrive normalized; comparing
+        // directly avoids re-normalizing every mount per file (this runs once
+        // per file in the list RPCs). normalize() is idempotent, so callers
+        // holding already-normalized paths lose nothing.
         for (const auto &m : mounts)
         {
-            if (normalize(m) == volume_root)
+            if (m == volume_root)
                 return true;
         }
         return false;

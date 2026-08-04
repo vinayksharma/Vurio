@@ -1277,6 +1277,36 @@ threshold change wipes all groups and reprocesses from id 0.
   eviction and on shutdown.
 
 ### MP-5. gRPC payload shape (do **not** change the transport model)
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> Transport model untouched, as prescribed.
+> - **Item 1 (the 4 MiB failure) fixed:** `GrpcClient.swift` now sets
+>   `maximumReceiveMessageLength = 64 MiB` (grpc-swift default is 4 MiB).
+>   The viewer timeline's `files_per_day=0` request survives a
+>   bulk-imported library whose mtime-fallback dates pile ~17k files onto
+>   one day — 64 MiB ≈ 280k files of headroom, and the transport is a
+>   local unix socket so the ceiling costs nothing. Swift app builds.
+> - **Per-RPC mount normalization (from item 2):** `mountedFilesystems()`
+>   normalizes at collection; `isPathAvailable` compares directly — the
+>   old code re-normalized every mount for EVERY file of a list RPC
+>   (mounts × 17k files per GetDayGroups).
+> - **Deferred (rest of item 2 — the proto slimming):** int64 ids,
+>   response-level `thumbnail_cache_root` + relative paths, float
+>   similarity. Deliberate: (a) changing a field's wire type on the same
+>   field number is proto3-incompatible — both binaries must flip
+>   atomically; (b) the SwiftUI client keys UI state on string ids in
+>   many views, so the churn spans files with in-flight edits
+>   (ServerImageLoader has uncommitted work); (c) the payload win is
+>   bandwidth over a LOCAL unix socket — the only real failure mode was
+>   the receive limit, now closed with 16x headroom. Revisit only if a
+>   list RPC ever shows up in profiles.
+> - **Tests:** `MediaAvailabilityTest` (mounts normalized at collection,
+>   availability against normalized mounts). Suite: 336 tests, 304
+>   passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`, rebuild/run the app; the viewer
+>   timeline should load even on days with huge file counts, and day-list
+>   scrolling should feel no worse (mount work per RPC dropped).
+
 - The paths-over-unix-socket design (`MediaPathResponse`, no image bytes on the
   wire, no base64) is correct — keep it.
 - **Changes:**

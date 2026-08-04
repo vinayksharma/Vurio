@@ -30,6 +30,13 @@ final class VurioGrpcClient {
             ) { configuration in
                 configuration.connectionPool.connectionsPerEventLoop = 8
                 configuration.connectionPool.maxWaitersPerEventLoop = 1000
+                // MP-5: the viewer timeline requests GetDayGroups with
+                // files_per_day=0 ("all files"); a bulk-imported library whose
+                // mtime-fallback taken_time piles everything onto one day can
+                // exceed grpc-swift's 4 MiB default and kill the call. The
+                // transport is a local unix socket, so a generous ceiling
+                // costs nothing (64 MiB ≈ 280k files on a single day).
+                configuration.maximumReceiveMessageLength = 64 * 1024 * 1024
             }
             self.channel = ch
             // The handshake call itself carries no token (it's how we get one).

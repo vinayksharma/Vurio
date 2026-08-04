@@ -14,8 +14,10 @@ namespace MediaDedup
     {
     public:
         // Mount points of all currently-mounted filesystems (e.g. "/",
-        // "/Volumes/USB"). Reads the in-memory mount table only; safe to call
-        // concurrently from multiple threads.
+        // "/Volumes/USB"), separator-normalized with trailing slashes stripped
+        // (MP-5: normalized once here instead of per lookup). Reads the
+        // in-memory mount table only; safe to call concurrently from multiple
+        // threads.
         static std::vector<std::string> mountedFilesystems();
 
         // Derives the "volume root" a path depends on: the removable mount point
