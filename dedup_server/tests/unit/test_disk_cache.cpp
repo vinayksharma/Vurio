@@ -1040,3 +1040,29 @@ TEST(FullResLruCacheTest, DestructorUnlinksEverything)
     }
     EXPECT_FALSE(std::filesystem::exists(a)) << "shutdown must not leave native-res temp litter";
 }
+
+// ---------------------------------------------------------------------------
+// MP-5: mount-table normalization happens ONCE at collection, not per lookup.
+// ---------------------------------------------------------------------------
+#include "filesmanager/media_availability.hpp"
+
+TEST(MediaAvailabilityTest, MountedFilesystemsAreNormalized)
+{
+    for (const auto &m : MediaAvailability::mountedFilesystems())
+    {
+        EXPECT_EQ(m.find('\\'), std::string::npos) << m;
+        if (m.size() > 1)
+            EXPECT_NE(m.back(), '/') << "trailing slash must be stripped at collection: " << m;
+    }
+}
+
+TEST(MediaAvailabilityTest, IsPathAvailableAgainstNormalizedMounts)
+{
+    // Boot volume paths are always available, mounts list irrelevant.
+    EXPECT_TRUE(MediaAvailability::isPathAvailable("/Users/x/photo.jpg", {}));
+
+    // Removable volume: available exactly when its normalized root is mounted.
+    std::vector<std::string> mounts = {"/", "/Volumes/TestVol123"};
+    EXPECT_TRUE(MediaAvailability::isPathAvailable("/Volumes/TestVol123/a/b.jpg", mounts));
+    EXPECT_FALSE(MediaAvailability::isPathAvailable("/Volumes/OtherVol/a.jpg", mounts));
+}
