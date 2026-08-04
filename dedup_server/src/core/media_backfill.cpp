@@ -2,7 +2,7 @@
 
 #include "core/media_generation_failures.hpp"
 #include "core/media_ready_bus.hpp"
-#include "core/web/web_handlers_thumbnail.hpp"
+#include "media_processors/thumbnail_service.hpp"
 #include "database/database_manager.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "filesmanager/disk_cache.hpp"
@@ -82,10 +82,10 @@ namespace MediaDedup
             {
                 if (!std::filesystem::exists(path))
                     continue;
-                tpm->submit("thumbnail_generator", [cfg, db, backfill_thumb_cache, backfill_trans_cache, tpm, path, thumb_size]() {
-                    ThumbnailHandler temp_handler(cfg, db, backfill_thumb_cache, backfill_trans_cache, tpm);
+                tpm->submit("thumbnail_generator", [cfg, db, backfill_thumb_cache, path, thumb_size]() {
+                    ThumbnailService service(cfg, db, backfill_thumb_cache);
                     std::string cached_path;
-                    if (temp_handler.generateAndCacheThumbnail(path, thumb_size, cached_path))
+                    if (service.generateAndCacheThumbnail(path, thumb_size, cached_path))
                     {
                         MediaGenerationFailures::instance().recordSuccess(path, "thumbnail");
                         MediaReadyBus::instance().publish({path, "thumbnail", true, ""});

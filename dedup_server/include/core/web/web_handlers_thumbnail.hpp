@@ -58,15 +58,8 @@ namespace MediaDedup
         std::shared_ptr<DiskCache> transcoding_cache_;
         std::shared_ptr<ThreadPoolManager> tpm_;
 
-        // Per-path generation locks to prevent duplicate work
-        // CC-6: striped generation locks. The old per-key map erased entries
-        // WHILE the caller still held the mutex, letting a second thread mint
-        // a fresh mutex for the same key (double generation + racing cache
-        // writes) — and every early return leaked an entry forever. A fixed
-        // stripe array has no erase, no leak, no race; hash collisions merely
-        // serialize the occasional unrelated generation.
-        static std::array<std::mutex, 64> generation_stripes_;
-        static std::mutex &generationStripe(const std::string &key);
+        // AR-1: generation logic (incl. the CC-6 striped locks) lives in
+        // ThumbnailService; this handler is HTTP plumbing only.
 
         void streamThumbnailFile(const std::string &file_path,
                                  Poco::Net::HTTPServerResponse &response,

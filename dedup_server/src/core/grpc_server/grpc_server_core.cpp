@@ -24,15 +24,18 @@
 #include "orchestration/duplicate_finder.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "filesmanager/media_availability.hpp"
-#include "core/web/web_handlers_thumbnail.hpp"
+#include "orchestration/integrity_check_service.hpp"
+// AR-2 (pending): the LAST upward edge into core/web — bulkEject/bulkUndoEject
+// live in the HTTP duplicates handler and are shared by this service. AR-2
+// extracts them into a shared eject service; this include dies with it.
 #include "core/web/web_handlers_duplicates.hpp"
 #include "media_processors/media_processor.hpp"
+#include "media_processors/thumbnail_service.hpp"
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "utils/thumbnail_generator.hpp"
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
-#include "core/web/web_handlers_websocket.hpp"
 #include "core/media_ready_bus.hpp"
 #include "core/media_generation_failures.hpp"
 #include "database/processing_errors_ops.hpp"
@@ -1247,7 +1250,7 @@ public:
                                              vurio::dedup::AdvancedActionResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string error;
-        if (MediaDedupServer::Core::DatabaseIntegrityCheckHandler::startIntegrityCheck(db_owner_, config_, scheduler_, tpm_, error)) {
+        if (MediaDedup::Orchestration::IntegrityCheckService::start(db_owner_, config_, scheduler_, tpm_, error)) {
             reply->set_success(true);
         } else {
             reply->set_success(false);
@@ -1259,7 +1262,7 @@ public:
     grpc::Status GetDatabaseIntegrityCheckStatus(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                                  vurio::dedup::IntegrityCheckStatusResponse* reply) override {
         if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
-        auto state = MediaDedupServer::Core::DatabaseIntegrityCheckHandler::getIntegrityCheckStatus();
+        auto state = MediaDedup::Orchestration::IntegrityCheckService::status();
         reply->set_running(state.is_running);
         reply->set_progress(state.progress);
         reply->set_total_files(state.total_files);
@@ -1448,10 +1451,10 @@ public:
                 std::string path_copy = file_path;
                 int size_copy = normalized_size;
 
-                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
-                    MediaDedup::ThumbnailHandler temp_handler(config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy);
+                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, path_copy, size_copy]() {
+                    MediaDedup::ThumbnailService service(config_copy, db_copy, tcache_copy);
                     std::string cached_path;
-                    if (temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
+                    if (service.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
                         MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
                         MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
                     } else {
@@ -1565,12 +1568,8 @@ public:
                                 PreviewCacheOps::upsertPreview(
                                     *db_copy, PreviewCacheOps::makeRecord(path_copy, final_path));
 
-                                nlohmann::json msg;
-                                msg["type"] = "media_ready";
-                                msg["media_type"] = "preview";
-                                msg["file_path"] = path_copy;
-
-                                WebSocketStatusHandler::broadcastMessage(msg.dump());
+                                // AR-1: the dead WebSocket broadcast is gone —
+                                // MediaReadyBus serves the live (gRPC) client.
                                 MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "preview");
                                 MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview", true, ""});
                             } else {

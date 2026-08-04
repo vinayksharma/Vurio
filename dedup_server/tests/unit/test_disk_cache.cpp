@@ -1066,3 +1066,63 @@ TEST(MediaAvailabilityTest, IsPathAvailableAgainstNormalizedMounts)
     EXPECT_TRUE(MediaAvailability::isPathAvailable("/Volumes/TestVol123/a/b.jpg", mounts));
     EXPECT_FALSE(MediaAvailability::isPathAvailable("/Volumes/OtherVol/a.jpg", mounts));
 }
+
+// ---------------------------------------------------------------------------
+// AR-1: ThumbnailService — the generation core shared by HTTP, gRPC, and the
+// backfill (extracted from the HTTP ThumbnailHandler).
+// ---------------------------------------------------------------------------
+#if defined(HAVE_OPENCV)
+#include "media_processors/thumbnail_service.hpp"
+#include "database/database_manager.hpp"
+#include "database/thumbnail_cache_ops.hpp"
+#include <opencv2/opencv.hpp>
+
+TEST(ThumbnailServiceTest, GenerateAndCacheEndToEnd)
+{
+    // File-backed DB (a :memory: DatabaseManager is broken under the pool)
+    auto db_path = (std::filesystem::temp_directory_path() / "thumb_service_test.db").string();
+    std::filesystem::remove(db_path);
+    auto db = std::make_shared<DatabaseManager>(db_path);
+    ASSERT_TRUE(db->initialize());
+    ASSERT_TRUE(ThumbnailCacheOps::ensureTable(*db));
+
+    ConfigManagerConfig cfg_config;
+    cfg_config.config_file_path = "/dev/null";
+    cfg_config.enable_file_monitoring = false;
+    auto cfg = ConfigManagerFactory::createWithConfig(cfg_config);
+    ASSERT_TRUE(cfg->initialize());
+    std::string cache_dir = "thumb_service_cache_" + std::to_string(::getpid());
+    cfg->createProperty("cache.thumbnail.location", cache_dir, "test");
+    cfg->createProperty("cache.thumbnail.size_limit_mb", 64, "test");
+    auto cache = std::make_shared<DiskCache>(cfg, "cache.thumbnail");
+    ASSERT_TRUE(cache->initialize());
+
+    auto src = (std::filesystem::temp_directory_path() / "thumb_service_src.jpg").string();
+    cv::Mat img(600, 800, CV_8UC3, cv::Scalar(120, 90, 200));
+    ASSERT_TRUE(cv::imwrite(src, img));
+
+    ThumbnailService service(cfg, db, cache);
+    std::string cached_path;
+    ASSERT_TRUE(service.generateAndCacheThumbnail(src, 256, cached_path));
+    EXPECT_TRUE(std::filesystem::exists(cached_path));
+
+    // DB row recorded and served on repeat (no regeneration: same path back)
+    auto row = ThumbnailCacheOps::getBestFitThumbnail(*db, src, 256);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->cached_path, cached_path);
+    std::string cached_path2;
+    ASSERT_TRUE(service.generateAndCacheThumbnail(src, 256, cached_path2));
+    EXPECT_EQ(cached_path2, cached_path);
+
+    // Thumbnail decodes back at the requested box
+    cv::Mat thumb = cv::imread(cached_path, cv::IMREAD_COLOR);
+    ASSERT_FALSE(thumb.empty());
+    EXPECT_EQ(std::max(thumb.rows, thumb.cols), 256);
+
+    db.reset();
+    std::filesystem::remove(db_path);
+    std::filesystem::remove(src);
+    std::error_code ec;
+    std::filesystem::remove_all(std::filesystem::current_path() / cache_dir, ec);
+}
+#endif // HAVE_OPENCV

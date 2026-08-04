@@ -1331,6 +1331,38 @@ threshold change wipes all groups and reprocesses from id 0.
 Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
 
 ### AR-1. Break the three upward edges into the legacy HTTP layer
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> All three named edges broken:
+> - **(a) `ThumbnailService`** (`src/media_processors/thumbnail_service.*`):
+>   the generation core (incl. the CC-6 striped locks, now process-wide
+>   across every surface) extracted from the HTTP ThumbnailHandler. gRPC
+>   and the backfill construct the service directly — no more full HTTP
+>   request handler built inside a TPM task; the HTTP handler delegates.
+> - **(b) `IntegrityCheckService`**
+>   (`src/orchestration/integrity_check_service.*`): state + snapshot +
+>   the detached runner (CC-5 lifetime/bounded-drain fixes preserved
+>   verbatim) moved out of `DatabaseIntegrityCheckHandler` statics. gRPC
+>   calls `Orchestration::IntegrityCheckService::start/status`; the HTTP
+>   handler is plumbing that delegates to the same service.
+> - **(c) Dead WebSocket broadcasts deleted** in `grpc_server_core.cpp`
+>   (preview generation) and `pipeline_thumbnail_helper.cpp` —
+>   `active_sockets_` is always empty in production; `MediaReadyBus`
+>   serves the live client. `media_processors/` now has ZERO `core/web`
+>   includes.
+> - **One edge deliberately remains, marked for AR-2:** gRPC still
+>   includes `web_handlers_duplicates.hpp` for `bulkEject`/`bulkUndoEject`
+>   — exactly the shared gRPC/HTTP clone AR-2 extracts next; the include
+>   carries an AR-2 comment and dies with that step.
+> - **Tests:** `ThumbnailServiceTest.GenerateAndCacheEndToEnd` (real DB +
+>   DiskCache + JPEG: generate, DB row, repeat-call cache hit, decode-back
+>   box check); all handler/gRPC suites that compile the touched TUs still
+>   pass. Suite: 337 tests, 305 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; thumbnails/previews generate as before
+>   from the app, and Advanced Settings → database integrity check runs
+>   with live progress and completes (it now runs through the
+>   orchestration service on both surfaces).
+
 - **Files:** `grpc_server_core.cpp:26-34` (includes of `core/web/*`), `:1388`
   (constructs an HTTP `ThumbnailHandler` inside a TPM task to call
   `generateAndCacheThumbnail`), `:1204,1216` (integrity-check via static state on
