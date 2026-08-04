@@ -1242,6 +1242,31 @@ threshold change wipes all groups and reprocesses from id 0.
   `kNativeResolution` sentinel that bypasses the thumbnail cache.
 
 ### MP-4. Bound the full-res viewer cache
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> - The unbounded `unordered_map` is now `FullResLruCache`
+>   (`include/utils/full_res_lru_cache.hpp`, extracted so it's unit
+>   testable): **LRU with 32-entry AND 512 MB caps**, exactly as the plan
+>   sized it. Eviction unlinks the temp render; so do staleness detection
+>   (the old code dropped the map entry but LEAKED the file when the
+>   source's mtime changed), same-key replacement (same leak), QW-9
+>   clear-caches, and the destructor at shutdown — no more ~5 GB of
+>   invisible quality-95 temp JPEGs from scrolling the viewer.
+> - Call sites simplified to `getFresh` (validates existence + mtime,
+>   touches recency) / `put` — the three hand-rolled lock+find+check
+>   blocks in `grpc_server_core.cpp` collapsed.
+> - **Known small window (pre-existing):** a temp path already handed to
+>   the client can be evicted before the client opens it; the client
+>   retries via the normal UNAVAILABLE flow, same as QW-9's clear.
+> - **Tests:** `FullResLruCacheTest` — entry-cap LRU order + unlink,
+>   byte-cap eviction, stale-mtime unlink, replacement unlink, destructor
+>   cleanup. Suite: 334 tests, 302 passed / 32 pre-existing skips /
+>   0 failed.
+> - **Validate:** `./restart -b`; zoom through many RAW photos in the
+>   viewer, then check the temp dir (`ls /var/folders/.../T/fullres_*` or
+>   wherever makeTempFilePath points) — at most ~32 renders should exist,
+>   and they disappear on server shutdown.
+
 - **File:** `grpc_server_core.cpp:1403-1462` (`fullResCache()` function-local static
   map + temp JPEGs).
 - **Problem:** unbounded; nothing deletes the quality-95 native-res temp files

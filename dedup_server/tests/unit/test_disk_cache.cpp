@@ -944,3 +944,99 @@ TEST_F(DiskCacheTest, ShardedLayout_ClearAndAccountingWork)
     EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0u);
     EXPECT_FALSE(std::filesystem::exists(p));
 }
+
+// ---------------------------------------------------------------------------
+// MP-4: bounded LRU for the viewer's full-resolution temp renders.
+// ---------------------------------------------------------------------------
+#include "utils/full_res_lru_cache.hpp"
+
+namespace
+{
+    std::string writeTempRender(const std::string &name, size_t bytes)
+    {
+        auto path = (std::filesystem::temp_directory_path() / name).string();
+        std::ofstream f(path, std::ios::binary);
+        std::vector<char> data(bytes, 'R');
+        f.write(data.data(), data.size());
+        return path;
+    }
+}
+
+TEST(FullResLruCacheTest, EntryCapEvictsLeastRecentlyUsedAndUnlinks)
+{
+    FullResLruCache cache(/*max_entries=*/2, /*max_bytes=*/SIZE_MAX);
+
+    std::string a = writeTempRender("fullres_a.jpg", 100);
+    std::string b = writeTempRender("fullres_b.jpg", 100);
+    std::string c = writeTempRender("fullres_c.jpg", 100);
+
+    cache.put("/photo/a", {a, 1});
+    cache.put("/photo/b", {b, 1});
+    ASSERT_TRUE(cache.getFresh("/photo/a", 1).has_value()); // touch a: b is now LRU
+
+    cache.put("/photo/c", {c, 1}); // evicts b
+    EXPECT_FALSE(std::filesystem::exists(b)) << "evicted render must be unlinked";
+    EXPECT_TRUE(std::filesystem::exists(a));
+    EXPECT_TRUE(std::filesystem::exists(c));
+    EXPECT_FALSE(cache.getFresh("/photo/b", 1).has_value());
+
+    cache.clear();
+    EXPECT_FALSE(std::filesystem::exists(a));
+    EXPECT_FALSE(std::filesystem::exists(c));
+}
+
+TEST(FullResLruCacheTest, ByteCapEvicts)
+{
+    FullResLruCache cache(/*max_entries=*/100, /*max_bytes=*/250);
+
+    std::string a = writeTempRender("fullres_bytes_a.jpg", 100);
+    std::string b = writeTempRender("fullres_bytes_b.jpg", 100);
+    std::string c = writeTempRender("fullres_bytes_c.jpg", 100);
+
+    cache.put("/p/a", {a, 1});
+    cache.put("/p/b", {b, 1});
+    cache.put("/p/c", {c, 1}); // 300 > 250: oldest (a) evicted
+
+    EXPECT_FALSE(std::filesystem::exists(a));
+    EXPECT_TRUE(std::filesystem::exists(b));
+    EXPECT_TRUE(std::filesystem::exists(c));
+    cache.clear();
+}
+
+TEST(FullResLruCacheTest, StaleMtimeDropsEntryAndUnlinks)
+{
+    FullResLruCache cache;
+    std::string a = writeTempRender("fullres_stale.jpg", 64);
+    cache.put("/p/stale", {a, /*source_mtime=*/100});
+
+    // Source changed (mtime 200): entry is stale — dropped AND the temp
+    // render unlinked (the old code leaked the file here).
+    EXPECT_FALSE(cache.getFresh("/p/stale", 200).has_value());
+    EXPECT_FALSE(std::filesystem::exists(a));
+}
+
+TEST(FullResLruCacheTest, ReplacingEntryUnlinksOldRender)
+{
+    FullResLruCache cache;
+    std::string old_render = writeTempRender("fullres_old.jpg", 64);
+    std::string new_render = writeTempRender("fullres_new.jpg", 64);
+
+    cache.put("/p/x", {old_render, 1});
+    cache.put("/p/x", {new_render, 2});
+
+    EXPECT_FALSE(std::filesystem::exists(old_render)) << "replaced render must be unlinked";
+    auto hit = cache.getFresh("/p/x", 2);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->temp_path, new_render);
+    cache.clear();
+}
+
+TEST(FullResLruCacheTest, DestructorUnlinksEverything)
+{
+    std::string a = writeTempRender("fullres_dtor.jpg", 64);
+    {
+        FullResLruCache cache;
+        cache.put("/p/d", {a, 1});
+    }
+    EXPECT_FALSE(std::filesystem::exists(a)) << "shutdown must not leave native-res temp litter";
+}

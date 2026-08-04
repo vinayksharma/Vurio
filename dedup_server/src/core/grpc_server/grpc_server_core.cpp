@@ -2,6 +2,7 @@
 #include <grpcpp/grpcpp.h>
 #include <Poco/Logger.h>
 #include <filesystem>
+#include "utils/full_res_lru_cache.hpp"
 #include "dedup.grpc.pb.h"
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
@@ -629,23 +630,18 @@ static std::string calculateFileSHA1(const std::string& path) {
 // Session-lifetime index of generated full-resolution previews (temp files):
 // path -> {temp jpeg, source mtime}. Mirrors the web endpoint's
 // no-persistent-cache semantics while making repeat zooms instant within a
-// server run; temp files are reclaimed by the OS. File-scope so both
-// MediaServiceImpl (fills it) and AdvancedSettingsServiceImpl::ClearAllCaches
-// (resets it, QW-9) can reach it.
-struct FullResEntry { std::string temp_path; int64_t source_mtime; };
-static std::mutex& fullResMutex() { static std::mutex m; return m; }
-static std::unordered_map<std::string, FullResEntry>& fullResCache() {
-    static std::unordered_map<std::string, FullResEntry> c; return c;
+// server run. File-scope so both MediaServiceImpl (fills it) and
+// AdvancedSettingsServiceImpl::ClearAllCaches (resets it, QW-9) can reach it.
+//
+// MP-4: bounded LRU (entry + byte caps) — the previous unbounded map never
+// deleted its quality-95 native-resolution temp files during the process
+// lifetime (macOS only clears /var/folders on reboot): scrolling the viewer
+// through 500 photos leaked ~5 GB invisible to every cache limit. Eviction,
+// staleness replacement, clear, and shutdown all unlink the temp render.
+static MediaDedup::FullResLruCache& fullResCache() {
+    static MediaDedup::FullResLruCache c; return c;
 }
-// Deletes the temp renders and empties the index.
-static void clearFullResCache() {
-    std::lock_guard<std::mutex> lock(fullResMutex());
-    for (const auto& [path, entry] : fullResCache()) {
-        std::error_code ec;
-        std::filesystem::remove(entry.temp_path, ec);
-    }
-    fullResCache().clear();
-}
+static void clearFullResCache() { fullResCache().clear(); }
 
 class AdvancedSettingsServiceImpl final : public vurio::dedup::AdvancedSettingsService::Service {
     std::shared_ptr<DatabaseManager> db_owner_; // CC-5
@@ -1484,18 +1480,10 @@ public:
             }
 
             int64_t full_mtime = sourceModifiedTime(file_path);
-            {
-                std::lock_guard<std::mutex> lock(fullResMutex());
-                auto it = fullResCache().find(file_path);
-                if (it != fullResCache().end()) {
-                    if (std::filesystem::exists(it->second.temp_path) &&
-                        (full_mtime == 0 || it->second.source_mtime == full_mtime)) {
-                        response->set_file_path(it->second.temp_path);
-                        response->set_is_full_resolution(true);
-                        return grpc::Status::OK;
-                    }
-                    fullResCache().erase(it);
-                }
+            if (auto hit = fullResCache().getFresh(file_path, full_mtime)) {
+                response->set_file_path(hit->temp_path);
+                response->set_is_full_resolution(true);
+                return grpc::Status::OK;
             }
 
             if (tpm_) {
@@ -1514,10 +1502,7 @@ public:
                         out.write(static_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.length()));
                         out.close();
                         if (!out.fail()) {
-                            {
-                                std::lock_guard<std::mutex> lock(fullResMutex());
-                                fullResCache()[path_copy] = {out_path, sourceModifiedTime(path_copy)};
-                            }
+                            fullResCache().put(path_copy, {out_path, sourceModifiedTime(path_copy)});
                             MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "preview_full");
                             MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview_full", true, ""});
                             return;
@@ -1533,17 +1518,10 @@ public:
         // Best-available: when a full-resolution render is already materialized
         // for this file, serve it for the ordinary preview request too — no
         // point handing out QHD only for the viewer to upgrade on zoom.
-        {
-            std::lock_guard<std::mutex> lock(fullResMutex());
-            auto it = fullResCache().find(file_path);
-            if (it != fullResCache().end() && std::filesystem::exists(it->second.temp_path)) {
-                int64_t current_mtime = sourceModifiedTime(file_path);
-                if (current_mtime == 0 || it->second.source_mtime == current_mtime) {
-                    response->set_file_path(it->second.temp_path);
-                    response->set_is_full_resolution(true);
-                    return grpc::Status::OK;
-                }
-            }
+        if (auto hit = fullResCache().getFresh(file_path, sourceModifiedTime(file_path))) {
+            response->set_file_path(hit->temp_path);
+            response->set_is_full_resolution(true);
+            return grpc::Status::OK;
         }
 
         if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
