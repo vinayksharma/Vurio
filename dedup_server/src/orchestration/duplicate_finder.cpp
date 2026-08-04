@@ -175,7 +175,8 @@ namespace MediaDedup
 
             // DF-3: edge discovery floor — must sit at or below the similarity
             // threshold so every group-relevant pair has a recorded edge.
-            edge_floor_ = cfg_->getPropertyValue<double>("duplicates.edges.floor", 0.85);
+            // Default 0.80 = the UI slider's loosest position.
+            edge_floor_ = cfg_->getPropertyValue<double>("duplicates.edges.floor", 0.80);
             if (edge_floor_ > embedding_threshold_similarity_)
             {
                 logger.warning("duplicates.edges.floor (%.3f) above similarity threshold (%.3f); clamping.",
@@ -192,29 +193,62 @@ namespace MediaDedup
             file_size_tolerance_ = cfg_->getPropertyValue<double>("duplicates.metadata.fileSizeTolerance", 0.50);
             require_same_format_ = cfg_->getPropertyValue<bool>("duplicates.metadata.requireSameFormat", false);
 
-            // DF-3 migration: a pre-edge-list install has groups and an
-            // advanced watermark but an EMPTY duplicate_edges table — a
-            // re-cluster would wipe every group and re-discovery would never
-            // trigger. Reset the watermark once so discovery repopulates the
-            // edges; existing groups stay visible and the first rebuild
-            // reuses their ids via representative matching.
+            // DF-3 migration + floor provenance. The edge list is only usable
+            // if it is COMPLETE down to the current discovery floor; the floor
+            // it was built with is recorded in duplicate_edges_meta. One-time
+            // re-discovery (edges cleared, watermark reset — groups stay
+            // visible; the first rebuild reuses their ids via rep matching)
+            // is needed when the watermark advanced but:
+            //   - the edge table is empty (pre-edge-list install), or
+            //   - edges exist with unknown provenance (pre-meta install), or
+            //   - the configured floor dropped below the recorded one.
             try
             {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                {
+                    Statement create(sess);
+                    create << "CREATE TABLE IF NOT EXISTS duplicate_edges_meta ("
+                              "id INTEGER PRIMARY KEY CHECK (id = 1), floor REAL NOT NULL)",
+                        now;
+                }
+                double stored_floor = -1.0;
+                {
+                    std::vector<double> rows;
+                    Statement q(sess);
+                    q << "SELECT floor FROM duplicate_edges_meta WHERE id = 1", into(rows), now;
+                    if (!rows.empty())
+                        stored_floor = rows[0];
+                }
+                int edge_count = 0;
+                {
+                    Statement q(sess);
+                    q << "SELECT COUNT(*) FROM duplicate_edges", into(edge_count), now;
+                }
+
                 auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, "EMBEDDING");
+                bool need_rediscovery = false;
                 if (checkpoint.has_value() && checkpoint->last_processed_id > 0)
                 {
-                    int edge_count = 0;
-                    {
-                        auto lease = db_.acquireSessionLease();
-                        Statement stmt(lease.get());
-                        stmt << "SELECT COUNT(*) FROM duplicate_edges", into(edge_count), now;
-                    }
                     if (edge_count == 0)
-                    {
-                        logger.information("No recorded duplicate edges behind watermark %d: resetting checkpoint for one-time edge discovery.",
-                                           checkpoint->last_processed_id);
-                        DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
-                    }
+                        need_rediscovery = true;
+                    else if (stored_floor < 0.0 || edge_floor_ + 1e-9 < stored_floor)
+                        need_rediscovery = true;
+                }
+                if (need_rediscovery)
+                {
+                    logger.information("Edge list unusable at floor %.3f (stored floor %.3f, %d edge(s)): resetting checkpoint for one-time edge discovery.",
+                                       edge_floor_, stored_floor, edge_count);
+                    Statement del(sess);
+                    del << "DELETE FROM duplicate_edges", now;
+                    DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
+                }
+                {
+                    double f = edge_floor_;
+                    Statement up(sess);
+                    up << "INSERT INTO duplicate_edges_meta(id, floor) VALUES(1, ?) "
+                          "ON CONFLICT(id) DO UPDATE SET floor = excluded.floor",
+                        use(f), now;
                 }
             }
             catch (const std::exception &e)
@@ -1173,15 +1207,25 @@ namespace MediaDedup
                     {
                         // DF-3: below the discovery floor the recorded edges
                         // cannot answer — full re-discovery (rare; the floor
-                        // sits below every sane slider position).
+                        // sits at the slider's loosest position, so only a
+                        // hand-edited config can get here). The floor follows
+                        // the threshold down so re-discovery actually records
+                        // the newly needed band, and the meta row keeps the
+                        // provenance consistent for the next startup.
                         finderLogger().warning("Similarity threshold %.3f is below the edge floor %.3f: full re-discovery required.",
                                                embedding_threshold_similarity_, edge_floor_);
+                        edge_floor_ = embedding_threshold_similarity_;
                         try
                         {
                             auto lease = db_.acquireSessionLease();
                             Session &sess = lease.get();
                             Statement stmt(sess);
                             stmt << "DELETE FROM duplicate_edges", now;
+                            double f = edge_floor_;
+                            Statement up(sess);
+                            up << "INSERT INTO duplicate_edges_meta(id, floor) VALUES(1, ?) "
+                                  "ON CONFLICT(id) DO UPDATE SET floor = excluded.floor",
+                                use(f), now;
                         }
                         catch (const std::exception &e)
                         {

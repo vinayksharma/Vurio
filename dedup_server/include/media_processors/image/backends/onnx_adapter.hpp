@@ -34,7 +34,16 @@ namespace MediaDedup
                                      const std::string &model_path,
                                      int embedding_dim,
                                      std::vector<std::uint8_t> &out_blob);
-    
+
+        // DF-4 test hook: decode exactly as ComputeEmbedding does (reduced
+        // decode with full-resolution fallback) and report the decoded
+        // dimensions. Returns false when the file cannot be decoded or
+        // OpenCV is unavailable.
+        static bool DecodeDimsForTest(const std::string &file_path,
+                                      int input_size,
+                                      int &out_rows,
+                                      int &out_cols);
+
     private:
         static std::shared_ptr<OnnxSessionManager> session_manager_;
     };

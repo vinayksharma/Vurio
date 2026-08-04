@@ -6,11 +6,45 @@
 #include "media_processors/image/backends/tiff_validator.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
+#include <mutex>
+#include <set>
 #include "config/unified_observable_config.hpp"
 #include "config/config_enums.hpp"
 
 namespace MediaDedup
 {
+    namespace
+    {
+        // DF-4: ensure image_artifacts ONCE per database instead of once per
+        // image (every embedding paid a lease + sqlite_master probe). Keyed
+        // by database path; if the memo goes stale (same-path DB recreated,
+        // e.g. in tests) the failed upsert re-ensures and retries once.
+        bool persistEmbedding(DatabaseManager &db, ImageEmbeddingRecord &rec)
+        {
+            static std::mutex ensured_mutex;
+            static std::set<std::string> ensured_dbs;
+
+            bool ensured;
+            {
+                std::lock_guard<std::mutex> lock(ensured_mutex);
+                ensured = ensured_dbs.count(db.getDatabasePath()) > 0;
+            }
+            if (!ensured)
+            {
+                if (!ImageArtifactsOps::ensureTable(db))
+                    return false;
+                std::lock_guard<std::mutex> lock(ensured_mutex);
+                ensured_dbs.insert(db.getDatabasePath());
+            }
+
+            if (ImageArtifactsOps::upsertEmbedding(db, rec))
+                return true;
+            if (!ImageArtifactsOps::ensureTable(db))
+                return false;
+            return ImageArtifactsOps::upsertEmbedding(db, rec);
+        }
+    }
+
     QualityPipelineConfig QualityPipeline::GetConfigFromManager(std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                                                                 const QualityPipelineConfig &defaults)
     {
@@ -67,14 +101,9 @@ namespace MediaDedup
             rec.embedding_blob = std::move(blob);
             rec.version = 1;
 
-            if (!ImageArtifactsOps::ensureTable(db))
+            if (!persistEmbedding(db, rec))
             {
-                Poco::Logger::get("QualityPipeline").error("Failed to ensure image_artifacts table");
-                return false;
-            }
-            if (!ImageArtifactsOps::upsertEmbedding(db, rec))
-            {
-                Poco::Logger::get("QualityPipeline").error("Failed to upsert embedding for %s", file_path);
+                Poco::Logger::get("QualityPipeline").error("Failed to persist embedding for %s", file_path);
                 return false;
             }
             return true;
@@ -139,16 +168,10 @@ namespace MediaDedup
             rec.embedding_blob = std::move(blob);
             rec.version = 1;
 
-            if (!ImageArtifactsOps::ensureTable(db))
+            if (!persistEmbedding(db, rec))
             {
-                Poco::Logger::get("QualityPipeline").error("Failed to ensure image_artifacts table");
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Failed to ensure image_artifacts table", "Database");
-                return false;
-            }
-            if (!ImageArtifactsOps::upsertEmbedding(db, rec))
-            {
-                Poco::Logger::get("QualityPipeline").error("Failed to upsert embedding for %s", original_file_path);
-                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Failed to upsert embedding to database", "Database");
+                Poco::Logger::get("QualityPipeline").error("Failed to persist embedding for %s", original_file_path);
+                ProcessingErrorsOps::insertError(db, original_file_path, ServerMode::EMBEDDING, -1, "Failed to persist embedding to database", "Database");
                 return false;
             }
             return true;
@@ -192,14 +215,9 @@ namespace MediaDedup
             rec.embedding_blob = std::move(blob);
             rec.version = 1;
 
-            if (!ImageArtifactsOps::ensureTable(db))
+            if (!persistEmbedding(db, rec))
             {
-                logger.error("Failed to ensure image_artifacts table");
-                return false;
-            }
-            if (!ImageArtifactsOps::upsertEmbedding(db, rec))
-            {
-                logger.error("Failed to upsert embedding for %s", original_file_path);
+                logger.error("Failed to persist embedding for %s", original_file_path);
                 return false;
             }
 

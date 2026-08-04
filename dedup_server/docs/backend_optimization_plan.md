@@ -872,7 +872,8 @@ threshold change wipes all groups and reprocesses from id 0.
 > The finder is now two decoupled phases; ~850 lines of greedy/repair
 > machinery deleted (`duplicate_finder.cpp` 2061 → ~1220 lines).
 > - **Discovery:** `processBatch` records pair scores >= the discovery floor
->   (`duplicates.edges.floor`, default 0.85, clamped <= the similarity
+>   (`duplicates.edges.floor`, default 0.80 = the UI slider's loosest
+>   position, clamped <= the similarity
 >   threshold) into new table `duplicate_edges(file_a, file_b, score)`
 >   (WITHOUT ROWID, PK (a,b), score index). KNN path: score = 1 − distance
 >   directly (vec0 is exact under cosine) — neighbor embeddings never load.
@@ -951,6 +952,66 @@ threshold change wipes all groups and reprocesses from id 0.
   state on group ids).
 
 ### DF-4. Embedding throughput (ONNX)
+
+> **STATUS: ✅ DONE 2026-08-04 (validated).**
+> Items 1-3 + the ensureTable hoist landed; 4-5 deferred (below).
+> - **Reduced decode (item 1):** `IMREAD_REDUCED_COLOR_4` — libjpeg decodes
+>   the 2560px preview at 1/4 scale (640px) directly, 4-16x cheaper
+>   preprocessing and ~1/16th peak pixel memory; falls back to a full decode
+>   when the reduced image would undershoot the model input (tiny sources).
+> - **CoreML EP (item 2):** config-gated (`media.image.onnx.coreml.enabled`
+>   — code default OFF so tests stay CPU; config.yaml turns it ON), appended
+>   as `AppendExecutionProvider("CoreML", {MLComputeUnitsAll, MLProgram,
+>   ModelCacheDirectory=cache/coreml})`. Any failure downgrades that session
+>   to CPU-only; CoreML itself falls back per-node for unsupported ops. The
+>   compiled-model cache avoids recompiles across pooled sessions/restarts.
+> - **Session plumbing (item 3):** ONE process-wide `Ort::Env`
+>   (`OnnxSessionWrapper::sharedEnv()`, was one env per pooled session);
+>   `ORT_ENABLE_ALL` (was BASIC); the model's I/O layout (names, dims,
+>   types, image-input index/NHWC, output name) is introspected ONCE at
+>   session creation into `OnnxSessionWrapper::IoSpec` — the adapter
+>   previously re-queried and re-allocated all of it on EVERY inference.
+> - **Adapter dedup:** the two ~300-line near-identical ComputeEmbedding
+>   overloads now share decode/preprocess/inference helpers (~250 lines
+>   gone); the memory path's std::cerr spam replaced with logger calls.
+> - **ensureTable hoist:** `QualityPipeline` ensured `image_artifacts` once
+>   per IMAGE (lease + sqlite_master probe); now once per database via a
+>   memoized `persistEmbedding` helper (stale-memo safe: failed upsert
+>   re-ensures and retries once).
+> - **Config-key bug found & fixed:** the session manager read
+>   `media.image.quality.onnx.sessionCache.*` but factory/config.yaml define
+>   `media.image.onnx.sessionCache.*` — the cache knobs were silently inert
+>   (defaults happened to match). Manager + tests now use the real keys.
+> - **DF-3 follow-up (floor vs. slider range):** the UI slider's loosest
+>   position is threshold 0.80 (distance 0.20) — BELOW the 0.85 edge floor,
+>   so the slider's bottom band would have forced legacy wipes. Floor
+>   default is now 0.80 (`duplicates.edges.floor` registered + in
+>   config.yaml), and a new `duplicate_edges_meta(floor)` provenance row
+>   makes floor changes safe: edges recorded at a higher floor than
+>   configured trigger a one-time re-discovery (groups stay visible);
+>   below-floor threshold drops also pull the floor down and record it.
+> - **Test-infra:** migrated the DuplicateFinderRangeTest fixture off
+>   `:memory:` to a file-backed temp DB (the longer initialize() shifted
+>   pooled-connection rotation and the luck ran out — 4 tests failed until
+>   migrated, exactly as predicted in the DF-1 caveat).
+> - **Deferred (item 4, batching):** 8-16 images per Run() needs cross-image
+>   orchestration in MediaProcessor and weakens per-file error isolation;
+>   revisit only if throughput is still short after CoreML.
+> - **Deferred (item 5, fp16/int8):** model asset change, not a code change.
+>   QualityPipeline ensureTable-per-image (the "Also" item) IS done.
+> - **Tests:** reduced-decode dims (large 2000x1600 → 500x400, mid 600x800
+>   full fallback, small full), `SharedEnvAndCachedIoSpec` (real model,
+>   skips if absent), `ComputeEmbeddingEndToEnd` (real model through the
+>   full rewritten path: 512-float non-zero embedding). Suite: 333 tests,
+>   301 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`, ingest new photos and watch the log for
+>   "Created ONNX session (CoreML EP)" (first session creation compiles the
+>   model — expect a one-time delay, then cached). Embedding throughput
+>   (files/min in processing) should rise noticeably vs. before; a repeat
+>   restart should reuse `cache/coreml`. Expect one-time
+>   "Edge list unusable at floor 0.800 (stored floor -1.000...)" +
+>   re-discovery on first start (the 0.85→0.80 floor migration).
+
 - **Files:** `onnx_session_manager.cpp:18-24`; `onnx_adapter.cpp:59, 75-144,
   170-298`; `quality_pipeline.cpp:56,121,182`; config
   `media.image.onnx.sessionCache.maxSessions: 4`.

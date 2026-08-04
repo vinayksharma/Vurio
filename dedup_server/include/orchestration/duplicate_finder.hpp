@@ -337,7 +337,9 @@ namespace MediaDedup
             // DF-3: discovery floor for persisted edges — clamped at init to
             // never exceed the similarity threshold. Sliding the threshold
             // anywhere >= this floor is answered from stored edges alone.
-            double edge_floor_ = 0.85;
+            // 0.80 = the loosest threshold the UI slider can request
+            // (maxDistance 0.20), so no slider position ever forces a wipe.
+            double edge_floor_ = 0.80;
             std::vector<PurityCriterion> purity_order_ = {PurityCriterion::CAMERA_RAW, PurityCriterion::EXIF_CAPTURE_DATE, PurityCriterion::FILE_SIZE};
 
             // Metadata filtering parameters
