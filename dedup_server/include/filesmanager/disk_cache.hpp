@@ -1,9 +1,12 @@
 #pragma once
 
 #include <string>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 #include <istream>
 #include <set>
@@ -14,15 +17,21 @@ namespace MediaDedup
     /**
      * @brief Manages a disk-based cache with automatic size management
      *
-     * DiskCache provides file caching with configurable size limits and automatic
-     * eviction of oldest files when space is needed. The cache persists across
-     * server restarts and supports thread-safe concurrent operations.
+     * MP-2: accounting is an in-memory index (path -> size/insert-time) built
+     * once at initialize() and maintained incrementally — no readdir/stat
+     * storms per insert (previously ~180 ms per insert at 59k files, under
+     * the mutex). Bulk file copies happen OUTSIDE the mutex. Eviction is
+     * LRU-driven by the owning tables' last_accessed_at via injectable hooks
+     * (setEvictionHooks), with the index's insert-order as fallback, batched
+     * to 10% headroom so it doesn't re-trigger on every insert. Cache files
+     * are sharded into 256 subdirectories and named by a hash of the FULL
+     * source path (basename-only naming silently collided).
      *
      * Features:
-     * - FIFO eviction policy (oldest files removed first)
+     * - DB-driven LRU eviction (hooks), insert-order FIFO fallback
      * - Observable configuration (reacts to runtime config changes)
-     * - Thread-safe operations
-     * - Handles files larger than cache limit (with warning)
+     * - Thread-safe operations; copies do not block other cache users
+     * - Handles files larger than cache limit (refused, with warning)
      * - Persistent across restarts
      */
     class DiskCache
@@ -127,35 +136,53 @@ namespace MediaDedup
          */
         std::string getCacheLocation() const;
 
-    private:
         /**
-         * @brief Enforce size limit by removing old files if necessary
+         * @brief MP-2: wire DB-driven LRU eviction.
+         * @param lru_query returns cached-file paths in least-recently-used
+         *        order (up to max_count) — typically SELECT cached_path ...
+         *        ORDER BY last_accessed_at
+         * @param evicted_notify called with the paths actually deleted so the
+         *        owning table's rows can be removed (prevents dangling rows
+         *        and the regeneration storms they cause)
+         */
+        using LruQueryFn = std::function<std::vector<std::string>(std::size_t max_count)>;
+        using EvictedNotifyFn = std::function<void(const std::vector<std::string> &)>;
+        void setEvictionHooks(LruQueryFn lru_query, EvictedNotifyFn evicted_notify);
+
+    private:
+        /// MP-2: per-file accounting entry (insert time approximates LRU for
+        /// the no-hook fallback).
+        struct IndexEntry
+        {
+            std::size_t size = 0;
+            std::chrono::steady_clock::time_point inserted_at{};
+        };
+
+        /**
+         * @brief Enforce size limit by removing old files if necessary.
+         * Must be called with cache_mutex_ held.
          * @param required_space_bytes Space needed for new file
          */
-        void enforceSizeLimit(size_t required_space_bytes);
+        void enforceSizeLimitLocked(size_t required_space_bytes);
 
         /**
-         * @brief Remove oldest files to free up specified space
-         * @param bytes_to_free Amount of space to free in bytes
+         * @brief Evict files to free at least bytes_to_free (LRU hook first,
+         * index insert-order fallback). Must be called with cache_mutex_ held.
          */
-        void removeOldestFiles(size_t bytes_to_free);
+        void removeOldestFilesLocked(size_t bytes_to_free);
+
+        /// Rebuild the index from disk (recursive). cache_mutex_ held.
+        void rebuildIndexLocked();
+
+        void indexInsertLocked(const std::string &path, std::size_t size);
+        void indexEraseLocked(const std::string &path);
+        /// True when the path is marked in use or has a write in flight.
+        bool isBusyLocked(const std::string &path) const;
 
         /**
-         * @brief Calculate total size of all files in cache
-         * @return Total size in bytes
-         */
-        size_t calculateCacheSize();
-
-        /**
-         * @brief Get list of files sorted by creation time (oldest first)
-         * @return Vector of pairs (path, creation_time)
-         */
-        std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> getFilesByAge();
-
-        /**
-         * @brief Generate cache filename using original filename (no hash)
-         * @param original_path Original file path
-         * @return Cache filename (same as original filename)
+         * @brief Sharded cache-relative name for a source path:
+         * "<2-hex-shard>/<stem>_<16-hex-hash-of-full-path><ext>". Hashing the
+         * FULL path (not the basename) makes distinct sources collision-free.
          */
         std::string generateCacheFilename(const std::string &original_path);
 
@@ -179,6 +206,11 @@ namespace MediaDedup
         bool initialized_;
         std::string config_prefix_;
 
+        // MP-2: incremental accounting + in-flight write guard
+        std::unordered_map<std::string, IndexEntry> index_;
+        std::set<std::string> pending_writes_;
+        LruQueryFn lru_query_;
+        EvictedNotifyFn evicted_notify_;
 
         // File-in-use tracking
         std::set<std::string> files_in_use_;

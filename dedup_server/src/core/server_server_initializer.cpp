@@ -53,10 +53,9 @@ namespace MediaDedup
             ToolPaths::setMagickPath(
                 config_manager_->getPropertyValue<std::string>("tools.imagemagick.path", "/opt/homebrew/bin/magick"));
 
-            // Register the thumbnail/preview backfill used by the database
-            // integrity check (kept behind a hook so test binaries that compile
-            // the integrity handler don't link the media-generation stack).
-            MediaBackfill::installHook();
+            // (MP-2: the thumbnail/preview backfill hook is now registered in
+            // initializeMediaProcessing, where the real DiskCache instances
+            // exist to be captured.)
 
             logger.information("Configuration initialized successfully");
             return true;
@@ -308,6 +307,29 @@ namespace MediaDedup
             {
                 PreviewCacheOps::clearCache(*database_manager_);
             }
+
+            // MP-2: DB-driven LRU eviction. Each cache evicts by its table's
+            // last_accessed_at (real usage recency, not file mtime) and the
+            // rows of evicted files are deleted in the same pass — dangling
+            // rows previously caused regeneration storms.
+            {
+                auto db_for_hooks = database_manager_;
+                thumbnail_disk_cache_->setEvictionHooks(
+                    [db_for_hooks](std::size_t max_count)
+                    { return ThumbnailCacheOps::lruCachedPaths(*db_for_hooks, static_cast<int>(max_count)); },
+                    [db_for_hooks](const std::vector<std::string> &paths)
+                    { ThumbnailCacheOps::deleteByCachedPaths(*db_for_hooks, paths); });
+                transcoding_disk_cache_->setEvictionHooks(
+                    [db_for_hooks](std::size_t max_count)
+                    { return PreviewCacheOps::lruCachedPaths(*db_for_hooks, static_cast<int>(max_count)); },
+                    [db_for_hooks](const std::vector<std::string> &paths)
+                    { PreviewCacheOps::deleteByCachedPaths(*db_for_hooks, paths); });
+            }
+
+            // MP-2: register the backfill with the REAL cache instances — the
+            // previous hook built a second DiskCache pair over the same
+            // directories (split-brain accounting, void in-use protection).
+            MediaBackfill::installHook(thumbnail_disk_cache_, transcoding_disk_cache_);
 
             // Ensure ejected_files_history database table exists
             if (!EjectedFilesOps::ensureTable(*database_manager_))

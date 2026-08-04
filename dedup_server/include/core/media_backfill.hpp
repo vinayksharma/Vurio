@@ -35,19 +35,28 @@ namespace MediaDedup
                         std::shared_ptr<ThreadPoolManager> tpm);
     };
 
+    class DiskCache;
+
     /**
      * @brief The real backfill: enqueues regeneration for processed files
      * missing a thumbnail_cache row or a needed preview. Linked into the
      * server binary only; installed onto MediaBackfillHook at startup.
+     *
+     * MP-2: installHook captures the initializer's REAL DiskCache instances —
+     * the backfill previously constructed a second pair over the same
+     * directories (split-brain size accounting, void in-use protection).
      */
     class MediaBackfill
     {
     public:
-        static void installHook();
+        static void installHook(std::shared_ptr<DiskCache> thumbnail_cache,
+                                std::shared_ptr<DiskCache> transcoding_cache);
 
         static void run(std::shared_ptr<DatabaseManager> db,
                         std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                        std::shared_ptr<ThreadPoolManager> tpm);
+                        std::shared_ptr<ThreadPoolManager> tpm,
+                        std::shared_ptr<DiskCache> thumbnail_cache,
+                        std::shared_ptr<DiskCache> transcoding_cache);
     };
 
 } // namespace MediaDedup

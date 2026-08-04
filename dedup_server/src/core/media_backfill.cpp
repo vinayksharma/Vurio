@@ -19,21 +19,26 @@
 
 namespace MediaDedup
 {
-    void MediaBackfill::installHook()
+    void MediaBackfill::installHook(std::shared_ptr<DiskCache> thumbnail_cache,
+                                    std::shared_ptr<DiskCache> transcoding_cache)
     {
-        MediaBackfillHook::install([](std::shared_ptr<DatabaseManager> db,
-                                      std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                                      std::shared_ptr<ThreadPoolManager> tpm) {
-            MediaBackfill::run(std::move(db), std::move(cfg), std::move(tpm));
+        // MP-2: the hook captures the initializer's REAL cache instances.
+        MediaBackfillHook::install([thumbnail_cache, transcoding_cache](std::shared_ptr<DatabaseManager> db,
+                                                                        std::shared_ptr<UnifiedObservableConfigManager> cfg,
+                                                                        std::shared_ptr<ThreadPoolManager> tpm) {
+            MediaBackfill::run(std::move(db), std::move(cfg), std::move(tpm),
+                               thumbnail_cache, transcoding_cache);
         });
     }
 
     void MediaBackfill::run(std::shared_ptr<DatabaseManager> db,
                             std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                            std::shared_ptr<ThreadPoolManager> tpm)
+                            std::shared_ptr<ThreadPoolManager> tpm,
+                            std::shared_ptr<DiskCache> thumbnail_cache,
+                            std::shared_ptr<DiskCache> transcoding_cache)
     {
         Poco::Logger &logger = Poco::Logger::get("MediaBackfill");
-        if (!db || !cfg || !tpm)
+        if (!db || !cfg || !tpm || !thumbnail_cache || !transcoding_cache)
             return;
 
         try
@@ -66,16 +71,10 @@ namespace MediaDedup
             if (missing_thumbs.empty() && preview_candidates.empty())
                 return;
 
-            // Same cache directories the server initializer builds
-            // (config-driven), constructed locally because the integrity
-            // handler isn't plumbed with the instances.
-            auto backfill_thumb_cache = std::make_shared<DiskCache>(cfg, "cache.thumbnail");
-            auto backfill_trans_cache = std::make_shared<DiskCache>(cfg, "cache.disk");
-            if (!backfill_thumb_cache->initialize() || !backfill_trans_cache->initialize())
-            {
-                logger.warning("Backfill skipped: disk caches failed to initialize.");
-                return;
-            }
+            // MP-2: the initializer's already-initialized cache instances —
+            // no second DiskCache pair over the same directories.
+            auto backfill_thumb_cache = thumbnail_cache;
+            auto backfill_trans_cache = transcoding_cache;
 
             int thumb_size = cfg->getPropertyValue<int>("thumbnail.pipeline.size", 256);
             int enqueued_thumbs = 0;

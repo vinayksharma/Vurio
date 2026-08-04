@@ -144,11 +144,13 @@ TEST_F(DiskCacheTest, CopyToCache_NonExistentFile)
     EXPECT_FALSE(disk_cache_->copyToCache("/nonexistent/file.txt", cached_path));
 }
 
-TEST_F(DiskCacheTest, CopyToCache_OverwritesSameName)
+// MP-2: cache names hash the FULL source path — two sources with the same
+// basename in different directories must NOT collide (the old basename-only
+// naming silently overwrote one with the other).
+TEST_F(DiskCacheTest, CopyToCache_SameBasenameDistinctSourcesDoNotCollide)
 {
     ASSERT_TRUE(disk_cache_->initialize());
 
-    // Create two test files with same name in different directories
     auto test_file1 = test_files_dir_ / "dir1" / "test.txt";
     auto test_file2 = test_files_dir_ / "dir2" / "test.txt";
 
@@ -162,8 +164,26 @@ TEST_F(DiskCacheTest, CopyToCache_OverwritesSameName)
     EXPECT_TRUE(disk_cache_->copyToCache(test_file1.string(), cached_path1));
     EXPECT_TRUE(disk_cache_->copyToCache(test_file2.string(), cached_path2));
 
-    // Paths should be the same since we removed hash naming and files overwrite
+    EXPECT_NE(cached_path1, cached_path2);
+    EXPECT_TRUE(std::filesystem::exists(cached_path1));
+    EXPECT_TRUE(std::filesystem::exists(cached_path2));
+}
+
+// Re-caching the SAME source path is deterministic: same cached path, no
+// double counting.
+TEST_F(DiskCacheTest, CopyToCache_SameSourceOverwritesDeterministically)
+{
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    auto test_file = test_files_dir_ / "same_source.bin";
+    createTestFile(test_file, 1024 * 1024); // 1 MB
+
+    std::string cached_path1, cached_path2;
+    EXPECT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path1));
+    EXPECT_TRUE(disk_cache_->copyToCache(test_file.string(), cached_path2));
+
     EXPECT_EQ(cached_path1, cached_path2);
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 1u) << "re-cache must not double count";
 }
 
 TEST_F(DiskCacheTest, SaveStreamToCache_Success)
@@ -863,4 +883,64 @@ TEST_F(DiskCacheTest, RemoveOldestFiles_SkipsFilesInUse)
         std::filesystem::remove(source_file);
     }
     std::filesystem::remove(large_file);
+}
+
+// MP-2: with eviction hooks installed, eviction follows the DB's LRU order
+// (not file mtime), and the owner is notified of exactly the deleted paths so
+// its rows can be removed (no dangling rows -> no regeneration storms).
+TEST_F(DiskCacheTest, EvictionHooks_LruOrderAndNotification)
+{
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    // Fill with three 3 MB files (limit is 10 MB from SetUp).
+    std::vector<std::string> cached;
+    for (int i = 0; i < 3; ++i)
+    {
+        auto f = test_files_dir_ / ("lru_" + std::to_string(i) + ".bin");
+        createTestFile(f, 3 * 1024 * 1024);
+        std::string p;
+        ASSERT_TRUE(disk_cache_->copyToCache(f.string(), p));
+        cached.push_back(p);
+    }
+
+    // Hook says: the MIDDLE file is least recently used.
+    std::vector<std::string> notified;
+    disk_cache_->setEvictionHooks(
+        [&](std::size_t) { return std::vector<std::string>{cached[1], cached[0], cached[2]}; },
+        [&](const std::vector<std::string> &paths)
+        { notified.insert(notified.end(), paths.begin(), paths.end()); });
+
+    // A 4th 3 MB file forces eviction (9 + 3 > 10).
+    auto f4 = test_files_dir_ / "lru_new.bin";
+    createTestFile(f4, 3 * 1024 * 1024);
+    std::string p4;
+    ASSERT_TRUE(disk_cache_->copyToCache(f4.string(), p4));
+
+    EXPECT_FALSE(std::filesystem::exists(cached[1])) << "hook-designated LRU file evicted first";
+    EXPECT_TRUE(std::filesystem::exists(p4));
+    ASSERT_FALSE(notified.empty());
+    EXPECT_EQ(notified.front(), cached[1]) << "owner notified of the evicted path";
+    for (const auto &p : notified)
+        EXPECT_FALSE(std::filesystem::exists(p)) << "every notified path was actually deleted";
+}
+
+// MP-2: cached files land in hash shards (2-hex subdirectories), and cache
+// accounting/clearing handles the nested layout.
+TEST_F(DiskCacheTest, ShardedLayout_ClearAndAccountingWork)
+{
+    ASSERT_TRUE(disk_cache_->initialize());
+
+    auto f = test_files_dir_ / "sharded.bin";
+    createTestFile(f, 1024 * 1024);
+    std::string p;
+    ASSERT_TRUE(disk_cache_->copyToCache(f.string(), p));
+
+    auto rel = std::filesystem::path(p).lexically_relative(disk_cache_->getCacheLocation());
+    ASSERT_EQ(std::distance(rel.begin(), rel.end()), 2) << "expected <shard>/<file> layout, got " << rel;
+    EXPECT_EQ(rel.begin()->string().size(), 2u) << "shard dir is 2 hex chars";
+
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 1u);
+    EXPECT_TRUE(disk_cache_->clearCache());
+    EXPECT_EQ(disk_cache_->getCurrentSizeMB(), 0u);
+    EXPECT_FALSE(std::filesystem::exists(p));
 }
