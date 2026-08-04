@@ -194,6 +194,10 @@ namespace MediaDedup
         std::string read_path = file_path;
         // Temp file holding an extracted embedded JPEG; removed after the run.
         std::string embedded_temp_path;
+        // Embedded JPEG below the QHD target: kept as a last-resort input for
+        // when the full demosaic fails (e.g. a magick build without RAW
+        // support) — a camera preview beats no preview at all.
+        std::string small_embedded_path;
 
         // Don't prepend tiff: for RAW files even if they have TIFF magic bytes
         if (format == ImageFormat::TIFF && RawFileDetector::IsRawFile(file_path)) {
@@ -227,45 +231,62 @@ namespace MediaDedup
                     logger_.debug("Embedded JPEG too small (%dx%d < %d), full demosaic: %s",
                                   embedded->width, embedded->height,
                                   static_cast<int>(MAX_PREVIEW_DIMENSION), file_path.c_str());
-                    std::error_code ec;
-                    std::filesystem::remove(embedded->jpeg_path, ec);
+                    small_embedded_path = embedded->jpeg_path;
                 }
             }
         }
 
         std::string command = ToolPaths::magickPath();
-        std::vector<std::string> args = buildPreviewMagickArgs(read_path, temp_out_path);
 
         struct EmbeddedCleanup {
             std::string path;
+            std::string small_path;
             ~EmbeddedCleanup() {
-                if (!path.empty()) {
-                    std::error_code ec;
+                std::error_code ec;
+                if (!path.empty())
                     std::filesystem::remove(path, ec);
-                }
+                if (!small_path.empty())
+                    std::filesystem::remove(small_path, ec);
             }
-        } embedded_cleanup{embedded_temp_path};
+        } embedded_cleanup{embedded_temp_path, small_embedded_path};
 
         try
         {
-            SubprocessResult run = runProcessWithTimeout(command, args, timeout_ms,
-                                                         ToolPaths::magickResourceEnv());
-            if (run.timed_out)
+            auto runMagickTo = [&](const std::string &input) -> bool
             {
-                logger_.error("magick timed out after %d ms for file: %s", timeout_ms, file_path);
-                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
-                return false;
-            }
-            if (run.exit_code != 0)
-            {
-                logger_.error("magick command failed with exit code %d for file: %s", run.exit_code, file_path);
-                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
-                return false;
-            }
+                std::vector<std::string> args = buildPreviewMagickArgs(input, temp_out_path);
+                SubprocessResult run = runProcessWithTimeout(command, args, timeout_ms,
+                                                             ToolPaths::magickResourceEnv());
+                if (run.timed_out)
+                {
+                    logger_.error("magick timed out after %d ms for file: %s", timeout_ms, file_path);
+                    return false;
+                }
+                if (run.exit_code != 0)
+                {
+                    logger_.error("magick command failed with exit code %d for file: %s", run.exit_code, file_path);
+                    return false;
+                }
+                if (!std::filesystem::exists(temp_out_path))
+                {
+                    logger_.error("magick succeeded but output file is missing: %s", temp_out_path);
+                    return false;
+                }
+                return true;
+            };
 
-            if (!std::filesystem::exists(temp_out_path))
+            bool ran_ok = runMagickTo(read_path);
+            if (!ran_ok && !small_embedded_path.empty())
             {
-                logger_.error("magick succeeded but output file is missing: %s", temp_out_path);
+                // The demosaic path is broken or timed out; serve the camera's
+                // own preview at its native resolution instead of failing (and
+                // eventually negative-caching a perfectly readable file).
+                logger_.warning("RAW decode failed, falling back to sub-QHD embedded JPEG for: %s", file_path);
+                ran_ok = runMagickTo("jpeg:" + small_embedded_path);
+            }
+            if (!ran_ok)
+            {
+                if (std::filesystem::exists(temp_out_path)) std::filesystem::remove(temp_out_path);
                 return false;
             }
 

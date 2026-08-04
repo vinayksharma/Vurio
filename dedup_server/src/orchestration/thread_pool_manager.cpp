@@ -223,7 +223,8 @@ namespace MediaDedup
         schedule();
     }
 
-    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn, const std::string &file_path)
+    void ThreadPoolManager::submit(const std::string &type, std::function<void()> fn, const std::string &file_path,
+                                   bool urgent)
     {
         if (!accepting_.load())
         {
@@ -246,12 +247,21 @@ namespace MediaDedup
             {
                 if (!inflight_paths_.insert(type + "|" + file_path).second)
                 {
-                    return; // Already queued or running
+                    // Already queued or running. An urgent submit still pulls
+                    // a queued copy to the front so the UI-visible request is
+                    // served next instead of at backfill's FIFO position.
+                    if (urgent)
+                        promoteQueuedTaskLocked(type, file_path);
+                    return;
                 }
             }
 
-            type_to_queue_[type].emplace_back(std::move(fn), file_path);
-            queued_for_type = type_to_queue_[type].size();
+            auto &queue = type_to_queue_[type];
+            if (urgent)
+                queue.emplace_front(std::move(fn), file_path);
+            else
+                queue.emplace_back(std::move(fn), file_path);
+            queued_for_type = queue.size();
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
             {
@@ -269,6 +279,28 @@ namespace MediaDedup
                      type.c_str(), static_cast<unsigned int>(queued_for_type),
                      file_path.empty() ? "<no_file>" : file_path.c_str(), thread_id_str.c_str());
         schedule();
+    }
+
+    void ThreadPoolManager::promoteQueuedTaskLocked(const std::string &type, const std::string &file_path)
+    {
+        auto it = type_to_queue_.find(type);
+        if (it == type_to_queue_.end())
+            return;
+        auto &queue = it->second;
+        for (auto qit = queue.begin(); qit != queue.end(); ++qit)
+        {
+            if (qit->file_path == file_path)
+            {
+                if (qit != queue.begin())
+                {
+                    QueuedTask task = std::move(*qit);
+                    queue.erase(qit);
+                    queue.push_front(std::move(task));
+                }
+                return;
+            }
+        }
+        // Not in the queue: the task is already running — nothing to promote.
     }
 
     bool ThreadPoolManager::canSubmit(const std::string &type, size_t max_queue_size) const

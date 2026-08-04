@@ -173,7 +173,7 @@ namespace MediaDedup
                                     std::filesystem::remove(temp_path);
                                 }
                             }
-                        }, source_path);
+                        }, source_path, /*urgent=*/true);
                         
                         // Return a 1x1 transparent PNG to prevent browser errors and free the socket
                         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);

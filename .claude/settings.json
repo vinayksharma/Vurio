@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake --build *)",
+      "Bash(./build/bin/all_unit_tests)",
+      "Bash(./build/bin/all_unit_tests *)",
+      "Bash(swift build)",
+      "Bash(swift build *)",
+      "Bash(sqlite3 -readonly *)",
+      "Bash(sqlite3 \"file:data/dedup_server.db?mode=ro\" *)",
+      "Bash(sqlite3 \"file:dedup_server/data/dedup_server.db?mode=ro\" *)",
+      "Bash(brew list *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(./restart *)",
+      "Bash(swift run *)"
+    ]
+  }
+}

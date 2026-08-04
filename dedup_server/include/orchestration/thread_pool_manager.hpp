@@ -51,7 +51,14 @@ namespace MediaDedup
         void setTemporaryOverride(const std::string &type, double temporary_share);
         void clearTemporaryOverride(const std::string &type);
 
-        void submit(const std::string &type, std::function<void()> fn, const std::string &file_path = "");
+        /// `urgent` marks user-visible on-demand work (a thumbnail/preview the
+        /// UI is waiting on): the task is queued at the FRONT of its type's
+        /// queue, and when an identical task is already queued (dedup hit,
+        /// e.g. enqueued by a bulk backfill) that task is promoted to the
+        /// front instead of leaving the visible tile stuck behind thousands
+        /// of backfill jobs.
+        void submit(const std::string &type, std::function<void()> fn, const std::string &file_path = "",
+                    bool urgent = false);
         bool canSubmit(const std::string &type, size_t max_queue_size = 10000) const;
         bool cancelTask(const std::string &type, const std::string &file_path);
 
@@ -137,6 +144,10 @@ namespace MediaDedup
     private:
         void onTaskStarted(const std::string &type, uint64_t id);
         void onTaskFinished(const std::string &type, uint64_t id);
+
+        /// Move an already-queued task for `file_path` to the front of its
+        /// type's queue (no-op when it is running or absent). Caller holds mutex_.
+        void promoteQueuedTaskLocked(const std::string &type, const std::string &file_path);
 
         void schedule();
         size_t allowanceFor(const std::string &type) const;

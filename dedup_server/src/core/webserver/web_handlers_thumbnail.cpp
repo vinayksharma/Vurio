@@ -173,15 +173,14 @@ namespace MediaDedup
                 auto config_copy = config_manager_;
                 auto db_copy = database_manager_;
                 auto tcache_copy = thumbnail_cache_;
-                auto xcache_copy = transcoding_cache_;
-                auto tpm_copy = tpm_;
                 std::string path_copy = source_path;
                 int size_copy = size;
                 
-                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy, path_copy, size_copy]() {
-                    ThumbnailHandler temp_handler(config_copy, db_copy, tcache_copy, xcache_copy, tpm_copy);
+                tpm_->submit("thumbnail_generator", [config_copy, db_copy, tcache_copy, path_copy, size_copy]() {
+                    ThumbnailService service(config_copy, db_copy, tcache_copy);
                     std::string cached_path;
-                    if (temp_handler.generateAndCacheThumbnail(path_copy, size_copy, cached_path)) {
+                    ThumbnailService::GenerationFailure kind;
+                    if (service.generateAndCacheThumbnail(path_copy, size_copy, cached_path, &kind)) {
                         Poco::JSON::Object msg;
                         msg.set("type", "media_ready");
                         msg.set("media_type", "thumbnail");
@@ -193,12 +192,17 @@ namespace MediaDedup
                         MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
                         MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
                     } else {
-                        MediaGenerationFailures::instance().recordFailure(
-                            path_copy, "thumbnail", "Thumbnail generation failed (unsupported or corrupted file)");
+                        // Only decode failures are evidence about the file;
+                        // infrastructure failures stay out of the negative
+                        // cache so the request is retryable.
+                        if (kind == ThumbnailService::GenerationFailure::Decode) {
+                            MediaGenerationFailures::instance().recordFailure(
+                                path_copy, "thumbnail", "Thumbnail generation failed (unsupported or corrupted file)");
+                        }
                         MediaReadyBus::instance().publish({path_copy, "thumbnail", false,
                                                            "Thumbnail generation failed"});
                     }
-                }, source_path);
+                }, source_path, /*urgent=*/true);
 
                 // Return a 1x1 transparent PNG to prevent browser errors and free the socket
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
