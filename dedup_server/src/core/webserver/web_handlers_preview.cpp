@@ -83,8 +83,8 @@ namespace MediaDedup
             {
                 logger.information("Generating full-size preview on demand for: %s", source_path);
                 Magick::Blob blob;
-                // size=0 gives native full resolution, quality 95
-                if (ThumbnailGenerator::generateToBlob(source_path, 0, blob, 95))
+                // Native full resolution (never cached), quality 95
+                if (ThumbnailGenerator::generateToBlob(source_path, ThumbnailGenerator::kNativeResolution, blob, 95))
                 {
                     logger.debug("Successfully generated full size dynamically for: %s", source_path);
                     streamData(static_cast<const char*>(blob.data()), blob.length(), response, source_modified);

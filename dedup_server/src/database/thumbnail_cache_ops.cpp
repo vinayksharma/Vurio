@@ -327,6 +327,30 @@ namespace MediaDedup
     }
 
 
+    std::vector<std::string> ThumbnailCacheOps::purgeSizeZeroThumbnails(DatabaseManager &db)
+    {
+        std::vector<std::string> paths;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            {
+                Statement sel(sess);
+                sel << "SELECT cached_path FROM thumbnail_cache WHERE thumbnail_size = 0", into(paths), now;
+            }
+            if (!paths.empty())
+            {
+                Statement del(sess);
+                del << "DELETE FROM thumbnail_cache WHERE thumbnail_size = 0", now;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("purgeSizeZeroThumbnails failed: %s", std::string(e.what()));
+        }
+        return paths;
+    }
+
     std::vector<std::string> ThumbnailCacheOps::lruCachedPaths(DatabaseManager &db, int limit)
     {
         std::vector<std::string> paths;

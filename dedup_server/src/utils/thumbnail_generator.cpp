@@ -219,7 +219,9 @@ namespace MediaDedup
         {
             Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
 
-            if (!isValidSize(size))
+            // MP-3: the native-resolution sentinel bypasses size snapping —
+            // it is for the full-res viewer paths only, never cached.
+            if (size != kNativeResolution && !isValidSize(size))
             {
                 logger.warning("Invalid thumbnail size %d requested, using closest valid size", size);
                 size = getClosestValidSize(size);
@@ -253,7 +255,9 @@ namespace MediaDedup
         {
             Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
 
-            if (!isValidSize(size))
+            // MP-3: the native-resolution sentinel bypasses size snapping —
+            // it is for the full-res viewer paths only, never cached.
+            if (size != kNativeResolution && !isValidSize(size))
             {
                 logger.warning("Invalid thumbnail size %d requested, using closest valid size", size);
                 size = getClosestValidSize(size);
@@ -338,10 +342,11 @@ namespace MediaDedup
 
     int ThumbnailGenerator::getClosestValidSize(int requested_size)
     {
-        if (requested_size == 0)
-            return 0;
-
-        if (requested_size < 0)
+        // MP-3: 0 is no longer a cached-thumbnail size — small/zero requests
+        // snap to the smallest real size instead of a full-resolution render.
+        // (The live bug: the gRPC default size=80 normalized to 0 and cached
+        // full-resolution files forever.)
+        if (requested_size <= 0)
             return DEFAULT_SIZE;
 
         int closest = VALID_SIZES[0];

@@ -121,6 +121,13 @@ namespace MediaDedup
         static bool updateCacheLocation(DatabaseManager &db, const std::string &old_base_path, const std::string &new_base_path);
     
         /**
+         * @brief MP-3: delete all size=0 rows (full-resolution renders that
+         * leaked past validation and could never be served by the best-fit
+         * query). Returns the cached paths so the caller can unlink the files.
+         */
+        static std::vector<std::string> purgeSizeZeroThumbnails(DatabaseManager &db);
+
+        /**
          * @brief MP-2: cached-file paths in least-recently-used order (for
          * DiskCache eviction).
          */
