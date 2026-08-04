@@ -616,6 +616,24 @@ page ≈ **1.3 s of DB work** under a single held lease.
 ### CC-4. SchedulerService races and lifecycle
 
 > **STATUS: ✅ DONE 2026-08-03 (validated).**
+>
+> **Regression found & fixed 2026-08-03 (field report: "processing stops at
+> ~0.5k after registering a location"):** the dispatch lambda submitted to the
+> TPM is the ONLY resetter of a job's RUNNING state — and it lives in a queue
+> that `clearQueues()` (DeregisterLocation, integrity check, cache reset)
+> wipes, and that `submit()` rejects while draining. A dropped dispatch left
+> the job RUNNING forever; every later tick logged "already running, skipping"
+> at DEBUG. The user's deregister→re-register ate the queued `mediaProcessor`
+> dispatch, so no file was ever routed again (the "0.5k processed" was the
+> scanner's filter-ignored files — the UI counts state 3). Fix: a
+> `DispatchDropGuard` rides in the lambda's captures and restores IDLE via a
+> lock-free CAS on a `weak_ptr<Job>` when the callable is destroyed without
+> executing (`jobs_` became `shared_ptr<Job>`; NO `jobsMutex_` in the guard —
+> its destructor can run inside the TPM mutex while `triggerJob` holds
+> `jobsMutex_`→TPM-mutex, ABBA otherwise). Regression test:
+> `SchedulerConcurrencyTest.DroppedDispatch_ResetsJobToIdle` (pause pool →
+> trigger → clearQueues → job must be triggerable and run again).
+>
 > All seven sub-items landed (scheduler_service.cpp rewritten):
 > 1. `Job::interval/backoff` → atomic `interval_ms`/`backoff_ms`.
 > 2. `registerJob` rejects duplicate ids (was: destroyed a live Job under its
@@ -762,6 +780,36 @@ linear scan; sqlite-vec `VectorIndex` exists but is effectively unused; a
 threshold change wipes all groups and reprocesses from id 0.
 
 ### DF-1. Load once, compare cheap (prerequisite for everything else)
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> All three items landed:
+> 1. **EmbeddingArena** — one contiguous `vector<float>` of L2-normalized
+>    rows keyed by file_id, populated ONLY in single-threaded preloads (run
+>    start, batch preload, cross-group preload); the CC-3 fan-outs strictly
+>    read. `computeSimilarity` is a bare `dotSimilarity` when both files are
+>    in the arena, with the legacy blob-cosine as fallback (zero-norm /
+>    mixed-dim / out-of-run artifacts). Arena memory released at run end.
+> 2. **Run-level pool (`RunState`)** — representatives + ungrouped files load
+>    ONCE per findDuplicates run (previously reloaded from the DB every
+>    batch) and are mutated in memory as files group; batch artifacts and
+>    cross-group member artifacts are set-based preloads on a held session.
+> 3. Dead `FileArtifact` fields (phash/features/features_method) removed.
+> **Decision:** write-time normalization of stored embeddings was NOT done —
+> the arena normalizes at load (same O(n) cost, once per run), stored blobs
+> stay byte-identical to what ONNX produced, and cosine-metric KNN is
+> normalization-invariant, so there is no migration/compat question.
+> Tests: `SimilarityCalculatorTest.DotSimilarityMatchesLegacyCosine` /
+> `L2NormalizeProducesUnitNorm` / `L2NormalizeRejectsZeroVector` pin the
+> primitives; new `FindDuplicatesGroupsSimilarEmbeddingsEndToEnd` runs the
+> REAL pipeline (run-state load → arena preload → local-worker fan-out →
+> group creation → checkpoint) over deliberately unnormalized fabricated
+> embeddings and asserts grouping + checkpoint advance. (Possible only
+> because CC-3 removed the TPM from the fan-out.)
+> **Test-infra caveat discovered:** a `:memory:` DatabaseManager is broken
+> under the connection pool — every pooled connection is its own empty DB.
+> The end-to-end test uses a file-backed temp DB; existing `:memory:`
+> fixtures survive only by connection-reuse luck (worth migrating when
+> touched). Suite green (290 tests).
 
 > **STATUS: ✔ IMPLEMENTED 2026-08-03 — awaiting user validation.**
 > - **Arena + load-once:** `DuplicateFinder::EmbeddingArena` (contiguous

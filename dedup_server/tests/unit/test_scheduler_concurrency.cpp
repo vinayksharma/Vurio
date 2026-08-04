@@ -227,3 +227,44 @@ TEST_F(SchedulerConcurrencyTest, ScheduledDispatch_WhenAlreadyRunning_SkipsDispa
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
+
+// Regression (2026-08-03, found investigating "processing stops after
+// registering a location"): a dispatched-but-not-yet-executed job task lived
+// in a TPM queue that clearQueues() (DeregisterLocation, integrity check,
+// cache reset) wiped. The dropped lambda was the only resetter of the job's
+// RUNNING state, so the job wedged forever — every later tick logged
+// "already running, skipping" and, for mediaProcessor, no file was ever
+// processed again. The DispatchDropGuard must restore IDLE when the callable
+// is destroyed without executing.
+TEST_F(SchedulerConcurrencyTest, DroppedDispatch_ResetsJobToIdle)
+{
+    std::atomic<int> execution_count{0};
+
+    scheduler_->registerJob("dropTestJob", std::chrono::milliseconds(60000), "dropTest", [&]()
+                            { execution_count.fetch_add(1); });
+
+    // Freeze the pool so the dispatch task stays queued instead of running.
+    tpm_->pause();
+
+    ASSERT_TRUE(scheduler_->triggerJob("dropTestJob"));
+    // Job is now RUNNING with its dispatch parked in the TPM queue.
+    EXPECT_FALSE(scheduler_->triggerJob("dropTestJob"));
+
+    // The failure mode: wipe the queues (what DeregisterLocation does). The
+    // guard in the destroyed callable must reset the job to IDLE.
+    tpm_->clearQueues();
+
+    // Give the guard's destructor a beat (runs synchronously inside
+    // clearQueues, but be safe on slower CI).
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    tpm_->resume();
+
+    // Wedged before the fix: this second trigger returned false forever.
+    EXPECT_TRUE(scheduler_->triggerJob("dropTestJob"));
+
+    // And the redispatched job actually runs.
+    for (int i = 0; i < 100 && execution_count.load() == 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_EQ(execution_count.load(), 1);
+}
