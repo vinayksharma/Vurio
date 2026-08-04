@@ -54,14 +54,24 @@ namespace MediaDedup
 
     bool ThumbnailService::generateAndCacheThumbnail(const std::string &source_path,
                                                      int size,
-                                                     std::string &cached_path)
+                                                     std::string &cached_path,
+                                                     GenerationFailure *failure)
     {
         Poco::Logger &logger = Poco::Logger::get("ThumbnailService");
+
+        auto fail = [failure](GenerationFailure kind)
+        {
+            if (failure)
+                *failure = kind;
+            return false;
+        };
+        if (failure)
+            *failure = GenerationFailure::None;
 
         if (!config_manager_ || !database_manager_ || !thumbnail_cache_)
         {
             logger.error("ThumbnailService missing dependencies");
-            return false;
+            return fail(GenerationFailure::Infrastructure);
         }
 
         // Serialize duplicate generations of the same source+size.
@@ -87,18 +97,27 @@ namespace MediaDedup
             ss << std::hash<std::string>{}(source_path) << "_" << size << ".jpg";
             std::string cache_filename = ss.str();
 
+            // A missing source is NOT evidence the file is corrupt — its
+            // volume may simply be disconnected. Classified as infrastructure
+            // so the negative cache never brands an offline file unreadable.
+            if (!std::filesystem::exists(source_path))
+            {
+                logger.warning("Thumbnail source not found (offline volume?): %s", source_path);
+                return fail(GenerationFailure::Infrastructure);
+            }
+
             int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
 
             Magick::Blob blob;
             if (!ThumbnailGenerator::generateToBlob(source_path, size, blob, quality))
             {
                 logger.error("ThumbnailGenerator::generateToBlob failed for: %s (check ThumbnailGenerator logs for details)", source_path);
-                return false;
+                return fail(GenerationFailure::Decode);
             }
             if (blob.length() == 0)
             {
                 logger.error("ThumbnailGenerator::generateToBlob returned empty blob for: %s", source_path);
-                return false;
+                return fail(GenerationFailure::Decode);
             }
             logger.debug("Generated thumbnail blob: %zu bytes for %s", blob.length(), source_path);
 
@@ -110,14 +129,14 @@ namespace MediaDedup
             if (!thumbnail_stream.good())
             {
                 logger.error("Failed to create valid stream from blob for: %s", source_path);
-                return false;
+                return fail(GenerationFailure::Infrastructure);
             }
 
             std::string final_cached_path;
             if (!thumbnail_cache_->saveStreamToCache(thumbnail_stream, cache_filename, final_cached_path))
             {
                 logger.error("Failed to save thumbnail stream to cache: %s", source_path);
-                return false;
+                return fail(GenerationFailure::Infrastructure);
             }
 
             int64_t now_ts = currentTimestamp();
@@ -143,8 +162,11 @@ namespace MediaDedup
         }
         catch (const std::exception &e)
         {
+            // Conservative: an exception says nothing definitive about the
+            // file; genuinely corrupt files fail deterministically inside
+            // generateToBlob and are classified there.
             logger.error("Exception in generateAndCacheThumbnail: %s", std::string(e.what()));
-            return false;
+            return fail(GenerationFailure::Infrastructure);
         }
     }
 

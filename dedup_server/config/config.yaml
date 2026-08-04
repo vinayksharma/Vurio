@@ -168,3 +168,5 @@ media.images.raw.bay: true
 media.images.raw.dng: true
 media.images.raw.rwl: true
 media.images.raw.srw: true
+tools.imagemagick.path: /opt/homebrew/opt/imagemagick-full/bin/magick
+

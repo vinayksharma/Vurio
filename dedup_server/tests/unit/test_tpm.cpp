@@ -740,3 +740,75 @@ TEST(ThreadPoolManagerTest, BackgroundTypeIsThrottledNotStarvedByUIBacklog)
     release.store(true);
     tpm.shutdownAndDrain(std::chrono::milliseconds(500));
 }
+
+// Slow-first-thumbnails fix: an urgent submit (user-visible on-demand work)
+// must run ahead of a bulk backlog of the same type, and an urgent submit
+// that dedup-hits an already-queued path must PROMOTE that task to the front
+// instead of leaving it at its backfill FIFO position. Uses a 1-thread pool
+// and a non-UI type so execution is strictly serial and deterministic.
+TEST(ThreadPoolManagerTest, UrgentSubmitJumpsQueueAndPromotesDuplicates)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("1"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    std::atomic<bool> release{false};
+    std::atomic<bool> blocker_started{false};
+    std::mutex order_mutex;
+    std::vector<std::string> order;
+    auto record = [&order, &order_mutex](const std::string &name)
+    {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        order.push_back(name);
+    };
+
+    // Occupy the single worker so everything below stays queued.
+    tpm.submit("media_processor", [&]()
+               {
+        blocker_started.store(true);
+        while (!release.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(5)); },
+               "/blocker");
+    ASSERT_TRUE(TestUtils::waitForCondition([&]()
+                                            { return blocker_started.load(); },
+                                            std::chrono::milliseconds(2000), std::chrono::milliseconds(10)));
+
+    // Bulk backlog (backfill-style FIFO).
+    for (int i = 0; i < 4; ++i)
+        tpm.submit("media_processor", [&record, i]()
+                   { record("/bulk/" + std::to_string(i)); },
+                   "/bulk/" + std::to_string(i));
+
+    // On-demand: a fresh urgent path goes to the front...
+    tpm.submit("media_processor", [&record]()
+               { record("/urgent"); },
+               "/urgent", /*urgent=*/true);
+    // ...and an urgent duplicate of a deep backlog entry promotes the
+    // ORIGINAL queued task (this fn is dropped by dedup) ahead of it.
+    tpm.submit("media_processor", [&record]()
+               { record("/bulk/2-duplicate"); },
+               "/bulk/2", /*urgent=*/true);
+
+    release.store(true);
+    ASSERT_TRUE(TestUtils::waitForCondition([&]()
+                                            {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        return order.size() == 5; },
+                                            std::chrono::milliseconds(5000), std::chrono::milliseconds(10)));
+
+    std::lock_guard<std::mutex> lock(order_mutex);
+    // Promoted duplicate runs first (its original fn, promoted last), the
+    // urgent newcomer second, then the remaining backlog in FIFO order.
+    ASSERT_EQ(order.size(), 5u);
+    EXPECT_EQ(order[0], "/bulk/2");
+    EXPECT_EQ(order[1], "/urgent");
+    EXPECT_EQ(order[2], "/bulk/0");
+    EXPECT_EQ(order[3], "/bulk/1");
+    EXPECT_EQ(order[4], "/bulk/3");
+
+    tpm.shutdownAndDrain(std::chrono::milliseconds(500));
+}

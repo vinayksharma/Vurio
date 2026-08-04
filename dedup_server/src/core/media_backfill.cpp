@@ -85,12 +85,13 @@ namespace MediaDedup
                 tpm->submit("thumbnail_generator", [cfg, db, backfill_thumb_cache, path, thumb_size]() {
                     ThumbnailService service(cfg, db, backfill_thumb_cache);
                     std::string cached_path;
-                    if (service.generateAndCacheThumbnail(path, thumb_size, cached_path))
+                    ThumbnailService::GenerationFailure kind;
+                    if (service.generateAndCacheThumbnail(path, thumb_size, cached_path, &kind))
                     {
                         MediaGenerationFailures::instance().recordSuccess(path, "thumbnail");
                         MediaReadyBus::instance().publish({path, "thumbnail", true, ""});
                     }
-                    else
+                    else if (kind == ThumbnailService::GenerationFailure::Decode)
                     {
                         MediaGenerationFailures::instance().recordFailure(
                             path, "thumbnail", "Thumbnail backfill failed (unsupported or corrupted file)");

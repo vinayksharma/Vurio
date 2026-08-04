@@ -32,15 +32,34 @@ namespace MediaDedup
                          std::shared_ptr<DiskCache> thumbnail_cache);
 
         /**
+         * @brief Why a generation attempt failed.
+         *
+         * Callers feed the MediaGenerationFailures negative cache — which
+         * permanently brands a file "unsupported or corrupted" after a few
+         * strikes — so the distinction matters: only Decode failures are
+         * evidence about the FILE. Infrastructure failures (source missing —
+         * possibly a disconnected volume — cache write errors, internal
+         * exceptions) are transient server conditions and must stay retryable.
+         */
+        enum class GenerationFailure
+        {
+            None,
+            Decode,        ///< the file itself could not be decoded
+            Infrastructure ///< server-side trouble unrelated to file validity
+        };
+
+        /**
          * @brief Generate (or reuse a concurrently generated) thumbnail.
          * @param source_path Source image path
          * @param size Cached-thumbnail size (128/256/512/1024)
          * @param cached_path Output: path of the cached thumbnail file
+         * @param failure Optional output: failure classification (None on success)
          * @return true on success
          */
         bool generateAndCacheThumbnail(const std::string &source_path,
                                        int size,
-                                       std::string &cached_path);
+                                       std::string &cached_path,
+                                       GenerationFailure *failure = nullptr);
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;

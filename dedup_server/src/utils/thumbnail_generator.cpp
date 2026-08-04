@@ -80,6 +80,17 @@ namespace MediaDedup
                     cleanup.path = embedded->jpeg_path;
                     read_path = "jpeg:" + embedded->jpeg_path;
                 }
+                else if (RawFileDetector::DetectFormatFromMagicBytes(source_path) == ImageFormat::TIFF)
+                {
+                    // No usable embedded image (e.g. lossy/JXL-compressed
+                    // Lightroom DNGs whose thumbs LibRaw hands back as JXL,
+                    // which nothing downstream decodes). TIFF-magic RAWs still
+                    // carry a plain preview IFD that magick's tiff reader can
+                    // decode — far better than the bare-RAW delegate, which
+                    // needs the same LibRaw that just failed (or an external
+                    // tool like darktable-cli that may not exist).
+                    read_path = "tiff:" + source_path;
+                }
                 return true;
             }
 
