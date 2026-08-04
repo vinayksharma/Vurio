@@ -210,30 +210,48 @@ namespace MediaDedup
             };
 
             /**
-             * @brief DF-1: run-level comparison state, loaded once per run.
+             * @brief DF-3: run-level comparison state for the non-KNN fallback.
              *
-             * Previously processBatch re-loaded every representative and every
-             * ungrouped file from the DB on EVERY batch; now the pool is loaded
-             * once and mutated in memory as files get grouped.
+             * When no vector index is available, edge discovery compares each
+             * new file against every embedded processed file; that pool is
+             * loaded once per run, not per batch.
              */
             struct RunState
             {
-                std::map<int, FileArtifact> group_representatives; // group_id -> rep
-                std::vector<FileArtifact> ungrouped_files;         // prior-batch/pre-run pool
+                std::vector<FileArtifact> pool; // all embedded processed files
                 bool loaded = false;
             };
 
             /**
-             * @brief Process a batch of files for duplicate detection
+             * @brief DF-3: discover similarity edges for one batch of new files
+             *
+             * Records pair scores >= edge_floor_ into duplicate_edges (KNN when
+             * available, otherwise linear scan over run_state.pool) and advances
+             * the checkpoint watermark. Does NOT touch groups — clustering is
+             * rebuildGroupsFromEdges().
              *
              * @param mode Current server mode (EMBEDDING only)
              * @param batch_size Maximum files to process
              * @param last_processed_id Start processing from this ID + 1
-             * @param run_state Run-level pool, loaded on the first non-empty batch
+             * @param run_state Fallback pool, loaded on first use
              * @return Number of files processed
              */
             int processBatch(const std::string &mode, int batch_size, int &last_processed_id,
                              RunState &run_state);
+
+            /**
+             * @brief DF-3: rebuild duplicate groups from the persisted edge list
+             *
+             * Union-find over duplicate_edges at the current similarity
+             * threshold; components of >=2 become groups. Group ids are stable:
+             * a component containing an existing group's representative (or any
+             * previous group head) reuses that id. Runs in one transaction —
+             * this is what makes the tightness slider sub-second and wipe-free.
+             */
+            void rebuildGroupsFromEdges(const std::string &mode);
+
+            /// DF-3: drop edges whose endpoints no longer exist in scanned_files.
+            void purgeOrphanEdges();
 
             /**
              * @brief Compute similarity between two files using embedding-based matching
@@ -246,39 +264,6 @@ namespace MediaDedup
             double computeSimilarity(const FileArtifact &file1,
                                      const FileArtifact &file2,
                                      const std::string &mode);
-
-            /**
-             * @brief Check if a file is already in a duplicate group
-             *
-             * @param file_id File ID to check
-             * @param mode Server mode (EMBEDDING only)
-             * @return Group ID if file is in a group, nullopt otherwise
-             */
-            std::optional<int> getGroupIdForFile(int file_id, const std::string &mode);
-
-            /**
-             * @brief Check if two files are metadata-compatible for comparison
-             *
-             * Pre-filters based on aspect ratio, dimensions, file size, and format.
-             * Reduces false positives by skipping dissimilar files early.
-             *
-             * @param file1 First file artifact
-             * @param file2 Second file artifact
-             * @return True if files should be compared, false to skip
-             */
-            bool areMetadataCompatible(const FileArtifact &file1, const FileArtifact &file2);
-
-            /**
-             * @brief Find existing duplicate group for a file (if any)
-             *
-             * @param file File artifact to check
-             * @param mode Server mode (EMBEDDING only)
-             * @param processed_files All previously processed files
-             * @return Group ID if found, -1 if no match
-             */
-            int findMatchingGroup(const FileArtifact &file,
-                                  const std::string &mode,
-                                  const std::vector<FileArtifact> &processed_files);
 
             /**
              * @brief Determine best representative for a group
@@ -318,47 +303,6 @@ namespace MediaDedup
              */
             static bool promoteNextBestRepresentative(DatabaseManager& db, int group_id, int file_id_to_exclude, const std::string& purity_str);
 
-            /**
-             * @brief Create a new duplicate group
-             *
-             * @param files Files in the group
-             * @param mode Server mode (EMBEDDING only)
-             * @param threshold Similarity threshold used
-             * @return Group ID, or -1 on failure
-             */
-            int createDuplicateGroup(const std::vector<FileArtifact> &files,
-                                     const std::string &mode,
-                                     double threshold);
-
-            /**
-             * @brief Add a file to an existing duplicate group
-             *
-             * May update the representative if the new file is bigger/older
-             *
-             * @param group_id Existing group ID
-             * @param file File to add
-             * @param mode Server mode (EMBEDDING only)
-             * @param similarity_score Similarity to current representative
-             * @return True if addition succeeded
-             */
-            bool addToGroup(int group_id,
-                            const FileArtifact &file,
-                            const std::string &mode,
-                            double similarity_score);
-
-        public:
-            /**
-             * @brief Perform cross-group similarity checking for low-similarity files
-             *
-             * Identifies files with similarity scores below max threshold and checks
-             * if they would be better matched in other groups.
-             *
-             * @param mode Server mode (EMBEDDING only)
-             * @param threshold_max Maximum threshold for representative swaps
-             * @return Number of files moved between groups
-             */
-            int performCrossGroupChecking(const std::string &mode, double threshold_max);
-
         private:
             /**
              * @brief React to configuration changes
@@ -366,41 +310,6 @@ namespace MediaDedup
              * @param event Config change event
              */
             void onConfigChange(const ConfigChangeEvent &event);
-
-            /**
-             * @brief Find cross-batch candidates without creating groups
-             *
-             * @param new_file The new file to find cross-batch matches for
-             * @param ungrouped_files Pool of ungrouped files from prior batches
-             * @param last_processed_id Files with ID > this are from current batch (skip)
-             * @param mode Server mode (EMBEDDING only)
-             * @param threshold_min Minimum similarity threshold for grouping
-             * @return Vector of candidates forming a new group (including new_file), or empty if none
-             */
-            std::vector<FileArtifact> findCrossBatchCandidates(
-                const FileArtifact &new_file,
-                const std::vector<FileArtifact> &ungrouped_files,
-                int last_processed_id,
-                const std::string &mode,
-                double threshold_min,
-                const std::set<int> *knn_filter = nullptr);
-
-            /**
-             * @brief Attempt split and redistribution when new_file is in similar tier
-             *
-             * If new_file matches a similar member at duplicate threshold, creates new group,
-             * adds the pair, and redistributes other similar members by higher score.
-             *
-             * @return True if split was performed (new_file handled), false if no split
-             */
-            bool trySplitAndRedistribute(int best_group_id,
-                                         const FileArtifact &new_file,
-                                         double best_similarity,
-                                         const std::string &mode,
-                                         std::map<int, FileArtifact> &group_representatives,
-                                         int &duplicates_found,
-                                         int &groups_created,
-                                         int &groups_updated);
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
             DatabaseManager &db_;
@@ -412,6 +321,9 @@ namespace MediaDedup
 
             std::atomic<bool> running_{false};
             std::atomic<bool> abort_{false};
+            // DF-3: set by onConfigChange on a threshold move; the next finder
+            // run re-clusters from recorded edges even with no new files.
+            std::atomic<bool> regroup_requested_{false};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;
             std::mutex group_event_cb_mutex_;
@@ -422,6 +334,10 @@ namespace MediaDedup
             int max_group_size_ = 100;
             double embedding_threshold_similarity_ = 0.92;  // Minimum to consider for a group
             double embedding_threshold_duplicate_ = 0.97;  // True duplicate tier
+            // DF-3: discovery floor for persisted edges — clamped at init to
+            // never exceed the similarity threshold. Sliding the threshold
+            // anywhere >= this floor is answered from stored edges alone.
+            double edge_floor_ = 0.85;
             std::vector<PurityCriterion> purity_order_ = {PurityCriterion::CAMERA_RAW, PurityCriterion::EXIF_CAPTURE_DATE, PurityCriterion::FILE_SIZE};
 
             // Metadata filtering parameters

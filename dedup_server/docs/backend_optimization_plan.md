@@ -794,10 +794,10 @@ threshold change wipes all groups and reprocesses from id 0.
 >    batch) and are mutated in memory as files group; batch artifacts and
 >    cross-group member artifacts are set-based preloads on a held session.
 > 3. Dead `FileArtifact` fields (phash/features/features_method) removed.
-> **Decision:** write-time normalization of stored embeddings was NOT done —
-> the arena normalizes at load (same O(n) cost, once per run), stored blobs
-> stay byte-identical to what ONNX produced, and cosine-metric KNN is
-> normalization-invariant, so there is no migration/compat question.
+> **Note:** `ImageArtifactsOps::upsertEmbedding` L2-normalizes the blob at
+> write time and feeds the SAME normalized vector to the vector index; the
+> arena still re-normalizes on load so legacy (pre-normalization) rows stay
+> valid, and cosine-metric KNN is normalization-invariant either way.
 > Tests: `SimilarityCalculatorTest.DotSimilarityMatchesLegacyCosine` /
 > `L2NormalizeProducesUnitNorm` / `L2NormalizeRejectsZeroVector` pin the
 > primitives; new `FindDuplicatesGroupsSimilarEmbeddingsEndToEnd` runs the
@@ -810,40 +810,6 @@ threshold change wipes all groups and reprocesses from id 0.
 > The end-to-end test uses a file-backed temp DB; existing `:memory:`
 > fixtures survive only by connection-reuse luck (worth migrating when
 > touched). Suite green (290 tests).
-
-> **STATUS: ✔ IMPLEMENTED 2026-08-03 — awaiting user validation.**
-> - **Arena + load-once:** `DuplicateFinder::EmbeddingArena` (contiguous
->   `std::vector<float>` + parallel id array, all rows L2-normalized on
->   insert) lives for one `findDuplicates()` run and is freed at run end.
->   The representative + ungrouped pool is loaded ONCE per run (`RunState`,
->   first non-empty batch) and mutated in memory: cross-batch-grouped files
->   are erased from the pool under the batch write lock; files that stay
->   ungrouped are appended at batch end. Batch files are preloaded with one
->   set-based query (the fan-out previously did a pool checkout + query per
->   file), as are `performCrossGroupChecking`'s representatives (was one
->   lease per group) and its low-similarity members (was one lease per
->   member, inside the fan-out).
-> - **Compare cheap:** `computeSimilarity` uses
->   `SimilarityCalculator::dotSimilarity` (bare dot product over normalized
->   arena rows, no copies/norms/sqrts) whenever both files are in the arena;
->   legacy blob-based cosine remains as the fallback (ad-hoc loads inside
->   `trySplitAndRedistribute`, zero-norm/mixed-dim rows). Arena mutation
->   happens only in single-threaded sections; fan-outs strictly read.
-> - **Normalize at write:** `ImageArtifactsOps::upsertEmbedding` L2-normalizes
->   the blob before storing and feeds the SAME normalized vector to the
->   vector index (local 10-line helper — no database→media_processors
->   include edge). Legacy unnormalized rows stay valid: the arena
->   re-normalizes on load and the fallback normalizes per pair.
-> - **Dead fields dropped:** `FileArtifact.phash/features/features_method`
->   (never populated by any loader).
-> - **Tests:** 3 new SimilarityCalculatorTest cases pin dotSimilarity ==
->   legacy cosine (1e-5), unit-norm invariant, zero-vector rejection. Full
->   suite: 321 tests, 289 passed / 32 pre-existing skips / 0 failed.
-> - **Validate:** run a dedup pass over new files and compare wall-clock of
->   `processBatch` log lines vs. before; groups produced should be identical
->   (same thresholds, same cosine within float tolerance). Expect the
->   per-batch "Loaded N group representatives / M ungrouped" lines to appear
->   only once per run now.
 
 - **Files:** `duplicate_finder.cpp:342-430` (per-batch pool reload),
   `similarity_calculator.cpp:72-140` (`bytesToFloat32` copies, per-pair
@@ -861,6 +827,27 @@ threshold change wipes all groups and reprocesses from id 0.
   to <10 s, −230 MB/batch of realloc churn.
 
 ### DF-2. Make the vector index real and primary
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> (Status block reconstructed post-hoc — the DF-2 commit `b6c4253` shipped
+> the code but missed this file.) All changes landed:
+> - **`VectorIndex::reconcile()`** at startup: set-based backfill of
+>   embeddings that predate the index + purge of vectors for deleted files;
+>   idempotent, fresh-DB tolerant, cost proportional to drift.
+> - **`remove()`/`removeMany()`** wired into all three file-deletion paths —
+>   deleted files no longer poison KNN results.
+> - **KNN primary:** ONE distance-filtered query per new file
+>   (`distance <= 1 - threshold + eps`) drove both the representative search
+>   and the cross-batch candidates; the silent full-scan fallback on empty
+>   intersection was removed (only an empty KNN result — an index fault —
+>   warns). Superseded in shape by DF-3's edge discovery, which keeps the
+>   same principle: vec0 is EXACT KNN under the cosine metric, so
+>   score = 1 − distance with no embedding loads.
+> - **Tests:** `FindDuplicatesGroupsViaKnnIndexEndToEnd` (skips when
+>   vec0.dylib absent) pins KNN-driven grouping == linear-scan grouping.
+> - **Deferred:** per-thread vec0 handles / in-memory hnswlib if the single
+>   VectorIndex mutex ever shows up at scale.
+
 - **Files:** `src/database/vector_index.cpp`; insert site
   `image_artifacts_ops.cpp:78-82`; consumer `duplicate_finder.cpp:435-437, 520-531`;
   `findCrossBatchCandidates` `:1406-1475` (never consults the index).
@@ -880,6 +867,63 @@ threshold change wipes all groups and reprocesses from id 0.
 - **Expected:** 4.45e9 → ~2e7 comparisons for a fresh 100k run.
 
 ### DF-3. Union-find grouping over a persisted edge list; sub-second slider
+
+> **STATUS: ✅ DONE 2026-08-03 (validated).**
+> The finder is now two decoupled phases; ~850 lines of greedy/repair
+> machinery deleted (`duplicate_finder.cpp` 2061 → ~1220 lines).
+> - **Discovery:** `processBatch` records pair scores >= the discovery floor
+>   (`duplicates.edges.floor`, default 0.85, clamped <= the similarity
+>   threshold) into new table `duplicate_edges(file_a, file_b, score)`
+>   (WITHOUT ROWID, PK (a,b), score index). KNN path: score = 1 − distance
+>   directly (vec0 is exact under cosine) — neighbor embeddings never load.
+>   Fallback path (no index): once-per-run pool of all embedded files,
+>   arena dot products, each new-new pair recorded from the higher-id side
+>   only. Edges land in ONE transaction per batch; the id watermark advances
+>   as before (withheld on abort).
+> - **Clustering:** `rebuildGroupsFromEdges` = union-find (path halving +
+>   union by size) over edges `>= similarity threshold`; components >= 2
+>   become groups; representative via the existing purity logic; member
+>   `similarity_score` = max incident edge (rep = 1.0). **Group-id
+>   stability** for the SwiftUI client: a component containing an existing
+>   group's representative (or any previous group head) reuses that id;
+>   the whole rewrite (update reused + insert new + delete vanished groups
+>   and orphan members) is ONE transaction. Timing logged.
+> - **Slider:** a similarity change now just sets `regroup_requested_` —
+>   NO group wipe, NO checkpoint reset, NO embedding math; the next finder
+>   tick (5 s) re-clusters from stored edges in milliseconds. Successive
+>   ticks coalesce into one flag (natural debounce). Only a threshold BELOW
+>   the edge floor falls back to the legacy full reset (edges cleared too).
+>   A purity-order change also schedules a re-cluster (rep choice depends
+>   on it).
+> - **Deleted:** `getGroupIdForFile`, `areMetadataCompatible` (was already
+>   inert — see DF-5), `findMatchingGroup`, `createDuplicateGroup`,
+>   `addToGroup`, `trySplitAndRedistribute`, `findCrossBatchCandidates`,
+>   `performCrossGroupChecking`. Group events are no longer emitted during
+>   rebuild — the UI catches up via its 2 s status polling.
+> - **Hygiene:** `purgeOrphanEdges()` at run start drops edges whose
+>   endpoints left `scanned_files` (deletion paths untouched).
+> - **Deferred (item 5):** the checkpoint stays a single id watermark;
+>   re-embedded files below it are still never re-compared. Revisit with an
+>   `artifact_updated_at` cursor or dirty flag if/when re-embedding becomes
+>   a real flow.
+> - **Migration:** a pre-edge-list install (advanced watermark, groups, but
+>   an empty `duplicate_edges`) gets its checkpoint reset once at
+>   `initialize()` so discovery repopulates the edges; groups stay visible
+>   throughout and the first rebuild reuses their ids via rep matching.
+> - **Tests:** `ThresholdDecreaseSchedulesReclusterWithoutWipe` (groups +
+>   checkpoint survive a slider move), `ThresholdBelowEdgeFloorTriggersFullReset`,
+>   `EmptyEdgeTableBehindWatermarkResetsCheckpoint` (migration), and
+>   end-to-end `SliderReclusterFromEdgesEndToEnd`: three files (two at
+>   cos ~0.9997, one at ~0.93 to both), group at 0.95 = {a, a2}, 3 edges on
+>   disk, slide to 0.92 → SAME group id grows to {a, a2, m} with the
+>   watermark untouched. Obsolete `CrossGroupCheckingExecutes` removed.
+>   Suite: 328 tests, 296 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; let a scan finish, then drag the tightness
+>   slider — groups should re-form near-instantly (look for
+>   "Re-clustered from N edge(s) in X ms" in the log) and the UI should NOT
+>   go through a wipe-and-rebuild flash. New files should keep joining
+>   groups incrementally.
+
 - **Files:** greedy clique builder `duplicate_finder.cpp:718-807` (worst-case ~m³,
   single-threaded); first-match-wins ordering `:1417-1471`; repair passes
   `trySplitAndRedistribute` `:1252-1404` and `performCrossGroupChecking`
