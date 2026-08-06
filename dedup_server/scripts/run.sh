@@ -272,18 +272,10 @@ start_web_server() {
     print_status "Configuration file: $CONFIG_FILE"
     print_status "Web server will be available at: http://localhost:8080"
     print_status "API endpoints:"
-    print_status "  GET  /api/v1/config - Get all configuration"
-    print_status "  GET  /api/v1/config/{key} - Get specific property"
-    print_status "  PUT  /api/v1/config/{key} - Update property"
-    print_status "  POST /api/v1/config/reload - Reload configuration"
-    print_status "  GET  /api/v1/config/status - Get system status"
-    print_status "  GET  /api/openapi.json - OpenAPI specification"
+    print_status "  API: gRPC over unix socket /tmp/vurio_dedup.sock"
     echo
     
     local EXTRA_ARGS=""
-    if [ "$START_WEB_SERVER" = true ]; then
-        EXTRA_ARGS="--web"
-    fi
 
     # Run server in foreground
     if [ "$DEBUG_MODE" = true ]; then
@@ -323,9 +315,6 @@ run_server() {
     export DEDUP_NON_INTERACTIVE=1
     
     local EXTRA_ARGS=""
-    if [ "$START_WEB_SERVER" = true ]; then
-        EXTRA_ARGS="--web"
-    fi
 
     # Run server in background
     if [ "$DEBUG_MODE" = true ]; then
@@ -577,7 +566,6 @@ main() {
     DEBUG_MODE=false
     SKIP_BUILD=false
     CLEAN_BUILD=false
-    START_WEB_SERVER=false
     CONFIG_FILE="$CONFIG_DIR/config.yaml"
     
     # Parse command line arguments
@@ -598,10 +586,6 @@ main() {
             -c|--config)
                 CONFIG_FILE="$2"
                 shift 2
-                ;;
-            -w|--web|-web)
-                START_WEB_SERVER=true
-                shift
                 ;;
             --no-build)
                 SKIP_BUILD=true

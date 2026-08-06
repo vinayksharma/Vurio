@@ -43,7 +43,6 @@ set(UNIT_TEST_SOURCES
     unit/test_scanned_files_ops.cpp
     unit/test_day_groups_ops.cpp
     unit/test_preview_cache_ops.cpp
-    unit/test_web_handlers_preview.cpp
     unit/test_image_artifacts_ops.cpp
     unit/test_processing_errors_ops.cpp
     unit/test_stderr_capture.cpp
@@ -56,7 +55,6 @@ set(UNIT_TEST_SOURCES
     unit/test_files_service_immediate_scan.cpp
     unit/test_scheduled_jobs_independence.cpp
     unit/test_property_manager.cpp
-    unit/test_swagger_ui_handler.cpp
     unit/test_media_processor.cpp
     unit/test_image_magick_adapter.cpp
     unit/test_image_magick_transcoder.cpp
@@ -272,13 +270,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
-    elseif(${test_name} STREQUAL "test_web_handlers_preview")
-        # Skip creating standalone executable for this test
-        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewHandlerTest.*")
-        set_tests_properties(${test_name} PROPERTIES
-            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
-            TIMEOUT 300
-        )
     elseif(${test_name} STREQUAL "test_media_filtering")
         # Skip creating standalone executable for this test
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MediaFilteringTest.*")
@@ -313,7 +304,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/day_groups_ops.cpp
-            ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
     ${CMAKE_SOURCE_DIR}/src/services/eject_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/integrity_check_service.cpp
             ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
@@ -424,12 +414,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
         )
         target_compile_definitions(${test_name} PRIVATE FILE_SCANNER_TEST_STANDALONE_MAIN=1)
-    endif()
-    if(${test_name} STREQUAL "test_swagger_ui_handler")
-        target_sources(${test_name} PRIVATE 
-            ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
-            ${CMAKE_SOURCE_DIR}/src/config/unified_observable_config.cpp
-        )
     endif()
     if(${test_name} STREQUAL "test_media_processor")
         target_sources(${test_name} PRIVATE 
@@ -560,12 +544,7 @@ set_source_files_properties(
 
 target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/server_console_input_manager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/server_static_file_handler.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_preview.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_thumbnail.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/thumbnail_service.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_websocket.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/webserver/web_handlers_duplicates.cpp
     ${CMAKE_SOURCE_DIR}/src/services/eject_service.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/integrity_check_service.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
@@ -732,7 +711,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
       NOT ${test_name} STREQUAL "test_day_groups_ops" AND
-      NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
       NOT ${test_name} STREQUAL "test_media_filtering" AND
       NOT ${test_name} STREQUAL "test_eject_collision" AND
       NOT ${test_name} STREQUAL "test_grpc_media_service" AND
@@ -761,8 +739,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
        NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
        NOT ${test_name} STREQUAL "test_preview_cache_ops" AND
        NOT ${test_name} STREQUAL "test_day_groups_ops" AND
-       NOT ${test_name} STREQUAL "test_web_handlers_preview" AND
-       NOT ${test_name} STREQUAL "test_media_filtering" AND
+        NOT ${test_name} STREQUAL "test_media_filtering" AND
        NOT ${test_name} STREQUAL "test_eject_collision" AND
        NOT ${test_name} STREQUAL "test_grpc_media_service" AND
        NOT ${test_name} STREQUAL "test_onnx_session_manager")

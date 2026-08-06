@@ -1442,6 +1442,38 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   at the extracted services so coverage survives AR-3.
 
 ### AR-3. Delete the legacy HTTP surface (~7,300 lines)
+
+> **STATUS: ✅ DONE 2026-08-06 (validated).**
+> **-8,841 lines** (net +8/-8841 incl. tests and 1.8 MB of static swagger
+> assets). Deleted wholesale:
+> - `src/core/webserver/` (10 TUs + `static/`), `include/core/web/`
+>   (9 headers), `src/core/server_static_file_handler.cpp`.
+> - The `--web` CLI option, `handleWeb`, `start_web_server_`,
+>   `initializeWebServer()`, the web branch of the config-change callback
+>   (host/port restart), the shutdown handler's web parameter + stop
+>   block, and `scripts/run.sh`'s `--web` flag + HTTP endpoint banner.
+> - Dead tests of the dead surface: `test_swagger_ui_handler` (15) and
+>   `test_web_handlers_preview` (2 — the underlying transcode/cache logic
+>   is covered by transcoding-pipeline and preview-cache-ops suites); the
+>   WebSocket mock stubs in two other test files; the orphan
+>   `simplified_web_server` example. AR-2's repointed eject/purge tests
+>   carry the correct-fork coverage forward as designed.
+> - The console `restart` command (which restarted only the web server)
+>   is now an explicit no-op with a log message; the launcher restarts
+>   the whole process.
+> - **Security payoff:** the zero-auth destructive endpoints and the
+>   factory-default `0.0.0.0` bind are gone with the surface.
+> - **Orphans noted for CL-2/AR-6:** `server.host`/`server.port` config
+>   keys (and `ServerConfigManager`'s defaults for them) now have no
+>   consumer; `web_handlers_config`/`user_settings`/`server_status`/
+>   `cache` HTTP counterparts died with no extraction needed (gRPC has
+>   its own implementations, per the AR-2 deferral reasoning).
+> - **Suite:** 323 tests, 291 passed / 32 pre-existing skips / 0 failed;
+>   server binary links and builds clean.
+> - **Validate:** `./restart -b`; the app must work exactly as before
+>   (it is pure gRPC). `curl http://localhost:8080/` should now connect-
+>   refuse. Startup log reads "API: gRPC over /tmp/vurio_dedup.sock".
+
 - **Preconditions:** AR-1, AR-2 done; QW-8's logic lives in the shared service.
 - **Evidence it is dead in production:** HTTP starts only with `--web`
   (`src/core/server.cpp:106-108, 183-185`); the SwiftUI launcher passes no args
