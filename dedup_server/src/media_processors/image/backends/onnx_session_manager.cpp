@@ -149,7 +149,7 @@ namespace MediaDedup
             // DF-4: default OFF in code so tests/headless runs stay CPU;
             // production config.yaml turns it on.
             coreml_enabled_ = config_->getPropertyValue<bool>("media.image.onnx.coreml.enabled", false);
-            coreml_cache_dir_ = config_->getPropertyValue<std::string>("media.image.onnx.coreml.cacheDir", "cache/coreml");
+            coreml_cache_dir_ = config_->getPropertyValue<std::string>("media.image.onnx.coreml.cacheDir", "dedup_server/data/coreml");
 
             // Subscribe to configuration changes
             config_->subscribeToConfigChanges([this](const ConfigChangeEvent& event) {

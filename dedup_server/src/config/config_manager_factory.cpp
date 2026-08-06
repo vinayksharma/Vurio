@@ -430,7 +430,7 @@ namespace MediaDedup
         // DF-4: CoreML execution provider (ANE/GPU) with automatic CPU
         // fallback. Registered default is off; production config.yaml enables.
         manager->createProperty<bool>("media.image.onnx.coreml.enabled", false, getDesc("media.image.onnx.coreml.enabled"), getLongDesc("media.image.onnx.coreml.enabled"));
-        manager->createProperty<std::string>("media.image.onnx.coreml.cacheDir", "cache/coreml", getDesc("media.image.onnx.coreml.cacheDir"), getLongDesc("media.image.onnx.coreml.cacheDir"));
+        manager->createProperty<std::string>("media.image.onnx.coreml.cacheDir", "dedup_server/data/coreml", getDesc("media.image.onnx.coreml.cacheDir"), getLongDesc("media.image.onnx.coreml.cacheDir"));
         manager->createProperty<int>("media.image.embeddingDim", 512, getDesc("media.image.embeddingDim"), getLongDesc("media.image.embeddingDim"));
         manager->createProperty<bool>("media.image.transcoding.enabled", true, getDesc("media.image.transcoding.enabled"), getLongDesc("media.image.transcoding.enabled"));
         manager->createProperty<int>("media.image.transcoding.timeoutMs", 120000, getDesc("media.image.transcoding.timeoutMs"), getLongDesc("media.image.transcoding.timeoutMs"));

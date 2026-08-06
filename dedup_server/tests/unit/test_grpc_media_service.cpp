@@ -74,11 +74,10 @@ protected:
     }
 };
 
-// We test the logic of GetThumbnail and GetPreview in MediaServiceImpl.
-// Since MediaServiceImpl is private to grpc_server_core.cpp, we can't instantiate it directly here easily.
-// A better way is to test the actual generated GrpcServerCore or similar, but
-// to keep it simple, we could instantiate GrpcServerCore and connect to it using a grpc client.
-// However, since GrpcServerCore provides start(), we can start it on a random socket, connect, and test.
+// AR-5: the service impls are no longer private to grpc_server_core.cpp —
+// they live in per-service headers and can be instantiated directly (see
+// ServiceImplsAreDirectlyConstructible below). The end-to-end tests here keep
+// exercising the real server over a unix socket as well.
 
 #include <grpcpp/grpcpp.h>
 #include "dedup.grpc.pb.h"
@@ -287,4 +286,32 @@ TEST_F(MediaServiceGrpcTest, HandshakeIsExemptFromAuthAndTokenWorks) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE) << "authorized call must reach the handler";
 
     server.stop();
+}
+
+
+// ---------------------------------------------------------------------------
+// AR-5: the split's whole point — service impls are constructible from tests
+// without spinning up a server. Exercise one handler directly in-process.
+// ---------------------------------------------------------------------------
+#include "core/grpc_server/media_service.hpp"
+#include "core/grpc_server/config_service.hpp"
+
+TEST_F(MediaServiceGrpcTest, ServiceImplsAreDirectlyConstructible) {
+    // MediaServiceImpl: call GetThumbnail as a plain method, no server.
+    MediaServiceImpl media(config_, db_, thumb_cache_, transcode_cache_, tpm_);
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path("/tmp/nonexistent_direct.jpg");
+    req.set_size("128");
+    vurio::dedup::MediaPathResponse resp;
+    grpc::ServerContext ctx;
+    grpc::Status st = media.GetThumbnail(&ctx, &req, &resp);
+    EXPECT_EQ(st.error_code(), grpc::StatusCode::UNAVAILABLE) << "uncached file dispatches generation";
+
+    // ConfigServiceImpl: read a real config property directly.
+    ConfigServiceImpl config_svc(config_);
+    vurio::dedup::GetConfigRequest creq;
+    vurio::dedup::GetConfigResponse cresp;
+    grpc::ServerContext cctx;
+    grpc::Status cst = config_svc.GetConfig(&cctx, &creq, &cresp);
+    EXPECT_TRUE(cst.ok());
 }
