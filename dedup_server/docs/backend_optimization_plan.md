@@ -1489,6 +1489,40 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   rebuild as a ~300-line adapter over the services.
 
 ### AR-4. gRPC auth via interceptor, not 34 copy-pasted lines
+
+> **STATUS: ✅ DONE 2026-08-06 (validated).**
+> Implemented as an **AuthMetadataProcessor**, not a ServerInterceptor —
+> a deliberate deviation with a reason: a C++ server interceptor cannot
+> cleanly reject a sync RPC with a status before the handler runs
+> (TryCancel races the handler and yields CANCELLED, not
+> UNAUTHENTICATED), while the processor closes the call with the right
+> status BEFORE any handler executes.
+> - **`SessionAuthProcessor`** enforces `x-vurio-token` for every method;
+>   `/vurio.dedup.SecurityService/Handshake` is exempt via the `:path`
+>   pseudo-header. The 34 copy-pasted `requireSession` guards are deleted
+>   — and no future RPC can forget the check.
+> - **Empirical finding:** `SetAuthMetadataProcessor` on
+>   `InsecureServerCredentials` ABORTS with "Not Supported" on gRPC 1.80.
+>   Fix: `grpc::experimental::LocalServerCredentials(UDS)` — identical
+>   wire format (no TLS, plain h2c) but a real security context, so the
+>   processor works. The existing tests' insecure client channels still
+>   connect, proving wire compatibility with plaintext clients.
+> - **Pairing design unchanged** (0600 cookie file, unix socket 0600,
+>   constant-time compares) — it was sound.
+> - **ResourceQuota added:** sync worker threads capped at 32 (previously
+>   unbounded — a thumbnail-scroll burst could spawn without limit). The
+>   CC-6 Shutdown deadline the plan asked for was already in place.
+> - **Tests:** `CallWithoutTokenIsRejectedBeforeHandler` (UNAUTHENTICATED,
+>   not the handler's UNAVAILABLE — proves pre-handler enforcement),
+>   `CallWithWrongTokenIsRejected`, `HandshakeIsExemptFromAuthAndTokenWorks`
+>   (full pair→call round trip). Suite: 326 tests, 294 passed / 32
+>   pre-existing skips / 0 failed.
+> - **Validate (IMPORTANT):** `./restart -b` and confirm the Swift app
+>   still connects and loads media — grpc-swift's `.plaintext` speaks the
+>   same h2c as the C++ insecure client that passes in tests, but the app
+>   is the definitive check. If the app failed to pair/connect, tell me
+>   immediately — the credentials change would be the cause.
+
 - **File:** `grpc_server_core.cpp:91-104` (`requireSession`), repeated in 34 of 35
   RPCs; builder at `:1703-1717`.
 - **Change:** implement `grpc::experimental::ServerInterceptorFactoryInterface`
