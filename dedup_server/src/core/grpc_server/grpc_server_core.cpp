@@ -87,21 +87,36 @@ namespace {
         return diff == 0;
     }
 
-    // Reject any call that does not carry the current session token. Handshake is
-    // exempt (it is how a paired client obtains the token in the first place).
-    grpc::Status requireSession(grpc::ServerContext* context) {
-        std::string expected;
-        { std::lock_guard<std::mutex> lk(g_auth_mutex); expected = g_session_token; }
-        if (expected.empty()) {
-            return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Server not paired");
+    // AR-4: session enforcement for EVERY method in ONE place. The processor
+    // runs before any handler is invoked and closes unauthenticated calls
+    // with UNAUTHENTICATED — replacing the identical guard that was
+    // copy-pasted into 34 of 35 RPCs (and would have had to be remembered in
+    // every future one). Handshake is exempt: it is how a paired client
+    // obtains the token in the first place. The pairing design itself
+    // (cookie file readable only by the same OS user, unix socket,
+    // constant-time compares) is unchanged.
+    class SessionAuthProcessor : public grpc::AuthMetadataProcessor {
+    public:
+        grpc::Status Process(const InputMetadata& auth_metadata, grpc::AuthContext* /*context*/,
+                             OutputMetadata* /*consumed_auth_metadata*/,
+                             OutputMetadata* /*response_metadata*/) override {
+            auto path = auth_metadata.find(":path");
+            if (path != auth_metadata.end() &&
+                path->second == grpc::string_ref("/vurio.dedup.SecurityService/Handshake")) {
+                return grpc::Status::OK;
+            }
+            std::string expected;
+            { std::lock_guard<std::mutex> lk(g_auth_mutex); expected = g_session_token; }
+            if (expected.empty()) {
+                return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Server not paired");
+            }
+            auto it = auth_metadata.find("x-vurio-token");
+            if (it == auth_metadata.end() || !constantTimeEqualsRef(it->second, expected)) {
+                return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Invalid or missing session token");
+            }
+            return grpc::Status::OK;
         }
-        const auto& md = context->client_metadata();
-        auto it = md.find("x-vurio-token");
-        if (it == md.end() || !constantTimeEqualsRef(it->second, expected)) {
-            return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Invalid or missing session token");
-        }
-        return grpc::Status::OK;
-    }
+    };
 }
 
 class SecurityServiceImpl final : public vurio::dedup::SecurityService::Service {
@@ -130,7 +145,6 @@ public:
     explicit ConfigServiceImpl(std::shared_ptr<UnifiedObservableConfigManager> c) : config_(std::move(c)) {}
     grpc::Status GetConfig(grpc::ServerContext* context, const vurio::dedup::GetConfigRequest* request,
                            vurio::dedup::GetConfigResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         nlohmann::json json_config;
         for (const auto& key : config_->getAllPropertyKeys()) {
             auto property = config_->getProperty<int>(key); // Template parameter is unused in getProperty
@@ -149,7 +163,6 @@ public:
 
     grpc::Status UpdateConfig(grpc::ServerContext* context, const vurio::dedup::UpdateConfigRequest* request,
                               vurio::dedup::UpdateConfigResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         const std::string& key = request->key();
         const std::string& value_json = request->value_json();
         
@@ -182,7 +195,6 @@ public:
 
     grpc::Status GetStatus(grpc::ServerContext* context, const vurio::dedup::GetStatusRequest* request,
                            vurio::dedup::GetStatusResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto locations = files_->listMediaLocations();
         for (const auto& pair : locations) {
             reply->add_registered_dirs(pair.second);
@@ -229,7 +241,6 @@ public:
 
     grpc::Status RegisterLocation(grpc::ServerContext* context, const vurio::dedup::RegisterLocationRequest* request,
                                   vurio::dedup::RegisterLocationResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         bool success = files_->registerMediaLocation(request->path());
         reply->set_success(success);
         if (!success) {
@@ -240,7 +251,6 @@ public:
 
     grpc::Status DeregisterLocation(grpc::ServerContext* context, const vurio::dedup::DeregisterLocationRequest* request,
                                     vurio::dedup::DeregisterLocationResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (tpm_) {
             Poco::Logger::get("DedupServiceImpl").information("Clearing thread pool queues prior to deregistering a path.");
             tpm_->clearQueues();
@@ -255,7 +265,6 @@ public:
 
     grpc::Status ChangePath(grpc::ServerContext* context, const vurio::dedup::ChangePathRequest* request,
                             vurio::dedup::ChangePathResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto result = files_->changeMediaLocationPath(request->old_path(), request->new_path());
         reply->set_success(result.success);
         reply->set_error_message(result.error_message);
@@ -265,7 +274,6 @@ public:
 
     grpc::Status LocateMissingFile(grpc::ServerContext* context, const vurio::dedup::LocateMissingFileRequest* request,
                                    vurio::dedup::LocateMissingFileResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto result = files_->locateMissingFile(request->member_path(), request->located_path());
         reply->set_success(result.success);
         reply->set_error_message(result.error_message);
@@ -358,7 +366,6 @@ public:
 
     grpc::Status GetDuplicateGroups(grpc::ServerContext* context, const vurio::dedup::GetGroupsRequest* request,
                                     vurio::dedup::GetGroupsResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
         
         int limit = request->limit() > 0 ? request->limit() : 100;
@@ -487,7 +494,6 @@ public:
 
     grpc::Status GetDayGroups(grpc::ServerContext* context, const vurio::dedup::GetDayGroupsRequest* request,
                               vurio::dedup::GetDayGroupsResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
 
         int limit = request->limit() > 0 ? request->limit() : 30;
@@ -523,7 +529,6 @@ public:
 
     grpc::Status GetDayFiles(grpc::ServerContext* context, const vurio::dedup::GetDayFilesRequest* request,
                              vurio::dedup::GetDayFilesResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
         if (request->day().empty()) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "day is required");
@@ -549,7 +554,6 @@ public:
 
     grpc::Status EjectDuplicates(grpc::ServerContext* context, const vurio::dedup::EjectDuplicatesRequest* request,
                                  vurio::dedup::EjectDuplicatesResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         // Delegate to the shared, optimized bulk eject (rename fast path,
         // single batched transaction) used by the HTTP handler too.
         std::vector<std::string> paths(request->file_paths().begin(), request->file_paths().end());
@@ -564,7 +568,6 @@ public:
 
     grpc::Status UndoEjectDuplicates(grpc::ServerContext* context, const vurio::dedup::UndoEjectDuplicatesRequest* request,
                                      vurio::dedup::UndoEjectDuplicatesResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::vector<std::string> paths(request->file_paths().begin(), request->file_paths().end());
         auto r = MediaDedup::Services::bulkUndoEject(*db_, paths, request->undo_all());
         reply->set_success(r.successCount > 0 || (r.failureCount == 0));
@@ -577,7 +580,6 @@ public:
 
     grpc::Status SubscribeToDuplicateUpdates(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                              grpc::ServerWriter<vurio::dedup::DuplicateGroupUpdate>* writer) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto queue = std::make_shared<StreamQueue>();
         {
             std::lock_guard<std::mutex> lock(streams_mutex_);
@@ -667,7 +669,6 @@ public:
 
     grpc::Status ResetErrors(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                              vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             int files_reset = MediaDedup::ScannedFilesOps::resetAllErrors(*db_);
             reply->set_success(files_reset >= 0);
@@ -696,7 +697,6 @@ public:
 
     grpc::Status EjectErrors(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                              vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             fillBulkReply(reply, MediaDedup::Services::ejectErrored(*db_));
         } catch (const std::exception& e) {
@@ -708,7 +708,6 @@ public:
 
     grpc::Status UndoEjectErrors(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             fillBulkReply(reply, MediaDedup::Services::undoEjectErrored(*db_));
         } catch (const std::exception& e) {
@@ -720,7 +719,6 @@ public:
 
     grpc::Status EjectIgnored(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                               vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             fillBulkReply(reply, MediaDedup::Services::ejectIgnored(*db_));
         } catch (const std::exception& e) {
@@ -732,7 +730,6 @@ public:
 
     grpc::Status UndoEjectIgnored(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                   vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             fillBulkReply(reply, MediaDedup::Services::undoEjectIgnored(*db_));
         } catch (const std::exception& e) {
@@ -744,7 +741,6 @@ public:
 
     grpc::Status PurgeEjectedAndErrored(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                         vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             fillBulkReply(reply, MediaDedup::Services::purgeEjected(*db_, config_));
         } catch (const std::exception& e) {
@@ -757,7 +753,6 @@ public:
 
     grpc::Status ResetDuplicates(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             std::string mode = "EMBEDDING";
             bool success = true;
@@ -774,7 +769,6 @@ public:
 
     grpc::Status PauseProcessing(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (scheduler_) {
             scheduler_->pause();
             reply->set_success(true);
@@ -787,7 +781,6 @@ public:
 
     grpc::Status ResumeProcessing(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (scheduler_) {
             scheduler_->resume();
             reply->set_success(true);
@@ -800,7 +793,6 @@ public:
 
     grpc::Status StartDatabaseIntegrityCheck(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                              vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string error;
         if (MediaDedup::Orchestration::IntegrityCheckService::start(db_owner_, config_, scheduler_, tpm_, error)) {
             reply->set_success(true);
@@ -813,7 +805,6 @@ public:
 
     grpc::Status GetDatabaseIntegrityCheckStatus(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                                  vurio::dedup::IntegrityCheckStatusResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto state = MediaDedup::Orchestration::IntegrityCheckService::status();
         reply->set_running(state.is_running);
         reply->set_progress(state.progress);
@@ -830,21 +821,18 @@ public:
 
     grpc::Status BackupDatabase(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                 vurio::dedup::BackupDatabaseResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         reply->set_success(true);
         return grpc::Status::OK;
     }
 
     grpc::Status GetLatestBackup(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                  vurio::dedup::BackupDatabaseResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         reply->set_success(true);
         return grpc::Status::OK;
     }
 
     grpc::Status ClearAllCaches(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                 vurio::dedup::ClearCachesResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         try {
             bool thumb_success = thumbnail_cache_->clearCache();
             bool transcode_success = transcoding_cache_->clearCache();
@@ -882,7 +870,6 @@ public:
 
     grpc::Status ConfigurePurityOrder(grpc::ServerContext* context, const vurio::dedup::ConfigurePurityOrderRequest* request,
                                       vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (config_) {
             config_->setPropertyValue<std::string>("duplicates.purity.order", request->purity_order());
             config_->triggerSave();
@@ -896,7 +883,6 @@ public:
 
     grpc::Status GetUserTheme(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                               vurio::dedup::GetUserThemeResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string theme = "os";
         if (db_) {
             MediaDedup::UserSettingsOps::get(*db_, "ui_theme", theme);
@@ -907,7 +893,6 @@ public:
 
     grpc::Status SetUserTheme(grpc::ServerContext* context, const vurio::dedup::SetUserThemeRequest* request,
                               vurio::dedup::AdvancedActionResponse* reply) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (db_) {
             MediaDedup::UserSettingsOps::upsert(*db_, "ui_theme", request->theme());
             reply->set_success(true);
@@ -965,7 +950,6 @@ public:
 
     grpc::Status GetThumbnail(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
                               vurio::dedup::MediaPathResponse* response) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string file_path = request->file_path();
         int size = 80;
         try { size = std::stoi(request->size()); } catch (...) {}
@@ -1028,7 +1012,6 @@ public:
 
     grpc::Status GetPreview(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
                             vurio::dedup::MediaPathResponse* response) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         std::string file_path = request->file_path();
 
         // Full-resolution request (viewer zoomed in). The native client asks
@@ -1149,7 +1132,6 @@ public:
 
     grpc::Status CancelMediaGeneration(grpc::ServerContext* context, const vurio::dedup::CancelMediaRequest* request,
                                        vurio::dedup::Empty* response) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         if (tpm_) {
             tpm_->cancelTask(request->type(), request->file_path());
         }
@@ -1158,7 +1140,6 @@ public:
 
     grpc::Status SubscribeToMediaReady(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                        grpc::ServerWriter<vurio::dedup::MediaReadyEvent>* writer) override {
-        if (auto _vs = requireSession(context); !_vs.ok()) return _vs;
         auto subscription = MediaDedup::MediaReadyBus::instance().subscribe();
 
         while (!context->IsCancelled()) {
@@ -1273,7 +1254,20 @@ void GrpcServerCore::start(const std::string& socket_path,
     }
 
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    // AR-4: the auth processor is attached to the server credentials so the
+    // session check runs before ANY handler, for every present and future RPC.
+    // Local (UDS) credentials, not insecure ones: identical wire format (no
+    // TLS), but they carry a real security context, which is what makes
+    // SetAuthMetadataProcessor work — on InsecureServerCredentials gRPC
+    // aborts with "Not Supported" (verified empirically on gRPC 1.80).
+    auto server_creds = grpc::experimental::LocalServerCredentials(UDS);
+    server_creds->SetAuthMetadataProcessor(std::make_shared<SessionAuthProcessor>());
+    builder.AddListeningPort(server_address, server_creds);
+    // AR-4: bound the sync server's worker threads — previously unbounded,
+    // so a thumbnail-scroll burst could spawn threads without limit.
+    grpc::ResourceQuota quota("vurio-grpc");
+    quota.SetMaxThreads(32);
+    builder.SetResourceQuota(quota);
     builder.RegisterService(security_service.get());
     builder.RegisterService(config_service.get());
     builder.RegisterService(media_service.get());

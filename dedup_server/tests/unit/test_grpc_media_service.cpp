@@ -212,3 +212,79 @@ TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
 
     server.stop();
 }
+
+// ---------------------------------------------------------------------------
+// AR-4: session auth is enforced by an AuthMetadataProcessor attached to the
+// server credentials — BEFORE any handler runs — replacing the guard that was
+// copy-pasted into 34 RPCs. These tests are also the empirical proof that the
+// processor fires on insecure credentials over a unix socket: if it did not,
+// the token-less call below would reach the handler and return UNAVAILABLE
+// ("Thumbnail generating") instead of UNAUTHENTICATED.
+// ---------------------------------------------------------------------------
+
+TEST_F(MediaServiceGrpcTest, CallWithoutTokenIsRejectedBeforeHandler) {
+    std::string socket_path = "/tmp/test_grpc_auth_none.sock";
+    GrpcServerCore server;
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+
+    auto channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path("/tmp/nonexistent.jpg");
+    req.set_size("128");
+    grpc::ClientContext context; // no x-vurio-token
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
+
+    server.stop();
+}
+
+TEST_F(MediaServiceGrpcTest, CallWithWrongTokenIsRejected) {
+    std::string socket_path = "/tmp/test_grpc_auth_bad.sock";
+    GrpcServerCore server;
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+
+    auto channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path("/tmp/nonexistent.jpg");
+    req.set_size("128");
+    grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", "definitely-not-the-token");
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
+
+    server.stop();
+}
+
+TEST_F(MediaServiceGrpcTest, HandshakeIsExemptFromAuthAndTokenWorks) {
+    std::string socket_path = "/tmp/test_grpc_auth_pair.sock";
+    GrpcServerCore server;
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+
+    auto channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
+
+    // Handshake requires no token (it is how the token is obtained)...
+    std::string token = pairWithServer(channel);
+    ASSERT_FALSE(token.empty());
+
+    // ...and the obtained token authenticates a real call end-to-end.
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path("/tmp/nonexistent.jpg");
+    req.set_size("128");
+    grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE) << "authorized call must reach the handler";
+
+    server.stop();
+}
