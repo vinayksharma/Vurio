@@ -962,7 +962,7 @@ threshold change wipes all groups and reprocesses from id 0.
 > - **CoreML EP (item 2):** config-gated (`media.image.onnx.coreml.enabled`
 >   — code default OFF so tests stay CPU; config.yaml turns it ON), appended
 >   as `AppendExecutionProvider("CoreML", {MLComputeUnitsAll, MLProgram,
->   ModelCacheDirectory=cache/coreml})`. Any failure downgrades that session
+>   ModelCacheDirectory=dedup_server/data/coreml})`. Any failure downgrades that session
 >   to CPU-only; CoreML itself falls back per-node for unsupported ops. The
 >   compiled-model cache avoids recompiles across pooled sessions/restarts.
 > - **Session plumbing (item 3):** ONE process-wide `Ort::Env`
@@ -1008,7 +1008,7 @@ threshold change wipes all groups and reprocesses from id 0.
 >   "Created ONNX session (CoreML EP)" (first session creation compiles the
 >   model — expect a one-time delay, then cached). Embedding throughput
 >   (files/min in processing) should rise noticeably vs. before; a repeat
->   restart should reuse `cache/coreml`. Expect one-time
+>   restart should reuse `dedup_server/data/coreml`. Expect one-time
 >   "Edge list unusable at floor 0.800 (stored floor -1.000...)" +
 >   re-discovery on first start (the 0.85→0.80 floor migration).
 
@@ -1534,6 +1534,37 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   deadline on `Shutdown()` (CC-6).
 
 ### AR-5. Split the gRPC god file and make services testable
+
+> **STATUS: ✅ DONE 2026-08-06 (validated).**
+> `grpc_server_core.cpp`: 1,744 (plan-time) → 1,322 (after AR-2/AR-4
+> shrank the clones/guards) → **172 lines** — now ONLY server lifecycle
+> (secret publication, builder wiring, auth registration, socket perms,
+> shutdown).
+> - Each service impl moved VERBATIM into its own constructible header
+>   under `include/core/grpc_server/`: `security_service.hpp` (35),
+>   `config_service.hpp` (58), `media_locations_service.hpp` (115),
+>   `duplicates_service.hpp` (350), `advanced_settings_service.hpp`
+>   (273), `media_service.hpp` (289). Header-defined by design: verbatim
+>   moves carry zero rewrite risk, and only grpc_server_core.cpp + tests
+>   include them (via a shared `grpc_service_common.hpp` prelude), so
+>   there is no compile-time blast radius. (Deviation from the plan's
+>   `.{hpp,cpp}` pairs — out-of-lining ~1,000 lines of method bodies was
+>   all risk, no benefit.)
+> - `grpc_auth.hpp`: pairing/session state behind an inline accessor
+>   (single instance via function-local static) + the AR-4
+>   SessionAuthProcessor. `full_res_cache_registry.hpp`: the MP-4 LRU
+>   accessor shared by MediaService (fills) and AdvancedSettings
+>   (QW-9 clear). The dead file-static `calculateFileSHA1` copy died in
+>   the move.
+> - **The point, proven:** `ServiceImplsAreDirectlyConstructible`
+>   instantiates `MediaServiceImpl` and `ConfigServiceImpl` in-process
+>   and calls their handlers as plain methods — exactly what the old
+>   test file documented as impossible. The stale apology comment is
+>   replaced.
+> - **Suite:** 327 tests, 295 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; pure refactor — app behavior must be
+>   identical.
+
 - **File:** `grpc_server_core.cpp` (1,744 lines, six service classes private to the
   TU — `tests/unit/test_grpc_media_service.cpp:77-81` documents being unable to
   instantiate them).
