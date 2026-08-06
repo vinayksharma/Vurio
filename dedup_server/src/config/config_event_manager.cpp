@@ -5,19 +5,18 @@
 namespace MediaDedup
 {
 
-    void ConfigEventManager::subscribeToConfigChanges(ConfigChangeCallback callback)
+    size_t ConfigEventManager::subscribeToConfigChanges(ConfigChangeCallback callback)
     {
         std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        config_change_callbacks_.push_back(callback);
+        size_t token = next_subscription_token_++;
+        config_change_callbacks_.emplace(token, std::move(callback));
+        return token;
     }
 
-    void ConfigEventManager::unsubscribeFromConfigChanges(ConfigChangeCallback callback)
+    void ConfigEventManager::unsubscribeFromConfigChanges(size_t token)
     {
         std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        // Note: std::function doesn't support == operator, so we can't use std::remove
-        // For now, we'll just clear all callbacks. In practice, you might want to use
-        // a more sophisticated callback management system with unique IDs
-        config_change_callbacks_.clear();
+        config_change_callbacks_.erase(token);
     }
 
     void ConfigEventManager::clearAllCallbacks()
@@ -60,7 +59,9 @@ namespace MediaDedup
         std::vector<ConfigChangeCallback> callbacks_copy;
         {
             std::lock_guard<std::mutex> lock(callbacks_mutex_);
-            callbacks_copy = config_change_callbacks_;
+            callbacks_copy.reserve(config_change_callbacks_.size());
+            for (const auto &kv : config_change_callbacks_)
+                callbacks_copy.push_back(kv.second);
         }
         
         // Call callbacks outside the lock to prevent deadlock

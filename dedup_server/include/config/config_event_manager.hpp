@@ -4,6 +4,7 @@
 #include <any>
 #include <functional>
 #include <vector>
+#include <map>
 #include <mutex>
 #include <chrono>
 #include "config/config_change_event.hpp"
@@ -37,16 +38,21 @@ namespace MediaDedup
 
         // Event subscription management
         /**
-         * @brief Subscribe to configuration change events
-         * @param callback Callback function to invoke on changes
+         * @brief Subscribe to configuration change events.
+         * @return Subscription token for unsubscribeFromConfigChanges.
+         *
+         * AR-6: token-based. The old callback-parameter unsubscribe could not
+         * compare std::functions and CLEARED EVERY SUBSCRIBER in the process
+         * (its one caller silently killed config reactivity for the database,
+         * TPM, finder, caches, and ONNX manager on media-processor shutdown).
          */
-        void subscribeToConfigChanges(ConfigChangeCallback callback);
+        size_t subscribeToConfigChanges(ConfigChangeCallback callback);
 
         /**
-         * @brief Unsubscribe from configuration change events
-         * @param callback Callback function to remove (clears all if not found)
+         * @brief Unsubscribe a single subscription by its token. Unknown
+         * tokens are ignored.
          */
-        void unsubscribeFromConfigChanges(ConfigChangeCallback callback);
+        void unsubscribeFromConfigChanges(size_t token);
 
         /**
          * @brief Clear all event callbacks
@@ -94,7 +100,8 @@ namespace MediaDedup
         bool isFilteringFileUpdates() const { return filter_file_updates_; }
 
     private:
-        std::vector<ConfigChangeCallback> config_change_callbacks_;
+        std::map<size_t, ConfigChangeCallback> config_change_callbacks_; // ordered: preserves subscription order
+        size_t next_subscription_token_ = 1;
         mutable std::mutex callbacks_mutex_;
         bool filter_file_updates_ = false;
 

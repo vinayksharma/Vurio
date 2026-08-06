@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <chrono>
 #include "database/session_manager.hpp"
+#include "config/unified_observable_config.hpp"
 
 namespace MediaDedup
 {
@@ -175,6 +176,9 @@ namespace MediaDedup
         bool connected_;
         Poco::Logger &logger_;
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        // AR-6: RAII subscription — declared after the config manager so the
+        // callback can never outlive this object; unsubscribes only itself.
+        ScopedConfigSubscription config_subscription_;
 
         /**
          * @brief Create media files table

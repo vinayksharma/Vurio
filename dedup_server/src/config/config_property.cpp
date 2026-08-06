@@ -63,30 +63,6 @@ namespace MediaDedup
             {
                 return setValue(ConfigTypeConverter::fromString<bool>(value));
             }
-            else if (default_value_.type() == typeid(float))
-            {
-                return setValue(ConfigTypeConverter::fromString<float>(value));
-            }
-            else if (default_value_.type() == typeid(long))
-            {
-                return setValue(ConfigTypeConverter::fromString<long>(value));
-            }
-            else if (default_value_.type() == typeid(long long))
-            {
-                return setValue(ConfigTypeConverter::fromString<long long>(value));
-            }
-            else if (default_value_.type() == typeid(unsigned int))
-            {
-                return setValue(ConfigTypeConverter::fromString<unsigned int>(value));
-            }
-            else if (default_value_.type() == typeid(unsigned long))
-            {
-                return setValue(ConfigTypeConverter::fromString<unsigned long>(value));
-            }
-            else if (default_value_.type() == typeid(unsigned long long))
-            {
-                return setValue(ConfigTypeConverter::fromString<unsigned long long>(value));
-            }
         }
         catch (const TypeConversionError &)
         {

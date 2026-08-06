@@ -50,18 +50,8 @@ namespace MediaDedup
                 new_value = ConfigTypeConverter::fromString<double>(value);
             else if (default_value_.type() == typeid(bool))
                 new_value = ConfigTypeConverter::fromString<bool>(value);
-            else if (default_value_.type() == typeid(float))
-                new_value = ConfigTypeConverter::fromString<float>(value);
-            else if (default_value_.type() == typeid(long))
-                new_value = ConfigTypeConverter::fromString<long>(value);
-            else if (default_value_.type() == typeid(long long))
-                new_value = ConfigTypeConverter::fromString<long long>(value);
-            else if (default_value_.type() == typeid(unsigned int))
-                new_value = ConfigTypeConverter::fromString<unsigned int>(value);
-            else if (default_value_.type() == typeid(unsigned long))
-                new_value = ConfigTypeConverter::fromString<unsigned long>(value);
-            else if (default_value_.type() == typeid(unsigned long long))
-                new_value = ConfigTypeConverter::fromString<unsigned long long>(value);
+            // AR-6: canonical four types only (bool/int/double/string);
+            // wider types are converted at file load.
             else
                 return false;
 
@@ -228,33 +218,29 @@ namespace MediaDedup
                     {
                         createProperty<bool>(key, std::any_cast<bool>(value), "Loaded from file");
                     }
+                    // AR-6: the config system canonicalizes on FOUR types
+                    // (bool/int/double/string). Anything wider the file layer
+                    // hands us is converted here so the converter and every
+                    // consumer only deal with the canonical set.
                     else if (value.type() == typeid(float))
                     {
-                        createProperty<float>(key, std::any_cast<float>(value), "Loaded from file");
+                        createProperty<double>(key, static_cast<double>(std::any_cast<float>(value)), "Loaded from file");
                     }
                     else if (value.type() == typeid(long))
                     {
-                        createProperty<long>(key, std::any_cast<long>(value), "Loaded from file");
+                        createProperty<int>(key, static_cast<int>(std::any_cast<long>(value)), "Loaded from file");
                     }
                     else if (value.type() == typeid(long long))
                     {
-                        createProperty<long long>(key, std::any_cast<long long>(value), "Loaded from file");
+                        createProperty<int>(key, static_cast<int>(std::any_cast<long long>(value)), "Loaded from file");
                     }
                     else if (value.type() == typeid(unsigned int))
                     {
-                        createProperty<unsigned int>(key, std::any_cast<unsigned int>(value), "Loaded from file");
+                        createProperty<int>(key, static_cast<int>(std::any_cast<unsigned int>(value)), "Loaded from file");
                     }
                     else if (value.type() == typeid(unsigned long))
                     {
-                        createProperty<unsigned long>(key, std::any_cast<unsigned long>(value), "Loaded from file");
-                    }
-                    else if (value.type() == typeid(unsigned long long))
-                    {
-                        createProperty<unsigned long long>(key, std::any_cast<unsigned long long>(value), "Loaded from file");
-                    }
-                    else if (value.type() == typeid(std::vector<std::string>))
-                    {
-                        createProperty<std::vector<std::string>>(key, std::any_cast<std::vector<std::string>>(value), "Loaded from file");
+                        createProperty<int>(key, static_cast<int>(std::any_cast<unsigned long>(value)), "Loaded from file");
                     }
                     else
                     {
@@ -311,19 +297,20 @@ namespace MediaDedup
         return file_manager_->reloadConfiguration() && loadConfiguration();
     }
 
-    void UnifiedObservableConfigManager::subscribeToConfigChanges(ConfigChangeCallback callback)
+    size_t UnifiedObservableConfigManager::subscribeToConfigChanges(ConfigChangeCallback callback)
     {
         if (event_manager_)
         {
-            event_manager_->subscribeToConfigChanges(callback);
+            return event_manager_->subscribeToConfigChanges(std::move(callback));
         }
+        return 0;
     }
 
-    void UnifiedObservableConfigManager::unsubscribeFromConfigChanges(ConfigChangeCallback callback)
+    void UnifiedObservableConfigManager::unsubscribeFromConfigChanges(size_t token)
     {
-        if (event_manager_)
+        if (event_manager_ && token != 0)
         {
-            event_manager_->unsubscribeFromConfigChanges(callback);
+            event_manager_->unsubscribeFromConfigChanges(token);
         }
     }
 

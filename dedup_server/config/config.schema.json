@@ -1,0 +1,662 @@
+{
+  "cache.disk.location": {
+    "type": "string",
+    "default": "./previews"
+  },
+  "cache.disk.size_limit_mb": {
+    "type": "int",
+    "default": 2048
+  },
+  "cache.thumbnail.clearOnStartup": {
+    "type": "bool",
+    "default": false
+  },
+  "cache.thumbnail.location": {
+    "type": "string",
+    "default": "./thumbnails_cache"
+  },
+  "cache.thumbnail.size_limit_mb": {
+    "type": "int",
+    "default": 512
+  },
+  "database.path": {
+    "type": "string",
+    "default": "data/dedup_server.db"
+  },
+  "database.session.acquireTimeoutMs": {
+    "type": "int",
+    "default": 3000
+  },
+  "database.session.poolMax": {
+    "type": "int",
+    "default": 32
+  },
+  "database.session.poolMin": {
+    "type": "int",
+    "default": 4
+  },
+  "database.sqlite.cacheSize": {
+    "type": "int",
+    "default": 1000
+  },
+  "database.vector.enabled": {
+    "type": "bool",
+    "default": false
+  },
+  "database.vector.extensionPath": {
+    "type": "string",
+    "default": ""
+  },
+  "debug.enabled": {
+    "type": "bool",
+    "default": false
+  },
+  "debug.verbose": {
+    "type": "bool",
+    "default": false
+  },
+  "duplicates.edges.floor": {
+    "type": "double",
+    "default": 0.8
+  },
+  "duplicates.finder.batchSize": {
+    "type": "int",
+    "default": 1000
+  },
+  "duplicates.finder.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "duplicates.finder.intervalMs": {
+    "type": "int",
+    "default": 3600000
+  },
+  "duplicates.finder.knnK": {
+    "type": "int",
+    "default": 200
+  },
+  "duplicates.finder.maxGroupSize": {
+    "type": "int",
+    "default": 100
+  },
+  "duplicates.purity.order": {
+    "type": "string",
+    "default": "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE"
+  },
+  "duplicates.representative.strategy": {
+    "type": "string",
+    "default": "size_then_age"
+  },
+  "duplicates.threshold.duplicate": {
+    "type": "double",
+    "default": 0.96
+  },
+  "duplicates.threshold.similarity": {
+    "type": "double",
+    "default": 0.92
+  },
+  "files.manager.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "files.manager.scan.intervalMs": {
+    "type": "int",
+    "default": 500
+  },
+  "files.manager.useInMemoryIndex": {
+    "type": "bool",
+    "default": false
+  },
+  "files.service.immediateJobTrigger.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "files.service.immediateJobTrigger.timeoutMs": {
+    "type": "int",
+    "default": 30000
+  },
+  "logging.enable_console": {
+    "type": "bool",
+    "default": true
+  },
+  "logging.enable_file": {
+    "type": "bool",
+    "default": false
+  },
+  "media.audio.aac": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.aiff": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.alac": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.amr": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.au": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.flac": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.m4a": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.mp3": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.ogg": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.opus": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.wav": {
+    "type": "bool",
+    "default": true
+  },
+  "media.audio.wma": {
+    "type": "bool",
+    "default": true
+  },
+  "media.filter.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.filter.low_res.apply_after_date": {
+    "type": "string",
+    "default": "2005-01-01"
+  },
+  "media.filter.low_res.min_height": {
+    "type": "int",
+    "default": 600
+  },
+  "media.filter.low_res.min_width": {
+    "type": "int",
+    "default": 600
+  },
+  "media.filter.min_file_size_kb": {
+    "type": "int",
+    "default": 10
+  },
+  "media.image.embeddingDim": {
+    "type": "int",
+    "default": 512
+  },
+  "media.image.onnx.coreml.cacheDir": {
+    "type": "string",
+    "default": "dedup_server/data/coreml"
+  },
+  "media.image.onnx.coreml.enabled": {
+    "type": "bool",
+    "default": false
+  },
+  "media.image.onnx.inputSize": {
+    "type": "int",
+    "default": 224
+  },
+  "media.image.onnx.modelPath": {
+    "type": "string",
+    "default": "models/clip-image-vitb32.onnx"
+  },
+  "media.image.onnx.sessionCache.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.image.onnx.sessionCache.maxSessions": {
+    "type": "int",
+    "default": 4
+  },
+  "media.image.retry.baseDelayMs": {
+    "type": "int",
+    "default": 500
+  },
+  "media.image.retry.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.image.retry.maxAttempts": {
+    "type": "int",
+    "default": 2
+  },
+  "media.image.timeoutMs": {
+    "type": "int",
+    "default": 30000
+  },
+  "media.image.transcoding.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.image.transcoding.preserveMetadata": {
+    "type": "bool",
+    "default": true
+  },
+  "media.image.transcoding.timeoutMs": {
+    "type": "int",
+    "default": 120000
+  },
+  "media.images.bmp": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.bmp.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.dib.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.exr": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.exr.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.gif": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.gif.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.hdr": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.hdr.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.jp2": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.jp2.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.jpeg": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.jpg": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.pbm": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.pgm": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.png": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.pnm": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.ppm": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.3fr": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.arw": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.bay": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.cr2": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.dcr": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.dng": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.fff": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.iiq": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.kdc": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.mef": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.mos": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.mrw": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.nef": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.nrw": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.orf": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.pef": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.raf": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.raw": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.rw2": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.rwl": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.rwz": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.raw.srw": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.tif": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.tif.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.tiff": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.tiff.transcode": {
+    "type": "bool",
+    "default": true
+  },
+  "media.images.webp": {
+    "type": "bool",
+    "default": true
+  },
+  "media.processor.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.processor.intervalMs": {
+    "type": "int",
+    "default": 30000
+  },
+  "media.processor.maxQueueSize": {
+    "type": "int",
+    "default": 1000
+  },
+  "media.video.avi": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.flv": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.m2ts": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.m4v": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mkv": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mov": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mp4": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mpeg": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mpg": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.mts": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.ogv": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.ts": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.webm": {
+    "type": "bool",
+    "default": false
+  },
+  "media.video.wmv": {
+    "type": "bool",
+    "default": false
+  },
+  "scheduler.backoff.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "scheduler.backoff.initialMs": {
+    "type": "int",
+    "default": 1000
+  },
+  "scheduler.backoff.jitterPercent": {
+    "type": "int",
+    "default": 10
+  },
+  "scheduler.backoff.maxMs": {
+    "type": "int",
+    "default": 30000
+  },
+  "scheduler.backoff.multiplier": {
+    "type": "double",
+    "default": 2.0
+  },
+  "scheduler.drift.maxDriftMs": {
+    "type": "int",
+    "default": 60000
+  },
+  "scheduler.jitter.enabled": {
+    "type": "bool",
+    "default": false
+  },
+  "scheduler.jitter.percent": {
+    "type": "int",
+    "default": 0
+  },
+  "scheduler.jobs": {
+    "type": "string",
+    "default": ""
+  },
+  "scheduler.maxConsecutiveFailures": {
+    "type": "int",
+    "default": 5
+  },
+  "server.host": {
+    "type": "string",
+    "default": "0.0.0.0"
+  },
+  "server.http.threadPool.maxQueued": {
+    "type": "int",
+    "default": 50
+  },
+  "server.http.threadPool.maxThreads": {
+    "type": "string",
+    "default": "auto"
+  },
+  "server.instanceCheck.bufferSize": {
+    "type": "int",
+    "default": 128
+  },
+  "server.instanceCheck.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "server.max_connections": {
+    "type": "int",
+    "default": 100
+  },
+  "server.name": {
+    "type": "string",
+    "default": "Media Deduplication Server"
+  },
+  "server.port": {
+    "type": "int",
+    "default": 8080
+  },
+  "server.processName": {
+    "type": "string",
+    "default": "media_dedup_server"
+  },
+  "server.timeout": {
+    "type": "double",
+    "default": 30.0
+  },
+  "thumbnail.allowed.sizes": {
+    "type": "string",
+    "default": "128,256,512,1024"
+  },
+  "thumbnail.default.size": {
+    "type": "int",
+    "default": 256
+  },
+  "thumbnail.generation.timeoutMs": {
+    "type": "int",
+    "default": 5000
+  },
+  "thumbnail.jpeg.quality": {
+    "type": "int",
+    "default": 85
+  },
+  "thumbnail.pipeline.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "thumbnail.pipeline.onlyIfMissing": {
+    "type": "bool",
+    "default": true
+  },
+  "thumbnail.pipeline.size": {
+    "type": "int",
+    "default": 256
+  },
+  "thumbnail.qhd_preview.threshold_mb": {
+    "type": "double",
+    "default": 5.0
+  },
+  "tools.imagemagick.path": {
+    "type": "string",
+    "default": "/opt/homebrew/bin/magick"
+  },
+  "tpm.killTimeoutMs": {
+    "type": "int",
+    "default": 10000
+  },
+  "tpm.mediaGeneration.maxConcurrent": {
+    "type": "int",
+    "default": 4
+  },
+  "tpm.pool.max": {
+    "type": "string",
+    "default": "auto"
+  },
+  "tpm.thread.idleTimeoutSeconds": {
+    "type": "int",
+    "default": 120
+  },
+  "tpm.thread.stackSizeKB": {
+    "type": "int",
+    "default": 1024
+  },
+  "tpm.types.audio_processor.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.duplicate_finder.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.fileScan.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.image_processor.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.media_processor.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.thumbnail_generator.share": {
+    "type": "double",
+    "default": 1.0
+  },
+  "tpm.types.video_processor.share": {
+    "type": "double",
+    "default": 1.0
+  }
+}

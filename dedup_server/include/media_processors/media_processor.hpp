@@ -117,6 +117,9 @@ namespace MediaDedup
     private:
         // Configuration management
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        // AR-6: RAII subscription — declared after the config manager so the
+        // callback can never outlive this object; unsubscribes only itself.
+        ScopedConfigSubscription config_subscription_;
 
         // Database management
         std::shared_ptr<DatabaseManager> database_manager_;

@@ -155,6 +155,8 @@ namespace MediaDedup
 
         // Config
         std::shared_ptr<UnifiedObservableConfigManager> cfg_;
+        // AR-6: RAII subscription — unsubscribes only itself on destruction.
+        ScopedConfigSubscription config_subscription_;
         size_t effective_max_;
         // Combined running-task cap for thumbnail_generator + preview_generator
         // (each task shells out to magick; unbounded bursts OOM the host).

@@ -1573,6 +1573,48 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   with constructible headers. After AR-2 these shrink to marshalling.
 
 ### AR-6. Config subsystem rightsizing
+
+> **STATUS: ✅ DONE 2026-08-06 (validated).**
+> All five items landed:
+> 1. **The unsubscribe bug is fixed.** Subscriptions are token-based
+>    (`size_t subscribeToConfigChanges`, `unsubscribe(token)`); the old
+>    callback-parameter API — which CLEARED EVERY SUBSCRIBER in the
+>    process, so media-processor shutdown silently killed config
+>    reactivity for the database, TPM, finder, caches, and ONNX manager —
+>    is gone. New RAII `ScopedConfigSubscription` (holds the manager
+>    alive, unsubscribes only itself); **all six** raw-`this` subscribers
+>    converted (MediaProcessor, DatabaseManager, ThreadPoolManager,
+>    DuplicateFinder, DiskCache, OnnxSessionManager) — their callbacks
+>    can no longer outlive them. Regression test
+>    `ConfigSubscriptionTest.UnsubscribeRemovesOnlyThatSubscription`
+>    pins single-removal + RAII behavior.
+> 2. **Schema moved to `config/config.schema.json`** (165 entries with
+>    type+default; sorted keys). The ~290-line hand-written block is a
+>    ~45-line loop; the 4 config-derived properties
+>    (file_monitoring/validation, defaults from the preset struct) stay
+>    hand-written. Standard-location fallback probing since the schema is
+>    functional, not cosmetic. Factory: 709 → 368 lines.
+> 3. **Dead API deleted:** `createWithCustomComponents`,
+>    `getDefaultConfig`, `createDefault`, `createForDevelopment`,
+>    `createFromEnvironment` (only caller was the orphan
+>    config_factory_demo example, also deleted); write-only fields
+>    `auto_save`/`validate_on_load`/`validate_on_save`/
+>    `enable_file_watching`. Presets collapsed to
+>    createForTesting/createForProduction (+ createWithConfig core).
+>    `validateConfig` KEPT — the plan's "zero call sites" was stale;
+>    createWithConfig calls it.
+> 4. **Converter restricted to the canonical four** (bool/int/double/
+>    string; 411 → 296 lines): wide numeric overloads deleted, the two
+>    stray `<long>`/`<float>` dispatch chains (config_property +
+>    load-from-file) trimmed, and the file loader now CONVERTS wider
+>    YAML-parsed types into the canonical four at the boundary.
+> 5. **`std::cout` config-event output replaced with Poco logging** (it
+>    bypassed levels, colors, and capture).
+> - **Suite:** 328 tests, 296 passed / 32 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; config edits from the app (thresholds,
+>   cache sizes) must still apply live, and `[CONFIG]` console spam is
+>   now proper log lines. Everything else is internal.
+
 - **Files:** `config_manager_factory.cpp` (709 lines; 175 hand-written
   `createProperty` calls at :292-582), `config_event_manager.cpp:14-21`,
   `config_type_converter.cpp` (410 lines).
