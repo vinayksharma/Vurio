@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <mutex>
+#include "config/unified_observable_config.hpp"
 #include <condition_variable>
 #include <deque>
 #include <unordered_map>
@@ -165,6 +166,8 @@ namespace MediaDedup
 
     private:
         std::shared_ptr<UnifiedObservableConfigManager> config_;
+        // AR-6: RAII subscription — unsubscribes only itself on destruction.
+        ScopedConfigSubscription config_subscription_;
 
         // Session pools per model path
         mutable std::mutex mutex_;

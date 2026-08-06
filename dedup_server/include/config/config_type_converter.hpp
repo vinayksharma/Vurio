@@ -129,12 +129,6 @@ namespace MediaDedup
         static bool convertFromString(const std::string &str, int &result);
         static bool convertFromString(const std::string &str, double &result);
         static bool convertFromString(const std::string &str, std::string &result);
-        static bool convertFromString(const std::string &str, float &result);
-        static bool convertFromString(const std::string &str, long &result);
-        static bool convertFromString(const std::string &str, long long &result);
-        static bool convertFromString(const std::string &str, unsigned int &result);
-        static bool convertFromString(const std::string &str, unsigned long &result);
-        static bool convertFromString(const std::string &str, unsigned long long &result);
     };
 
     // Template implementations

@@ -199,6 +199,8 @@ namespace MediaDedup
         void onSizeLimitChanged(int new_limit_mb);
 
         std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
+        // AR-6: RAII subscription — unsubscribes only itself on destruction.
+        ScopedConfigSubscription config_subscription_;
         mutable std::mutex cache_mutex_;
         std::filesystem::path cache_location_;
         size_t size_limit_bytes_;

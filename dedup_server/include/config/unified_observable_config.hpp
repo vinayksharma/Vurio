@@ -125,9 +125,10 @@ namespace MediaDedup
             return property;
         }
 
-        // Event system
-        void subscribeToConfigChanges(ConfigChangeCallback callback);
-        void unsubscribeFromConfigChanges(ConfigChangeCallback callback);
+        // Event system (AR-6: token-based — the old callback-parameter
+        // unsubscribe cleared EVERY subscriber in the process)
+        size_t subscribeToConfigChanges(ConfigChangeCallback callback);
+        void unsubscribeFromConfigChanges(size_t token);
         void emitConfigChangeEvent(const ConfigChangeEvent &event);
 
         // Manual save trigger (to be called after batch operations)
@@ -191,6 +192,57 @@ namespace MediaDedup
 
         // Validation
         void validateConfiguration();
+    };
+
+
+    /**
+     * @brief AR-6: RAII config-change subscription.
+     *
+     * Holds the manager alive and unsubscribes exactly this subscription on
+     * destruction — long-lived components that capture `this` in their
+     * callback keep one of these as their LAST member so the callback can
+     * never outlive the object.
+     */
+    class ScopedConfigSubscription
+    {
+    public:
+        ScopedConfigSubscription() = default;
+        ScopedConfigSubscription(std::shared_ptr<UnifiedObservableConfigManager> manager, size_t token)
+            : manager_(std::move(manager)), token_(token) {}
+        ~ScopedConfigSubscription() { reset(); }
+
+        ScopedConfigSubscription(const ScopedConfigSubscription &) = delete;
+        ScopedConfigSubscription &operator=(const ScopedConfigSubscription &) = delete;
+        ScopedConfigSubscription(ScopedConfigSubscription &&other) noexcept
+            : manager_(std::move(other.manager_)), token_(other.token_)
+        {
+            other.token_ = 0;
+        }
+        ScopedConfigSubscription &operator=(ScopedConfigSubscription &&other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                manager_ = std::move(other.manager_);
+                token_ = other.token_;
+                other.token_ = 0;
+            }
+            return *this;
+        }
+
+        void reset()
+        {
+            if (manager_ && token_ != 0)
+            {
+                manager_->unsubscribeFromConfigChanges(token_);
+            }
+            manager_.reset();
+            token_ = 0;
+        }
+
+    private:
+        std::shared_ptr<UnifiedObservableConfigManager> manager_;
+        size_t token_ = 0;
     };
 
 } // namespace MediaDedup

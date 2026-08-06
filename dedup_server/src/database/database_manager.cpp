@@ -115,12 +115,14 @@ namespace MediaDedup
                 // Subscribe to config changes for pool sizes
                 if (config_manager_)
                 {
-                    config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
+                    config_subscription_ = ScopedConfigSubscription(
+                        config_manager_,
+                        config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                                              {
                         if (event.key == "database.session.poolMin" || event.key == "database.session.poolMax")
                         {
                             logger_.warning("Database session pool size changed ('%s'). Pool size changes require server restart to take effect.", event.key);
-                        } });
+                        } }));
                 }
                 
                 return true;

@@ -679,6 +679,11 @@ add_custom_target(setup_test_data
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data
     COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/test_data/databases
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/test_data/databases
+    # The property schema is functional (properties don't exist without it);
+    # stage it at build/config/ so tests running from the build dir find it.
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/config
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/config/config.schema.json ${CMAKE_BINARY_DIR}/config/config.schema.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/config/config.descriptions.json ${CMAKE_BINARY_DIR}/config/config.descriptions.json
     COMMENT "Setting up test data..."
 )
 set(TEST_DATA_DEPENDENCY setup_test_data)

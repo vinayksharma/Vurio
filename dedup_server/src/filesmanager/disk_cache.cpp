@@ -143,7 +143,9 @@ namespace MediaDedup
             }
 
             // Subscribe to configuration changes
-            config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
+            config_subscription_ = ScopedConfigSubscription(
+                config_manager_,
+                config_manager_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
                                                       {
                 std::string config_key_location = this->config_prefix_ + ".location";
                 if (event.key == config_key_location)
@@ -159,7 +161,7 @@ namespace MediaDedup
                         int new_limit_mb = std::any_cast<int>(event.new_value);
                         this->onSizeLimitChanged(new_limit_mb);
                     } catch (...) {}
-                } });
+                } }));
 
             initialized_ = true;
             return true;

@@ -152,12 +152,13 @@ namespace MediaDedup
             coreml_cache_dir_ = config_->getPropertyValue<std::string>("media.image.onnx.coreml.cacheDir", "dedup_server/data/coreml");
 
             // Subscribe to configuration changes
-            config_->subscribeToConfigChanges([this](const ConfigChangeEvent& event) {
-                if (event.key.find("media.image.onnx.sessionCache") != std::string::npos)
-                {
-                    onConfigChange();
-                }
-            });
+            config_subscription_ = ScopedConfigSubscription(
+                config_, config_->subscribeToConfigChanges([this](const ConfigChangeEvent& event) {
+                    if (event.key.find("media.image.onnx.sessionCache") != std::string::npos)
+                    {
+                        onConfigChange();
+                    }
+                }));
         }
         
         Poco::Logger::get("OnnxSessionManager").information(

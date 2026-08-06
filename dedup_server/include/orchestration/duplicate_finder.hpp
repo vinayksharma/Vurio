@@ -312,6 +312,8 @@ namespace MediaDedup
             void onConfigChange(const ConfigChangeEvent &event);
 
             std::shared_ptr<UnifiedObservableConfigManager> cfg_;
+        // AR-6: RAII subscription — unsubscribes only itself on destruction.
+        ScopedConfigSubscription config_subscription_;
             DatabaseManager &db_;
             std::shared_ptr<ThreadPoolManager> tpm_;
 

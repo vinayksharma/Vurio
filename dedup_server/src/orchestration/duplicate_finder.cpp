@@ -251,8 +251,9 @@ namespace MediaDedup
             }
 
             // Subscribe to config changes
-            cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
-                                           { onConfigChange(event); });
+            config_subscription_ = ScopedConfigSubscription(
+                cfg_, cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
+                                                     { onConfigChange(event); }));
 
             logger.information("DuplicateFinder initialized successfully (enabled=" +
                                std::string(enabled_ ? "true" : "false") +

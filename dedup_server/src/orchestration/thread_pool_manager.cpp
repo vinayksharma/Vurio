@@ -118,8 +118,9 @@ namespace MediaDedup
                            static_cast<unsigned int>(effective_max_), idle_timeout_seconds_, stackSizeKB);
 
         // Subscribe to config changes
-        cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
-                                       { onConfigChange(ev); });
+        config_subscription_ = ScopedConfigSubscription(
+            cfg_, cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &ev)
+                                                 { onConfigChange(ev); }));
                                        
         // Load any existing share configurations
         for (const auto& key : cfg_->getAllPropertyKeys())

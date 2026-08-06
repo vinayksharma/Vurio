@@ -226,3 +226,49 @@ int main(int argc, char **argv)
     return RUN_ALL_TESTS();
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// AR-6: token-based config subscriptions. The old callback-parameter
+// unsubscribe could not compare std::functions and CLEARED EVERY SUBSCRIBER
+// in the process — media-processor shutdown silently killed config
+// reactivity for the database, TPM, finder, caches, and ONNX manager.
+// ---------------------------------------------------------------------------
+#include "config/unified_observable_config.hpp"
+
+TEST(ConfigSubscriptionTest, UnsubscribeRemovesOnlyThatSubscription)
+{
+    auto mgr = std::make_shared<MediaDedup::UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(mgr->initialize());
+
+    int a = 0, b = 0;
+    size_t token_a = mgr->subscribeToConfigChanges([&](const MediaDedup::ConfigChangeEvent&) { a++; });
+    size_t token_b = mgr->subscribeToConfigChanges([&](const MediaDedup::ConfigChangeEvent&) { b++; });
+    ASSERT_NE(token_a, 0u);
+    ASSERT_NE(token_b, token_a);
+
+    mgr->createProperty("ar6.test", 1, "test");
+    mgr->setPropertyValue("ar6.test", 2);
+    ASSERT_GT(a, 0);
+    ASSERT_GT(b, 0);
+
+    // Unsubscribing A must leave B alive (the old API cleared everyone).
+    int a_before = a, b_before = b;
+    mgr->unsubscribeFromConfigChanges(token_a);
+    mgr->setPropertyValue("ar6.test", 3);
+    EXPECT_EQ(a, a_before) << "unsubscribed callback must not fire";
+    EXPECT_GT(b, b_before) << "other subscribers must survive an unsubscribe";
+
+    // RAII: ScopedConfigSubscription unsubscribes on destruction.
+    int c = 0;
+    {
+        MediaDedup::ScopedConfigSubscription scoped(
+            mgr, mgr->subscribeToConfigChanges([&](const MediaDedup::ConfigChangeEvent&) { c++; }));
+        mgr->setPropertyValue("ar6.test", 4);
+        EXPECT_GT(c, 0);
+    }
+    int c_before = c;
+    int b_before2 = b;
+    mgr->setPropertyValue("ar6.test", 5);
+    EXPECT_EQ(c, c_before) << "scoped subscription must be gone after destruction";
+    EXPECT_GT(b, b_before2) << "unrelated subscriber still alive";
+}

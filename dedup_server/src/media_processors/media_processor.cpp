@@ -51,12 +51,14 @@ namespace MediaDedup
             return false;
         }
 
-        // Subscribe to configuration changes
-        config_manager_->subscribeToConfigChanges(
-            [this](const ConfigChangeEvent &event)
-            {
-                onConfigChange(event);
-            });
+        // Subscribe to configuration changes (AR-6: RAII token)
+        config_subscription_ = ScopedConfigSubscription(
+            config_manager_,
+            config_manager_->subscribeToConfigChanges(
+                [this](const ConfigChangeEvent &event)
+                {
+                    onConfigChange(event);
+                }));
 
         // Set up unified thread pool shares for media processing (consolidated naming: tpm.types.<type>.share)
         double media_processor_share = config_manager_->getPropertyValue<double>("tpm.types.media_processor.share", 1.0);
@@ -110,16 +112,12 @@ namespace MediaDedup
             // RAW re-transcode of the library on every restart. Persistence
             // across restarts is the point of the cache.
 
-            // Unsubscribe from configuration changes
-            if (config_manager_)
-            {
-                config_manager_->unsubscribeFromConfigChanges(
-                    [this](const ConfigChangeEvent &event)
-                    {
-                        onConfigChange(event);
-                    });
-                logger.debug("Unsubscribed from configuration changes");
-            }
+            // AR-6: unsubscribe ONLY this subscription. The old
+            // callback-parameter API cleared EVERY subscriber in the
+            // process, killing config reactivity for the database, TPM,
+            // finder, caches, and ONNX manager on media-processor shutdown.
+            config_subscription_.reset();
+            logger.debug("Unsubscribed from configuration changes");
 
             logger.information("MediaProcessor shutdown complete");
         }

@@ -18,17 +18,13 @@ namespace MediaDedup
         bool enable_file_monitoring = true;
         std::chrono::milliseconds reload_interval = std::chrono::milliseconds(1000);
         bool enable_validation = true;
-        bool auto_save = true;
         std::string log_level = "info";
 
         // File monitoring settings
-        bool enable_file_watching = true;
         std::chrono::milliseconds file_check_interval = std::chrono::milliseconds(500);
 
         // Validation settings
         bool strict_validation = false;
-        bool validate_on_load = true;
-        bool validate_on_save = true;
 
         // Event system settings
         bool enable_events = true;
@@ -45,13 +41,6 @@ namespace MediaDedup
     class ConfigManagerFactory
     {
     public:
-        /**
-         * @brief Create a default configuration manager
-         * @param config_file_path Path to the configuration file
-         * @return Shared pointer to configured UnifiedObservableConfigManager
-         */
-        static std::shared_ptr<UnifiedObservableConfigManager> createDefault(
-            const std::string &config_file_path);
 
         /**
          * @brief Create a configuration manager with custom configuration
@@ -79,34 +68,8 @@ namespace MediaDedup
             const std::string &config_file_path,
             bool enable_monitoring = true);
 
-        /**
-         * @brief Create a configuration manager for development use
-         * @param config_file_path Path to the configuration file
-         * @return Shared pointer to development-configured UnifiedObservableConfigManager
-         */
-        static std::shared_ptr<UnifiedObservableConfigManager> createForDevelopment(
-            const std::string &config_file_path);
 
-        /**
-         * @brief Create a configuration manager with custom component factories
-         * @param config Configuration settings
-         * @param file_manager_factory Custom file manager factory
-         * @param validator_factory Custom validator factory
-         * @param event_manager_factory Custom event manager factory
-         * @return Shared pointer to configured UnifiedObservableConfigManager
-         */
-        static std::shared_ptr<UnifiedObservableConfigManager> createWithCustomComponents(
-            const ConfigManagerConfig &config,
-            std::function<std::unique_ptr<ConfigFileManager>(const std::string &)> file_manager_factory = nullptr,
-            std::function<std::unique_ptr<ConfigValidator>()> validator_factory = nullptr,
-            std::function<std::unique_ptr<ConfigEventManager>()> event_manager_factory = nullptr);
 
-        /**
-         * @brief Get default configuration for a specific environment
-         * @param environment Environment name ("development", "testing", "production")
-         * @return Default configuration for the environment
-         */
-        static ConfigManagerConfig getDefaultConfig(const std::string &environment);
 
         /**
          * @brief Validate configuration settings
@@ -115,13 +78,6 @@ namespace MediaDedup
          */
         static bool validateConfig(const ConfigManagerConfig &config);
 
-        /**
-         * @brief Create a configuration manager from environment variables
-         * @param config_file_path Path to the configuration file
-         * @return Shared pointer to environment-configured UnifiedObservableConfigManager
-         */
-        static std::shared_ptr<UnifiedObservableConfigManager> createFromEnvironment(
-            const std::string &config_file_path);
 
     private:
         /**
