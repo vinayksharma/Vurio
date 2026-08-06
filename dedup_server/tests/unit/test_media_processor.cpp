@@ -21,16 +21,6 @@
 
 using namespace MediaDedup;
 
-// Mock WebSocketStatusHandler for standalone test executables
-#ifndef ALL_UNIT_TESTS
-#include "core/web/web_handlers_websocket.hpp"
-namespace MediaDedup {
-    void WebSocketStatusHandler::broadcastMessage(const std::string& message) {
-        // Do nothing in standalone tests
-    }
-}
-#endif
-
 class MediaProcessorTest : public ::testing::Test
 {
 protected:

@@ -8,7 +8,6 @@ namespace MediaDedup
 {
     class UnifiedObservableConfigManager;
     class DatabaseManager;
-    class WebServer;
     class ThreadPoolManager;
     class MediaProcessor;
     // Forward declaration for ConsoleInputManager in different namespace
@@ -43,7 +42,6 @@ namespace MediaDedup
         /**
          * @brief Handle graceful shutdown
          * @param database_manager Database manager instance
-         * @param web_server Web server instance
          * @param tpm Thread pool manager instance
          * @param scheduler_service Scheduler service instance
          * @param files_manager Files manager instance
@@ -53,7 +51,6 @@ namespace MediaDedup
          */
         void handleShutdown(
             std::shared_ptr<DatabaseManager> &database_manager,
-            std::unique_ptr<WebServer> &web_server,
             std::shared_ptr<ThreadPoolManager> &tpm,
             std::shared_ptr<Orchestration::SchedulerService> &scheduler_service,
             std::shared_ptr<Orchestration::FilesManager> &files_manager,

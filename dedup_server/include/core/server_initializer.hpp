@@ -8,7 +8,6 @@ namespace MediaDedup
 {
     class UnifiedObservableConfigManager;
     class DatabaseManager;
-    class WebServer;
     class ThreadPoolManager;
     class ConsoleInputManager;
     class MediaProcessor;
@@ -51,12 +50,6 @@ namespace MediaDedup
         bool initializeDatabase();
 
         /**
-         * @brief Initialize web server
-         * @return true if successful, false otherwise
-         */
-        bool initializeWebServer();
-
-        /**
          * @brief Initialize TPM (Thread Pool Manager)
          * @return true if successful, false otherwise
          */
@@ -77,7 +70,6 @@ namespace MediaDedup
         // Getters for initialized components
         std::shared_ptr<UnifiedObservableConfigManager> getConfigManager() const { return config_manager_; }
         std::shared_ptr<DatabaseManager> &getDatabaseManager() { return database_manager_; }
-        std::unique_ptr<WebServer> &getWebServer() { return web_server_; }
         std::shared_ptr<ThreadPoolManager> &getTPM() { return tpm_; }
         std::shared_ptr<Orchestration::SchedulerService> &getSchedulerService() { return scheduler_service_; }
         std::shared_ptr<Orchestration::FilesManager> &getFilesManager() { return files_manager_; }
@@ -92,7 +84,6 @@ namespace MediaDedup
         // through no-op-deleter shared_ptrs handed to every consumer and
         // fire-and-forget task - lifetime safety that looked real but wasn't.
         std::shared_ptr<DatabaseManager> database_manager_;
-        std::unique_ptr<WebServer> web_server_;
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::shared_ptr<Orchestration::FilesManager> files_manager_;
@@ -104,9 +95,5 @@ namespace MediaDedup
         std::shared_ptr<class DiskCache> thumbnail_disk_cache_;
         std::shared_ptr<class DiskCache> transcoding_disk_cache_;
 
-        /**
-         * @brief Setup request handlers for web server
-         */
-        void setupRequestHandlers();
     };
 }

@@ -225,19 +225,8 @@ add_executable(media_dedup_server
     src/core/server_config_manager.cpp
     src/core/server_server_initializer.cpp
     src/core/server_server_shutdown.cpp
-    src/core/webserver/web_server_core.cpp
-    src/core/webserver/web_handlers_config.cpp
-    src/core/webserver/web_handlers_user_settings.cpp
-    src/core/webserver/web_handlers_server_status.cpp
-    src/core/webserver/web_handlers_websocket.cpp
-    src/core/webserver/web_handlers_reset_errors.cpp
-    src/core/webserver/web_handlers_thumbnail.cpp
-    src/core/webserver/web_handlers_preview.cpp
-    src/core/webserver/web_handlers_duplicates.cpp
     src/services/eject_service.cpp
     src/orchestration/integrity_check_service.cpp
-    src/core/webserver/web_handlers_cache.cpp
-    src/core/server_static_file_handler.cpp
     src/database/database_service.cpp
     src/database/session/session_manager.cpp
     src/database/user_settings/user_settings_ops.cpp

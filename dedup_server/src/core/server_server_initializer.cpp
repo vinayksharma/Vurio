@@ -10,7 +10,6 @@
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "database/ejected_files_ops.hpp"
-#include "core/web/web_server.hpp"
 #include "filesmanager/files_service.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "orchestration/thread_pool_manager.hpp"
@@ -123,116 +122,7 @@ namespace MediaDedup
         }
     }
 
-    bool ServerInitializer::initializeWebServer()
-    {
-        Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
-
-        try
-        {
-            // Get host and port from config
-            std::string host = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
-            int port_int = config_manager_->getPropertyValue<int>("server.port", 8080);
-            uint16_t port = static_cast<uint16_t>(port_int);
-
-            // Create web server with scheduler service
-            web_server_ = std::make_unique<WebServer>(config_manager_, host, port, scheduler_service_);
-
-            // Set up services
-            if (user_settings_service_)
-            {
-                web_server_->setUserSettingsService(user_settings_service_);
-                logger.information("UserSettingsService set on web server");
-            }
-            else
-            {
-                logger.warning("UserSettingsService is null - not setting on web server");
-            }
-
-            if (files_service_)
-            {
-                web_server_->setFilesService(files_service_);
-                logger.information("FilesService set on web server");
-            }
-            else
-            {
-                logger.warning("FilesService is null - not setting on web server");
-            }
-
-            if (scanned_files_service_)
-            {
-                web_server_->setScannedFilesService(scanned_files_service_);
-                logger.information("ScannedFilesService set on web server");
-            }
-            else
-            {
-                logger.warning("ScannedFilesService is null - not setting on web server");
-            }
-
-            if (tpm_)
-            {
-                web_server_->setThreadPoolManager(tpm_);
-                logger.information("ThreadPoolManager set on web server");
-            }
-            else
-            {
-                logger.warning("ThreadPoolManager is null - not setting on web server");
-            }
-
-            // Set duplicate finder on web server for status endpoint
-            if (duplicate_finder_)
-            {
-                web_server_->setDuplicateFinder(duplicate_finder_);
-                logger.information("DuplicateFinder set on web server");
-            }
-            else
-            {
-                logger.warning("DuplicateFinder is null - not setting on web server");
-            }
-
-            // Set database manager and thumbnail cache on web server for thumbnail endpoint
-            auto db_shared = database_manager_; // CC-5: genuine shared ownership
-            if (db_shared)
-            {
-                web_server_->setDatabaseManager(db_shared);
-                logger.information("DatabaseManager set on web server");
-            }
-
-            if (thumbnail_disk_cache_)
-            {
-                web_server_->setThumbnailCache(thumbnail_disk_cache_);
-                logger.information("ThumbnailCache set on web server");
-            }
-            else
-            {
-                logger.warning("ThumbnailCache is null - not setting on web server");
-            }
-
-            if (transcoding_disk_cache_)
-            {
-                web_server_->setTranscodingCache(transcoding_disk_cache_);
-                logger.information("TranscodingCache set on web server for thumbnail API");
-            }
-            else
-            {
-                logger.warning("Transcoding cache is null - not setting on web server");
-            }
-
-            // Start the web server
-            if (!web_server_->start())
-            {
-                logger.error("Failed to start web server");
-                return false;
-            }
-
-            logger.information("Web server started on %s:%u", host, static_cast<unsigned int>(port));
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            logger.error("Failed to initialize web server: %s", e.what());
-            return false;
-        }
-    }
+    // AR-3: initializeWebServer() deleted with the legacy HTTP surface.
 
     bool ServerInitializer::initializeTPM()
     {
@@ -537,10 +427,4 @@ namespace MediaDedup
         config_manager_->setFileChangeCallback(callback);
     }
 
-    void ServerInitializer::setupRequestHandlers()
-    {
-        // This would be implemented based on the existing web server setup
-        // For now, we'll leave it as a placeholder since the web server
-        // handles its own request handler setup
-    }
 }

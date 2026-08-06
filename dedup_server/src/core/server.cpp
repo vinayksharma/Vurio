@@ -3,7 +3,7 @@
  * Purpose: Implements the main server application (MediaDedupServer).
  * Summary:
  *   - Parses CLI options, initializes configuration and subsystems
- *   - Starts HTTP web server and orchestrated services (DB, TPM, scheduler)
+ *   - Starts the gRPC server and orchestrated services (DB, TPM, scheduler)
  *   - Subscribes to console events and handles graceful shutdown
  * Usage:
  *   - Linked into the media_dedup_server executable (see CMakeLists.txt)
@@ -69,12 +69,6 @@ namespace MediaDedup
                 .required(false)
                 .repeatable(false)
                 .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleDebug)));
-
-        options.addOption(
-            Poco::Util::Option("web", "w", "Start web server")
-                .required(false)
-                .repeatable(false)
-                .callback(Poco::Util::OptionCallback<MediaDedupServer>(this, &MediaDedupServer::handleWeb)));
     }
 
     void MediaDedupServer::handleOption(const std::string &name, const std::string &value)
@@ -101,11 +95,6 @@ namespace MediaDedup
     void MediaDedupServer::handleDebug(const std::string &name, const std::string &value)
     {
         // For now, this is just parsed to avoid exception.
-    }
-
-    void MediaDedupServer::handleWeb(const std::string &name, const std::string &value)
-    {
-        start_web_server_ = true;
     }
 
     int MediaDedupServer::main(const std::vector<std::string> &args)
@@ -179,47 +168,15 @@ namespace MediaDedup
                 return Application::EXIT_CONFIG;
             }
 
-            // Initialize and start web server (after all services are ready)
-            if (start_web_server_)
-            {
-                if (!initializer.initializeWebServer())
-                {
-                    logger_.error("Failed to initialize web server");
-                    return Application::EXIT_CONFIG;
-                }
-            }
-            else
-            {
-                logger_.information("Web server not started (no -web parameter provided)");
-            }
-
-
 
             // Setup configuration change callback
             initializer.setupConfigChangeCallback([this, &initializer](const std::string &file_path)
                                                   {
                 try {
                     // Handle configuration changes
-                    std::string new_host = config_manager_->getPropertyValue<std::string>("server.host", server_host_);
-                    int new_port_i = config_manager_->getPropertyValue<int>("server.port", static_cast<int>(server_port_));
-                    uint16_t new_port = static_cast<uint16_t>(new_port_i);
                     std::string new_log_level = config_manager_->getPropertyValue<std::string>("logging.level", logging_level_);
                     int new_acquire_timeout = config_manager_->getPropertyValue<int>("database.session.acquireTimeoutMs", 3000);
                     std::string new_mode = config_manager_->getPropertyValue<std::string>("server.mode", server_mode_);
-
-                    if (new_host != server_host_ || new_port != server_port_) {
-                        logger_.information("Configuration change detected (host/port). Restarting web server...");
-                        logger_.information("Old: " + server_host_ + ":" + std::to_string(server_port_) +
-                                            " -> New: " + new_host + ":" + std::to_string(new_port));
-
-                        server_host_ = new_host;
-                        server_port_ = new_port;
-                        if (web_server_) {
-                            web_server_->setHost(server_host_);
-                            web_server_->setPort(server_port_);
-                            web_server_->restart();
-                        }
-                    }
 
                     if (new_log_level != logging_level_)
                     {
@@ -257,7 +214,6 @@ namespace MediaDedup
 
             // Get initialized components
             database_manager_ = std::move(initializer.getDatabaseManager());
-            web_server_ = std::move(initializer.getWebServer());
             tpm_ = initializer.getTPM();
             scheduler_service_ = initializer.getSchedulerService();
             files_manager_ = initializer.getFilesManager();
@@ -279,8 +235,6 @@ namespace MediaDedup
             }
 
             // Initialize server variables for logging
-            server_host_ = config_manager_->getPropertyValue<std::string>("server.host", "0.0.0.0");
-            server_port_ = static_cast<uint16_t>(config_manager_->getPropertyValue<int>("server.port", 8080));
             database_path_ = config_manager_->getPropertyValue<std::string>("database.path", "data/dedup_server.db");
             logging_level_ = config_manager_->getPropertyValue<std::string>("logging.level", "info");
             server_mode_ = "EMBEDDING"; // Single mode operation
@@ -320,7 +274,6 @@ namespace MediaDedup
                 ServerShutdown shutdown_handler(config_manager_);
                 shutdown_handler.handleShutdown(
                     database_manager_,
-                    web_server_,
                     tpm_,
                     scheduler_service_,
                     files_manager_,
@@ -347,7 +300,6 @@ namespace MediaDedup
             files_manager_.reset();
             media_processor_.reset();
             tpm_.reset();
-            web_server_.reset();
             database_manager_.reset();
 
             // Hard-exit to bypass global/static destructors in third-party libs that may abort
@@ -428,12 +380,9 @@ namespace MediaDedup
                 break;
 
             case ConsoleEventType::COMMAND_RESTART:
-                logger_.information("Received restart command");
-                if (web_server_)
-                {
-                    logger_.information("Restarting web server...");
-                    web_server_->restart();
-                }
+                // AR-3: the legacy HTTP server is gone; nothing to restart
+                // in-process (the launcher restarts the whole server).
+                logger_.information("Restart command is a no-op (legacy web server removed in AR-3)");
                 break;
 
             case ConsoleEventType::COMMAND_STATUS:
@@ -444,7 +393,6 @@ namespace MediaDedup
             case ConsoleEventType::COMMAND_HELP:
                 logger_.information("Available commands:");
                 logger_.information("  exit, quit, shutdown - Stop the server");
-                logger_.information("  restart - Restart the web server");
                 logger_.information("  status - Show server status");
                 logger_.information("  help - Show this help message");
                 break;
@@ -470,8 +418,7 @@ namespace MediaDedup
         logger_.information("=== Media Deduplication Server Started ===");
         logger_.information("Configuration file: " + config_manager_->getConfigFilePath());
         logger_.information("Database path: " + database_path_);
-        logger_.information("Web server: " + server_host_ + ":" + std::to_string(server_port_));
-        logger_.information("API Docs: http://" + server_host_ + ":" + std::to_string(server_port_) + "/ (Swagger UI)");
+        logger_.information("API: gRPC over /tmp/vurio_dedup.sock");
         logger_.information("==========================================");
         logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
     }

@@ -1,7 +1,6 @@
 #include "core/server_shutdown.hpp"
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
-#include "core/web/web_server.hpp"
 #include "orchestration/thread_pool_manager.hpp"
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
@@ -18,7 +17,6 @@ namespace MediaDedup
 
     void ServerShutdown::handleShutdown(
         std::shared_ptr<DatabaseManager> &database_manager,
-        std::unique_ptr<WebServer> &web_server,
         std::shared_ptr<ThreadPoolManager> &tpm,
         std::shared_ptr<Orchestration::SchedulerService> &scheduler_service,
         std::shared_ptr<Orchestration::FilesManager> &files_manager,
@@ -142,29 +140,6 @@ namespace MediaDedup
         catch (...)
         {
             logger.error("Unknown exception during thread pool manager shutdown");
-        }
-
-        // Stop web server
-        try
-        {
-            if (web_server)
-            {
-                logger.debug("Stopping web server...");
-                web_server->stop();
-                logger.debug("Web server stopped successfully");
-            }
-            else
-            {
-                logger.debug("Web server is null, skipping");
-            }
-        }
-        catch (const std::exception &e)
-        {
-            logger.error("Exception during web server shutdown: %s", e.what());
-        }
-        catch (...)
-        {
-            logger.error("Unknown exception during web server shutdown");
         }
 
         // Cleanup database

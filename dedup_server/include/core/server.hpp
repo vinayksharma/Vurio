@@ -15,7 +15,6 @@
 // Include the actual headers instead of forward declarations
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
-#include "core/web/web_server.hpp"
 #include "core/console_input_manager.hpp"
 #include "core/grpc_server/grpc_server_core.hpp"
 #include "filesmanager/files_service.hpp"
@@ -88,7 +87,6 @@ namespace MediaDedup
 
         void handleConfig(const std::string &name, const std::string &value);
         void handleDebug(const std::string &name, const std::string &value);
-        void handleWeb(const std::string &name, const std::string &value);
 
         /**
          * @brief Main application logic
@@ -102,7 +100,6 @@ namespace MediaDedup
         std::shared_ptr<DatabaseManager> database_manager_; // CC-5: real shared ownership
 
         // Server components
-        std::unique_ptr<WebServer> web_server_;
         std::unique_ptr<::MediaDedup::Core::GrpcServerCore> grpc_server_;
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
@@ -116,13 +113,10 @@ namespace MediaDedup
         // Configuration options
         std::string config_file_;
         std::string database_path_;
-        std::string server_host_;
-        uint16_t server_port_ = 0; // value-initialize; defaults applied later
         std::string logging_level_;
         std::string server_mode_;
         bool help_requested_;
         bool daemon_mode_;
-        bool start_web_server_ = false;
 
         // Logging
         Poco::Logger &logger_;
@@ -139,16 +133,7 @@ namespace MediaDedup
          */
         bool initializeDatabase();
 
-        /**
-         * @brief Initialize web server
-         * @return true if successful, false otherwise
-         */
-        bool initializeWebServer();
 
-        /**
-         * @brief Setup request handlers
-         */
-        void setupRequestHandlers();
 
         /**
          * @brief Start HTTP server
