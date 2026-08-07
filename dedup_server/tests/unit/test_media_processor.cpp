@@ -334,71 +334,25 @@ TEST_F(MediaProcessorTest, RouteToProcessor_InvalidServerMode_Works)
     EXPECT_TRUE(result);
 }
 
-TEST_F(MediaProcessorTest, RouteToProcessor_VideoFile_ReturnsTrue)
+// CL-1: photos-only product — video/audio never route to a processor,
+// even with the config flags enabled. The old stub processors returned true
+// and files got marked processed=2 with ZERO artifacts (the live bug).
+TEST_F(MediaProcessorTest, RouteToProcessor_VideoAndAudioAreUnsupported)
 {
-    std::string test_file = "/path/to/test/video.mp4";
+    std::vector<std::pair<std::string, std::string>> cases = {
+        {"/path/to/test/video.mp4", "media.video.mp4"},
+        {"/path/to/test/video.avi", "media.video.avi"},
+        {"/path/to/test/video.mov", "media.video.mov"},
+        {"/path/to/test/audio.mp3", "media.audio.mp3"},
+        {"/path/to/test/audio.wav", "media.audio.wav"},
+        {"/path/to/test/audio.flac", "media.audio.flac"}};
 
-    // Enable video format
-    config_manager_->setPropertyValue<bool>("media.video.mp4", true);
-
-    bool result = media_processor_->RouteToProcessor(test_file);
-
-    EXPECT_TRUE(result); // Should return true as video processing is now implemented
-}
-
-TEST_F(MediaProcessorTest, RouteToProcessor_AudioFile_ReturnsTrue)
-{
-    std::string test_file = "/path/to/test/audio.mp3";
-
-    // Enable audio format
-    config_manager_->setPropertyValue<bool>("media.audio.mp3", true);
-
-    bool result = media_processor_->RouteToProcessor(test_file);
-
-    EXPECT_TRUE(result); // Should return true as audio processing is now implemented
-}
-
-TEST_F(MediaProcessorTest, RouteToProcessor_MultipleVideoFormats_Work)
-{
-    // Test different video formats
-    std::vector<std::string> video_files = {
-        "/path/to/test/video.mp4",
-        "/path/to/test/video.avi",
-        "/path/to/test/video.mkv",
-        "/path/to/test/video.mov"};
-
-    for (const auto &file : video_files)
+    for (const auto &[file, config_key] : cases)
     {
-        std::string extension = file.substr(file.find_last_of('.') + 1);
-        std::string config_key = "media.video." + extension;
-
-        // Enable the video format
+        // Even an explicitly ENABLED flag must not route video/audio.
         config_manager_->setPropertyValue<bool>(config_key, true);
-
-        bool result = media_processor_->RouteToProcessor(file);
-        EXPECT_TRUE(result) << "Failed for video format: " << extension;
-    }
-}
-
-TEST_F(MediaProcessorTest, RouteToProcessor_MultipleAudioFormats_Work)
-{
-    // Test different audio formats
-    std::vector<std::string> audio_files = {
-        "/path/to/test/audio.mp3",
-        "/path/to/test/audio.wav",
-        "/path/to/test/audio.flac",
-        "/path/to/test/audio.aac"};
-
-    for (const auto &file : audio_files)
-    {
-        std::string extension = file.substr(file.find_last_of('.') + 1);
-        std::string config_key = "media.audio." + extension;
-
-        // Enable the audio format
-        config_manager_->setPropertyValue<bool>(config_key, true);
-
-        bool result = media_processor_->RouteToProcessor(file);
-        EXPECT_TRUE(result) << "Failed for audio format: " << extension;
+        EXPECT_FALSE(media_processor_->RouteToProcessor(file))
+            << "video/audio must be unsupported regardless of config: " << file;
     }
 }
 

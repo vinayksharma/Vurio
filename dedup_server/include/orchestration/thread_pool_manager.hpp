@@ -70,7 +70,7 @@ namespace MediaDedup
 
         /**
          * @brief Get current queue depth for a specific task type
-         * @param type Task type (e.g., "image_processor", "video_processor", "audio_processor")
+         * @param type Task type (e.g., "image_processor", "thumbnail_generator")
          * @return Current number of queued tasks for the specified type
          */
         size_t getQueueDepth(const std::string &type) const;

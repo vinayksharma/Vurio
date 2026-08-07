@@ -443,8 +443,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
@@ -485,8 +483,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
@@ -596,8 +592,6 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
-    ${CMAKE_SOURCE_DIR}/src/media_processors/audio_processor.cpp
-    ${CMAKE_SOURCE_DIR}/src/media_processors/video_processor.cpp
     ${CMAKE_SOURCE_DIR}/src/core/grpc_server/grpc_server_core.cpp
     ${CMAKE_BINARY_DIR}/generated/dedup.pb.cc
     ${CMAKE_BINARY_DIR}/generated/dedup.grpc.pb.cc
