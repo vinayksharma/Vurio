@@ -91,18 +91,6 @@ namespace MediaDedup
          */
         bool initialize();
 
-        /**
-         * @brief Configure image properties for optimal transcoding
-         *
-         * @param image Reference to the ImageMagick image to configure
-         */
-        void configureImageProperties(Magick::Image &image);
 
-        /**
-         * @brief Set JPEG format options for OpenCV compatibility
-         *
-         * @param image Reference to the ImageMagick image to configure
-         */
-        void setJpegFormatOptions(Magick::Image &image);
     };
 }

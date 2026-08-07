@@ -1,1219 +1,1205 @@
 {
-    "server.host": "Server Host / IP Address",
-    "server.host.long": [
-        {
-            "type": "paragraph",
-            "text": "The IP address or hostname the server will bind to. Use '0.0.0.0' to allow connections from any device on your network, or '127.0.0.1' (localhost) to restrict access to this machine only."
-        }
-    ],
-    "server.port": "Server Port",
-    "server.port.long": [
-        {
-            "type": "paragraph",
-            "text": "The network port number the server will listen on for incoming connections. Ensure this port is not blocked by your firewall and is not already in use by another application."
-        }
-    ],
-    "server.name": "Server Name",
-    "server.name.long": [
-        {
-            "type": "paragraph",
-            "text": "A descriptive name for this server instance, useful for identification in logs and monitoring."
-        }
-    ],
-    "server.processName": "Process Name",
-    "server.processName.long": [
-        {
-            "type": "paragraph",
-            "text": "The internal process name used to ensure only a single instance of the server is running at any time."
-        }
-    ],
-    "server.instanceCheck.enabled": "Enable Instance Checking",
-    "server.instanceCheck.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, the server prevents multiple instances of the application from running simultaneously, avoiding conflicts."
-        }
-    ],
-    "server.instanceCheck.bufferSize": "Instance Check Buffer Size",
-    "server.instanceCheck.bufferSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The size of the memory buffer used for checking running instances. It is recommended to leave this at its default value."
-        }
-    ],
-    "server.max_connections": "Maximum Connections",
-    "server.max_connections.long": [
-        {
-            "type": "paragraph",
-            "text": "The absolute maximum number of simultaneous client connections the server will accept before rejecting new ones."
-        }
-    ],
-    "server.timeout": "Server Timeout (Seconds)",
-    "server.timeout.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum duration in seconds the server will wait for an idle connection before automatically closing it."
-        }
-    ],
-    "database.path": "Database File Path",
-    "database.path.long": [
-        {
-            "type": "paragraph",
-            "text": "The absolute or relative path to the SQLite database file where application data will be stored."
-        }
-    ],
-    "database.session.acquireTimeoutMs": "Database Session Acquire Timeout (ms)",
-    "database.session.acquireTimeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum time in milliseconds the application will wait to acquire a database session before failing."
-        }
-    ],
-    "database.session.acquireBackoffMs": "Database Session Acquire Backoff (ms)",
-    "database.session.acquireBackoffMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The time in milliseconds to wait before retrying a failed attempt to acquire a database session."
-        }
-    ],
-    "database.session.poolMin": "Minimum Database Session Pool Size",
-    "database.session.poolMin.long": [
-        {
-            "type": "paragraph",
-            "text": "The minimum number of database sessions to keep open and ready for use at all times."
-        }
-    ],
-    "database.session.poolMax": "Maximum Database Session Pool Size",
-    "database.session.poolMax.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of concurrent database sessions allowed to be open simultaneously."
-        }
-    ],
-    "database.vector.enabled": "Enable Vector Search Index",
-    "database.vector.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Enables the sqlite-vec extension to allow highly optimized vector-based search for duplicate image detection."
-        }
-    ],
-    "database.vector.extensionPath": "Vector Extension Path",
-    "database.vector.extensionPath.long": [
-        {
-            "type": "paragraph",
-            "text": "The file path to the sqlite-vec extension binary (e.g. vec0.dylib or vec0.so). Required if vector search is enabled."
-        }
-    ],
-    "logging.level": "Logging Level",
-    "logging.level.long": [
-        {
-            "type": "paragraph",
-            "text": "The detail level of application logs. Typical values include 'debug', 'info', 'warn', and 'error'."
-        }
-    ],
-    "logging.level.options": "trace, debug, info, warn, error, fatal",
-    "logging.enable_console": "Enable Console Logging",
-    "logging.enable_console.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, log messages will be printed directly to the standard output or console."
-        }
-    ],
-    "logging.enable_file": "Enable File Logging",
-    "logging.enable_file.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, log messages will be written and saved to log files on the disk."
-        }
-    ],
-    "files.manager.enabled": "Enable File Manager",
-    "files.manager.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Enables the internal file manager responsible for scanning and tracking files."
-        }
-    ],
-    "files.manager.scan.intervalMs": "File Scan Interval (ms)",
-    "files.manager.scan.intervalMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The delay in milliseconds between consecutive file scanning operations."
-        }
-    ],
-    "scheduler.jitter.enabled": "Enable Scheduler Jitter",
-    "scheduler.jitter.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Introduces slight, random variations to task scheduling to prevent simultaneous executions that could spike resource usage."
-        }
-    ],
-    "scheduler.jitter.percent": "Scheduler Jitter Percentage",
-    "scheduler.jitter.percent.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum percentage by which scheduled task intervals can vary when jitter is enabled."
-        }
-    ],
-    "scheduler.drift.mode": "Scheduler Drift Mode",
-    "scheduler.drift.mode.long": [
-        {
-            "type": "paragraph",
-            "text": "Defines how the scheduler handles task execution delays, whether it should catch up or maintain fixed intervals."
-        }
-    ],
-    "scheduler.drift.mode.options": "anchored, catchup",
-    "scheduler.drift.maxDriftMs": "Maximum Scheduler Drift (ms)",
-    "scheduler.drift.maxDriftMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum allowed drift in milliseconds before the scheduler resets a task's timing."
-        }
-    ],
-    "scheduler.backoff.enabled": "Enable Scheduler Backoff",
-    "scheduler.backoff.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the scheduler to dynamically increase the interval between task executions when failures or idle periods occur."
-        }
-    ],
-    "scheduler.backoff.initialMs": "Initial Scheduler Backoff (ms)",
-    "scheduler.backoff.initialMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The starting delay in milliseconds when the scheduler first begins backing off a task."
-        }
-    ],
-    "scheduler.backoff.multiplier": "Scheduler Backoff Multiplier",
-    "scheduler.backoff.multiplier.long": [
-        {
-            "type": "paragraph",
-            "text": "The factor by which the backoff delay increases with each subsequent failure or retry."
-        }
-    ],
-    "scheduler.backoff.maxMs": "Maximum Scheduler Backoff (ms)",
-    "scheduler.backoff.maxMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum possible delay in milliseconds the backoff strategy will reach."
-        }
-    ],
-    "scheduler.backoff.jitterPercent": "Scheduler Backoff Jitter Percentage",
-    "scheduler.backoff.jitterPercent.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum percentage of random variation applied to backoff delays to prevent synchronized retries."
-        }
-    ],
-    "tpm.pool.max": "Maximum Thread Pool Size",
-    "tpm.pool.max.long": [
-        {
-            "type": "paragraph",
-            "text": "The absolute maximum number of worker threads the Thread Pool Manager (TPM) can spawn."
-        }
-    ],
-    "tpm.killTimeoutMs": "Thread Kill Timeout (ms)",
-    "tpm.killTimeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum time in milliseconds to wait for a thread to finish its work before forcing it to stop."
-        }
-    ],
-    "tpm.thread.idleTimeoutSeconds": "Thread Idle Timeout (Seconds)",
-    "tpm.thread.idleTimeoutSeconds.long": [
-        {
-            "type": "paragraph",
-            "text": "The time in seconds an unused thread remains active before it is automatically terminated to save resources."
-        }
-    ],
-    "tpm.types.fileScan.share": "File Scan Thread Share",
-    "tpm.types.fileScan.share.long": [
-        {
-            "type": "paragraph",
-            "text": "The relative share or proportion of the thread pool allocated specifically for file scanning tasks."
-        }
-    ],
-    "media.processor.enabled": "Enable Media Processor",
-    "media.processor.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Enables the component responsible for extracting metadata and processing media files."
-        }
-    ],
-    "media.processor.intervalMs": "Media Processor Interval (ms)",
-    "media.processor.intervalMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The delay in milliseconds between continuous media processing batches."
-        }
-    ],
-    "tpm.types.media_processor.share": "Media Processor Thread Share",
-    "tpm.types.media_processor.share.long": [
-        {
-            "type": "paragraph",
-            "text": "The proportion of the thread pool allocated for general media processing tasks."
-        }
-    ],
-    "tpm.types.image_processor.share": "Image Processor Thread Share",
-    "tpm.types.image_processor.share.long": [
-        {
-            "type": "paragraph",
-            "text": "Reserved proportion of the thread pool for specialized image processing tasks."
-        }
-    ],
-    "tpm.types.audio_processor.share": "Audio Processor Thread Share",
-    "tpm.types.audio_processor.share.long": [
-        {
-            "type": "paragraph",
-            "text": "Reserved proportion of the thread pool for specialized audio processing tasks."
-        }
-    ],
-    "tpm.types.video_processor.share": "Video Processor Thread Share",
-    "tpm.types.video_processor.share.long": [
-        {
-            "type": "paragraph",
-            "text": "Reserved proportion of the thread pool for specialized video processing tasks."
-        }
-    ],
-    "media.image.timeoutMs": "Image Processing Timeout (ms)",
-    "media.image.timeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum time in milliseconds allowed to process a single image before giving up."
-        }
-    ],
-    "media.image.retry.enabled": "Enable Image Processing Retries",
-    "media.image.retry.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically retry processing an image if a temporary error occurs."
-        }
-    ],
-    "media.image.retry.maxAttempts": "Maximum Image Processing Retries",
-    "media.image.retry.maxAttempts.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of times to retry processing an image after the initial attempt fails."
-        }
-    ],
-    "media.image.retry.baseDelayMs": "Image Retry Base Delay (ms)",
-    "media.image.retry.baseDelayMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The starting delay in milliseconds before the first retry attempt for image processing."
-        }
-    ],
-    "media.image.onnx.modelPath": "ONNX Model Path",
-    "media.image.onnx.modelPath.long": [
-        {
-            "type": "paragraph",
-            "text": "The file path to the ONNX machine learning model used for extracting image features and embeddings."
-        }
-    ],
-    "media.image.onnx.inputSize": "ONNX Model Input Size",
-    "media.image.onnx.inputSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The required dimensions (width and height) for images fed into the ONNX model."
-        }
-    ],
-    "media.image.onnx.sessionCache.enabled": "Enable ONNX Session Caching",
-    "media.image.onnx.sessionCache.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Keeps ONNX inference sessions in memory to significantly speed up processing multiple images."
-        }
-    ],
-    "media.image.onnx.sessionCache.maxSessions": "Maximum Cached ONNX Sessions",
-    "media.image.onnx.sessionCache.maxSessions.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of ONNX sessions to keep cached in memory simultaneously."
-        }
-    ],
-    "media.image.embeddingDim": "Image Embedding Dimension",
-    "media.image.embeddingDim.long": [
-        {
-            "type": "paragraph",
-            "text": "The size of the mathematical vector (embedding) generated for each image. Must match the output size of the ONNX model."
-        }
-    ],
-    "debug.enabled": "Enable Debug Mode",
-    "debug.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Activates additional internal checks, metrics, and capabilities used for troubleshooting."
-        }
-    ],
-    "debug.verbose": "Enable Verbose Debug Output",
-    "debug.verbose.long": [
-        {
-            "type": "paragraph",
-            "text": "Produces highly detailed debug logs, useful for deep technical investigation but may impact performance."
-        }
-    ],
-    "file_monitoring.enabled": "Enable File System Monitoring",
-    "file_monitoring.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Actively listens for changes in the file system (e.g., new, modified, or deleted files) to keep the database up-to-date."
-        }
-    ],
-    "file_monitoring.interval": "File System Check Interval (ms)",
-    "file_monitoring.interval.long": [
-        {
-            "type": "paragraph",
-            "text": "The delay in milliseconds between polling the file system for updates, if continuous monitoring is not available."
-        }
-    ],
-    "validation.enabled": "Enable Data Validation",
-    "validation.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Performs checks to ensure data integrity and configuration correctness."
-        }
-    ],
-    "validation.strict": "Enable Strict Data Validation",
-    "validation.strict.long": [
-        {
-            "type": "paragraph",
-            "text": "Enforces rigorous validation rules, refusing to start or process data if any minor inconsistencies are found."
-        }
-    ],
-    "duplicates.finder.enabled": "Enable Duplicate Detection",
-    "duplicates.finder.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Activates the core duplicate finder engine to analyze and identify similar or identical files."
-        }
-    ],
-    "duplicates.finder.intervalMs": "Duplicate Detection Interval (ms)",
-    "duplicates.finder.intervalMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The delay in milliseconds between automated duplicate detection sweeps."
-        }
-    ],
-    "duplicates.finder.batchSize": "Duplicate Detection Batch Size",
-    "duplicates.finder.batchSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The number of files processed together in a single duplicate detection operation."
-        }
-    ],
-    "duplicates.finder.maxGroupSize": "Maximum Duplicate Group Size",
-    "duplicates.finder.maxGroupSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The absolute maximum number of similar files allowed to be clustered into a single duplicate group."
-        }
-    ],
-    "duplicates.finder.knnK": "Vector Search Candidate Count (K)",
-    "duplicates.finder.knnK.long": [
-        {
-            "type": "paragraph",
-            "text": "The number of nearest neighbors to retrieve during a vector search. A higher value increases accuracy but requires more computation."
-        }
-    ],
-    "tpm.types.duplicate_finder.share": "Duplicate Finder Thread Share",
-    "tpm.types.duplicate_finder.share.long": [
-        {
-            "type": "paragraph",
-            "text": "The proportion of the thread pool allocated for identifying duplicate files."
-        }
-    ],
-    "duplicates.threshold.similarity": "Similarity Match Threshold",
-    "duplicates.threshold.similarity.long": [
-        {
-            "type": "headline",
-            "text": "This dual slider controls two key properties that define how images are grouped:"
-        },
-        {
-            "type": "paragraph",
-            "text": "**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together."
-        },
-        {
-            "type": "paragraph",
-            "text": "**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate."
-        },
-        {
-            "type": "paragraph",
-            "text": "**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject."
-        }
-    ],
-    "duplicates.threshold.duplicate": "Exact Duplicate Match Threshold",
-    "duplicates.threshold.duplicate.long": [
-        {
-            "type": "headline",
-            "text": "This dual slider controls two key properties that define how images are grouped:"
-        },
-        {
-            "type": "paragraph",
-            "text": "**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together."
-        },
-        {
-            "type": "paragraph",
-            "text": "**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate."
-        },
-        {
-            "type": "paragraph",
-            "text": "**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject."
-        }
-    ],
-    "duplicates.purity.order": "Purity Rules Selection Order",
-    "duplicates.purity.order.long": [
-        {
-            "type": "paragraph",
-            "text": "A prioritized list of criteria (like resolution, file size, or date) used to automatically determine the 'best' original file in a duplicate group."
-        }
-    ],
-    "cache.thumbnail.location": "Thumbnail Cache Directory",
-    "cache.thumbnail.location.long": [
-        {
-            "type": "paragraph",
-            "text": "The physical directory path where generated image thumbnails are stored to speed up the UI."
-        }
-    ],
-    "cache.disk.location": "Disk Cache Directory",
-    "cache.disk.location.long": [
-        {
-            "type": "paragraph",
-            "text": "The physical directory path where media previews and transcoded files are cached."
-        }
-    ],
-    "cache.thumbnail.size_limit_mb": "Thumbnail Cache Size Limit (MB)",
-    "cache.thumbnail.size_limit_mb.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum amount of disk space in Megabytes the thumbnail cache is allowed to use. Oldest items are removed when this limit is reached."
-        }
-    ],
-    "cache.disk.size_limit_mb": "Disk Cache Size Limit (MB)",
-    "cache.disk.size_limit_mb.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum amount of disk space in Megabytes the general disk cache can consume."
-        }
-    ],
-    "thumbnail.default.size": "Default Thumbnail Size",
-    "thumbnail.default.size.long": [
-        {
-            "type": "paragraph",
-            "text": "The standard dimension (in pixels) for generated thumbnails."
-        }
-    ],
-    "thumbnail.allowed.sizes": "Allowed Thumbnail Sizes",
-    "thumbnail.allowed.sizes.long": [
-        {
-            "type": "paragraph",
-            "text": "A list of allowed dimensions for thumbnails. The system will only generate thumbnails matching these exact sizes."
-        }
-    ],
-    "thumbnail.generation.timeoutMs": "Thumbnail Generation Timeout (ms)",
-    "thumbnail.generation.timeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum time in milliseconds to spend attempting to generate a single thumbnail."
-        }
-    ],
-    "thumbnail.jpeg.quality": "Thumbnail JPEG Quality",
-    "thumbnail.jpeg.quality.long": [
-        {
-            "type": "paragraph",
-            "text": "The compression quality level for generated thumbnails, ranging from 0 (lowest quality, smallest file) to 100 (highest quality, largest file)."
-        }
-    ],
-    "thumbnail.qhd_preview.threshold_mb": "QHD Preview Size Threshold (MB)",
-    "thumbnail.qhd_preview.threshold_mb.long": [
-        {
-            "type": "paragraph",
-            "text": "Images larger than this file size will automatically have a lighter 'QHD' preview generated to improve loading times."
-        }
-    ],
-    "tpm.types.thumbnail_generator.share": "Thumbnail Generator Thread Share",
-    "tpm.types.thumbnail_generator.share.long": [
-        {
-            "type": "paragraph",
-            "text": "The proportion of the thread pool allocated for generating image and video thumbnails."
-        }
-    ],
-    "media.filter.enabled": "Enable Media Filtering",
-    "media.filter.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, media files that do not meet certain criteria (like minimum size) will be ignored."
-        }
-    ],
-    "media.filter.min_file_size_kb": "Minimum File Size Filter (KB)",
-    "media.filter.min_file_size_kb.long": [
-        {
-            "type": "paragraph",
-            "text": "Files smaller than this size in Kilobytes will be entirely ignored by the system."
-        }
-    ],
-    "media.filter.low_res.min_width": "Minimum Image Width Filter",
-    "media.filter.low_res.min_width.long": [
-        {
-            "type": "paragraph",
-            "text": "Images narrower than this width in pixels will be flagged as low resolution or ignored."
-        }
-    ],
-    "media.filter.low_res.min_height": "Minimum Image Height Filter",
-    "media.filter.low_res.min_height.long": [
-        {
-            "type": "paragraph",
-            "text": "Images shorter than this height in pixels will be flagged as low resolution or ignored."
-        }
-    ],
-    "media.filter.low_res.apply_after_date": "Low Resolution Filter Start Date",
-    "media.filter.low_res.apply_after_date.long": [
-        {
-            "type": "paragraph",
-            "text": "The date (in YYYY-MM-DD format) after which the low-resolution filters will be strictly applied. Older files may be exempt."
-        }
-    ],
-    "media.images.jpg": "Enable JPEG Processing (.jpg)",
-    "media.images.jpg.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process files with the .jpg extension."
-        }
-    ],
-    "media.images.jpeg": "Enable JPEG Processing (.jpeg)",
-    "media.images.jpeg.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process files with the .jpeg extension."
-        }
-    ],
-    "media.images.png": "Enable PNG Processing",
-    "media.images.png.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process PNG image files."
-        }
-    ],
-    "media.images.bmp": "Enable BMP Processing",
-    "media.images.bmp.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process BMP image files."
-        }
-    ],
-    "media.images.gif": "Enable GIF Processing",
-    "media.images.gif.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process GIF image files."
-        }
-    ],
-    "media.images.tiff": "Enable TIFF Processing (.tiff)",
-    "media.images.tiff.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process TIFF image files."
-        }
-    ],
-    "media.images.webp": "Enable WebP Processing",
-    "media.images.webp.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process WebP image files."
-        }
-    ],
-    "media.images.jp2": "Enable JPEG 2000 Processing",
-    "media.images.jp2.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process JPEG 2000 image files."
-        }
-    ],
-    "media.images.ppm": "Enable PPM Processing",
-    "media.images.ppm.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process Portable Pixmap (PPM) image files."
-        }
-    ],
-    "media.images.pgm": "Enable PGM Processing",
-    "media.images.pgm.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process Portable Graymap (PGM) image files."
-        }
-    ],
-    "media.images.pbm": "Enable PBM Processing",
-    "media.images.pbm.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process Portable Bitmap (PBM) image files."
-        }
-    ],
-    "media.images.pnm": "Enable PNM Processing",
-    "media.images.pnm.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process Portable Anymap (PNM) image files."
-        }
-    ],
-    "media.images.exr": "Enable EXR Processing",
-    "media.images.exr.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process OpenEXR high dynamic range image files."
-        }
-    ],
-    "media.images.hdr": "Enable HDR Processing",
-    "media.images.hdr.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process High Dynamic Range (HDR) image files."
-        }
-    ],
-    "media.images.bmp.transcode": "Transcode BMP to JPEG",
-    "media.images.bmp.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts BMP files to JPEG format internally before processing embeddings to improve speed and compatibility."
-        }
-    ],
-    "media.images.dib.transcode": "Transcode DIB to JPEG",
-    "media.images.dib.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts DIB files to JPEG format internally before processing."
-        }
-    ],
-    "media.images.tif.transcode": "Transcode TIFF (.tif) to JPEG",
-    "media.images.tif.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts .tif files to JPEG format internally before processing."
-        }
-    ],
-    "media.images.tiff.transcode": "Transcode TIFF (.tiff) to JPEG",
-    "media.images.tiff.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts .tiff files to JPEG format internally before processing."
-        }
-    ],
-    "media.images.gif.transcode": "Transcode GIF to JPEG",
-    "media.images.gif.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts GIF files (typically the first frame) to JPEG format internally before processing."
-        }
-    ],
-    "media.images.jp2.transcode": "Transcode JPEG 2000 to JPEG",
-    "media.images.jp2.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts JPEG 2000 files to standard JPEG format internally before processing."
-        }
-    ],
-    "media.images.exr.transcode": "Transcode EXR to JPEG",
-    "media.images.exr.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts OpenEXR files to JPEG format internally before processing."
-        }
-    ],
-    "media.images.hdr.transcode": "Transcode HDR to JPEG",
-    "media.images.hdr.transcode.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically converts HDR image files to standard JPEG format internally before processing."
-        }
-    ],
-    "media.video.mp4": "Enable MP4 Video Processing",
-    "media.video.mp4.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process MP4 video files."
-        }
-    ],
-    "media.video.avi": "Enable AVI Video Processing",
-    "media.video.avi.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process AVI video files."
-        }
-    ],
-    "media.video.mov": "Enable MOV Video Processing",
-    "media.video.mov.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Apple QuickTime MOV video files."
-        }
-    ],
-    "media.video.mkv": "Enable MKV Video Processing",
-    "media.video.mkv.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Matroska (MKV) video files."
-        }
-    ],
-    "media.video.wmv": "Enable WMV Video Processing",
-    "media.video.wmv.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Windows Media Video (WMV) files."
-        }
-    ],
-    "media.video.flv": "Enable FLV Video Processing",
-    "media.video.flv.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Flash Video (FLV) files."
-        }
-    ],
-    "media.video.webm": "Enable WebM Video Processing",
-    "media.video.webm.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process WebM video files."
-        }
-    ],
-    "media.video.m4v": "Enable M4V Video Processing",
-    "media.video.m4v.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Apple M4V video files."
-        }
-    ],
-    "media.video.mpg": "Enable MPG Video Processing",
-    "media.video.mpg.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process MPG video files."
-        }
-    ],
-    "media.video.mpeg": "Enable MPEG Video Processing",
-    "media.video.mpeg.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process MPEG video files."
-        }
-    ],
-    "media.video.ts": "Enable TS Video Processing",
-    "media.video.ts.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process MPEG Transport Stream (TS) video files."
-        }
-    ],
-    "media.video.mts": "Enable MTS Video Processing",
-    "media.video.mts.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process AVCHD (MTS) video files."
-        }
-    ],
-    "media.video.m2ts": "Enable M2TS Video Processing",
-    "media.video.m2ts.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Blu-ray Disc Audio-Video (M2TS) files."
-        }
-    ],
-    "media.video.ogv": "Enable OGV Video Processing",
-    "media.video.ogv.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Ogg Video (OGV) files."
-        }
-    ],
-    "media.audio.mp3": "Enable MP3 Audio Processing",
-    "media.audio.mp3.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process MP3 audio files."
-        }
-    ],
-    "media.audio.wav": "Enable WAV Audio Processing",
-    "media.audio.wav.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process WAV audio files."
-        }
-    ],
-    "media.audio.flac": "Enable FLAC Audio Processing",
-    "media.audio.flac.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process FLAC lossless audio files."
-        }
-    ],
-    "media.audio.ogg": "Enable OGG Audio Processing",
-    "media.audio.ogg.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Ogg Vorbis audio files."
-        }
-    ],
-    "media.audio.m4a": "Enable M4A Audio Processing",
-    "media.audio.m4a.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process M4A audio files."
-        }
-    ],
-    "media.audio.aac": "Enable AAC Audio Processing",
-    "media.audio.aac.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Advanced Audio Coding (AAC) files."
-        }
-    ],
-    "media.audio.opus": "Enable Opus Audio Processing",
-    "media.audio.opus.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Opus audio files."
-        }
-    ],
-    "media.audio.wma": "Enable WMA Audio Processing",
-    "media.audio.wma.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Windows Media Audio (WMA) files."
-        }
-    ],
-    "media.audio.aiff": "Enable AIFF Audio Processing",
-    "media.audio.aiff.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Audio Interchange File Format (AIFF) files."
-        }
-    ],
-    "media.audio.alac": "Enable ALAC Audio Processing",
-    "media.audio.alac.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Apple Lossless Audio Codec (ALAC) files."
-        }
-    ],
-    "media.audio.amr": "Enable AMR Audio Processing",
-    "media.audio.amr.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process Adaptive Multi-Rate (AMR) audio files."
-        }
-    ],
-    "media.audio.au": "Enable AU Audio Processing",
-    "media.audio.au.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to detect and process standard AU audio files."
-        }
-    ],
-    "media.images.raw.cr2": "Enable Canon CR2 RAW",
-    "media.images.raw.cr2.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Canon CR2 raw image files."
-        }
-    ],
-    "media.images.raw.nef": "Enable Nikon NEF RAW",
-    "media.images.raw.nef.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Nikon NEF raw image files."
-        }
-    ],
-    "media.images.raw.arw": "Enable Sony ARW RAW",
-    "media.images.raw.arw.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Sony ARW raw image files."
-        }
-    ],
-    "media.images.raw.dng": "Enable Adobe DNG RAW",
-    "media.images.raw.dng.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Adobe Digital Negative (DNG) raw image files."
-        }
-    ],
-    "media.images.raw.raf": "Enable Fujifilm RAF RAW",
-    "media.images.raw.raf.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Fujifilm RAF raw image files."
-        }
-    ],
-    "media.images.raw.rw2": "Enable Panasonic RW2 RAW",
-    "media.images.raw.rw2.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Panasonic RW2 raw image files."
-        }
-    ],
-    "media.images.raw.orf": "Enable Olympus ORF RAW",
-    "media.images.raw.orf.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Olympus ORF raw image files."
-        }
-    ],
-    "media.images.raw.pef": "Enable Pentax PEF RAW",
-    "media.images.raw.pef.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Pentax PEF raw image files."
-        }
-    ],
-    "media.images.raw.srw": "Enable Samsung SRW RAW",
-    "media.images.raw.srw.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Samsung SRW raw image files."
-        }
-    ],
-    "media.images.raw.kdc": "Enable Kodak KDC RAW",
-    "media.images.raw.kdc.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Kodak KDC raw image files."
-        }
-    ],
-    "media.images.raw.dcr": "Enable Kodak DCR RAW",
-    "media.images.raw.dcr.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Kodak DCR raw image files."
-        }
-    ],
-    "media.images.raw.mos": "Enable Leaf MOS RAW",
-    "media.images.raw.mos.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Leaf MOS raw image files."
-        }
-    ],
-    "media.images.raw.mrw": "Enable Minolta MRW RAW",
-    "media.images.raw.mrw.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Minolta MRW raw image files."
-        }
-    ],
-    "media.images.raw.raw": "Enable Generic RAW",
-    "media.images.raw.raw.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of generically named .raw image files."
-        }
-    ],
-    "media.images.raw.bay": "Enable Casio BAY RAW",
-    "media.images.raw.bay.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Casio BAY raw image files."
-        }
-    ],
-    "media.images.raw.3fr": "Enable Hasselblad 3FR RAW",
-    "media.images.raw.3fr.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Hasselblad 3FR raw image files."
-        }
-    ],
-    "media.images.raw.fff": "Enable Hasselblad FFF RAW",
-    "media.images.raw.fff.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Hasselblad FFF raw image files."
-        }
-    ],
-    "media.images.raw.mef": "Enable Mamiya MEF RAW",
-    "media.images.raw.mef.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Mamiya MEF raw image files."
-        }
-    ],
-    "media.images.raw.iiq": "Enable Phase One IIQ RAW",
-    "media.images.raw.iiq.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Phase One IIQ raw image files."
-        }
-    ],
-    "media.images.raw.rwz": "Enable Rawzor RWZ RAW",
-    "media.images.raw.rwz.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Rawzor RWZ raw image files."
-        }
-    ],
-    "media.images.raw.nrw": "Enable Nikon NRW RAW",
-    "media.images.raw.nrw.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Nikon NRW raw image files."
-        }
-    ],
-    "media.images.raw.rwl": "Enable Leica RWL RAW",
-    "media.images.raw.rwl.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows processing of Leica RWL raw image files."
-        }
-    ],
-    "server.http.threadPool.maxThreads": "HTTP Maximum Threads",
-    "server.http.threadPool.maxThreads.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of threads dedicated to handling HTTP requests."
-        }
-    ],
-    "server.http.threadPool.maxQueued": "HTTP Maximum Queued Requests",
-    "server.http.threadPool.maxQueued.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of HTTP requests that can be queued waiting for a thread before the server starts rejecting new requests."
-        }
-    ],
-    "database.sqlite.cacheSize": "SQLite Cache Size",
-    "database.sqlite.cacheSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The number of pages SQLite keeps in memory to speed up database reads."
-        }
-    ],
-    "database.sqlite.tempStore": "SQLite Temporary Store",
-    "database.sqlite.tempStore.long": [
-        {
-            "type": "paragraph",
-            "text": "Determines where SQLite stores temporary tables and indices. Using 'memory' is faster but requires more RAM."
-        }
-    ],
-    "database.sqlite.tempStore.options": "memory, file, default",
-    "files.manager.useInMemoryIndex": "Use In-Memory File Index",
-    "files.manager.useInMemoryIndex.long": [
-        {
-            "type": "paragraph",
-            "text": "Caches the file structure in RAM for much faster file lookups, at the cost of higher memory usage."
-        }
-    ],
-    "files.service.immediateJobTrigger.enabled": "Enable Immediate Job Triggers",
-    "files.service.immediateJobTrigger.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the file service to bypass the scheduler and instantly trigger scanning or processing when changes are detected."
-        }
-    ],
-    "files.service.immediateJobTrigger.timeoutMs": "Immediate Job Trigger Timeout (ms)",
-    "files.service.immediateJobTrigger.timeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The debounce or timeout duration before firing an immediate file change event, to group rapid changes together."
-        }
-    ],
-    "tpm.thread.stackSizeKB": "Thread Stack Size (KB)",
-    "tpm.thread.stackSizeKB.long": [
-        {
-            "type": "paragraph",
-            "text": "The amount of memory allocated to each worker thread's stack. Adjust only if experiencing stack overflow issues."
-        }
-    ],
-    "tpm.mediaGeneration.maxConcurrent": "Max Concurrent Thumbnail/Preview Generations",
-    "tpm.mediaGeneration.maxConcurrent.long": [
-        {
-            "type": "paragraph",
-            "text": "Combined cap on thumbnail and preview generation tasks running at once. Each task launches an external ImageMagick decode that can use hundreds of MB for RAW files; unbounded bursts cause transient decode failures under memory pressure. Default 4."
-        }
-    ],
-    "tools.imagemagick.path": "ImageMagick Binary Path",
-    "tools.imagemagick.path.long": [
-        {
-            "type": "paragraph",
-            "text": "Full path to the ImageMagick 'magick' executable used for thumbnail and preview generation. Defaults to the Homebrew location /opt/homebrew/bin/magick."
-        }
-    ],
-    "media.processor.maxQueueSize": "Media Processor Max Queue Size",
-    "media.processor.maxQueueSize.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of media items that can be queued up for processing simultaneously."
-        }
-    ],
-    "media.image.transcoding.enabled": "Enable Image Transcoding",
-    "media.image.transcoding.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Globally enables transcoding images from incompatible formats into standard formats before processing."
-        }
-    ],
-    "media.image.transcoding.timeoutMs": "Image Transcoding Timeout (ms)",
-    "media.image.transcoding.timeoutMs.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum time allowed for transcoding a single image before giving up."
-        }
-    ],
-    "media.image.transcoding.preserveMetadata": "Preserve Transcoded Image Metadata",
-    "media.image.transcoding.preserveMetadata.long": [
-        {
-            "type": "paragraph",
-            "text": "Ensures that EXIF data, dates, and other metadata are copied from the original image to the transcoded image."
-        }
-    ],
-    "media.images.tif": "Enable TIFF Processing (.tif)",
-    "media.images.tif.long": [
-        {
-            "type": "paragraph",
-            "text": "Allows the system to read, index, and process files with the .tif extension."
-        }
-    ],
-    "duplicates.representative.strategy": "Duplicate Representative Strategy",
-    "duplicates.representative.strategy.long": [
-        {
-            "type": "paragraph",
-            "text": "The algorithmic strategy used to determine which file in a duplicate group should be considered the primary or 'best' file."
-        }
-    ],
-    "cache.thumbnail.clearOnStartup": "Clear Thumbnail Cache on Startup",
-    "cache.thumbnail.clearOnStartup.long": [
-        {
-            "type": "paragraph",
-            "text": "Automatically empties the thumbnail directory every time the server starts. Useful for development or resolving cache corruption."
-        }
-    ],
-    "thumbnail.pipeline.enabled": "Enable Advanced Thumbnail Pipeline",
-    "thumbnail.pipeline.enabled.long": [
-        {
-            "type": "paragraph",
-            "text": "Enables the new structured thumbnail processing pipeline for generating standard thumbnails."
-        }
-    ],
-    "thumbnail.pipeline.onlyIfMissing": "Only Generate Missing Thumbnails",
-    "thumbnail.pipeline.onlyIfMissing.long": [
-        {
-            "type": "paragraph",
-            "text": "When enabled, the pipeline skips thumbnail generation if an existing thumbnail of the correct size is already present."
-        }
-    ],
-    "thumbnail.pipeline.size": "Pipeline Thumbnail Size",
-    "thumbnail.pipeline.size.long": [
-        {
-            "type": "paragraph",
-            "text": "The target dimension in pixels generated by the advanced thumbnail pipeline."
-        }
-    ],
-    "scheduler.jobs": "Static Scheduler Jobs",
-    "scheduler.jobs.long": [
-        {
-            "type": "paragraph",
-            "text": "A comma-separated list of manually defined static jobs to run on startup. Typically leave empty for automatic scheduling."
-        }
-    ],
-    "scheduler.maxConsecutiveFailures": "Scheduler Max Consecutive Failures",
-    "scheduler.maxConsecutiveFailures.long": [
-        {
-            "type": "paragraph",
-            "text": "The maximum number of times a scheduled task can fail in a row before the scheduler disables it or alerts."
-        }
-    ]
+  "server.host": "Server Host / IP Address",
+  "server.host.long": [
+    {
+      "type": "paragraph",
+      "text": "The IP address or hostname the server will bind to. Use '0.0.0.0' to allow connections from any device on your network, or '127.0.0.1' (localhost) to restrict access to this machine only."
+    }
+  ],
+  "server.port": "Server Port",
+  "server.port.long": [
+    {
+      "type": "paragraph",
+      "text": "The network port number the server will listen on for incoming connections. Ensure this port is not blocked by your firewall and is not already in use by another application."
+    }
+  ],
+  "server.name": "Server Name",
+  "server.name.long": [
+    {
+      "type": "paragraph",
+      "text": "A descriptive name for this server instance, useful for identification in logs and monitoring."
+    }
+  ],
+  "server.processName": "Process Name",
+  "server.processName.long": [
+    {
+      "type": "paragraph",
+      "text": "The internal process name used to ensure only a single instance of the server is running at any time."
+    }
+  ],
+  "server.instanceCheck.enabled": "Enable Instance Checking",
+  "server.instanceCheck.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "When enabled, the server prevents multiple instances of the application from running simultaneously, avoiding conflicts."
+    }
+  ],
+  "server.instanceCheck.bufferSize": "Instance Check Buffer Size",
+  "server.instanceCheck.bufferSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The size of the memory buffer used for checking running instances. It is recommended to leave this at its default value."
+    }
+  ],
+  "server.max_connections": "Maximum Connections",
+  "server.max_connections.long": [
+    {
+      "type": "paragraph",
+      "text": "The absolute maximum number of simultaneous client connections the server will accept before rejecting new ones."
+    }
+  ],
+  "server.timeout": "Server Timeout (Seconds)",
+  "server.timeout.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum duration in seconds the server will wait for an idle connection before automatically closing it."
+    }
+  ],
+  "database.path": "Database File Path",
+  "database.path.long": [
+    {
+      "type": "paragraph",
+      "text": "The absolute or relative path to the SQLite database file where application data will be stored."
+    }
+  ],
+  "database.session.acquireTimeoutMs": "Database Session Acquire Timeout (ms)",
+  "database.session.acquireTimeoutMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum time in milliseconds the application will wait to acquire a database session before failing."
+    }
+  ],
+  "database.session.acquireBackoffMs": "Database Session Acquire Backoff (ms)",
+  "database.session.acquireBackoffMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The time in milliseconds to wait before retrying a failed attempt to acquire a database session."
+    }
+  ],
+  "database.session.poolMin": "Minimum Database Session Pool Size",
+  "database.session.poolMin.long": [
+    {
+      "type": "paragraph",
+      "text": "The minimum number of database sessions to keep open and ready for use at all times."
+    }
+  ],
+  "database.session.poolMax": "Maximum Database Session Pool Size",
+  "database.session.poolMax.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of concurrent database sessions allowed to be open simultaneously."
+    }
+  ],
+  "database.vector.enabled": "Enable Vector Search Index",
+  "database.vector.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Enables the sqlite-vec extension to allow highly optimized vector-based search for duplicate image detection."
+    }
+  ],
+  "database.vector.extensionPath": "Vector Extension Path",
+  "database.vector.extensionPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The file path to the sqlite-vec extension binary (e.g. vec0.dylib or vec0.so). Required if vector search is enabled."
+    }
+  ],
+  "logging.level": "Logging Level",
+  "logging.level.long": [
+    {
+      "type": "paragraph",
+      "text": "The detail level of application logs. Typical values include 'debug', 'info', 'warn', and 'error'."
+    }
+  ],
+  "logging.level.options": "trace, debug, info, warn, error, fatal",
+  "logging.enable_console": "Enable Console Logging",
+  "logging.enable_console.long": [
+    {
+      "type": "paragraph",
+      "text": "When enabled, log messages will be printed directly to the standard output or console."
+    }
+  ],
+  "logging.enable_file": "Enable File Logging",
+  "logging.enable_file.long": [
+    {
+      "type": "paragraph",
+      "text": "When enabled, log messages will be written and saved to log files on the disk."
+    }
+  ],
+  "files.manager.enabled": "Enable File Manager",
+  "files.manager.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Enables the internal file manager responsible for scanning and tracking files."
+    }
+  ],
+  "files.manager.scan.intervalMs": "File Scan Interval (ms)",
+  "files.manager.scan.intervalMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The delay in milliseconds between consecutive file scanning operations."
+    }
+  ],
+  "scheduler.jitter.enabled": "Enable Scheduler Jitter",
+  "scheduler.jitter.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Introduces slight, random variations to task scheduling to prevent simultaneous executions that could spike resource usage."
+    }
+  ],
+  "scheduler.jitter.percent": "Scheduler Jitter Percentage",
+  "scheduler.jitter.percent.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum percentage by which scheduled task intervals can vary when jitter is enabled."
+    }
+  ],
+  "scheduler.drift.mode": "Scheduler Drift Mode",
+  "scheduler.drift.mode.long": [
+    {
+      "type": "paragraph",
+      "text": "Defines how the scheduler handles task execution delays, whether it should catch up or maintain fixed intervals."
+    }
+  ],
+  "scheduler.drift.mode.options": "anchored, catchup",
+  "scheduler.drift.maxDriftMs": "Maximum Scheduler Drift (ms)",
+  "scheduler.drift.maxDriftMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum allowed drift in milliseconds before the scheduler resets a task's timing."
+    }
+  ],
+  "scheduler.backoff.enabled": "Enable Scheduler Backoff",
+  "scheduler.backoff.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the scheduler to dynamically increase the interval between task executions when failures or idle periods occur."
+    }
+  ],
+  "scheduler.backoff.initialMs": "Initial Scheduler Backoff (ms)",
+  "scheduler.backoff.initialMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The starting delay in milliseconds when the scheduler first begins backing off a task."
+    }
+  ],
+  "scheduler.backoff.multiplier": "Scheduler Backoff Multiplier",
+  "scheduler.backoff.multiplier.long": [
+    {
+      "type": "paragraph",
+      "text": "The factor by which the backoff delay increases with each subsequent failure or retry."
+    }
+  ],
+  "scheduler.backoff.maxMs": "Maximum Scheduler Backoff (ms)",
+  "scheduler.backoff.maxMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum possible delay in milliseconds the backoff strategy will reach."
+    }
+  ],
+  "scheduler.backoff.jitterPercent": "Scheduler Backoff Jitter Percentage",
+  "scheduler.backoff.jitterPercent.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum percentage of random variation applied to backoff delays to prevent synchronized retries."
+    }
+  ],
+  "tpm.pool.max": "Maximum Thread Pool Size",
+  "tpm.pool.max.long": [
+    {
+      "type": "paragraph",
+      "text": "The absolute maximum number of worker threads the Thread Pool Manager (TPM) can spawn."
+    }
+  ],
+  "tpm.killTimeoutMs": "Thread Kill Timeout (ms)",
+  "tpm.killTimeoutMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum time in milliseconds to wait for a thread to finish its work before forcing it to stop."
+    }
+  ],
+  "tpm.thread.idleTimeoutSeconds": "Thread Idle Timeout (Seconds)",
+  "tpm.thread.idleTimeoutSeconds.long": [
+    {
+      "type": "paragraph",
+      "text": "The time in seconds an unused thread remains active before it is automatically terminated to save resources."
+    }
+  ],
+  "tpm.types.fileScan.share": "File Scan Thread Share",
+  "tpm.types.fileScan.share.long": [
+    {
+      "type": "paragraph",
+      "text": "The relative share or proportion of the thread pool allocated specifically for file scanning tasks."
+    }
+  ],
+  "media.processor.enabled": "Enable Media Processor",
+  "media.processor.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Enables the component responsible for extracting metadata and processing media files."
+    }
+  ],
+  "media.processor.intervalMs": "Media Processor Interval (ms)",
+  "media.processor.intervalMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The delay in milliseconds between continuous media processing batches."
+    }
+  ],
+  "tpm.types.media_processor.share": "Media Processor Thread Share",
+  "tpm.types.media_processor.share.long": [
+    {
+      "type": "paragraph",
+      "text": "The proportion of the thread pool allocated for general media processing tasks."
+    }
+  ],
+  "tpm.types.image_processor.share": "Image Processor Thread Share",
+  "tpm.types.image_processor.share.long": [
+    {
+      "type": "paragraph",
+      "text": "Reserved proportion of the thread pool for specialized image processing tasks."
+    }
+  ],
+  "tpm.types.audio_processor.share": "Audio Processor Thread Share",
+  "tpm.types.audio_processor.share.long": [
+    {
+      "type": "paragraph",
+      "text": "Reserved proportion of the thread pool for specialized audio processing tasks."
+    }
+  ],
+  "tpm.types.video_processor.share": "Video Processor Thread Share",
+  "tpm.types.video_processor.share.long": [
+    {
+      "type": "paragraph",
+      "text": "Reserved proportion of the thread pool for specialized video processing tasks."
+    }
+  ],
+  "media.image.timeoutMs": "Image Processing Timeout (ms)",
+  "media.image.timeoutMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum time in milliseconds allowed to process a single image before giving up."
+    }
+  ],
+  "media.image.retry.enabled": "Enable Image Processing Retries",
+  "media.image.retry.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically retry processing an image if a temporary error occurs."
+    }
+  ],
+  "media.image.retry.maxAttempts": "Maximum Image Processing Retries",
+  "media.image.retry.maxAttempts.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of times to retry processing an image after the initial attempt fails."
+    }
+  ],
+  "media.image.retry.baseDelayMs": "Image Retry Base Delay (ms)",
+  "media.image.retry.baseDelayMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The starting delay in milliseconds before the first retry attempt for image processing."
+    }
+  ],
+  "media.image.onnx.modelPath": "ONNX Model Path",
+  "media.image.onnx.modelPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The file path to the ONNX machine learning model used for extracting image features and embeddings."
+    }
+  ],
+  "media.image.onnx.inputSize": "ONNX Model Input Size",
+  "media.image.onnx.inputSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The required dimensions (width and height) for images fed into the ONNX model."
+    }
+  ],
+  "media.image.onnx.sessionCache.enabled": "Enable ONNX Session Caching",
+  "media.image.onnx.sessionCache.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Keeps ONNX inference sessions in memory to significantly speed up processing multiple images."
+    }
+  ],
+  "media.image.onnx.sessionCache.maxSessions": "Maximum Cached ONNX Sessions",
+  "media.image.onnx.sessionCache.maxSessions.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of ONNX sessions to keep cached in memory simultaneously."
+    }
+  ],
+  "media.image.embeddingDim": "Image Embedding Dimension",
+  "media.image.embeddingDim.long": [
+    {
+      "type": "paragraph",
+      "text": "The size of the mathematical vector (embedding) generated for each image. Must match the output size of the ONNX model."
+    }
+  ],
+  "debug.enabled": "Enable Debug Mode",
+  "debug.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Activates additional internal checks, metrics, and capabilities used for troubleshooting."
+    }
+  ],
+  "debug.verbose": "Enable Verbose Debug Output",
+  "debug.verbose.long": [
+    {
+      "type": "paragraph",
+      "text": "Produces highly detailed debug logs, useful for deep technical investigation but may impact performance."
+    }
+  ],
+  "file_monitoring.enabled": "Enable File System Monitoring",
+  "file_monitoring.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Actively listens for changes in the file system (e.g., new, modified, or deleted files) to keep the database up-to-date."
+    }
+  ],
+  "file_monitoring.interval": "File System Check Interval (ms)",
+  "file_monitoring.interval.long": [
+    {
+      "type": "paragraph",
+      "text": "The delay in milliseconds between polling the file system for updates, if continuous monitoring is not available."
+    }
+  ],
+  "validation.enabled": "Enable Data Validation",
+  "validation.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Performs checks to ensure data integrity and configuration correctness."
+    }
+  ],
+  "validation.strict": "Enable Strict Data Validation",
+  "validation.strict.long": [
+    {
+      "type": "paragraph",
+      "text": "Enforces rigorous validation rules, refusing to start or process data if any minor inconsistencies are found."
+    }
+  ],
+  "duplicates.finder.enabled": "Enable Duplicate Detection",
+  "duplicates.finder.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Activates the core duplicate finder engine to analyze and identify similar or identical files."
+    }
+  ],
+  "duplicates.finder.intervalMs": "Duplicate Detection Interval (ms)",
+  "duplicates.finder.intervalMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The delay in milliseconds between automated duplicate detection sweeps."
+    }
+  ],
+  "duplicates.finder.batchSize": "Duplicate Detection Batch Size",
+  "duplicates.finder.batchSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The number of files processed together in a single duplicate detection operation."
+    }
+  ],
+  "duplicates.finder.maxGroupSize": "Maximum Duplicate Group Size",
+  "duplicates.finder.maxGroupSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The absolute maximum number of similar files allowed to be clustered into a single duplicate group."
+    }
+  ],
+  "duplicates.finder.knnK": "Vector Search Candidate Count (K)",
+  "duplicates.finder.knnK.long": [
+    {
+      "type": "paragraph",
+      "text": "The number of nearest neighbors to retrieve during a vector search. A higher value increases accuracy but requires more computation."
+    }
+  ],
+  "tpm.types.duplicate_finder.share": "Duplicate Finder Thread Share",
+  "tpm.types.duplicate_finder.share.long": [
+    {
+      "type": "paragraph",
+      "text": "The proportion of the thread pool allocated for identifying duplicate files."
+    }
+  ],
+  "duplicates.threshold.similarity": "Similarity Match Threshold",
+  "duplicates.threshold.similarity.long": [
+    {
+      "type": "headline",
+      "text": "This dual slider controls two key properties that define how images are grouped:"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate."
+    },
+    {
+      "type": "paragraph",
+      "text": "**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject."
+    }
+  ],
+  "duplicates.threshold.duplicate": "Exact Duplicate Match Threshold",
+  "duplicates.threshold.duplicate.long": [
+    {
+      "type": "headline",
+      "text": "This dual slider controls two key properties that define how images are grouped:"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Similar Threshold (Green/Down)**: Sets the maximum allowed visual distance to cluster images into a group. A higher value casts a wider net, grouping looser similarities together."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exact Threshold (Red/Up)**: Sets the strictness for identifying identical matches. A lower value requires a near-perfect match to be considered an exact duplicate."
+    },
+    {
+      "type": "paragraph",
+      "text": "**In Combination**: The Similar threshold defines the boundaries of the entire group cluster, while the Exact threshold highlights the truly identical pairs within that specific group for operations like auto-eject."
+    }
+  ],
+  "duplicates.purity.order": "Purity Rules Selection Order",
+  "duplicates.purity.order.long": [
+    {
+      "type": "paragraph",
+      "text": "A prioritized list of criteria (like resolution, file size, or date) used to automatically determine the 'best' original file in a duplicate group."
+    }
+  ],
+  "cache.thumbnail.location": "Thumbnail Cache Directory",
+  "cache.thumbnail.location.long": [
+    {
+      "type": "paragraph",
+      "text": "The physical directory path where generated image thumbnails are stored to speed up the UI."
+    }
+  ],
+  "cache.disk.location": "Disk Cache Directory",
+  "cache.disk.location.long": [
+    {
+      "type": "paragraph",
+      "text": "The physical directory path where media previews and transcoded files are cached."
+    }
+  ],
+  "cache.thumbnail.size_limit_mb": "Thumbnail Cache Size Limit (MB)",
+  "cache.thumbnail.size_limit_mb.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum amount of disk space in Megabytes the thumbnail cache is allowed to use. Oldest items are removed when this limit is reached."
+    }
+  ],
+  "cache.disk.size_limit_mb": "Disk Cache Size Limit (MB)",
+  "cache.disk.size_limit_mb.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum amount of disk space in Megabytes the general disk cache can consume."
+    }
+  ],
+  "thumbnail.default.size": "Default Thumbnail Size",
+  "thumbnail.default.size.long": [
+    {
+      "type": "paragraph",
+      "text": "The standard dimension (in pixels) for generated thumbnails."
+    }
+  ],
+  "thumbnail.jpeg.quality": "Thumbnail JPEG Quality",
+  "thumbnail.jpeg.quality.long": [
+    {
+      "type": "paragraph",
+      "text": "The compression quality level for generated thumbnails, ranging from 0 (lowest quality, smallest file) to 100 (highest quality, largest file)."
+    }
+  ],
+  "thumbnail.qhd_preview.threshold_mb": "QHD Preview Size Threshold (MB)",
+  "thumbnail.qhd_preview.threshold_mb.long": [
+    {
+      "type": "paragraph",
+      "text": "Images larger than this file size will automatically have a lighter 'QHD' preview generated to improve loading times."
+    }
+  ],
+  "tpm.types.thumbnail_generator.share": "Thumbnail Generator Thread Share",
+  "tpm.types.thumbnail_generator.share.long": [
+    {
+      "type": "paragraph",
+      "text": "The proportion of the thread pool allocated for generating image and video thumbnails."
+    }
+  ],
+  "media.filter.enabled": "Enable Media Filtering",
+  "media.filter.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "When enabled, media files that do not meet certain criteria (like minimum size) will be ignored."
+    }
+  ],
+  "media.filter.min_file_size_kb": "Minimum File Size Filter (KB)",
+  "media.filter.min_file_size_kb.long": [
+    {
+      "type": "paragraph",
+      "text": "Files smaller than this size in Kilobytes will be entirely ignored by the system."
+    }
+  ],
+  "media.filter.low_res.min_width": "Minimum Image Width Filter",
+  "media.filter.low_res.min_width.long": [
+    {
+      "type": "paragraph",
+      "text": "Images narrower than this width in pixels will be flagged as low resolution or ignored."
+    }
+  ],
+  "media.filter.low_res.min_height": "Minimum Image Height Filter",
+  "media.filter.low_res.min_height.long": [
+    {
+      "type": "paragraph",
+      "text": "Images shorter than this height in pixels will be flagged as low resolution or ignored."
+    }
+  ],
+  "media.filter.low_res.apply_after_date": "Low Resolution Filter Start Date",
+  "media.filter.low_res.apply_after_date.long": [
+    {
+      "type": "paragraph",
+      "text": "The date (in YYYY-MM-DD format) after which the low-resolution filters will be strictly applied. Older files may be exempt."
+    }
+  ],
+  "media.images.jpg": "Enable JPEG Processing (.jpg)",
+  "media.images.jpg.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process files with the .jpg extension."
+    }
+  ],
+  "media.images.jpeg": "Enable JPEG Processing (.jpeg)",
+  "media.images.jpeg.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process files with the .jpeg extension."
+    }
+  ],
+  "media.images.png": "Enable PNG Processing",
+  "media.images.png.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process PNG image files."
+    }
+  ],
+  "media.images.bmp": "Enable BMP Processing",
+  "media.images.bmp.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process BMP image files."
+    }
+  ],
+  "media.images.gif": "Enable GIF Processing",
+  "media.images.gif.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process GIF image files."
+    }
+  ],
+  "media.images.tiff": "Enable TIFF Processing (.tiff)",
+  "media.images.tiff.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process TIFF image files."
+    }
+  ],
+  "media.images.webp": "Enable WebP Processing",
+  "media.images.webp.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process WebP image files."
+    }
+  ],
+  "media.images.jp2": "Enable JPEG 2000 Processing",
+  "media.images.jp2.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process JPEG 2000 image files."
+    }
+  ],
+  "media.images.ppm": "Enable PPM Processing",
+  "media.images.ppm.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process Portable Pixmap (PPM) image files."
+    }
+  ],
+  "media.images.pgm": "Enable PGM Processing",
+  "media.images.pgm.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process Portable Graymap (PGM) image files."
+    }
+  ],
+  "media.images.pbm": "Enable PBM Processing",
+  "media.images.pbm.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process Portable Bitmap (PBM) image files."
+    }
+  ],
+  "media.images.pnm": "Enable PNM Processing",
+  "media.images.pnm.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process Portable Anymap (PNM) image files."
+    }
+  ],
+  "media.images.exr": "Enable EXR Processing",
+  "media.images.exr.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process OpenEXR high dynamic range image files."
+    }
+  ],
+  "media.images.hdr": "Enable HDR Processing",
+  "media.images.hdr.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process High Dynamic Range (HDR) image files."
+    }
+  ],
+  "media.images.bmp.transcode": "Transcode BMP to JPEG",
+  "media.images.bmp.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts BMP files to JPEG format internally before processing embeddings to improve speed and compatibility."
+    }
+  ],
+  "media.images.dib.transcode": "Transcode DIB to JPEG",
+  "media.images.dib.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts DIB files to JPEG format internally before processing."
+    }
+  ],
+  "media.images.tif.transcode": "Transcode TIFF (.tif) to JPEG",
+  "media.images.tif.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts .tif files to JPEG format internally before processing."
+    }
+  ],
+  "media.images.tiff.transcode": "Transcode TIFF (.tiff) to JPEG",
+  "media.images.tiff.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts .tiff files to JPEG format internally before processing."
+    }
+  ],
+  "media.images.gif.transcode": "Transcode GIF to JPEG",
+  "media.images.gif.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts GIF files (typically the first frame) to JPEG format internally before processing."
+    }
+  ],
+  "media.images.jp2.transcode": "Transcode JPEG 2000 to JPEG",
+  "media.images.jp2.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts JPEG 2000 files to standard JPEG format internally before processing."
+    }
+  ],
+  "media.images.exr.transcode": "Transcode EXR to JPEG",
+  "media.images.exr.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts OpenEXR files to JPEG format internally before processing."
+    }
+  ],
+  "media.images.hdr.transcode": "Transcode HDR to JPEG",
+  "media.images.hdr.transcode.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically converts HDR image files to standard JPEG format internally before processing."
+    }
+  ],
+  "media.video.mp4": "Enable MP4 Video Processing",
+  "media.video.mp4.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process MP4 video files."
+    }
+  ],
+  "media.video.avi": "Enable AVI Video Processing",
+  "media.video.avi.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process AVI video files."
+    }
+  ],
+  "media.video.mov": "Enable MOV Video Processing",
+  "media.video.mov.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Apple QuickTime MOV video files."
+    }
+  ],
+  "media.video.mkv": "Enable MKV Video Processing",
+  "media.video.mkv.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Matroska (MKV) video files."
+    }
+  ],
+  "media.video.wmv": "Enable WMV Video Processing",
+  "media.video.wmv.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Windows Media Video (WMV) files."
+    }
+  ],
+  "media.video.flv": "Enable FLV Video Processing",
+  "media.video.flv.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Flash Video (FLV) files."
+    }
+  ],
+  "media.video.webm": "Enable WebM Video Processing",
+  "media.video.webm.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process WebM video files."
+    }
+  ],
+  "media.video.m4v": "Enable M4V Video Processing",
+  "media.video.m4v.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Apple M4V video files."
+    }
+  ],
+  "media.video.mpg": "Enable MPG Video Processing",
+  "media.video.mpg.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process MPG video files."
+    }
+  ],
+  "media.video.mpeg": "Enable MPEG Video Processing",
+  "media.video.mpeg.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process MPEG video files."
+    }
+  ],
+  "media.video.ts": "Enable TS Video Processing",
+  "media.video.ts.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process MPEG Transport Stream (TS) video files."
+    }
+  ],
+  "media.video.mts": "Enable MTS Video Processing",
+  "media.video.mts.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process AVCHD (MTS) video files."
+    }
+  ],
+  "media.video.m2ts": "Enable M2TS Video Processing",
+  "media.video.m2ts.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Blu-ray Disc Audio-Video (M2TS) files."
+    }
+  ],
+  "media.video.ogv": "Enable OGV Video Processing",
+  "media.video.ogv.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Ogg Video (OGV) files."
+    }
+  ],
+  "media.audio.mp3": "Enable MP3 Audio Processing",
+  "media.audio.mp3.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process MP3 audio files."
+    }
+  ],
+  "media.audio.wav": "Enable WAV Audio Processing",
+  "media.audio.wav.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process WAV audio files."
+    }
+  ],
+  "media.audio.flac": "Enable FLAC Audio Processing",
+  "media.audio.flac.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process FLAC lossless audio files."
+    }
+  ],
+  "media.audio.ogg": "Enable OGG Audio Processing",
+  "media.audio.ogg.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Ogg Vorbis audio files."
+    }
+  ],
+  "media.audio.m4a": "Enable M4A Audio Processing",
+  "media.audio.m4a.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process M4A audio files."
+    }
+  ],
+  "media.audio.aac": "Enable AAC Audio Processing",
+  "media.audio.aac.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Advanced Audio Coding (AAC) files."
+    }
+  ],
+  "media.audio.opus": "Enable Opus Audio Processing",
+  "media.audio.opus.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Opus audio files."
+    }
+  ],
+  "media.audio.wma": "Enable WMA Audio Processing",
+  "media.audio.wma.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Windows Media Audio (WMA) files."
+    }
+  ],
+  "media.audio.aiff": "Enable AIFF Audio Processing",
+  "media.audio.aiff.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Audio Interchange File Format (AIFF) files."
+    }
+  ],
+  "media.audio.alac": "Enable ALAC Audio Processing",
+  "media.audio.alac.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Apple Lossless Audio Codec (ALAC) files."
+    }
+  ],
+  "media.audio.amr": "Enable AMR Audio Processing",
+  "media.audio.amr.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process Adaptive Multi-Rate (AMR) audio files."
+    }
+  ],
+  "media.audio.au": "Enable AU Audio Processing",
+  "media.audio.au.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to detect and process standard AU audio files."
+    }
+  ],
+  "media.images.raw.cr2": "Enable Canon CR2 RAW",
+  "media.images.raw.cr2.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Canon CR2 raw image files."
+    }
+  ],
+  "media.images.raw.nef": "Enable Nikon NEF RAW",
+  "media.images.raw.nef.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Nikon NEF raw image files."
+    }
+  ],
+  "media.images.raw.arw": "Enable Sony ARW RAW",
+  "media.images.raw.arw.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Sony ARW raw image files."
+    }
+  ],
+  "media.images.raw.dng": "Enable Adobe DNG RAW",
+  "media.images.raw.dng.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Adobe Digital Negative (DNG) raw image files."
+    }
+  ],
+  "media.images.raw.raf": "Enable Fujifilm RAF RAW",
+  "media.images.raw.raf.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Fujifilm RAF raw image files."
+    }
+  ],
+  "media.images.raw.rw2": "Enable Panasonic RW2 RAW",
+  "media.images.raw.rw2.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Panasonic RW2 raw image files."
+    }
+  ],
+  "media.images.raw.orf": "Enable Olympus ORF RAW",
+  "media.images.raw.orf.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Olympus ORF raw image files."
+    }
+  ],
+  "media.images.raw.pef": "Enable Pentax PEF RAW",
+  "media.images.raw.pef.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Pentax PEF raw image files."
+    }
+  ],
+  "media.images.raw.srw": "Enable Samsung SRW RAW",
+  "media.images.raw.srw.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Samsung SRW raw image files."
+    }
+  ],
+  "media.images.raw.kdc": "Enable Kodak KDC RAW",
+  "media.images.raw.kdc.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Kodak KDC raw image files."
+    }
+  ],
+  "media.images.raw.dcr": "Enable Kodak DCR RAW",
+  "media.images.raw.dcr.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Kodak DCR raw image files."
+    }
+  ],
+  "media.images.raw.mos": "Enable Leaf MOS RAW",
+  "media.images.raw.mos.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Leaf MOS raw image files."
+    }
+  ],
+  "media.images.raw.mrw": "Enable Minolta MRW RAW",
+  "media.images.raw.mrw.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Minolta MRW raw image files."
+    }
+  ],
+  "media.images.raw.raw": "Enable Generic RAW",
+  "media.images.raw.raw.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of generically named .raw image files."
+    }
+  ],
+  "media.images.raw.bay": "Enable Casio BAY RAW",
+  "media.images.raw.bay.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Casio BAY raw image files."
+    }
+  ],
+  "media.images.raw.3fr": "Enable Hasselblad 3FR RAW",
+  "media.images.raw.3fr.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Hasselblad 3FR raw image files."
+    }
+  ],
+  "media.images.raw.fff": "Enable Hasselblad FFF RAW",
+  "media.images.raw.fff.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Hasselblad FFF raw image files."
+    }
+  ],
+  "media.images.raw.mef": "Enable Mamiya MEF RAW",
+  "media.images.raw.mef.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Mamiya MEF raw image files."
+    }
+  ],
+  "media.images.raw.iiq": "Enable Phase One IIQ RAW",
+  "media.images.raw.iiq.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Phase One IIQ raw image files."
+    }
+  ],
+  "media.images.raw.rwz": "Enable Rawzor RWZ RAW",
+  "media.images.raw.rwz.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Rawzor RWZ raw image files."
+    }
+  ],
+  "media.images.raw.nrw": "Enable Nikon NRW RAW",
+  "media.images.raw.nrw.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Nikon NRW raw image files."
+    }
+  ],
+  "media.images.raw.rwl": "Enable Leica RWL RAW",
+  "media.images.raw.rwl.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows processing of Leica RWL raw image files."
+    }
+  ],
+  "server.http.threadPool.maxThreads": "HTTP Maximum Threads",
+  "server.http.threadPool.maxThreads.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of threads dedicated to handling HTTP requests."
+    }
+  ],
+  "server.http.threadPool.maxQueued": "HTTP Maximum Queued Requests",
+  "server.http.threadPool.maxQueued.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of HTTP requests that can be queued waiting for a thread before the server starts rejecting new requests."
+    }
+  ],
+  "database.sqlite.cacheSize": "SQLite Cache Size",
+  "database.sqlite.cacheSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The number of pages SQLite keeps in memory to speed up database reads."
+    }
+  ],
+  "database.sqlite.tempStore": "SQLite Temporary Store",
+  "database.sqlite.tempStore.long": [
+    {
+      "type": "paragraph",
+      "text": "Determines where SQLite stores temporary tables and indices. Using 'memory' is faster but requires more RAM."
+    }
+  ],
+  "database.sqlite.tempStore.options": "memory, file, default",
+  "files.manager.useInMemoryIndex": "Use In-Memory File Index",
+  "files.manager.useInMemoryIndex.long": [
+    {
+      "type": "paragraph",
+      "text": "Caches the file structure in RAM for much faster file lookups, at the cost of higher memory usage."
+    }
+  ],
+  "files.service.immediateJobTrigger.enabled": "Enable Immediate Job Triggers",
+  "files.service.immediateJobTrigger.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the file service to bypass the scheduler and instantly trigger scanning or processing when changes are detected."
+    }
+  ],
+  "files.service.immediateJobTrigger.timeoutMs": "Immediate Job Trigger Timeout (ms)",
+  "files.service.immediateJobTrigger.timeoutMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The debounce or timeout duration before firing an immediate file change event, to group rapid changes together."
+    }
+  ],
+  "tpm.thread.stackSizeKB": "Thread Stack Size (KB)",
+  "tpm.thread.stackSizeKB.long": [
+    {
+      "type": "paragraph",
+      "text": "The amount of memory allocated to each worker thread's stack. Adjust only if experiencing stack overflow issues."
+    }
+  ],
+  "tpm.mediaGeneration.maxConcurrent": "Max Concurrent Thumbnail/Preview Generations",
+  "tpm.mediaGeneration.maxConcurrent.long": [
+    {
+      "type": "paragraph",
+      "text": "Combined cap on thumbnail and preview generation tasks running at once. Each task launches an external ImageMagick decode that can use hundreds of MB for RAW files; unbounded bursts cause transient decode failures under memory pressure. Default 4."
+    }
+  ],
+  "tools.imagemagick.path": "ImageMagick Binary Path",
+  "tools.imagemagick.path.long": [
+    {
+      "type": "paragraph",
+      "text": "Full path to the ImageMagick 'magick' executable used for thumbnail and preview generation. Defaults to the Homebrew location /opt/homebrew/bin/magick."
+    }
+  ],
+  "media.processor.maxQueueSize": "Media Processor Max Queue Size",
+  "media.processor.maxQueueSize.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of media items that can be queued up for processing simultaneously."
+    }
+  ],
+  "media.image.transcoding.enabled": "Enable Image Transcoding",
+  "media.image.transcoding.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Globally enables transcoding images from incompatible formats into standard formats before processing."
+    }
+  ],
+  "media.image.transcoding.timeoutMs": "Image Transcoding Timeout (ms)",
+  "media.image.transcoding.timeoutMs.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum time allowed for transcoding a single image before giving up."
+    }
+  ],
+  "media.image.transcoding.preserveMetadata": "Preserve Transcoded Image Metadata",
+  "media.image.transcoding.preserveMetadata.long": [
+    {
+      "type": "paragraph",
+      "text": "Ensures that EXIF data, dates, and other metadata are copied from the original image to the transcoded image."
+    }
+  ],
+  "media.images.tif": "Enable TIFF Processing (.tif)",
+  "media.images.tif.long": [
+    {
+      "type": "paragraph",
+      "text": "Allows the system to read, index, and process files with the .tif extension."
+    }
+  ],
+  "duplicates.representative.strategy": "Duplicate Representative Strategy",
+  "duplicates.representative.strategy.long": [
+    {
+      "type": "paragraph",
+      "text": "The algorithmic strategy used to determine which file in a duplicate group should be considered the primary or 'best' file."
+    }
+  ],
+  "cache.thumbnail.clearOnStartup": "Clear Thumbnail Cache on Startup",
+  "cache.thumbnail.clearOnStartup.long": [
+    {
+      "type": "paragraph",
+      "text": "Automatically empties the thumbnail directory every time the server starts. Useful for development or resolving cache corruption."
+    }
+  ],
+  "thumbnail.pipeline.enabled": "Enable Advanced Thumbnail Pipeline",
+  "thumbnail.pipeline.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Enables the new structured thumbnail processing pipeline for generating standard thumbnails."
+    }
+  ],
+  "thumbnail.pipeline.onlyIfMissing": "Only Generate Missing Thumbnails",
+  "thumbnail.pipeline.onlyIfMissing.long": [
+    {
+      "type": "paragraph",
+      "text": "When enabled, the pipeline skips thumbnail generation if an existing thumbnail of the correct size is already present."
+    }
+  ],
+  "thumbnail.pipeline.size": "Pipeline Thumbnail Size",
+  "thumbnail.pipeline.size.long": [
+    {
+      "type": "paragraph",
+      "text": "The target dimension in pixels generated by the advanced thumbnail pipeline."
+    }
+  ],
+  "scheduler.jobs": "Static Scheduler Jobs",
+  "scheduler.jobs.long": [
+    {
+      "type": "paragraph",
+      "text": "A comma-separated list of manually defined static jobs to run on startup. Typically leave empty for automatic scheduling."
+    }
+  ],
+  "scheduler.maxConsecutiveFailures": "Scheduler Max Consecutive Failures",
+  "scheduler.maxConsecutiveFailures.long": [
+    {
+      "type": "paragraph",
+      "text": "The maximum number of times a scheduled task can fail in a row before the scheduler disables it or alerts."
+    }
+  ]
 }

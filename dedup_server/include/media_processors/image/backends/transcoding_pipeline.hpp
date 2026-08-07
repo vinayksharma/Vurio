@@ -27,17 +27,6 @@ namespace MediaDedup
     class TranscodingPipeline
     {
     public:
-        /**
-         * @brief Transcode a raw image file to JPEG format in memory
-         *
-         * @param file_path The path to the raw image file
-         * @param jpeg_data Output vector to store the transcoded JPEG data
-         * @param config Configuration for transcoding operation
-         * @return true if transcoding was successful, false otherwise
-         */
-        static bool TranscodeToMemory(const std::string &file_path,
-                                      std::vector<std::uint8_t> &jpeg_data,
-                                      const TranscodingConfig &config = TranscodingConfig{});
 
         /**
          * @brief Transcode a raw image file to JPEG format and save to disk

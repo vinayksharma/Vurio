@@ -1470,16 +1470,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient 
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>
 
-  func backupDatabase(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
-
-  func getLatestBackup(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
-
   func clearAllCaches(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -1704,42 +1694,6 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
     )
   }
 
-  /// Unary call to BackupDatabase
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to BackupDatabase.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func backupDatabase(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
-    return self.makeUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetLatestBackup
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetLatestBackup.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getLatestBackup(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
-    return self.makeUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
-    )
-  }
-
   /// Unary call to ClearAllCaches
   ///
   /// - Parameters:
@@ -1933,16 +1887,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCCl
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>
 
-  func makeBackupDatabaseCall(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
-
-  func makeGetLatestBackupCall(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>
-
   func makeClearAllCachesCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -2103,30 +2047,6 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetDatabaseIntegrityCheckStatusInterceptors() ?? []
-    )
-  }
-
-  internal func makeBackupDatabaseCall(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetLatestBackupCall(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
     )
   }
 
@@ -2313,30 +2233,6 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
-  internal func backupDatabase(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? []
-    )
-  }
-
-  internal func getLatestBackup(
-    _ request: Vurio_Dedup_Empty,
-    callOptions: CallOptions? = nil
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? []
-    )
-  }
-
   internal func clearAllCaches(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
@@ -2438,12 +2334,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryPro
   /// - Returns: Interceptors to use when invoking 'getDatabaseIntegrityCheckStatus'.
   func makeGetDatabaseIntegrityCheckStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>]
 
-  /// - Returns: Interceptors to use when invoking 'backupDatabase'.
-  func makeBackupDatabaseInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
-  /// - Returns: Interceptors to use when invoking 'getLatestBackup'.
-  func makeGetLatestBackupInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
   /// - Returns: Interceptors to use when invoking 'clearAllCaches'.
   func makeClearAllCachesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>]
 
@@ -2473,8 +2363,6 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resumeProcessing,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getDatabaseIntegrityCheckStatus,
-      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.backupDatabase,
-      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getLatestBackup,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllCaches,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.configurePurityOrder,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.getUserTheme,
@@ -2546,18 +2434,6 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
     internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
       name: "GetDatabaseIntegrityCheckStatus",
       path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
-      type: GRPCCallType.unary
-    )
-
-    internal static let backupDatabase = GRPCMethodDescriptor(
-      name: "BackupDatabase",
-      path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
-      type: GRPCCallType.unary
-    )
-
-    internal static let getLatestBackup = GRPCMethodDescriptor(
-      name: "GetLatestBackup",
-      path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
       type: GRPCCallType.unary
     )
 
@@ -3833,10 +3709,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvid
 
   func getDatabaseIntegrityCheckStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_IntegrityCheckStatusResponse>
 
-  func backupDatabase(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
-
-  func getLatestBackup(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_BackupDatabaseResponse>
-
   func clearAllCaches(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ClearCachesResponse>
 
   func configurePurityOrder(request: Vurio_Dedup_ConfigurePurityOrderRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
@@ -3957,24 +3829,6 @@ extension Vurio_Dedup_AdvancedSettingsServiceProvider {
         userFunction: self.getDatabaseIntegrityCheckStatus(request:context:)
       )
 
-    case "BackupDatabase":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
-        userFunction: self.backupDatabase(request:context:)
-      )
-
-    case "GetLatestBackup":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
-        userFunction: self.getLatestBackup(request:context:)
-      )
-
     case "ClearAllCaches":
       return UnaryServerHandler(
         context: context,
@@ -4081,16 +3935,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerP
     request: Vurio_Dedup_Empty,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_IntegrityCheckStatusResponse
-
-  func backupDatabase(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
-
-  func getLatestBackup(
-    request: Vurio_Dedup_Empty,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Vurio_Dedup_BackupDatabaseResponse
 
   func clearAllCaches(
     request: Vurio_Dedup_Empty,
@@ -4231,24 +4075,6 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
         wrapping: { try await self.getDatabaseIntegrityCheckStatus(request: $0, context: $1) }
       )
 
-    case "BackupDatabase":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeBackupDatabaseInterceptors() ?? [],
-        wrapping: { try await self.backupDatabase(request: $0, context: $1) }
-      )
-
-    case "GetLatestBackup":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
-        responseSerializer: ProtobufSerializer<Vurio_Dedup_BackupDatabaseResponse>(),
-        interceptors: self.interceptors?.makeGetLatestBackupInterceptors() ?? [],
-        wrapping: { try await self.getLatestBackup(request: $0, context: $1) }
-      )
-
     case "ClearAllCaches":
       return GRPCAsyncServerHandler(
         context: context,
@@ -4337,14 +4163,6 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryPro
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetDatabaseIntegrityCheckStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_IntegrityCheckStatusResponse>]
 
-  /// - Returns: Interceptors to use when handling 'backupDatabase'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeBackupDatabaseInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getLatestBackup'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetLatestBackupInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_BackupDatabaseResponse>]
-
   /// - Returns: Interceptors to use when handling 'clearAllCaches'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeClearAllCachesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ClearCachesResponse>]
@@ -4378,8 +4196,6 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resumeProcessing,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.startDatabaseIntegrityCheck,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getDatabaseIntegrityCheckStatus,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.backupDatabase,
-      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getLatestBackup,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.clearAllCaches,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.configurePurityOrder,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.getUserTheme,
@@ -4451,18 +4267,6 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
     internal static let getDatabaseIntegrityCheckStatus = GRPCMethodDescriptor(
       name: "GetDatabaseIntegrityCheckStatus",
       path: "/vurio.dedup.AdvancedSettingsService/GetDatabaseIntegrityCheckStatus",
-      type: GRPCCallType.unary
-    )
-
-    internal static let backupDatabase = GRPCMethodDescriptor(
-      name: "BackupDatabase",
-      path: "/vurio.dedup.AdvancedSettingsService/BackupDatabase",
-      type: GRPCCallType.unary
-    )
-
-    internal static let getLatestBackup = GRPCMethodDescriptor(
-      name: "GetLatestBackup",
-      path: "/vurio.dedup.AdvancedSettingsService/GetLatestBackup",
       type: GRPCCallType.unary
     )
 

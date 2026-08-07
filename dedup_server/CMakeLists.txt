@@ -232,7 +232,6 @@ add_executable(media_dedup_server
     src/database/user_settings/user_settings_ops.cpp
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
-    src/utils/stderr_capture.cpp
     src/utils/thumbnail_generator.cpp
     src/utils/subprocess_runner.cpp
     src/utils/temp_paths.cpp
@@ -254,7 +253,6 @@ add_executable(media_dedup_server
     src/database/database_manager.cpp
     src/media_processors/media_processor.cpp
     src/media_processors/image_processor.cpp
-    src/media_processors/image/image_task.cpp
     src/media_processors/image/pipeline_thumbnail_helper.cpp
     src/media_processors/thumbnail_service.cpp
     src/media_processors/image/backends/image_magick_adapter.cpp
