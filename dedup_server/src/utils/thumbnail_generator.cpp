@@ -220,41 +220,8 @@ namespace MediaDedup
         return args;
     }
 
-    bool ThumbnailGenerator::generate(const std::string &source_path,
-                                      const std::string &output_path,
-                                      int size,
-                                      int quality,
-                                      int timeout_ms)
-    {
-        try
-        {
-            Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
-
-            // MP-3: the native-resolution sentinel bypasses size snapping —
-            // it is for the full-res viewer paths only, never cached.
-            if (size != kNativeResolution && !isValidSize(size))
-            {
-                logger.warning("Invalid thumbnail size %d requested, using closest valid size", size);
-                size = getClosestValidSize(size);
-            }
-
-            TempFileCleanup cleanup;
-            std::string read_path;
-            if (!resolveInputPath(source_path, read_path, cleanup, logger))
-                return false;
-
-            if (!runMagick(read_path, output_path, size, quality, timeout_ms, source_path, logger))
-                return false;
-
-            logger.debug("Generated thumbnail: %s -> %s", source_path, output_path);
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ThumbnailGenerator").error("Exception in generate: %s", std::string(e.what()));
-            return false;
-        }
-    }
+    // CL-2: the file-output generate() variant deleted (production uses
+    // generateToBlob; the last file-variant callers died with the HTTP surface).
 
     bool ThumbnailGenerator::generateToBlob(const std::string &source_path,
                                              int size,

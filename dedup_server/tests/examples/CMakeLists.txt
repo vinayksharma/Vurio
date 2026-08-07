@@ -69,7 +69,6 @@ target_sources(quality_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
 )
 target_include_directories(quality_smoke PRIVATE
     ${LIBRAW_INCLUDE_DIRS}

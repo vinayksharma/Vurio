@@ -265,8 +265,6 @@ service AdvancedSettingsService {
   rpc StartDatabaseIntegrityCheck(Empty) returns (AdvancedActionResponse);
   rpc GetDatabaseIntegrityCheckStatus(Empty) returns (IntegrityCheckStatusResponse);
   
-  rpc BackupDatabase(Empty) returns (BackupDatabaseResponse);
-  rpc GetLatestBackup(Empty) returns (BackupDatabaseResponse);
   
   rpc ClearAllCaches(Empty) returns (ClearCachesResponse);
   
@@ -296,12 +294,6 @@ message IntegrityCheckStatusResponse {
   int32 artifacts_removed = 8;
   int32 errors_removed = 9;
   string current_phase = 10;
-}
-
-message BackupDatabaseResponse {
-  bool success = 1;
-  string backup_path = 2;
-  string error_message = 3;
 }
 
 message ClearCachesResponse {

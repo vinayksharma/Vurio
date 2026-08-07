@@ -34,21 +34,6 @@ namespace MediaDedup
                                     int quality = 85,
                                     int timeout_ms = DEFAULT_TIMEOUT_MS);
 
-        /**
-         * @brief Generate a thumbnail for an image file (synchronous)
-         *
-         * @param source_path Path to the source image file
-         * @param output_path Path where the thumbnail JPEG will be saved
-         * @param size Target size in pixels (longer edge will be this size)
-         * @param quality JPEG quality (0-100, default 85)
-         * @param timeout_ms Hard limit on the magick subprocess; expired decodes are killed
-         * @return true if thumbnail generated successfully, false otherwise
-         */
-        static bool generate(const std::string &source_path,
-                             const std::string &output_path,
-                             int size,
-                             int quality = 85,
-                             int timeout_ms = DEFAULT_TIMEOUT_MS);
 
         /**
          * @brief Build the magick CLI argument vector for one thumbnail render.

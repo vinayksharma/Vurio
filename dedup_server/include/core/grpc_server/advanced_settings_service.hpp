@@ -185,17 +185,9 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status BackupDatabase(grpc::ServerContext* context, const vurio::dedup::Empty* request,
-                                vurio::dedup::BackupDatabaseResponse* reply) override {
-        reply->set_success(true);
-        return grpc::Status::OK;
-    }
+    // CL-2: BackupDatabase/GetLatestBackup removed from the proto — they
+    // returned success=true while doing NOTHING, and no client called them.
 
-    grpc::Status GetLatestBackup(grpc::ServerContext* context, const vurio::dedup::Empty* request,
-                                 vurio::dedup::BackupDatabaseResponse* reply) override {
-        reply->set_success(true);
-        return grpc::Status::OK;
-    }
 
     grpc::Status ClearAllCaches(grpc::ServerContext* context, const vurio::dedup::Empty* request,
                                 vurio::dedup::ClearCachesResponse* reply) override {

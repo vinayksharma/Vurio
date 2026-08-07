@@ -1733,6 +1733,44 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   gate is fixed), their pool-share config, and CMake entries.
 
 ### CL-2. Dead code inventory (verified zero production references)
+
+> **STATUS: ✅ DONE 2026-08-07 (validated).**
+> Every inventory item resolved:
+> - **Deleted code:** `image_task.{cpp,hpp}` (whole file, zero refs),
+>   `stderr_capture.{cpp,hpp}` + its test, `TranscodingPipeline::
+>   TranscodeToMemory` (its 6 tests were its only callers — deleted;
+>   equivalent TranscodeToFile edge-case tests already existed),
+>   `ImageMagickTranscoder::{configureImageProperties,setJpegFormatOptions}`,
+>   `ThumbnailGenerator::generate` file-variant. Already gone from prior
+>   steps: features_adapter/ComputePhash (DF-5), session_lease.cpp
+>   (DB-4), ThumbnailCleanupHandler (AR-3).
+> - **Backup RPCs REMOVED from the proto** (decision: remove, not
+>   implement — they returned success=true doing NOTHING, and the Swift
+>   app never calls them). C++ stubs deleted; Swift protos regenerated;
+>   app builds.
+> - **Dead config keys deleted:** `thumbnail.generation.timeoutMs`,
+>   `thumbnail.allowed.sizes` (yaml + schema + descriptions).
+>   `database.sqlite.cacheSize`/`tempStore` were WIRED by QW-7 — live,
+>   kept.
+> - **Working-tree litter removed:** 4 empty root DBs, the 444
+>   `test_gif*.jpg` files, `report_dynamo_export.sarif` (1.8 MB,
+>   tracked), `server_stdout.log` (3.9 MB). `disk_cache.cpp.bak` was
+>   already gone.
+> - **Unbounded maps:** `MediaGenerationFailures` capped at 10k entries
+>   (wholesale reset at the cap — forgetting failures just re-allows a
+>   generation attempt, same as a restart, per the class's own design);
+>   thumbnail `generation_locks_` was already fixed by CC-6's striped
+>   array.
+> - **Deferred:** the MediaDedupServer class-vs-namespace naming collapse
+>   — the plan itself says "mechanical, wide diff — do late"; with the
+>   plan complete it is pure churn against a stable tree. Recorded here
+>   as consciously not done.
+> - **Suite:** 310 tests (dead-code tests left with their subjects),
+>   281 passed / 29 pre-existing skips / 0 failed. Swift app builds
+>   against the regenerated protos.
+> - **Validate:** `./restart -b` + app smoke test — behavior identical;
+>   the repo is just lighter.
+
 - `src/media_processors/image/image_task.cpp` (whole file; also has the sleep issue
   in CC-6), ~~`features_adapter.cpp`, `OpenCvAdapter::ComputePhash`~~ (✅ deleted
   in DF-5), `TranscodingPipeline::TranscodeToMemory` (tests only),

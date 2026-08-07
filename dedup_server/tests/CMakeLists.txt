@@ -45,7 +45,6 @@ set(UNIT_TEST_SOURCES
     unit/test_preview_cache_ops.cpp
     unit/test_image_artifacts_ops.cpp
     unit/test_processing_errors_ops.cpp
-    unit/test_stderr_capture.cpp
     unit/test_tpm.cpp
     unit/test_file_scanner.cpp
     unit/test_media_filtering.cpp
@@ -97,13 +96,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         # Just add the test to the test list without creating executable
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ProcessingErrorsOpsTest.*")
-        set_tests_properties(${test_name} PROPERTIES
-            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
-            TIMEOUT 300
-        )
-    elseif(${test_name} STREQUAL "test_stderr_capture")
-        # Skip creating standalone executable for this test - it's only part of all_unit_tests
-        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="StderrCaptureTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -419,7 +411,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
@@ -430,7 +421,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
@@ -459,7 +449,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
-            ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
@@ -470,7 +459,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
-            ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
@@ -559,7 +547,6 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/database/preview_cache_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/stderr_capture.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
@@ -581,7 +568,6 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
-        ${CMAKE_SOURCE_DIR}/src/media_processors/image/image_task.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -705,7 +691,6 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_onnx_session_manager" AND
       NOT ${test_name} STREQUAL "test_disk_cache" AND
       NOT ${test_name} STREQUAL "test_processing_errors_ops" AND
-      NOT ${test_name} STREQUAL "test_stderr_capture" AND
       NOT ${test_name} STREQUAL "test_duplicate_finder_range" AND
       NOT ${test_name} STREQUAL "test_purge_ejected_errored" AND
       NOT ${test_name} STREQUAL "test_preview_cache_ops" AND

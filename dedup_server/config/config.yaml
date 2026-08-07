@@ -13,7 +13,6 @@ media.images.webp: true
 media.video.mp4: false
 tpm.mediaGeneration.maxConcurrent: 4
 media.images.dib.transcode: true
-thumbnail.generation.timeoutMs: 5000
 cache.thumbnail.location: /Users/vinaysharma/developer/vurio/dedup_server/data/cache.thumbnails
 duplicates.edges.floor: 0.80000000000000004
 file_monitoring.interval: 1000
@@ -125,7 +124,6 @@ scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false
 media.video.mov: false
 media.images.raw.rwl: true
-thumbnail.allowed.sizes: 128
 thumbnail.pipeline.onlyIfMissing: true
 media.video.mpg: false
 media.video.mpeg: false

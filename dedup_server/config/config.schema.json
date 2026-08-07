@@ -575,17 +575,9 @@
     "type": "double",
     "default": 30.0
   },
-  "thumbnail.allowed.sizes": {
-    "type": "string",
-    "default": "128,256,512,1024"
-  },
   "thumbnail.default.size": {
     "type": "int",
     "default": 256
-  },
-  "thumbnail.generation.timeoutMs": {
-    "type": "int",
-    "default": 5000
   },
   "thumbnail.jpeg.quality": {
     "type": "int",

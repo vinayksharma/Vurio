@@ -13,7 +13,17 @@ namespace MediaDedup
                                                const std::string &error_message)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        Entry &entry = failures_[key(file_path, media_type)];
+        // CL-2: bound the map. It was pruned only on success, so a library
+        // full of failing files grew it without limit. Wholesale reset at the
+        // cap is acceptable by design: forgetting failures merely re-allows a
+        // generation attempt, exactly like a server restart (see clearAll).
+        constexpr std::size_t kMaxEntries = 10000;
+        const std::string k = key(file_path, media_type);
+        if (failures_.size() >= kMaxEntries && failures_.find(k) == failures_.end())
+        {
+            failures_.clear();
+        }
+        Entry &entry = failures_[k];
         entry.count += 1;
         entry.last_error = error_message;
         return entry.count;
