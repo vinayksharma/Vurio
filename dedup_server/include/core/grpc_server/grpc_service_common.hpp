@@ -5,6 +5,19 @@
 // classes are header-defined (verbatim moves) so they stay constructible from
 // tests; only grpc_server_core.cpp and tests include them, so the breadth of
 // this prelude costs nothing in practice.
+//
+// AR-7: STATUS-CODE CONVENTION (deliberate, two tiers — the Swift client
+// depends on both):
+//   - Action RPCs (AdvancedActionResponse and friends): the transport status
+//     is OK whenever the request was processed; the BUSINESS outcome travels
+//     in success/success_count/error_message. Clients branch on resp.success.
+//   - Media RPCs (MediaService): gRPC status codes ARE the flow control —
+//     UNAVAILABLE = asset generating (retry via MediaReady push),
+//     FAILED_PRECONDITION = permanently failed source (negative cache),
+//     NOT_FOUND/INVALID_ARGUMENT for bad requests.
+//   - UNAUTHENTICATED is reserved for the AR-4 auth processor on both tiers.
+// Do not "normalize" one tier into the other — each is load-bearing for the
+// client behavior described above.
 
 #include <grpcpp/grpcpp.h>
 #include <Poco/Logger.h>

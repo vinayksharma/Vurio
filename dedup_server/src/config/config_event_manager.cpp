@@ -1,5 +1,5 @@
 #include "config/config_event_manager.hpp"
-#include <iostream>
+#include <Poco/Logger.h>
 #include <algorithm>
 
 namespace MediaDedup
@@ -74,7 +74,7 @@ namespace MediaDedup
             catch (const std::exception &e)
             {
                 // Log error but don't crash
-                std::cerr << "Error in config change callback: " << e.what() << std::endl;
+                Poco::Logger::get("Config").error("Error in config change callback: " + std::string(e.what()));
             }
         }
     }
