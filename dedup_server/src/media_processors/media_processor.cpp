@@ -1,8 +1,6 @@
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image_processor.hpp"
 #include "media_processors/image/pipeline_thumbnail_helper.hpp"
-#include "media_processors/audio_processor.hpp"
-#include "media_processors/video_processor.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
 #include "media_processors/image/backends/transcoding_pipeline.hpp"
 #include "filesmanager/disk_cache.hpp"
@@ -457,305 +455,14 @@ namespace MediaDedup
                 return false;
             }
         }
-        else if (category == FileTypeCategory::VIDEO)
+        else if (category == FileTypeCategory::VIDEO || category == FileTypeCategory::AUDIO)
         {
-            // Submit fire-and-forget lambda to thread pool
-            if (thread_pool_manager_)
-            {
-                // Check queue capacity before submitting to prevent memory buildup
-                if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
-                {
-                    Poco::Logger::get("MediaProcessor").trace("Media processor queue at capacity (%u), skipping video file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
-                    // Mark file as skipped in database to avoid reprocessing
-                    try
-                    {
-                        ScannedFilesOps::markProcessed(*database_manager_, file_path, -2); // -2 = skipped due to backpressure
-                    }
-                    catch (...)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Failed to mark file as skipped in database: %s", file_path);
-                    }
-                    return false; // Indicate that processing was skipped
-                }
-
-                // Capture by value for thread safety and to avoid dangling references
-                std::string file_path_copy = file_path;
-                std::shared_ptr<DatabaseManager> db_manager = database_manager_;
-
-                thread_pool_manager_->submit("media_processor", [file_path_copy, db_manager]()
-                                             {
-                    try
-                    {
-                        Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
-
-                        // Check if file is already processed or currently being processed
-                        auto current_file = ScannedFilesOps::getByPath(*db_manager, file_path_copy);
-                        if (current_file.has_value())
-                        {
-                            int current_status = current_file->processed;
-
-                            // Skip if already processed (status >= 2) or currently in progress (status = 1)
-                            if (current_status >= 2)
-                            {
-                                Poco::Logger::get("MediaProcessor").information("Skipping already processed file: %s (status: %d)", file_path_copy, current_status);
-                                return;
-                            }
-                            else if (current_status == 1)
-                            {
-                                Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
-                                return;
-                            }
-                        }
-
-                        // Mark file as in progress (only if not already in an error state)
-                        // If file is in an error state, keep it so escalation logic can work properly
-                        if (current_file.has_value())
-                        {
-                            int current_status_check = current_file->processed;
-                            
-                            // Only mark as "in progress" if not already in an error state
-                            if (current_status_check >= 0)
-                            {
-                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 1); // 1 = in progress
-                            }
-                        }
-
-                        // Check if file exists and is accessible (file access error detection)
-                        if (!std::filesystem::exists(file_path_copy))
-                        {
-                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                            return;
-                        }
-
-                        if (!std::filesystem::is_regular_file(file_path_copy))
-                        {
-                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                            return;
-                        }
-
-                        VideoProcessor video_processor;
-                        bool processing_success = false;
-
-                        // Process video (media loading happens here on-demand)
-                        processing_success = video_processor.Process(file_path_copy);
-
-                        // Update database status within the lambda using connection pool
-                        if (processing_success)
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 2);
-                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
-                        }
-                        else
-                        {
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Video processing failed", "Video");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General processing error
-                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
-                        }
-                    }
-                    catch (const std::bad_alloc& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -4, e.what(), "Memory");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -4); // Memory allocation error
-                    }
-                    catch (const std::filesystem::filesystem_error& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -3, e.what(), "FileSystem");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                    }
-                    catch (const std::runtime_error& e)
-                    {
-                        std::string error_msg = e.what();
-                        // Check for network-related error messages
-                        if (error_msg.find("network") != std::string::npos || 
-                            error_msg.find("connection") != std::string::npos ||
-                            error_msg.find("timeout") != std::string::npos)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -5, error_msg, "Network");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -5); // Network-related error
-                        }
-                        else
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, error_msg, "General");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Exception in video processing thread for file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, e.what(), "General");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                    }
-                    catch (...)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Unknown exception in video processing thread for file: " + file_path_copy);
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Unknown exception", "General");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                    } }, file_path_copy);
-
-                Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
-                return true; // Successfully submitted to thread pool
-            }
-            else
-            {
-                Poco::Logger::get("MediaProcessor").error("Thread pool manager not available for file: " + file_path);
-                return false;
-            }
-        }
-        else if (category == FileTypeCategory::AUDIO)
-        {
-            // Submit fire-and-forget lambda to thread pool
-            if (thread_pool_manager_)
-            {
-                // Check queue capacity before submitting to prevent memory buildup
-                if (!thread_pool_manager_->canSubmit("media_processor", max_processing_queue_size_))
-                {
-                    Poco::Logger::get("MediaProcessor").trace("Media processor queue at capacity (%u), skipping audio file: %s", static_cast<unsigned int>(max_processing_queue_size_), file_path);
-                    // Mark file as skipped in database to avoid reprocessing
-                    try
-                    {
-                        ScannedFilesOps::markProcessed(*database_manager_, file_path, -2); // -2 = skipped due to backpressure
-                    }
-                    catch (...)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Failed to mark file as skipped in database: %s", file_path);
-                    }
-                    return false; // Indicate that processing was skipped
-                }
-
-                // Capture by value for thread safety and to avoid dangling references
-                std::string file_path_copy = file_path;
-                std::shared_ptr<DatabaseManager> db_manager = database_manager_;
-
-                thread_pool_manager_->submit("media_processor", [file_path_copy, db_manager]()
-                                             {
-                    try
-                    {
-                        Poco::Logger::get("MediaProcessor").debug("Processing file in thread: " + file_path_copy);
-
-                        // Check if file is already processed or currently being processed
-                        auto current_file = ScannedFilesOps::getByPath(*db_manager, file_path_copy);
-                        if (current_file.has_value())
-                        {
-                            int current_status = current_file->processed;
-
-                            // Skip if already processed (status >= 2) or currently in progress (status = 1)
-                            if (current_status >= 2)
-                            {
-                                Poco::Logger::get("MediaProcessor").information("Skipping already processed file: %s (status: %d)", file_path_copy, current_status);
-                                return;
-                            }
-                            else if (current_status == 1)
-                            {
-                                Poco::Logger::get("MediaProcessor").information("Skipping file currently in progress: %s", file_path_copy);
-                                return;
-                            }
-                        }
-
-                        // Mark file as in progress (only if not already in an error state)
-                        // If file is in an error state, keep it so escalation logic can work properly
-                        if (current_file.has_value())
-                        {
-                            int current_status_check = current_file->processed;
-                            
-                            // Only mark as "in progress" if not already in an error state
-                            if (current_status_check >= 0)
-                            {
-                                ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 1); // 1 = in progress
-                            }
-                        }
-
-                        // Check if file exists and is accessible (file access error detection)
-                        if (!std::filesystem::exists(file_path_copy))
-                        {
-                            Poco::Logger::get("MediaProcessor").error("File not found: " + file_path_copy);
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                            return;
-                        }
-
-                        if (!std::filesystem::is_regular_file(file_path_copy))
-                        {
-                            Poco::Logger::get("MediaProcessor").error("File is not a regular file: " + file_path_copy);
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                            return;
-                        }
-
-                        AudioProcessor audio_processor;
-                        bool processing_success = false;
-
-                        // Process audio (media loading happens here on-demand)
-                        processing_success = audio_processor.Process(file_path_copy);
-
-                        // Update database status within the lambda using connection pool
-                        if (processing_success)
-                        {
-                            ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 2);
-                            Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);
-                        }
-                        else
-                        {
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Audio processing failed", "Audio");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General processing error
-                            Poco::Logger::get("MediaProcessor").warning("Failed to process file: " + file_path_copy);
-                        }
-                    }
-                    catch (const std::bad_alloc& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Memory allocation error processing file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -4, e.what(), "Memory");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -4); // Memory allocation error
-                    }
-                    catch (const std::filesystem::filesystem_error& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("File system error processing file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -3, e.what(), "FileSystem");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -3); // File access error
-                    }
-                    catch (const std::runtime_error& e)
-                    {
-                        std::string error_msg = e.what();
-                        // Check for network-related error messages
-                        if (error_msg.find("network") != std::string::npos || 
-                            error_msg.find("connection") != std::string::npos ||
-                            error_msg.find("timeout") != std::string::npos)
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Network error processing file " + file_path_copy + ": " + error_msg);
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -5, error_msg, "Network");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -5); // Network-related error
-                        }
-                        else
-                        {
-                            Poco::Logger::get("MediaProcessor").error("Runtime error processing file " + file_path_copy + ": " + error_msg);
-                            ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, error_msg, "General");
-                            ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Exception in audio processing thread for file " + file_path_copy + ": " + e.what());
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, e.what(), "General");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                    }
-                    catch (...)
-                    {
-                        Poco::Logger::get("MediaProcessor").error("Unknown exception in audio processing thread for file: " + file_path_copy);
-                        ProcessingErrorsOps::insertError(*db_manager, file_path_copy, ServerMode::EMBEDDING, -1, "Unknown exception", "General");
-                        ScannedFilesOps::markProcessedWithEscalation(*db_manager, file_path_copy, -1); // General error
-                    } }, file_path_copy);
-
-                Poco::Logger::get("MediaProcessor").debug("Submitted file for processing: " + file_path);
-                return true; // Successfully submitted to thread pool
-            }
-            else
-            {
-                Poco::Logger::get("MediaProcessor").error("Thread pool manager not available for file: " + file_path);
-                return false;
-            }
+            // CL-1: photos-only product — video/audio routing deleted. The
+            // category gate below already returns UNSUPPORTED for these, so
+            // this branch is unreachable; it exists to make the intent
+            // explicit if the gate ever changes.
+            Poco::Logger::get("MediaProcessor").warning("Video/audio are not supported (photos-only): " + file_path);
+            return false;
         }
         else
         {
@@ -1096,13 +803,12 @@ namespace MediaDedup
         {
             return FileTypeCategory::IMAGE;
         }
-        else if (config_key.find("media.video.") == 0)
+        // CL-1: photos-only product. Video/audio keys map to UNSUPPORTED so a
+        // stale config flag can never route a video into a stub processor
+        // that marked it processed=2 with zero artifacts (the live bug).
+        else if (config_key.find("media.video.") == 0 || config_key.find("media.audio.") == 0)
         {
-            return FileTypeCategory::VIDEO;
-        }
-        else if (config_key.find("media.audio.") == 0)
-        {
-            return FileTypeCategory::AUDIO;
+            return FileTypeCategory::UNSUPPORTED;
         }
 
         return FileTypeCategory::UNSUPPORTED;

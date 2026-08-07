@@ -125,51 +125,51 @@
   },
   "media.audio.aac": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.aiff": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.alac": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.amr": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.au": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.flac": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.m4a": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.mp3": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.ogg": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.opus": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.wav": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.audio.wma": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "media.filter.enabled": {
     "type": "bool",
@@ -631,10 +631,6 @@
     "type": "int",
     "default": 1024
   },
-  "tpm.types.audio_processor.share": {
-    "type": "double",
-    "default": 1.0
-  },
   "tpm.types.duplicate_finder.share": {
     "type": "double",
     "default": 1.0
@@ -652,10 +648,6 @@
     "default": 1.0
   },
   "tpm.types.thumbnail_generator.share": {
-    "type": "double",
-    "default": 1.0
-  },
-  "tpm.types.video_processor.share": {
     "type": "double",
     "default": 1.0
   }

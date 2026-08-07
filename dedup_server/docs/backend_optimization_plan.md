@@ -1691,6 +1691,33 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
 ## Phase 6 — Cleanup / dead code
 
 ### CL-1. Video/audio vestiges (photos-only product, commit 96e9aec)
+
+> **STATUS: ✅ DONE 2026-08-07 (validated).**
+> - **The live bug is closed at the gate:** `getFileTypeCategory` now
+>   returns UNSUPPORTED for every `media.video.*`/`media.audio.*` key —
+>   a stale config flag can never again route a video into a stub that
+>   marked it `processed=2` with zero artifacts. A defensive
+>   VIDEO/AUDIO branch remains in RouteToProcessor that warns + returns
+>   false should the gate ever change.
+> - **Deleted:** `video_processor.{cpp,hpp}`, `audio_processor.{cpp,hpp}`
+>   (stubs, now zero references), the two ~150-line VIDEO/AUDIO routing
+>   branches in `media_processor.cpp`, their CMake entries (main + two
+>   test targets + aggregate), and the
+>   `tpm.types.{video,audio}_processor.share` config keys (yaml +
+>   schema).
+> - **Config migrated:** all 26 `media.video.*`/`media.audio.*` flags in
+>   config.yaml set to false; the 12 audio schema defaults that were
+>   still true flipped to false (video's already were).
+> - **Tests:** the four routing tests that asserted videos/audio "route
+>   successfully" (i.e. asserted the BUG) replaced by
+>   `RouteToProcessor_VideoAndAudioAreUnsupported`, which enables the
+>   flags explicitly and asserts routing still refuses. Suite: 325
+>   tests, 296 passed / 29 pre-existing skips / 0 failed.
+> - **Validate:** `./restart -b`; photo processing unaffected. If your
+>   library folders contain videos, they are now ignored (previously
+>   they were silently marked processed with no artifacts — rows from
+>   that era remain in the DB and the integrity check can clear them).
+
 - **The bug:** `config/config.yaml` still sets all 14 `media.video.*` flags **true**
   (:61-165 various), overriding the flipped factory defaults
   (`config_manager_factory.cpp:528-541`). The processing gate

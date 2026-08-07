@@ -276,8 +276,6 @@ add_executable(media_dedup_server
     src/database/preview_cache_ops.cpp
     src/database/ejected_files_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
-    src/media_processors/audio_processor.cpp
-    src/media_processors/video_processor.cpp
     src/core/grpc_server/grpc_server_core.cpp
     ${PROTO_BUILD_DIR}/dedup.pb.cc
     ${PROTO_BUILD_DIR}/dedup.grpc.pb.cc
