@@ -1638,6 +1638,43 @@ Sequencing inside this phase matters: **AR-1 → AR-2 → AR-3**.
   5. Replace the `std::cout` config-event subscriber (:691-706) with Poco logging.
 
 ### AR-7. Error/logging conventions (opportunistic, alongside other work)
+
+> **STATUS: ✅ DONE 2026-08-06 (validated).**
+> Per its "opportunistic" designation, this closed what remained after
+> the earlier steps already did most of the work:
+> - **cout/cerr ban: done.** DF-4 had cleaned onnx_adapter (×11) and
+>   AR-3 deleted web_server_core (×14); this pass converted/removed the
+>   last 10 stragglers (config subsystem → Poco; two leftover "DEBUG:"
+>   prints deleted). The 6 remaining uses are all legitimate by
+>   design: the log sink's own stdout writes, the interactive
+>   `dedup_server>` console prompt, and `--help` output.
+> - **Empty `catch (...)` audit: no dangerous swallows found.** All ~28
+>   empty catches are deliberate best-effort guards (transaction
+>   rollback-after-failure, stoi/date-parse fallbacks, cache-file
+>   deletion sweeps, mtime propagation, eviction-notify hook isolation,
+>   scheduler-resume in error paths) — exactly the exempt category. The
+>   ~164 non-empty `catch (...)` sites sit at handler/thread boundaries
+>   paired with logged `catch (const std::exception&)`. Wholesale
+>   conversion = churn without behavior change; not done.
+> - **gRPC status convention: DOCUMENTED, not normalized** (in
+>   `grpc_service_common.hpp`): action RPCs return OK + business outcome
+>   in `success`/`error_message` (the Swift client branches on
+>   `resp.success`); MediaService uses status codes AS flow control
+>   (UNAVAILABLE = generating, FAILED_PRECONDITION = negative-cached);
+>   UNAUTHENTICATED reserved for the AR-4 processor. Both tiers are
+>   client-load-bearing — "picking one" would break the app.
+> - **`Result<T>` for the DB layer: deliberately DEFERRED.** A full
+>   migration touches every ops file and hundreds of call sites for a
+>   style unification with no active bug behind it; the two
+>   `lookup_failed` out-params are documented and load-bearing at their
+>   call sites. Revisit only if the DB layer grows new error semantics.
+> - **Suite:** 328 tests, 296 passed / 32 pre-existing skips / 0 failed
+>   (two timing-sensitive tests flaked once under load-average-7 while
+>   the validation server ran; both pass 3/3 in isolation and the suite
+>   is green on re-run).
+> - **Validate:** `./restart -b` — cosmetic-only changes; config
+>   file-monitor messages now appear as proper log lines.
+
 - Adopt a `Result<T>`-style return for the database layer distinguishing
   "not found" from "operation failed" — subsumes the current four conventions
   (bool+log, optional, the ad-hoc `bool* lookup_failed` out-params in

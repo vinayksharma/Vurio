@@ -1,4 +1,5 @@
 #include "config/unified_observable_config.hpp"
+#include <Poco/Logger.h>
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
@@ -146,7 +147,7 @@ namespace MediaDedup
             // Set up file monitor callback
             file_monitor_->setFileChangeCallback([this](const std::string &file_path)
                                                  {
-                std::cout << "[UnifiedObservableConfigManager] File change callback triggered for: " << file_path << std::endl;
+                Poco::Logger::get("Config").debug("File change callback triggered for: " + file_path);
                 reloadConfiguration();
                 notifyFileChange(file_path); });
 

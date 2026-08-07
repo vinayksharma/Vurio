@@ -150,10 +150,10 @@ namespace MediaDedup
             if (f.is_open()) {
                 descriptions = nlohmann::json::parse(f);
             } else {
-                std::cerr << "[WARNING] " << desc_path << " not found. Descriptions will be empty." << std::endl;
+                Poco::Logger::get("Config").warning(desc_path + " not found. Descriptions will be empty.");
             }
         } catch (const std::exception& e) {
-            std::cerr << "[ERROR] Failed to parse config.descriptions.json: " << e.what() << std::endl;
+            Poco::Logger::get("Config").error("Failed to parse config.descriptions.json: " + std::string(e.what()));
         }
 
         auto getDesc = [&descriptions](const std::string& key) -> std::string {

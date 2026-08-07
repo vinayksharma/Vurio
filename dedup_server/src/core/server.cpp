@@ -240,10 +240,8 @@ namespace MediaDedup
             server_mode_ = "EMBEDDING"; // Single mode operation
 
             // Apply the logging level from configuration
-            std::cout << "DEBUG: About to apply logging level: " << logging_level_ << std::endl;
             LoggingSetup logging_setup;
             logging_setup.applyLogLevel(logging_level_);
-            std::cout << "DEBUG: Logging level applied successfully" << std::endl;
 
             // Start console input processing AFTER configuration is loaded
             console_input_manager_.start();

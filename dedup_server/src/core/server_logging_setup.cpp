@@ -162,7 +162,6 @@ namespace MediaDedup
 
     void LoggingSetup::applyLogLevel(const std::string &level)
     {
-        std::cout << "DEBUG: applyLogLevel called with level: " << level << std::endl;
         std::string lowered = level;
         for (char &c : lowered)
             c = static_cast<char>(::tolower(c));
