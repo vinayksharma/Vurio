@@ -18,6 +18,12 @@ actor ServerImageLoader {
     /// occupy a download slot ahead of a thumbnail the user is actually viewing.
     static let prefetchPriority = Int.max
 
+    /// Priority tier for the viewer's main image (preview / full-res): above
+    /// every thumbnail layer, so the image the user is actually looking at
+    /// never queues behind a screenful of strip tiles. (Before the FIFO
+    /// fairness fix this jumped the queue by accident via LIFO ordering.)
+    static let viewerImagePriority = -1
+
     private var activeDownloads = 0
     private let maxConcurrentDownloads = 8
     private let maxQueueSize = 1000
@@ -299,6 +305,11 @@ actor ServerImageLoader {
         if !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
             if let image = await decodeImageInBackground(filePath: filePath, priority: priority) {
                 knownFullRes.insert(filePath)
+                // Replace the preview slot with the better bitmap: revisits hit
+                // the "_preview" cache first, and a stale QHD entry there while
+                // knownFullRes is set would show the low-res image AND disarm
+                // the viewer's zoom upgrade (it trusts knownFullRes).
+                ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                 return image
             }
             // Local decode failed (odd codec, truncated file) — fall through
@@ -306,8 +317,8 @@ actor ServerImageLoader {
         }
 
         ensureMediaReadySubscription()
-        try await waitForToken(priority: 0)
-        defer { Task { await self.releaseToken(priority: 0) } }
+        try await waitForToken(priority: Self.viewerImagePriority)
+        defer { Task { await self.releaseToken(priority: Self.viewerImagePriority) } }
 
         defer {
             if Task.isCancelled {
@@ -347,6 +358,9 @@ actor ServerImageLoader {
 
                 if let image = await self.decodeImageInBackground(filePath: response.filePath, priority: priority) {
                     knownFullRes.insert(filePath)
+                    // Keep the "_preview" cache slot holding the best bitmap
+                    // (see the local-decode branch above for why).
+                    ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                     return image
                 } else {
                     decodeFailures += 1
@@ -391,8 +405,8 @@ actor ServerImageLoader {
     private func performLoadPreview(filePath: String, priority: TaskPriority?) async throws -> NSImage {
         // Previews are user-initiated (opening the full-screen viewer), so they run
         // at the highest priority alongside top-layer thumbnails.
-        try await waitForToken(priority: 0)
-        defer { Task { await self.releaseToken(priority: 0) } }
+        try await waitForToken(priority: Self.viewerImagePriority)
+        defer { Task { await self.releaseToken(priority: Self.viewerImagePriority) } }
         
         defer {
             if Task.isCancelled {
@@ -588,9 +602,13 @@ actor ServerImageLoader {
         guard let minPriority = queue.map({ $0.priority }).min() else { return nil }
         // Blocked while any higher-priority layer is still generating.
         for (p, count) in activeByPriority where count > 0 && p < minPriority { return nil }
-        // Within the shallowest queued layer, serve the most recently enqueued
-        // (LIFO) so on-screen requests beat ones scrolling out of view.
-        for i in stride(from: queue.count - 1, through: 0, by: -1) where queue[i].priority == minPriority {
+        // FIFO within the shallowest queued layer. This used to be LIFO
+        // ("newest request is most likely still on screen"), which starved the
+        // OLDEST waiters — with a fresh cache a screenful of misses queues at
+        // once, every new arrival jumped ahead, and the first tiles of a strip
+        // could wait forever. Scroll-off staleness is handled by explicit
+        // cancellation (tiles cancel on disappear), so fairness costs nothing.
+        for i in queue.indices where queue[i].priority == minPriority {
             return i
         }
         return nil
