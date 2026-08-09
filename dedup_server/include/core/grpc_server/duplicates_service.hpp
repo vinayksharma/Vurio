@@ -278,6 +278,51 @@ public:
         return grpc::Status::OK;
     }
 
+    // True when `path` (slash-normalized) sits under any ejection root — the
+    // same rule the list RPCs use to derive is_ejected.
+    static bool isUnderEjectionPath(const std::string& path, const std::vector<std::string>& ejection_paths) {
+        std::string normalized = path;
+        std::replace(normalized.begin(), normalized.end(), '\\', '/');
+        for (const auto& ep : ejection_paths) {
+            if (normalized.find(ep) == 0) return true;
+        }
+        return false;
+    }
+
+    grpc::Status GetEligibleDuplicatePaths(grpc::ServerContext* context,
+                                           const vurio::dedup::GetEligibleDuplicatePathsRequest* request,
+                                           vurio::dedup::DuplicatePathsResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+
+        // Score/representative filtering is done in SQL; the ejected exclusion
+        // happens here because ejection roots are dynamic user settings.
+        auto ejection_paths = loadEjectionPaths();
+        auto paths = MediaDedup::DuplicateGroupsOps::getEjectCandidatePaths(*db_, request->tightness());
+        for (auto& path : paths) {
+            if (!isUnderEjectionPath(path, ejection_paths)) {
+                reply->add_file_paths(std::move(path));
+            }
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetEjectedDuplicatePaths(grpc::ServerContext* context, const vurio::dedup::Empty* request,
+                                          vurio::dedup::DuplicatePathsResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+
+        // Deliberately scoped to duplicate-group members (not the full ejection
+        // history): the BINNED Restore button restores duplicates only —
+        // errored/ignored ejects are restored from Settings.
+        auto ejection_paths = loadEjectionPaths();
+        auto paths = MediaDedup::DuplicateGroupsOps::getAllMemberPaths(*db_);
+        for (auto& path : paths) {
+            if (isUnderEjectionPath(path, ejection_paths)) {
+                reply->add_file_paths(std::move(path));
+            }
+        }
+        return grpc::Status::OK;
+    }
+
     grpc::Status EjectDuplicates(grpc::ServerContext* context, const vurio::dedup::EjectDuplicatesRequest* request,
                                  vurio::dedup::EjectDuplicatesResponse* reply) override {
         // Delegate to the shared, optimized bulk eject (rename fast path,

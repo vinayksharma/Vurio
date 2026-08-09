@@ -171,3 +171,135 @@ TEST_F(DuplicatesResetAPITest, ResetAll_ClearsAllModes)
     ASSERT_TRUE(checkpoint_embedding.has_value());
     EXPECT_EQ(checkpoint_embedding->last_processed_id, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Paths-only bulk-op candidate queries (frontend 2.2):
+// GetEligibleDuplicatePaths / GetEjectedDuplicatePaths back onto these ops.
+// ---------------------------------------------------------------------------
+
+class DuplicateBulkPathsTest : public DuplicatesResetAPITest
+{
+protected:
+    int makeScannedFile(const std::string &path)
+    {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.location_key = "test_location";
+        row.file_name = path;
+        ScannedFilesOps::upsert(*db_, row);
+        auto inserted = ScannedFilesOps::getByPath(*db_, path);
+        EXPECT_TRUE(inserted.has_value());
+        return inserted ? inserted->id : -1;
+    }
+};
+
+TEST_F(DuplicateBulkPathsTest, EjectCandidates_FilterByTightnessRepAndMemberCount)
+{
+    // Real group: representative (1.0) + close member (0.99) + far member (0.90).
+    int rep_id = makeScannedFile("/test/rep.jpg");
+    int close_id = makeScannedFile("/test/close.jpg");
+    int far_id = makeScannedFile("/test/far.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_, "EMBEDDING", rep_id, "/test/rep.jpg", 1024, "2025-10-21", 0.95);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, rep_id, "/test/rep.jpg", 1.0, 1024, "2025-10-21", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, close_id, "/test/close.jpg", 0.99, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, far_id, "/test/far.jpg", 0.90, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::updateGroupMemberCount(*db_, group_id, 3));
+
+    // Degenerate group (member_count stays 1): its member must never appear.
+    int lone_id = makeScannedFile("/test/lone.jpg");
+    int lone_group = DuplicateGroupsOps::createGroup(
+        *db_, "EMBEDDING", lone_id, "/test/lone.jpg", 1024, "2025-10-22", 0.95);
+    ASSERT_GT(lone_group, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, lone_group, lone_id, "/test/lone.jpg", 0.99, 1024, "2025-10-22", false));
+
+    // Tight: only the 0.99 member (distance 0.01); the representative never counts.
+    auto tight = DuplicateGroupsOps::getEjectCandidatePaths(*db_, 0.02);
+    EXPECT_EQ(tight, std::vector<std::string>({"/test/close.jpg"}));
+
+    // Loose: both non-rep members, best match first.
+    auto loose = DuplicateGroupsOps::getEjectCandidatePaths(*db_, 0.2);
+    EXPECT_EQ(loose, std::vector<std::string>({"/test/close.jpg", "/test/far.jpg"}));
+}
+
+TEST_F(DuplicateBulkPathsTest, EjectCandidates_ZeroScoreCountsAsExactDuplicate)
+{
+    int rep_id = makeScannedFile("/test/rep0.jpg");
+    int exact_id = makeScannedFile("/test/exact0.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_, "EMBEDDING", rep_id, "/test/rep0.jpg", 1024, "2025-10-21", 0.95);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, rep_id, "/test/rep0.jpg", 1.0, 1024, "2025-10-21", true));
+    // SHA-identical members are recorded with score 0 — distance 0, always eligible.
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, exact_id, "/test/exact0.jpg", 0.0, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::updateGroupMemberCount(*db_, group_id, 2));
+
+    auto strictest = DuplicateGroupsOps::getEjectCandidatePaths(*db_, 0.0);
+    EXPECT_EQ(strictest, std::vector<std::string>({"/test/exact0.jpg"}));
+}
+
+TEST_F(DuplicateBulkPathsTest, AllMemberPaths_ReturnsEveryMemberOfRealGroups)
+{
+    int rep_id = makeScannedFile("/test/a.jpg");
+    int member_id = makeScannedFile("/test/b.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_, "EMBEDDING", rep_id, "/test/a.jpg", 1024, "2025-10-21", 0.95);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, rep_id, "/test/a.jpg", 1.0, 1024, "2025-10-21", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, member_id, "/test/b.jpg", 0.97, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::updateGroupMemberCount(*db_, group_id, 2));
+
+    auto all = DuplicateGroupsOps::getAllMemberPaths(*db_);
+    ASSERT_EQ(all.size(), 2u);
+    // Representative first only by score ordering (1.0 > 0.97).
+    EXPECT_EQ(all[0], "/test/a.jpg");
+    EXPECT_EQ(all[1], "/test/b.jpg");
+}
+
+// AR-5 pattern: exercise the new gRPC handlers directly, no server needed.
+#include "core/grpc_server/duplicates_service.hpp"
+#include "database/user_settings_ops.hpp"
+#include <chrono>
+#include <thread>
+
+TEST_F(DuplicateBulkPathsTest, GrpcHandlers_EligibleAndEjectedPaths)
+{
+    ASSERT_TRUE(UserSettingsOps::ensureTable(*db_));
+    ASSERT_TRUE(UserSettingsOps::upsert(*db_, "ejectionPath:test_location", "/test/bin/ejected_x"));
+
+    // Group: representative + one eligible member + one already in the bin.
+    int rep_id = makeScannedFile("/test/h_rep.jpg");
+    int cand_id = makeScannedFile("/test/h_cand.jpg");
+    int ejected_id = makeScannedFile("/test/bin/ejected_x/h_gone.jpg");
+    int group_id = DuplicateGroupsOps::createGroup(
+        *db_, "EMBEDDING", rep_id, "/test/h_rep.jpg", 1024, "2025-10-21", 0.95);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, rep_id, "/test/h_rep.jpg", 1.0, 1024, "2025-10-21", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, cand_id, "/test/h_cand.jpg", 0.99, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_, group_id, ejected_id, "/test/bin/ejected_x/h_gone.jpg", 0.98, 1024, "2025-10-21", false));
+    ASSERT_TRUE(DuplicateGroupsOps::updateGroupMemberCount(*db_, group_id, 3));
+
+    // loadEjectionPaths() memoizes process-wide for 5 s; wait it out so the
+    // first handler call below reads THIS test database's settings.
+    std::this_thread::sleep_for(std::chrono::milliseconds(5100));
+
+    Core::DuplicatesServiceImpl svc(db_.get());
+
+    grpc::ServerContext ectx;
+    vurio::dedup::GetEligibleDuplicatePathsRequest ereq;
+    ereq.set_tightness(0.2);
+    vurio::dedup::DuplicatePathsResponse eresp;
+    ASSERT_TRUE(svc.GetEligibleDuplicatePaths(&ectx, &ereq, &eresp).ok());
+    // The representative never counts and the binned member is excluded.
+    ASSERT_EQ(eresp.file_paths_size(), 1);
+    EXPECT_EQ(eresp.file_paths(0), "/test/h_cand.jpg");
+
+    grpc::ServerContext jctx;
+    vurio::dedup::Empty empty;
+    vurio::dedup::DuplicatePathsResponse jresp;
+    ASSERT_TRUE(svc.GetEjectedDuplicatePaths(&jctx, &empty, &jresp).ok());
+    ASSERT_EQ(jresp.file_paths_size(), 1);
+    EXPECT_EQ(jresp.file_paths(0), "/test/bin/ejected_x/h_gone.jpg");
+}

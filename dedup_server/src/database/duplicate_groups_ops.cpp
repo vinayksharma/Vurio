@@ -1011,4 +1011,53 @@ namespace MediaDedup
             return page; // Return empty page on error
         }
     }
+
+    std::vector<std::string> DuplicateGroupsOps::getEjectCandidatePaths(DatabaseManager &db, double tightness)
+    {
+        std::vector<std::string> results;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            double t = tightness;
+            Statement stmt = (sess << std::string(SQL::kSelectEjectCandidateMemberPaths), use(t));
+            stmt.execute();
+
+            Poco::Data::RecordSet rs(stmt);
+            for (auto &row : rs)
+            {
+                results.push_back(row[0].convert<std::string>());
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in getEjectCandidatePaths: %s", std::string(e.what()));
+        }
+        return results;
+    }
+
+    std::vector<std::string> DuplicateGroupsOps::getAllMemberPaths(DatabaseManager &db)
+    {
+        std::vector<std::string> results;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            Statement stmt = (sess << std::string(SQL::kSelectAllDuplicateMemberPaths));
+            stmt.execute();
+
+            Poco::Data::RecordSet rs(stmt);
+            for (auto &row : rs)
+            {
+                results.push_back(row[0].convert<std::string>());
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in getAllMemberPaths: %s", std::string(e.what()));
+        }
+        return results;
+    }
 }

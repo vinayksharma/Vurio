@@ -934,6 +934,16 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>
 
+  func getEligibleDuplicatePaths(
+    _ request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse>
+
+  func getEjectedDuplicatePaths(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse>
+
   func subscribeToDuplicateUpdates(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?,
@@ -1036,6 +1046,44 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? []
+    )
+  }
+
+  /// Paths-only queries for bulk eject/restore: the client keeps its chunked
+  /// operation (per-chunk progress, cancellable between chunks) without first
+  /// downloading every group's full member payload just to build a path list.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetEligibleDuplicatePaths.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getEligibleDuplicatePaths(
+    _ request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEligibleDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEligibleDuplicatePathsInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetEjectedDuplicatePaths
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetEjectedDuplicatePaths.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getEjectedDuplicatePaths(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEjectedDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEjectedDuplicatePathsInterceptors() ?? []
     )
   }
 
@@ -1151,6 +1199,16 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>
 
+  func makeGetEligibleDuplicatePathsCall(
+    _ request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse>
+
+  func makeGetEjectedDuplicatePathsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse>
+
   func makeSubscribeToDuplicateUpdatesCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -1224,6 +1282,30 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeUndoEjectDuplicatesInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetEligibleDuplicatePathsCall(
+    _ request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEligibleDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEligibleDuplicatePathsInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetEjectedDuplicatePathsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEjectedDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEjectedDuplicatePathsInterceptors() ?? []
     )
   }
 
@@ -1302,6 +1384,30 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
+  internal func getEligibleDuplicatePaths(
+    _ request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_DuplicatePathsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEligibleDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEligibleDuplicatePathsInterceptors() ?? []
+    )
+  }
+
+  internal func getEjectedDuplicatePaths(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_DuplicatePathsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEjectedDuplicatePaths.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEjectedDuplicatePathsInterceptors() ?? []
+    )
+  }
+
   internal func subscribeToDuplicateUpdates(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
@@ -1349,6 +1455,12 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when invoking 'undoEjectDuplicates'.
   func makeUndoEjectDuplicatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'getEligibleDuplicatePaths'.
+  func makeGetEligibleDuplicatePathsInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getEjectedDuplicatePaths'.
+  func makeGetEjectedDuplicatePathsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse>]
+
   /// - Returns: Interceptors to use when invoking 'subscribeToDuplicateUpdates'.
   func makeSubscribeToDuplicateUpdatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
 }
@@ -1363,6 +1475,8 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.undoEjectDuplicates,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEligibleDuplicatePaths,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEjectedDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates,
     ]
   )
@@ -1395,6 +1509,18 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     internal static let undoEjectDuplicates = GRPCMethodDescriptor(
       name: "UndoEjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEligibleDuplicatePaths = GRPCMethodDescriptor(
+      name: "GetEligibleDuplicatePaths",
+      path: "/vurio.dedup.DuplicatesService/GetEligibleDuplicatePaths",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEjectedDuplicatePaths = GRPCMethodDescriptor(
+      name: "GetEjectedDuplicatePaths",
+      path: "/vurio.dedup.DuplicatesService/GetEjectedDuplicatePaths",
       type: GRPCCallType.unary
     )
 
@@ -3399,6 +3525,13 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
 
   func undoEjectDuplicates(request: Vurio_Dedup_UndoEjectDuplicatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_UndoEjectDuplicatesResponse>
 
+  /// Paths-only queries for bulk eject/restore: the client keeps its chunked
+  /// operation (per-chunk progress, cancellable between chunks) without first
+  /// downloading every group's full member payload just to build a path list.
+  func getEligibleDuplicatePaths(request: Vurio_Dedup_GetEligibleDuplicatePathsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_DuplicatePathsResponse>
+
+  func getEjectedDuplicatePaths(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_DuplicatePathsResponse>
+
   func subscribeToDuplicateUpdates(request: Vurio_Dedup_Empty, context: StreamingResponseCallContext<Vurio_Dedup_DuplicateGroupUpdate>) -> EventLoopFuture<GRPCStatus>
 }
 
@@ -3459,6 +3592,24 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         userFunction: self.undoEjectDuplicates(request:context:)
       )
 
+    case "GetEligibleDuplicatePaths":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetEligibleDuplicatePathsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicatePathsResponse>(),
+        interceptors: self.interceptors?.makeGetEligibleDuplicatePathsInterceptors() ?? [],
+        userFunction: self.getEligibleDuplicatePaths(request:context:)
+      )
+
+    case "GetEjectedDuplicatePaths":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicatePathsResponse>(),
+        interceptors: self.interceptors?.makeGetEjectedDuplicatePathsInterceptors() ?? [],
+        userFunction: self.getEjectedDuplicatePaths(request:context:)
+      )
+
     case "SubscribeToDuplicateUpdates":
       return ServerStreamingServerHandler(
         context: context,
@@ -3513,6 +3664,19 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
     request: Vurio_Dedup_UndoEjectDuplicatesRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_UndoEjectDuplicatesResponse
+
+  /// Paths-only queries for bulk eject/restore: the client keeps its chunked
+  /// operation (per-chunk progress, cancellable between chunks) without first
+  /// downloading every group's full member payload just to build a path list.
+  func getEligibleDuplicatePaths(
+    request: Vurio_Dedup_GetEligibleDuplicatePathsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_DuplicatePathsResponse
+
+  func getEjectedDuplicatePaths(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_DuplicatePathsResponse
 
   func subscribeToDuplicateUpdates(
     request: Vurio_Dedup_Empty,
@@ -3585,6 +3749,24 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.undoEjectDuplicates(request: $0, context: $1) }
       )
 
+    case "GetEligibleDuplicatePaths":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetEligibleDuplicatePathsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicatePathsResponse>(),
+        interceptors: self.interceptors?.makeGetEligibleDuplicatePathsInterceptors() ?? [],
+        wrapping: { try await self.getEligibleDuplicatePaths(request: $0, context: $1) }
+      )
+
+    case "GetEjectedDuplicatePaths":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_DuplicatePathsResponse>(),
+        interceptors: self.interceptors?.makeGetEjectedDuplicatePathsInterceptors() ?? [],
+        wrapping: { try await self.getEjectedDuplicatePaths(request: $0, context: $1) }
+      )
+
     case "SubscribeToDuplicateUpdates":
       return GRPCAsyncServerHandler(
         context: context,
@@ -3622,6 +3804,14 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeUndoEjectDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_UndoEjectDuplicatesRequest, Vurio_Dedup_UndoEjectDuplicatesResponse>]
 
+  /// - Returns: Interceptors to use when handling 'getEligibleDuplicatePaths'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetEligibleDuplicatePathsInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetEligibleDuplicatePathsRequest, Vurio_Dedup_DuplicatePathsResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getEjectedDuplicatePaths'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetEjectedDuplicatePathsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicatePathsResponse>]
+
   /// - Returns: Interceptors to use when handling 'subscribeToDuplicateUpdates'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSubscribeToDuplicateUpdatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
@@ -3637,6 +3827,8 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getEligibleDuplicatePaths,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getEjectedDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.subscribeToDuplicateUpdates,
     ]
   )
@@ -3669,6 +3861,18 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     internal static let undoEjectDuplicates = GRPCMethodDescriptor(
       name: "UndoEjectDuplicates",
       path: "/vurio.dedup.DuplicatesService/UndoEjectDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEligibleDuplicatePaths = GRPCMethodDescriptor(
+      name: "GetEligibleDuplicatePaths",
+      path: "/vurio.dedup.DuplicatesService/GetEligibleDuplicatePaths",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEjectedDuplicatePaths = GRPCMethodDescriptor(
+      name: "GetEjectedDuplicatePaths",
+      path: "/vurio.dedup.DuplicatesService/GetEjectedDuplicatePaths",
       type: GRPCCallType.unary
     )
 

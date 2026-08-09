@@ -137,7 +137,25 @@ service DuplicatesService {
   rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);
   rpc EjectDuplicates(EjectDuplicatesRequest) returns (EjectDuplicatesResponse);
   rpc UndoEjectDuplicates(UndoEjectDuplicatesRequest) returns (UndoEjectDuplicatesResponse);
+  // Paths-only queries for bulk eject/restore: the client keeps its chunked
+  // operation (per-chunk progress, cancellable between chunks) without first
+  // downloading every group's full member payload just to build a path list.
+  rpc GetEligibleDuplicatePaths(GetEligibleDuplicatePathsRequest) returns (DuplicatePathsResponse);
+  rpc GetEjectedDuplicatePaths(Empty) returns (DuplicatePathsResponse);
   rpc SubscribeToDuplicateUpdates(Empty) returns (stream DuplicateGroupUpdate);
+}
+
+message GetEligibleDuplicatePathsRequest {
+  // Max distance (1 - similarity_score) for a non-representative, not-yet-
+  // ejected member to count as eligible; members with score <= 0 are treated
+  // as distance 0 (exact duplicates). Mirrors the client-side slider rule.
+  double tightness = 1;
+}
+
+message DuplicatePathsResponse {
+  // Newest group first, best match first within a group — the same order the
+  // BINNED view displays, so chunked progress walks the list top-down.
+  repeated string file_paths = 1;
 }
 
 message GetGroupsRequest {
