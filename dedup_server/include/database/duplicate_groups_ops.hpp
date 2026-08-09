@@ -143,6 +143,15 @@ namespace MediaDedup
         // Paginated retrieval with members (for API)
         static DuplicateGroupsPage getGroupsWithMembers(DatabaseManager &db, int start, int limit, const std::string &mode = "");
 
+        // Paths-only bulk-op candidates (no member payloads). Ordering matches
+        // the BINNED display order: newest group first, best match first.
+        // Non-representative members within `tightness` distance (score <= 0
+        // counts as distance 0); groups of >= 2 members only.
+        static std::vector<std::string> getEjectCandidatePaths(DatabaseManager &db, double tightness);
+        // Every member path of every real (>= 2 member) group; the caller keeps
+        // the ejected subset by ejection-root prefix.
+        static std::vector<std::string> getAllMemberPaths(DatabaseManager &db);
+
         // Checkpoint operations
         static bool upsertCheckpoint(DatabaseManager &db,
                                      const std::string &mode,

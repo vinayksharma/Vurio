@@ -518,6 +518,24 @@ namespace MediaDedup
         inline constexpr std::string_view kSelectDuplicateGroupsCountOlderThan =
             "SELECT COUNT(*) FROM duplicate_groups WHERE mode=? AND representative_created_date > ?";
 
+        // Paths-only bulk-op candidate queries (frontend 2.2). Ordering matches
+        // the BINNED display order (newest group first, best match first) so
+        // chunked eject/restore progress walks the visible list top-down.
+        // Ejection-state filtering (path under an ejection root) happens in the
+        // service layer — the roots are dynamic user settings.
+        inline constexpr std::string_view kSelectEjectCandidateMemberPaths =
+            "SELECT dm.file_path FROM duplicate_members dm "
+            "JOIN duplicate_groups dg ON dg.id = dm.group_id "
+            "WHERE dg.member_count >= 2 AND dm.is_representative = 0 "
+            "AND (dm.similarity_score <= 0 OR (1.0 - dm.similarity_score) <= ?) "
+            "ORDER BY dg.representative_created_date DESC, dm.similarity_score DESC";
+
+        inline constexpr std::string_view kSelectAllDuplicateMemberPaths =
+            "SELECT dm.file_path FROM duplicate_members dm "
+            "JOIN duplicate_groups dg ON dg.id = dm.group_id "
+            "WHERE dg.member_count >= 2 "
+            "ORDER BY dg.representative_created_date DESC, dm.similarity_score DESC";
+
 // Best cached thumbnail path for a source file, independent of which size bucket
 // the pipeline produced. Prefers the smallest bucket >= 128 (adequate for the
 // 70-80px display tiles), otherwise the largest smaller bucket. Populating this
