@@ -3,28 +3,48 @@ import AppKit
 
 final class ImageCache {
     static let shared = ImageCache()
-    
-    private let cache = NSCache<NSString, NSImage>()
-    
+
+    // Two pools with separate budgets: a 70 px thumbnail decodes to ~20 KB
+    // while a viewer preview (QHD, or full-res via the best-available swap) can
+    // be tens to hundreds of MB. One count-limited cache treated them the same,
+    // so a browse through the viewer could pin gigabytes of previews.
+    // Cost = decoded bytes (pixels × 4), so the limits bound real memory.
+    private let thumbs = NSCache<NSString, NSImage>()
+    private let previews = NSCache<NSString, NSImage>()
+
     private init() {
-        // Limit cache to 500 images to avoid unbounded memory growth.
-        // This is large enough to keep many pages in memory while preventing OOM.
-        cache.countLimit = 500
+        thumbs.countLimit = 4000
+        thumbs.totalCostLimit = 256 * 1024 * 1024
+        previews.countLimit = 40
+        previews.totalCostLimit = 1024 * 1024 * 1024
     }
-    
+
+    // Keys are "path_<pixelSize>" for thumbnails and "path_preview" for viewer
+    // images (full-res results are stored under the _preview slot as the
+    // best-available bitmap). Routing by suffix keeps the call sites unchanged.
+    private func pool(forKey key: String) -> NSCache<NSString, NSImage> {
+        key.hasSuffix("_preview") || key.hasSuffix("_fullres") ? previews : thumbs
+    }
+
+    private static func cost(of image: NSImage) -> Int {
+        let pixels = image.representations.reduce(0) { $0 + $1.pixelsWide * $1.pixelsHigh }
+        return max(pixels * 4, 1)
+    }
+
     func getImage(forKey key: String) -> NSImage? {
-        return cache.object(forKey: key as NSString)
+        return pool(forKey: key).object(forKey: key as NSString)
     }
-    
+
     func setImage(_ image: NSImage, forKey key: String) {
-        cache.setObject(image, forKey: key as NSString)
+        pool(forKey: key).setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
     }
-    
+
     func removeImage(forKey key: String) {
-        cache.removeObject(forKey: key as NSString)
+        pool(forKey: key).removeObject(forKey: key as NSString)
     }
-    
+
     func clear() {
-        cache.removeAllObjects()
+        thumbs.removeAllObjects()
+        previews.removeAllObjects()
     }
 }

@@ -10,95 +10,73 @@ class RowViewModel: ObservableObject, Identifiable {
     @Published var refreshTrigger: Int = 0
 }
 
-/// A custom high-performance, infinitely scrollable virtualization container using AppKit.
+/// Reference box holding the current row-content closure. `updateNSView` swaps
+/// the closure in place (free — no view rebuild); rows re-read it on their next
+/// body pass, which only happens when something bumps their `refreshTrigger`.
+/// This replaces the old scheme of reassigning every hosting view's `rootView`
+/// (via `AnyView`) on every SwiftUI update.
+final class RowContentBox<RowContent: View> {
+    var content: (Int) -> RowContent
+    init(_ content: @escaping (Int) -> RowContent) { self.content = content }
+}
+
+/// A custom high-performance, infinitely scrollable virtualization container
+/// using AppKit. Rows are uniform-height: all geometry is closed-form, so a
+/// 100k-row list costs the same to lay out and update as a 10-row one.
 struct VurioScroller<RowContent: View>: NSViewRepresentable {
-    let itemHeights: [CGFloat]
+    let itemCount: Int
+    let rowHeight: CGFloat
+    /// Invalidation stamp for the row content. Must change whenever anything the
+    /// `rowContent` closure reads (besides the row index and `selection`, which
+    /// are handled separately) changes — row data, slider-driven overlays,
+    /// processing flags. Rows re-render only when this moves; unrelated SwiftUI
+    /// updates (status-bar ticks, hover elsewhere) no longer touch them.
+    var dataVersion: Int = 0
+    /// Whether this scroller belongs to the currently selected tab. Multiple
+    /// scrollers stay mounted behind opacity toggles; the shared wheel monitor
+    /// must never route events into a hidden one.
+    var isActive: Bool = true
     var scrollbarInsets: EdgeInsets = EdgeInsets()
     @Binding var selection: Int?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)? = nil
     var rowContent: (Int) -> RowContent
-    
-    
-    class Coordinator {
-        var monitor: Any?
-        deinit {
-            if let monitor = monitor {
-                NSEvent.removeMonitor(monitor)
-            }
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
 
     func makeNSView(context: Context) -> VurioScrollView {
-        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak coordinator = context.coordinator] event in
-            guard let window = event.window else { return event }
-            
-            // Find if there is a VurioScrollView under the mouse
-            let mouseLocation = window.mouseLocationOutsideOfEventStream
-            guard let hitView = window.contentView?.hitTest(mouseLocation) else { return event }
-            
-            // Walk up to find VurioScrollView
-            var current: NSView? = hitView
-            var targetScrollView: VurioScrollView? = nil
-            while current != nil {
-                if let sv = current as? VurioScrollView {
-                    targetScrollView = sv
-                    break
-                }
-                current = current?.superview
-            }
-            
-            guard let scrollView = targetScrollView else { return event }
-            
-            let hasPhase = event.phase != [] || event.momentumPhase != []
-            if !hasPhase {
-                if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) && abs(event.scrollingDeltaY) > 0 {
-                    scrollView.scrollWheel(with: event)
-                    return nil
-                }
-            } else {
-                if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) && abs(event.scrollingDeltaY) > 0 {
-                    scrollView.scrollWheel(with: event)
-                    return nil
-                }
-            }
-            return event
-        }
+        VurioScrollWheelRouter.installIfNeeded()
 
         let scrollView = VurioScrollView()
+        scrollView.isActiveTab = isActive
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
-        
+
         let documentView = VurioDocumentView(
-            itemHeights: itemHeights,
+            itemCount: itemCount,
+            rowHeight: rowHeight,
             rowContent: rowContent
         )
-        
+
         // Pass selection change up to SwiftUI
         documentView.onSelectionChanged = { newSelection in
             DispatchQueue.main.async {
                 self.selection = newSelection
             }
         }
-        
+
         documentView.onVisibleRowsChanged = { newRange in
             DispatchQueue.main.async {
                 self.onVisibleRowsChanged?(newRange)
             }
         }
-        
+
         scrollView.documentView = documentView
-        
+
         // Wire up keyboard navigation
         scrollView.onMoveSelection = { direction, page, end in
             documentView.moveSelection(direction: direction, page: page, end: end)
         }
-        
+
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
@@ -112,22 +90,42 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
                 documentView?.boundsDidChange()
             }
         }
-        
+
         return scrollView
     }
-    
+
     func updateNSView(_ nsView: VurioScrollView, context: Context) {
+        nsView.isActiveTab = isActive
         nsView.scrollerInsets = NSEdgeInsets(
             top: scrollbarInsets.top,
             left: scrollbarInsets.leading,
             bottom: scrollbarInsets.bottom,
             right: scrollbarInsets.trailing
         )
-        
-        if let docView = nsView.documentView as? VurioDocumentView<RowContent> {
-            docView.itemHeights = itemHeights
+
+        guard let docView = nsView.documentView as? VurioDocumentView<RowContent> else { return }
+
+        // Always freshen the closure (it captures current view-model state);
+        // rows only re-run their bodies when one of the checks below fires.
+        docView.contentBox.content = rowContent
+
+        if docView.itemCount != itemCount || docView.rowHeight != rowHeight {
+            docView.itemCount = itemCount
+            docView.rowHeight = rowHeight
+            docView.updateDocumentSize()
+        }
+
+        var needsRowRefresh = false
+        if docView.lastAppliedSelection != selection {
+            docView.lastAppliedSelection = selection
             docView.currentSelection = selection
-            docView.rowContent = rowContent
+            needsRowRefresh = true
+        }
+        if docView.lastDataVersion != dataVersion {
+            docView.lastDataVersion = dataVersion
+            needsRowRefresh = true
+        }
+        if needsRowRefresh {
             docView.refreshActiveViews()
         }
     }
@@ -135,104 +133,99 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
 
 /// The document view representing the entire virtualized scroll area.
 class VurioDocumentView<RowContent: View>: NSView {
-    var itemHeights: [CGFloat] {
-        didSet {
-            updatePrefixSums()
-        }
-    }
-    var rowContent: (Int) -> RowContent
+    var itemCount: Int
+    var rowHeight: CGFloat
+    let contentBox: RowContentBox<RowContent>
     var onSelectionChanged: ((Int?) -> Void)?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)?
-    
+
+    // Diff stamps consumed by VurioScroller.updateNSView so rows are only
+    // refreshed when the selection or the declared data version actually moved.
+    var lastAppliedSelection: Int? = nil
+    var lastDataVersion: Int = .min
+
     var currentSelection: Int? {
         didSet {
             updateSelectionState()
         }
     }
-    
+
     private var pool: [NSView] = []
-    private var activeViews: [Int: NSView] = [:] 
-    private var viewModels: [NSView: RowViewModel] = [:] 
-    private var prefixSums: [CGFloat] = [] 
-    
-    init(itemHeights: [CGFloat], @ViewBuilder rowContent: @escaping (Int) -> RowContent) {
-        self.itemHeights = itemHeights
-        self.rowContent = rowContent
+    private var activeViews: [Int: NSView] = [:]
+    private var viewModels: [NSView: RowViewModel] = [:]
+    // Last range handed to onVisibleRowsChanged. layoutVisibleRows runs on
+    // every scroll tick; the callback only fires when the range actually moves.
+    private var lastReportedRange: ClosedRange<Int>?
+
+    init(itemCount: Int, rowHeight: CGFloat, @ViewBuilder rowContent: @escaping (Int) -> RowContent) {
+        self.itemCount = itemCount
+        self.rowHeight = rowHeight
+        self.contentBox = RowContentBox(rowContent)
         super.init(frame: .zero)
         self.wantsLayer = true
         self.autoresizesSubviews = false
-        updatePrefixSums()
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    func refreshActiveViews() {
-        for (index, view) in activeViews {
-            if let hostingView = view as? VurioRowHostingView<AnyView>,
-               let viewModel = viewModels[view] {
-                hostingView.rootView = AnyView(RowContainer(viewModel: viewModel, content: rowContent))
-                viewModel.refreshTrigger += 1
-            }
-        }
-    }
-
-    func updatePrefixSums() {
-        prefixSums.reserveCapacity(itemHeights.count + 1)
-        var sum: CGFloat = 0
-        prefixSums = [0]
-        for h in itemHeights {
-            sum += h
-            prefixSums.append(sum)
-        }
         updateDocumentSize()
     }
 
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func refreshActiveViews() {
+        for view in activeViews.values {
+            viewModels[view]?.refreshTrigger += 1
+        }
+    }
+
     func updateDocumentSize() {
-        let totalHeight = prefixSums.last ?? 0
+        let totalHeight = CGFloat(itemCount) * rowHeight
         let newWidth = superview?.bounds.width ?? 800
         let newFrame = CGRect(x: 0, y: 0, width: newWidth, height: totalHeight)
-        
+
         if self.frame.size != newFrame.size {
             self.frame = newFrame
             layoutVisibleRows()
         }
     }
-    
+
     override func layout() {
         super.layout()
         updateDocumentSize()
         layoutVisibleRows()
     }
-    
+
     override var isFlipped: Bool { return true }
     override var acceptsFirstResponder: Bool { return true }
-    
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
-    
+
+    /// Row index containing the given document-space y, clamped to valid rows.
+    private func rowIndex(at y: CGFloat) -> Int {
+        guard rowHeight > 0, itemCount > 0 else { return 0 }
+        return max(0, min(itemCount - 1, Int(floor(y / rowHeight))))
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self.enclosingScrollView)
-        
-        let localPoint = self.convert(event.locationInWindow, from: nil)
-        let clickedIndex = max(0, prefixSums.upperBound(of: localPoint.y) - 1)
-        
-        if clickedIndex >= 0 && clickedIndex < itemHeights.count {
+
+        if itemCount > 0 {
+            let localPoint = self.convert(event.locationInWindow, from: nil)
+            let clickedIndex = rowIndex(at: localPoint.y)
             if currentSelection != clickedIndex {
                 currentSelection = clickedIndex
                 onSelectionChanged?(clickedIndex)
             }
         }
-        
+
         super.mouseDown(with: event)
     }
-    
+
     func boundsDidChange() {
         layoutVisibleRows()
     }
-    
+
     private func updateSelectionState() {
         for (_, viewModel) in viewModels {
             let selected = (viewModel.index == currentSelection)
@@ -241,36 +234,36 @@ class VurioDocumentView<RowContent: View>: NSView {
             }
         }
     }
-    
+
     func moveSelection(direction: Int, page: Bool, end: Bool) {
+        guard itemCount > 0 else { return }
         var newSelection = currentSelection ?? 0
-        
+
         if end {
-            newSelection = direction == 0 ? 0 : itemHeights.count - 1
+            newSelection = direction == 0 ? 0 : itemCount - 1
         } else if page {
             let visibleHeight = enclosingScrollView?.contentView.bounds.height ?? 500
-            let currentY = prefixSums[min(newSelection, itemHeights.count)]
-            let targetY = currentY + CGFloat(direction) * visibleHeight
-            newSelection = max(0, prefixSums.upperBound(of: targetY) - 1)
+            let currentY = CGFloat(newSelection) * rowHeight
+            newSelection = rowIndex(at: currentY + CGFloat(direction) * visibleHeight)
         } else {
             newSelection += direction
         }
-        
-        newSelection = max(0, min(itemHeights.count - 1, newSelection))
-        
+
+        newSelection = max(0, min(itemCount - 1, newSelection))
+
         if currentSelection != newSelection {
             currentSelection = newSelection
             onSelectionChanged?(newSelection)
             scrollToVisible(index: newSelection)
         }
     }
-    
+
     private func scrollToVisible(index: Int) {
         guard let scrollView = enclosingScrollView else { return }
-        
-        let rowRect = CGRect(x: 0, y: prefixSums[index], width: 1, height: itemHeights[index])
+
+        let rowRect = CGRect(x: 0, y: CGFloat(index) * rowHeight, width: 1, height: rowHeight)
         let visibleRect = scrollView.contentView.bounds
-        
+
         if rowRect.minY < visibleRect.minY {
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: rowRect.minY))
             scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -279,27 +272,31 @@ class VurioDocumentView<RowContent: View>: NSView {
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
     }
-    
+
     private func layoutVisibleRows() {
         guard let scrollView = enclosingScrollView else { return }
-        
+        guard itemCount > 0, rowHeight > 0 else { return }
+
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        
+
         let visibleRect = scrollView.contentView.bounds
-        
-        let startRow = max(0, prefixSums.upperBound(of: visibleRect.minY) - 1)
-        let endRow = min(itemHeights.count - 1, prefixSums.lowerBound(of: visibleRect.maxY) - 1)
-        
-        if startRow > endRow || itemHeights.isEmpty {
+
+        let startRow = max(0, Int(floor(visibleRect.minY / rowHeight)))
+        let endRow = min(itemCount - 1, Int(ceil(visibleRect.maxY / rowHeight)) - 1)
+
+        if startRow > endRow {
             CATransaction.commit()
             return
         }
-        
-        onVisibleRowsChanged?(startRow...endRow)
-        
+
+        if lastReportedRange != startRow...endRow {
+            lastReportedRange = startRow...endRow
+            onVisibleRowsChanged?(startRow...endRow)
+        }
+
         let visibleIndices = Set(startRow...endRow)
-        
+
         for (index, view) in activeViews {
             if !visibleIndices.contains(index) {
                 view.isHidden = true
@@ -307,22 +304,21 @@ class VurioDocumentView<RowContent: View>: NSView {
                 activeViews.removeValue(forKey: index)
             }
         }
-        
+
         for index in startRow...endRow {
             if activeViews[index] == nil {
                 let view = getReusableView(for: index)
-                
-                let yPos = prefixSums[index]
-                view.frame = CGRect(x: 0, y: yPos, width: self.bounds.width, height: itemHeights[index])
-                
+
+                view.frame = CGRect(x: 0, y: CGFloat(index) * rowHeight, width: self.bounds.width, height: rowHeight)
+
                 if view.isHidden {
                     view.isHidden = false
                 }
-                
+
                 if view.superview == nil {
                     self.addSubview(view)
                 }
-                
+
                 activeViews[index] = view
             } else {
                 let view = activeViews[index]!
@@ -331,10 +327,10 @@ class VurioDocumentView<RowContent: View>: NSView {
                 }
             }
         }
-        
+
         CATransaction.commit()
     }
-    
+
     private func getReusableView(for index: Int) -> NSView {
         if let view = pool.popLast() {
             if let viewModel = viewModels[view] {
@@ -343,25 +339,21 @@ class VurioDocumentView<RowContent: View>: NSView {
             }
             return view
         }
-        
+
         let viewModel = RowViewModel()
         viewModel.index = index
         viewModel.isSelected = (index == currentSelection)
-        
-        let hostedView = AnyView(
-            RowContainer(viewModel: viewModel, content: rowContent)
-        )
-        
-        let hostingView = VurioRowHostingView(rootView: hostedView)
-        hostingView.sizingOptions = [] 
-        
+
+        let hostingView = VurioRowHostingView(rootView: RowContainer(viewModel: viewModel, box: contentBox))
+        hostingView.sizingOptions = []
+
         hostingView.onSelect = { [weak self] in
             if let vm = self?.viewModels[hostingView] {
                 self?.currentSelection = vm.index
                 self?.onSelectionChanged?(vm.index)
             }
         }
-        
+
         viewModels[hostingView] = viewModel
         return hostingView
     }
@@ -370,12 +362,12 @@ class VurioDocumentView<RowContent: View>: NSView {
 /// A wrapper to extract the dynamic index from the ViewModel and pass it to the SwiftUI content.
 struct RowContainer<RowContent: View>: View {
     @ObservedObject var viewModel: RowViewModel
-    let content: (Int) -> RowContent
-    
+    let box: RowContentBox<RowContent>
+
     var body: some View {
         let _ = viewModel.refreshTrigger
         if viewModel.index >= 0 {
-            content(viewModel.index)
+            box.content(viewModel.index)
                 .contentShape(Rectangle())
                 .onHover { hovering in
                     viewModel.isHovered = hovering
@@ -388,11 +380,11 @@ struct RowContainer<RowContent: View>: View {
 
 class VurioRowHostingView<Content: View>: NSHostingView<Content> {
     var onSelect: (() -> Void)?
-    
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
-    
+
     override func scrollWheel(with event: NSEvent) {
         if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
             // Forward vertical scrolls to the outer VurioScrollView
@@ -402,13 +394,13 @@ class VurioRowHostingView<Content: View>: NSHostingView<Content> {
             super.scrollWheel(with: event)
         }
     }
-    
+
     override func mouseDown(with event: NSEvent) {
         onSelect?()
-        
+
         let previousResponder = window?.firstResponder
         super.mouseDown(with: event)
-        
+
         let currentResponder = window?.firstResponder
         if currentResponder == previousResponder || currentResponder == self || currentResponder == window {
             window?.makeFirstResponder(self.enclosingScrollView)
@@ -416,22 +408,64 @@ class VurioRowHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+/// One app-wide scroll-wheel monitor that routes vertical wheel events to the
+/// VurioScrollView under the pointer. A single shared monitor replaces the old
+/// per-scroller monitors (each of which hit-tested every wheel event in the
+/// window), and the isActiveTab guard keeps events out of a scroller that is
+/// mounted but hidden behind the tab ZStack.
+enum VurioScrollWheelRouter {
+    private static var installed = false
+
+    static func installIfNeeded() {
+        guard !installed else { return }
+        installed = true
+        // Installed once for the app's lifetime — the scrollers using it live
+        // as long as the window does.
+        NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard let window = event.window else { return event }
+
+            // Find if there is a VurioScrollView under the mouse
+            let mouseLocation = window.mouseLocationOutsideOfEventStream
+            guard let hitView = window.contentView?.hitTest(mouseLocation) else { return event }
+
+            // Walk up to find VurioScrollView
+            var current: NSView? = hitView
+            var targetScrollView: VurioScrollView? = nil
+            while current != nil {
+                if let sv = current as? VurioScrollView {
+                    targetScrollView = sv
+                    break
+                }
+                current = current?.superview
+            }
+
+            guard let scrollView = targetScrollView, scrollView.isActiveTab else { return event }
+
+            if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) && abs(event.scrollingDeltaY) > 0 {
+                scrollView.scrollWheel(with: event)
+                return nil
+            }
+            return event
+        }
+    }
+}
+
 class VurioScrollView: NSScrollView {
     var onMoveSelection: ((_ direction: Int, _ page: Bool, _ end: Bool) -> Void)?
+    /// See VurioScroller.isActive — false while this scroller's tab is hidden.
+    var isActiveTab: Bool = true
     override var acceptsFirstResponder: Bool { return true }
-    
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
-    
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
     }
-    
+
     override func keyDown(with event: NSEvent) {
-        var handled = true
-        
         switch event.keyCode {
         case 126: // Up
             onMoveSelection?(-1, false, false)
@@ -446,38 +480,7 @@ class VurioScrollView: NSScrollView {
         case 119: // End
             onMoveSelection?(1, false, true)
         default:
-            handled = false
             super.keyDown(with: event)
         }
-    }
-}
-
-extension Array where Element: Comparable {
-    func lowerBound(of value: Element) -> Int {
-        var low = 0
-        var high = count
-        while low < high {
-            let mid = low + (high - low) / 2
-            if self[mid] < value {
-                low = mid + 1
-            } else {
-                high = mid
-            }
-        }
-        return low
-    }
-    
-    func upperBound(of value: Element) -> Int {
-        var low = 0
-        var high = count
-        while low < high {
-            let mid = low + (high - low) / 2
-            if self[mid] <= value {
-                low = mid + 1
-            } else {
-                high = mid
-            }
-        }
-        return low
     }
 }

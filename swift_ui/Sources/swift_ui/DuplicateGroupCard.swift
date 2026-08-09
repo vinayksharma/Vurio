@@ -63,8 +63,7 @@ struct DuplicateGroupCard: View {
                             .padding(.trailing, 12)
                             .overlay(alignment: .bottomLeading) {
                                 let indices = candidates.enumerated().compactMap { index, file in
-                                    let score = file.similarityScore > 0 ? file.similarityScore : 1.0
-                                    return (1.0 - score) <= duplicateTightness ? index : nil
+                                    DuplicateEligibility.distance(similarityScore: file.similarityScore) <= duplicateTightness ? index : nil
                                 }
                                 
                                 if let first = indices.first, let last = indices.last {
@@ -297,7 +296,10 @@ struct DuplicateMemberView: View {
         let cornerRadius: CGFloat = 8
 
         ZStack {
-            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size), cachedThumbnailPath: file.cachedThumbnailPath)
+            // requestSize 70: the representative displays at 80 pt but shares the
+            // 70 px asset with candidate tiles, VU day tiles, and prefetch — one
+            // cache entry per file instead of a second cold fetch/decode at 80.
+            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size), cachedThumbnailPath: file.cachedThumbnailPath, requestSize: 70)
                 .frame(width: size, height: size)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)

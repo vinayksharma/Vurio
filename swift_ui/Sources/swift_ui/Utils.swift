@@ -1,24 +1,18 @@
 import Foundation
+import os
 
-private let sharedDateFormatter: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    return formatter
-}()
+/// Unified-log logger for the media pipeline. Watch it with:
+///   log stream --predicate 'subsystem == "com.vurio.app"' --level debug
+let vurioLog = Logger(subsystem: "com.vurio.app", category: "media")
 
-func logDebug(_ msg: String) {
-    // Write asynchronously so we don't block the UI thread during scrolling
-    Task.detached(priority: .utility) {
-        let url = URL(fileURLWithPath: "/tmp/vurio_debug.log")
-        let timestamp = sharedDateFormatter.string(from: Date())
-        let line = "[\(timestamp)] \(msg)\n"
-        if let data = line.data(using: .utf8) {
-            if let handle = try? FileHandle(forWritingTo: url) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                handle.closeFile()
-            } else {
-                try? data.write(to: url)
-            }
-        }
-    }
+/// Debug logging, compiled out of release builds entirely. The @autoclosure
+/// keeps even the message's string interpolation unevaluated when logging is
+/// off — logDebug sits on the per-thumbnail hot path, where the old
+/// implementation (a detached Task plus an open/write/close of
+/// /tmp/vurio_debug.log per line) cost real CPU during scrolling.
+@inline(__always) func logDebug(_ msg: @autoclosure () -> String) {
+    #if DEBUG
+    let text = msg()
+    vurioLog.debug("\(text)")
+    #endif
 }

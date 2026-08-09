@@ -13,15 +13,29 @@ struct DaySlot: Identifiable {
 /// the slider stay on DuplicatesViewModel — this model only reads.
 @MainActor
 class AllDaysViewModel: ObservableObject {
-    @Published var days: [DaySlot] = []
+    @Published var days: [DaySlot] = [] {
+        // Any content change (page load, eject flip, appended day files — element
+        // mutations reassign the array, it's a value type) bumps the scroller's
+        // row-invalidation stamp.
+        didSet { dataVersion &+= 1 }
+    }
+    /// Monotonic stamp of `days` content, fed into VurioScroller's dataVersion.
+    /// Not @Published — `days` itself already drives the render.
+    private(set) var dataVersion = 0
     @Published var totalDays: Int32 = 0
-    @Published var loadingTasks: [Int32: Task<Void, Never>] = [:]
-
-    private var prefetchTasks: [Int: Task<Void, Never>] = [:]
 
     // Days are heavier than duplicate groups (a day can hold hundreds of files),
     // so page fewer of them at a time.
     let pageSize: Int32 = 10
+
+    // Shared window/task machinery (page-load dedup, out-of-window
+    // cancellation, prefetch bookkeeping); see PageWindowController.
+    private lazy var window = PageWindowController(
+        pageSize: pageSize,
+        slotCount: { [weak self] in self?.days.count ?? 0 },
+        loadPage: { [weak self] page in await self?.loadPage(pageIndex: page) },
+        makePrefetchTask: { [weak self] index in self?.makePrefetchTask(for: index) }
+    )
 
     // Files fetched per day per request. A day row shows ~15 tiles per screen
     // width, so 60 gives a few screens of horizontal runway; the row's trailing
@@ -34,71 +48,34 @@ class AllDaysViewModel: ObservableObject {
 
     /// Reset the slot list and load the first page to learn the day count.
     func refresh() async {
-        for task in loadingTasks.values { task.cancel() }
-        loadingTasks.removeAll()
-        for task in prefetchTasks.values { task.cancel() }
-        prefetchTasks.removeAll()
+        window.reset()
         days = []
         await loadPage(pageIndex: 0)
     }
 
     func updateVisibleRows(_ range: ClosedRange<Int>) {
-        // Match the BINNED view's prefetch runway; day pages are cheap to serve
-        // now that the day queries are index-served (taken_day).
-        let prefetchMargin = 25
-        let start = max(0, range.lowerBound - prefetchMargin)
-        let end = min(max(0, days.count - 1), range.upperBound + prefetchMargin)
-        guard start <= end else { return }
-
-        let startPage = Int32(start / Int(pageSize))
-        let endPage = Int32(end / Int(pageSize))
-
-        for p in loadingTasks.keys {
-            if p < startPage || p > endPage {
-                loadingTasks[p]?.cancel()
-                loadingTasks[p] = nil
-            }
-        }
-
-        for p in startPage...endPage {
-            triggerLoadPage(p)
-        }
-
-        let desiredPrefetch = Set(start...end).subtracting(Set(range))
-
-        for (index, task) in prefetchTasks {
-            if index < start || index > end {
-                task.cancel()
-                prefetchTasks.removeValue(forKey: index)
-            }
-        }
-
-        for index in desiredPrefetch {
-            if prefetchTasks[index] == nil {
-                guard index < days.count, let day = days[index].day else { continue }
-
-                let task = Task.detached(priority: .background) {
-                    for file in day.files {
-                        try? Task.checkCancellation()
-                        if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
-                            // Off-screen prefetch runs below every visible layer so it
-                            // never delays thumbnails on screen.
-                            _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
-                        }
-                    }
-                }
-                prefetchTasks[index] = task
-            }
-        }
+        window.updateVisibleRows(range)
     }
 
     func triggerLoadPage(_ pageIndex: Int32) {
-        guard loadingTasks[pageIndex] == nil else { return }
+        window.triggerLoadPage(pageIndex)
+    }
 
-        let task = Task {
-            await loadPage(pageIndex: pageIndex)
+    /// Detached prefetch warming one day's thumbnails; nil while the slot is
+    /// still a placeholder.
+    private func makePrefetchTask(for index: Int) -> Task<Void, Never>? {
+        guard index < days.count, let day = days[index].day else { return nil }
+
+        return Task.detached(priority: .background) {
+            for file in day.files {
+                try? Task.checkCancellation()
+                if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
+                    // Off-screen prefetch runs below every visible layer so it
+                    // never delays thumbnails on screen.
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
+                }
+            }
         }
-        loadingTasks[pageIndex] = task
     }
 
     /// Re-fetch only the pages that already have data so server-computed fields
@@ -111,35 +88,16 @@ class AllDaysViewModel: ObservableObject {
                 .map { Int32($0.offset) / pageSize }
         ).sorted()
         for page in loadedPages {
-            loadingTasks[page]?.cancel()
-            loadingTasks[page] = nil
+            // Bypass the in-flight guard in triggerLoadPage; these events are rare.
+            window.cancelLoad(of: page)
             await loadPage(pageIndex: page)
         }
     }
 
-    /// The server answers UNAVAILABLE when the day view is momentarily starved
-    /// (DB session pool contention while background processing runs). Retry with
-    /// capped backoff instead of surfacing an error — the page fills in as the
-    /// burst drains, and the day list is never mistaken for empty.
-    private func callWithBusyRetry<R>(_ op: () async throws -> R) async throws -> R {
-        var delay: UInt64 = 250_000_000 // 250ms
-        let maxDelay: UInt64 = 2_000_000_000
-        var attemptsLeft = 4
-        while true {
-            do {
-                return try await op()
-            } catch let status as GRPCStatus where status.code == .unavailable && attemptsLeft > 0 {
-                attemptsLeft -= 1
-                try await Task.sleep(nanoseconds: delay)
-                delay = min(delay * 2, maxDelay)
-            }
-        }
-    }
-
     func loadPage(pageIndex: Int32) async {
+        await VurioGrpcClient.shared.waitUntilPaired()
         do {
             guard let client = VurioGrpcClient.shared.duplicates else {
-                loadingTasks[pageIndex] = nil
                 return
             }
 
@@ -175,23 +133,19 @@ class AllDaysViewModel: ObservableObject {
                     }
                 }
                 days = localDays
+                window.schedulePrefetch()
             }
-            loadingTasks[pageIndex] = nil
 
         } catch {
-            let isCancelled: Bool
-            if error is CancellationError {
-                isCancelled = true
-            } else if let grpcStatus = error as? GRPCStatus, grpcStatus.code == .cancelled {
-                isCancelled = true
-            } else {
-                isCancelled = false
-            }
-
-            if !isCancelled {
-                MessageCenter.shared.post("Failed to load days page \(pageIndex): \(error.localizedDescription)")
-            }
-            loadingTasks[pageIndex] = nil
+            // Background paging never toasts. A failed page is still a
+            // placeholder, and the fix is to retry while it's on screen — a
+            // per-page error message means nothing actionable to the user
+            // (thumb-drag bursts routinely outlast the RPC busy retry, or
+            // exhaust the client connection pool). A genuinely dead server
+            // surfaces through the status dot (isOnline), not here.
+            guard !isGrpcCancellation(error) else { return }
+            logDebug("Days page \(pageIndex) failed (\(grpcStatusCode(of: error).map(String.init(describing:)) ?? "non-gRPC")); retrying in-window: \(error)")
+            window.scheduleRetry(of: pageIndex)
         }
     }
 
@@ -225,7 +179,14 @@ class AllDaysViewModel: ObservableObject {
             current.totalFiles = response.totalFiles
             days[di].day = current
         } catch {
-            MessageCenter.shared.post("Failed to load more files for \(dayKey): \(error.localizedDescription)")
+            guard !isGrpcCancellation(error) else { return }
+            if isTransientGrpcError(error) {
+                // The trailing sentinel re-arms on the next horizontal scroll;
+                // a transient failure needs no toast.
+                logDebug("Load-more for \(dayKey) transiently failed: \(error)")
+            } else {
+                MessageCenter.shared.post("Failed to load more files for \(dayKey): \(error.localizedDescription)")
+            }
         }
     }
 

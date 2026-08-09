@@ -485,7 +485,7 @@ struct ViewerView: View {
                 // Transient (timeout, cancellation, connection): unlock so the
                 // next zoom change retries — mirrors the web viewer's onerror.
                 if fullResRequestFor == filePath { fullResRequestFor = nil }
-                print("Full-resolution load failed for \(filePath): \(error)")
+                logDebug("Full-resolution load failed for \(filePath): \(error)")
             }
         }
     }
@@ -551,7 +551,7 @@ struct ViewerView: View {
                 }
             }
         } catch {
-            print("Failed to load preview for \(filePath): \(error)")
+            logDebug("Failed to load preview for \(filePath): \(error)")
             if model.selectedImage?.filePath == filePath {
                 withAnimation(Self.imageFade) {
                     isLoadingImage = false

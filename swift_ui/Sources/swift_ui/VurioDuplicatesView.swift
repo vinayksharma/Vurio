@@ -11,7 +11,13 @@ struct VurioDuplicatesView: View {
     // VU: path of the single-click-selected thumbnail (accent border on its tile).
     @State private var selectedVUFilePath: String? = nil
 
-    @StateObject private var viewModel = DuplicatesViewModel()
+    // All data/reconciliation lives on the coordinator; the aliases below keep
+    // the body reading naturally (`viewModel` = BINNED groups, `allViewModel`
+    // = VU days). Child invalidations re-emit through the coordinator's
+    // objectWillChange, so observing it alone keeps every read live.
+    @StateObject private var coordinator = DuplicatesCoordinator()
+    private var viewModel: DuplicatesViewModel { coordinator.binned }
+    private var allViewModel: AllDaysViewModel { coordinator.days }
 
     @State private var showingBulkEjectConfirmation = false
     @State private var isEjectButtonHovered = false
@@ -32,8 +38,6 @@ struct VurioDuplicatesView: View {
     @State private var binnedViewerRequest: ViewerRequest? = nil
 
     private static let viewerSlide = Animation.spring(response: 0.4, dampingFraction: 0.85)
-
-    @StateObject private var allViewModel = AllDaysViewModel()
 
     @EnvironmentObject var appState: AppState
 
@@ -164,7 +168,10 @@ struct VurioDuplicatesView: View {
                                 viewModel.duplicateTightness = newValue
                             }
                         ),
-                        similarValue: $viewModel.similarSliderValue,
+                        similarValue: Binding(
+                            get: { viewModel.similarSliderValue },
+                            set: { viewModel.similarSliderValue = $0 }
+                        ),
                         range: 0.0...viewModel.maxDistance,
                         formatValue: { val in
                             return (1.0 - val).formatted(.number.precision(.fractionLength(3)))
@@ -235,126 +242,26 @@ struct VurioDuplicatesView: View {
                 }
             }
         }
-        // The embedded viewer (group mode) ejects/restores through its own gRPC
-        // calls; it broadcasts each change so the loaded rows here stay in sync
-        // without a reload.
-        .onReceive(NotificationCenter.default.publisher(for: .viewerEjectStatusChanged)) { note in
-            guard let filePath = note.userInfo?["filePath"] as? String,
-                  let isEjected = note.userInfo?["isEjected"] as? Bool else { return }
-            for groupIndex in viewModel.groups.indices {
-                if let fileIndex = viewModel.groups[groupIndex].group?.files.firstIndex(where: { $0.filePath == filePath }) {
-                    viewModel.groups[groupIndex].group?.files[fileIndex].isEjected = isEjected
-                }
-            }
-            allViewModel.applyEjectionState([filePath], isEjected: isEjected)
-        }
+        // Cross-cutting reconciliation (viewer eject broadcasts, config saves,
+        // cache clears, volume mount/unmount, location deregistration) is
+        // handled inside DuplicatesCoordinator via its own subscriptions; only
+        // SwiftUI-lifecycle-bound shims remain here.
         .alert("Eject Duplicates", isPresented: $showingBulkEjectConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Eject", role: .destructive) {
-                Task {
-                    await viewModel.handleBulkEject()
-                    if showAllMode { await allViewModel.reloadLoadedPages() }
-                }
+                coordinator.performBulkEject()
             }
         } message: {
             Text("All images identified as duplicates will be ejected. Do you want to proceed?")
         }
         .task {
-            viewModel.setup(appState: appState)
-            await viewModel.fetchSettings()
-            if viewModel.totalGroups != appState.duplicateGroupsCount {
-                viewModel.totalGroups = appState.duplicateGroupsCount
-            }
-            if viewModel.groups.isEmpty || viewModel.groups.count != viewModel.totalGroups {
-                await viewModel.refresh()
-            }
-            // Load the first binned page even in ALL mode so the global
-            // Eject/Restore buttons reflect eligibility on the VU tab too (they
-            // inspect loaded groups).
-            viewModel.triggerLoadPage(0)
-            if showAllMode && allViewModel.days.isEmpty {
-                await allViewModel.refresh()
-            }
-            await viewModel.listenForUpdates()
+            await coordinator.initialLoad(appState: appState, isAllMode: showAllMode)
         }
         .onChange(of: showAllMode) { _, isAll in
-            // Entering a mode reconciles its data: ALL loads (or reloads) its day
-            // pages; returning to BINNED re-fetches loaded pages so ejects done in
-            // ALL mode are reflected.
-            Task {
-                if isAll {
-                    if allViewModel.days.isEmpty {
-                        await allViewModel.refresh()
-                    } else {
-                        await allViewModel.reloadLoadedPages()
-                    }
-                } else {
-                    await viewModel.reloadLoadedPages()
-                }
-            }
+            coordinator.modeChanged(isAll: isAll)
         }
-        .onChange(of: viewModel.totalGroups) { old, newValue in
-
-        }
-        .onChange(of: appState.duplicateGroupsCount) { old, newCount in
-            // Only refresh if we are currently empty (e.g. going from 0 to >0)
-            // Otherwise, we rely on the streaming updates for fine-grained insertions.
-            if viewModel.groups.isEmpty && newCount > 0 && !viewModel.isLoading {
-                viewModel.totalGroups = newCount
-                Task { await viewModel.refresh() }
-            } else if newCount == 0 && viewModel.totalGroups > 0 {
-                viewModel.totalGroups = 0
-                viewModel.groups = []
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ConfigSaved"))) { _ in
-            Task {
-                viewModel.setup(appState: appState)
-            await viewModel.fetchSettings()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .cachesCleared)) { _ in
-            // Server caches were wiped: re-fetch loaded rows so their
-            // cached_thumbnail_path fields stop pointing at deleted files
-            // (tiles themselves re-request via ThumbnailView's own observer).
-            Task {
-                await viewModel.reloadLoadedPages()
-                await allViewModel.reloadLoadedPages()
-            }
-        }
-        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
-            // A volume came online — re-fetch loaded pages so disconnected files
-            // flip back to connected without waiting for the user to scroll.
-            Task {
-                await viewModel.reloadLoadedPages()
-                await allViewModel.reloadLoadedPages()
-            }
-        }
-        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in
-            // A volume went offline — re-fetch loaded pages so its files show the
-            // disconnected (Locate) mask immediately.
-            Task {
-                await viewModel.reloadLoadedPages()
-                await allViewModel.reloadLoadedPages()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MediaLocationDeregistered"))) { _ in
-            Task {
-                await appState.fetchStatus()
-                viewModel.totalGroups = appState.duplicateGroupsCount
-                if viewModel.totalGroups == 0 {
-                    viewModel.groups = []
-                } else {
-                    await viewModel.refresh()
-                }
-                if showAllMode {
-                    await allViewModel.refresh()
-                } else {
-                    // Drop stale day data; it reloads on the next switch to ALL.
-                    allViewModel.days = []
-                    allViewModel.totalDays = 0
-                }
-            }
+        .onChange(of: appState.duplicateGroupsCount) { _, newCount in
+            coordinator.duplicateGroupsCountChanged(to: newCount)
         }
         // Bulk eject/restore runs in the background. Integrity is guaranteed
         // server-side (each request is one atomic transaction), so there is no
@@ -364,6 +271,27 @@ struct VurioDuplicatesView: View {
         // eject/restore controls), so only non-mutating browsing stays enabled.
     }
     
+    // Row-invalidation stamps for the two scrollers: everything the row-content
+    // closures render from besides the row index and the scroller-managed
+    // selection. If a new input is ever captured by renderRow/renderDayRow, it
+    // must be added here or rows won't repaint when it changes.
+    private var vuRowVersion: Int {
+        var hasher = Hasher()
+        hasher.combine(allViewModel.dataVersion)
+        hasher.combine(viewModel.isProcessing)
+        hasher.combine(selectedVUFilePath)
+        return hasher.finalize()
+    }
+
+    private var binnedRowVersion: Int {
+        var hasher = Hasher()
+        hasher.combine(viewModel.dataVersion)
+        hasher.combine(viewModel.duplicateTightness)
+        hasher.combine(viewModel.isProcessing)
+        hasher.combine(selectedCandidateIndex)
+        return hasher.finalize()
+    }
+
     // VU (ALL mode) list: one row per capture day.
     @ViewBuilder
     private var vuList: some View {
@@ -381,7 +309,10 @@ struct VurioDuplicatesView: View {
                 customInsets.bottom += 30
 
                 return VurioScroller(
-                    itemHeights: Array(repeating: dayRowHeight, count: Int(allViewModel.totalDays)),
+                    itemCount: Int(allViewModel.totalDays),
+                    rowHeight: dayRowHeight,
+                    dataVersion: vuRowVersion,
+                    isActive: isFrontmost && showAllMode,
                     scrollbarInsets: customInsets,
                     selection: $vuSelection,
                     onVisibleRowsChanged: { range in
@@ -412,7 +343,10 @@ struct VurioDuplicatesView: View {
                 customInsets.bottom += 30
 
                 return VurioScroller(
-                    itemHeights: Array(repeating: rowHeight, count: Int(viewModel.totalGroups)),
+                    itemCount: Int(viewModel.totalGroups),
+                    rowHeight: rowHeight,
+                    dataVersion: binnedRowVersion,
+                    isActive: isFrontmost && !showAllMode,
                     scrollbarInsets: customInsets,
                     selection: $binnedSelection,
                     onVisibleRowsChanged: { range in
@@ -609,83 +543,9 @@ struct VurioDuplicatesView: View {
     /// remap it. The server infers the registered media-location root from the
     /// chosen file, so the user only needs to point at the moved file itself.
     private func locateMissingFile(memberPath: String) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Locate \"\((memberPath as NSString).lastPathComponent)\" in its new location"
-        panel.prompt = "Locate"
-
-        if panel.runModal() == .OK, let locatedPath = panel.url?.path {
-            Task {
-                await viewModel.locateMissingFile(memberPath: memberPath, locatedPath: locatedPath)
-                if showAllMode { await allViewModel.reloadLoadedPages() }
-            }
-        }
+        coordinator.locateMissingFile(memberPath: memberPath)
     }
-
-    private func fetchSettings() async {
-        do {
-            let req = Vurio_Dedup_GetConfigRequest()
-            if let client = VurioGrpcClient.shared.config {
-                let res = try await client.getConfig(req)
-                if let data = res.jsonPayload.data(using: .utf8),
-                   let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                   
-                   var exactThreshold = 0.98
-                   if let obj = json["duplicates.threshold.duplicate"] as? [String: Any],
-                      let valStr = obj["value"] as? String, let val = Double(valStr) {
-                       exactThreshold = val
-                   } else if let valStr = json["duplicates.threshold.duplicate"] as? String, let val = Double(valStr) {
-                       exactThreshold = val
-                   } else if let valNum = json["duplicates.threshold.duplicate"] as? Double {
-                       exactThreshold = valNum
-                   }
-                   
-                   var simThreshold = 0.90
-                   if let obj = json["duplicates.threshold.similarity"] as? [String: Any],
-                      let valStr = obj["value"] as? String, let val = Double(valStr) {
-                       simThreshold = val
-                   } else if let valStr = json["duplicates.threshold.similarity"] as? String, let val = Double(valStr) {
-                       simThreshold = val
-                   } else if let valNum = json["duplicates.threshold.similarity"] as? Double {
-                       simThreshold = valNum
-                   }
-                   
-                   let initialDistance = 1.0 - exactThreshold
-                   let calculatedMaxDistance = 1.0 - simThreshold
-                   
-                   await MainActor.run {
-                       self.viewModel.maxDistance = max(calculatedMaxDistance, 0.01)
-                       self.viewModel.similarSliderValue = self.viewModel.maxDistance
-                       self.viewModel.sliderValue = min(initialDistance, self.viewModel.maxDistance)
-                       self.viewModel.duplicateTightness = self.viewModel.sliderValue
-                   }
-                }
-            }
-        } catch {
-            print("Failed to fetch settings: \(error)")
-        }
-    }
-    
-    
-
-    
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 struct VurioGroupRowWrapper: View {
     let slot: GroupSlot

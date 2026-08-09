@@ -21,6 +21,41 @@ final class VurioGrpcClient {
         self.group = MultiThreadedEventLoopGroup(numberOfThreads: 4)
     }
 
+    // MARK: Pairing gate
+
+    private let pairingLock = NSLock()
+    private var pairedFlag = false
+    private var pairingWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Suspends until the handshake has completed (returns immediately once
+    /// paired). Startup work — first page loads, settings fetch, the update
+    /// stream — awaits this instead of silently no-oping when it loses the
+    /// launch race against pairing: nothing used to retry those, which left
+    /// placeholder rows (and no stream) until the next scroll event.
+    func waitUntilPaired() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            pairingLock.lock()
+            if pairedFlag {
+                pairingLock.unlock()
+                continuation.resume()
+            } else {
+                pairingWaiters.append(continuation)
+                pairingLock.unlock()
+            }
+        }
+    }
+
+    private func signalPaired() {
+        pairingLock.lock()
+        pairedFlag = true
+        let waiters = pairingWaiters
+        pairingWaiters.removeAll()
+        pairingLock.unlock()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
     func connect(socketPath: String = "/tmp/vurio_dedup.sock") {
         do {
             let ch = try GRPCChannelPool.with(
@@ -71,6 +106,7 @@ final class VurioGrpcClient {
                         self.advanced = Vurio_Dedup_AdvancedSettingsServiceAsyncClient(channel: channel, defaultCallOptions: options)
                         self.mediaStreaming = Vurio_Dedup_MediaServiceAsyncClient(channel: channel, defaultCallOptions: options)
                         print("gRPC paired with server (attempt \(attempt))")
+                        signalPaired()
                         return
                     } else {
                         print("gRPC handshake rejected: \(resp.errorMessage)")
