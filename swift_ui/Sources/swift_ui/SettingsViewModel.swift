@@ -5,6 +5,12 @@ extension Notification.Name {
     /// Posted after a successful server-side ClearAllCaches so every view
     /// holding rendered media re-requests it fresh (thumbnails regenerate).
     static let cachesCleared = Notification.Name("CachesCleared")
+    /// Posted after Settings saves config changes; the duplicates coordinator
+    /// re-fetches the slider thresholds.
+    static let configSaved = Notification.Name("ConfigSaved")
+    /// Posted after a media location is deregistered; the duplicates
+    /// coordinator resets both tabs' data.
+    static let mediaLocationDeregistered = Notification.Name("MediaLocationDeregistered")
 }
 
 @MainActor
@@ -62,47 +68,30 @@ class SettingsViewModel: ObservableObject {
     func loadConfig() async {
         isLoadingConfig = true
         defer { isLoadingConfig = false }
-        
+
         do {
-            let request = Vurio_Dedup_GetConfigRequest()
-            if let response = try await VurioGrpcClient.shared.config?.getConfig(request) {
-                // The response is JSON string, parse it
-                if let data = response.jsonPayload.data(using: .utf8),
-                   let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    var parsedConfig: [String: String] = [:]
-                    var parsedDescriptions: [String: String] = [:]
-                    var parsedLongDescriptions: [String: String] = [:]
-                    var parsedOptions: [String: [String]] = [:]
-                    
-                    for (key, value) in dict {
-                        if let strValue = value as? String {
-                            // Backwards compatibility
-                            parsedConfig[key] = strValue
-                        } else if let objValue = value as? [String: Any],
-                                  let propValue = objValue["value"] as? String {
-                            parsedConfig[key] = propValue
-                            if let propDesc = objValue["description"] as? String {
-                                parsedDescriptions[key] = propDesc
-                            }
-                            if let propLongDesc = objValue["longDescription"] as? String {
-                                parsedLongDescriptions[key] = propLongDesc
-                            }
-                            if let propOptions = objValue["options"] as? String, !propOptions.isEmpty {
-                                parsedOptions[key] = propOptions.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-                            }
-                        }
-                    }
-                    
-                    self.config = parsedConfig
-                    self.originalConfig = parsedConfig
-                    self.configDescriptions = parsedDescriptions
-                    self.configLongDescriptions = parsedLongDescriptions
-                    self.configOptions = parsedOptions
-                    self.modifiedProperties.removeAll()
-                }
+            guard let parsed = try await ConfigService.fetch() else { return }
+
+            var parsedConfig: [String: String] = [:]
+            var parsedDescriptions: [String: String] = [:]
+            var parsedLongDescriptions: [String: String] = [:]
+            var parsedOptions: [String: [String]] = [:]
+
+            for (key, entry) in parsed.entries {
+                parsedConfig[key] = entry.value
+                parsedDescriptions[key] = entry.description
+                parsedLongDescriptions[key] = entry.longDescription
+                parsedOptions[key] = entry.options
             }
+
+            self.config = parsedConfig
+            self.originalConfig = parsedConfig
+            self.configDescriptions = parsedDescriptions
+            self.configLongDescriptions = parsedLongDescriptions
+            self.configOptions = parsedOptions
+            self.modifiedProperties.removeAll()
         } catch {
-            print("Error loading config: \(error)")
+            MessageCenter.shared.post("Failed to load settings: \(error.localizedDescription)")
         }
     }
     
@@ -121,24 +110,33 @@ class SettingsViewModel: ObservableObject {
                 do {
                     let _ = try await VurioGrpcClient.shared.config?.updateConfig(req)
                 } catch {
-                    print("Failed to save \(key): \(error)")
+                    // The user pressed Save; a swallowed per-key failure would
+                    // leave the setting silently unchanged.
+                    MessageCenter.shared.post("Failed to save \(key): \(error.localizedDescription)")
                 }
             }
         }
         await loadConfig()
-        NotificationCenter.default.post(name: Notification.Name("ConfigSaved"), object: nil)
+        NotificationCenter.default.post(name: .configSaved, object: nil)
     }
     
     // Advanced Actions
-    func performAdvancedAction(_ action: @escaping () async throws -> Vurio_Dedup_AdvancedActionResponse, 
-                               successMessage: String) async {
+    /// `mutatesEjectedBins`: pass true for actions that move files in/out of the
+    /// ejected bins on disk, so AppState rescans them (its scan is event-driven,
+    /// not polled).
+    func performAdvancedAction(_ action: @escaping () async throws -> Vurio_Dedup_AdvancedActionResponse,
+                               successMessage: String,
+                               mutatesEjectedBins: Bool = false) async {
         isAnyActionRunning = true
         defer { isAnyActionRunning = false }
-        
+
         do {
             let response = try await action()
             if response.success {
                 MessageCenter.shared.post(successMessage)
+                if mutatesEjectedBins {
+                    NotificationCenter.default.post(name: .ejectedBinsChanged, object: nil)
+                }
             } else {
                 MessageCenter.shared.post("Action failed: \(response.errorMessage)")
             }
@@ -153,25 +151,25 @@ class SettingsViewModel: ObservableObject {
     
     func ejectErrors() async {
         activeOperationMessage = "Ejecting errored files..."
-        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors ejected")
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors ejected", mutatesEjectedBins: true)
         activeOperationMessage = nil
     }
     
     func restoreErrors() async {
         activeOperationMessage = "Restoring errored files..."
-        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors restored")
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectErrors(Vurio_Dedup_Empty()) }, successMessage: "Errors restored", mutatesEjectedBins: true)
         activeOperationMessage = nil
     }
     
     func ejectIgnored() async {
         activeOperationMessage = "Ejecting ignored files..."
-        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored ejected")
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.ejectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored ejected", mutatesEjectedBins: true)
         activeOperationMessage = nil
     }
     
     func restoreIgnored() async {
         activeOperationMessage = "Restoring ignored files..."
-        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored restored")
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.undoEjectIgnored(Vurio_Dedup_Empty()) }, successMessage: "Ignored restored", mutatesEjectedBins: true)
         activeOperationMessage = nil
     }
     
@@ -180,7 +178,7 @@ class SettingsViewModel: ObservableObject {
     }
     
     func purgeEjectedAndErrored() async {
-        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.purgeEjectedAndErrored(Vurio_Dedup_Empty()) }, successMessage: "Purged ejected and errored files")
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.purgeEjectedAndErrored(Vurio_Dedup_Empty()) }, successMessage: "Purged ejected and errored files", mutatesEjectedBins: true)
     }
     
     func clearAllCaches() async {

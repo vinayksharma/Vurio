@@ -1,17 +1,12 @@
 import SwiftUI
 
 struct VurioScrollerTestView: View {
-    // Precompute alternating heights to test variable height support
-    let itemHeights: [CGFloat] = (0..<100_000).map { i in
-        switch i % 4 {
-        case 0: return 120.0
-        case 1: return 200.0
-        case 2: return 80.0
-        default: return 300.0
-        }
-    }
+    // The scroller is uniform-height by design (closed-form geometry); the
+    // harness exercises keyboard/scroll/focus interaction at 100k rows.
+    private let itemCount = 100_000
+    private let rowHeight: CGFloat = 150
     @State private var selection: Int? = 0
-    
+
     var body: some View {
         VStack(spacing: 0) {
             Text("Vurio Scroller Test Harness")
@@ -20,14 +15,15 @@ struct VurioScrollerTestView: View {
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(Color.black.opacity(0.3))
-            
+
             GeometryReader { geo in
                 VurioScroller(
-                    itemHeights: itemHeights,
+                    itemCount: itemCount,
+                    rowHeight: rowHeight,
                     scrollbarInsets: geo.safeAreaInsets,
                     selection: $selection
                 ) { index in
-                    TestRowView(index: index, height: itemHeights[index])
+                    TestRowView(index: index, height: rowHeight)
                 }
                 .background(Color.black.opacity(0.1))
             }

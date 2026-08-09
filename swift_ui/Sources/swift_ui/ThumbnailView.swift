@@ -9,6 +9,11 @@ struct ThumbnailView: View {
     // deeper layers load only after all shallower ones are delivered. Defaults to
     // 0 so non-stacked thumbnails always load at top priority.
     var layerPriority: Int = 0
+    // Pixel size to request from the server and key the cache by. Defaults to
+    // the display width. The BINNED representative tile displays at 80 pt but
+    // requests 70, so a file shares one decoded asset ("path_70") across both
+    // tabs, the day-view stacks, and prefetch instead of a second cold fetch.
+    var requestSize: Int? = nil
 
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
@@ -16,10 +21,18 @@ struct ThumbnailView: View {
     // rendered as a distinct warning tile, never re-requested.
     @State private var unreadableReason: String? = nil
 
+    private var assetSize: Int { requestSize ?? Int(size.width) }
+    private var cacheKey: String { "\(filePath)_\(assetSize)" }
+
     var body: some View {
+        // The cache re-check happens synchronously at render (NSCache is cheap
+        // and thread-safe): a row recycled back on screen repaints its image on
+        // the first frame instead of flashing the spinner through the 75 ms
+        // debounce even though the bitmap was already decoded.
+        let displayed = thumbnail ?? ImageCache.shared.getImage(forKey: cacheKey)
         Group {
-            if let thumbnail = thumbnail {
-                Image(nsImage: thumbnail)
+            if let displayed = displayed {
+                Image(nsImage: displayed)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: size.width, height: size.height)
@@ -48,15 +61,16 @@ struct ThumbnailView: View {
                 .background(Color.gray.opacity(0.2))
             }
         }
-        .onAppear {
-            if let cachedImage = ImageCache.shared.getImage(forKey: "\(filePath)_\(Int(size.width))") {
-                self.thumbnail = cachedImage
-                self.isLoading = false
-            }
-        }
         .task(id: filePath) {
             if thumbnail == nil {
-                await generateThumbnail()
+                if let cached = ImageCache.shared.getImage(forKey: cacheKey) {
+                    // Promote the cache hit into local state so later body
+                    // passes skip the lookup.
+                    thumbnail = cached
+                    isLoading = false
+                } else {
+                    await generateThumbnail()
+                }
             }
         }
         .onDisappear {
@@ -74,15 +88,15 @@ struct ThumbnailView: View {
             Task { await generateThumbnail() }
         }
     }
-    
+
     private func generateThumbnail() async {
         logDebug("ThumbnailView.generateThumbnail started for \(filePath)")
         do {
             // Debounce: wait 75ms before fetching. If scrolled off-screen quickly, this throws CancellationError.
             try await Task.sleep(nanoseconds: 75_000_000)
-            
+
             logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: Int(size.width), cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: assetSize, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
             await MainActor.run {
                 self.thumbnail = image
                 self.isLoading = false

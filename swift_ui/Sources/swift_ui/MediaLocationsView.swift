@@ -273,7 +273,7 @@ struct MediaLocationsView: View {
                         selectedRegisteredLocation = nil
                     }
                     await appState.fetchStatus()
-                    NotificationCenter.default.post(name: Notification.Name("MediaLocationDeregistered"), object: nil)
+                    NotificationCenter.default.post(name: .mediaLocationDeregistered, object: nil)
                 } else {
                     statusMessage = "Failed: \(response.errorMessage)"
                 }

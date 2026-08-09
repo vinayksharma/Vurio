@@ -29,8 +29,15 @@ struct VurioApp: App {
     }
 }
 
+extension Notification.Name {
+    /// Posted after any operation that adds or removes files in the ejected
+    /// bins (eject/restore/purge, from any surface). AppState listens and
+    /// rescans the bins — the scan is filesystem work and must not run on a
+    /// timer (it kept external drives awake by enumerating them every 2 s).
+    static let ejectedBinsChanged = Notification.Name("EjectedBinsChanged")
+}
+
 class AppState: ObservableObject {
-    @Published var configStatus: String = "Connecting..."
     @Published var registeredDirs: [String] = []
     @Published var ejectedDirs: [String] = []
     @Published var hasEjectedFilesInFolder: Bool = false
@@ -69,88 +76,126 @@ class AppState: ObservableObject {
     @Published var integrityCheckThumbnailsRemoved: Int32 = 0
     @Published var integrityCheckArtifactsRemoved: Int32 = 0
     @Published var integrityCheckErrorsRemoved: Int32 = 0
-    
-    @MainActor
-    func fetchConfig() async {
-        do {
-            let request = Vurio_Dedup_GetConfigRequest()
-            if let client = VurioGrpcClient.shared.config {
-                let response = try await client.getConfig(request)
-                self.configStatus = response.jsonPayload
-            }
-        } catch {
-            self.configStatus = "Failed: \(error.localizedDescription)"
+
+    private var binsChangedObserver: NSObjectProtocol?
+    // Whether rescanEjectedBins has run at least once this launch (the first
+    // fetchStatus triggers it so the restore buttons start out correct).
+    private var hasScannedEjectedBins = false
+
+    init() {
+        binsChangedObserver = NotificationCenter.default.addObserver(
+            forName: .ejectedBinsChanged, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { await self?.rescanEjectedBins() }
         }
     }
-    
+
+    deinit {
+        if let binsChangedObserver {
+            NotificationCenter.default.removeObserver(binsChangedObserver)
+        }
+    }
+
+    /// Assign only when the value differs. Assigning an identical value to an
+    /// @Published property still fires objectWillChange, and the 2 s status
+    /// poll writes ~15 of them — without this, every view observing AppState
+    /// re-rendered on every tick even when nothing changed.
+    @MainActor
+    private func setIfChanged<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppState, T>, _ value: T) {
+        if self[keyPath: keyPath] != value {
+            self[keyPath: keyPath] = value
+        }
+    }
+
     func fetchStatus() async {
         do {
             let request = Vurio_Dedup_GetStatusRequest()
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.getStatus(request)
-                await MainActor.run {
+                let needsBinRescan: Bool = await MainActor.run {
                     self.statusFailureStreak = 0
-                    self.isOnline = true
-                    self.registeredDirs = response.registeredDirs
-                    self.ejectedDirs = response.ejectedDirs
-                    self.scannedFilesCount = response.scannedFilesCount
-                    self.processedFilesCount = response.processedFilesCount
-                    self.threadCount = response.threadCount
-                    self.maxThreads = response.maxThreads
-                    self.errorFilesCount = response.errorFilesCount
-                    self.duplicateGroupsCount = response.duplicateGroupsCount
-                    self.duplicateFilesCount = response.duplicateFilesCount
-                    self.duplicateFindingTotal = response.duplicateFindingTotal
-                    self.duplicateFindingCompleted = response.duplicateFindingCompleted
-                    self.isPaused = response.isPaused
+                    let dirsChanged = self.registeredDirs != response.registeredDirs
+                        || self.ejectedDirs != response.ejectedDirs
+                    self.setIfChanged(\.isOnline, true)
+                    self.setIfChanged(\.registeredDirs, response.registeredDirs)
+                    self.setIfChanged(\.ejectedDirs, response.ejectedDirs)
+                    self.setIfChanged(\.scannedFilesCount, response.scannedFilesCount)
+                    self.setIfChanged(\.processedFilesCount, response.processedFilesCount)
+                    self.setIfChanged(\.threadCount, response.threadCount)
+                    self.setIfChanged(\.maxThreads, response.maxThreads)
+                    self.setIfChanged(\.errorFilesCount, response.errorFilesCount)
+                    self.setIfChanged(\.duplicateGroupsCount, response.duplicateGroupsCount)
+                    self.setIfChanged(\.duplicateFilesCount, response.duplicateFilesCount)
+                    self.setIfChanged(\.duplicateFindingTotal, response.duplicateFindingTotal)
+                    self.setIfChanged(\.duplicateFindingCompleted, response.duplicateFindingCompleted)
+                    self.setIfChanged(\.isPaused, response.isPaused)
+                    let needs = dirsChanged || !self.hasScannedEjectedBins
+                    return needs
                 }
-                
-                let dirs = response.ejectedDirs
-                let roots = response.registeredDirs
-                let scan = await Task.detached(priority: .background) { () -> (Bool, Set<String>) in
-                    let fm = FileManager.default
-                    // True iff `dir` contains an actual file (recursively), skipping
-                    // hidden entries (.DS_Store) and empty leftover subdirectories
-                    // (e.g. spent collision folders after a restore) - those must NOT
-                    // count, otherwise eject/restore buttons stay enabled with nothing
-                    // left to act on.
-                    func hasRealFile(_ dir: String) -> Bool {
-                        guard let enumerator = fm.enumerator(
-                            at: URL(fileURLWithPath: dir),
-                            includingPropertiesForKeys: [.isRegularFileKey],
-                            options: [.skipsHiddenFiles]
-                        ) else { return false }
-                        for case let fileURL as URL in enumerator {
-                            if (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
-                                return true
-                            }
-                        }
-                        return false
-                    }
-                    var rootsWithFiles = Set<String>()
-                    var anyFiles = false
-                    for dir in dirs where hasRealFile(dir) {
-                        anyFiles = true
-                        for root in roots where dir.hasPrefix(root) {
-                            rootsWithFiles.insert(root)
-                        }
-                    }
-                    return (anyFiles, rootsWithFiles)
-                }.value
 
-                await MainActor.run {
-                    self.hasEjectedFilesInFolder = scan.0
-                    self.ejectedRootsWithFiles = scan.1
+                // The bin scan is recursive filesystem work; it no longer runs on
+                // the 2 s poll. It reruns when the server-reported dir lists move,
+                // plus once at launch; content-level changes (files moved in/out
+                // of existing bins) are covered by .ejectedBinsChanged posts at
+                // the mutation sites (eject/restore/purge ops, volume events).
+                if needsBinRescan {
+                    await rescanEjectedBins()
                 }
             }
         } catch {
             await MainActor.run {
                 self.statusFailureStreak += 1
                 if self.statusFailureStreak >= self.offlineThreshold {
-                    self.isOnline = false
+                    self.setIfChanged(\.isOnline, false)
                 }
             }
-            print("Failed to fetch status (streak \(statusFailureStreak)): \(error)")
+            logDebug("Failed to fetch status (streak \(statusFailureStreak)): \(error)")
+        }
+    }
+
+    /// Recompute hasEjectedFilesInFolder / ejectedRootsWithFiles by scanning the
+    /// ejected-bin directories on disk. Event-driven: called on launch, when the
+    /// server's dir lists change, and via .ejectedBinsChanged after any
+    /// eject/restore/purge or volume mount/unmount.
+    func rescanEjectedBins() async {
+        let (dirs, roots): ([String], [String]) = await MainActor.run {
+            (self.ejectedDirs, self.registeredDirs)
+        }
+        let scan = await Task.detached(priority: .background) { () -> (Bool, Set<String>) in
+            let fm = FileManager.default
+            // True iff `dir` contains an actual file (recursively), skipping
+            // hidden entries (.DS_Store) and empty leftover subdirectories
+            // (e.g. spent collision folders after a restore) - those must NOT
+            // count, otherwise eject/restore buttons stay enabled with nothing
+            // left to act on.
+            func hasRealFile(_ dir: String) -> Bool {
+                guard let enumerator = fm.enumerator(
+                    at: URL(fileURLWithPath: dir),
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles]
+                ) else { return false }
+                for case let fileURL as URL in enumerator {
+                    if (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+                        return true
+                    }
+                }
+                return false
+            }
+            var rootsWithFiles = Set<String>()
+            var anyFiles = false
+            for dir in dirs where hasRealFile(dir) {
+                anyFiles = true
+                for root in roots where dir.hasPrefix(root) {
+                    rootsWithFiles.insert(root)
+                }
+            }
+            return (anyFiles, rootsWithFiles)
+        }.value
+
+        await MainActor.run {
+            self.hasScannedEjectedBins = true
+            self.setIfChanged(\.hasEjectedFilesInFolder, scan.0)
+            self.setIfChanged(\.ejectedRootsWithFiles, scan.1)
         }
     }
     
@@ -160,20 +205,20 @@ class AppState: ObservableObject {
             if let client = VurioGrpcClient.shared.advanced {
                 let response = try await client.getDatabaseIntegrityCheckStatus(request)
                 await MainActor.run {
-                    self.isIntegrityCheckRunning = response.running
-                    self.integrityCheckProgress = response.progress
-                    self.integrityCheckTotalFiles = response.totalFiles
-                    self.integrityCheckProcessedFiles = response.processedFiles
-                    self.integrityCheckCurrentPhase = response.currentPhase
-                    self.integrityCheckFilesRemoved = response.filesRemoved
-                    self.integrityCheckGroupsRemoved = response.groupsRemoved
-                    self.integrityCheckThumbnailsRemoved = response.thumbnailsRemoved
-                    self.integrityCheckArtifactsRemoved = response.artifactsRemoved
-                    self.integrityCheckErrorsRemoved = response.errorsRemoved
+                    self.setIfChanged(\.isIntegrityCheckRunning, response.running)
+                    self.setIfChanged(\.integrityCheckProgress, response.progress)
+                    self.setIfChanged(\.integrityCheckTotalFiles, response.totalFiles)
+                    self.setIfChanged(\.integrityCheckProcessedFiles, response.processedFiles)
+                    self.setIfChanged(\.integrityCheckCurrentPhase, response.currentPhase)
+                    self.setIfChanged(\.integrityCheckFilesRemoved, response.filesRemoved)
+                    self.setIfChanged(\.integrityCheckGroupsRemoved, response.groupsRemoved)
+                    self.setIfChanged(\.integrityCheckThumbnailsRemoved, response.thumbnailsRemoved)
+                    self.setIfChanged(\.integrityCheckArtifactsRemoved, response.artifactsRemoved)
+                    self.setIfChanged(\.integrityCheckErrorsRemoved, response.errorsRemoved)
                 }
             }
         } catch {
-            print("Failed to fetch integrity check status: \(error)")
+            logDebug("Failed to fetch integrity check status: \(error)")
         }
     }
     
@@ -188,7 +233,9 @@ class AppState: ObservableObject {
             // Optimistically update the state
             isPaused.toggle()
         } catch {
-            print("Failed to toggle pause: \(error)")
+            // The user clicked the pause/resume control; a silent failure reads
+            // as a dead button.
+            MessageCenter.shared.post("Failed to \(isPaused ? "resume" : "pause") processing: \(error.localizedDescription)")
         }
     }
 }
@@ -235,7 +282,7 @@ struct ContentView: View {
             .background(
                 GeometryReader { geometry in
                     Color.clear
-                        .onChange(of: geometry.size.width) { newWidth in
+                        .onChange(of: geometry.size.width) { _, newWidth in
                             sidebarWidth = newWidth
                         }
                         .onAppear {
@@ -290,9 +337,16 @@ struct ContentView: View {
         }
         .task {
             // Background status poller
+            var tick = 0
             while !Task.isCancelled {
                 await appState.fetchStatus()
-                await appState.fetchIntegrityCheckStatus()
+                // Integrity checks are rare: poll every ~10 s to detect an
+                // externally started one, but at full 2 s cadence while one is
+                // running so the overlay's progress stays live.
+                if appState.isIntegrityCheckRunning || tick % 5 == 0 {
+                    await appState.fetchIntegrityCheckStatus()
+                }
+                tick += 1
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
