@@ -316,12 +316,16 @@ run_server() {
     
     local EXTRA_ARGS=""
 
-    # Run server in background
+    # Run server in background. Console output MUST be redirected: the server
+    # (and its media libraries) can emit raw binary bytes on stdout/stderr,
+    # and unredirected they land in the launching terminal — iTerm2 interprets
+    # the ANSI media-copy sequence (ESC[5i) in such garbage as "print the
+    # screen" and opens a print dialog.
     if [ "$DEBUG_MODE" = true ]; then
         print_status "Running in debug mode..."
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug $EXTRA_ARGS &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" --debug $EXTRA_ARGS >> "$LOGS_DIR/server_console.log" 2>&1 &
     else
-        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" $EXTRA_ARGS &
+        "$BUILD_DIR/bin/media_dedup_server" --config "$CONFIG_FILE" $EXTRA_ARGS >> "$LOGS_DIR/server_console.log" 2>&1 &
     fi
     
     local server_pid=$!
