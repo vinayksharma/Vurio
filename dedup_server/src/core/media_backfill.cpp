@@ -118,8 +118,15 @@ namespace MediaDedup
                         std::string final_path;
                         if (backfill_trans_cache->moveToCache(temp_path, final_path))
                         {
-                            PreviewCacheOps::upsertPreview(
-                                *db, PreviewCacheOps::makeRecord(path, final_path));
+                            // A preview with no cache row is invisible to every
+                            // reader and would be transcoded again on the next
+                            // backfill sweep; drop it rather than leak it.
+                            if (!PreviewCacheOps::upsertPreview(
+                                    *db, PreviewCacheOps::makeRecord(path, final_path)))
+                            {
+                                backfill_trans_cache->deleteFromCacheImmediately(final_path);
+                                return;
+                            }
                             MediaGenerationFailures::instance().recordSuccess(path, "preview");
                             MediaReadyBus::instance().publish({path, "preview", true, ""});
                         }

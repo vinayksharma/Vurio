@@ -215,8 +215,17 @@ public:
                         if (TranscodingPipeline::TranscodeToFile(path_copy, temp_path, transcode_config, temp_dir)) {
                             std::string final_path;
                             if (xcache_copy && xcache_copy->moveToCache(temp_path, final_path)) {
-                                PreviewCacheOps::upsertPreview(
-                                    *db_copy, PreviewCacheOps::makeRecord(path_copy, final_path));
+                                if (!PreviewCacheOps::upsertPreview(
+                                        *db_copy, PreviewCacheOps::makeRecord(path_copy, final_path))) {
+                                    // Without the row nothing can ever find this
+                                    // preview, and announcing it ready would send
+                                    // the client straight back for another full
+                                    // transcode. Discard and report transient.
+                                    xcache_copy->deleteFromCacheImmediately(final_path);
+                                    MediaDedup::MediaReadyBus::instance().publish(
+                                        {path_copy, "preview", false, "Preview generation failed (transient server error)"});
+                                    return;
+                                }
 
                                 // AR-1: the dead WebSocket broadcast is gone —
                                 // MediaReadyBus serves the live (gRPC) client.

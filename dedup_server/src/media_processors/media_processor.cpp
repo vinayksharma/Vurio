@@ -288,10 +288,18 @@ namespace MediaDedup
                                 std::string final_cached_path;
                                 if (disk_cache->moveToCache(temp_filename, final_cached_path)) {
                                     // Save to preview cache (QW-8: shared helper fills
-                                    // the freshness fields consistently everywhere)
-                                    PreviewCacheOps::upsertPreview(
-                                        *db_manager, PreviewCacheOps::makeRecord(file_path_copy, final_cached_path));
-                                    
+                                    // the freshness fields consistently everywhere).
+                                    // A lost row is not fatal here — this run still
+                                    // needs the file for embedding — but it must not
+                                    // pass silently: the viewer will re-transcode this
+                                    // RAW on every open until a later sweep writes it.
+                                    if (!PreviewCacheOps::upsertPreview(
+                                            *db_manager, PreviewCacheOps::makeRecord(file_path_copy, final_cached_path))) {
+                                        Poco::Logger::get("MediaProcessor").error(
+                                            "Transcoded preview cached but its row could not be written: %s", file_path_copy);
+                                    }
+
+
                                     processing_file_path = final_cached_path;
                                     transcoded_preview_path = final_cached_path;
                                     Poco::Logger::get("MediaProcessor").information("Successfully transcoded RAW and saved to preview cache: %s", final_cached_path);

@@ -1,5 +1,6 @@
 #include "database/image_artifacts_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/db_retry.hpp"
 #include "database/sql_constants.hpp"
 #include "database/vector_index.hpp"
 #include <Poco/Data/Session.h>
@@ -65,28 +66,34 @@ namespace MediaDedup
             l2NormalizeEmbeddingBlob(normalized_blob, r.dim);
 
             int file_id = 0;
-            {
-                auto lease = db.acquireSessionLease();
-                Session &sess = lease.get();
-                Statement stmt(sess);
-                std::string file_path = r.file_path;
-                std::string model = r.model;
-                int dim = r.dim;
-                // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
-                // std::string would truncate at first NULL byte (0x00) in embedding data
-                Poco::Data::CLOB blob(reinterpret_cast<const char *>(normalized_blob.data()), normalized_blob.size());
-                int v = r.version;
-                stmt << std::string(SQL::kUpsertImageEmbedding),
-                    Keywords::use(file_path),
-                    Keywords::use(model),
-                    Keywords::use(dim),
-                    Keywords::use(blob),
-                    Keywords::use(v),
-                    Keywords::now;
+            // Losing this write throws away a full ONNX inference and leaves
+            // the file looking unprocessed, so it is paid for again on the
+            // next pass. Ride out write-lock contention instead.
+            if (!DbRetry::withBusyRetry("ImageArtifactsOps", "upsertEmbedding", [&]() {
+                    auto lease = db.acquireSessionLease();
+                    Session &sess = lease.get();
+                    Statement stmt(sess);
+                    std::string file_path = r.file_path;
+                    std::string model = r.model;
+                    int dim = r.dim;
+                    // CRITICAL FIX: Use Poco::Data::CLOB for binary data to prevent NULL-byte truncation
+                    // std::string would truncate at first NULL byte (0x00) in embedding data
+                    Poco::Data::CLOB blob(reinterpret_cast<const char *>(normalized_blob.data()), normalized_blob.size());
+                    int v = r.version;
+                    stmt << std::string(SQL::kUpsertImageEmbedding),
+                        Keywords::use(file_path),
+                        Keywords::use(model),
+                        Keywords::use(dim),
+                        Keywords::use(blob),
+                        Keywords::use(v),
+                        Keywords::now;
 
-                Statement sel(sess);
-                sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
-            } // POCO lease is released, freeing up lock!
+                    Statement sel(sess);
+                    sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
+                })) // POCO lease is released, freeing up lock!
+            {
+                return false;
+            }
 
             // Sync vector index when enabled (for KNN duplicate search) —
             // with the same normalized vector that was stored.

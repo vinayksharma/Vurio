@@ -1,5 +1,6 @@
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/db_retry.hpp"
 #include "database/sql_constants.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
@@ -127,8 +128,10 @@ namespace MediaDedup
 
     bool ThumbnailCacheOps::upsertThumbnail(DatabaseManager &db, const ThumbnailCacheRecord &record)
     {
-        try
-        {
+        // Losing this write means the generated thumbnail exists on disk with
+        // no row pointing at it, so the next request misses the cache and
+        // regenerates it — forever. Ride out the contention instead.
+        return DbRetry::withBusyRetry("ThumbnailCacheOps", "upsertThumbnail", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
@@ -152,13 +155,7 @@ namespace MediaDedup
                 now;
 
             Poco::Logger::get("ThumbnailCacheOps").debug("Upserted thumbnail cache entry: %s (size: %d)", record.source_path, sz);
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ThumbnailCacheOps").error("Exception in upsertThumbnail: %s", std::string(e.what()));
-            return false;
-        }
+        });
     }
 
     bool ThumbnailCacheOps::updateAccessTime(DatabaseManager &db,

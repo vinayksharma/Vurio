@@ -1,5 +1,6 @@
 #include "database/preview_cache_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/db_retry.hpp"
 #include "database/sql_constants.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
@@ -83,8 +84,9 @@ namespace MediaDedup
 
     bool PreviewCacheOps::upsertPreview(DatabaseManager &db, const PreviewCacheRecord &record)
     {
-        try
-        {
+        // See ThumbnailCacheOps::upsertThumbnail — a dropped row here costs a
+        // whole RAW transcode on every subsequent viewer open of this file.
+        return DbRetry::withBusyRetry("PreviewCacheOps", "upsertPreview", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
@@ -106,13 +108,7 @@ namespace MediaDedup
                 now;
 
             Poco::Logger::get("PreviewCacheOps").debug("Upserted preview cache entry: %s", record.source_path);
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("PreviewCacheOps").error("Exception in upsertPreview: %s", std::string(e.what()));
-            return false;
-        }
+        });
     }
 
     bool PreviewCacheOps::updateAccessTime(DatabaseManager &db, const std::string &source_path, int64_t timestamp)
