@@ -48,8 +48,19 @@ struct ViewerView: View {
     @State private var fullResLoadedFor: String? = nil
     @State private var fullResRequestFor: String? = nil
 
+    // True while `currentImage` is only the file's strip thumbnail, standing in
+    // for a preview that is still being generated. It is a real bitmap on
+    // screen, so every "do we have an image?" check passes — but it must not be
+    // mistaken for the preview: no 1:1 zoom off its pixel dimensions, and no
+    // full-res upgrade racing the preview that is already on its way.
+    @State private var isPlaceholderImage = false
+
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
+
+    /// Pixel size the strip tiles request. The main image area reuses their
+    /// cached bitmap as its placeholder, so the two must key the same asset.
+    private static let stripThumbnailSize = 70
 
     var body: some View {
         VStack(spacing: 0) {
@@ -188,34 +199,43 @@ struct ViewerView: View {
             .contentShape(Rectangle())
             .gesture(panGesture)
             .simultaneousGesture(magnifyGesture)
-            // Unobtrusive badge while the full-resolution image is being
-            // pulled; the preview stays interactive underneath.
+            // Unobtrusive badge while a better bitmap than the one on screen is
+            // being pulled — the thumbnail placeholder waiting on its preview,
+            // or the preview waiting on its full-resolution render. What is
+            // already there stays visible and interactive underneath.
             .overlay(alignment: .bottomTrailing) {
-                if let selected = model.selectedImage, fullResRequestFor == selected.filePath {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("LOADING FULL RES")
-                            .font(.custom("Menlo", size: 9))
-                            .fontWeight(.bold)
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Theme.surfaceElevated.opacity(0.9)))
-                    .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
-                    .padding(12)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                if isPlaceholderImage && isLoadingImage {
+                    loadingBadge("LOADING PREVIEW")
+                } else if let selected = model.selectedImage, fullResRequestFor == selected.filePath {
+                    loadingBadge("LOADING FULL RES")
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: fullResRequestFor)
+            .animation(.easeInOut(duration: 0.2), value: isPlaceholderImage)
             .onAppear { mainAreaSize = geometry.size }
             .onChange(of: geometry.size) { _, newSize in
                 mainAreaSize = newSize
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadingBadge(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text(text)
+                .font(.custom("Menlo", size: 9))
+                .fontWeight(.bold)
+                .foregroundColor(Theme.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Theme.surfaceElevated.opacity(0.9)))
+        .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
+        .padding(12)
+        .allowsHitTesting(false)
+        .transition(.opacity)
     }
 
     private var panGesture: some Gesture {
@@ -370,12 +390,13 @@ struct ViewerView: View {
 
     private func stripTile(_ image: ViewerImage) -> some View {
         let isSelected = image.id == model.selectedID
+        let side = CGFloat(Self.stripThumbnailSize)
         return ThumbnailView(
             filePath: image.filePath,
-            size: CGSize(width: 70, height: 70),
+            size: CGSize(width: side, height: side),
             cachedThumbnailPath: image.cachedThumbnailPath
         )
-        .frame(width: 70, height: 70)
+        .frame(width: side, height: side)
         .cornerRadius(8)
         .opacity(image.isEjected ? 0.3 : 1.0)
         .overlay(
@@ -444,7 +465,10 @@ struct ViewerView: View {
     /// 1:1 pixel zoom: scale so one image pixel maps to one point of the fitted
     /// (aspect-fit) layout, using the bitmap's pixel dimensions.
     private func zoomToActualSize() {
-        guard let image = currentImage, mainAreaSize.width > 0, mainAreaSize.height > 0 else { return }
+        // Meaningless against the thumbnail placeholder — its pixel dimensions
+        // are the tile's, not the photo's, so "1:1" would land nowhere near it.
+        guard !isPlaceholderImage,
+              let image = currentImage, mainAreaSize.width > 0, mainAreaSize.height > 0 else { return }
         let pixelWidth = image.representations.first.map { CGFloat($0.pixelsWide) } ?? image.size.width
         let pixelHeight = image.representations.first.map { CGFloat($0.pixelsHigh) } ?? image.size.height
         guard pixelWidth > 0, pixelHeight > 0 else { return }
@@ -460,8 +484,14 @@ struct ViewerView: View {
     /// (beyond added sharpness) because the image is laid out aspect-fit — the
     /// fitted frame, and thus every transform, is identical for both bitmaps.
     private func maybeLoadFullResolution(zoomScale: CGFloat) {
+        // Never off the placeholder: the preview it stands in for is already
+        // being generated, and on a RAW that would put a second (much heavier)
+        // render in the queue behind it for the same file. loadPreview() calls
+        // back here the moment the real preview lands, so a zoom during the
+        // wait is honoured, just not acted on twice.
         guard zoomScale > 1.2,
               currentImage != nil,
+              !isPlaceholderImage,
               let selected = model.selectedImage,
               fullResLoadedFor != selected.filePath,
               fullResRequestFor != selected.filePath else { return }
@@ -497,6 +527,7 @@ struct ViewerView: View {
             withAnimation(Self.imageFade) {
                 currentImage = nil
                 displayedImagePath = nil
+                isPlaceholderImage = false
             }
             return
         }
@@ -507,6 +538,7 @@ struct ViewerView: View {
             withAnimation(Self.imageFade) {
                 currentImage = cached
                 displayedImagePath = filePath
+                isPlaceholderImage = false
                 isLoadingImage = false
             }
             if await ServerImageLoader.shared.isFullResolutionKnown(filePath: filePath) {
@@ -515,11 +547,25 @@ struct ViewerView: View {
             return
         }
 
+        // Cold preview. The strip tile for this very file is usually already
+        // decoded, so put it up as a soft, upscaled placeholder rather than
+        // spinning on an empty frame — a first-time RAW preview is a full
+        // transcode on the server and can take seconds to arrive. Same
+        // `displayedImagePath` as the preview that replaces it, so the sharpen
+        // is an instant in-place swap rather than a second cross-fade.
+        let placeholder = ImageCache.shared.getImage(forKey: "\(filePath)_\(Self.stripThumbnailSize)")
         withAnimation(Self.imageFade) {
             isLoadingImage = true
-            currentImage = nil
-            displayedImagePath = nil
+            currentImage = placeholder
+            displayedImagePath = placeholder == nil ? nil : filePath
+            isPlaceholderImage = placeholder != nil
             unreadableMessage = nil
+        }
+        if placeholder == nil {
+            // Not in memory (viewer opened straight onto this file, or the tile
+            // was evicted) but generated at some point: decode it off the disk
+            // cache. Still far cheaper than waiting for the preview.
+            loadThumbnailPlaceholder(for: selected)
         }
         do {
             let image = try await ServerImageLoader.shared.loadPreview(filePath: filePath)
@@ -528,6 +574,7 @@ struct ViewerView: View {
                 withAnimation(Self.imageFade) {
                     currentImage = image
                     displayedImagePath = filePath
+                    isPlaceholderImage = false
                     isLoadingImage = false
                 }
                 // Served best-available: when the preview is already full
@@ -546,6 +593,10 @@ struct ViewerView: View {
         } catch let error as MediaUnreadableError {
             if model.selectedImage?.filePath == filePath {
                 withAnimation(Self.imageFade) {
+                    // Drop the thumbnail placeholder: it would otherwise sit on
+                    // top of the warning state (any image wins that branch) and
+                    // read as a successfully loaded, merely soft, preview.
+                    clearPlaceholder()
                     unreadableMessage = error.message
                     isLoadingImage = false
                 }
@@ -554,9 +605,37 @@ struct ViewerView: View {
             logDebug("Failed to load preview for \(filePath): \(error)")
             if model.selectedImage?.filePath == filePath {
                 withAnimation(Self.imageFade) {
+                    clearPlaceholder()
                     isLoadingImage = false
                 }
             }
         }
+    }
+
+    /// Put the file's cached thumbnail up as the placeholder, unless the real
+    /// preview (or a newer selection) beat it there.
+    private func loadThumbnailPlaceholder(for image: ViewerImage) {
+        let thumbnailPath = image.cachedThumbnailPath
+        guard !thumbnailPath.isEmpty else { return }
+        let filePath = image.filePath
+
+        Task { @MainActor in
+            guard let thumbnail = await ServerImageLoader.shared.decodeCachedAsset(path: thumbnailPath) else { return }
+            guard model.selectedImage?.filePath == filePath, currentImage == nil else { return }
+            withAnimation(Self.imageFade) {
+                currentImage = thumbnail
+                displayedImagePath = filePath
+                isPlaceholderImage = true
+            }
+        }
+    }
+
+    /// Take a stand-in bitmap back off screen, restoring the "no image" state
+    /// the error and empty branches expect.
+    private func clearPlaceholder() {
+        guard isPlaceholderImage else { return }
+        currentImage = nil
+        displayedImagePath = nil
+        isPlaceholderImage = false
     }
 }

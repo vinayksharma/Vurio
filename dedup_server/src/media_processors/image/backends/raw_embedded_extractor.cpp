@@ -23,7 +23,30 @@ namespace MediaDedup
                 return std::nullopt;
             }
 
-            if (raw_processor->unpack_thumb() != LIBRAW_SUCCESS)
+            // unpack_thumb() takes the file's DEFAULT embedded image, which is
+            // not always the biggest one it carries (Canon CR2s, for one, list
+            // three). Walk the thumbnail list and unpack the largest; only fall
+            // back to the default when the list is unavailable or empty.
+            bool unpacked = false;
+#if LIBRAW_COMPILE_CHECK_VERSION_NOTLESS(0, 21)
+            {
+                const auto &list = raw_processor->imgdata.thumbs_list;
+                int best_index = -1;
+                long best_pixels = 0;
+                for (int i = 0; i < list.thumbcount; ++i)
+                {
+                    long pixels = static_cast<long>(list.thumblist[i].twidth) * list.thumblist[i].theight;
+                    if (pixels > best_pixels)
+                    {
+                        best_pixels = pixels;
+                        best_index = i;
+                    }
+                }
+                if (best_index >= 0)
+                    unpacked = raw_processor->unpack_thumb_ex(best_index) == LIBRAW_SUCCESS;
+            }
+#endif
+            if (!unpacked && raw_processor->unpack_thumb() != LIBRAW_SUCCESS)
             {
                 logger.debug("LibRaw found no embedded thumbnail in: %s", source_path);
                 raw_processor->recycle();
@@ -44,6 +67,11 @@ namespace MediaDedup
             // for JPEG-type thumbs (the processed image's width/height can be 0).
             result.width = std::max<int>(thumb->width, raw_processor->imgdata.thumbnail.twidth);
             result.height = std::max<int>(thumb->height, raw_processor->imgdata.thumbnail.theight);
+            // Visible (post-crop) sensor dimensions — what a demosaic would
+            // produce, and therefore the yardstick for whether this embedded
+            // preview already IS the full-resolution image.
+            result.source_width = raw_processor->imgdata.sizes.width;
+            result.source_height = raw_processor->imgdata.sizes.height;
 
             bool ok = false;
             if (thumb->type == LIBRAW_IMAGE_JPEG)
@@ -100,8 +128,9 @@ namespace MediaDedup
             if (!ok)
                 return std::nullopt;
 
-            logger.debug("Extracted embedded preview (%dx%d) from RAW file: %s -> %s",
-                         result.width, result.height, source_path, result.jpeg_path);
+            logger.debug("Extracted embedded preview (%dx%d of %dx%d sensor) from RAW file: %s -> %s",
+                         result.width, result.height, result.source_width, result.source_height,
+                         source_path, result.jpeg_path);
             return result;
         }
         catch (const std::exception &e)
