@@ -258,6 +258,7 @@ add_executable(media_dedup_server
     src/media_processors/image/backends/image_magick_adapter.cpp
     src/media_processors/image/backends/image_magick_transcoder.cpp
     src/media_processors/image/backends/raw_file_detector.cpp
+    src/media_processors/image/backends/raw_demosaic_renderer.cpp
     src/media_processors/image/backends/raw_embedded_extractor.cpp
     src/media_processors/image/backends/exif_reader.cpp
     src/media_processors/image/backends/heic_adapter.cpp

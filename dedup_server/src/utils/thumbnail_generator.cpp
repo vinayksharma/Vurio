@@ -1,6 +1,7 @@
 #include "utils/thumbnail_generator.hpp"
 #include "media_processors/image/backends/tiff_validator.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
+#include "media_processors/image/backends/raw_demosaic_renderer.hpp"
 #include "media_processors/image/backends/raw_embedded_extractor.hpp"
 #include "utils/subprocess_runner.hpp"
 #include "utils/temp_paths.hpp"
@@ -32,15 +33,36 @@ namespace MediaDedup
             }
         };
 
+        /// Where the pixels for one render should come from.
+        struct ResolvedInput
+        {
+            /// magick/OpenCV input spec (may carry a "jpeg:"/"png:"/"tiff:" prefix).
+            std::string read_path;
+            /// Set instead of `read_path` when the only adequate source is the
+            /// RAW sensor data itself: the caller demosaics this in-process.
+            std::string demosaic_source;
+            /// Second chance if the demosaic fails — the camera's embedded
+            /// preview. Better a small real image than no image at all.
+            std::string fallback_read_path;
+        };
+
         /// Shared front half of thumbnail generation: validates the source and
-        /// resolves the magick input path. RAW files route through the single
-        /// consolidated decoder (RawEmbeddedExtractor); everything else gets a
-        /// magic-bytes format prefix. Returns false when the source is unusable.
+        /// resolves where to read pixels from. RAW files route through the
+        /// single consolidated decoder (RawEmbeddedExtractor); everything else
+        /// gets a magic-bytes format prefix. Returns false when the source is
+        /// unusable.
+        ///
+        /// `size` is the caller's longest-edge target (kNativeResolution for the
+        /// full-resolution viewer path). It decides whether a sub-full-size
+        /// embedded RAW preview is good enough: at thumbnail sizes any embedded
+        /// image is, at native resolution it is not — see the RAW branch.
         bool resolveInputPath(const std::string &source_path,
-                              std::string &read_path,
+                              int size,
+                              ResolvedInput &input,
                               TempFileCleanup &cleanup,
                               Poco::Logger &logger)
         {
+            std::string &read_path = input.read_path;
             if (!std::filesystem::exists(source_path))
             {
                 logger.error("Source file not found: %s", source_path);
@@ -71,25 +93,60 @@ namespace MediaDedup
 
             if (RawFileDetector::IsRawFile(source_path))
             {
-                // Consolidated RAW path: extract the embedded JPEG (any size is
-                // fine for a thumbnail). Only when the RAW file carries no
-                // usable embedded image do we hand the bare RAW to magick's
-                // full-demosaic delegate.
+                // Consolidated RAW path: the camera's embedded JPEG covers
+                // every cached size cheaply. Developing the sensor data is
+                // reserved for native resolution, where nothing else will do.
                 if (auto embedded = RawEmbeddedExtractor::extract(source_path))
                 {
                     cleanup.path = embedded->jpeg_path;
-                    read_path = "jpeg:" + embedded->jpeg_path;
+
+                    // At native resolution the embedded preview is only an
+                    // acceptable answer when it already carries the sensor's
+                    // full resolution. Often it does not — 1616x1080 out of
+                    // 5496x3672 is an ordinary Sony ARW — and taking it anyway
+                    // made the viewer's zoom-time "full resolution" upgrade
+                    // hand back an image SMALLER than the 2560px QHD preview it
+                    // was replacing. Develop the sensor data instead.
+                    if (size != ThumbnailGenerator::kNativeResolution || embedded->isFullSize())
+                    {
+                        read_path = "jpeg:" + embedded->jpeg_path;
+                    }
+                    else
+                    {
+                        logger.debug("Embedded preview %dx%d is sub-full-size (sensor %dx%d), "
+                                     "demosaicing for native resolution: %s",
+                                     embedded->width, embedded->height,
+                                     embedded->source_width, embedded->source_height, source_path);
+                        read_path.clear();
+                        input.demosaic_source = source_path;
+                        input.fallback_read_path = "jpeg:" + embedded->jpeg_path;
+                    }
                 }
-                else if (RawFileDetector::DetectFormatFromMagicBytes(source_path) == ImageFormat::TIFF)
+                else
                 {
                     // No usable embedded image (e.g. lossy/JXL-compressed
                     // Lightroom DNGs whose thumbs LibRaw hands back as JXL,
                     // which nothing downstream decodes). TIFF-magic RAWs still
                     // carry a plain preview IFD that magick's tiff reader can
                     // decode — far better than the bare-RAW delegate, which
-                    // needs the same LibRaw that just failed (or an external
-                    // tool like darktable-cli that may not exist).
-                    read_path = "tiff:" + source_path;
+                    // needs an external tool like darktable-cli that may not
+                    // exist. At native resolution that preview IFD is still
+                    // only a preview, so develop the sensor data and keep the
+                    // IFD as the fallback.
+                    std::string tiff_read_path;
+                    if (RawFileDetector::DetectFormatFromMagicBytes(source_path) == ImageFormat::TIFF)
+                        tiff_read_path = "tiff:" + source_path;
+
+                    if (size == ThumbnailGenerator::kNativeResolution)
+                    {
+                        read_path.clear();
+                        input.demosaic_source = source_path;
+                        input.fallback_read_path = tiff_read_path;
+                    }
+                    else if (!tiff_read_path.empty())
+                    {
+                        read_path = tiff_read_path;
+                    }
                 }
                 return true;
             }
@@ -242,9 +299,26 @@ namespace MediaDedup
             }
 
             TempFileCleanup cleanup;
-            std::string read_path;
-            if (!resolveInputPath(source_path, read_path, cleanup, logger))
+            ResolvedInput input;
+            if (!resolveInputPath(source_path, size, input, cleanup, logger))
                 return false;
+
+            // Native resolution out of RAW sensor data: develop it in-process.
+            // This IS the requested output — full resolution, encoded once at
+            // the requested quality — so nothing below needs to run.
+            if (!input.demosaic_source.empty())
+            {
+                if (RawDemosaicRenderer::renderToBlob(input.demosaic_source, quality, timeout_ms, blob))
+                    return true;
+                if (input.fallback_read_path.empty())
+                    return false;
+                // A small real image beats none, and beats letting a readable
+                // file drift into the negative cache.
+                logger.warning("RAW demosaic failed, falling back to the embedded preview for: %s", source_path);
+                input.read_path = input.fallback_read_path;
+            }
+
+            const std::string &read_path = input.read_path;
 
 #if defined(HAVE_OPENCV)
             // MP-1: JPEG/PNG inputs (previews, RAW-embedded JPEGs, ordinary

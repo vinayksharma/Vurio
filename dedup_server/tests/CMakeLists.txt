@@ -425,6 +425,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_demosaic_renderer.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/exif_reader.cpp
             ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
@@ -463,6 +464,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
+            ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_demosaic_renderer.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/exif_reader.cpp
             ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
@@ -553,6 +555,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_generation_failures.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_demosaic_renderer.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/raw_embedded_extractor.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/exif_reader.cpp
     ${CMAKE_SOURCE_DIR}/src/orchestration/thread_pool_manager.cpp
