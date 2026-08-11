@@ -35,6 +35,18 @@ namespace MediaDedup
                                      int embedding_dim,
                                      std::vector<std::uint8_t> &out_blob);
 
+        // Run the CLIP TEXT encoder on pre-tokenized input (see ClipTokenizer).
+        // out_floats receives embedding_dim floats, NOT normalized — callers
+        // L2-normalize to match the image embeddings stored via
+        // ImageArtifactsOps. Returns false if ONNX Runtime is unavailable or
+        // the model cannot be loaded/run.
+        static bool ComputeTextEmbedding(const std::vector<std::int64_t> &input_ids,
+                                         const std::vector<std::int64_t> &attention_mask,
+                                         const std::string &model_path,
+                                         int embedding_dim,
+                                         std::vector<float> &out_floats,
+                                         std::string *out_reason = nullptr);
+
         // DF-4 test hook: decode exactly as ComputeEmbedding does (reduced
         // decode with full-resolution fallback) and report the decoded
         // dimensions. Returns false when the file cannot be decoded or

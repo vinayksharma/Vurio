@@ -219,6 +219,10 @@
     "type": "int",
     "default": 4
   },
+  "media.image.onnx.textModelPath": {
+    "type": "string",
+    "default": "models/clip-text-vitb32.onnx"
+  },
   "media.image.retry.baseDelayMs": {
     "type": "int",
     "default": 500
@@ -534,6 +538,14 @@
   "scheduler.maxConsecutiveFailures": {
     "type": "int",
     "default": 5
+  },
+  "search.knnK": {
+    "type": "int",
+    "default": 300
+  },
+  "search.minScore": {
+    "type": "double",
+    "default": 0.2
   },
   "server.host": {
     "type": "string",
