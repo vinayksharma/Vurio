@@ -19,6 +19,7 @@ namespace Orchestration {
     class SchedulerService;
 }
 class ThreadPoolManager;
+class TextSearchEngine;
 } // namespace MediaDedup
 
 namespace MediaDedup {
@@ -49,6 +50,9 @@ private:
     // services_ teardown (the callback captures a raw service pointer).
     std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder_;
     std::string socket_path_;
+    // Owned here (it is not a grpc::Service); the DuplicatesServiceImpl in
+    // services_ holds a raw pointer, and services_ dies with us.
+    std::shared_ptr<TextSearchEngine> text_search_engine_;
     std::vector<std::unique_ptr<grpc::Service>> services_;
 };
 

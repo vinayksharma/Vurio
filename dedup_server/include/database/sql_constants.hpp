@@ -499,15 +499,21 @@ namespace MediaDedup
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
             "FROM duplicate_groups WHERE mode=? ORDER BY representative_created_date DESC";
 
+        // BINNED display order. The `id DESC` tiebreak is not cosmetic: with
+        // date alone, groups sharing a capture date have no defined relative
+        // order, so two pages of the same list could repeat or skip a row. It
+        // also makes a group's index computable (kSelectDuplicateGroupRank),
+        // which is what lets the client re-anchor its scroll after a
+        // re-cluster.
         inline constexpr std::string_view kSelectDuplicateGroupsWithPagination =
             "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
-            "FROM duplicate_groups ORDER BY representative_created_date DESC LIMIT ? OFFSET ?";
+            "FROM duplicate_groups ORDER BY representative_created_date DESC, id DESC LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectDuplicateGroupsWithPaginationByMode =
             "SELECT id, mode, representative_file_id, representative_file_path, representative_file_size, "
             "representative_created_date, similarity_threshold, member_count, created_at, updated_at "
-            "FROM duplicate_groups WHERE mode=? ORDER BY representative_created_date DESC LIMIT ? OFFSET ?";
+            "FROM duplicate_groups WHERE mode=? ORDER BY representative_created_date DESC, id DESC LIMIT ? OFFSET ?";
 
         inline constexpr std::string_view kSelectDuplicateGroupsCount =
             "SELECT COUNT(*) FROM duplicate_groups";
@@ -517,6 +523,14 @@ namespace MediaDedup
 
         inline constexpr std::string_view kSelectDuplicateGroupsCountOlderThan =
             "SELECT COUNT(*) FROM duplicate_groups WHERE mode=? AND representative_created_date > ?";
+
+        // 0-based row index of one group in the paginated display order above:
+        // the number of groups that sort ahead of it. Bound as
+        // (date, date, id) for the group in question.
+        inline constexpr std::string_view kSelectDuplicateGroupRank =
+            "SELECT COUNT(*) FROM duplicate_groups "
+            "WHERE representative_created_date > ? "
+            "   OR (representative_created_date = ? AND id > ?)";
 
         // Paths-only bulk-op candidate queries (frontend 2.2). Ordering matches
         // the BINNED display order (newest group first, best match first) so

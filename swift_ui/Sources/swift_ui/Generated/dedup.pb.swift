@@ -265,6 +265,34 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_GetGroupIndexRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var groupID: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_GetGroupIndexResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// false when the group no longer exists
+  var found: Bool = false
+
+  /// 0-based row index in GetDuplicateGroups order
+  var index: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_GetEligibleDuplicatePathsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -379,6 +407,11 @@ struct Vurio_Dedup_GetDayGroupsRequest: Sendable {
   /// max files returned per day (0 = all files)
   var filesPerDay: Int32 = 0
 
+  /// Semantic text filter (CLIP text->image search). Empty = no filter.
+  /// When set, days/files are restricted to the ranked matches; each matched
+  /// file appears on its own capture day (group anchoring is bypassed).
+  var searchQuery: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -462,6 +495,9 @@ struct Vurio_Dedup_GetDayFilesRequest: Sendable {
   var offset: Int32 = 0
 
   var limit: Int32 = 0
+
+  /// Must match the search_query the day list was fetched with (or empty).
+  var searchQuery: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -576,6 +612,13 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
     case added // = 0
     case updated // = 1
     case deleted // = 2
+
+    /// The finder re-clustered: groups may have been added, dropped, merged or
+    /// re-ordered (a new representative changes a group's capture date, which
+    /// is what the list sorts on). No per-row delta is meaningful, so the
+    /// client re-fetches its loaded pages and re-anchors its scroll position.
+    /// `index` and `group` are unset.
+    case reload // = 3
     case UNRECOGNIZED(Int)
 
     init() {
@@ -587,6 +630,7 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
       case 0: self = .added
       case 1: self = .updated
       case 2: self = .deleted
+      case 3: self = .reload
       default: self = .UNRECOGNIZED(rawValue)
       }
     }
@@ -596,6 +640,7 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
       case .added: return 0
       case .updated: return 1
       case .deleted: return 2
+      case .reload: return 3
       case .UNRECOGNIZED(let i): return i
       }
     }
@@ -605,6 +650,7 @@ struct Vurio_Dedup_DuplicateGroupUpdate: Sendable {
       .added,
       .updated,
       .deleted,
+      .reload,
     ]
 
   }
@@ -1389,6 +1435,71 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
   }
 }
 
+extension Vurio_Dedup_GetGroupIndexRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".GetGroupIndexRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}group_id\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.groupID) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.groupID.isEmpty {
+      try visitor.visitSingularStringField(value: self.groupID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_GetGroupIndexRequest, rhs: Vurio_Dedup_GetGroupIndexRequest) -> Bool {
+    if lhs.groupID != rhs.groupID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_GetGroupIndexResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".GetGroupIndexResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}found\0\u{1}index\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.found) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.index) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.found != false {
+      try visitor.visitSingularBoolField(value: self.found, fieldNumber: 1)
+    }
+    if self.index != 0 {
+      try visitor.visitSingularInt32Field(value: self.index, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_GetGroupIndexResponse, rhs: Vurio_Dedup_GetGroupIndexResponse) -> Bool {
+    if lhs.found != rhs.found {return false}
+    if lhs.index != rhs.index {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_GetEligibleDuplicatePathsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetEligibleDuplicatePathsRequest"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tightness\0")
@@ -1626,7 +1737,7 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayGroupsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0\u{3}search_query\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1637,6 +1748,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
       case 1: try { try decoder.decodeSingularInt32Field(value: &self.limit) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.offset) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.filesPerDay) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
       default: break
       }
     }
@@ -1652,6 +1764,9 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if self.filesPerDay != 0 {
       try visitor.visitSingularInt32Field(value: self.filesPerDay, fieldNumber: 3)
     }
+    if !self.searchQuery.isEmpty {
+      try visitor.visitSingularStringField(value: self.searchQuery, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1659,6 +1774,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.limit != rhs.limit {return false}
     if lhs.offset != rhs.offset {return false}
     if lhs.filesPerDay != rhs.filesPerDay {return false}
+    if lhs.searchQuery != rhs.searchQuery {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1816,7 +1932,7 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
 
 extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayFilesRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0\u{3}search_query\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1827,6 +1943,7 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
       case 1: try { try decoder.decodeSingularStringField(value: &self.day) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.offset) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.limit) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
       default: break
       }
     }
@@ -1842,6 +1959,9 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if self.limit != 0 {
       try visitor.visitSingularInt32Field(value: self.limit, fieldNumber: 3)
     }
+    if !self.searchQuery.isEmpty {
+      try visitor.visitSingularStringField(value: self.searchQuery, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1849,6 +1969,7 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.day != rhs.day {return false}
     if lhs.offset != rhs.offset {return false}
     if lhs.limit != rhs.limit {return false}
+    if lhs.searchQuery != rhs.searchQuery {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2099,7 +2220,7 @@ extension Vurio_Dedup_DuplicateGroupUpdate: SwiftProtobuf.Message, SwiftProtobuf
 }
 
 extension Vurio_Dedup_DuplicateGroupUpdate.UpdateType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ADDED\0\u{1}UPDATED\0\u{1}DELETED\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ADDED\0\u{1}UPDATED\0\u{1}DELETED\0\u{1}RELOAD\0")
 }
 
 extension Vurio_Dedup_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

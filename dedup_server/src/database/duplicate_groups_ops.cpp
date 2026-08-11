@@ -719,6 +719,39 @@ namespace MediaDedup
         }
     }
 
+    int DuplicateGroupsOps::getGroupRank(DatabaseManager &db, int group_id)
+    {
+        try
+        {
+            auto group = getGroupById(db, group_id);
+            if (!group.has_value())
+                return -1;
+
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+
+            std::string date_str = group->representative_created_date;
+            int gid = group_id;
+            int rank = 0;
+
+            stmt << std::string(SQL::kSelectDuplicateGroupRank),
+                into(rank), use(date_str), use(date_str), use(gid), now;
+
+            return rank;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Exception in getGroupRank: %s", std::string(e.what()));
+            return -1;
+        }
+        catch (...)
+        {
+            Poco::Logger::get("DuplicateGroupsOps").error("Unknown exception in getGroupRank");
+            return -1;
+        }
+    }
+
     int DuplicateGroupsOps::countMembersByGroup(DatabaseManager &db, int group_id)
     {
         try

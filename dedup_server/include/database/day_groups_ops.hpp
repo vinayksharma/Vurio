@@ -51,6 +51,12 @@ namespace MediaDedup
     // (not ignored, not errored) grouped by capture day. Capture day comes
     // from exif_datetime, falling back to file mtime (file_metadata JSON),
     // then the row's created_at — see SQL::kSelectScanFilesByDay.
+    //
+    // Search filtering: `match_ids` (scanned_files ids from TextSearchEngine)
+    // restricts both queries to matching files. Filtered mode bypasses the
+    // group-anchoring/suppression rules — each matched file shows on its own
+    // capture day — so the result reads as "which of my photos match", not
+    // "which duplicate stacks match".
     class DayGroupsOps
     {
     public:
@@ -58,11 +64,13 @@ namespace MediaDedup
         // (0 = all files); DayGroupRecord.total_files always holds the full
         // per-day count so callers can page the rest via getDayFiles.
         static DayGroupsPage getDayGroups(DatabaseManager &db, int offset, int limit,
-                                          int files_per_day = 0);
+                                          int files_per_day = 0,
+                                          const std::vector<int> *match_ids = nullptr);
 
         // One page of a single day's files (taken_time order), for
         // horizontal-scroll pagination within a day row.
         static DayFilesPage getDayFiles(DatabaseManager &db, const std::string &day,
-                                        int offset, int limit);
+                                        int offset, int limit,
+                                        const std::vector<int> *match_ids = nullptr);
     };
 }

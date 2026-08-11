@@ -20,6 +20,60 @@ final class RowContentBox<RowContent: View> {
     init(_ content: @escaping (Int) -> RowContent) { self.content = content }
 }
 
+/// A live handle on a mounted scroller's position, so a view model can pin the
+/// viewport to a specific row across a data change.
+///
+/// The list is paged by index, so when rows are inserted above the viewport
+/// every index below them shifts and the same scroll offset now shows different
+/// content — the list appears to jump. Uniform row height makes the fix exact:
+/// read which row is at the top (and how far into it we are), then after the
+/// data settles put that same row back in the same place.
+///
+/// `requestRestore` records the target rather than applying it blind: the
+/// scroller applies it from `updateNSView`, after the document has been resized
+/// to the new item count, so the offset is never clamped against a stale height.
+@MainActor
+final class ScrollAnchorHandle {
+    struct Anchor {
+        /// Row index at the top edge of the viewport.
+        let index: Int
+        /// How far that row's top sits above the viewport's top edge, in points.
+        let offsetIntoRow: CGFloat
+    }
+
+    fileprivate weak var scrollView: NSScrollView?
+    fileprivate var rowHeight: CGFloat = 0
+    fileprivate var pendingRestore: Anchor?
+
+    /// The row currently at the top of the viewport, or nil when not mounted.
+    func anchor() -> Anchor? {
+        guard let scrollView, rowHeight > 0 else { return nil }
+        let y = max(0, scrollView.contentView.bounds.origin.y)
+        let index = Int(y / rowHeight)
+        return Anchor(index: index, offsetIntoRow: y - CGFloat(index) * rowHeight)
+    }
+
+    /// Put `index` back where the anchor row used to sit. Applied now if the
+    /// document is already the right size, and again on the next update pass.
+    func requestRestore(to index: Int, offsetIntoRow: CGFloat) {
+        pendingRestore = Anchor(index: index, offsetIntoRow: offsetIntoRow)
+        applyPendingRestore(clearPending: false)
+    }
+
+    fileprivate func applyPendingRestore(clearPending: Bool) {
+        guard let target = pendingRestore, let scrollView, rowHeight > 0 else { return }
+        if clearPending { pendingRestore = nil }
+
+        let documentHeight = scrollView.documentView?.frame.height ?? 0
+        let maxY = max(0, documentHeight - scrollView.contentView.bounds.height)
+        let y = min(max(0, CGFloat(target.index) * rowHeight + target.offsetIntoRow), maxY)
+
+        guard abs(scrollView.contentView.bounds.origin.y - y) > 0.5 else { return }
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+}
+
 /// A custom high-performance, infinitely scrollable virtualization container
 /// using AppKit. Rows are uniform-height: all geometry is closed-form, so a
 /// 100k-row list costs the same to lay out and update as a 10-row one.
@@ -37,6 +91,9 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
     /// must never route events into a hidden one.
     var isActive: Bool = true
     var scrollbarInsets: EdgeInsets = EdgeInsets()
+    /// Optional position handle, for owners that need to pin the viewport to a
+    /// row across a data change (see ScrollAnchorHandle).
+    var anchorHandle: ScrollAnchorHandle? = nil
     @Binding var selection: Int?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)? = nil
     var rowContent: (Int) -> RowContent
@@ -77,6 +134,9 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
             documentView.moveSelection(direction: direction, page: page, end: end)
         }
 
+        anchorHandle?.scrollView = scrollView
+        anchorHandle?.rowHeight = rowHeight
+
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
@@ -105,6 +165,9 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
 
         guard let docView = nsView.documentView as? VurioDocumentView<RowContent> else { return }
 
+        anchorHandle?.scrollView = nsView
+        anchorHandle?.rowHeight = rowHeight
+
         // Always freshen the closure (it captures current view-model state);
         // rows only re-run their bodies when one of the checks below fires.
         docView.contentBox.content = rowContent
@@ -114,6 +177,10 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
             docView.rowHeight = rowHeight
             docView.updateDocumentSize()
         }
+
+        // After the resize above, so a restore into a grown list is not clamped
+        // against the old document height.
+        anchorHandle?.applyPendingRestore(clearPending: true)
 
         var needsRowRefresh = false
         if docView.lastAppliedSelection != selection {

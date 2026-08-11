@@ -14,6 +14,7 @@
 #include "core/grpc_server/duplicates_service.hpp"
 #include "core/grpc_server/advanced_settings_service.hpp"
 #include "core/grpc_server/media_service.hpp"
+#include "search/text_search_engine.hpp"
 
 #include <grpcpp/grpcpp.h>
 #include <Poco/Logger.h>
@@ -90,7 +91,8 @@ void GrpcServerCore::start(const std::string& socket_path,
         files_service = files_manager->getFilesService();
     }
     auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_service, thread_pool_manager, database_manager.get(), scheduler_service);
-    auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager.get());
+    text_search_engine_ = std::make_shared<TextSearchEngine>(config_manager, database_manager.get());
+    auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager.get(), text_search_engine_.get());
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
 
@@ -101,6 +103,9 @@ void GrpcServerCore::start(const std::string& socket_path,
         DuplicatesServiceImpl* dup_svc = duplicates_service.get();
         duplicate_finder->setGroupEventCallback([dup_svc](int group_id, bool is_new) {
             dup_svc->OnDuplicateGroupEvent(group_id, is_new);
+        });
+        duplicate_finder->setGroupsRebuiltCallback([dup_svc]() {
+            dup_svc->OnGroupsRebuilt();
         });
     }
 
@@ -147,11 +152,12 @@ void GrpcServerCore::start(const std::string& socket_path,
 }
 
 void GrpcServerCore::stop() {
-    // CC-6: detach the finder's group-event callback BEFORE tearing down the
-    // service it points at — a still-running dedup task could otherwise call
-    // into freed memory during the shutdown drain window.
+    // CC-6: detach the finder's callbacks BEFORE tearing down the service they
+    // point at — a still-running dedup task could otherwise call into freed
+    // memory during the shutdown drain window.
     if (duplicate_finder_) {
         duplicate_finder_->setGroupEventCallback(nullptr);
+        duplicate_finder_->setGroupsRebuiltCallback(nullptr);
         duplicate_finder_.reset();
     }
     if (server_) {

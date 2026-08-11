@@ -24,6 +24,37 @@ class AllDaysViewModel: ObservableObject {
     private(set) var dataVersion = 0
     @Published var totalDays: Int32 = 0
 
+    // Semantic search filter (CLIP text->image). `searchText` is the live
+    // field binding; `activeSearchQuery` is the debounced value every RPC
+    // carries. Applying a new query resets the day list to placeholders.
+    @Published var searchText: String = "" {
+        didSet { debounceSearch() }
+    }
+    private(set) var activeSearchQuery: String = ""
+    var isSearchActive: Bool { !activeSearchQuery.isEmpty }
+    private var searchDebounceTask: Task<Void, Never>?
+
+    private func debounceSearch() {
+        searchDebounceTask?.cancel()
+        searchDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let query = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard query != self.activeSearchQuery else { return }
+            self.activeSearchQuery = query
+            await self.refresh()
+        }
+    }
+
+    /// Clear the filter immediately (X button), skipping the debounce delay.
+    func clearSearch() {
+        searchDebounceTask?.cancel()
+        searchText = ""
+        guard !activeSearchQuery.isEmpty else { return }
+        activeSearchQuery = ""
+        Task { await refresh() }
+    }
+
     // Days are heavier than duplicate groups (a day can hold hundreds of files),
     // so page fewer of them at a time.
     let pageSize: Int32 = 10
@@ -101,13 +132,18 @@ class AllDaysViewModel: ObservableObject {
                 return
             }
 
+            let query = activeSearchQuery
             let request = Vurio_Dedup_GetDayGroupsRequest.with {
                 $0.limit = pageSize
                 $0.offset = pageIndex * pageSize
                 $0.filesPerDay = filesPerDay
+                $0.searchQuery = query
             }
 
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
+            // A stale response for a superseded query must not overwrite the
+            // current filter's day list.
+            guard query == activeSearchQuery else { return }
 
             if !Task.isCancelled {
                 // Resize the slot list when the server's day count moved (files
@@ -144,6 +180,15 @@ class AllDaysViewModel: ObservableObject {
             // exhaust the client connection pool). A genuinely dead server
             // surfaces through the status dot (isOnline), not here.
             guard !isGrpcCancellation(error) else { return }
+            // Search-specific failures are not transient: retrying the page
+            // would loop forever. Surface once and drop the filter.
+            if isSearchActive,
+               let code = grpcStatusCode(of: error),
+               code == .unimplemented || code == .unavailable {
+                MessageCenter.shared.post("Search unavailable: \(error.localizedDescription)")
+                clearSearch()
+                return
+            }
             logDebug("Days page \(pageIndex) failed (\(grpcStatusCode(of: error).map(String.init(describing:)) ?? "non-gRPC")); retrying in-window: \(error)")
             window.scheduleRetry(of: pageIndex)
         }
@@ -167,6 +212,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.day = dayKey
                 $0.offset = Int32(day.files.count)
                 $0.limit = filesPerDay
+                $0.searchQuery = activeSearchQuery
             }
             let response = try await callWithBusyRetry { try await client.getDayFiles(request) }
 

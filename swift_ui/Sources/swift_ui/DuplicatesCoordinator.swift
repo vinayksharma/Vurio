@@ -107,17 +107,16 @@ final class DuplicatesCoordinator: ObservableObject {
         }
     }
 
-    /// The view's `.onChange(of: appState.duplicateGroupsCount)`: only refresh
-    /// when currently empty (e.g. 0 -> N at startup); otherwise streamed
-    /// updates handle fine-grained insertions.
+    /// The view's `.onChange(of: appState.duplicateGroupsCount)`: track the
+    /// server's count in both directions.
+    ///
+    /// This used to resize only on the empty -> non-empty transition and leave
+    /// every later change to the streamed `ADDED`/`DELETED` updates — but the
+    /// server never emits them (`setGroupEventCallback` has no caller), so the
+    /// list froze at whatever count arrived first. During a scan that is a
+    /// handful of groups out of thousands.
     func duplicateGroupsCountChanged(to newCount: Int32) {
-        if binned.groups.isEmpty && newCount > 0 && !binned.isLoading {
-            binned.totalGroups = newCount
-            Task { await binned.refresh() }
-        } else if newCount == 0 && binned.totalGroups > 0 {
-            binned.totalGroups = 0
-            binned.groups = []
-        }
+        binned.setTotalGroups(newCount)
     }
 
     /// Bulk eject confirmed in the alert; ALL mode reconciles its rows after.
