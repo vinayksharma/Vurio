@@ -293,11 +293,14 @@ namespace MediaDedup
                 logger.debug("Resuming from checkpoint: last_processed_id=%d", last_processed_id);
 
                 // DF-3: drop edges referencing deleted files BEFORE clustering
-                // — stale edges would resurrect their groups.
-                purgeOrphanEdges();
+                // — stale edges would resurrect their groups. A purge can split
+                // a component, so it also forces the full re-cluster below.
+                const bool purged = purgeOrphanEdges();
 
                 arena_.clear();
                 RunState run_state;
+                // Files whose group could have moved this run (see processBatch).
+                std::unordered_set<int> touched;
 
                 // Phase 1 — DISCOVERY: record pair scores >= edge_floor_ as
                 // persistent edges (KNN-driven; batches advance the id
@@ -306,7 +309,7 @@ namespace MediaDedup
                 int batch_count = 0;
                 while (!abort_.load())
                 {
-                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state);
+                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state, touched);
                     if (processed == 0)
                         break;
                     total_processed += processed;
@@ -326,9 +329,18 @@ namespace MediaDedup
                 // the current similarity threshold. Runs when new edges were
                 // discovered OR a threshold change requested a re-cluster
                 // (the slider no longer wipes groups or the checkpoint).
-                if (!abort_.load() && (total_processed > 0 || regroup_requested_.exchange(false)))
+                // Read the flag unconditionally: short-circuiting it behind
+                // `total_processed > 0` left a requested regroup latched, so
+                // the threshold change was honoured only by accident on a
+                // later run and this run could not tell it needed a full pass.
+                const bool regroup = regroup_requested_.exchange(false);
+                if (!abort_.load() && (total_processed > 0 || regroup))
                 {
-                    rebuildGroupsFromEdges(mode_str);
+                    // A threshold change or an edge purge can REMOVE edges and
+                    // therefore split a component; only edge additions can be
+                    // reasoned about incrementally.
+                    const bool full_pass = regroup || purged;
+                    rebuildGroupsFromEdges(mode_str, full_pass ? nullptr : &touched);
                 }
 
                 auto stats = getStats();
@@ -349,7 +361,7 @@ namespace MediaDedup
             running_.store(false);
         }
 
-        void DuplicateFinder::purgeOrphanEdges()
+        bool DuplicateFinder::purgeOrphanEdges()
         {
             try
             {
@@ -363,15 +375,19 @@ namespace MediaDedup
                 count << "SELECT changes()", into(changes), now;
                 if (changes > 0)
                     finderLogger().information("Purged %d orphan duplicate edge(s)", changes);
+                return changes > 0;
             }
             catch (const std::exception &e)
             {
                 finderLogger().warning("purgeOrphanEdges failed: %s", std::string(e.what()));
+                // Unknown outcome: assume edges went away so the caller takes
+                // the full pass rather than trusting a stale component map.
+                return true;
             }
         }
 
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id,
-                                          RunState &run_state)
+                                          RunState &run_state, std::unordered_set<int> &touched)
         {
             Poco::Logger &logger = finderLogger();
 
@@ -511,6 +527,16 @@ namespace MediaDedup
                 {
                     logger.warning("Batch aborted before completion. Checkpoint will not be updated this run.");
                     return 0;
+                }
+
+                // Every file in this batch had its artifacts re-read (and may
+                // have had metadata rewritten), so its group must be revisited
+                // even if it produced no edge.
+                touched.insert(file_ids.begin(), file_ids.end());
+                for (const auto &e : edges)
+                {
+                    touched.insert(e.a);
+                    touched.insert(e.b);
                 }
 
                 // Persist this batch's edges in ONE transaction.
@@ -762,32 +788,32 @@ namespace MediaDedup
         }
 
         DuplicateFinder::RepresentativeInfo DuplicateFinder::selectRepresentative(
-            const std::vector<FileArtifact> &members)
+            const std::vector<const FileArtifact *> &members)
         {
             if (members.empty())
             {
                 return RepresentativeInfo();
             }
 
-            RepresentativeInfo best;
-            best.file_id = members[0].file_id;
-            best.file_path = members[0].file_path;
-            best.file_size = members[0].file_size;
-            best.created_date = members[0].created_date;
-            best.has_exif_date = members[0].has_exif_date;
+            auto toInfo = [](const FileArtifact &a)
+            {
+                RepresentativeInfo info;
+                info.file_id = a.file_id;
+                info.file_path = a.file_path;
+                info.file_size = a.file_size;
+                info.created_date = a.created_date;
+                info.has_exif_date = a.has_exif_date;
+                return info;
+            };
+
+            RepresentativeInfo best = toInfo(*members[0]);
 
             for (size_t i = 1; i < members.size(); ++i)
             {
-                RepresentativeInfo candidate;
-                candidate.file_id = members[i].file_id;
-                candidate.file_path = members[i].file_path;
-                candidate.file_size = members[i].file_size;
-                candidate.created_date = members[i].created_date;
-                candidate.has_exif_date = members[i].has_exif_date;
-
+                RepresentativeInfo candidate = toInfo(*members[i]);
                 if (isBetterRepresentative(candidate, best))
                 {
-                    best = candidate;
+                    best = std::move(candidate);
                 }
             }
 
@@ -926,7 +952,8 @@ namespace MediaDedup
             constexpr double kScoreEpsilon = 1e-9;
         }
 
-        void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode)
+        void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode,
+                                                     const std::unordered_set<int> *touched)
         {
             Poco::Logger &logger = finderLogger();
             const auto t0 = std::chrono::steady_clock::now();
@@ -1017,21 +1044,7 @@ namespace MediaDedup
 
                 lap(unionfind_ms);
 
-                // 3. Metadata for every grouped member, one set-based load.
-                std::vector<int> all_ids;
-                for (const auto &kv : components)
-                    if (kv.second.size() >= 2)
-                        all_ids.insert(all_ids.end(), kv.second.begin(), kv.second.end());
-                std::unordered_map<int, FileArtifact> artifacts;
-                {
-                    auto lease = db_.acquireSessionLease();
-                    for (FileArtifact &a : loadFileArtifactsBatch(lease.get(), all_ids))
-                        artifacts.emplace(a.file_id, std::move(a));
-                }
-
-                lap(artifacts_ms);
-
-                // 4. Existing state, read outside the write transaction. Two
+                // 3. Existing state, read outside the write transaction. Two
                 // jobs: group-id stability (a component reuses the id of the
                 // existing group whose representative — or, failing that, any
                 // member that heads a group — it contains), and the baseline
@@ -1088,10 +1101,111 @@ namespace MediaDedup
 
                 lap(existing_ms);
 
-                // 5. Resolve every component to its desired rows and diff it
-                // against what is committed. This whole pass is pure CPU —
-                // nothing below touches the database — so the write lock is
-                // taken only for groups that genuinely changed.
+                // 4. Prove which components are already stored exactly as they
+                // would be rebuilt, and do no further work for them.
+                //
+                // `touched` is the set of files this run either re-processed or
+                // attached a new edge to. Edges are only ever ADDED between full
+                // passes, so a component none of whose members were touched has
+                // the same membership, the same per-member best score, and the
+                // same artifacts as when it was written — meaning the same
+                // representative and the same rows. Skipping it here (rather
+                // than building its rows and diffing them) is what keeps the
+                // artifact load and the row-building pass proportional to what
+                // changed instead of to the whole library.
+                //
+                // A null `touched` forces the full pass: a threshold change or
+                // an edge purge can SPLIT a component, which no additive
+                // argument covers.
+                std::unordered_map<int, int> member_to_gid;
+                if (touched)
+                    for (const auto &kv : existing_members)
+                        for (const ExistingMember &m : kv.second)
+                            member_to_gid[m.file_id] = kv.first;
+
+                int groups_total = 0, groups_new = 0, members_total = 0;
+                int groups_skipped = 0;
+                std::set<int> used_gids;
+                std::vector<const std::vector<int> *> changed_components;
+
+                for (auto &kv : components)
+                {
+                    const std::vector<int> &member_ids = kv.second;
+                    if (member_ids.size() < 2)
+                        continue;
+
+                    if (touched)
+                    {
+                        // Every member must belong to the same existing group,
+                        // none of them touched this run.
+                        int gid_candidate = -1;
+                        bool provable = true;
+                        for (int id : member_ids)
+                        {
+                            if (touched->count(id))
+                            {
+                                provable = false;
+                                break;
+                            }
+                            auto it = member_to_gid.find(id);
+                            if (it == member_to_gid.end())
+                            {
+                                provable = false;
+                                break;
+                            }
+                            if (gid_candidate == -1)
+                                gid_candidate = it->second;
+                            else if (gid_candidate != it->second)
+                            {
+                                provable = false; // component spans two groups: they merged
+                                break;
+                            }
+                        }
+
+                        if (provable && gid_candidate > 0 && used_gids.count(gid_candidate) == 0)
+                        {
+                            auto git = existing_groups.find(gid_candidate);
+                            auto mit = existing_members.find(gid_candidate);
+                            // Size equality turns "every member is in group G"
+                            // into "this component IS group G" — without it a
+                            // component that lost members would look unchanged.
+                            if (git != existing_groups.end() && mit != existing_members.end() &&
+                                mit->second.size() == member_ids.size() &&
+                                std::abs(git->second.threshold - threshold) <= kScoreEpsilon)
+                            {
+                                used_gids.insert(gid_candidate);
+                                groups_total++;
+                                members_total += static_cast<int>(mit->second.size());
+                                groups_skipped++;
+                                continue;
+                            }
+                        }
+                    }
+
+                    changed_components.push_back(&member_ids);
+                }
+                last_recluster_groups_skipped_.store(groups_skipped);
+
+                // 5. Metadata, for the changed components only. Each artifact
+                // carries a 2 KB embedding blob, so loading the whole library
+                // here was the second-largest cost in the pass.
+                std::vector<int> all_ids;
+                for (const std::vector<int> *c : changed_components)
+                    all_ids.insert(all_ids.end(), c->begin(), c->end());
+                std::unordered_map<int, FileArtifact> artifacts;
+                if (!all_ids.empty())
+                {
+                    auto lease = db_.acquireSessionLease();
+                    for (FileArtifact &a : loadFileArtifactsBatch(lease.get(), all_ids))
+                        artifacts.emplace(a.file_id, std::move(a));
+                }
+
+                lap(artifacts_ms);
+
+                // 6. Resolve the changed components to their desired rows and
+                // diff those against what is committed. Pure CPU — nothing
+                // below touches the database — so the write lock is taken only
+                // for groups that genuinely differ.
                 struct PendingGroup
                 {
                     int gid; // > 0 reuses an existing group; -1 needs an insert
@@ -1104,24 +1218,23 @@ namespace MediaDedup
                     bool members_changed;
                 };
 
-                int groups_total = 0, groups_new = 0, members_total = 0;
-                std::set<int> used_gids;
                 // Sized for the changed subset, not every component.
                 std::vector<PendingGroup> pending;
 
-                for (auto &kv : components)
+                for (const std::vector<int> *component : changed_components)
                 {
-                    auto &member_ids = kv.second;
-                    if (member_ids.size() < 2)
-                        continue;
+                    const std::vector<int> &member_ids = *component;
 
-                    std::vector<FileArtifact> members;
+                    // Pointers into `artifacts`, which outlives this loop. The
+                    // old form copied the artifact — embedding blob and all —
+                    // once per member of every changed component.
+                    std::vector<const FileArtifact *> members;
                     members.reserve(member_ids.size());
                     for (int id : member_ids)
                     {
                         auto ait = artifacts.find(id);
                         if (ait != artifacts.end())
-                            members.push_back(ait->second);
+                            members.push_back(&ait->second);
                     }
                     if (members.size() < 2)
                         continue;
@@ -1153,13 +1266,13 @@ namespace MediaDedup
                     pg.rep_date = rep.created_date;
 
                     pg.members.reserve(members.size());
-                    for (const FileArtifact &memb : members)
+                    for (const FileArtifact *memb : members)
                     {
-                        const int is_rep = (memb.file_id == rep.file_id) ? 1 : 0;
-                        auto sit = best_score.find(memb.file_id);
+                        const int is_rep = (memb->file_id == rep.file_id) ? 1 : 0;
+                        auto sit = best_score.find(memb->file_id);
                         const double score = is_rep ? 1.0 : (sit != best_score.end() ? sit->second : threshold);
-                        pg.members.push_back(ExistingMember{memb.file_id, memb.file_path, score, memb.file_size,
-                                                            memb.created_date, is_rep});
+                        pg.members.push_back(ExistingMember{memb->file_id, memb->file_path, score, memb->file_size,
+                                                            memb->created_date, is_rep});
                     }
                     std::sort(pg.members.begin(), pg.members.end(),
                               [](const ExistingMember &l, const ExistingMember &r)
@@ -1316,7 +1429,8 @@ namespace MediaDedup
                     "Re-clustered from " + std::to_string(edges.size()) + " edge(s) in " + std::to_string(ms) +
                     " ms: " + std::to_string(groups_total) + " group(s) (" + std::to_string(groups_new) + " new), " +
                     std::to_string(members_total) + " member(s), threshold=" + std::to_string(threshold) +
-                    "; wrote " + std::to_string(groups_written) + " group(s), dropped " +
+                    "; wrote " + std::to_string(groups_written) + " group(s), skipped " +
+                    std::to_string(groups_skipped) + (touched ? " unchanged" : " (full pass)") + ", dropped " +
                     std::to_string(stale_gids.size()) + ", write lock held " + std::to_string(write_ms) +
                     " ms [edges " + std::to_string(edges_ms) + " / unionfind " + std::to_string(unionfind_ms) +
                     " / artifacts " + std::to_string(artifacts_ms) + " / existing " + std::to_string(existing_ms) +

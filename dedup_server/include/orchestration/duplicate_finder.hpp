@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include <atomic>
 #include <mutex>
@@ -65,6 +66,22 @@ namespace MediaDedup
             }
 
             /**
+             * @brief Callback type for "the group set was rebuilt"
+             *
+             * Clustering rewrites every group for the mode in one transaction,
+             * so there is no per-group delta to report — this fires once, after
+             * the commit, and means "re-read the groups".
+             */
+            using GroupsRebuiltCallback = std::function<void()>;
+
+            // Guarded by the same mutex as group_event_cb_ (see CC-6).
+            void setGroupsRebuiltCallback(GroupsRebuiltCallback cb)
+            {
+                std::lock_guard<std::mutex> lock(group_event_cb_mutex_);
+                groups_rebuilt_cb_ = std::move(cb);
+            }
+
+            /**
              * @brief Main duplicate finding operation (called by scheduler)
              *
              * This is the entry point for the scheduled job. It:
@@ -90,6 +107,12 @@ namespace MediaDedup
                 std::string last_run_timestamp;
             };
             Stats getStats() const;
+
+            /// Components the last re-cluster proved unchanged and skipped
+            /// outright. Zero means it did the full pass over every group —
+            /// the distinction is invisible in the resulting rows, so this is
+            /// how tests assert the incremental path actually engaged.
+            int lastReclusterGroupsSkipped() const { return last_recluster_groups_skipped_.load(); }
 
             /**
              * @brief Check if finder is currently running
@@ -236,8 +259,12 @@ namespace MediaDedup
              * @param run_state Fallback pool, loaded on first use
              * @return Number of files processed
              */
+            /// `touched` accumulates every file this batch re-processed plus
+            /// both endpoints of every edge it recorded — the inputs whose
+            /// group could have moved. rebuildGroupsFromEdges uses it to leave
+            /// untouched components alone.
             int processBatch(const std::string &mode, int batch_size, int &last_processed_id,
-                             RunState &run_state);
+                             RunState &run_state, std::unordered_set<int> &touched);
 
             /**
              * @brief DF-3: rebuild duplicate groups from the persisted edge list
@@ -248,10 +275,16 @@ namespace MediaDedup
              * previous group head) reuses that id. Runs in one transaction —
              * this is what makes the tightness slider sub-second and wipe-free.
              */
-            void rebuildGroupsFromEdges(const std::string &mode);
+            /// `touched` limits the work to components those files can have
+            /// moved; pass nullptr to rebuild every component from scratch,
+            /// which is required whenever edges may have been REMOVED (a purge
+            /// or a threshold change), since that can split a component.
+            void rebuildGroupsFromEdges(const std::string &mode,
+                                        const std::unordered_set<int> *touched = nullptr);
 
-            /// DF-3: drop edges whose endpoints no longer exist in scanned_files.
-            void purgeOrphanEdges();
+            /// DF-3: drop edges whose endpoints no longer exist in
+            /// scanned_files. Returns true when anything was actually removed.
+            bool purgeOrphanEdges();
 
             /**
              * @brief Compute similarity between two files using embedding-based matching
@@ -273,7 +306,10 @@ namespace MediaDedup
              * @param members All members of the group
              * @return Representative info
              */
-            RepresentativeInfo selectRepresentative(const std::vector<FileArtifact> &members);
+            /// Takes pointers, not values: each FileArtifact owns a ~2 KB
+            /// embedding blob, and the caller was copying one per member —
+            /// over 150 MB per pass on a library with a large component.
+            RepresentativeInfo selectRepresentative(const std::vector<const FileArtifact *> &members);
 
             /**
              * @brief Check if file A is better representative than file B
@@ -326,8 +362,10 @@ namespace MediaDedup
             // DF-3: set by onConfigChange on a threshold move; the next finder
             // run re-clusters from recorded edges even with no new files.
             std::atomic<bool> regroup_requested_{false};
+            std::atomic<int> last_recluster_groups_skipped_{0};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;
+            GroupsRebuiltCallback groups_rebuilt_cb_;
             std::mutex group_event_cb_mutex_;
 
             // Configuration cache

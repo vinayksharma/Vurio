@@ -943,3 +943,131 @@ TEST_F(DuplicateFinderRangeTest, ReclusterOnlyWritesGroupsThatChanged)
     db_manager_.reset();
     std::filesystem::remove(db_path);
 }
+
+// The incremental re-cluster leaves untouched components alone, which is only
+// sound if "touched" really covers everything a new edge can move. The hard
+// case is a MERGE: one new file bridges two existing groups, so members that
+// were never touched themselves still change group. A third, unrelated group
+// must survive the same run untouched.
+TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRest)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df_incremental_merge.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.85);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.95);
+
+    auto addProcessedFile = [&](const std::string &path, const std::vector<float> &vec) {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": 1000}";
+        row.processed = 2;
+        EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+        auto stored = ScannedFilesOps::getByPath(*db_manager_, path);
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+        return stored ? stored->id : 0;
+    };
+
+    // Directions A and B sit at cos = 0.5 — two distinct groups. Their bisector
+    // is cos 0.866 to both, i.e. over the 0.85 threshold, so introducing it
+    // merges them. Direction C is orthogonal to everything and must not move.
+    int id_a1 = addProcessedFile("/mrg/a1.jpg", {1.0f, 0.0f,   0.05f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f});
+    int id_a2 = addProcessedFile("/mrg/a2.jpg", {1.0f, 0.0f,   0.0f,  0.05f, 0.0f, 0.0f, 0.0f, 0.0f});
+    int id_b1 = addProcessedFile("/mrg/b1.jpg", {0.5f, 0.866f, 0.05f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f});
+    int id_b2 = addProcessedFile("/mrg/b2.jpg", {0.5f, 0.866f, 0.0f,  0.05f, 0.0f, 0.0f, 0.0f, 0.0f});
+    int id_c1 = addProcessedFile("/mrg/c1.jpg", {0.0f, 0.0f,   0.0f,  0.0f,  1.0f, 0.05f, 0.0f, 0.0f});
+    int id_c2 = addProcessedFile("/mrg/c2.jpg", {0.0f, 0.0f,   0.0f,  0.0f,  1.0f, 0.0f, 0.05f, 0.0f});
+    ASSERT_GT(id_a1, 0);
+    ASSERT_GT(id_c2, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    auto before = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(before.groups.size(), 3u) << "expected the A, B and C pairs as three groups";
+
+    int c_group_id = -1;
+    for (const auto &g : before.groups)
+        for (const auto &m : g.members)
+            if (m.file_id == id_c1)
+                c_group_id = g.group.id;
+    ASSERT_GT(c_group_id, 0);
+
+    // Back-date C's row; an incremental run must not rewrite it.
+    const std::string kSentinel = "1999-01-01 00:00:00";
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        std::string sentinel = kSentinel;
+        Poco::Data::Statement stamp(lease.get());
+        stamp << "UPDATE duplicate_groups SET updated_at = ? WHERE id = ?",
+            Poco::Data::Keywords::use(sentinel), Poco::Data::Keywords::use(c_group_id),
+            Poco::Data::Keywords::now;
+    }
+
+    // The bridge: cos 0.866 to both A and B.
+    int id_bridge = addProcessedFile("/mrg/bridge.jpg", {0.866f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    ASSERT_GT(id_bridge, 0);
+    finder.findDuplicates();
+
+    // Without this the rest of the test passes even on a full pass, which
+    // produces identical rows — only slower.
+    EXPECT_GT(finder.lastReclusterGroupsSkipped(), 0)
+        << "incremental path never engaged; the assertions below prove nothing";
+
+    auto after = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(after.groups.size(), 2u) << "A and B must have merged into one group, leaving C";
+
+    bool merged_found = false, c_found = false;
+    for (const auto &g : after.groups)
+    {
+        std::set<int> ids;
+        for (const auto &m : g.members)
+            ids.insert(m.file_id);
+
+        if (ids.count(id_bridge))
+        {
+            merged_found = true;
+            // a2 and b2 were never touched themselves, but their group moved.
+            EXPECT_EQ(ids, (std::set<int>{id_a1, id_a2, id_b1, id_b2, id_bridge}))
+                << "merge must pull in members that were not touched directly";
+        }
+        else
+        {
+            c_found = true;
+            EXPECT_EQ(g.group.id, c_group_id) << "untouched group changed identity";
+            EXPECT_EQ(ids, (std::set<int>{id_c1, id_c2}));
+        }
+    }
+    EXPECT_TRUE(merged_found) << "merged group missing";
+    EXPECT_TRUE(c_found) << "untouched group was deleted by the incremental pass";
+
+    std::string stamp_after;
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        Poco::Data::Statement q(lease.get());
+        q << "SELECT updated_at FROM duplicate_groups WHERE id = ?",
+            Poco::Data::Keywords::into(stamp_after), Poco::Data::Keywords::use(c_group_id),
+            Poco::Data::Keywords::now;
+    }
+    EXPECT_EQ(stamp_after, kSentinel) << "untouched group was rewritten";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
