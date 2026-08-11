@@ -50,3 +50,75 @@ dedup_server/.cache/
 
 # Test output images
 dedup_server/test_gif*.jpg
+
+# ---------------------------------------------------------------------------
+# Images — never commit these. This app processes personal photo libraries, so
+# any image that lands in a commit is likely someone's real photo. Blanket-ignore
+# every image format, then explicitly re-allow the handful of files the build
+# and the test suite actually need (see the allowlist below).
+# ---------------------------------------------------------------------------
+*.jpg
+*.jpeg
+*.jfif
+*.png
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.avif
+*.heic
+*.heif
+*.ico
+*.icns
+*.psd
+*.ai
+*.svg
+
+# RAW formats
+*.raw
+*.cr2
+*.cr3
+*.nef
+*.dng
+*.arw
+*.orf
+*.rw2
+*.raf
+*.pef
+*.srw
+*.sr2
+*.3fr
+*.erf
+*.mef
+*.mrw
+*.x3f
+
+# Video / other media
+*.mov
+*.mp4
+*.m4v
+*.avi
+*.mkv
+*.hevc
+
+# Allowlist: committed assets and test fixtures that are NOT personal media.
+# Add new entries here rather than loosening the rules above.
+!web_ui/src/assets/error_thumbnail.jpg
+!test_data/pictures/testset/test.jpg
+!test_data/pictures/testset/test.cr2
+!test_data/pictures/testset/test.arw
+!tests/test_data/images/test_balance.jpg
+
+# Generated thumbnail caches — user photo data, never commit.
+thumbnails_cache/
+dedup_server/thumbnails_cache/
+**/thumbnails_cache/
+
+# Scan databases — these index the user's real filesystem (absolute paths and
+# filenames from their photo library). Never commit.
+scan_results.db
+scan_results.db-shm
+scan_results.db-wal
+*.db-shm
+*.db-wal
