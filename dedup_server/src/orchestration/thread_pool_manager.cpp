@@ -259,9 +259,9 @@ namespace MediaDedup
 
             auto &queue = type_to_queue_[type];
             if (urgent)
-                queue.emplace_front(std::move(fn), file_path);
+                queue.emplace_front(std::move(fn), file_path, true);
             else
-                queue.emplace_back(std::move(fn), file_path);
+                queue.emplace_back(std::move(fn), file_path, false);
             queued_for_type = queue.size();
             // maintain round robin order
             if (std::find(round_robin_types_.begin(), round_robin_types_.end(), type) == round_robin_types_.end())
@@ -292,6 +292,11 @@ namespace MediaDedup
         {
             if (qit->file_path == file_path)
             {
+                // The queued copy was almost certainly enqueued by a bulk
+                // producer, so it must inherit the urgency of the request that
+                // just deduped into it — otherwise it keeps competing with
+                // backfill for the media slots it was promoted out of.
+                qit->urgent = true;
                 if (qit != queue.begin())
                 {
                     QueuedTask task = std::move(*qit);
@@ -474,14 +479,27 @@ namespace MediaDedup
 
         std::unique_lock<std::mutex> lock(mutex_);
 
-        // Check for high-priority UI tasks dynamically
-        auto has_ui_tasks_fn = [this]() {
-            // CC-6: find(), not operator[] — the old form permanently inserted
-            // three empty deques that skewed status reporting.
-            for (const char *t : {"thumbnail_generator", "preview_generator", "fullres_generator"}) {
-                auto it = type_to_queue_.find(t);
-                if (it != type_to_queue_.end() && !it->second.empty()) return true;
-            }
+        // Media task types, most user-visible first. Urgent work is served in
+        // this order rather than by round-robin position: the image filling
+        // the viewer outranks the strip tile behind it.
+        static constexpr const char *kMediaTypes[] = {"fullres_generator", "preview_generator", "thumbnail_generator"};
+
+        // An urgent task always sits at the front of its type's queue (urgent
+        // submits push_front, everything else push_back), so the head answers
+        // "is a user waiting on this type?" in O(1).
+        auto type_head_is_urgent = [this](const char *t) {
+            auto it = type_to_queue_.find(t);
+            return it != type_to_queue_.end() && !it->second.empty() && it->second.front().urgent;
+        };
+
+        // Check for high-priority UI tasks dynamically. This must mean "a user
+        // is actually waiting", not merely "a media queue is non-empty" — the
+        // backfill enqueues up to 20,000 non-urgent thumbnail/preview jobs into
+        // these same queues, and treating those as UI work kept every
+        // background type throttled to one thread for the entire sweep.
+        auto has_ui_tasks_fn = [&type_head_is_urgent]() {
+            for (const char *t : kMediaTypes)
+                if (type_head_is_urgent(t)) return true;
             return false;
         };
 
@@ -517,6 +535,35 @@ namespace MediaDedup
         size_t numTypes = types_copy.size();
         size_t tasksStarted = 0;
 
+        // Hoist media types whose head is urgent ahead of the round-robin, in
+        // kMediaTypes order. Front-of-queue placement only ordered a task
+        // against its own type; across types the rotation could still hand the
+        // next free media slot to a backfill thumbnail while the viewer's
+        // render waited its turn.
+        {
+            std::vector<std::string> ordered;
+            ordered.reserve(numTypes);
+            for (const char *t : kMediaTypes)
+            {
+                if (!type_head_is_urgent(t))
+                    continue;
+                if (std::find(types_copy.begin(), types_copy.end(), t) != types_copy.end())
+                    ordered.emplace_back(t);
+            }
+            if (!ordered.empty())
+            {
+                for (size_t i = 0; i < numTypes; ++i)
+                {
+                    const std::string &t = types_copy[(startIndex + i) % numTypes];
+                    if (std::find(ordered.begin(), ordered.end(), t) == ordered.end())
+                        ordered.push_back(t);
+                }
+                types_copy = std::move(ordered);
+                startIndex = 0;
+                numTypes = types_copy.size();
+            }
+        }
+
         bool task_started_in_pass;
         do {
             task_started_in_pass = false;
@@ -550,10 +597,21 @@ namespace MediaDedup
             // by a combined cap — the old "use every thread" exemption let RAF
             // bursts run dozens of parallel demosaics, which is what caused
             // mass transient transcode failures under memory pressure.
-            if (type == "thumbnail_generator" || type == "preview_generator" || type == "fullres_generator")
+            if (is_ui_type)
             {
                 size_t media_running = type_to_running_["thumbnail_generator"] + type_to_running_["preview_generator"] + type_to_running_["fullres_generator"];
-                if (media_running >= media_generation_cap_)
+
+                // The last slot belongs to user-visible work. Without it, a
+                // backfill sweep keeps all `media_generation_cap_` slots busy
+                // with multi-second magick decodes and the viewer's urgent
+                // request — front of its queue, first in the type order — still
+                // waits for one of them to finish, because nothing preempts a
+                // running task. Bulk work therefore runs at cap-1 and an
+                // urgent arrival always finds a slot free.
+                size_t cap = media_generation_cap_;
+                if (!queue.front().urgent && cap > 1)
+                    cap -= 1;
+                if (media_running >= cap)
                 {
                     continue;
                 }
@@ -568,9 +626,12 @@ namespace MediaDedup
             if (running_total_ >= current_limit)
                 break;
 
-            if (running_total_ >= effective_max_ && type != "thumbnail_generator" && type != "preview_generator" && type != "fullres_generator")
+            // Only genuinely user-visible work may bypass effective_max_. The
+            // type name alone used to grant this, which handed backfill's
+            // thumbnail/preview jobs the right to oversubscribe the pool.
+            if (running_total_ >= effective_max_ && !(is_ui_type && queue.front().urgent))
             {
-                continue; // only UI tasks can bypass effective_max_
+                continue;
             }
 
             // Move (not copy) the task out of the queue; on a failed start the
@@ -579,6 +640,7 @@ namespace MediaDedup
             queue.pop_front();
             auto fn = std::move(task.fn);
             std::string task_file_path = std::move(task.file_path);
+            const bool task_urgent = task.urgent; // preserved across the CC-2 re-queues below
 
             // create runnable and start (we ensured a thread is available)
             uint64_t id = next_id_++;
@@ -634,7 +696,7 @@ namespace MediaDedup
                 // as bad_function_call (swallowed), the work was silently
                 // lost, and its file_path blocked resubmission via the dedup
                 // check until the zombie drained.
-                queue.emplace_front(runnable->takeFn(), runnable->file_path());
+                queue.emplace_front(runnable->takeFn(), runnable->file_path(), task_urgent);
                 break; // Stop scheduling
             }
             catch (const std::exception& e)
@@ -649,7 +711,7 @@ namespace MediaDedup
                 // CC-2: these paths previously DROPPED the task with no
                 // re-queue and no signal to the submitter. Re-queue intact and
                 // stop this pass; the next schedule() event retries.
-                queue.emplace_front(runnable->takeFn(), runnable->file_path());
+                queue.emplace_front(runnable->takeFn(), runnable->file_path(), task_urgent);
                 break;
             }
             catch (...)
@@ -661,7 +723,7 @@ namespace MediaDedup
                 if (it != type_to_running_.end() && it->second > 0)
                     it->second -= 1;
                 active_runnables_.erase(id);
-                queue.emplace_front(runnable->takeFn(), runnable->file_path());
+                queue.emplace_front(runnable->takeFn(), runnable->file_path(), task_urgent);
                 break;
             }
 

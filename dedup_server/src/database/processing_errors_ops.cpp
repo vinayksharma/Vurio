@@ -1,5 +1,6 @@
 #include "database/processing_errors_ops.hpp"
 #include "database/database_manager.hpp"
+#include "database/db_retry.hpp"
 #include "database/sql_constants.hpp"
 #include "config/config_enums.hpp"
 #include <Poco/Data/Session.h>
@@ -50,8 +51,9 @@ namespace MediaDedup
         const std::string &error_message,
         const std::string &error_source)
     {
-        try
-        {
+        // A dropped error row loses the only record of why a file failed, and
+        // the escalation logic that reads it then treats the file as untried.
+        return DbRetry::withBusyRetry("ProcessingErrorsOps", "insertError", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
@@ -84,19 +86,7 @@ namespace MediaDedup
                 Keywords::now;
 
             Poco::Logger::get("ProcessingErrorsOps").debug("Inserted processing error for file: " + file_path + " (code: " + std::to_string(error_code) + ", source: " + error_source + ")");
-
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ProcessingErrorsOps").error("Failed to insert processing error for file " + file_path + ": " + std::string(e.what()));
-            return false;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ProcessingErrorsOps").error("Failed to insert processing error for file " + file_path + ": unknown error");
-            return false;
-        }
+        });
     }
 
     int ProcessingErrorsOps::deleteBySource(DatabaseManager &db, const std::string &error_source)

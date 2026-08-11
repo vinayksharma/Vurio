@@ -844,3 +844,102 @@ TEST_F(DuplicateFinderRangeTest, SliderReclusterFromEdgesEndToEnd)
     db_manager_.reset();
     std::filesystem::remove(db_path);
 }
+
+// A re-cluster rewrote every group and every member row on every run, holding
+// SQLite's single write lock for ~8-10s over ~100k statements while a handful
+// of groups had actually changed. Everything else in the process that writes —
+// most visibly the thumbnail and preview cache upserts — blocked out and
+// failed. Unchanged groups must now survive a run untouched.
+TEST_F(DuplicateFinderRangeTest, ReclusterOnlyWritesGroupsThatChanged)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df_recluster_diff.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.95);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    auto addProcessedFile = [&](const std::string &path, const std::vector<float> &vec) {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": 1000}";
+        row.processed = 2;
+        EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+    };
+
+    // Two near-identical pairs, orthogonal to each other: clustering the
+    // second pair cannot disturb the first.
+    addProcessedFile("/diff/a.jpg",  {2.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    addProcessedFile("/diff/a2.jpg", {3.0f, 0.0f, 0.06f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    auto first = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(first.groups.size(), 1u);
+    int stable_group_id = first.groups[0].group.id;
+
+    // Stamp a sentinel a rewrite cannot preserve: the group UPDATE sets
+    // updated_at=CURRENT_TIMESTAMP, so a back-dated value surviving proves no
+    // UPDATE touched this row. It has to stay a parseable timestamp — the
+    // pagination reader parses the column and fails the whole page otherwise.
+    const std::string kSentinel = "1999-01-01 00:00:00";
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        std::string sentinel = kSentinel;
+        Poco::Data::Statement stamp(lease.get());
+        stamp << "UPDATE duplicate_groups SET updated_at = ? WHERE id = ?",
+            Poco::Data::Keywords::use(sentinel), Poco::Data::Keywords::use(stable_group_id),
+            Poco::Data::Keywords::now;
+    }
+
+    // A second, unrelated pair arrives — the steady-state import case.
+    addProcessedFile("/diff/b.jpg",  {0.0f, 0.0f, 0.0f, 0.0f, 2.0f, 0.02f, 0.0f, 0.0f});
+    addProcessedFile("/diff/b2.jpg", {0.0f, 0.0f, 0.0f, 0.0f, 3.0f, 0.0f, 0.06f, 0.0f});
+    finder.findDuplicates();
+
+    auto second = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(second.groups.size(), 2u) << "the new pair must form its own group";
+
+    std::string stamp_after;
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        Poco::Data::Statement q(lease.get());
+        q << "SELECT updated_at FROM duplicate_groups WHERE id = ?",
+            Poco::Data::Keywords::into(stamp_after), Poco::Data::Keywords::use(stable_group_id),
+            Poco::Data::Keywords::now;
+    }
+    EXPECT_EQ(stamp_after, kSentinel)
+        << "an unchanged group was rewritten by the re-cluster";
+
+    // The unchanged group also keeps its identity and membership.
+    bool found = false;
+    for (const auto &g : second.groups)
+    {
+        if (g.group.id != stable_group_id)
+            continue;
+        found = true;
+        EXPECT_EQ(g.members.size(), 2u);
+    }
+    EXPECT_TRUE(found) << "stable group disappeared across the re-cluster";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}

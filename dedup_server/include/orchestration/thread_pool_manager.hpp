@@ -101,9 +101,14 @@ namespace MediaDedup
         {
             std::function<void()> fn;
             std::string file_path;
-            
-            QueuedTask(std::function<void()> f, const std::string& path = "")
-                : fn(std::move(f)), file_path(path) {}
+            /// Set by an urgent submit and carried all the way to dispatch.
+            /// Front-insertion alone only ordered a task within its own type's
+            /// queue; schedule() could not tell a viewer's render from a
+            /// backfill job and gave them equal claim on the media slots.
+            bool urgent = false;
+
+            QueuedTask(std::function<void()> f, const std::string& path = "", bool is_urgent = false)
+                : fn(std::move(f)), file_path(path), urgent(is_urgent) {}
         };
 
         class FunctionRunnable : public Poco::Runnable

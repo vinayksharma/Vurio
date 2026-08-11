@@ -14,6 +14,7 @@
 #include <Poco/Dynamic/Var.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <set>
 #include <sstream>
@@ -894,11 +895,54 @@ namespace MediaDedup
             return true;
         }
 
+        namespace
+        {
+            /// Committed shape of a duplicate_groups row, for the re-cluster diff.
+            struct ExistingGroup
+            {
+                int rep_id;
+                std::string rep_path;
+                long long rep_size;
+                std::string rep_date;
+                double threshold;
+                int member_count;
+            };
+
+            /// Committed shape of a duplicate_members row, for the same diff.
+            struct ExistingMember
+            {
+                int file_id;
+                std::string file_path;
+                double score;
+                long long file_size;
+                std::string created_date;
+                int is_representative;
+            };
+
+            /// Scores round-trip through SQLite as IEEE-754 doubles, so an
+            /// epsilon compare only guards against a recomputation that lands
+            /// a hair off — not against a real similarity change, which moves
+            /// the score far more than this.
+            constexpr double kScoreEpsilon = 1e-9;
+        }
+
         void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode)
         {
             Poco::Logger &logger = finderLogger();
             const auto t0 = std::chrono::steady_clock::now();
             const double threshold = embedding_threshold_similarity_;
+
+            // Phase stopwatch: the re-cluster is a single-threaded pass over
+            // the whole edge list, so when it runs long we need to know which
+            // phase owns the time rather than guess.
+            auto phase_mark = t0;
+            long edges_ms = 0, unionfind_ms = 0, artifacts_ms = 0, existing_ms = 0, diff_ms = 0;
+            auto lap = [&phase_mark](long &slot) {
+                const auto nowt = std::chrono::steady_clock::now();
+                slot = static_cast<long>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(nowt - phase_mark).count());
+                phase_mark = nowt;
+            };
 
             try
             {
@@ -918,6 +962,7 @@ namespace MediaDedup
                     for (std::size_t i = 0; i < as.size(); ++i)
                         edges.push_back({as[i], bs[i], scores[i]});
                 }
+                lap(edges_ms);
 
                 // 2. Union-find (path halving + union by size): deterministic,
                 // order-independent — the property the old greedy grouping
@@ -970,6 +1015,8 @@ namespace MediaDedup
                     sb = std::max(sb, e.score);
                 }
 
+                lap(unionfind_ms);
+
                 // 3. Metadata for every grouped member, one set-based load.
                 std::vector<int> all_ids;
                 for (const auto &kv : components)
@@ -982,85 +1029,238 @@ namespace MediaDedup
                         artifacts.emplace(a.file_id, std::move(a));
                 }
 
-                // 4. Group-id stability: a component reuses the id of the
-                // existing group whose representative (or, failing that, any
-                // member that heads a group) it contains.
+                lap(artifacts_ms);
+
+                // 4. Existing state, read outside the write transaction. Two
+                // jobs: group-id stability (a component reuses the id of the
+                // existing group whose representative — or, failing that, any
+                // member that heads a group — it contains), and the baseline
+                // for the row-level diff below. A steady-state run finds a
+                // handful of changed groups out of thousands; rewriting all of
+                // them held SQLite's single write lock for 8-10 seconds, which
+                // starved every other writer in the process (the thumbnail and
+                // preview cache upserts most visibly).
                 std::unordered_map<int, int> rep_to_gid;
+                std::unordered_map<int, ExistingGroup> existing_groups;
+                std::unordered_map<int, std::vector<ExistingMember>> existing_members;
                 {
                     auto lease = db_.acquireSessionLease();
                     Session &sess = lease.get();
-                    std::vector<int> gids, reps;
-                    Statement stmt(sess);
                     std::string m = mode;
-                    stmt << "SELECT id, representative_file_id FROM duplicate_groups WHERE mode = ? ORDER BY id",
-                        into(gids), into(reps), use(m), now;
-                    for (std::size_t i = 0; i < gids.size(); ++i)
-                        rep_to_gid.emplace(reps[i], gids[i]);
+                    {
+                        std::vector<int> gids, reps, counts;
+                        std::vector<std::string> rep_paths, rep_dates;
+                        std::vector<long long> rep_sizes;
+                        std::vector<double> thresholds;
+                        Statement stmt(sess);
+                        stmt << "SELECT id, representative_file_id, representative_file_path, "
+                                "representative_file_size, representative_created_date, similarity_threshold, "
+                                "member_count FROM duplicate_groups WHERE mode = ? ORDER BY id",
+                            into(gids), into(reps), into(rep_paths), into(rep_sizes), into(rep_dates),
+                            into(thresholds), into(counts), use(m), now;
+                        for (std::size_t i = 0; i < gids.size(); ++i)
+                        {
+                            rep_to_gid.emplace(reps[i], gids[i]);
+                            existing_groups.emplace(gids[i], ExistingGroup{reps[i], rep_paths[i], rep_sizes[i],
+                                                                           rep_dates[i], thresholds[i], counts[i]});
+                        }
+                    }
+                    {
+                        std::vector<int> group_ids, file_ids, is_reps;
+                        std::vector<std::string> paths, dates;
+                        std::vector<double> scores;
+                        std::vector<long long> sizes;
+                        Statement stmt(sess);
+                        stmt << "SELECT group_id, file_id, file_path, similarity_score, file_size, created_date, "
+                                "is_representative FROM duplicate_members WHERE group_id IN "
+                                "(SELECT id FROM duplicate_groups WHERE mode = ?)",
+                            into(group_ids), into(file_ids), into(paths), into(scores), into(sizes), into(dates),
+                            into(is_reps), use(m), now;
+                        for (std::size_t i = 0; i < group_ids.size(); ++i)
+                            existing_members[group_ids[i]].push_back(
+                                ExistingMember{file_ids[i], paths[i], scores[i], sizes[i], dates[i], is_reps[i]});
+                        for (auto &kv : existing_members)
+                            std::sort(kv.second.begin(), kv.second.end(),
+                                      [](const ExistingMember &l, const ExistingMember &r)
+                                      { return l.file_id < r.file_id; });
+                    }
                 }
+
+                lap(existing_ms);
+
+                // 5. Resolve every component to its desired rows and diff it
+                // against what is committed. This whole pass is pure CPU —
+                // nothing below touches the database — so the write lock is
+                // taken only for groups that genuinely changed.
+                struct PendingGroup
+                {
+                    int gid; // > 0 reuses an existing group; -1 needs an insert
+                    int rep_id;
+                    std::string rep_path;
+                    long long rep_size;
+                    std::string rep_date;
+                    std::vector<ExistingMember> members; // desired rows, sorted by file_id
+                    bool group_row_changed;
+                    bool members_changed;
+                };
 
                 int groups_total = 0, groups_new = 0, members_total = 0;
                 std::set<int> used_gids;
-                std::vector<int> kept_group_ids;
+                // Sized for the changed subset, not every component.
+                std::vector<PendingGroup> pending;
+
+                for (auto &kv : components)
                 {
+                    auto &member_ids = kv.second;
+                    if (member_ids.size() < 2)
+                        continue;
+
+                    std::vector<FileArtifact> members;
+                    members.reserve(member_ids.size());
+                    for (int id : member_ids)
+                    {
+                        auto ait = artifacts.find(id);
+                        if (ait != artifacts.end())
+                            members.push_back(ait->second);
+                    }
+                    if (members.size() < 2)
+                        continue;
+
+                    RepresentativeInfo rep = selectRepresentative(members);
+
+                    int gid = -1;
+                    auto rit = rep_to_gid.find(rep.file_id);
+                    if (rit != rep_to_gid.end() && used_gids.count(rit->second) == 0)
+                        gid = rit->second;
+                    else
+                    {
+                        for (int id : member_ids)
+                        {
+                            auto mit = rep_to_gid.find(id);
+                            if (mit != rep_to_gid.end() && used_gids.count(mit->second) == 0)
+                            {
+                                gid = mit->second;
+                                break;
+                            }
+                        }
+                    }
+
+                    PendingGroup pg;
+                    pg.gid = gid;
+                    pg.rep_id = rep.file_id;
+                    pg.rep_path = rep.file_path;
+                    pg.rep_size = rep.file_size;
+                    pg.rep_date = rep.created_date;
+
+                    pg.members.reserve(members.size());
+                    for (const FileArtifact &memb : members)
+                    {
+                        const int is_rep = (memb.file_id == rep.file_id) ? 1 : 0;
+                        auto sit = best_score.find(memb.file_id);
+                        const double score = is_rep ? 1.0 : (sit != best_score.end() ? sit->second : threshold);
+                        pg.members.push_back(ExistingMember{memb.file_id, memb.file_path, score, memb.file_size,
+                                                            memb.created_date, is_rep});
+                    }
+                    std::sort(pg.members.begin(), pg.members.end(),
+                              [](const ExistingMember &l, const ExistingMember &r)
+                              { return l.file_id < r.file_id; });
+
+                    if (gid > 0)
+                    {
+                        used_gids.insert(gid);
+
+                        auto git = existing_groups.find(gid);
+                        pg.group_row_changed =
+                            git == existing_groups.end() ||
+                            git->second.rep_id != pg.rep_id ||
+                            git->second.rep_path != pg.rep_path ||
+                            git->second.rep_size != pg.rep_size ||
+                            git->second.rep_date != pg.rep_date ||
+                            git->second.member_count != static_cast<int>(pg.members.size()) ||
+                            std::abs(git->second.threshold - threshold) > kScoreEpsilon;
+
+                        auto mit = existing_members.find(gid);
+                        const std::vector<ExistingMember> empty_members;
+                        const std::vector<ExistingMember> &was =
+                            mit == existing_members.end() ? empty_members : mit->second;
+                        pg.members_changed = was.size() != pg.members.size();
+                        for (std::size_t i = 0; !pg.members_changed && i < was.size(); ++i)
+                            pg.members_changed =
+                                was[i].file_id != pg.members[i].file_id ||
+                                was[i].file_path != pg.members[i].file_path ||
+                                was[i].file_size != pg.members[i].file_size ||
+                                was[i].created_date != pg.members[i].created_date ||
+                                was[i].is_representative != pg.members[i].is_representative ||
+                                std::abs(was[i].score - pg.members[i].score) > kScoreEpsilon;
+                    }
+                    else
+                    {
+                        pg.group_row_changed = true;
+                        pg.members_changed = true;
+                        groups_new++;
+                    }
+
+                    groups_total++;
+                    members_total += static_cast<int>(pg.members.size());
+
+                    // Only changed groups are carried to the write phase.
+                    // Retaining every group's member rows instead held the
+                    // whole ~110k-row result set alongside the artifact map
+                    // (each artifact owns a 2 KB embedding blob) for the
+                    // length of the pass — enough extra resident memory to
+                    // push the process into swap, where this pure-CPU loop
+                    // took minutes instead of milliseconds.
+                    if (pg.group_row_changed || pg.members_changed)
+                        pending.push_back(std::move(pg));
+                }
+
+                // Groups that no longer map to any component. Computed here so
+                // the delete targets specific ids instead of the old
+                // "NOT IN (<every kept id>)" literal list — which grew to a
+                // multi-thousand-element SQL string re-parsed on every run.
+                std::vector<int> stale_gids;
+                for (const auto &kv : existing_groups)
+                    if (used_gids.count(kv.first) == 0)
+                        stale_gids.push_back(kv.first);
+
+                const int groups_written = static_cast<int>(pending.size());
+
+                lap(diff_ms);
+
+                // 6. Apply the delta. Still one transaction — a half-applied
+                // group set is not something readers should ever see — but in
+                // steady state it now carries a handful of statements instead
+                // of six figures' worth.
+                long write_ms = 0;
+                if (groups_written > 0 || !stale_gids.empty())
+                {
+                    const auto write_t0 = std::chrono::steady_clock::now();
                     auto lease = db_.acquireSessionLease();
                     Session &sess = lease.get();
                     try
                     {
                         sess.begin();
-                        for (auto &kv : components)
+                        double th = threshold;
+
+                        for (PendingGroup &pg : pending)
                         {
-                            auto &member_ids = kv.second;
-                            if (member_ids.size() < 2)
-                                continue;
+                            int member_count = static_cast<int>(pg.members.size());
 
-                            std::vector<FileArtifact> members;
-                            members.reserve(member_ids.size());
-                            for (int id : member_ids)
+                            if (pg.gid > 0)
                             {
-                                auto ait = artifacts.find(id);
-                                if (ait != artifacts.end())
-                                    members.push_back(ait->second);
-                            }
-                            if (members.size() < 2)
-                                continue;
-
-                            RepresentativeInfo rep = selectRepresentative(members);
-
-                            int gid = -1;
-                            auto rit = rep_to_gid.find(rep.file_id);
-                            if (rit != rep_to_gid.end() && used_gids.count(rit->second) == 0)
-                                gid = rit->second;
-                            else
-                            {
-                                for (int id : member_ids)
+                                if (pg.group_row_changed)
                                 {
-                                    auto mit = rep_to_gid.find(id);
-                                    if (mit != rep_to_gid.end() && used_gids.count(mit->second) == 0)
-                                    {
-                                        gid = mit->second;
-                                        break;
-                                    }
+                                    Statement upd(sess);
+                                    upd << "UPDATE duplicate_groups SET representative_file_id=?, representative_file_path=?, "
+                                           "representative_file_size=?, representative_created_date=?, similarity_threshold=?, "
+                                           "member_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                                        use(pg.rep_id), use(pg.rep_path), use(pg.rep_size), use(pg.rep_date), use(th),
+                                        use(member_count), use(pg.gid), now;
                                 }
-                            }
-
-                            int member_count = static_cast<int>(members.size());
-                            std::string rep_path = rep.file_path;
-                            long long rep_size = rep.file_size;
-                            std::string rep_date = rep.created_date;
-                            int rep_id = rep.file_id;
-                            double th = threshold;
-
-                            if (gid > 0)
-                            {
-                                used_gids.insert(gid);
-                                Statement upd(sess);
-                                upd << "UPDATE duplicate_groups SET representative_file_id=?, representative_file_path=?, "
-                                       "representative_file_size=?, representative_created_date=?, similarity_threshold=?, "
-                                       "member_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                                    use(rep_id), use(rep_path), use(rep_size), use(rep_date), use(th),
-                                    use(member_count), use(gid), now;
+                                if (!pg.members_changed)
+                                    continue;
                                 Statement delm(sess);
-                                delm << "DELETE FROM duplicate_members WHERE group_id = ?", use(gid), now;
+                                delm << "DELETE FROM duplicate_members WHERE group_id = ?", use(pg.gid), now;
                             }
                             else
                             {
@@ -1069,51 +1269,29 @@ namespace MediaDedup
                                 ins << "INSERT INTO duplicate_groups(mode, representative_file_id, representative_file_path, "
                                        "representative_file_size, representative_created_date, similarity_threshold, member_count) "
                                        "VALUES(?, ?, ?, ?, ?, ?, ?)",
-                                    use(m), use(rep_id), use(rep_path), use(rep_size), use(rep_date), use(th),
+                                    use(m), use(pg.rep_id), use(pg.rep_path), use(pg.rep_size), use(pg.rep_date), use(th),
                                     use(member_count), now;
                                 Statement rowid(sess);
-                                rowid << "SELECT last_insert_rowid()", into(gid), now;
-                                used_gids.insert(gid);
-                                groups_new++;
+                                rowid << "SELECT last_insert_rowid()", into(pg.gid), now;
                             }
-                            kept_group_ids.push_back(gid);
 
-                            for (const FileArtifact &memb : members)
+                            for (ExistingMember &memb : pg.members)
                             {
-                                int fid = memb.file_id;
-                                std::string fpath = memb.file_path;
-                                long long fsize = memb.file_size;
-                                std::string fdate = memb.created_date;
-                                int is_rep = (memb.file_id == rep.file_id) ? 1 : 0;
-                                auto sit = best_score.find(memb.file_id);
-                                double score = is_rep ? 1.0 : (sit != best_score.end() ? sit->second : threshold);
                                 Statement insm(sess);
                                 insm << "INSERT OR REPLACE INTO duplicate_members(group_id, file_id, file_path, "
                                         "similarity_score, file_size, created_date, is_representative) "
                                         "VALUES(?, ?, ?, ?, ?, ?, ?)",
-                                    use(gid), use(fid), use(fpath), use(score), use(fsize), use(fdate), use(is_rep), now;
-                                members_total++;
+                                    use(pg.gid), use(memb.file_id), use(memb.file_path), use(memb.score),
+                                    use(memb.file_size), use(memb.created_date), use(memb.is_representative), now;
                             }
-                            groups_total++;
                         }
 
-                        // Drop groups that no longer map to any component.
+                        for (int stale : stale_gids)
                         {
-                            std::string keep_list;
-                            for (int id : kept_group_ids)
-                            {
-                                if (!keep_list.empty())
-                                    keep_list += ",";
-                                keep_list += std::to_string(id);
-                            }
-                            std::string m = mode;
-                            std::string sql = "DELETE FROM duplicate_groups WHERE mode = ?";
-                            if (!keep_list.empty())
-                                sql += " AND id NOT IN (" + keep_list + ")";
-                            Statement delg(sess);
-                            delg << sql, use(m), now;
                             Statement delm(sess);
-                            delm << "DELETE FROM duplicate_members WHERE group_id NOT IN (SELECT id FROM duplicate_groups)", now;
+                            delm << "DELETE FROM duplicate_members WHERE group_id = ?", use(stale), now;
+                            Statement delg(sess);
+                            delg << "DELETE FROM duplicate_groups WHERE id = ?", use(stale), now;
                         }
 
                         sess.commit();
@@ -1123,14 +1301,26 @@ namespace MediaDedup
                         try { sess.rollback(); } catch (...) {}
                         throw;
                     }
+                    write_ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                     std::chrono::steady_clock::now() - write_t0)
+                                                     .count());
                 }
 
                 const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::steady_clock::now() - t0)
                                     .count();
-                logger.information("Re-clustered from %d edge(s) in %ld ms: %d group(s) (%d new), %d member(s), threshold=%.3f",
-                                   static_cast<int>(edges.size()), static_cast<long>(ms),
-                                   groups_total, groups_new, members_total, threshold);
+                // Composed, not format-substituted: Poco::Logger's variadic
+                // overloads cap out well below this many values and silently
+                // truncate the rest of the message.
+                logger.information(
+                    "Re-clustered from " + std::to_string(edges.size()) + " edge(s) in " + std::to_string(ms) +
+                    " ms: " + std::to_string(groups_total) + " group(s) (" + std::to_string(groups_new) + " new), " +
+                    std::to_string(members_total) + " member(s), threshold=" + std::to_string(threshold) +
+                    "; wrote " + std::to_string(groups_written) + " group(s), dropped " +
+                    std::to_string(stale_gids.size()) + ", write lock held " + std::to_string(write_ms) +
+                    " ms [edges " + std::to_string(edges_ms) + " / unionfind " + std::to_string(unionfind_ms) +
+                    " / artifacts " + std::to_string(artifacts_ms) + " / existing " + std::to_string(existing_ms) +
+                    " / diff " + std::to_string(diff_ms) + "]");
 
                 // Refresh last-run stats on the checkpoint.
                 auto cp = DuplicateGroupsOps::getCheckpoint(db_, mode);
@@ -1138,6 +1328,22 @@ namespace MediaDedup
                     DuplicateGroupsOps::upsertCheckpoint(db_, mode, cp->last_processed_id, cp->files_checked,
                                                          members_total - groups_total, groups_new,
                                                          groups_total - groups_new);
+
+                // Announce the new group set (after the commit, so anyone who
+                // re-reads on this signal sees the committed rows). Nothing
+                // written means nothing to announce — the old unconditional
+                // fire pushed an identical group set to every client on every
+                // run of the 30s loop.
+                if (groups_written > 0 || !stale_gids.empty())
+                {
+                    GroupsRebuiltCallback rebuilt_cb;
+                    {
+                        std::lock_guard<std::mutex> lock(group_event_cb_mutex_);
+                        rebuilt_cb = groups_rebuilt_cb_;
+                    }
+                    if (rebuilt_cb)
+                        rebuilt_cb();
+                }
             }
             catch (const std::exception &e)
             {

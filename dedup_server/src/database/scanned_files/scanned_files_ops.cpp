@@ -1,6 +1,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
+#include "database/db_retry.hpp"
 #include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
 #include <Poco/Data/Session.h>
@@ -950,8 +951,9 @@ namespace MediaDedup
                                  const std::string &exif_datetime, const std::string &exif_camera,
                                  const std::string &exif_resolution)
     {
-        try
-        {
+        // Losing this to write-lock contention silently drops the file's EXIF
+        // date, which the day view groups by — the row is never revisited.
+        return DbRetry::withBusyRetry("ScannedFilesOps", "updateExifMetadata", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
@@ -967,14 +969,7 @@ namespace MediaDedup
                 Keywords::use(cam),
                 Keywords::use(res),
                 Keywords::use(p), Keywords::now;
-
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("updateExifMetadata error: %s", std::string(e.what()));
-            return false;
-        }
+        });
     }
 
     int ScannedFilesOps::clearProcessingFlags(DatabaseManager &db)

@@ -547,12 +547,14 @@ TEST(ThreadPoolManagerTest, AutoPrioritizesUITasks)
         }, "file_bg_" + std::to_string(i));
     }
 
-    // Submit 2 UI tasks
+    // Submit 2 UI tasks. Urgent is what makes them UI: the type name alone no
+    // longer buys priority, or a 20k-job backfill into the same queue would
+    // masquerade as a user waiting on a thumbnail.
     for (int i = 0; i < 2; ++i)
     {
         tpm.submit("thumbnail_generator", [&]() {
             ui_finished++;
-        }, "file_ui_" + std::to_string(i));
+        }, "file_ui_" + std::to_string(i), /*urgent=*/true);
     }
 
     // Release the blocked background tasks
@@ -613,7 +615,7 @@ TEST(ThreadPoolManagerTest, UIGraceCapacityBypassesMaxLimit)
             while (!release_all.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-        }, "file_ui_" + std::to_string(i));
+        }, "file_ui_" + std::to_string(i), /*urgent=*/true);
     }
 
     // Wait and verify that UI tasks have actually started (running total = 4).
@@ -712,7 +714,8 @@ TEST(ThreadPoolManagerTest, BackgroundTypeIsThrottledNotStarvedByUIBacklog)
     tpm.initialize();
 
     // Saturate the media-generation cap and keep a UI backlog queued so
-    // has_ui_tasks stays true the whole time.
+    // has_ui_tasks stays true the whole time. These must be urgent submits —
+    // that, not the type name, is what marks work as user-visible.
     std::atomic<bool> release{false};
     std::atomic<int> ui_started{0};
     for (int i = 0; i < 8; ++i)
@@ -721,7 +724,7 @@ TEST(ThreadPoolManagerTest, BackgroundTypeIsThrottledNotStarvedByUIBacklog)
             ui_started.fetch_add(1);
             while (!release.load())
                 std::this_thread::sleep_for(std::chrono::milliseconds(5)); },
-                   "/ui/" + std::to_string(i));
+                   "/ui/" + std::to_string(i), /*urgent=*/true);
 
     ASSERT_TRUE(MediaDedup::Test::TestUtils::waitForCondition(
         [&]() { return ui_started.load() >= 4; },
@@ -811,4 +814,103 @@ TEST(ThreadPoolManagerTest, UrgentSubmitJumpsQueueAndPromotesDuplicates)
     EXPECT_EQ(order[4], "/bulk/3");
 
     tpm.shutdownAndDrain(std::chrono::milliseconds(500));
+}
+
+// Slow-viewer fix: bulk media work runs at media_generation_cap_ - 1 so the
+// last slot is always free for a user-visible request. Front-of-queue
+// placement could not deliver this on its own — nothing preempts a running
+// magick decode, so an urgent arrival used to wait out one of the four
+// backfill transcodes already holding the cap.
+TEST(ThreadPoolManagerTest, MediaCapReservesASlotForUrgentWork)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("8"));
+    cfg->createProperty("tpm.mediaGeneration.maxConcurrent", 4);
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+
+    std::atomic<bool> release{false};
+    std::atomic<int> bulk_started{0};
+    std::atomic<bool> urgent_started{false};
+
+    auto block = [&release]()
+    {
+        while (!release.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    };
+
+    // Backfill-style: more work than the cap, none of it urgent.
+    for (int i = 0; i < 8; ++i)
+        tpm.submit("thumbnail_generator", [&]()
+                   { bulk_started.fetch_add(1); block(); },
+                   "/backfill/" + std::to_string(i));
+
+    // Bulk saturates at cap-1 and must stay there.
+    ASSERT_TRUE(TestUtils::waitForCondition([&]()
+                                            { return bulk_started.load() >= 3; },
+                                            std::chrono::milliseconds(2000), std::chrono::milliseconds(10)))
+        << "bulk media work should reach cap-1";
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(bulk_started.load(), 3) << "bulk work took the slot reserved for urgent requests";
+
+    // The viewer's request finds the reserved slot free, with every bulk task
+    // still running and nothing preempted.
+    tpm.submit("fullres_generator", [&]()
+               { urgent_started.store(true); block(); },
+               "/viewer/raw.arw", /*urgent=*/true);
+
+    EXPECT_TRUE(TestUtils::waitForCondition([&]()
+                                            { return urgent_started.load(); },
+                                            std::chrono::milliseconds(2000), std::chrono::milliseconds(10)))
+        << "urgent media task waited on the bulk backlog";
+    EXPECT_EQ(bulk_started.load(), 3);
+
+    release.store(true);
+    tpm.shutdownAndDrain(std::chrono::milliseconds(1000));
+}
+
+// A non-urgent media backlog must NOT read as "the user is waiting": the
+// backfill enqueues up to 20k thumbnail/preview jobs into the very queues the
+// scheduler used to treat as UI, which throttled every background type to one
+// thread for the whole sweep.
+TEST(ThreadPoolManagerTest, BulkMediaBacklogDoesNotThrottleBackgroundTypes)
+{
+    auto cfg = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(cfg->initialize());
+    cfg->createProperty("tpm.pool.max", std::string("8"));
+    cfg->createProperty("tpm.killTimeoutMs", 100);
+
+    ThreadPoolManager tpm(cfg);
+    tpm.initialize();
+    tpm.setShare("media_processor", 1.0);
+
+    std::atomic<bool> release{false};
+    std::atomic<int> bg_running{0};
+
+    for (int i = 0; i < 8; ++i)
+        tpm.submit("thumbnail_generator", [&]()
+                   {
+            while (!release.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(5)); },
+                   "/backfill/" + std::to_string(i));
+
+    for (int i = 0; i < 4; ++i)
+        tpm.submit("media_processor", [&]()
+                   {
+            bg_running.fetch_add(1);
+            while (!release.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(5)); },
+                   "/bg/" + std::to_string(i));
+
+    // Throttled-to-one would cap this at 1 for as long as the backlog lasts.
+    EXPECT_TRUE(TestUtils::waitForCondition([&]()
+                                            { return bg_running.load() >= 2; },
+                                            std::chrono::milliseconds(2000), std::chrono::milliseconds(10)))
+        << "background type throttled by a non-urgent media backlog";
+
+    release.store(true);
+    tpm.shutdownAndDrain(std::chrono::milliseconds(1000));
 }

@@ -151,8 +151,15 @@ namespace MediaDedup
 
             if (!ThumbnailCacheOps::upsertThumbnail(*database_manager_, record))
             {
-                logger.warning("Failed to update database, but thumbnail was generated: %s", final_cached_path);
-                // Continue anyway - the thumbnail exists on disk
+                // Reporting success here would be a lie the caller pays for
+                // repeatedly: with no row, every later request misses the
+                // cache and regenerates this exact file. Drop the unreferenced
+                // asset and report infrastructure trouble so the client backs
+                // off instead of spinning.
+                logger.error("Thumbnail generated but its cache row could not be written; discarding: %s",
+                             final_cached_path);
+                thumbnail_cache_->deleteFromCacheImmediately(final_cached_path);
+                return fail(GenerationFailure::Infrastructure);
             }
 
             cached_path = final_cached_path;
