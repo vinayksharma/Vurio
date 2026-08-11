@@ -24,6 +24,12 @@ actor ServerImageLoader {
     /// fairness fix this jumped the queue by accident via LIFO ordering.)
     static let viewerImagePriority = -1
 
+    /// Long-edge cap for a locally decoded preview. Matches the server's
+    /// MAX_PREVIEW_DIMENSION so both paths hand the viewer the same size;
+    /// the image is laid out aspect-fit, and past this the extra pixels only
+    /// matter once the user zooms, which triggers the full-resolution load.
+    static let previewMaxPixelSize = 2560
+
     private var activeDownloads = 0
     private let maxConcurrentDownloads = 8
     private let maxQueueSize = 1000
@@ -403,11 +409,54 @@ actor ServerImageLoader {
     }
     
     private func performLoadPreview(filePath: String, priority: TaskPriority?) async throws -> NSImage {
+        if let reason = unreadableReason(type: "preview", filePath: filePath) {
+            throw MediaUnreadableError(message: reason)
+        }
+
+        // Best-available: when full resolution is already known to be cheap
+        // (local decode proven, or the server has it materialized), serve it
+        // directly and skip the QHD step entirely.
+        if knownFullRes.contains(filePath) {
+            if let image = try? await performLoadFullResolution(filePath: filePath, priority: priority) {
+                ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
+                return image
+            }
+            // Full-res no longer obtainable (server restarted, volume gone) —
+            // forget and fall back to the normal preview flow.
+            knownFullRes.remove(filePath)
+        }
+
+        // Non-RAW original sitting on local disk: decode it here instead of
+        // asking the server to transcode it. Anything over 5 MB trips the
+        // server's QHD preview threshold, so ordinary camera JPEGs were paying
+        // for a magick subprocess (seconds, under a shared 4-slot cap) to
+        // produce an image this process can downsample directly in a fraction
+        // of the time — and at better quality, since it reads the original
+        // rather than a q85 re-encode. Runs before the download gate: no
+        // server round trip means no download slot.
+        let ext = (filePath as NSString).pathExtension.lowercased()
+        if !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
+            if let image = await decodeDownsampledImageInBackground(
+                filePath: filePath, maxPixelSize: Self.previewMaxPixelSize, priority: priority) {
+                // A result under the cap means the source itself was smaller,
+                // so this bitmap IS full resolution — record that and the
+                // viewer skips its zoom-time upgrade entirely.
+                if let rep = image.representations.first,
+                   max(rep.pixelsWide, rep.pixelsHigh) < Self.previewMaxPixelSize {
+                    knownFullRes.insert(filePath)
+                }
+                ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
+                return image
+            }
+            // Odd codec or truncated file — fall through to the server, whose
+            // decoder stack is broader.
+        }
+
         // Previews are user-initiated (opening the full-screen viewer), so they run
         // at the highest priority alongside top-layer thumbnails.
         try await waitForToken(priority: Self.viewerImagePriority)
         defer { Task { await self.releaseToken(priority: Self.viewerImagePriority) } }
-        
+
         defer {
             if Task.isCancelled {
                 Task {
@@ -424,23 +473,6 @@ actor ServerImageLoader {
                     }
                 }
             }
-        }
-        
-        if let reason = unreadableReason(type: "preview", filePath: filePath) {
-            throw MediaUnreadableError(message: reason)
-        }
-
-        // Best-available: when full resolution is already known to be cheap
-        // (local decode proven, or the server has it materialized), serve it
-        // directly and skip the QHD step entirely.
-        if knownFullRes.contains(filePath) {
-            if let image = try? await performLoadFullResolution(filePath: filePath, priority: priority) {
-                ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
-                return image
-            }
-            // Full-res no longer obtainable (server restarted, volume gone) —
-            // forget and fall back to the normal preview flow.
-            knownFullRes.remove(filePath)
         }
 
         ensureMediaReadySubscription()
@@ -507,6 +539,38 @@ actor ServerImageLoader {
         throw NSError(domain: "ServerImageLoader", code: -3, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for preview generation"])
     }
     
+    /// Decode an asset that is already on disk — no server hop, no download
+    /// token, no generation. The viewer uses it to put the file's cached
+    /// thumbnail on screen as an instant placeholder while the real preview
+    /// (a first-time RAW transcode can take seconds) is still being made.
+    nonisolated func decodeCachedAsset(path: String) async -> NSImage? {
+        await decodeImageInBackground(filePath: path)
+    }
+
+    /// Scaled decode through ImageIO. libjpeg decodes directly at a reduced
+    /// scale rather than decoding full size and shrinking afterwards, so a
+    /// 50 MP camera JPEG costs a fraction of the time and the memory of a
+    /// full decode. EXIF orientation is applied by the transform option.
+    private func decodeDownsampledImageInBackground(filePath: String,
+                                                    maxPixelSize: Int,
+                                                    priority: TaskPriority? = nil) async -> NSImage? {
+        return await Task.detached(priority: priority ?? .userInitiated) {
+            let url = URL(fileURLWithPath: filePath)
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+            ]
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                return nil
+            }
+            let size = NSSize(width: cgImage.width, height: cgImage.height)
+            return NSImage(cgImage: cgImage, size: size)
+        }.value
+    }
+
     private func decodeImageInBackground(filePath: String, priority: TaskPriority? = nil) async -> NSImage? {
         return await Task.detached(priority: priority ?? .userInitiated) {
             let url = URL(fileURLWithPath: filePath)
