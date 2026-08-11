@@ -262,7 +262,9 @@ TEST(OnnxSessionManagerTest, NotAvailable)
 #if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
 
 #include "media_processors/image/backends/onnx_adapter.hpp"
+#include "media_processors/text/clip_tokenizer.hpp"
 #include <opencv2/opencv.hpp>
+#include <cmath>
 
 namespace
 {
@@ -332,6 +334,72 @@ TEST(OnnxAdapterDecodeTest, ComputeEmbeddingEndToEnd)
         magnitude += std::abs(static_cast<double>(vals[i]));
     EXPECT_GT(magnitude, 0.0) << "embedding must not be all zeros";
     std::filesystem::remove(path);
+}
+
+// The text tower end-to-end: C++ tokenizer -> ComputeTextEmbedding against the
+// REAL checkpoint. The tokenizer's own goldens cover token ids; what this adds
+// is the wiring (input names/order, attention mask, output selection) — the
+// exact class of bug that made the first exported image model return hidden
+// states instead of embeddings. Semantics are asserted the CLIP-robust way:
+// related captions must sit closer than unrelated ones.
+TEST(OnnxAdapterDecodeTest, ComputeTextEmbeddingEndToEnd)
+{
+    const std::string model_path = "models/clip-text-vitb32.onnx";
+    const std::string vocab_path = "models/vocab.json";
+    const std::string merges_path = "models/merges.txt";
+    if (!std::filesystem::exists(model_path) ||
+        !std::filesystem::exists(vocab_path) ||
+        !std::filesystem::exists(merges_path))
+        GTEST_SKIP() << "text model or tokenizer assets not present";
+
+    MediaDedup::ClipTokenizer tokenizer;
+    ASSERT_TRUE(tokenizer.load(vocab_path, merges_path));
+
+    auto config = std::make_shared<UnifiedObservableConfigManager>("/dev/null", false);
+    ASSERT_TRUE(config->initialize());
+    MediaDedup::OnnxAdapter::initializeSessionManager(config);
+
+    auto embed = [&](const std::string &text)
+    {
+        const auto encoded = tokenizer.encode(text);
+        EXPECT_EQ(encoded.input_ids.size(),
+                  static_cast<size_t>(MediaDedup::ClipTokenizer::kContextLength));
+        std::vector<float> out;
+        std::string reason;
+        EXPECT_TRUE(MediaDedup::OnnxAdapter::ComputeTextEmbedding(
+            encoded.input_ids, encoded.attention_mask, model_path, 512, out, &reason))
+            << "text embedding failed for \"" << text << "\": " << reason;
+        double norm_sq = 0.0;
+        for (float v : out)
+            norm_sq += static_cast<double>(v) * v;
+        EXPECT_GT(norm_sq, 0.0) << "degenerate embedding for \"" << text << "\"";
+        const double inv = 1.0 / std::sqrt(norm_sq);
+        for (float &v : out)
+            v = static_cast<float>(v * inv);
+        return out;
+    };
+
+    auto cosine = [](const std::vector<float> &a, const std::vector<float> &b)
+    {
+        double dot = 0.0;
+        for (size_t i = 0; i < a.size(); ++i)
+            dot += static_cast<double>(a[i]) * b[i];
+        return dot;
+    };
+
+    const auto dog = embed("a photo of a dog");
+    const auto puppy = embed("a photo of a puppy");
+    const auto pasta = embed("a bowl of spaghetti on a table");
+    ASSERT_EQ(dog.size(), 512u);
+    ASSERT_EQ(puppy.size(), 512u);
+    ASSERT_EQ(pasta.size(), 512u);
+
+    // Deterministic: the same text must embed identically across calls.
+    EXPECT_NEAR(cosine(dog, embed("a photo of a dog")), 1.0, 1e-4);
+
+    EXPECT_GT(cosine(dog, puppy), cosine(dog, pasta))
+        << "related captions must outrank unrelated ones — a projected CLIP "
+           "text embedding is being produced, not raw hidden states";
 }
 
 #endif // HAVE_ONNXRUNTIME && HAVE_OPENCV

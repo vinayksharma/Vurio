@@ -35,7 +35,9 @@ namespace MediaDedup
             if (with_coreml)
             {
                 std::unordered_map<std::string, std::string> coreml_options{
-                    {"MLComputeUnits", "MLComputeUnitsAll"}, // ANE/GPU/CPU, CoreML picks
+                    // ORT >= 1.25 dropped the "MLComputeUnits" value prefix:
+                    // valid values are ALL/CPUAndNeuralEngine/CPUAndGPU/CPUOnly.
+                    {"MLComputeUnits", "ALL"}, // ANE/GPU/CPU, CoreML picks
                     {"ModelFormat", "MLProgram"},
                 };
                 if (!coreml_cache_dir.empty())
@@ -99,7 +101,11 @@ namespace MediaDedup
         {
             auto name_ptr = session->GetInputNameAllocated(i, allocator);
             io.input_names.emplace_back(name_ptr.get());
-            auto tensor_info = session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
+            // The TypeInfo must outlive the tensor info: GetTensorTypeAndShapeInfo()
+            // returns an unowned view into it, and chaining off the temporary
+            // read freed memory (garbage dims/types under ORT >= 1.25).
+            Ort::TypeInfo type_info = session->GetInputTypeInfo(i);
+            auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
             io.input_dims.push_back(tensor_info.GetShape());
             io.input_types.push_back(tensor_info.GetElementType());
         }
@@ -125,9 +131,42 @@ namespace MediaDedup
             }
         }
 
+        // Text input: 2-D int64 tensor ("input_ids"), with an optional
+        // "attention_mask" companion — the CLIP text-encoder layout.
+        for (size_t i = 0; i < io.num_inputs; ++i)
+        {
+            if (io.input_dims[i].size() != 2 ||
+                io.input_types[i] != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
+                continue;
+            if (io.input_names[i].find("attention_mask") != std::string::npos)
+            {
+                io.attention_mask_index = i;
+                io.found_attention_mask = true;
+            }
+            else if (!io.found_text_input)
+            {
+                io.text_input_index = i;
+                io.found_text_input = true;
+            }
+        }
+
+        // Output: prefer the projected CLIP embedding by name; models exported
+        // before the named-output convention fall back to output 0.
         if (session->GetOutputCount() > 0)
         {
-            auto out_ptr = session->GetOutputNameAllocated(0, allocator);
+            size_t chosen = 0;
+            for (size_t i = 0; i < session->GetOutputCount(); ++i)
+            {
+                auto name_ptr = session->GetOutputNameAllocated(i, allocator);
+                std::string name(name_ptr.get());
+                if (name == "image_embeds" || name == "text_embeds" ||
+                    name == "pooled_output")
+                {
+                    chosen = i;
+                    break;
+                }
+            }
+            auto out_ptr = session->GetOutputNameAllocated(chosen, allocator);
             io.output_name = out_ptr.get();
         }
 

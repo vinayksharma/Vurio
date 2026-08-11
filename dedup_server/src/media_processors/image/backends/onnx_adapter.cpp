@@ -68,16 +68,30 @@ namespace MediaDedup
             return cv::imdecode(image_data, cv::IMREAD_COLOR);
         }
 
-        // BGR -> RGB -> resize -> CLIP-normalized CHW floats. Consumes `bgr`.
+        // BGR -> RGB -> resize short side + center-crop -> CLIP-normalized CHW
+        // floats. Consumes `bgr`. Matches the HF CLIPImageProcessor geometry
+        // (shortest side to input_size, then a centered square crop) so image
+        // embeddings line up with the text tower for search; the previous
+        // square stretch skewed the joint embedding space.
         std::vector<float> preprocessClip(cv::Mat &bgr, int input_size)
         {
             cv::Mat rgb;
             cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
             bgr.release();
 
-            cv::Mat resized;
-            cv::resize(rgb, resized, cv::Size(input_size, input_size), 0, 0, cv::INTER_AREA);
+            const double scale = static_cast<double>(input_size) /
+                                 static_cast<double>(std::min(rgb.rows, rgb.cols));
+            const int new_w = std::max(input_size, static_cast<int>(std::lround(rgb.cols * scale)));
+            const int new_h = std::max(input_size, static_cast<int>(std::lround(rgb.rows * scale)));
+
+            cv::Mat scaled;
+            cv::resize(rgb, scaled, cv::Size(new_w, new_h), 0, 0, cv::INTER_AREA);
             rgb.release();
+
+            const int x = (scaled.cols - input_size) / 2;
+            const int y = (scaled.rows - input_size) / 2;
+            cv::Mat resized = scaled(cv::Rect(x, y, input_size, input_size)).clone();
+            scaled.release();
 
             resized.convertTo(resized, CV_32F, 1.0f / 255.0f);
 
@@ -216,6 +230,77 @@ namespace MediaDedup
             std::memcpy(out_blob.data(), data, copy_elems * sizeof(float));
             if (copy_elems < (size_t)embedding_dim)
                 std::memset(out_blob.data() + copy_elems * sizeof(float), 0, (embedding_dim - copy_elems) * sizeof(float));
+            return true;
+        }
+
+        // Text-tower inference: feeds input_ids (+ attention_mask when the
+        // model declares one) and reads the cached named output.
+        bool runClipTextInference(OnnxSessionWrapper &wrapper,
+                                  const std::vector<std::int64_t> &input_ids,
+                                  const std::vector<std::int64_t> &attention_mask,
+                                  int embedding_dim,
+                                  std::vector<float> &out_floats,
+                                  std::string *out_reason)
+        {
+            const auto &io = wrapper.io;
+            Ort::Session *session = wrapper.session.get();
+
+            if (!io.found_text_input)
+            {
+                if (out_reason)
+                    *out_reason = "model_has_no_text_input";
+                return false;
+            }
+            if (io.output_name.empty())
+            {
+                if (out_reason)
+                    *out_reason = "model_has_no_output";
+                return false;
+            }
+
+            static Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+            const std::vector<int64_t> shape = {1, static_cast<int64_t>(input_ids.size())};
+
+            std::vector<Ort::Value> input_values;
+            input_values.reserve(io.num_inputs);
+            for (size_t i = 0; i < io.num_inputs; ++i)
+            {
+                const std::vector<std::int64_t> *src = nullptr;
+                if (i == io.text_input_index)
+                    src = &input_ids;
+                else if (io.found_attention_mask && i == io.attention_mask_index)
+                    src = &attention_mask;
+                else
+                {
+                    if (out_reason)
+                        *out_reason = "unexpected_text_model_input_" + io.input_names[i];
+                    return false;
+                }
+                input_values.push_back(Ort::Value::CreateTensor<int64_t>(
+                    mem, const_cast<int64_t *>(src->data()), src->size(),
+                    shape.data(), shape.size()));
+            }
+
+            const char *out_names[] = {io.output_name.c_str()};
+            auto results = session->Run(Ort::RunOptions{nullptr}, io.input_name_ptrs.data(),
+                                        input_values.data(), io.num_inputs, out_names, 1);
+            if (results.empty() || !results[0].IsTensor())
+            {
+                if (out_reason)
+                    *out_reason = "inference_empty_or_non_tensor_output";
+                return false;
+            }
+
+            auto &tensor = results[0];
+            const size_t count = tensor.GetTensorTypeAndShapeInfo().GetElementCount();
+            const float *data = tensor.GetTensorMutableData<float>();
+            if (count < static_cast<size_t>(embedding_dim))
+            {
+                if (out_reason)
+                    *out_reason = "text_output_too_small_" + std::to_string(count);
+                return false;
+            }
+            out_floats.assign(data, data + embedding_dim);
             return true;
         }
 
@@ -394,6 +479,67 @@ namespace MediaDedup
         (void)model_path;
         (void)embedding_dim;
         (void)out_blob;
+        return false;
+#endif
+    }
+
+    bool OnnxAdapter::ComputeTextEmbedding(const std::vector<std::int64_t> &input_ids,
+                                           const std::vector<std::int64_t> &attention_mask,
+                                           const std::string &model_path,
+                                           int embedding_dim,
+                                           std::vector<float> &out_floats,
+                                           std::string *out_reason)
+    {
+#if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
+        try
+        {
+            if (model_path.empty())
+            {
+                if (out_reason)
+                    *out_reason = "model_path_missing";
+                return false;
+            }
+            if (input_ids.empty() || input_ids.size() != attention_mask.size())
+            {
+                if (out_reason)
+                    *out_reason = "invalid_token_input";
+                return false;
+            }
+            if (!session_manager_)
+            {
+                adapterLogger().error("ONNX Session Manager not initialized");
+                if (out_reason)
+                    *out_reason = "session_manager_not_initialized";
+                return false;
+            }
+
+            auto session_lease = session_manager_->borrowSession(model_path);
+            OnnxSessionWrapper *wrapper = session_lease.getWrapper();
+            if (!wrapper || !wrapper->session)
+            {
+                if (out_reason)
+                    *out_reason = "failed_to_borrow_session";
+                return false;
+            }
+
+            return runClipTextInference(*wrapper, input_ids, attention_mask,
+                                        embedding_dim, out_floats, out_reason);
+        }
+        catch (const std::exception &e)
+        {
+            adapterLogger().error("ONNX text embedding exception: %s", std::string(e.what()));
+            if (out_reason)
+                *out_reason = std::string("onnx_exception: ") + e.what();
+            return false;
+        }
+#else
+        (void)input_ids;
+        (void)attention_mask;
+        (void)model_path;
+        (void)embedding_dim;
+        (void)out_floats;
+        if (out_reason)
+            *out_reason = "onnxruntime_unavailable";
         return false;
 #endif
     }

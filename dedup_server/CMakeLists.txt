@@ -267,6 +267,8 @@ add_executable(media_dedup_server
     src/media_processors/image/pipelines/quality_pipeline.cpp
     src/media_processors/image/backends/onnx_adapter.cpp
     src/media_processors/image/backends/onnx_session_manager.cpp
+    src/media_processors/text/clip_tokenizer.cpp
+    src/search/text_search_engine.cpp
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp

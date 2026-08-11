@@ -74,6 +74,8 @@ set(UNIT_TEST_SOURCES
     unit/test_similarity_calculator.cpp
     unit/test_session_pragmas.cpp
     unit/test_vector_index.cpp
+    unit/test_clip_tokenizer.cpp
+    unit/test_duplicate_group_rank.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -181,6 +183,20 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_session_pragmas")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SessionPragmasTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_duplicate_group_rank")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="DuplicateGroupRankTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_clip_tokenizer")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ClipTokenizer*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -571,6 +587,8 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
+        ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/text_search_engine.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -707,7 +725,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_media_generation_failures" AND
       NOT ${test_name} STREQUAL "test_similarity_calculator" AND
       NOT ${test_name} STREQUAL "test_session_pragmas" AND
-      NOT ${test_name} STREQUAL "test_vector_index")
+      NOT ${test_name} STREQUAL "test_vector_index" AND
+      NOT ${test_name} STREQUAL "test_clip_tokenizer" AND
+      NOT ${test_name} STREQUAL "test_duplicate_group_rank")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

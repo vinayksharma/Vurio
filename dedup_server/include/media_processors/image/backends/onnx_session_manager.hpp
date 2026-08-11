@@ -42,6 +42,11 @@ namespace MediaDedup
             size_t image_input_index = 0;
             bool found_image_input = false;
             bool image_input_nhwc = false;
+            // Text encoder layout (CLIP text tower): 2-D int64 inputs.
+            size_t text_input_index = 0;
+            bool found_text_input = false;
+            size_t attention_mask_index = 0;
+            bool found_attention_mask = false;
             std::string output_name;
         };
         IoSpec io;
