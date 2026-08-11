@@ -54,6 +54,10 @@ class DuplicatesViewModel: ObservableObject {
     let pageSize: Int32 = 30
     private weak var appState: AppState?
 
+    /// Position handle for the BINNED scroller, used to keep the viewport on
+    /// the same group when a re-cluster shifts row indices.
+    let anchorHandle = ScrollAnchorHandle()
+
     // Shared window/task machinery (page-load dedup, out-of-window
     // cancellation, prefetch bookkeeping); see PageWindowController.
     private lazy var window = PageWindowController(
@@ -120,6 +124,36 @@ class DuplicatesViewModel: ObservableObject {
         window.reset()
     }
 
+    /// Resize the slot list to an authoritative group count, keeping the rows
+    /// that already hold data. Growth appends placeholders, shrink truncates.
+    ///
+    /// Groups page in `representative_created_date DESC` order, so a group
+    /// discovered mid-scan can land anywhere in the list, not just at the end.
+    /// Rows below an insertion point are therefore momentarily off by one until
+    /// their page is fetched again — which each page load does, overwriting its
+    /// slots in place. That beats resetting every loaded row to a placeholder
+    /// on every count change, which during a scan is continuous.
+    func setTotalGroups(_ newTotal: Int32) {
+        let target = Int(max(0, newTotal))
+        guard newTotal != totalGroups || groups.count != target else { return }
+        totalGroups = Int32(target)
+
+        if target == 0 {
+            groups = []
+            window.reset()
+            return
+        }
+        var resized = groups
+        if resized.count > target {
+            resized.removeLast(resized.count - target)
+        } else {
+            for i in resized.count..<target {
+                resized.append(GroupSlot(group: nil, placeholderIndex: i))
+            }
+        }
+        groups = resized
+    }
+
     /// Re-fetch only the pages that already have data so server-computed fields
     /// (notably `isAvailable`) update in place — e.g. right after a volume mounts
     /// or unmounts — without resetting loaded rows to placeholders. `loadPage`
@@ -160,6 +194,13 @@ class DuplicatesViewModel: ObservableObject {
             logDebug("loadPage(\(pageIndex)) fetched \(response.groups.count) groups. Task cancelled? \(Task.isCancelled)")
             
             if !Task.isCancelled {
+                // The page response carries the authoritative group count from
+                // the same query that produced the page — adopt it, the way the
+                // day view does. Without this the list is stuck at whatever
+                // count the status RPC happened to report when it first went
+                // non-empty (mid-scan that can be a handful of groups).
+                setTotalGroups(response.totalGroups)
+
                 var localGroups = groups
                 // Ejection state and availability come straight from the server:
                 // `isEjected` is derived from ejection history (not file presence) and
@@ -217,7 +258,7 @@ class DuplicatesViewModel: ObservableObject {
     
     private func handleUpdate(_ update: Vurio_Dedup_DuplicateGroupUpdate) {
         let index = Int(update.index)
-        
+
         switch update.type {
         case .added:
             if index <= groups.count {
@@ -233,8 +274,61 @@ class DuplicatesViewModel: ObservableObject {
             if index < groups.count {
                 groups[index] = GroupSlot(group: update.group, placeholderIndex: groups[index].placeholderIndex)
             }
+        case .reload:
+            Task { await reloadAfterRebuild() }
         case .UNRECOGNIZED:
             break
+        }
+    }
+
+    /// The finder re-clustered: groups were added, dropped or re-ordered, and
+    /// the server is the only thing that knows the resulting order. Re-read the
+    /// pages we are showing, then put the viewport back on the group the user
+    /// was looking at — new groups sort by capture date, so an insertion above
+    /// the viewport would otherwise slide everything down under the cursor.
+    func reloadAfterRebuild() async {
+        let anchor = anchorHandle.anchor()
+        // The top row is often still a placeholder mid-scan, so anchor on the
+        // first loaded row at or below it and remember how far down that is.
+        let reference: (groupID: String, rowsBelowTop: Int)? = anchor.flatMap { a in
+            guard a.index < groups.count else { return nil }
+            for index in a.index..<groups.count {
+                if let id = groups[index].group?.groupID {
+                    return (id, index - a.index)
+                }
+            }
+            return nil
+        }
+
+        await reloadLoadedPages()
+
+        guard let anchor, let reference,
+              let newIndex = await fetchGroupIndex(reference.groupID) else { return }
+
+        // Don't yank the view out from under someone who scrolled while the
+        // reload was in flight — their position is the one that matters.
+        guard anchorHandle.anchor()?.index == anchor.index else { return }
+
+        let restoredTop = max(0, newIndex - reference.rowsBelowTop)
+        guard restoredTop != anchor.index else { return }
+
+        // Warm the page the anchor moved to before jumping, so the restored
+        // viewport lands on rows rather than placeholders.
+        window.triggerLoadPage(Int32(restoredTop) / pageSize)
+        anchorHandle.requestRestore(to: restoredTop, offsetIntoRow: anchor.offsetIntoRow)
+    }
+
+    /// Current row index of a group in the server's display order, or nil when
+    /// the group no longer exists (or the lookup fails).
+    private func fetchGroupIndex(_ groupID: String) async -> Int? {
+        guard let client = VurioGrpcClient.shared.duplicates else { return nil }
+        do {
+            let request = Vurio_Dedup_GetGroupIndexRequest.with { $0.groupID = groupID }
+            let response = try await callWithBusyRetry { try await client.getGroupIndex(request) }
+            return response.found ? Int(response.index) : nil
+        } catch {
+            logDebug("Group index lookup for \(groupID) failed: \(error)")
+            return nil
         }
     }
     

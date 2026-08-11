@@ -949,6 +949,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?,
     handler: @escaping (Vurio_Dedup_DuplicateGroupUpdate) -> Void
   ) -> ServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>
+
+  func getGroupIndex(
+    _ request: Vurio_Dedup_GetGroupIndexRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse>
 }
 
 extension Vurio_Dedup_DuplicatesServiceClientProtocol {
@@ -1107,6 +1112,25 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       handler: handler
     )
   }
+
+  /// Current row index of one group in the BINNED display order. The client
+  /// uses it to re-anchor its scroll position after a re-cluster moves rows.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetGroupIndex.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getGroupIndex(
+    _ request: Vurio_Dedup_GetGroupIndexRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getGroupIndex.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetGroupIndexInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -1213,6 +1237,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
   ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>
+
+  func makeGetGroupIndexCall(
+    _ request: Vurio_Dedup_GetGroupIndexRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1320,6 +1349,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? []
     )
   }
+
+  internal func makeGetGroupIndexCall(
+    _ request: Vurio_Dedup_GetGroupIndexRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getGroupIndex.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetGroupIndexInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1419,6 +1460,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSubscribeToDuplicateUpdatesInterceptors() ?? []
     )
   }
+
+  internal func getGroupIndex(
+    _ request: Vurio_Dedup_GetGroupIndexRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_GetGroupIndexResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getGroupIndex.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetGroupIndexInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1463,6 +1516,9 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
 
   /// - Returns: Interceptors to use when invoking 'subscribeToDuplicateUpdates'.
   func makeSubscribeToDuplicateUpdatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
+
+  /// - Returns: Interceptors to use when invoking 'getGroupIndex'.
+  func makeGetGroupIndexInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse>]
 }
 
 internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
@@ -1478,6 +1534,7 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEligibleDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getEjectedDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.subscribeToDuplicateUpdates,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getGroupIndex,
     ]
   )
 
@@ -1528,6 +1585,12 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
       name: "SubscribeToDuplicateUpdates",
       path: "/vurio.dedup.DuplicatesService/SubscribeToDuplicateUpdates",
       type: GRPCCallType.serverStreaming
+    )
+
+    internal static let getGroupIndex = GRPCMethodDescriptor(
+      name: "GetGroupIndex",
+      path: "/vurio.dedup.DuplicatesService/GetGroupIndex",
+      type: GRPCCallType.unary
     )
   }
 }
@@ -3533,6 +3596,10 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
   func getEjectedDuplicatePaths(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_DuplicatePathsResponse>
 
   func subscribeToDuplicateUpdates(request: Vurio_Dedup_Empty, context: StreamingResponseCallContext<Vurio_Dedup_DuplicateGroupUpdate>) -> EventLoopFuture<GRPCStatus>
+
+  /// Current row index of one group in the BINNED display order. The client
+  /// uses it to re-anchor its scroll position after a re-cluster moves rows.
+  func getGroupIndex(request: Vurio_Dedup_GetGroupIndexRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetGroupIndexResponse>
 }
 
 extension Vurio_Dedup_DuplicatesServiceProvider {
@@ -3619,6 +3686,15 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         userFunction: self.subscribeToDuplicateUpdates(request:context:)
       )
 
+    case "GetGroupIndex":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetGroupIndexRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetGroupIndexResponse>(),
+        interceptors: self.interceptors?.makeGetGroupIndexInterceptors() ?? [],
+        userFunction: self.getGroupIndex(request:context:)
+      )
+
     default:
       return nil
     }
@@ -3683,6 +3759,13 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
     responseStream: GRPCAsyncResponseStreamWriter<Vurio_Dedup_DuplicateGroupUpdate>,
     context: GRPCAsyncServerCallContext
   ) async throws
+
+  /// Current row index of one group in the BINNED display order. The client
+  /// uses it to re-anchor its scroll position after a re-cluster moves rows.
+  func getGroupIndex(
+    request: Vurio_Dedup_GetGroupIndexRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_GetGroupIndexResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -3776,6 +3859,15 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.subscribeToDuplicateUpdates(request: $0, responseStream: $1, context: $2) }
       )
 
+    case "GetGroupIndex":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_GetGroupIndexRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_GetGroupIndexResponse>(),
+        interceptors: self.interceptors?.makeGetGroupIndexInterceptors() ?? [],
+        wrapping: { try await self.getGroupIndex(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -3815,6 +3907,10 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when handling 'subscribeToDuplicateUpdates'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSubscribeToDuplicateUpdatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_DuplicateGroupUpdate>]
+
+  /// - Returns: Interceptors to use when handling 'getGroupIndex'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetGroupIndexInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetGroupIndexRequest, Vurio_Dedup_GetGroupIndexResponse>]
 }
 
 internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
@@ -3830,6 +3926,7 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getEligibleDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getEjectedDuplicatePaths,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.subscribeToDuplicateUpdates,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getGroupIndex,
     ]
   )
 
@@ -3880,6 +3977,12 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
       name: "SubscribeToDuplicateUpdates",
       path: "/vurio.dedup.DuplicatesService/SubscribeToDuplicateUpdates",
       type: GRPCCallType.serverStreaming
+    )
+
+    internal static let getGroupIndex = GRPCMethodDescriptor(
+      name: "GetGroupIndex",
+      path: "/vurio.dedup.DuplicatesService/GetGroupIndex",
+      type: GRPCCallType.unary
     )
   }
 }

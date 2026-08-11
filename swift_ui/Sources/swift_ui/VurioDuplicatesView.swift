@@ -150,6 +150,11 @@ struct VurioDuplicatesView: View {
                 .buttonStyle(PlainButtonStyle())
 
                 if !isFiltersCollapsed {
+                // VU-only semantic search: filters the day view to photos
+                // matching the typed description (server-side CLIP search).
+                if showAllMode {
+                    searchFilterRow
+                }
                 HStack {
                     HStack(spacing: 4) {
                         Image(systemName: "square.fill.on.square.fill")
@@ -298,7 +303,9 @@ struct VurioDuplicatesView: View {
         if allViewModel.days.isEmpty {
             VStack {
                 Spacer()
-                Text("No days available.")
+                Text(allViewModel.isSearchActive
+                     ? "No photos match \"\(allViewModel.activeSearchQuery)\"."
+                     : "No days available.")
                     .foregroundColor(Theme.textSecondary)
                 Spacer()
             }
@@ -348,6 +355,7 @@ struct VurioDuplicatesView: View {
                     dataVersion: binnedRowVersion,
                     isActive: isFrontmost && !showAllMode,
                     scrollbarInsets: customInsets,
+                    anchorHandle: viewModel.anchorHandle,
                     selection: $binnedSelection,
                     onVisibleRowsChanged: { range in
                         viewModel.updateVisibleRows(range)
@@ -358,6 +366,40 @@ struct VurioDuplicatesView: View {
                 .background(Color.clear)
             }
         }
+    }
+
+    // VU search field: debounced in AllDaysViewModel (300 ms after the last
+    // keystroke the day list reloads filtered to CLIP matches).
+    @ViewBuilder
+    private var searchFilterRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(Theme.textSecondary)
+            TextField(
+                "Search photos — e.g. \"dog on the beach\"",
+                text: Binding(
+                    get: { allViewModel.searchText },
+                    set: { allViewModel.searchText = $0 }
+                )
+            )
+            .textFieldStyle(PlainTextFieldStyle())
+            .foregroundColor(Theme.textPrimary)
+            if !allViewModel.searchText.isEmpty {
+                Button(action: { allViewModel.clearSearch() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .padding(10)
+        .background(Theme.surface.opacity(0.5))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.border, lineWidth: 1)
+        )
+        .padding([.horizontal, .bottom])
     }
 
     // The bulk Eject/Restore buttons for the BINNED tab. Extracted so the Filters
@@ -506,9 +548,12 @@ struct VurioDuplicatesView: View {
                         onThumbnailDoubleTapped: { file in
                             vuSelection = index
                             selectedVUFilePath = file.filePath
-                            // `index` is the day's global offset (0 = newest),
-                            // which anchors the viewer's library timeline.
-                            openViewer(.timeline(anchorDayIndex: index, file: file))
+                            // `index` is the day's offset (0 = newest) within the
+                            // day list AS FILTERED, so the viewer must page with
+                            // the same query or it lands on a different day.
+                            openViewer(.timeline(anchorDayIndex: index,
+                                                 file: file,
+                                                 searchQuery: allViewModel.activeSearchQuery))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

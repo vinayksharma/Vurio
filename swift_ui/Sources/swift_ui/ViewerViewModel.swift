@@ -12,8 +12,11 @@ extension Notification.Name {
 /// VU/BINNED, which slides that tab's viewer in over the grid.
 enum ViewerContent {
     /// Library timeline anchored at the double-clicked image's day. The anchor
-    /// index is the day's global offset (0 = newest), i.e. its VU row index.
-    case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile)
+    /// index is the day's global offset (0 = newest), i.e. its VU row index —
+    /// so it only addresses the same day when the viewer pages the day list
+    /// with the SAME search filter VU was showing. `searchQuery` carries it
+    /// (empty = unfiltered library).
+    case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile, searchQuery: String)
     /// A duplicate group from BINNED, opened at the double-clicked member.
     case group(Vurio_Dedup_DuplicateGroup, selectedIndex: Int)
 }
@@ -92,6 +95,9 @@ final class ViewerViewModel: ObservableObject {
     // Timeline window: `days` is contiguous, days[0] is day index `windowStart`
     // (0 = newest day in the library).
     private var days: [Vurio_Dedup_DayGroup] = []
+    /// Search filter the timeline is paging under; every day fetch repeats it so
+    /// the viewer's day offsets stay aligned with VU's filtered day list.
+    private var searchQuery = ""
     private var windowStart = 0
     private var totalDays: Int32 = 0
     private var loadingNewer = false
@@ -139,6 +145,7 @@ final class ViewerViewModel: ObservableObject {
         case .group(let group, let selectedIndex):
             isGroupMode = true
             days = []
+            searchQuery = ""
             items = group.files.map { .image(ViewerImage($0)) }
             let selected = group.files.indices.contains(selectedIndex) ? group.files[selectedIndex] : group.files.first
             selectedID = selected?.id
@@ -146,10 +153,11 @@ final class ViewerViewModel: ObservableObject {
                 scrollTarget = ScrollTarget(id: id, anchor: .center, animated: false)
             }
 
-        case .timeline(let anchorDayIndex, let file):
+        case .timeline(let anchorDayIndex, let file, let query):
             isGroupMode = false
             items = []
             days = []
+            searchQuery = query
             selectedID = nil
             isLoading = true
             defer { isLoading = false }
@@ -282,6 +290,9 @@ final class ViewerViewModel: ObservableObject {
                 $0.limit = limit
                 $0.offset = offset
                 $0.filesPerDay = 0 // 0 = every file of each day
+                // Must match the filter the day list was paged with, or the
+                // offset addresses a different day than the one clicked.
+                $0.searchQuery = searchQuery
             }
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
             totalDays = response.totalDays

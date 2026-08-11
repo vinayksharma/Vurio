@@ -6,6 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "core/grpc_server/grpc_service_common.hpp"
+#include "search/text_search_engine.hpp"
 
 namespace MediaDedup {
 namespace Core {
@@ -13,6 +14,9 @@ namespace Core {
 class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Service {
     std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
+    // Optional CLIP text->image search backend for the day-view search filter
+    // (owned by GrpcServerCore; null in tests that don't exercise search).
+    MediaDedup::TextSearchEngine* search_engine_ = nullptr;
 
     struct StreamQueue {
         std::mutex mutex;
@@ -33,7 +37,9 @@ class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Serv
     }
 
 public:
-    explicit DuplicatesServiceImpl(DatabaseManager* db) : db_(db) {}
+    explicit DuplicatesServiceImpl(DatabaseManager* db,
+                                   MediaDedup::TextSearchEngine* search_engine = nullptr)
+        : db_(db), search_engine_(search_engine) {}
 
     void OnDuplicateGroupEvent(int group_id, bool is_new) {
         if (!db_) return;
@@ -82,13 +88,38 @@ public:
             proto_file->set_is_ejected(is_ejected);
         }
 
+        broadcast(update);
+    }
+
+    /// The finder finished a re-cluster. It rebuilds every group for the mode
+    /// in one transaction — ids are reused where a component still contains an
+    /// old representative, groups appear and disappear, and a promoted
+    /// representative changes the capture date a group sorts on — so there is
+    /// no meaningful per-row delta to send. One RELOAD tells the client to
+    /// re-fetch what it has on screen and re-anchor; the server stays the sole
+    /// authority on ordering.
+    void OnGroupsRebuilt() {
+        vurio::dedup::DuplicateGroupUpdate update;
+        update.set_type(vurio::dedup::DuplicateGroupUpdate::RELOAD);
+        broadcast(update, /*coalesce=*/true);
+    }
+
+private:
+    /// Fan one update out to every open subscriber. With `coalesce`, a queue
+    /// whose tail is already the same type is left alone — a client that is
+    /// slow to drain gets one reload, not a backlog of identical ones.
+    void broadcast(const vurio::dedup::DuplicateGroupUpdate& update, bool coalesce = false) {
         std::lock_guard<std::mutex> lock(streams_mutex_);
         for (auto& queue : streams_) {
             std::lock_guard<std::mutex> q_lock(queue->mutex);
+            if (coalesce && !queue->updates.empty() && queue->updates.back().type() == update.type())
+                continue;
             queue->updates.push(update);
             queue->cv.notify_one();
         }
     }
+
+public:
 
     grpc::Status GetDuplicateGroups(grpc::ServerContext* context, const vurio::dedup::GetGroupsRequest* request,
                                     vurio::dedup::GetGroupsResponse* reply) override {
@@ -218,6 +249,32 @@ public:
             MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
     }
 
+    // Resolve the request's semantic search filter (if any) into scanned_files
+    // ids. Returns false (with `status` set) when the filter cannot be
+    // evaluated; `match_ids` stays null when no filter is active.
+    bool resolveSearchFilter(const std::string& query,
+                             std::vector<int>& ids_storage,
+                             const std::vector<int>*& match_ids,
+                             grpc::Status& status) {
+        match_ids = nullptr;
+        if (query.empty()) return true;
+        if (!search_engine_) {
+            status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "Text search unavailable");
+            return false;
+        }
+        auto search = search_engine_->search(query);
+        if (!search.ok) {
+            status = grpc::Status(grpc::StatusCode::UNAVAILABLE,
+                                  "Text search failed: " + search.error);
+            return false;
+        }
+        ids_storage.clear();
+        ids_storage.reserve(search.matches.size());
+        for (const auto& m : search.matches) ids_storage.push_back(m.file_id);
+        match_ids = &ids_storage;
+        return true;
+    }
+
     grpc::Status GetDayGroups(grpc::ServerContext* context, const vurio::dedup::GetDayGroupsRequest* request,
                               vurio::dedup::GetDayGroupsResponse* reply) override {
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
@@ -226,7 +283,13 @@ public:
         int offset = request->offset() >= 0 ? request->offset() : 0;
         int files_per_day = request->files_per_day() > 0 ? request->files_per_day() : 0;
 
-        auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day);
+        std::vector<int> search_ids;
+        const std::vector<int>* match_ids = nullptr;
+        grpc::Status search_status = grpc::Status::OK;
+        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status))
+            return search_status;
+
+        auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day, match_ids);
         if (!page.ok) {
             // Transient failure (e.g. DB session pool exhausted under load).
             // Returning OK with total_days=0 would make the client treat the
@@ -263,7 +326,13 @@ public:
         int limit = request->limit() > 0 ? request->limit() : 60;
         int offset = request->offset() >= 0 ? request->offset() : 0;
 
-        auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit);
+        std::vector<int> search_ids;
+        const std::vector<int>* match_ids = nullptr;
+        grpc::Status search_status = grpc::Status::OK;
+        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status))
+            return search_status;
+
+        auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit, match_ids);
         if (!page.ok) {
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Day view temporarily busy");
         }
@@ -346,6 +415,24 @@ public:
         reply->set_failure_count(r.failureCount);
         reply->set_skipped_unavailable(r.skippedUnavailable);
         reply->set_error_message(r.lastError);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetGroupIndex(grpc::ServerContext* context, const vurio::dedup::GetGroupIndexRequest* request,
+                               vurio::dedup::GetGroupIndexResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+
+        int group_id = 0;
+        try {
+            group_id = std::stoi(request->group_id());
+        } catch (const std::exception&) {
+            reply->set_found(false);
+            return grpc::Status::OK;
+        }
+
+        int rank = MediaDedup::DuplicateGroupsOps::getGroupRank(*db_, group_id);
+        reply->set_found(rank >= 0);
+        reply->set_index(rank >= 0 ? rank : 0);
         return grpc::Status::OK;
     }
 

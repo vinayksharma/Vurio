@@ -143,6 +143,18 @@ service DuplicatesService {
   rpc GetEligibleDuplicatePaths(GetEligibleDuplicatePathsRequest) returns (DuplicatePathsResponse);
   rpc GetEjectedDuplicatePaths(Empty) returns (DuplicatePathsResponse);
   rpc SubscribeToDuplicateUpdates(Empty) returns (stream DuplicateGroupUpdate);
+  // Current row index of one group in the BINNED display order. The client
+  // uses it to re-anchor its scroll position after a re-cluster moves rows.
+  rpc GetGroupIndex(GetGroupIndexRequest) returns (GetGroupIndexResponse);
+}
+
+message GetGroupIndexRequest {
+  string group_id = 1;
+}
+
+message GetGroupIndexResponse {
+  bool found = 1;  // false when the group no longer exists
+  int32 index = 2; // 0-based row index in GetDuplicateGroups order
 }
 
 message GetEligibleDuplicatePathsRequest {
@@ -189,6 +201,10 @@ message GetDayGroupsRequest {
   int32 limit = 1;         // days per page
   int32 offset = 2;        // day offset (0 = newest day)
   int32 files_per_day = 3; // max files returned per day (0 = all files)
+  // Semantic text filter (CLIP text->image search). Empty = no filter.
+  // When set, days/files are restricted to the ranked matches; each matched
+  // file appears on its own capture day (group anchoring is bypassed).
+  string search_query = 4;
 }
 
 message DayFile {
@@ -220,6 +236,8 @@ message GetDayFilesRequest {
   string day = 1;   // "YYYY-MM-DD"
   int32 offset = 2; // file offset within the day (taken_time order)
   int32 limit = 3;
+  // Must match the search_query the day list was fetched with (or empty).
+  string search_query = 4;
 }
 
 message GetDayFilesResponse {
@@ -257,6 +275,12 @@ message DuplicateGroupUpdate {
     ADDED = 0;
     UPDATED = 1;
     DELETED = 2;
+    // The finder re-clustered: groups may have been added, dropped, merged or
+    // re-ordered (a new representative changes a group's capture date, which
+    // is what the list sorts on). No per-row delta is meaningful, so the
+    // client re-fetches its loaded pages and re-anchors its scroll position.
+    // `index` and `group` are unset.
+    RELOAD = 3;
   }
   UpdateType type = 1;
   int32 index = 2;

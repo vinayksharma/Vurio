@@ -136,6 +136,11 @@ namespace MediaDedup
         
         static int getDuplicateGroupsCountOlderThan(DatabaseManager &db, const std::string &mode, const std::string &date);
 
+        /// 0-based row index of `group_id` in the paginated display order
+        /// (newest representative capture date first, id descending within a
+        /// date). Returns -1 when the group no longer exists.
+        static int getGroupRank(DatabaseManager &db, int group_id);
+
         static int countMembersByGroup(DatabaseManager &db, int group_id);
 
         static DuplicateStats getStats(DatabaseManager &db, const std::string &mode);
