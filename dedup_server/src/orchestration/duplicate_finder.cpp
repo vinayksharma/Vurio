@@ -154,7 +154,6 @@ namespace MediaDedup
             // Load configuration
             enabled_ = cfg_->getPropertyValue<bool>("duplicates.finder.enabled", true);
             batch_size_ = cfg_->getPropertyValue<int>("duplicates.finder.batchSize", 1000);
-            max_group_size_ = cfg_->getPropertyValue<int>("duplicates.finder.maxGroupSize", 100);
 
             // Configure ThreadPoolManager share
             if (tpm_) {
@@ -299,8 +298,6 @@ namespace MediaDedup
 
                 arena_.clear();
                 RunState run_state;
-                // Files whose group could have moved this run (see processBatch).
-                std::unordered_set<int> touched;
 
                 // Phase 1 — DISCOVERY: record pair scores >= edge_floor_ as
                 // persistent edges (KNN-driven; batches advance the id
@@ -309,7 +306,7 @@ namespace MediaDedup
                 int batch_count = 0;
                 while (!abort_.load())
                 {
-                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state, touched);
+                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state);
                     if (processed == 0)
                         break;
                     total_processed += processed;
@@ -334,13 +331,11 @@ namespace MediaDedup
                 // the threshold change was honoured only by accident on a
                 // later run and this run could not tell it needed a full pass.
                 const bool regroup = regroup_requested_.exchange(false);
-                if (!abort_.load() && (total_processed > 0 || regroup))
+                // The sweep is a full deterministic rebuild, so an edge purge
+                // needs no special handling beyond making sure we re-run.
+                if (!abort_.load() && (total_processed > 0 || regroup || purged))
                 {
-                    // A threshold change or an edge purge can REMOVE edges and
-                    // therefore split a component; only edge additions can be
-                    // reasoned about incrementally.
-                    const bool full_pass = regroup || purged;
-                    rebuildGroupsFromEdges(mode_str, full_pass ? nullptr : &touched);
+                    rebuildGroupsFromEdges(mode_str);
                 }
 
                 auto stats = getStats();
@@ -387,7 +382,7 @@ namespace MediaDedup
         }
 
         int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id,
-                                          RunState &run_state, std::unordered_set<int> &touched)
+                                          RunState &run_state)
         {
             Poco::Logger &logger = finderLogger();
 
@@ -529,16 +524,6 @@ namespace MediaDedup
                     return 0;
                 }
 
-                // Every file in this batch had its artifacts re-read (and may
-                // have had metadata rewritten), so its group must be revisited
-                // even if it produced no edge.
-                touched.insert(file_ids.begin(), file_ids.end());
-                for (const auto &e : edges)
-                {
-                    touched.insert(e.a);
-                    touched.insert(e.b);
-                }
-
                 // Persist this batch's edges in ONE transaction.
                 if (!edges.empty())
                 {
@@ -585,14 +570,14 @@ namespace MediaDedup
             // Shared row -> FileArtifact mapping for the loaders: parses the
             // file_metadata JSON (size and created date, with the exif
             // datetime preferred) and the embedding CLOB.
-            void fillArtifactFromRow(DuplicateFinder::FileArtifact &artifact,
-                                     int id, const std::string &path,
-                                     const std::string &metadata, const std::string &exif_dt,
-                                     const Poco::Data::CLOB &embedding_blob,
-                                     const std::string &embedding_model, int embedding_dim)
+            /// Shared metadata decode for both loaders: size and created date
+            /// out of the file_metadata JSON, EXIF datetime preferred.
+            void fillPurityFromRow(DuplicateFinder::RepresentativeInfo &info,
+                                   int id, const std::string &path,
+                                   const std::string &metadata, const std::string &exif_dt)
             {
-                artifact.file_id = id;
-                artifact.file_path = path;
+                info.file_id = id;
+                info.file_path = path;
 
                 try
                 {
@@ -600,11 +585,11 @@ namespace MediaDedup
                     Poco::Dynamic::Var result = parser.parse(metadata);
                     Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
 
-                    artifact.file_size = obj->has("sizeBytes") ? obj->getValue<int64_t>("sizeBytes") : 0;
+                    info.file_size = obj->has("sizeBytes") ? obj->getValue<int64_t>("sizeBytes") : 0;
 
                     if (!exif_dt.empty())
                     {
-                        artifact.has_exif_date = true;
+                        info.has_exif_date = true;
                         // exif dates can sometimes be separated by colons in the date part (e.g. 2024:01:01 12:00:00)
                         std::string cleaned_dt = exif_dt;
                         if (cleaned_dt.size() >= 10 && cleaned_dt[4] == ':' && cleaned_dt[7] == ':')
@@ -612,7 +597,7 @@ namespace MediaDedup
                             cleaned_dt[4] = '-';
                             cleaned_dt[7] = '-';
                         }
-                        artifact.created_date = cleaned_dt;
+                        info.created_date = cleaned_dt;
                     }
                     else if (obj->has("createdAt"))
                     {
@@ -622,19 +607,34 @@ namespace MediaDedup
                         std::tm *tm = std::gmtime(&created_time);
                         std::stringstream ss;
                         ss << std::put_time(tm, "%Y-%m-%d %H:%M:%S"); // store full time
-                        artifact.created_date = ss.str();
+                        info.created_date = ss.str();
                     }
                     else
                     {
-                        artifact.created_date = "";
+                        info.created_date = "";
                     }
                 }
                 catch (const std::exception &e)
                 {
                     finderLogger().warning("Failed to parse file_metadata JSON for file_id %d: %s", id, std::string(e.what()));
-                    artifact.file_size = 0;
-                    artifact.created_date = "";
+                    info.file_size = 0;
+                    info.created_date = "";
                 }
+            }
+
+            void fillArtifactFromRow(DuplicateFinder::FileArtifact &artifact,
+                                     int id, const std::string &path,
+                                     const std::string &metadata, const std::string &exif_dt,
+                                     const Poco::Data::CLOB &embedding_blob,
+                                     const std::string &embedding_model, int embedding_dim)
+            {
+                DuplicateFinder::RepresentativeInfo info;
+                fillPurityFromRow(info, id, path, metadata, exif_dt);
+                artifact.file_id = info.file_id;
+                artifact.file_path = std::move(info.file_path);
+                artifact.file_size = info.file_size;
+                artifact.created_date = std::move(info.created_date);
+                artifact.has_exif_date = info.has_exif_date;
 
                 // CRITICAL FIX: rawContent() + size(), never std::string
                 // conversion (which truncates at the first NULL byte).
@@ -768,6 +768,60 @@ namespace MediaDedup
             return artifacts;
         }
 
+        std::vector<DuplicateFinder::RepresentativeInfo>
+        DuplicateFinder::loadPurityRecordsBatch(Session &sess, const std::vector<int> &file_ids)
+        {
+            std::vector<RepresentativeInfo> records;
+            records.reserve(file_ids.size());
+
+            constexpr std::size_t kChunk = 500;
+            for (std::size_t start = 0; start < file_ids.size(); start += kChunk)
+            {
+                const std::size_t end = std::min(start + kChunk, file_ids.size());
+
+                // Integer id list composed into the SQL — see
+                // loadFileArtifactsBatch for why this is safe and why it beats
+                // a positional bind list.
+                std::ostringstream in_list;
+                for (std::size_t i = start; i < end; ++i)
+                {
+                    if (i != start)
+                        in_list << ',';
+                    in_list << file_ids[i];
+                }
+
+                try
+                {
+                    // No join to image_artifacts and no embedding column: every
+                    // id here came out of duplicate_edges, so it necessarily
+                    // had an embedding when the edge was recorded.
+                    std::string query =
+                        "SELECT sf.id, sf.file_path, COALESCE(sf.file_metadata, ''), COALESCE(sf.exif_datetime, '') "
+                        "FROM scanned_files sf WHERE sf.id IN (" + in_list.str() + ")";
+
+                    std::vector<int> ids;
+                    std::vector<std::string> paths, metadatas, exif_dts;
+
+                    Statement stmt(sess);
+                    stmt << query, into(ids), into(paths), into(metadatas), into(exif_dts), now;
+
+                    for (std::size_t i = 0; i < ids.size(); ++i)
+                    {
+                        RepresentativeInfo info;
+                        fillPurityFromRow(info, ids[i], paths[i], metadatas[i], exif_dts[i]);
+                        records.push_back(std::move(info));
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    finderLogger().error("Exception in loadPurityRecordsBatch (chunk %zu-%zu): %s",
+                                         start, end, std::string(e.what()));
+                }
+            }
+
+            return records;
+        }
+
         double DuplicateFinder::computeSimilarity(const FileArtifact &file1,
                                                   const FileArtifact &file2,
                                                   const std::string & /* mode */)
@@ -785,39 +839,6 @@ namespace MediaDedup
             // zero-norm/mixed-dim embeddings): legacy blob-based cosine.
             return SimilarityCalculator::computeEmbeddingSimilarity(
                 file1.embedding, file2.embedding, file1.embedding_dim);
-        }
-
-        DuplicateFinder::RepresentativeInfo DuplicateFinder::selectRepresentative(
-            const std::vector<const FileArtifact *> &members)
-        {
-            if (members.empty())
-            {
-                return RepresentativeInfo();
-            }
-
-            auto toInfo = [](const FileArtifact &a)
-            {
-                RepresentativeInfo info;
-                info.file_id = a.file_id;
-                info.file_path = a.file_path;
-                info.file_size = a.file_size;
-                info.created_date = a.created_date;
-                info.has_exif_date = a.has_exif_date;
-                return info;
-            };
-
-            RepresentativeInfo best = toInfo(*members[0]);
-
-            for (size_t i = 1; i < members.size(); ++i)
-            {
-                RepresentativeInfo candidate = toInfo(*members[i]);
-                if (isBetterRepresentative(candidate, best))
-                {
-                    best = std::move(candidate);
-                }
-            }
-
-            return best;
         }
 
         bool DuplicateFinder::isBetterRepresentative(const RepresentativeInfo &a, const RepresentativeInfo &b)
@@ -952,8 +973,7 @@ namespace MediaDedup
             constexpr double kScoreEpsilon = 1e-9;
         }
 
-        void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode,
-                                                     const std::unordered_set<int> *touched)
+        void DuplicateFinder::rebuildGroupsFromEdges(const std::string &mode)
         {
             Poco::Logger &logger = finderLogger();
             const auto t0 = std::chrono::steady_clock::now();
@@ -963,7 +983,7 @@ namespace MediaDedup
             // the whole edge list, so when it runs long we need to know which
             // phase owns the time rather than guess.
             auto phase_mark = t0;
-            long edges_ms = 0, unionfind_ms = 0, artifacts_ms = 0, existing_ms = 0, diff_ms = 0;
+            long edges_ms = 0, purity_ms = 0, sweep_ms = 0, existing_ms = 0, diff_ms = 0;
             auto lap = [&phase_mark](long &slot) {
                 const auto nowt = std::chrono::steady_clock::now();
                 slot = static_cast<long>(
@@ -991,58 +1011,117 @@ namespace MediaDedup
                 }
                 lap(edges_ms);
 
-                // 2. Union-find (path halving + union by size): deterministic,
-                // order-independent — the property the old greedy grouping
-                // lacked.
-                std::unordered_map<int, int> parent;
-                std::unordered_map<int, int> csize;
-                auto find_root = [&](int x)
-                {
-                    while (parent[x] != x)
-                    {
-                        parent[x] = parent[parent[x]];
-                        x = parent[x];
-                    }
-                    return x;
-                };
-                auto ensure_node = [&](int x)
-                {
-                    if (parent.find(x) == parent.end())
-                    {
-                        parent[x] = x;
-                        csize[x] = 1;
-                    }
-                };
+                // 2. Adjacency over the qualifying edges, plus the candidate
+                // node set. A file with no qualifying edge cannot be in a group
+                // of two, so the edge endpoints ARE the candidates.
+                std::unordered_map<int, std::vector<std::pair<int, double>>> adjacency;
                 for (const auto &e : edges)
                 {
-                    ensure_node(e.a);
-                    ensure_node(e.b);
-                    int ra = find_root(e.a), rb = find_root(e.b);
-                    if (ra != rb)
+                    adjacency[e.a].emplace_back(e.b, e.score);
+                    adjacency[e.b].emplace_back(e.a, e.score);
+                }
+
+                std::vector<int> candidates;
+                candidates.reserve(adjacency.size());
+                for (const auto &kv : adjacency)
+                    candidates.push_back(kv.first);
+
+                // Purity metadata for every candidate — no embeddings.
+                std::unordered_map<int, RepresentativeInfo> purity;
+                {
+                    auto lease = db_.acquireSessionLease();
+                    for (RepresentativeInfo &r : loadPurityRecordsBatch(lease.get(), candidates))
                     {
-                        if (csize[ra] < csize[rb])
-                            std::swap(ra, rb);
-                        parent[rb] = ra;
-                        csize[ra] += csize[rb];
+                        const int id = r.file_id;
+                        purity.emplace(id, std::move(r));
+                    }
+                }
+                // A candidate with no scanned_files row cannot be ranked or
+                // written; drop it rather than group it blind.
+                candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                                [&purity](int id) { return purity.find(id) == purity.end(); }),
+                                 candidates.end());
+
+                lap(purity_ms);
+
+                // 3. Representative-anchored sweep in purity order.
+                //
+                // Union-find grouped by CONNECTIVITY, so A~B~C put A and C in
+                // one group however unlike each other they were. On a real
+                // library that transitive closure collapsed 77,124 files —
+                // 60% of everything grouped — into a single "duplicate group".
+                //
+                // Instead: walk candidates best-first by the configured purity
+                // order, and let each file either join the representative it
+                // most resembles or become one itself. Every member is then
+                // within threshold OF THE REPRESENTATIVE, which is the property
+                // the UI and the eject/cull filter both assume. Because the
+                // walk order is purity (a total order), not arrival, the result
+                // is a pure function of the files and the threshold — the same
+                // library always yields the same groups, and the purest file in
+                // a group is always its representative. Representative swaps,
+                // eviction on swap, and split/redistribute passes all fall out
+                // of re-running this; none of them need their own machinery.
+                const auto purity_order = purity_order_;
+                std::sort(candidates.begin(), candidates.end(),
+                          [&purity, &purity_order](int lhs, int rhs)
+                          {
+                              return isBetterRepresentativeStatic(purity.at(lhs), purity.at(rhs), purity_order);
+                          });
+
+                // rep file_id -> members (rep first), and each member's score
+                // against its representative.
+                std::unordered_map<int, std::vector<int>> groups_by_rep;
+                std::unordered_map<int, int> rep_of;      // member -> rep file_id
+                std::unordered_map<int, double> rep_score; // member -> similarity to its rep
+
+                for (int id : candidates)
+                {
+                    // Best-match wins: among the representatives this file is
+                    // within threshold of, join the one it most resembles.
+                    int best_rep = -1;
+                    double best = 0.0;
+                    for (const auto &nb : adjacency[id])
+                    {
+                        if (nb.second < threshold)
+                            continue;
+                        auto rit = rep_of.find(nb.first);
+                        if (rit == rep_of.end() || rit->second != nb.first)
+                            continue; // neighbour is not itself a representative
+                        // Ties broken by the purer representative, so the
+                        // outcome never depends on adjacency iteration order.
+                        if (best_rep == -1 || nb.second > best ||
+                            (nb.second == best &&
+                             isBetterRepresentativeStatic(purity.at(nb.first), purity.at(best_rep), purity_order)))
+                        {
+                            best_rep = nb.first;
+                            best = nb.second;
+                        }
+                    }
+
+                    if (best_rep == -1)
+                    {
+                        // Seeds its own group. Purity order guarantees no file
+                        // seen later can be a purer representative for it.
+                        rep_of[id] = id;
+                        rep_score[id] = 1.0;
+                        groups_by_rep[id].push_back(id);
+                    }
+                    else
+                    {
+                        rep_of[id] = best_rep;
+                        rep_score[id] = best;
+                        groups_by_rep[best_rep].push_back(id);
                     }
                 }
 
+                // Only groups with a second member are duplicate groups.
                 std::unordered_map<int, std::vector<int>> components;
-                for (const auto &kv : parent)
-                    components[find_root(kv.first)].push_back(kv.first);
+                for (auto &kv : groups_by_rep)
+                    if (kv.second.size() >= 2)
+                        components.emplace(kv.first, std::move(kv.second));
 
-                // Per-member best incident score (>= threshold) — stored as
-                // the member's similarity_score.
-                std::unordered_map<int, double> best_score;
-                for (const auto &e : edges)
-                {
-                    auto &sa = best_score[e.a];
-                    sa = std::max(sa, e.score);
-                    auto &sb = best_score[e.b];
-                    sb = std::max(sb, e.score);
-                }
-
-                lap(unionfind_ms);
+                lap(sweep_ms);
 
                 // 3. Existing state, read outside the write transaction. Two
                 // jobs: group-id stability (a component reuses the id of the
@@ -1104,108 +1183,13 @@ namespace MediaDedup
                 // 4. Prove which components are already stored exactly as they
                 // would be rebuilt, and do no further work for them.
                 //
-                // `touched` is the set of files this run either re-processed or
-                // attached a new edge to. Edges are only ever ADDED between full
-                // passes, so a component none of whose members were touched has
-                // the same membership, the same per-member best score, and the
-                // same artifacts as when it was written — meaning the same
-                // representative and the same rows. Skipping it here (rather
-                // than building its rows and diffing them) is what keeps the
-                // artifact load and the row-building pass proportional to what
-                // changed instead of to the whole library.
-                //
-                // A null `touched` forces the full pass: a threshold change or
-                // an edge purge can SPLIT a component, which no additive
-                // argument covers.
-                std::unordered_map<int, int> member_to_gid;
-                if (touched)
-                    for (const auto &kv : existing_members)
-                        for (const ExistingMember &m : kv.second)
-                            member_to_gid[m.file_id] = kv.first;
-
+                // The sweep is a full deterministic rebuild every run, so there
+                // is no incremental path to guard any more: what used to be an
+                // additive-edges argument for skipping untouched components is
+                // now just "recompute, then write only what differs".
                 int groups_total = 0, groups_new = 0, members_total = 0;
-                int groups_skipped = 0;
                 std::set<int> used_gids;
-                std::vector<const std::vector<int> *> changed_components;
 
-                for (auto &kv : components)
-                {
-                    const std::vector<int> &member_ids = kv.second;
-                    if (member_ids.size() < 2)
-                        continue;
-
-                    if (touched)
-                    {
-                        // Every member must belong to the same existing group,
-                        // none of them touched this run.
-                        int gid_candidate = -1;
-                        bool provable = true;
-                        for (int id : member_ids)
-                        {
-                            if (touched->count(id))
-                            {
-                                provable = false;
-                                break;
-                            }
-                            auto it = member_to_gid.find(id);
-                            if (it == member_to_gid.end())
-                            {
-                                provable = false;
-                                break;
-                            }
-                            if (gid_candidate == -1)
-                                gid_candidate = it->second;
-                            else if (gid_candidate != it->second)
-                            {
-                                provable = false; // component spans two groups: they merged
-                                break;
-                            }
-                        }
-
-                        if (provable && gid_candidate > 0 && used_gids.count(gid_candidate) == 0)
-                        {
-                            auto git = existing_groups.find(gid_candidate);
-                            auto mit = existing_members.find(gid_candidate);
-                            // Size equality turns "every member is in group G"
-                            // into "this component IS group G" — without it a
-                            // component that lost members would look unchanged.
-                            if (git != existing_groups.end() && mit != existing_members.end() &&
-                                mit->second.size() == member_ids.size() &&
-                                std::abs(git->second.threshold - threshold) <= kScoreEpsilon)
-                            {
-                                used_gids.insert(gid_candidate);
-                                groups_total++;
-                                members_total += static_cast<int>(mit->second.size());
-                                groups_skipped++;
-                                continue;
-                            }
-                        }
-                    }
-
-                    changed_components.push_back(&member_ids);
-                }
-                last_recluster_groups_skipped_.store(groups_skipped);
-
-                // 5. Metadata, for the changed components only. Each artifact
-                // carries a 2 KB embedding blob, so loading the whole library
-                // here was the second-largest cost in the pass.
-                std::vector<int> all_ids;
-                for (const std::vector<int> *c : changed_components)
-                    all_ids.insert(all_ids.end(), c->begin(), c->end());
-                std::unordered_map<int, FileArtifact> artifacts;
-                if (!all_ids.empty())
-                {
-                    auto lease = db_.acquireSessionLease();
-                    for (FileArtifact &a : loadFileArtifactsBatch(lease.get(), all_ids))
-                        artifacts.emplace(a.file_id, std::move(a));
-                }
-
-                lap(artifacts_ms);
-
-                // 6. Resolve the changed components to their desired rows and
-                // diff those against what is committed. Pure CPU — nothing
-                // below touches the database — so the write lock is taken only
-                // for groups that genuinely differ.
                 struct PendingGroup
                 {
                     int gid; // > 0 reuses an existing group; -1 needs an insert
@@ -1217,32 +1201,18 @@ namespace MediaDedup
                     bool group_row_changed;
                     bool members_changed;
                 };
-
-                // Sized for the changed subset, not every component.
                 std::vector<PendingGroup> pending;
 
-                for (const std::vector<int> *component : changed_components)
+                for (const auto &kv : components)
                 {
-                    const std::vector<int> &member_ids = *component;
-
-                    // Pointers into `artifacts`, which outlives this loop. The
-                    // old form copied the artifact — embedding blob and all —
-                    // once per member of every changed component.
-                    std::vector<const FileArtifact *> members;
-                    members.reserve(member_ids.size());
-                    for (int id : member_ids)
-                    {
-                        auto ait = artifacts.find(id);
-                        if (ait != artifacts.end())
-                            members.push_back(&ait->second);
-                    }
-                    if (members.size() < 2)
-                        continue;
-
-                    RepresentativeInfo rep = selectRepresentative(members);
+                    // The sweep already chose the representative: it is the
+                    // component's key, the purest file in the group.
+                    const int rep_id = kv.first;
+                    const std::vector<int> &member_ids = kv.second;
+                    const RepresentativeInfo &rep = purity.at(rep_id);
 
                     int gid = -1;
-                    auto rit = rep_to_gid.find(rep.file_id);
+                    auto rit = rep_to_gid.find(rep_id);
                     if (rit != rep_to_gid.end() && used_gids.count(rit->second) == 0)
                         gid = rit->second;
                     else
@@ -1260,19 +1230,25 @@ namespace MediaDedup
 
                     PendingGroup pg;
                     pg.gid = gid;
-                    pg.rep_id = rep.file_id;
+                    pg.rep_id = rep_id;
                     pg.rep_path = rep.file_path;
                     pg.rep_size = rep.file_size;
                     pg.rep_date = rep.created_date;
 
-                    pg.members.reserve(members.size());
-                    for (const FileArtifact *memb : members)
+                    pg.members.reserve(member_ids.size());
+                    for (int id : member_ids)
                     {
-                        const int is_rep = (memb->file_id == rep.file_id) ? 1 : 0;
-                        auto sit = best_score.find(memb->file_id);
-                        const double score = is_rep ? 1.0 : (sit != best_score.end() ? sit->second : threshold);
-                        pg.members.push_back(ExistingMember{memb->file_id, memb->file_path, score, memb->file_size,
-                                                            memb->created_date, is_rep});
+                        const RepresentativeInfo &m = purity.at(id);
+                        const int is_rep = (id == rep_id) ? 1 : 0;
+                        // Similarity AGAINST THE REPRESENTATIVE. It used to be
+                        // the member's best score against any neighbour at all,
+                        // which under transitive grouping could be a file at the
+                        // far end of a chain — so the eject/cull filter, which
+                        // reads this column, could offer up images that are not
+                        // duplicates of the representative being kept.
+                        const double score = is_rep ? 1.0 : rep_score.at(id);
+                        pg.members.push_back(
+                            ExistingMember{id, m.file_path, score, m.file_size, m.created_date, is_rep});
                     }
                     std::sort(pg.members.begin(), pg.members.end(),
                               [](const ExistingMember &l, const ExistingMember &r)
@@ -1337,6 +1313,7 @@ namespace MediaDedup
                         stale_gids.push_back(kv.first);
 
                 const int groups_written = static_cast<int>(pending.size());
+                last_recluster_groups_unchanged_.store(groups_total - groups_written);
 
                 lap(diff_ms);
 
@@ -1429,11 +1406,11 @@ namespace MediaDedup
                     "Re-clustered from " + std::to_string(edges.size()) + " edge(s) in " + std::to_string(ms) +
                     " ms: " + std::to_string(groups_total) + " group(s) (" + std::to_string(groups_new) + " new), " +
                     std::to_string(members_total) + " member(s), threshold=" + std::to_string(threshold) +
-                    "; wrote " + std::to_string(groups_written) + " group(s), skipped " +
-                    std::to_string(groups_skipped) + (touched ? " unchanged" : " (full pass)") + ", dropped " +
+                    "; wrote " + std::to_string(groups_written) + " group(s), unchanged " +
+                    std::to_string(groups_total - groups_written) + ", dropped " +
                     std::to_string(stale_gids.size()) + ", write lock held " + std::to_string(write_ms) +
-                    " ms [edges " + std::to_string(edges_ms) + " / unionfind " + std::to_string(unionfind_ms) +
-                    " / artifacts " + std::to_string(artifacts_ms) + " / existing " + std::to_string(existing_ms) +
+                    " ms [edges " + std::to_string(edges_ms) + " / purity " + std::to_string(purity_ms) +
+                    " / sweep " + std::to_string(sweep_ms) + " / existing " + std::to_string(existing_ms) +
                     " / diff " + std::to_string(diff_ms) + "]");
 
                 // Refresh last-run stats on the checkpoint.
