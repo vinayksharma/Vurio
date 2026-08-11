@@ -108,11 +108,9 @@ namespace MediaDedup
             };
             Stats getStats() const;
 
-            /// Components the last re-cluster proved unchanged and skipped
-            /// outright. Zero means it did the full pass over every group —
-            /// the distinction is invisible in the resulting rows, so this is
-            /// how tests assert the incremental path actually engaged.
-            int lastReclusterGroupsSkipped() const { return last_recluster_groups_skipped_.load(); }
+            /// Groups the last re-cluster recomputed and found identical to
+            /// what was already stored, so no rows were rewritten for them.
+            int lastReclusterGroupsUnchanged() const { return last_recluster_groups_unchanged_.load(); }
 
             /**
              * @brief Check if finder is currently running
@@ -200,6 +198,18 @@ namespace MediaDedup
                 bool has_exif_date = false;
             };
 
+            /**
+             * @brief Purity fields only, for every id, without the embeddings.
+             *
+             * Clustering ranks and groups files on metadata alone — it reads
+             * pair scores from duplicate_edges and never touches a vector. The
+             * full artifact loader drags a ~2 KB embedding blob per row along
+             * with it, which is the single most expensive thing the re-cluster
+             * used to do. Ids with no scanned_files row are skipped.
+             */
+            std::vector<RepresentativeInfo> loadPurityRecordsBatch(Poco::Data::Session &sess,
+                                                                   const std::vector<int> &file_ids);
+
         private:
 
             /**
@@ -259,12 +269,8 @@ namespace MediaDedup
              * @param run_state Fallback pool, loaded on first use
              * @return Number of files processed
              */
-            /// `touched` accumulates every file this batch re-processed plus
-            /// both endpoints of every edge it recorded — the inputs whose
-            /// group could have moved. rebuildGroupsFromEdges uses it to leave
-            /// untouched components alone.
             int processBatch(const std::string &mode, int batch_size, int &last_processed_id,
-                             RunState &run_state, std::unordered_set<int> &touched);
+                             RunState &run_state);
 
             /**
              * @brief DF-3: rebuild duplicate groups from the persisted edge list
@@ -275,12 +281,7 @@ namespace MediaDedup
              * previous group head) reuses that id. Runs in one transaction —
              * this is what makes the tightness slider sub-second and wipe-free.
              */
-            /// `touched` limits the work to components those files can have
-            /// moved; pass nullptr to rebuild every component from scratch,
-            /// which is required whenever edges may have been REMOVED (a purge
-            /// or a threshold change), since that can split a component.
-            void rebuildGroupsFromEdges(const std::string &mode,
-                                        const std::unordered_set<int> *touched = nullptr);
+            void rebuildGroupsFromEdges(const std::string &mode);
 
             /// DF-3: drop edges whose endpoints no longer exist in
             /// scanned_files. Returns true when anything was actually removed.
@@ -306,10 +307,6 @@ namespace MediaDedup
              * @param members All members of the group
              * @return Representative info
              */
-            /// Takes pointers, not values: each FileArtifact owns a ~2 KB
-            /// embedding blob, and the caller was copying one per member —
-            /// over 150 MB per pass on a library with a large component.
-            RepresentativeInfo selectRepresentative(const std::vector<const FileArtifact *> &members);
 
             /**
              * @brief Check if file A is better representative than file B
@@ -362,7 +359,7 @@ namespace MediaDedup
             // DF-3: set by onConfigChange on a threshold move; the next finder
             // run re-clusters from recorded edges even with no new files.
             std::atomic<bool> regroup_requested_{false};
-            std::atomic<int> last_recluster_groups_skipped_{0};
+            std::atomic<int> last_recluster_groups_unchanged_{0};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;
             GroupsRebuiltCallback groups_rebuilt_cb_;
@@ -371,7 +368,6 @@ namespace MediaDedup
             // Configuration cache
             bool enabled_ = true;
             int batch_size_ = 1000;
-            int max_group_size_ = 100;
             double embedding_threshold_similarity_ = 0.92;  // Minimum to consider for a group
             double embedding_threshold_duplicate_ = 0.97;  // True duplicate tier
             // DF-3: discovery floor for persisted edges — clamped at init to

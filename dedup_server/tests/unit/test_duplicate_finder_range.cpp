@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <set>
 #include <vector>
@@ -944,12 +945,14 @@ TEST_F(DuplicateFinderRangeTest, ReclusterOnlyWritesGroupsThatChanged)
     std::filesystem::remove(db_path);
 }
 
-// The incremental re-cluster leaves untouched components alone, which is only
-// sound if "touched" really covers everything a new edge can move. The hard
-// case is a MERGE: one new file bridges two existing groups, so members that
-// were never touched themselves still change group. A third, unrelated group
-// must survive the same run untouched.
-TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRest)
+// The 77k-hairball regression test. A file that bridges two groups must join
+// exactly ONE of them, not fuse them: under the old connected-components
+// grouping, A~bridge~B made A and B one group however unlike each other they
+// were, and repeated across a real library that collapsed 60% of every grouped
+// file into a single "duplicate group". Representative-anchored grouping bounds
+// each group to files that resemble its representative, so the bridge picks its
+// best match and the two groups stay separate.
+TEST_F(DuplicateFinderRangeTest, BridgeFileJoinsOneGroupInsteadOfMergingThem)
 {
     std::string db_path = (std::filesystem::temp_directory_path() / "df_incremental_merge.sqlite").string();
     std::filesystem::remove(db_path);
@@ -984,9 +987,10 @@ TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRes
         return stored ? stored->id : 0;
     };
 
-    // Directions A and B sit at cos = 0.5 — two distinct groups. Their bisector
-    // is cos 0.866 to both, i.e. over the 0.85 threshold, so introducing it
-    // merges them. Direction C is orthogonal to everything and must not move.
+    // Directions A and B sit at cos = 0.5 — well under threshold, so two
+    // distinct groups. Their bisector is cos 0.866 to both, i.e. over the 0.85
+    // threshold and thus a bridge between them. Direction C is orthogonal to
+    // everything and must not move.
     int id_a1 = addProcessedFile("/mrg/a1.jpg", {1.0f, 0.0f,   0.05f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f});
     int id_a2 = addProcessedFile("/mrg/a2.jpg", {1.0f, 0.0f,   0.0f,  0.05f, 0.0f, 0.0f, 0.0f, 0.0f});
     int id_b1 = addProcessedFile("/mrg/b1.jpg", {0.5f, 0.866f, 0.05f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f});
@@ -1026,15 +1030,16 @@ TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRes
     ASSERT_GT(id_bridge, 0);
     finder.findDuplicates();
 
-    // Without this the rest of the test passes even on a full pass, which
-    // produces identical rows — only slower.
-    EXPECT_GT(finder.lastReclusterGroupsSkipped(), 0)
-        << "incremental path never engaged; the assertions below prove nothing";
+    // The untouched group must be recomputed and found identical, not rewritten.
+    EXPECT_GT(finder.lastReclusterGroupsUnchanged(), 0)
+        << "no group was recognised as unchanged; the sentinel check below proves nothing";
 
     auto after = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
-    ASSERT_EQ(after.groups.size(), 2u) << "A and B must have merged into one group, leaving C";
+    ASSERT_EQ(after.groups.size(), 3u)
+        << "the bridge must not fuse A and B; all three groups must survive";
 
-    bool merged_found = false, c_found = false;
+    int bridge_groups = 0;
+    bool c_found = false;
     for (const auto &g : after.groups)
     {
         std::set<int> ids;
@@ -1043,20 +1048,22 @@ TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRes
 
         if (ids.count(id_bridge))
         {
-            merged_found = true;
-            // a2 and b2 were never touched themselves, but their group moved.
-            EXPECT_EQ(ids, (std::set<int>{id_a1, id_a2, id_b1, id_b2, id_bridge}))
-                << "merge must pull in members that were not touched directly";
+            bridge_groups++;
+            // Whichever side it picked, it took only that side with it.
+            const bool joined_a = (ids == std::set<int>{id_a1, id_a2, id_bridge});
+            const bool joined_b = (ids == std::set<int>{id_b1, id_b2, id_bridge});
+            EXPECT_TRUE(joined_a || joined_b)
+                << "bridge pulled in members of both groups";
         }
-        else
+        else if (ids.count(id_c1))
         {
             c_found = true;
-            EXPECT_EQ(g.group.id, c_group_id) << "untouched group changed identity";
+            EXPECT_EQ(g.group.id, c_group_id) << "unrelated group changed identity";
             EXPECT_EQ(ids, (std::set<int>{id_c1, id_c2}));
         }
     }
-    EXPECT_TRUE(merged_found) << "merged group missing";
-    EXPECT_TRUE(c_found) << "untouched group was deleted by the incremental pass";
+    EXPECT_EQ(bridge_groups, 1) << "single membership: the bridge belongs to exactly one group";
+    EXPECT_TRUE(c_found) << "unrelated group was deleted";
 
     std::string stamp_after;
     {
@@ -1066,8 +1073,110 @@ TEST_F(DuplicateFinderRangeTest, IncrementalReclusterMergesGroupsAndSparesTheRes
             Poco::Data::Keywords::into(stamp_after), Poco::Data::Keywords::use(c_group_id),
             Poco::Data::Keywords::now;
     }
-    EXPECT_EQ(stamp_after, kSentinel) << "untouched group was rewritten";
+    EXPECT_EQ(stamp_after, kSentinel) << "unrelated group was rewritten";
 
     db_manager_.reset();
     std::filesystem::remove(db_path);
+}
+
+// Grouping must be a pure function of (files, threshold). The sweep walks
+// candidates in purity order rather than arrival order precisely so that
+// re-importing the same library in a different sequence cannot produce
+// different groups — the property the old greedy first-match-wins grouping
+// lacked, and the reason it needed split/redistribute repair passes.
+TEST_F(DuplicateFinderRangeTest, GroupingIsIndependentOfInsertionOrder)
+{
+    // Two clusters, deliberately far apart, plus a loner that groups with
+    // nobody. Distinct file sizes give the purity order something to rank on.
+    struct Spec { std::string name; std::vector<float> vec; int64_t size; };
+    const std::vector<Spec> specs = {
+        {"a1", {1.0f, 0.0f, 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 5000},
+        {"a2", {1.0f, 0.0f, 0.0f, 0.03f, 0.0f, 0.0f, 0.0f, 0.0f}, 9000},
+        {"a3", {1.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 7000},
+        {"b1", {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.03f, 0.0f, 0.0f}, 4000},
+        {"b2", {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.03f, 0.0f}, 8000},
+        {"lone", {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f}, 6000},
+    };
+
+    // Returns "rep_name:member_names,..." per group, sorted — a canonical
+    // fingerprint of the grouping that ignores group ids and row order.
+    auto groupingFingerprint = [&](const std::vector<std::size_t> &order) {
+        std::string db_path = (std::filesystem::temp_directory_path() /
+                               ("df_order_" + std::to_string(order[0]) + std::to_string(order[1]) + ".sqlite"))
+                                  .string();
+        std::filesystem::remove(db_path);
+        db_manager_ = std::make_unique<DatabaseManager>(db_path);
+        EXPECT_TRUE(db_manager_->initialize());
+        EXPECT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+        EXPECT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+        EXPECT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+        config_->setPropertyValue("duplicates.threshold.similarity", 0.85);
+        config_->setPropertyValue("duplicates.threshold.duplicate", 0.95);
+
+        std::map<int, std::string> name_of;
+        for (std::size_t idx : order)
+        {
+            const Spec &sp = specs[idx];
+            const std::string path = "/ord/" + sp.name + ".jpg";
+            ScannedFileRow row;
+            row.file_path = path;
+            row.relative_path = path;
+            row.file_name = path;
+            row.location_key = "test_location";
+            row.file_metadata = "{\"sizeBytes\": " + std::to_string(sp.size) + "}";
+            row.processed = 2;
+            EXPECT_TRUE(ScannedFilesOps::upsert(*db_manager_, row));
+            auto stored = ScannedFilesOps::getByPath(*db_manager_, path);
+            if (stored) name_of[stored->id] = sp.name;
+
+            ImageEmbeddingRecord rec;
+            rec.file_path = path;
+            rec.model = "test-model";
+            rec.dim = static_cast<int>(sp.vec.size());
+            rec.embedding_blob.resize(sp.vec.size() * sizeof(float));
+            std::memcpy(rec.embedding_blob.data(), sp.vec.data(), rec.embedding_blob.size());
+            EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+        }
+
+        DuplicateFinder finder(config_, *db_manager_);
+        EXPECT_TRUE(finder.initialize());
+        finder.findDuplicates();
+
+        auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 50, "EMBEDDING");
+        std::vector<std::string> lines;
+        for (const auto &g : page.groups)
+        {
+            std::string rep;
+            std::vector<std::string> names;
+            for (const auto &m : g.members)
+            {
+                names.push_back(name_of[m.file_id]);
+                if (m.is_representative) rep = name_of[m.file_id];
+            }
+            std::sort(names.begin(), names.end());
+            std::string line = rep + ":";
+            for (const auto &n : names) line += n + ",";
+            lines.push_back(line);
+        }
+        std::sort(lines.begin(), lines.end());
+        std::string fingerprint;
+        for (const auto &l : lines) fingerprint += l + "|";
+
+        db_manager_.reset();
+        std::filesystem::remove(db_path);
+        return fingerprint;
+    };
+
+    const std::string forward  = groupingFingerprint({0, 1, 2, 3, 4, 5});
+    const std::string reversed = groupingFingerprint({5, 4, 3, 2, 1, 0});
+    const std::string shuffled = groupingFingerprint({3, 0, 5, 2, 4, 1});
+
+    EXPECT_FALSE(forward.empty()) << "no groups formed; the fixture proves nothing";
+    EXPECT_EQ(forward, reversed) << "insertion order changed the grouping";
+    EXPECT_EQ(forward, shuffled) << "insertion order changed the grouping";
+
+    // And the representative is the purest member: same size ranking applies,
+    // so within cluster A the largest file (a2, 9000) must lead.
+    EXPECT_NE(forward.find("a2:"), std::string::npos)
+        << "representative is not the purest member of its group: " << forward;
 }
