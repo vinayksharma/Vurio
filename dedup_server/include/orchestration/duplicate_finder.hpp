@@ -273,6 +273,41 @@ namespace MediaDedup
                              RunState &run_state);
 
             /**
+             * @brief DF-4: record edges for an explicit list of file ids.
+             *
+             * The shared body of both discovery paths — the watermark batch
+             * and the requeue drain. Records edges only; the checkpoint is the
+             * caller's business.
+             *
+             * @param watermark When non-null, the highest id handled is
+             *        published here and same-batch peers are compared from one
+             *        side only (the fallback path's pair de-duplication). Null
+             *        means "compare against everything", which is what a
+             *        requeued file needs — its whole neighbourhood may already
+             *        be behind the watermark.
+             * @return Files compared, or -1 if the run was aborted (in which
+             *         case nothing was persisted).
+             */
+            int discoverEdgesForIds(const std::string &mode, const std::vector<int> &file_ids,
+                                    RunState &run_state, std::atomic<int> *watermark);
+
+            /**
+             * @brief DF-4: re-discover files the id watermark cannot reach.
+             *
+             * Drains duplicate_discovery_requeue — files whose vector reached
+             * the index too late for their peers to see (or which had no
+             * embedding when discovery passed them). Only ids that actually
+             * have an embedding now are taken; the rest stay parked.
+             *
+             * @return Number of files re-discovered.
+             */
+            int processRequeue(const std::string &mode, int batch_size, RunState &run_state);
+
+            /// DF-4: park file ids for a later discovery pass. Best-effort:
+            /// a failure here is logged, never fatal to the run.
+            void requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason);
+
+            /**
              * @brief DF-3: rebuild duplicate groups from the persisted edge list
              *
              * Union-find over duplicate_edges at the current similarity
@@ -376,6 +411,15 @@ namespace MediaDedup
             // 0.80 = the loosest threshold the UI slider can request
             // (maxDistance 0.20), so no slider position ever forces a wipe.
             double edge_floor_ = 0.80;
+            // DF-4: how many times further from a representative than from
+            // its best match in the library a file may sit and still join it.
+            // Measured on DISTANCE (1 - score), not on the score itself: at
+            // the top of the range the difference between 0.9995 and 0.9955 is
+            // a factor of nine, while down at 0.93 vs 0.92 it is noise, and a
+            // fixed score margin cannot tell those apart. <= 0 disables the
+            // guard (plain "within threshold of the rep" membership, which
+            // lets one afternoon's shooting collapse into a single group).
+            double join_deficit_ratio_ = 2.0;
             std::vector<PurityCriterion> purity_order_ = {PurityCriterion::CAMERA_RAW, PurityCriterion::EXIF_CAPTURE_DATE, PurityCriterion::FILE_SIZE};
 
         };

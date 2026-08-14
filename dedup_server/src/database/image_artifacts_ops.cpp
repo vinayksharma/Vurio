@@ -97,10 +97,32 @@ namespace MediaDedup
 
             // Sync vector index when enabled (for KNN duplicate search) —
             // with the same normalized vector that was stored.
+            //
+            // DF-4: this used to fail silently. A vector missing from the
+            // index is invisible to every peer that runs KNN discovery before
+            // reconcile() backfills it at the next startup, and the finder's
+            // id watermark means those pairs are never looked for again — so a
+            // skipped insert here is permanently lost edges, not a slow path.
+            // Both failure modes are therefore logged AND requeued.
             VectorIndex *vix = db.getVectorIndex();
-            if (vix && !normalized_blob.empty() && file_id > 0)
+            if (vix && !normalized_blob.empty())
             {
-                vix->insert(file_id, normalized_blob.data(), normalized_blob.size());
+                if (file_id <= 0)
+                {
+                    // No scanned_files row for the path we just wrote an
+                    // embedding against (rename mid-flight, or the artifact
+                    // landing before the scan row).
+                    Poco::Logger::get("ImageArtifactsOps").warning(
+                        "Vector index insert skipped: no scanned_files row for '" + r.file_path +
+                        "'. Edge discovery for this file will be incomplete until it is rescanned.");
+                }
+                else if (!vix->insert(file_id, normalized_blob.data(), normalized_blob.size()))
+                {
+                    Poco::Logger::get("ImageArtifactsOps").error(
+                        "Vector index insert FAILED for file_id " + std::to_string(file_id) + " ('" +
+                        r.file_path + "'): requeuing for edge discovery.");
+                    vix->requeueForDiscovery({file_id}, "index_insert_failed");
+                }
             }
             return true;
         }
