@@ -37,6 +37,22 @@ namespace MediaDedup
 
         namespace
         {
+            // DF-4: bump this when a discovery-correctness fix means the
+            // recorded edge list is incomplete on existing installs. On
+            // startup, a database stamped with a lower epoch has every
+            // embedded file requeued for a fresh KNN pass (edges are
+            // INSERT OR REPLACE and the pass is symmetric, so this repairs
+            // missing pairs without wiping edges, groups, or the watermark).
+            //
+            // Epoch 1: discovery only ever looked from the new file's side,
+            // against whatever was in the vector index at that instant. Any
+            // vector indexed late — or never, until reconcile() backfilled it
+            // — was invisible to peers already past the watermark, so their
+            // pairs were never recorded. On a 2.5k-file library this left
+            // ~13.8k missing pairs, 297 of them above 0.99, including exact
+            // RAW/JPG twins that then landed in unrelated groups.
+            constexpr int kEdgeDiscoveryEpoch = 1;
+
             // QW-6: Poco::Logger::get takes a process-global mutex per call;
             // areMetadataCompatible &co. run once per candidate pair, so the
             // registry lookup is resolved once (logger references stay valid
@@ -184,6 +200,17 @@ namespace MediaDedup
                 edge_floor_ = embedding_threshold_similarity_;
             }
 
+            // DF-4: see join_deficit_ratio_. <= 0 turns the guard off; below 1
+            // it would reject a file from the very rep it matches best, which
+            // is never what anyone means.
+            join_deficit_ratio_ = cfg_->getPropertyValue<double>("duplicates.group.joinDeficitRatio", 2.0);
+            if (join_deficit_ratio_ > 0.0 && join_deficit_ratio_ < 1.0)
+            {
+                logger.warning("duplicates.group.joinDeficitRatio (%.2f) is below 1; using 1.0 (strictest useful value).",
+                               join_deficit_ratio_);
+                join_deficit_ratio_ = 1.0;
+            }
+
             std::string purity_str = cfg_->getPropertyValue<std::string>("duplicates.purity.order", "CAMERA_RAW, EXIF_CAPTURE_DATE, FILE_SIZE");
             purity_order_ = parsePurityOrder(purity_str);
 
@@ -205,6 +232,17 @@ namespace MediaDedup
                     create << "CREATE TABLE IF NOT EXISTS duplicate_edges_meta ("
                               "id INTEGER PRIMARY KEY CHECK (id = 1), floor REAL NOT NULL)",
                         now;
+                }
+                // DF-4: added after the table shipped, so it arrives by ALTER
+                // on existing installs. Failing means "already there".
+                try
+                {
+                    Statement alter(sess);
+                    alter << "ALTER TABLE duplicate_edges_meta ADD COLUMN discovery_epoch INTEGER NOT NULL DEFAULT 0",
+                        now;
+                }
+                catch (const std::exception &)
+                {
                 }
                 double stored_floor = -1.0;
                 {
@@ -237,12 +275,45 @@ namespace MediaDedup
                     del << "DELETE FROM duplicate_edges", now;
                     DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
                 }
+                else if (checkpoint.has_value() && checkpoint->last_processed_id > 0)
+                {
+                    // DF-4: edges recorded before this epoch are incomplete —
+                    // see kEdgeDiscoveryEpoch. Requeue every embedded file for
+                    // a fresh symmetric pass rather than wiping: the existing
+                    // edges are all still valid, the groups stay visible, and
+                    // the repair costs one KNN query per file.
+                    int stored_epoch = 0;
+                    {
+                        std::vector<int> rows;
+                        Statement q(sess);
+                        q << "SELECT COALESCE(discovery_epoch, 0) FROM duplicate_edges_meta WHERE id = 1",
+                            into(rows), now;
+                        if (!rows.empty())
+                            stored_epoch = rows[0];
+                    }
+                    if (stored_epoch < kEdgeDiscoveryEpoch)
+                    {
+                        Statement seed(sess);
+                        seed << "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) "
+                                "SELECT sf.id, 'edge_discovery_epoch_repair' FROM scanned_files sf "
+                                "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
+                                "WHERE sf.processed = 2",
+                            now;
+                        int seeded = 0;
+                        Statement cnt(sess);
+                        cnt << "SELECT changes()", into(seeded), now;
+                        logger.information("Edge discovery epoch %d -> %d: queued %d file(s) for a one-time re-discovery pass (existing edges and groups are kept).",
+                                           stored_epoch, kEdgeDiscoveryEpoch, seeded);
+                    }
+                }
                 {
                     double f = edge_floor_;
+                    int epoch = kEdgeDiscoveryEpoch;
                     Statement up(sess);
-                    up << "INSERT INTO duplicate_edges_meta(id, floor) VALUES(1, ?) "
-                          "ON CONFLICT(id) DO UPDATE SET floor = excluded.floor",
-                        use(f), now;
+                    up << "INSERT INTO duplicate_edges_meta(id, floor, discovery_epoch) VALUES(1, ?, ?) "
+                          "ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
+                          "discovery_epoch = excluded.discovery_epoch",
+                        use(f), use(epoch), now;
                 }
             }
             catch (const std::exception &e)
@@ -315,6 +386,25 @@ namespace MediaDedup
                                  batch_count, processed, total_processed);
                 }
 
+                // DF-4: files the watermark can no longer reach — vectors that
+                // reached the index after their peers were discovered, and
+                // files that had no embedding when discovery passed them.
+                // Drained after the watermark pass so a file that is both new
+                // and requeued is not compared twice in one run.
+                int total_requeued = 0;
+                while (!abort_.load())
+                {
+                    int redone = processRequeue(mode_str, batch_size_, run_state);
+                    if (redone == 0)
+                        break;
+                    total_requeued += redone;
+                }
+                if (total_requeued > 0)
+                {
+                    logger.information("Edge re-discovery: repaired %d file(s) from the requeue", total_requeued);
+                    total_processed += total_requeued;
+                }
+
                 if (abort_.load())
                     logger.information("Duplicate detection run aborted: processed %d files in %d batches",
                                        total_processed, batch_count);
@@ -368,6 +458,12 @@ namespace MediaDedup
                 int changes = 0;
                 Statement count(sess);
                 count << "SELECT changes()", into(changes), now;
+
+                // DF-4: a requeued file that no longer exists would otherwise
+                // sit in the queue forever (the drain's join hides it, so it
+                // costs nothing but noise).
+                Statement rq(sess);
+                rq << "DELETE FROM duplicate_discovery_requeue WHERE file_id NOT IN (SELECT id FROM scanned_files)", now;
                 if (changes > 0)
                     finderLogger().information("Purged %d orphan duplicate edge(s)", changes);
                 return changes > 0;
@@ -406,6 +502,35 @@ namespace MediaDedup
                 }
                 logger.information("Edge discovery: %d new file(s) after id %d",
                                    static_cast<int>(file_ids.size()), last_processed_id);
+
+                std::atomic<int> new_last_processed_id{last_processed_id};
+                const int files_checked = discoverEdgesForIds(mode, file_ids, run_state, &new_last_processed_id);
+                if (files_checked < 0)
+                    return 0; // aborted; checkpoint deliberately not advanced
+
+                last_processed_id = new_last_processed_id.load();
+                if (!DuplicateGroupsOps::upsertCheckpoint(db_, mode, last_processed_id,
+                                                          files_checked, 0, 0, 0))
+                    logger.warning("Failed to update checkpoint for mode %s", mode);
+
+                return static_cast<int>(file_ids.size());
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in processBatch: %s", std::string(e.what()));
+                return 0;
+            }
+        }
+
+        int DuplicateFinder::discoverEdgesForIds(const std::string &mode, const std::vector<int> &file_ids,
+                                                 RunState &run_state, std::atomic<int> *watermark)
+        {
+            Poco::Logger &logger = finderLogger();
+
+            try
+            {
+                if (file_ids.empty())
+                    return 0;
 
                 // Batch-preload the new files' artifacts (one set-based query).
                 std::unordered_map<int, FileArtifact> batch_artifacts;
@@ -449,13 +574,19 @@ namespace MediaDedup
                 struct Edge { int a; int b; double score; };
                 std::vector<Edge> edges;
                 std::mutex edges_mutex;
+                std::vector<int> no_embedding;
                 std::atomic<int> files_checked{0};
-                std::atomic<int> new_last_processed_id{last_processed_id};
+                // Peers already behind the watermark are compared from both
+                // sides in the fallback path; the requeue drain (watermark ==
+                // nullptr) wants every pair, so nothing is skipped there.
+                const int peer_dedup_watermark = watermark ? watermark->load() : -1;
 
                 auto record_progress = [&](int id)
                 {
-                    int cur = new_last_processed_id.load();
-                    while (id > cur && !new_last_processed_id.compare_exchange_weak(cur, id)) {}
+                    if (!watermark)
+                        return;
+                    int cur = watermark->load();
+                    while (id > cur && !watermark->compare_exchange_weak(cur, id)) {}
                 };
 
                 auto discover_one = [&](std::size_t idx)
@@ -464,7 +595,17 @@ namespace MediaDedup
                     auto it = batch_artifacts.find(current_file_id);
                     if (it == batch_artifacts.end())
                     {
-                        // No embedding row: nothing to discover for this file.
+                        // DF-4: no embedding row — nothing to compare YET. The
+                        // watermark still advances (it is a single id; holding
+                        // it back would stall discovery for the whole library
+                        // behind one file), so the id is parked in the requeue
+                        // instead. A file marked processed=2 before its
+                        // embedding was written used to be dropped here
+                        // permanently, with no log and no second look.
+                        {
+                            std::lock_guard<std::mutex> lk(edges_mutex);
+                            no_embedding.push_back(current_file_id);
+                        }
                         record_progress(current_file_id);
                         return;
                     }
@@ -499,7 +640,7 @@ namespace MediaDedup
                                 continue;
                             // Batch peers: record each pair once (from the
                             // higher-id side) — both sides are "new".
-                            if (other.file_id > last_processed_id && other.file_id > current_file_id)
+                            if (other.file_id > peer_dedup_watermark && other.file_id > current_file_id)
                                 continue;
                             double sim = computeSimilarity(new_file, other, mode);
                             if (sim >= edge_floor_)
@@ -521,7 +662,7 @@ namespace MediaDedup
                 if (abort_.load())
                 {
                     logger.warning("Batch aborted before completion. Checkpoint will not be updated this run.");
-                    return 0;
+                    return -1;
                 }
 
                 // Persist this batch's edges in ONE transaction.
@@ -551,16 +692,106 @@ namespace MediaDedup
                                        static_cast<int>(edges.size()), edge_floor_);
                 }
 
-                last_processed_id = new_last_processed_id.load();
-                if (!DuplicateGroupsOps::upsertCheckpoint(db_, mode, last_processed_id,
-                                                          files_checked.load(), 0, 0, 0))
-                    logger.warning("Failed to update checkpoint for mode %s", mode);
+                if (!no_embedding.empty())
+                {
+                    logger.warning("%d file(s) were processed but had no embedding row; requeued for edge discovery.",
+                                   static_cast<int>(no_embedding.size()));
+                    requeueForDiscovery(no_embedding, "no_embedding_at_discovery");
+                }
+
+                return files_checked.load();
+            }
+            catch (const std::exception &e)
+            {
+                logger.error("Exception in discoverEdgesForIds: %s", std::string(e.what()));
+                return -1;
+            }
+        }
+
+        void DuplicateFinder::requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason)
+        {
+            if (file_ids.empty())
+                return;
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                sess.begin();
+                for (int id : file_ids)
+                {
+                    int fid = id;
+                    std::string r = reason;
+                    Statement stmt(sess);
+                    stmt << "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) VALUES(?, ?)",
+                        use(fid), use(r), now;
+                }
+                sess.commit();
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().warning("Failed to requeue %d file(s) for discovery (%s): %s",
+                                       static_cast<int>(file_ids.size()), reason, std::string(e.what()));
+            }
+        }
+
+        int DuplicateFinder::processRequeue(const std::string &mode, int batch_size, RunState &run_state)
+        {
+            Poco::Logger &logger = finderLogger();
+
+            try
+            {
+                // Only ids that can actually be discovered now. A file parked
+                // here without an embedding (marked processed before its
+                // artifact was written) stays put rather than being burned as
+                // a failed attempt — the join is the whole retry policy.
+                std::vector<int> file_ids;
+                {
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    Statement stmt(sess);
+                    int limit = batch_size;
+                    stmt << "SELECT r.file_id FROM duplicate_discovery_requeue r "
+                            "JOIN scanned_files sf ON sf.id = r.file_id "
+                            "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
+                            "ORDER BY r.file_id ASC LIMIT ?",
+                        into(file_ids), use(limit), now;
+                }
+                if (file_ids.empty())
+                    return 0;
+
+                logger.information("Edge re-discovery: draining %d requeued file(s)",
+                                   static_cast<int>(file_ids.size()));
+
+                // No watermark: a requeued file's neighbourhood is mostly
+                // BEHIND the watermark, which is exactly why its edges went
+                // missing. Compare it against everything.
+                if (discoverEdgesForIds(mode, file_ids, run_state, nullptr) < 0)
+                    return 0; // aborted — rows stay queued for the next run
+
+                {
+                    auto lease = db_.acquireSessionLease();
+                    Session &sess = lease.get();
+                    sess.begin();
+                    for (int id : file_ids)
+                    {
+                        int fid = id;
+                        // The EXISTS guard keeps a row queued if the file lost
+                        // its embedding between the select and here — it was
+                        // not actually discovered, so it is still owed a pass.
+                        Statement stmt(sess);
+                        stmt << "DELETE FROM duplicate_discovery_requeue WHERE file_id = ? AND EXISTS ("
+                                "SELECT 1 FROM scanned_files sf JOIN image_artifacts ia ON ia.file_path = sf.file_path "
+                                "WHERE sf.id = ?)",
+                            use(fid), use(fid), now;
+                    }
+                    sess.commit();
+                }
 
                 return static_cast<int>(file_ids.size());
             }
             catch (const std::exception &e)
             {
-                logger.error("Exception in processBatch: %s", std::string(e.what()));
+                logger.error("Exception in processRequeue: %s", std::string(e.what()));
                 return 0;
             }
         }
@@ -1075,6 +1306,22 @@ namespace MediaDedup
                 std::unordered_map<int, int> rep_of;      // member -> rep file_id
                 std::unordered_map<int, double> rep_score; // member -> similarity to its rep
 
+                // DF-4: each file's best score against ANY candidate, used by
+                // the join guard below.
+                std::unordered_map<int, double> best_neighbour;
+                if (join_deficit_ratio_ > 0.0)
+                {
+                    best_neighbour.reserve(candidates.size());
+                    for (int id : candidates)
+                    {
+                        double best = 0.0;
+                        for (const auto &nb : adjacency[id])
+                            if (nb.second > best && purity.count(nb.first))
+                                best = nb.second;
+                        best_neighbour[id] = best;
+                    }
+                }
+
                 for (int id : candidates)
                 {
                     // Best-match wins: among the representatives this file is
@@ -1097,6 +1344,34 @@ namespace MediaDedup
                             best_rep = nb.first;
                             best = nb.second;
                         }
+                    }
+
+                    // DF-4: join guard. Clearing the threshold against a
+                    // representative is not enough — a file must not be filed
+                    // under a rep it resembles markedly LESS than something
+                    // else in the library. One group in the sample was a
+                    // single afternoon's shooting: seven distinct frames, each
+                    // a RAW/JPG twin matching at ~0.999, all pulled under one
+                    // representative by 0.89-0.94 scene similarity. Each twin
+                    // pair is its own duplicate; the scene resemblance is not.
+                    // Across the library that shape accounted for 41% of all
+                    // groups, so this is the rule, not a special case.
+                    //
+                    // The comparison is on DISTANCE ratio rather than a score
+                    // margin: a fixed margin is simultaneously too loose at
+                    // the top (0.9955 passes a 0.01 margin against a 0.9995
+                    // alternative that is nine times closer) and too tight at
+                    // the bottom (0.92 vs 0.93 is noise, not a decision).
+                    //
+                    // Seeding its own group is the right move rather than
+                    // dropping the file: the better match is either a file not
+                    // yet visited (purity order puts it later, and it will join
+                    // this new rep) or one already grouped elsewhere, in which
+                    // case this file genuinely heads its own pair.
+                    if (best_rep != -1 && join_deficit_ratio_ > 0.0 &&
+                        (1.0 - best) > join_deficit_ratio_ * (1.0 - best_neighbour[id]) + 1e-9)
+                    {
+                        best_rep = -1;
                     }
 
                     if (best_rep == -1)
@@ -1539,6 +1814,24 @@ namespace MediaDedup
 
                 finderLogger().information("Updated thresholds: similarity=%.3f, duplicate=%.3f",
                                            embedding_threshold_similarity_, embedding_threshold_duplicate_);
+            }
+            else if (event.key == "duplicates.group.joinDeficitRatio")
+            {
+                double k = cfg_->getPropertyValue<double>(event.key, 2.0);
+                if (k > 0.0 && k < 1.0)
+                {
+                    finderLogger().warning("duplicates.group.joinDeficitRatio (%.2f) is below 1; clamping to 1.0.", k);
+                    k = 1.0;
+                }
+                if (std::abs(k - join_deficit_ratio_) > 1e-9)
+                {
+                    join_deficit_ratio_ = k;
+                    // Membership depends on the guard: re-cluster from the
+                    // recorded edges (no re-comparison, no wipe).
+                    regroup_requested_.store(true);
+                    finderLogger().information("Updated duplicates.group.joinDeficitRatio: %.2f (re-cluster scheduled)",
+                                               join_deficit_ratio_);
+                }
             }
             else if (event.key == "duplicates.purity.order")
             {

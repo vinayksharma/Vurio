@@ -407,6 +407,17 @@
       "text": "The absolute maximum number of similar files allowed to be clustered into a single duplicate group."
     }
   ],
+  "duplicates.group.joinDeficitRatio": "Group Join Strictness",
+  "duplicates.group.joinDeficitRatio.long": [
+    {
+      "type": "paragraph",
+      "text": "How many times further from a group's lead image a photo may sit than from its own closest match anywhere in the library, and still be filed in that group. At the default of 2, a photo joins only if the lead image is within twice the distance of its best match."
+    },
+    {
+      "type": "paragraph",
+      "text": "Without this check, a whole afternoon of similar frames collapses into one group: every frame clears the similarity threshold against the same lead image even though each has a near-identical twin elsewhere. Lower values split groups more aggressively; 0 turns the check off."
+    }
+  ],
   "duplicates.finder.knnK": "Vector Search Candidate Count (K)",
   "duplicates.finder.knnK.long": [
     {

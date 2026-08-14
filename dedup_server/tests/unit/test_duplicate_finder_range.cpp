@@ -1180,3 +1180,355 @@ TEST_F(DuplicateFinderRangeTest, GroupingIsIndependentOfInsertionOrder)
     EXPECT_NE(forward.find("a2:"), std::string::npos)
         << "representative is not the purest member of its group: " << forward;
 }
+
+namespace
+{
+    // The DF-4 fixtures below all want the same thing: a fully processed file
+    // with an embedding, written the way the real pipeline writes it.
+    int addProcessedFileWithEmbedding(DatabaseManager &db, const std::string &path,
+                                      const std::vector<float> &vec, int64_t size_bytes = 1000)
+    {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": " + std::to_string(size_bytes) + "}";
+        row.processed = 2;
+        EXPECT_TRUE(ScannedFilesOps::upsert(db, row));
+        auto stored = ScannedFilesOps::getByPath(db, path);
+
+        if (!vec.empty())
+        {
+            ImageEmbeddingRecord rec;
+            rec.file_path = path;
+            rec.model = "test-model";
+            rec.dim = static_cast<int>(vec.size());
+            rec.embedding_blob.resize(vec.size() * sizeof(float));
+            std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+            EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(db, rec));
+        }
+        return stored ? stored->id : 0;
+    }
+
+    int scalarQuery(DatabaseManager &db, const std::string &sql)
+    {
+        auto lease = db.acquireSessionLease();
+        int value = 0;
+        Poco::Data::Statement q(lease.get());
+        q << sql, Poco::Data::Keywords::into(value), Poco::Data::Keywords::now;
+        return value;
+    }
+
+    void execSql(DatabaseManager &db, const std::string &sql)
+    {
+        auto lease = db.acquireSessionLease();
+        Poco::Data::Statement s(lease.get());
+        s << sql, Poco::Data::Keywords::now;
+    }
+} // namespace
+
+// DF-4: the reported symptom in miniature. One afternoon's shooting — two
+// frames, each kept as a RAW/JPG pair matching at ~0.999, with the frames
+// themselves ~0.93 apart. Every file clears the 0.92 threshold against the
+// first representative, so plain rep-anchored membership swallows all four
+// into one group and files each image under something it resembles far less
+// than its own twin. The join guard is what keeps the pairs apart. (This
+// shape accounted for 41% of the groups in the sample library, so it is the
+// common case, not a curiosity.)
+TEST_F(DuplicateFinderRangeTest, JoinGuardSplitsBurstFramesIntoTheirRealPairs)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_join_margin.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+    if (!config_->hasProperty("duplicates.group.joinDeficitRatio"))
+        config_->createProperty("duplicates.group.joinDeficitRatio", 2.0, "test");
+    config_->setPropertyValue("duplicates.group.joinDeficitRatio", 2.0);
+
+    // Frame A along e0, frame B at cos 0.93 to it; each frame twice, with tiny
+    // orthogonal perturbations standing in for RAW-vs-JPG rendering
+    // differences (intra-pair ~0.9996, cross-frame ~0.9298).
+    const int id_a_raw = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/A.raf", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_a_jpg = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/A.jpg", {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_b_raw = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/B.raf", {0.93f, 0.36756f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f});
+    const int id_b_jpg = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/B.jpg", {0.93f, 0.36756f, 0.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f});
+    ASSERT_GT(id_a_raw, 0);
+    ASSERT_GT(id_b_jpg, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 2u) << "the two frames must not share a group";
+    for (const auto &g : page.groups)
+    {
+        std::set<int> ids;
+        for (const auto &m : g.members)
+            ids.insert(m.file_id);
+        const bool is_a = (ids == std::set<int>{id_a_raw, id_a_jpg});
+        const bool is_b = (ids == std::set<int>{id_b_raw, id_b_jpg});
+        EXPECT_TRUE(is_a || is_b) << "a group mixes the two frames";
+        for (const auto &m : g.members)
+            EXPECT_GT(m.similarity_score, 0.99)
+                << "every member must be a near-twin of its representative, not a scene match";
+    }
+
+    // All four edges are on disk either way — the split is a clustering
+    // decision, so turning the guard off must re-fuse them from the SAME
+    // recorded edges, with no re-comparison.
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 6)
+        << "all six pairs cleared the discovery floor";
+
+    config_->setPropertyValue("duplicates.group.joinDeficitRatio", 0.0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    finder.findDuplicates();
+
+    auto fused = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(fused.groups.size(), 1u) << "a disabled guard must restore plain rep-anchored membership";
+    EXPECT_EQ(fused.groups[0].members.size(), 4u);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-4: the case a fixed score margin cannot express. The twins sit at 0.9991
+// and the third file at 0.9951 — a gap of 0.004, which any usable absolute
+// margin waves through, yet the representative is five times further away
+// than the twin. Measuring the ratio of distances catches it; measuring the
+// difference of scores cannot, because 0.004 is also the width of pure noise
+// down at the 0.93 end of the same scale.
+TEST_F(DuplicateFinderRangeTest, JoinGuardSeparatesNearTwinsFromAFiveTimesWorseRepresentative)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_tight_band.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+    if (!config_->hasProperty("duplicates.group.joinDeficitRatio"))
+        config_->createProperty("duplicates.group.joinDeficitRatio", 2.0, "test");
+    config_->setPropertyValue("duplicates.group.joinDeficitRatio", 2.0);
+
+    // Biggest file, so purity order makes it the first representative.
+    const int id_rep = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4tb/wide.jpg", {1.0f, 0.0f, 0.0f, 0.0f, 0.095f, 0.0f, 0.0f, 0.0f}, 9000);
+    const int id_t1 = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4tb/twin1.jpg", {1.0f, 0.0f, 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 7000);
+    const int id_t2 = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4tb/twin2.jpg", {1.0f, 0.0f, 0.0f, 0.03f, 0.0f, 0.0f, 0.0f, 0.0f}, 5000);
+    ASSERT_GT(id_rep, 0);
+    ASSERT_GT(id_t2, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 1u);
+    std::set<int> ids;
+    for (const auto &m : page.groups[0].members)
+        ids.insert(m.file_id);
+    EXPECT_EQ(ids, (std::set<int>{id_t1, id_t2}))
+        << "the twins must group with each other, not with a representative five times further away";
+    EXPECT_EQ(ids.count(id_rep), 0u);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-4: discovery looks from the new file's side only, against whatever is in
+// the vector index at that instant, and then the id watermark moves past it
+// forever. A vector that lands late is therefore invisible to every peer
+// already discovered, and no later run will look again — which is how a pair
+// of exact twins ends up with no edge between them. The requeue is the only
+// way back; this proves both halves of that claim.
+TEST_F(DuplicateFinderRangeTest, RequeueRestoresEdgesTheWatermarkCannotReach)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_requeue.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    const int id_a = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4rq/a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_a2 = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4rq/a2.jpg", {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f});
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_a2, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 1);
+    ASSERT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+
+    // Reproduce the damage: the pair's edge was never recorded, because one of
+    // them was not visible to the other at discovery time.
+    execSql(*db_manager_, "DELETE FROM duplicate_edges");
+    DuplicateGroupsOps::deleteGroupsByMode(*db_manager_, "EMBEDDING");
+
+    // The watermark has passed both files, so an ordinary run is powerless.
+    finder.findDuplicates();
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 0)
+        << "watermark-driven discovery cannot revisit a file behind the checkpoint";
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 0);
+
+    // Requeue ONE side. Edges are symmetric, so re-querying from that side
+    // must restore the pair — this is exactly what reconcile() does for a
+    // backfilled vector.
+    execSql(*db_manager_, "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) VALUES(" +
+                              std::to_string(id_a2) + ", 'test')");
+    finder.findDuplicates();
+
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 1)
+        << "the requeued file must rediscover its neighbour behind the watermark";
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "the repaired edge must re-form the group";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "a drained requeue row must not be retried forever";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-4: a file marked processed before its embedding was written used to be
+// stepped over silently — the watermark advanced past it and nothing ever
+// looked at it again. It must instead be parked until its embedding shows up.
+TEST_F(DuplicateFinderRangeTest, ProcessedFileWithoutEmbeddingIsParkedNotDropped)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_no_embedding.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    const int id_a = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4ne/a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    // Processed, but the embedding has not landed yet.
+    const int id_late = addProcessedFileWithEmbedding(*db_manager_, "/df4ne/late.jpg", {});
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_late, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    auto checkpoint = DuplicateGroupsOps::getCheckpoint(*db_manager_, "EMBEDDING");
+    ASSERT_TRUE(checkpoint.has_value());
+    EXPECT_GE(checkpoint->last_processed_id, id_late)
+        << "one embedding-less file must not stall discovery for the library";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue WHERE file_id = " +
+                                            std::to_string(id_late)),
+              1)
+        << "the skipped file must be parked for a later pass";
+
+    // The embedding finally lands. Only the requeue can bring the file back.
+    ImageEmbeddingRecord rec;
+    rec.file_path = "/df4ne/late.jpg";
+    rec.model = "test-model";
+    const std::vector<float> vec = {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f};
+    rec.dim = static_cast<int>(vec.size());
+    rec.embedding_blob.resize(vec.size() * sizeof(float));
+    std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+    ASSERT_TRUE(ImageArtifactsOps::upsertEmbedding(*db_manager_, rec));
+
+    finder.findDuplicates();
+
+    auto page = DuplicateGroupsOps::getGroupsWithMembers(*db_manager_, 0, 10, "EMBEDDING");
+    ASSERT_EQ(page.groups.size(), 1u) << "the late file must group once its embedding exists";
+    std::set<int> ids;
+    for (const auto &m : page.groups[0].members)
+        ids.insert(m.file_id);
+    EXPECT_EQ(ids, (std::set<int>{id_a, id_late}));
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-4: existing libraries carry edges recorded by the one-sided discovery,
+// so the epoch stamp queues a single repair pass. It must keep the edges and
+// groups it already has — the pass is additive, not a wipe.
+TEST_F(DuplicateFinderRangeTest, EdgeDiscoveryEpochBumpQueuesRepairWithoutWiping)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_epoch.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    ASSERT_GT(addProcessedFileWithEmbedding(*db_manager_, "/df4ep/a.jpg",
+                                            {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}), 0);
+    ASSERT_GT(addProcessedFileWithEmbedding(*db_manager_, "/df4ep/a2.jpg",
+                                            {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f}), 0);
+    ASSERT_GT(addProcessedFileWithEmbedding(*db_manager_, "/df4ep/b.jpg",
+                                            {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}), 0);
+
+    {
+        DuplicateFinder finder(config_, *db_manager_);
+        ASSERT_TRUE(finder.initialize());
+        finder.findDuplicates();
+    }
+    const int edges_before = scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges");
+    ASSERT_GT(edges_before, 0);
+    ASSERT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "a database created at the current epoch owes no repair";
+
+    // Pretend this database was written by the pre-fix build.
+    execSql(*db_manager_, "UPDATE duplicate_edges_meta SET discovery_epoch = 0 WHERE id = 1");
+
+    DuplicateFinder upgraded(config_, *db_manager_);
+    ASSERT_TRUE(upgraded.initialize());
+
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 3)
+        << "every embedded file must be queued for the one-time repair pass";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), edges_before)
+        << "the repair must not wipe the edges it already has";
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "the repair must not wipe existing groups";
+    EXPECT_GT(scalarQuery(*db_manager_, "SELECT last_processed_id FROM duplicate_processing_checkpoint"), 0)
+        << "the repair must not reset the watermark";
+
+    upgraded.findDuplicates();
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "the repair pass must drain in one run";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), edges_before);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}

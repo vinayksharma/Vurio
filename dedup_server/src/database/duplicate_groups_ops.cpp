@@ -48,6 +48,15 @@ namespace MediaDedup
                 return false;
             }
 
+            // DF-4: files owed a discovery pass (late-indexed vectors, missing
+            // embeddings). VectorIndex::reconcile() writes here on its own
+            // connection before this runs, so the DDL lives in both places.
+            if (!db.ensureTableExists("duplicate_discovery_requeue", SQL::kCreateDuplicateDiscoveryRequeueTable))
+            {
+                logger.error("Failed to create duplicate_discovery_requeue table");
+                return false;
+            }
+
             // Ensure thumbnail_cache table exists since we now join with it
             if (!ThumbnailCacheOps::ensureTable(db))
             {

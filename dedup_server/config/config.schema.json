@@ -63,6 +63,10 @@
     "type": "int",
     "default": 1000
   },
+  "duplicates.group.joinDeficitRatio": {
+    "type": "double",
+    "default": 2.0
+  },
   "duplicates.finder.enabled": {
     "type": "bool",
     "default": true

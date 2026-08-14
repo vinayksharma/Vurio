@@ -57,8 +57,27 @@ namespace MediaDedup
          * longer exists (deleted files poisoned KNN results; remove() had no
          * callers before DF-2). Tolerant of missing tables (fresh DB).
          */
-        struct ReconcileStats { long long inserted = 0; long long purged = 0; };
+        struct ReconcileStats { long long inserted = 0; long long purged = 0; long long requeued = 0; };
         bool reconcile(ReconcileStats &out);
+
+        /**
+         * DF-4: mark files as owing an edge-discovery pass.
+         *
+         * A backfilled vector was missing while its peers ran discovery, so
+         * their KNN queries could not see it and those pairs were never
+         * recorded — and the finder's id watermark guarantees nobody looks
+         * again. The finder drains this table and re-queries from the listed
+         * file's side, which restores both directions (edges are symmetric).
+         *
+         * @return Number of ids newly written (already-queued ids are ignored)
+         */
+        long requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason);
+
+    private:
+        /// requeueForDiscovery body, with mutex_ already held.
+        long requeueForDiscoveryLocked(const std::vector<int> &file_ids, const std::string &reason);
+
+    public:
 
         /**
          * K-nearest neighbors using cosine distance.

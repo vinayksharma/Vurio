@@ -368,6 +368,24 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateEdgesIndexScore =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_score ON duplicate_edges(score);";
 
+        // DF-4: files owed a discovery pass that the id watermark cannot
+        // express. Discovery queries KNN once per file against whatever is in
+        // the vector index at that instant and then advances the watermark
+        // forever, so a file whose vector landed late was invisible to every
+        // peer already discovered — and nobody looks again. Recording it here
+        // and re-querying from ITS side repairs both directions, because edges
+        // are symmetric.
+        //
+        // Rows are drained only once the file actually has an embedding; an id
+        // parked here with no artifact row (processed before its embedding was
+        // written) simply waits, costing one join per run.
+        inline constexpr std::string_view kCreateDuplicateDiscoveryRequeueTable =
+            "CREATE TABLE IF NOT EXISTS duplicate_discovery_requeue (\n"
+            "    file_id INTEGER PRIMARY KEY,\n"
+            "    reason TEXT NOT NULL DEFAULT '',\n"
+            "    requeued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            ") WITHOUT ROWID;";
+
         inline constexpr std::string_view kCreateDuplicateProcessingCheckpointTable =
             "CREATE TABLE IF NOT EXISTS duplicate_processing_checkpoint (\n"
             "    mode TEXT PRIMARY KEY,\n"
