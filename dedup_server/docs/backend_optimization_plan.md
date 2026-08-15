@@ -907,6 +907,12 @@ threshold change wipes all groups and reprocesses from id 0.
 >   re-embedded files below it are still never re-compared. Revisit with an
 >   `artifact_updated_at` cursor or dirty flag if/when re-embedding becomes
 >   a real flow.
+>   **Update 2026-08-14 — the premise was wrong and this bit.** The hole is not
+>   confined to re-embedding: ordinary first-time processing writes `processed=2`
+>   out of id order, so 9.0% of embedded files (12,711) never ran a discovery
+>   pass of their own, damaging 13.4% of groups. A stopgap shipped; the real fix
+>   is now tracked as **DISC-1** in
+>   [todo_discovery_watermark.md](todo_discovery_watermark.md).
 > - **Migration:** a pre-edge-list install (advanced watermark, groups, but
 >   an empty `duplicate_edges`) gets its checkpoint reset once at
 >   `initialize()` so discovery repopulates the edges; groups stay visible

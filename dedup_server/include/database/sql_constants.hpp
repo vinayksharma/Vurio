@@ -386,6 +386,36 @@ namespace MediaDedup
             "    requeued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
             ") WITHOUT ROWID;";
 
+        // DF-5: the discovery watermark is a single ascending id, but processed
+        // is written per file_path by a parallel worker pool and can go back to
+        // 0 on a retry, an error reset, or a drive restore. Any file that
+        // reaches processed=2 AFTER a higher id advanced the watermark is never
+        // selected for a batch again, so it never queries its own neighbours —
+        // it only collects edges from files discovered later. Two such files
+        // never see each other at all, and the pair is lost permanently.
+        //
+        // The trigger closes that by parking exactly the late arrivals. Files
+        // still ahead of the watermark are left alone: the normal batch path
+        // owns them. MAX() spans every mode because the requeue is not
+        // mode-scoped; with the single EMBEDDING mode in use it is that
+        // mode's watermark.
+        //
+        // Dropped and recreated on every ensureTables so the body cannot go
+        // stale; both tables it touches are created before it.
+        inline constexpr std::string_view kDropRequeueLateProcessedTrigger =
+            "DROP TRIGGER IF EXISTS trg_scanned_files_requeue_late_processed;";
+
+        inline constexpr std::string_view kCreateRequeueLateProcessedTrigger =
+            "CREATE TRIGGER trg_scanned_files_requeue_late_processed\n"
+            "AFTER UPDATE OF processed ON scanned_files\n"
+            "WHEN NEW.processed = 2 AND OLD.processed <> 2\n"
+            "     AND NEW.id <= COALESCE((SELECT MAX(last_processed_id)\n"
+            "                             FROM duplicate_processing_checkpoint), 0)\n"
+            "BEGIN\n"
+            "    INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason)\n"
+            "    VALUES (NEW.id, 'processed_below_watermark');\n"
+            "END;";
+
         inline constexpr std::string_view kCreateDuplicateProcessingCheckpointTable =
             "CREATE TABLE IF NOT EXISTS duplicate_processing_checkpoint (\n"
             "    mode TEXT PRIMARY KEY,\n"

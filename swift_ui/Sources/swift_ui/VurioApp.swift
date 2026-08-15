@@ -58,6 +58,60 @@ class AppState: ObservableObject {
     @Published var isOnline: Bool = true
     @Published var isPaused: Bool = false
 
+    // DF-5: edge re-discovery ("realignment") in flight. The server reports 0/0
+    // whenever no episode is running, which is what hides the indicator.
+    @Published var repairTotal: Int32 = 0
+    @Published var repairCompleted: Int32 = 0
+    /// Estimated seconds left, nil until the rate is known. Derived here rather
+    /// than server-side so no run history has to be persisted.
+    @Published var repairETASeconds: Double? = nil
+
+    private var repairLastSample: (date: Date, completed: Int32)? = nil
+    private var repairRate: Double = 0 // EMA, files/sec
+
+    var isRepairing: Bool { repairTotal > 0 && repairCompleted < repairTotal }
+    var repairFraction: Double {
+        guard repairTotal > 0 else { return 0 }
+        return min(1.0, Double(repairCompleted) / Double(repairTotal))
+    }
+
+    /// The drain commits in batches (~1000 files), so raw poll-to-poll deltas
+    /// alternate between zero and a spike. Smooth them, or the ETA flickers
+    /// between "unknown" and a wild number every 2 s.
+    @MainActor
+    private func updateRepairProgress(total: Int32, completed: Int32) {
+        guard total > 0 else {
+            setIfChanged(\.repairTotal, 0)
+            setIfChanged(\.repairCompleted, 0)
+            repairLastSample = nil
+            repairRate = 0
+            if repairETASeconds != nil { repairETASeconds = nil }
+            return
+        }
+
+        let now = Date()
+        if let last = repairLastSample, completed > last.completed {
+            let dt = now.timeIntervalSince(last.date)
+            if dt > 0.5 {
+                let instant = Double(completed - last.completed) / dt
+                repairRate = repairRate > 0 ? (0.2 * instant + 0.8 * repairRate) : instant
+                repairLastSample = (now, completed)
+            }
+        } else if repairLastSample == nil || completed < repairLastSample!.completed {
+            // First sample of an episode, or the counter reset because a new
+            // episode began (server restart mid-drain). Start the rate over.
+            repairLastSample = (now, completed)
+            repairRate = 0
+        }
+
+        setIfChanged(\.repairTotal, total)
+        setIfChanged(\.repairCompleted, completed)
+
+        let remaining = Double(total - completed)
+        let eta: Double? = (repairRate > 0 && remaining > 0) ? remaining / repairRate : nil
+        if repairETASeconds != eta { repairETASeconds = eta }
+    }
+
     // Consecutive fetchStatus failures. Flipping isOnline on a single failure
     // tears down and rebuilds the whole detail view (losing scroll position),
     // so one transient hiccup — e.g. the server briefly starved for DB
@@ -129,6 +183,7 @@ class AppState: ObservableObject {
                     self.setIfChanged(\.duplicateFindingTotal, response.duplicateFindingTotal)
                     self.setIfChanged(\.duplicateFindingCompleted, response.duplicateFindingCompleted)
                     self.setIfChanged(\.isPaused, response.isPaused)
+                    self.updateRepairProgress(total: response.repairTotal, completed: response.repairCompleted)
                     let needs = dirsChanged || !self.hasScannedEjectedBins
                     return needs
                 }
@@ -474,10 +529,46 @@ struct CalloutOverlayView: View {
     let hoverX: CGFloat
     let hoverY: CGFloat
     let totalWidth: CGFloat
-    
+    /// DF-5: pointer is over the realignment line's span. Repair detail is
+    /// APPENDED to the segment's own text rather than replacing it, so hovering
+    /// never costs you the PROCESSED/DUPLICATES/ERRORS reading underneath.
+    var showRepair: Bool = false
+
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
-    
+
+    /// "2H 35M" / "9M 40S" / "45S" — coarse on purpose; the rate wanders.
+    private static func durationText(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        if s >= 3600 {
+            let h = s / 3600, m = (s % 3600) / 60
+            return m > 0 ? "\(h)H \(m)M" : "\(h)H"
+        }
+        if s >= 60 {
+            let m = s / 60, sec = s % 60
+            return sec > 0 ? "\(m)M \(sec)S" : "\(m)M"
+        }
+        return "\(max(s, 1))S"
+    }
+
+    private var repairLines: String {
+        guard appState.isRepairing else { return "" }
+        let pct = appState.repairFraction.formatted(.percent.precision(.fractionLength(0)))
+        var text = "\nREALIGNING DUPLICATES: \(pct) "
+        text += "(\(appState.repairCompleted.formatted(.number)) OF \(appState.repairTotal.formatted(.number)))"
+        if let eta = appState.repairETASeconds {
+            text += "\n~\(Self.durationText(eta)) REMAINING"
+        } else {
+            text += "\nESTIMATING RATE…"
+        }
+        text += "\nRECHECKING FILES WHOSE MATCHES WERE INCOMPLETE"
+        return text
+    }
+
     var calloutText: String {
+        baseText + (showRepair ? repairLines : "")
+    }
+
+    private var baseText: String {
         switch segment {
         case .processed:
             return "\(appState.processedFilesCount.formatted(.number)) / \(appState.scannedFilesCount.formatted(.number)) FILES PROCESSED"
@@ -565,6 +656,9 @@ struct StatusBarView: View {
     @EnvironmentObject var messageCenter: MessageCenter
     @State private var hoveredSegment: HoverSegment = .none
     @State private var hoverPosition: CGPoint = .zero
+    // DF-5: pointer is within the realignment line's span (full bar height, so
+    // it is not a 2pt hit target).
+    @State private var hoveringRepair = false
     @State private var isBreathing = false
 
     var body: some View {
@@ -600,6 +694,9 @@ struct StatusBarView: View {
                     let completedWidth = max(0, totalWidth * CGFloat(completedPercent / 100.0))
                     let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
                     let errorWidth = max(0, totalWidth * CGFloat(errorPercent / 100.0))
+                    // DF-5: spans the WHOLE bar, not the processed portion — it is
+                    // progress through the repair queue, not through the library.
+                    let repairWidth = max(0, totalWidth * CGFloat(appState.repairFraction))
                     
                     let blueColor = Theme.accent
                     let greenColor = Theme.success
@@ -634,10 +731,23 @@ struct StatusBarView: View {
                         .animation(.easeInOut(duration: 0.5), value: completedWidth)
                         .animation(.easeInOut(duration: 0.5), value: duplicateWidth)
                         .animation(.easeInOut(duration: 0.5), value: errorWidth)
+
+                        // DF-5: realignment overlay. A thin translucent line laid
+                        // ON the bar (not a fourth segment) because it measures a
+                        // different population — files being re-compared — and must
+                        // not read as part of the scanned/processed accounting.
+                        if appState.isRepairing {
+                            Capsule()
+                                .fill(Theme.warning.opacity(0.55))
+                                .frame(width: repairWidth, height: 2)
+                                .animation(.easeInOut(duration: 0.5), value: repairWidth)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
+                            hoveringRepair = appState.isRepairing && location.x <= repairWidth
                             // Store the hover x in the status-bar's coordinate space (not
                             // the bar's local space) so the callout — drawn in that space —
                             // stays aligned even when a status message offsets/resizes the
@@ -655,6 +765,7 @@ struct StatusBarView: View {
                             }
                         case .ended:
                             hoveredSegment = .none
+                            hoveringRepair = false
                         }
                     }
                 }
@@ -725,7 +836,8 @@ struct StatusBarView: View {
                             appState: appState,
                             hoverX: hoveredSegment == .statusDot ? geo.size.width - 24 : hoverPosition.x,
                             hoverY: geo.size.height / 2,
-                            totalWidth: geo.size.width
+                            totalWidth: geo.size.width,
+                            showRepair: hoveringRepair && hoveredSegment != .statusDot
                         )
                         .allowsHitTesting(false)
                     }
