@@ -1211,6 +1211,34 @@ namespace
         return stored ? stored->id : 0;
     }
 
+    // DF-5 needs the real pipeline ORDER, which the helper above collapses:
+    // the row appears first (unprocessed, no vector), the embedding is written
+    // later, and processed only flips to 2 after that.
+    int addUnprocessedFile(DatabaseManager &db, const std::string &path, int64_t size_bytes = 1000)
+    {
+        ScannedFileRow row;
+        row.file_path = path;
+        row.relative_path = path;
+        row.file_name = path;
+        row.location_key = "test_location";
+        row.file_metadata = "{\"sizeBytes\": " + std::to_string(size_bytes) + "}";
+        row.processed = 0;
+        EXPECT_TRUE(ScannedFilesOps::upsert(db, row));
+        auto stored = ScannedFilesOps::getByPath(db, path);
+        return stored ? stored->id : 0;
+    }
+
+    void writeEmbedding(DatabaseManager &db, const std::string &path, const std::vector<float> &vec)
+    {
+        ImageEmbeddingRecord rec;
+        rec.file_path = path;
+        rec.model = "test-model";
+        rec.dim = static_cast<int>(vec.size());
+        rec.embedding_blob.resize(vec.size() * sizeof(float));
+        std::memcpy(rec.embedding_blob.data(), vec.data(), rec.embedding_blob.size());
+        EXPECT_TRUE(ImageArtifactsOps::upsertEmbedding(db, rec));
+    }
+
     int scalarQuery(DatabaseManager &db, const std::string &sql)
     {
         auto lease = db.acquireSessionLease();
@@ -1528,6 +1556,120 @@ TEST_F(DuplicateFinderRangeTest, EdgeDiscoveryEpochBumpQueuesRepairWithoutWiping
         << "the repair pass must drain in one run";
     EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), edges_before);
     EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// DF-5: the reported group-27423 failure, reduced. The watermark is a single
+// ascending id, but processed is written out of id order and can be reset by a
+// retry or a restore. A file that reaches processed=2 AFTER a higher id moved
+// the watermark is never selected for a batch again, so it never queries its
+// own neighbours — it can only be found BY files discovered later. Its true
+// twin, sitting behind the same hole, is therefore never linked to it, and the
+// join guard reads a best-available score that is simply wrong: in the live
+// library both halves of a RAW/JPG pair matching at 0.9829 were admitted into
+// an unrelated group at 0.9119 and 0.8886, because the edge between them did
+// not exist.
+TEST_F(DuplicateFinderRangeTest, FileProcessedBelowTheWatermarkIsRequeuedAndRepaired)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df5_late_processed.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    // twin.jpg is scanned between the other two but is still being processed
+    // when discovery runs: no vector yet, so no peer can see it either.
+    const int id_a = addProcessedFileWithEmbedding(
+        *db_manager_, "/df5lp/twin_a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_twin = addUnprocessedFile(*db_manager_, "/df5lp/twin_b.jpg");
+    const int id_other = addProcessedFileWithEmbedding(
+        *db_manager_, "/df5lp/other.jpg", {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_twin, id_a);
+    ASSERT_GT(id_other, id_twin);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT last_processed_id FROM duplicate_processing_checkpoint"),
+              id_other)
+        << "the watermark must have stepped over the unprocessed file";
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "a file that is not processed yet is owed nothing";
+    ASSERT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 0);
+
+    // Processing finishes: vector first, then the status flip — the order the
+    // real pipeline uses. The id is now far behind the watermark.
+    writeEmbedding(*db_manager_, "/df5lp/twin_b.jpg", {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f});
+    execSql(*db_manager_, "UPDATE scanned_files SET processed = 2 WHERE id = " + std::to_string(id_twin));
+
+    EXPECT_EQ(scalarQuery(*db_manager_,
+                          "SELECT COUNT(*) FROM duplicate_discovery_requeue WHERE file_id = " +
+                              std::to_string(id_twin) + " AND reason = 'processed_below_watermark'"),
+              1)
+        << "a file finishing behind the watermark must be parked, not stepped over";
+
+    finder.findDuplicates();
+
+    EXPECT_EQ(scalarQuery(*db_manager_,
+                          "SELECT COUNT(*) FROM duplicate_edges WHERE file_a = " + std::to_string(id_a) +
+                              " AND file_b = " + std::to_string(id_twin)),
+              1)
+        << "the repair pass must link the pair the watermark could never reach";
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "the restored edge must form the group";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "a drained requeue row must not be retried forever";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// The trigger must stay out of the way of the normal path: a file still AHEAD
+// of the watermark is the batch selector's job, and parking it too would put
+// every newly processed file through a second, redundant KNN pass.
+TEST_F(DuplicateFinderRangeTest, FileProcessedAheadOfTheWatermarkIsNotRequeued)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df5_ahead.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    const int id_a = addProcessedFileWithEmbedding(
+        *db_manager_, "/df5ah/a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    ASSERT_GT(id_a, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT last_processed_id FROM duplicate_processing_checkpoint"), id_a);
+
+    // Scanned after the run, so its id is ahead of the watermark.
+    const int id_new = addUnprocessedFile(*db_manager_, "/df5ah/b.jpg");
+    ASSERT_GT(id_new, id_a);
+    writeEmbedding(*db_manager_, "/df5ah/b.jpg", {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f});
+    execSql(*db_manager_, "UPDATE scanned_files SET processed = 2 WHERE id = " + std::to_string(id_new));
+
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_discovery_requeue"), 0)
+        << "the batch selector still owns this file; parking it would double the work";
+
+    finder.findDuplicates();
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1)
+        << "the ordinary watermark path must still group it";
 
     db_manager_.reset();
     std::filesystem::remove(db_path);

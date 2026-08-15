@@ -16,6 +16,9 @@ All project documentation is consolidated in this directory for easy navigation 
 ## Technical Analysis
 
 - **[technical_analysis.md](technical_analysis.md)** - Technical analyses and ongoing research
+- **[todo_discovery_watermark.md](todo_discovery_watermark.md)** - DISC-1 (open): the id-based
+  discovery watermark drops files that finish out of id order; measured impact, the shipped
+  stopgap, and the per-file-flag replacement
 - **[developer_operations_guide.md](developer_operations_guide.md)** - Testing, building, operations, and status code references
 
 ## Troubleshooting & Fixes

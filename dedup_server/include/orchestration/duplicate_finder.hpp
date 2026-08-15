@@ -119,6 +119,24 @@ namespace MediaDedup
              */
             bool isRunning() const { return running_.load(); }
 
+            /// DF-5: progress of the edge re-discovery ("realignment") queue for
+            /// the CURRENT drain episode. `total` is how many drainable files
+            /// the episode started with, `completed` how many have been through
+            /// a fresh symmetric pass. Both 0 when no episode is running.
+            ///
+            /// Published as counters rather than derived from the requeue table
+            /// on demand: GetStatus polls every 2 s, and counting drainable rows
+            /// needs a three-way join that measured 77 ms mid-repair.
+            struct RepairProgress
+            {
+                int total = 0;
+                int completed = 0;
+            };
+            RepairProgress repairProgress() const
+            {
+                return {repair_total_.load(), repair_completed_.load()};
+            }
+
             /**
              * @brief Abort the current duplicate finding run if it is active
              */
@@ -307,6 +325,14 @@ namespace MediaDedup
             /// a failure here is logged, never fatal to the run.
             void requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason);
 
+            /// DF-5: requeued files that can actually be drained right now —
+            /// the same join processRequeue() selects on, so ids parked without
+            /// an embedding are excluded. Counting them is what lets the UI
+            /// show a fraction that reaches 100%: the permanently-parked rows
+            /// (files whose processing failed) would otherwise pin it below.
+            /// Run ONCE per findDuplicates(), not per status poll.
+            int countDrainableRequeue();
+
             /**
              * @brief DF-3: rebuild duplicate groups from the persisted edge list
              *
@@ -391,6 +417,10 @@ namespace MediaDedup
 
             std::atomic<bool> running_{false};
             std::atomic<bool> abort_{false};
+            // DF-5: see repairProgress(). Set at the start of a drain episode
+            // and zeroed when it ends, so "total > 0" means "repair in flight".
+            std::atomic<int> repair_total_{0};
+            std::atomic<int> repair_completed_{0};
             // DF-3: set by onConfigChange on a threshold move; the next finder
             // run re-clusters from recorded edges even with no new files.
             std::atomic<bool> regroup_requested_{false};

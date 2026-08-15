@@ -51,7 +51,20 @@ namespace MediaDedup
             // pairs were never recorded. On a 2.5k-file library this left
             // ~13.8k missing pairs, 297 of them above 0.99, including exact
             // RAW/JPG twins that then landed in unrelated groups.
-            constexpr int kEdgeDiscoveryEpoch = 1;
+            //
+            // Epoch 2: the watermark is a single ascending id, but processed
+            // is set out of id order and can be reset by a retry, an error
+            // reset, or a drive restore. A file reaching processed=2 below the
+            // watermark was never selected for a batch, so it never ran a pass
+            // of its own — it only collected edges from files discovered after
+            // it, and two such files never saw each other. On a 141k-file
+            // library that left 12,711 files (9.0%) with no pass of their own,
+            // touching 5,628 of 42,148 groups: a 400-member sample had 11
+            // (2.8%) filed under a representative while a true twin at ~1.0000
+            // sat behind a missing edge, invisible to the join guard.
+            // trg_scanned_files_requeue_late_processed stops it recurring;
+            // this epoch repairs what already happened.
+            constexpr int kEdgeDiscoveryEpoch = 2;
 
             // QW-6: Poco::Logger::get takes a process-global mutex per call;
             // areMetadataCompatible &co. run once per candidate pair, so the
@@ -386,19 +399,39 @@ namespace MediaDedup
                                  batch_count, processed, total_processed);
                 }
 
-                // DF-4: files the watermark can no longer reach — vectors that
-                // reached the index after their peers were discovered, and
-                // files that had no embedding when discovery passed them.
+                // DF-4/DF-5: files the watermark can no longer reach — vectors
+                // that reached the index after their peers were discovered,
+                // files that had no embedding when discovery passed them, and
+                // files that only reached processed=2 once the watermark was
+                // already past their id.
                 // Drained after the watermark pass so a file that is both new
                 // and requeued is not compared twice in one run.
+                // DF-5: publish progress for the status bar. One count per run,
+                // not per poll — see countDrainableRequeue(). A restart mid-drain
+                // starts a fresh episode sized to what is LEFT, so the reported
+                // fraction is always "of this episode", never of some lost total.
                 int total_requeued = 0;
+                repair_completed_.store(0);
+                repair_total_.store(countDrainableRequeue());
                 while (!abort_.load())
                 {
                     int redone = processRequeue(mode_str, batch_size_, run_state);
                     if (redone == 0)
                         break;
                     total_requeued += redone;
+                    const int done = repair_completed_.fetch_add(redone) + redone;
+                    // Re-anchor the denominator against what is actually left.
+                    // Files keep arriving in the requeue while a multi-hour
+                    // episode runs; a total fixed at the start would be passed
+                    // by `done` and read as "finished" with work still queued.
+                    // One count per batch (~1000 files) is free next to the pass.
+                    repair_total_.store(done + countDrainableRequeue());
                 }
+                // Episode over (drained, or aborted mid-way). Zeroing total is
+                // what hides the indicator; leaving it set would strand a
+                // half-full bar on screen until the next run.
+                repair_total_.store(0);
+                repair_completed_.store(0);
                 if (total_requeued > 0)
                 {
                     logger.information("Edge re-discovery: repaired %d file(s) from the requeue", total_requeued);
@@ -705,6 +738,29 @@ namespace MediaDedup
             {
                 logger.error("Exception in discoverEdgesForIds: %s", std::string(e.what()));
                 return -1;
+            }
+        }
+
+        int DuplicateFinder::countDrainableRequeue()
+        {
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                int count = 0;
+                Statement stmt(sess);
+                // Mirrors processRequeue()'s selector exactly — if this counts
+                // a row the drain would skip, the progress bar never finishes.
+                stmt << "SELECT COUNT(*) FROM duplicate_discovery_requeue r "
+                        "JOIN scanned_files sf ON sf.id = r.file_id "
+                        "JOIN image_artifacts ia ON ia.file_path = sf.file_path",
+                    into(count), now;
+                return count;
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().warning("countDrainableRequeue failed: %s", std::string(e.what()));
+                return 0; // progress unknown: report no repair rather than a wrong fraction
             }
         }
 

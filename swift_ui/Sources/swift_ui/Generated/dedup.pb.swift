@@ -260,6 +260,14 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
 
   var isPaused: Bool = false
 
+  /// DF-5: edge re-discovery ("realignment") currently in flight — the queue
+  /// drained after a discovery-correctness fix, or files that finished behind
+  /// the id watermark. Both are 0 whenever no repair episode is running, which
+  /// is the signal the UI uses to hide the indicator entirely.
+  var repairTotal: Int32 = 0
+
+  var repairCompleted: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1352,7 +1360,7 @@ extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0\u{3}repair_total\0\u{3}repair_completed\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1372,6 +1380,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       case 10: try { try decoder.decodeSingularInt32Field(value: &self.duplicateFindingTotal) }()
       case 11: try { try decoder.decodeSingularInt32Field(value: &self.duplicateFindingCompleted) }()
       case 12: try { try decoder.decodeSingularBoolField(value: &self.isPaused) }()
+      case 13: try { try decoder.decodeSingularInt32Field(value: &self.repairTotal) }()
+      case 14: try { try decoder.decodeSingularInt32Field(value: &self.repairCompleted) }()
       default: break
       }
     }
@@ -1414,6 +1424,12 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if self.isPaused != false {
       try visitor.visitSingularBoolField(value: self.isPaused, fieldNumber: 12)
     }
+    if self.repairTotal != 0 {
+      try visitor.visitSingularInt32Field(value: self.repairTotal, fieldNumber: 13)
+    }
+    if self.repairCompleted != 0 {
+      try visitor.visitSingularInt32Field(value: self.repairCompleted, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1430,6 +1446,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.duplicateFindingTotal != rhs.duplicateFindingTotal {return false}
     if lhs.duplicateFindingCompleted != rhs.duplicateFindingCompleted {return false}
     if lhs.isPaused != rhs.isPaused {return false}
+    if lhs.repairTotal != rhs.repairTotal {return false}
+    if lhs.repairCompleted != rhs.repairCompleted {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

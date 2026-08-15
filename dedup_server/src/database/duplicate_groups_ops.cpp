@@ -57,6 +57,17 @@ namespace MediaDedup
                 return false;
             }
 
+            // DF-5: the late-processed trigger below hangs off scanned_files,
+            // so it has to exist. Claimed here rather than left to whichever
+            // manager happens to initialize first — ScannedFilesOps::ensureTable
+            // opens with this same idempotent call and layers its migrations on
+            // top, so creating the bare table early costs nothing.
+            if (!db.ensureTableExists("scanned_files", SQL::kCreateScannedFilesTable))
+            {
+                logger.error("Failed to create scanned_files table");
+                return false;
+            }
+
             // Ensure thumbnail_cache table exists since we now join with it
             if (!ThumbnailCacheOps::ensureTable(db))
             {
@@ -78,6 +89,12 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateDuplicateMembersIndexFilePath), now;
             sess << std::string(SQL::kCreateDuplicateMembersIndexRepGroupFile), now;
             sess << std::string(SQL::kCreateDuplicateEdgesIndexScore), now;
+
+            // DF-5: parks files that reach processed=2 below the discovery
+            // watermark. It hangs off scanned_files and reads the checkpoint
+            // and requeue tables, all three of which are ensured above.
+            sess << std::string(SQL::kDropRequeueLateProcessedTrigger), now;
+            sess << std::string(SQL::kCreateRequeueLateProcessedTrigger), now;
 
             logger.debug("Successfully ensured all duplicate detection tables and indexes");
             return true;

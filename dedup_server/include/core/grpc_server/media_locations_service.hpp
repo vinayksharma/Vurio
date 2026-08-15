@@ -6,6 +6,8 @@
 // instantiate the TU-private impls).
 
 #include "core/grpc_server/grpc_service_common.hpp"
+// DF-5: repairProgress() is called inline below, so the full type is needed.
+#include "orchestration/duplicate_finder.hpp"
 
 namespace MediaDedup {
 namespace Core {
@@ -16,9 +18,14 @@ class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsServi
     std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
     std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_;
+    // DF-5: read only for repairProgress() — in-memory atomics, no DB work on
+    // the 2 s status poll. Optional: null in tests and if the finder is disabled.
+    std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder_;
 public:
-    explicit MediaLocationsServiceImpl(std::shared_ptr<FilesService> f, std::shared_ptr<ThreadPoolManager> tpm, DatabaseManager* db, std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler) 
-        : files_(std::move(f)), tpm_(std::move(tpm)), db_(db), scheduler_(std::move(scheduler)) {}
+    explicit MediaLocationsServiceImpl(std::shared_ptr<FilesService> f, std::shared_ptr<ThreadPoolManager> tpm, DatabaseManager* db, std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
+                                       std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder = nullptr)
+        : files_(std::move(f)), tpm_(std::move(tpm)), db_(db), scheduler_(std::move(scheduler)),
+          duplicate_finder_(std::move(duplicate_finder)) {}
 
     grpc::Status GetStatus(grpc::ServerContext* context, const vurio::dedup::GetStatusRequest* request,
                            vurio::dedup::GetStatusResponse* reply) override {
@@ -62,7 +69,12 @@ public:
         if (scheduler_) {
             reply->set_is_paused(scheduler_->isPaused());
         }
-        
+        if (duplicate_finder_) {
+            auto repair = duplicate_finder_->repairProgress();
+            reply->set_repair_total(repair.total);
+            reply->set_repair_completed(repair.completed);
+        }
+
         return grpc::Status::OK;
     }
 

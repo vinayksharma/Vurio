@@ -121,6 +121,12 @@ message GetStatusResponse {
   int32 duplicate_finding_total = 10;
   int32 duplicate_finding_completed = 11;
   bool is_paused = 12;
+  // DF-5: edge re-discovery ("realignment") currently in flight — the queue
+  // drained after a discovery-correctness fix, or files that finished behind
+  // the id watermark. Both are 0 whenever no repair episode is running, which
+  // is the signal the UI uses to hide the indicator entirely.
+  int32 repair_total = 13;
+  int32 repair_completed = 14;
 }
 
 // ---------------------------------------------------------
