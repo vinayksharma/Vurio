@@ -135,6 +135,14 @@ TEST_F(DuplicatesResetAPITest, ResetCheckpoint_ResetsToZero)
     EXPECT_EQ(checkpoint_opt->last_processed_id, 10000);
     EXPECT_EQ(checkpoint_opt->groups_created, 150);
 
+    // DISC-1: "Reset Duplicates" has to re-open discovery too. Zeroing the
+    // checkpoint alone resets nothing now, so the next run would find no work.
+    {
+        auto lease = db_->acquireSessionLease();
+        Poco::Data::Statement s(lease.get());
+        s << "UPDATE scanned_files SET discovery_done = 1", Poco::Data::Keywords::now;
+    }
+
     // Reset checkpoint
     bool reset = DuplicateGroupsOps::resetCheckpoint(*db_, "EMBEDDING");
     ASSERT_TRUE(reset);
@@ -147,6 +155,16 @@ TEST_F(DuplicatesResetAPITest, ResetCheckpoint_ResetsToZero)
     EXPECT_EQ(checkpoint_opt->duplicates_found, 0);
     EXPECT_EQ(checkpoint_opt->groups_created, 0);
     EXPECT_EQ(checkpoint_opt->groups_updated, 0);
+
+    int still_discovered = 0;
+    {
+        auto lease = db_->acquireSessionLease();
+        Poco::Data::Statement q(lease.get());
+        q << "SELECT COUNT(*) FROM scanned_files WHERE discovery_done = 1",
+            Poco::Data::Keywords::into(still_discovered), Poco::Data::Keywords::now;
+    }
+    EXPECT_EQ(still_discovered, 0)
+        << "a duplicates reset must re-open every file for edge discovery";
 }
 
 TEST_F(DuplicatesResetAPITest, ResetAll_ClearsAllModes)

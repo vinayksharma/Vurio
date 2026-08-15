@@ -61,21 +61,22 @@ namespace MediaDedup
         bool reconcile(ReconcileStats &out);
 
         /**
-         * DF-4: mark files as owing an edge-discovery pass.
+         * DISC-1: mark files as owing an edge-discovery pass.
          *
          * A backfilled vector was missing while its peers ran discovery, so
          * their KNN queries could not see it and those pairs were never
-         * recorded — and the finder's id watermark guarantees nobody looks
-         * again. The finder drains this table and re-queries from the listed
-         * file's side, which restores both directions (edges are symmetric).
+         * recorded. Clearing scanned_files.discovery_done makes the finder
+         * re-query from the listed file's side, which restores both directions
+         * (edges are symmetric).
          *
-         * @return Number of ids newly written (already-queued ids are ignored)
+         * @return Number of rows actually cleared (ids already pending, or with
+         *         no scanned_files row, contribute nothing)
          */
-        long requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason);
+        long clearDiscoveryDone(const std::vector<int> &file_ids, const std::string &reason);
 
     private:
-        /// requeueForDiscovery body, with mutex_ already held.
-        long requeueForDiscoveryLocked(const std::vector<int> &file_ids, const std::string &reason);
+        /// clearDiscoveryDone body, with mutex_ already held.
+        long clearDiscoveryDoneLocked(const std::vector<int> &file_ids, const std::string &reason);
 
     public:
 

@@ -3,6 +3,7 @@
 #include "database/scanned_files_ops.hpp"
 #include "database/image_artifacts_ops.hpp"
 #include "database/vector_index.hpp"
+#include "database/sql_constants.hpp"
 #include "media_processors/similarity/similarity_calculator.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
 #include <Poco/Logger.h>
@@ -19,6 +20,7 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <iomanip>
 #include <ctime>
 #include <map>
@@ -37,12 +39,12 @@ namespace MediaDedup
 
         namespace
         {
-            // DF-4: bump this when a discovery-correctness fix means the
+            // Bump this when a discovery-correctness fix means the
             // recorded edge list is incomplete on existing installs. On
-            // startup, a database stamped with a lower epoch has every
-            // embedded file requeued for a fresh KNN pass (edges are
-            // INSERT OR REPLACE and the pass is symmetric, so this repairs
-            // missing pairs without wiping edges, groups, or the watermark).
+            // startup, a database stamped with a lower epoch has discovery_done
+            // cleared for every file, so each one runs a fresh KNN pass (edges
+            // are INSERT OR REPLACE and the pass is symmetric, so this repairs
+            // missing pairs without wiping edges or groups).
             //
             // Epoch 1: discovery only ever looked from the new file's side,
             // against whatever was in the vector index at that instant. Any
@@ -61,10 +63,18 @@ namespace MediaDedup
             // library that left 12,711 files (9.0%) with no pass of their own,
             // touching 5,628 of 42,148 groups: a 400-member sample had 11
             // (2.8%) filed under a representative while a true twin at ~1.0000
-            // sat behind a missing edge, invisible to the join guard.
-            // trg_scanned_files_requeue_late_processed stops it recurring;
-            // this epoch repairs what already happened.
-            constexpr int kEdgeDiscoveryEpoch = 2;
+            // sat behind a missing edge, invisible to the join guard. That
+            // repair recovered 2.86M pairs and cut the population to 3.5%.
+            //
+            // Epoch 3: the epoch-2 stopgap (a trigger parking files that landed
+            // below the PERSISTED watermark) left a window it could not see.
+            // The checkpoint is only written after a batch commits, so a file
+            // reaching processed=2 DURING a batch was still ahead of the stored
+            // watermark — no requeue — while the in-memory watermark sailed
+            // past its id, and once it sits at 2 the trigger can never fire for
+            // it again. DISC-1 removes the watermark entirely; this epoch
+            // re-runs discovery once to sweep up whatever that window leaked.
+            constexpr int kEdgeDiscoveryEpoch = 3;
 
             // QW-6: Poco::Logger::get takes a process-global mutex per call;
             // areMetadataCompatible &co. run once per candidate pair, so the
@@ -213,7 +223,7 @@ namespace MediaDedup
                 edge_floor_ = embedding_threshold_similarity_;
             }
 
-            // DF-4: see join_deficit_ratio_. <= 0 turns the guard off; below 1
+            // Join guard: see join_deficit_ratio_. <= 0 turns the guard off; below 1
             // it would reject a file from the very rep it matches best, which
             // is never what anyone means.
             join_deficit_ratio_ = cfg_->getPropertyValue<double>("duplicates.group.joinDeficitRatio", 2.0);
@@ -230,9 +240,9 @@ namespace MediaDedup
             // DF-3 migration + floor provenance. The edge list is only usable
             // if it is COMPLETE down to the current discovery floor; the floor
             // it was built with is recorded in duplicate_edges_meta. One-time
-            // re-discovery (edges cleared, watermark reset — groups stay
+            // re-discovery (edges cleared, discovery_done cleared — groups stay
             // visible; the first rebuild reuses their ids via rep matching)
-            // is needed when the watermark advanced but:
+            // is needed when discovery has run at least once but:
             //   - the edge table is empty (pre-edge-list install), or
             //   - edges exist with unknown provenance (pre-meta install), or
             //   - the configured floor dropped below the recorded one.
@@ -246,7 +256,7 @@ namespace MediaDedup
                               "id INTEGER PRIMARY KEY CHECK (id = 1), floor REAL NOT NULL)",
                         now;
                 }
-                // DF-4: added after the table shipped, so it arrives by ALTER
+                // Added after the table shipped, so it arrives by ALTER
                 // on existing installs. Failing means "already there".
                 try
                 {
@@ -271,9 +281,19 @@ namespace MediaDedup
                     q << "SELECT COUNT(*) FROM duplicate_edges", into(edge_count), now;
                 }
 
-                auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, "EMBEDDING");
+                // DISC-1: "discovery has run before" is now a property of the
+                // files, not of a watermark integer. Anything with its flag set
+                // has had a pass committed against the stored floor.
+                int discovered_count = 0;
+                {
+                    Statement q(sess);
+                    q << "SELECT EXISTS(SELECT 1 FROM scanned_files WHERE discovery_done = 1)",
+                        into(discovered_count), now;
+                }
+                const bool discovery_has_run = discovered_count > 0;
+
                 bool need_rediscovery = false;
-                if (checkpoint.has_value() && checkpoint->last_processed_id > 0)
+                if (discovery_has_run)
                 {
                     if (edge_count == 0)
                         need_rediscovery = true;
@@ -282,19 +302,20 @@ namespace MediaDedup
                 }
                 if (need_rediscovery)
                 {
-                    logger.information("Edge list unusable at floor %.3f (stored floor %.3f, %d edge(s)): resetting checkpoint for one-time edge discovery.",
+                    logger.information("Edge list unusable at floor %.3f (stored floor %.3f, %d edge(s)): clearing discovery state for one-time edge discovery.",
                                        edge_floor_, stored_floor, edge_count);
                     Statement del(sess);
                     del << "DELETE FROM duplicate_edges", now;
+                    // resetCheckpoint also clears discovery_done for every file.
                     DuplicateGroupsOps::resetCheckpoint(db_, "EMBEDDING");
                 }
-                else if (checkpoint.has_value() && checkpoint->last_processed_id > 0)
+                else if (discovery_has_run)
                 {
-                    // DF-4: edges recorded before this epoch are incomplete —
-                    // see kEdgeDiscoveryEpoch. Requeue every embedded file for
-                    // a fresh symmetric pass rather than wiping: the existing
-                    // edges are all still valid, the groups stay visible, and
-                    // the repair costs one KNN query per file.
+                    // Edges recorded before this epoch are incomplete —
+                    // see kEdgeDiscoveryEpoch. Clear every flag so each file
+                    // runs a fresh symmetric pass rather than wiping: the
+                    // existing edges are all still valid, the groups stay
+                    // visible, and the repair costs one KNN query per file.
                     int stored_epoch = 0;
                     {
                         std::vector<int> rows;
@@ -306,16 +327,15 @@ namespace MediaDedup
                     }
                     if (stored_epoch < kEdgeDiscoveryEpoch)
                     {
-                        Statement seed(sess);
-                        seed << "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) "
-                                "SELECT sf.id, 'edge_discovery_epoch_repair' FROM scanned_files sf "
-                                "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
-                                "WHERE sf.processed = 2",
-                            now;
+                        sess << std::string(SQL::kClearDiscoveryDoneAll), now;
                         int seeded = 0;
                         Statement cnt(sess);
                         cnt << "SELECT changes()", into(seeded), now;
-                        logger.information("Edge discovery epoch %d -> %d: queued %d file(s) for a one-time re-discovery pass (existing edges and groups are kept).",
+                        // Tells findDuplicates() to publish repair progress for
+                        // this pass — an epoch sweep is a repair episode the UI
+                        // shows, ordinary new-file discovery is not.
+                        epoch_repair_pending_.store(true);
+                        logger.information("Edge discovery epoch %d -> %d: cleared discovery state on %d file(s) for a one-time re-discovery pass (existing edges and groups are kept).",
                                            stored_epoch, kEdgeDiscoveryEpoch, seeded);
                     }
                 }
@@ -371,10 +391,6 @@ namespace MediaDedup
             {
                 std::string mode_str = "EMBEDDING";
 
-                auto checkpoint = DuplicateGroupsOps::getCheckpoint(db_, mode_str);
-                int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
-                logger.debug("Resuming from checkpoint: last_processed_id=%d", last_processed_id);
-
                 // DF-3: drop edges referencing deleted files BEFORE clustering
                 // — stale edges would resurrect their groups. A purge can split
                 // a component, so it also forces the full re-cluster below.
@@ -383,60 +399,54 @@ namespace MediaDedup
                 arena_.clear();
                 RunState run_state;
 
-                // Phase 1 — DISCOVERY: record pair scores >= edge_floor_ as
-                // persistent edges (KNN-driven; batches advance the id
-                // watermark). Grouping no longer happens per file.
+                // DISC-1: DISCOVERY selects on discovery_done, so there is one
+                // pass, not a watermark pass plus a requeue drain. `cursor` is
+                // in-memory and per-run: it only stops this run from
+                // re-selecting ids it already attempted (a file whose artifact
+                // fails to load keeps its flag at 0, and this loop would
+                // otherwise spin on it). It is never persisted, so anything it
+                // skips is simply picked up by the next run.
+                //
+                // Publish repair progress only for an epoch sweep — that is the
+                // multi-hour episode the UI shows a bar for; ordinary new-file
+                // discovery is reported through the scan status counts.
+                const bool repairing = epoch_repair_pending_.exchange(false);
+                repair_completed_.store(0);
+                repair_total_.store(repairing ? countPendingDiscovery() : 0);
+
                 int total_processed = 0;
                 int batch_count = 0;
+                int cursor = 0;
                 while (!abort_.load())
                 {
-                    int processed = processBatch(mode_str, batch_size_, last_processed_id, run_state);
+                    int processed = processBatch(mode_str, batch_size_, cursor, run_state);
                     if (processed == 0)
                         break;
                     total_processed += processed;
                     batch_count++;
                     logger.debug("Processed batch %d: %d files (total: %d)",
                                  batch_count, processed, total_processed);
-                }
-
-                // DF-4/DF-5: files the watermark can no longer reach — vectors
-                // that reached the index after their peers were discovered,
-                // files that had no embedding when discovery passed them, and
-                // files that only reached processed=2 once the watermark was
-                // already past their id.
-                // Drained after the watermark pass so a file that is both new
-                // and requeued is not compared twice in one run.
-                // DF-5: publish progress for the status bar. One count per run,
-                // not per poll — see countDrainableRequeue(). A restart mid-drain
-                // starts a fresh episode sized to what is LEFT, so the reported
-                // fraction is always "of this episode", never of some lost total.
-                int total_requeued = 0;
-                repair_completed_.store(0);
-                repair_total_.store(countDrainableRequeue());
-                while (!abort_.load())
-                {
-                    int redone = processRequeue(mode_str, batch_size_, run_state);
-                    if (redone == 0)
-                        break;
-                    total_requeued += redone;
-                    const int done = repair_completed_.fetch_add(redone) + redone;
-                    // Re-anchor the denominator against what is actually left.
-                    // Files keep arriving in the requeue while a multi-hour
-                    // episode runs; a total fixed at the start would be passed
-                    // by `done` and read as "finished" with work still queued.
-                    // One count per batch (~1000 files) is free next to the pass.
-                    repair_total_.store(done + countDrainableRequeue());
+                    if (repairing)
+                    {
+                        const int done = repair_completed_.fetch_add(processed) + processed;
+                        // Re-anchor the denominator against what is actually
+                        // left. Files keep finishing processing while a
+                        // multi-hour episode runs; a total fixed at the start
+                        // would be passed by `done` and read as "finished" with
+                        // work still pending. One count per batch (~1000 files)
+                        // is free next to the pass.
+                        repair_total_.store(done + countPendingDiscovery());
+                    }
                 }
                 // Episode over (drained, or aborted mid-way). Zeroing total is
                 // what hides the indicator; leaving it set would strand a
                 // half-full bar on screen until the next run.
                 repair_total_.store(0);
                 repair_completed_.store(0);
-                if (total_requeued > 0)
-                {
-                    logger.information("Edge re-discovery: repaired %d file(s) from the requeue", total_requeued);
-                    total_processed += total_requeued;
-                }
+                // An aborted sweep is not a finished one: keep the flag so the
+                // next run still reports it as a repair episode.
+                if (repairing && abort_.load())
+                    epoch_repair_pending_.store(true);
 
                 if (abort_.load())
                     logger.information("Duplicate detection run aborted: processed %d files in %d batches",
@@ -492,11 +502,8 @@ namespace MediaDedup
                 Statement count(sess);
                 count << "SELECT changes()", into(changes), now;
 
-                // DF-4: a requeued file that no longer exists would otherwise
-                // sit in the queue forever (the drain's join hides it, so it
-                // costs nothing but noise).
-                Statement rq(sess);
-                rq << "DELETE FROM duplicate_discovery_requeue WHERE file_id NOT IN (SELECT id FROM scanned_files)", now;
+                // DISC-1: nothing to sweep alongside — discovery state is a
+                // column on scanned_files, so a deleted file takes it with it.
                 if (changes > 0)
                     finderLogger().information("Purged %d orphan duplicate edge(s)", changes);
                 return changes > 0;
@@ -510,39 +517,51 @@ namespace MediaDedup
             }
         }
 
-        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &last_processed_id,
+        int DuplicateFinder::processBatch(const std::string &mode, int batch_size, int &cursor,
                                           RunState &run_state)
         {
             Poco::Logger &logger = finderLogger();
 
             try
             {
-                // New fully-processed files past the watermark.
+                // DISC-1: files still owed a pass, in id order. No watermark —
+                // see kSelectPendingDiscovery for what `cursor` is and is not.
                 std::vector<int> file_ids;
                 {
                     auto lease = db_.acquireSessionLease();
                     Session &sess = lease.get();
                     Statement stmt(sess);
-                    int last_id = last_processed_id;
+                    int after = cursor;
                     int limit = batch_size;
-                    stmt << "SELECT id FROM scanned_files WHERE id > ? AND processed = 2 ORDER BY id ASC LIMIT ?",
-                        into(file_ids), use(last_id), use(limit), now;
+                    stmt << std::string(SQL::kSelectPendingDiscovery),
+                        into(file_ids), use(after), use(limit), now;
                 }
                 if (file_ids.empty())
                 {
-                    logger.debug("No new files to process for mode %s", mode);
+                    logger.debug("No files pending edge discovery for mode %s", mode);
                     return 0;
                 }
-                logger.information("Edge discovery: %d new file(s) after id %d",
-                                   static_cast<int>(file_ids.size()), last_processed_id);
+                logger.information("Edge discovery: %d file(s) pending after id %d",
+                                   static_cast<int>(file_ids.size()), cursor);
 
-                std::atomic<int> new_last_processed_id{last_processed_id};
-                const int files_checked = discoverEdgesForIds(mode, file_ids, run_state, &new_last_processed_id);
+                // Advance BEFORE the pass. The cursor tracks what this run has
+                // attempted, not what succeeded — a file that could not be
+                // loaded keeps discovery_done = 0 and is retried on the next
+                // run, but must not be re-selected by the very next batch.
+                cursor = file_ids.back();
+
+                const int files_checked = discoverEdgesForIds(mode, file_ids, run_state);
                 if (files_checked < 0)
-                    return 0; // aborted; checkpoint deliberately not advanced
+                    return 0; // aborted; no flags were set, so nothing is lost
 
-                last_processed_id = new_last_processed_id.load();
-                if (!DuplicateGroupsOps::upsertCheckpoint(db_, mode, last_processed_id,
+                // The checkpoint now carries last-run STATS only. DISC-1 left
+                // last_processed_id vestigial; it is read back and rewritten
+                // unchanged rather than zeroed, so a database rolled back to a
+                // pre-DISC-1 build still resumes where it left off instead of
+                // re-discovering the whole library.
+                auto cp = DuplicateGroupsOps::getCheckpoint(db_, mode);
+                const int retained = cp.has_value() ? cp->last_processed_id : 0;
+                if (!DuplicateGroupsOps::upsertCheckpoint(db_, mode, retained,
                                                           files_checked, 0, 0, 0))
                     logger.warning("Failed to update checkpoint for mode %s", mode);
 
@@ -556,7 +575,7 @@ namespace MediaDedup
         }
 
         int DuplicateFinder::discoverEdgesForIds(const std::string &mode, const std::vector<int> &file_ids,
-                                                 RunState &run_state, std::atomic<int> *watermark)
+                                                 RunState &run_state)
         {
             Poco::Logger &logger = finderLogger();
 
@@ -608,19 +627,19 @@ namespace MediaDedup
                 std::vector<Edge> edges;
                 std::mutex edges_mutex;
                 std::vector<int> no_embedding;
+                std::vector<int> discovered;
                 std::atomic<int> files_checked{0};
-                // Peers already behind the watermark are compared from both
-                // sides in the fallback path; the requeue drain (watermark ==
-                // nullptr) wants every pair, so nothing is skipped there.
-                const int peer_dedup_watermark = watermark ? watermark->load() : -1;
-
-                auto record_progress = [&](int id)
-                {
-                    if (!watermark)
-                        return;
-                    int cur = watermark->load();
-                    while (id > cur && !watermark->compare_exchange_weak(cur, id)) {}
-                };
+                // DISC-1: the fallback path compares each batch file against
+                // the WHOLE pool, so a pair whose two halves are both in this
+                // batch would be recorded twice. Skip the second sighting only
+                // — a peer outside the batch has already had its own pass and
+                // will never look again, so that pair must be recorded from
+                // here whichever side has the lower id.
+                //
+                // This replaces the old watermark test, which asked "is the
+                // peer new?" by id. With per-file state, batch membership is
+                // the exact answer to that question.
+                const std::unordered_set<int> batch_set(file_ids.begin(), file_ids.end());
 
                 auto discover_one = [&](std::size_t idx)
                 {
@@ -628,18 +647,14 @@ namespace MediaDedup
                     auto it = batch_artifacts.find(current_file_id);
                     if (it == batch_artifacts.end())
                     {
-                        // DF-4: no embedding row — nothing to compare YET. The
-                        // watermark still advances (it is a single id; holding
-                        // it back would stall discovery for the whole library
-                        // behind one file), so the id is parked in the requeue
-                        // instead. A file marked processed=2 before its
-                        // embedding was written used to be dropped here
-                        // permanently, with no log and no second look.
+                        // No embedding row — nothing to compare YET. DISC-1:
+                        // the flag simply stays 0, so the selector holds the
+                        // file back until it has a vector and the next run
+                        // picks it up. Nothing is parked, and nothing is lost.
                         {
                             std::lock_guard<std::mutex> lk(edges_mutex);
                             no_embedding.push_back(current_file_id);
                         }
-                        record_progress(current_file_id);
                         return;
                     }
                     const FileArtifact &new_file = it->second;
@@ -671,9 +686,11 @@ namespace MediaDedup
                         {
                             if (other.file_id == current_file_id)
                                 continue;
-                            // Batch peers: record each pair once (from the
-                            // higher-id side) — both sides are "new".
-                            if (other.file_id > peer_dedup_watermark && other.file_id > current_file_id)
+                            // Both halves in this batch: record once, from the
+                            // higher-id side. A peer OUTSIDE the batch is
+                            // already discovered and will never look again, so
+                            // its pair is recorded here regardless of id.
+                            if (batch_set.count(other.file_id) && other.file_id > current_file_id)
                                 continue;
                             double sim = computeSimilarity(new_file, other, mode);
                             if (sim >= edge_floor_)
@@ -682,24 +699,33 @@ namespace MediaDedup
                         }
                     }
 
-                    if (!local.empty())
                     {
                         std::lock_guard<std::mutex> lk(edges_mutex);
-                        edges.insert(edges.end(), local.begin(), local.end());
+                        if (!local.empty())
+                            edges.insert(edges.end(), local.begin(), local.end());
+                        // This file ran its own pass; its flag is set in the
+                        // same transaction as the edges below.
+                        discovered.push_back(current_file_id);
                     }
-                    record_progress(current_file_id);
                 };
 
                 runFanOut(file_ids.size(), abort_, discover_one);
 
                 if (abort_.load())
                 {
-                    logger.warning("Batch aborted before completion. Checkpoint will not be updated this run.");
+                    // No flags are set, so the whole batch stays pending and
+                    // the next run redoes it. Discovery is idempotent
+                    // (INSERT OR REPLACE), so redoing it costs time, not
+                    // correctness.
+                    logger.warning("Batch aborted before completion. Discovery state will not be advanced.");
                     return -1;
                 }
 
-                // Persist this batch's edges in ONE transaction.
-                if (!edges.empty())
+                // Persist this batch's edges AND the discovery flags in ONE
+                // transaction: a flag set without its edges would mark a file
+                // discovered when it is not, which is precisely the failure
+                // DISC-1 exists to remove.
+                if (!edges.empty() || !discovered.empty())
                 {
                     auto lease = db_.acquireSessionLease();
                     Session &sess = lease.get();
@@ -714,6 +740,12 @@ namespace MediaDedup
                             stmt << "INSERT OR REPLACE INTO duplicate_edges(file_a, file_b, score) VALUES(?, ?, ?)",
                                 use(a), use(b), use(score), now;
                         }
+                        for (int id : discovered)
+                        {
+                            int fid = id;
+                            Statement stmt(sess);
+                            stmt << std::string(SQL::kMarkDiscoveryDone), use(fid), now;
+                        }
                         sess.commit();
                     }
                     catch (...)
@@ -721,15 +753,18 @@ namespace MediaDedup
                         try { sess.rollback(); } catch (...) {}
                         throw;
                     }
-                    logger.information("Recorded %d edge(s) at floor %.2f",
-                                       static_cast<int>(edges.size()), edge_floor_);
+                    logger.information("Recorded %d edge(s) at floor %.2f; marked %d file(s) discovered",
+                                       static_cast<int>(edges.size()), edge_floor_,
+                                       static_cast<int>(discovered.size()));
                 }
 
                 if (!no_embedding.empty())
                 {
-                    logger.warning("%d file(s) were processed but had no embedding row; requeued for edge discovery.",
+                    // Left pending on purpose: the selector's embedding
+                    // predicate holds these back until their artifact exists,
+                    // so they cost nothing until they are actually workable.
+                    logger.warning("%d file(s) were processed but had no embedding row; left pending for edge discovery.",
                                    static_cast<int>(no_embedding.size()));
-                    requeueForDiscovery(no_embedding, "no_embedding_at_discovery");
                 }
 
                 return files_checked.load();
@@ -741,7 +776,7 @@ namespace MediaDedup
             }
         }
 
-        int DuplicateFinder::countDrainableRequeue()
+        int DuplicateFinder::countPendingDiscovery()
         {
             try
             {
@@ -749,106 +784,13 @@ namespace MediaDedup
                 Session &sess = lease.get();
                 int count = 0;
                 Statement stmt(sess);
-                // Mirrors processRequeue()'s selector exactly — if this counts
-                // a row the drain would skip, the progress bar never finishes.
-                stmt << "SELECT COUNT(*) FROM duplicate_discovery_requeue r "
-                        "JOIN scanned_files sf ON sf.id = r.file_id "
-                        "JOIN image_artifacts ia ON ia.file_path = sf.file_path",
-                    into(count), now;
+                stmt << std::string(SQL::kCountPendingDiscovery), into(count), now;
                 return count;
             }
             catch (const std::exception &e)
             {
-                finderLogger().warning("countDrainableRequeue failed: %s", std::string(e.what()));
+                finderLogger().warning("countPendingDiscovery failed: %s", std::string(e.what()));
                 return 0; // progress unknown: report no repair rather than a wrong fraction
-            }
-        }
-
-        void DuplicateFinder::requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason)
-        {
-            if (file_ids.empty())
-                return;
-            try
-            {
-                auto lease = db_.acquireSessionLease();
-                Session &sess = lease.get();
-                sess.begin();
-                for (int id : file_ids)
-                {
-                    int fid = id;
-                    std::string r = reason;
-                    Statement stmt(sess);
-                    stmt << "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) VALUES(?, ?)",
-                        use(fid), use(r), now;
-                }
-                sess.commit();
-            }
-            catch (const std::exception &e)
-            {
-                finderLogger().warning("Failed to requeue %d file(s) for discovery (%s): %s",
-                                       static_cast<int>(file_ids.size()), reason, std::string(e.what()));
-            }
-        }
-
-        int DuplicateFinder::processRequeue(const std::string &mode, int batch_size, RunState &run_state)
-        {
-            Poco::Logger &logger = finderLogger();
-
-            try
-            {
-                // Only ids that can actually be discovered now. A file parked
-                // here without an embedding (marked processed before its
-                // artifact was written) stays put rather than being burned as
-                // a failed attempt — the join is the whole retry policy.
-                std::vector<int> file_ids;
-                {
-                    auto lease = db_.acquireSessionLease();
-                    Session &sess = lease.get();
-                    Statement stmt(sess);
-                    int limit = batch_size;
-                    stmt << "SELECT r.file_id FROM duplicate_discovery_requeue r "
-                            "JOIN scanned_files sf ON sf.id = r.file_id "
-                            "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
-                            "ORDER BY r.file_id ASC LIMIT ?",
-                        into(file_ids), use(limit), now;
-                }
-                if (file_ids.empty())
-                    return 0;
-
-                logger.information("Edge re-discovery: draining %d requeued file(s)",
-                                   static_cast<int>(file_ids.size()));
-
-                // No watermark: a requeued file's neighbourhood is mostly
-                // BEHIND the watermark, which is exactly why its edges went
-                // missing. Compare it against everything.
-                if (discoverEdgesForIds(mode, file_ids, run_state, nullptr) < 0)
-                    return 0; // aborted — rows stay queued for the next run
-
-                {
-                    auto lease = db_.acquireSessionLease();
-                    Session &sess = lease.get();
-                    sess.begin();
-                    for (int id : file_ids)
-                    {
-                        int fid = id;
-                        // The EXISTS guard keeps a row queued if the file lost
-                        // its embedding between the select and here — it was
-                        // not actually discovered, so it is still owed a pass.
-                        Statement stmt(sess);
-                        stmt << "DELETE FROM duplicate_discovery_requeue WHERE file_id = ? AND EXISTS ("
-                                "SELECT 1 FROM scanned_files sf JOIN image_artifacts ia ON ia.file_path = sf.file_path "
-                                "WHERE sf.id = ?)",
-                            use(fid), use(fid), now;
-                    }
-                    sess.commit();
-                }
-
-                return static_cast<int>(file_ids.size());
-            }
-            catch (const std::exception &e)
-            {
-                logger.error("Exception in processRequeue: %s", std::string(e.what()));
-                return 0;
             }
         }
 
@@ -1362,7 +1304,7 @@ namespace MediaDedup
                 std::unordered_map<int, int> rep_of;      // member -> rep file_id
                 std::unordered_map<int, double> rep_score; // member -> similarity to its rep
 
-                // DF-4: each file's best score against ANY candidate, used by
+                // Each file's best score against ANY candidate, used by
                 // the join guard below.
                 std::unordered_map<int, double> best_neighbour;
                 if (join_deficit_ratio_ > 0.0)
@@ -1402,7 +1344,7 @@ namespace MediaDedup
                         }
                     }
 
-                    // DF-4: join guard. Clearing the threshold against a
+                    // Join guard. Clearing the threshold against a
                     // representative is not enough — a file must not be filed
                     // under a rep it resembles markedly LESS than something
                     // else in the library. One group in the sample was a

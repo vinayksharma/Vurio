@@ -54,7 +54,8 @@ namespace MediaDedup
         static int count(DatabaseManager &db);
         static int countProcessed(DatabaseManager &db);
         static int countProcessedSuccess(DatabaseManager &db);
-        static int countProcessedUpTo(DatabaseManager &db, int max_id);
+        /// DISC-1: processed files whose edge-discovery pass has committed.
+        static int countDiscovered(DatabaseManager &db);
         static int countError(DatabaseManager &db);
         static int countQueued(DatabaseManager &db);
 
@@ -88,7 +89,7 @@ namespace MediaDedup
          * @brief DB-7: all GetServerStatus scanned_files counts in ONE query.
          *
          * Predicates mirror count()/countProcessed()/countError()/
-         * countProcessedSuccess()/countProcessedUpTo() — previously the status
+         * countProcessedSuccess()/countDiscovered() — previously the status
          * poll (every 2 s) took five separate pool leases for five COUNTs.
          */
         struct ScanStatusCounts
@@ -97,9 +98,12 @@ namespace MediaDedup
             int processed = 0;        // processed = 2 or 3
             int errors = 0;           // processed < 0, excluding -2 / -99
             int processed_success = 0; // processed = 2
-            int processed_up_to = 0;   // processed = 2 AND id <= max_id
+            // DISC-1: processed = 2 AND discovery_done = 1. Was "id <= the
+            // discovery watermark", which counted files the watermark had
+            // passed but that never actually ran a pass.
+            int processed_up_to = 0;
         };
-        static bool getStatusCounts(DatabaseManager &db, int max_id, ScanStatusCounts &out);
+        static bool getStatusCounts(DatabaseManager &db, ScanStatusCounts &out);
 
         /**
          * @brief DB-7: upsert many rows in ONE transaction (one WAL commit).

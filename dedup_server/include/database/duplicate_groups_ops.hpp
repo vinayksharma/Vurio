@@ -75,6 +75,16 @@ namespace MediaDedup
         // Table initialization
         static bool ensureTables(DatabaseManager &db);
 
+        /**
+         * @brief DISC-1: per-file edge-discovery state on scanned_files.
+         *
+         * Adds discovery_done to pre-existing databases, creates the pending
+         * partial index, and performs the one-time migration off the id
+         * watermark (dropping the legacy requeue table and trigger).
+         * Idempotent; called from ensureTables(), exposed for tests.
+         */
+        static bool ensureDiscoveryState(DatabaseManager &db);
+
         // Group operations
         static int createGroup(DatabaseManager &db,
                                const std::string &mode,

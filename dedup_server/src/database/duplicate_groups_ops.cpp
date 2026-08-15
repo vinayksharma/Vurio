@@ -48,25 +48,19 @@ namespace MediaDedup
                 return false;
             }
 
-            // DF-4: files owed a discovery pass (late-indexed vectors, missing
-            // embeddings). VectorIndex::reconcile() writes here on its own
-            // connection before this runs, so the DDL lives in both places.
-            if (!db.ensureTableExists("duplicate_discovery_requeue", SQL::kCreateDuplicateDiscoveryRequeueTable))
-            {
-                logger.error("Failed to create duplicate_discovery_requeue table");
-                return false;
-            }
-
-            // DF-5: the late-processed trigger below hangs off scanned_files,
-            // so it has to exist. Claimed here rather than left to whichever
-            // manager happens to initialize first — ScannedFilesOps::ensureTable
-            // opens with this same idempotent call and layers its migrations on
-            // top, so creating the bare table early costs nothing.
+            // DISC-1: discovery state lives on scanned_files, so it has to
+            // exist. Claimed here rather than left to whichever manager happens
+            // to initialize first — ScannedFilesOps::ensureTable opens with this
+            // same idempotent call and layers its migrations on top, so creating
+            // the bare table early costs nothing.
             if (!db.ensureTableExists("scanned_files", SQL::kCreateScannedFilesTable))
             {
                 logger.error("Failed to create scanned_files table");
                 return false;
             }
+
+            if (!ensureDiscoveryState(db))
+                return false;
 
             // Ensure thumbnail_cache table exists since we now join with it
             if (!ThumbnailCacheOps::ensureTable(db))
@@ -90,12 +84,6 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateDuplicateMembersIndexRepGroupFile), now;
             sess << std::string(SQL::kCreateDuplicateEdgesIndexScore), now;
 
-            // DF-5: parks files that reach processed=2 below the discovery
-            // watermark. It hangs off scanned_files and reads the checkpoint
-            // and requeue tables, all three of which are ensured above.
-            sess << std::string(SQL::kDropRequeueLateProcessedTrigger), now;
-            sess << std::string(SQL::kCreateRequeueLateProcessedTrigger), now;
-
             logger.debug("Successfully ensured all duplicate detection tables and indexes");
             return true;
         }
@@ -107,6 +95,74 @@ namespace MediaDedup
         catch (...)
         {
             logger.error("Unknown exception in ensureTables");
+            return false;
+        }
+    }
+
+    bool DuplicateGroupsOps::ensureDiscoveryState(DatabaseManager &db)
+    {
+        Poco::Logger &logger = Poco::Logger::get("DuplicateGroupsOps");
+
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+
+            // Fresh databases get discovery_done from kCreateScannedFilesTable;
+            // pre-existing ones get it here. NOT NULL with a constant default,
+            // so the ALTER is a schema-only change (no table rewrite).
+            try
+            {
+                sess << std::string(SQL::kAlterScannedFilesAddDiscoveryDone), now;
+                logger.information("Added discovery_done column to scanned_files table.");
+            }
+            catch (const std::exception &)
+            {
+                // Column already exists.
+            }
+
+            sess << std::string(SQL::kCreateScannedFilesIndexPendingDiscovery), now;
+
+            // DISC-1 migration. The old stopgap's own artifacts are the guard:
+            // if either is still here, this database predates per-file state,
+            // and dropping them below makes the migration self-clearing. A
+            // fresh database has neither, so nothing runs and every file starts
+            // at 0 — which is correct, it has nothing discovered yet.
+            int legacy_requeue = 0;
+            {
+                Statement q(sess);
+                q << "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                     "AND name = 'duplicate_discovery_requeue'",
+                    into(legacy_requeue), now;
+            }
+            if (legacy_requeue > 0)
+            {
+                // The requeue table has to still exist for the NOT IN subquery,
+                // so migrate before dropping.
+                sess << std::string(SQL::kMigrateDiscoveryDoneFromWatermark), now;
+                int migrated = 0;
+                Statement c(sess);
+                c << "SELECT changes()", into(migrated), now;
+                logger.information(
+                    "DISC-1: migrated %d file(s) to discovery_done=1 from the id watermark; "
+                    "requeued ids and everything past the watermark stay pending.", migrated);
+
+                sess << std::string(SQL::kDropRequeueLateProcessedTrigger), now;
+                sess << std::string(SQL::kDropDuplicateDiscoveryRequeueTable), now;
+                logger.information("DISC-1: dropped the discovery requeue table and late-processed trigger.");
+            }
+            else
+            {
+                // Table already gone; the trigger cannot outlive it (its body
+                // inserts there), but drop defensively so an interrupted
+                // migration cannot leave one behind that fails every write.
+                sess << std::string(SQL::kDropRequeueLateProcessedTrigger), now;
+            }
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception in ensureDiscoveryState: %s", std::string(e.what()));
             return false;
         }
     }
@@ -289,6 +345,12 @@ namespace MediaDedup
                     "  groups_updated = 0, "
                     "  last_run_timestamp = CURRENT_TIMESTAMP",
                 use(mode_str), use(zero), use(zero), use(zero), use(zero), use(zero), now;
+
+            // DISC-1: this IS the "start discovery over" primitive (the reset
+            // API, and the floor-provenance reset in DuplicateFinder). Discovery
+            // state now lives per file, so zeroing the checkpoint alone would
+            // reset nothing and the next run would find no work.
+            sess << std::string(SQL::kClearDiscoveryDoneAll), now;
 
             Poco::Logger::get("DuplicateGroupsOps").information("Reset checkpoint for mode: %s", mode);
             return true;

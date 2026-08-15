@@ -90,6 +90,19 @@ namespace MediaDedup
 
                     Statement sel(sess);
                     sel << std::string(SQL::kSelectScannedFileIdByPath), Keywords::use(file_path), Keywords::into(file_id), Keywords::now;
+
+                    // DISC-1: this vector is new or has just changed, so any
+                    // discovery pass already run against it is stale. Clearing
+                    // the flag in the SAME lease as the write is what finally
+                    // closes DF-3 item 5 — a re-embedded file gets compared
+                    // again instead of keeping edges from its old vector. On a
+                    // first embedding the flag is already 0 and this is a no-op.
+                    if (file_id > 0)
+                    {
+                        int fid = file_id;
+                        Statement clr(sess);
+                        clr << std::string(SQL::kClearDiscoveryDoneById), Keywords::use(fid), Keywords::now;
+                    }
                 })) // POCO lease is released, freeing up lock!
             {
                 return false;
@@ -98,12 +111,11 @@ namespace MediaDedup
             // Sync vector index when enabled (for KNN duplicate search) —
             // with the same normalized vector that was stored.
             //
-            // DF-4: this used to fail silently. A vector missing from the
+            // This used to fail silently. A vector missing from the
             // index is invisible to every peer that runs KNN discovery before
-            // reconcile() backfills it at the next startup, and the finder's
-            // id watermark means those pairs are never looked for again — so a
-            // skipped insert here is permanently lost edges, not a slow path.
-            // Both failure modes are therefore logged AND requeued.
+            // reconcile() backfills it at the next startup, so a skipped insert
+            // here is permanently lost edges, not a slow path. Both failure
+            // modes are therefore logged AND left pending for re-discovery.
             VectorIndex *vix = db.getVectorIndex();
             if (vix && !normalized_blob.empty())
             {
@@ -120,8 +132,8 @@ namespace MediaDedup
                 {
                     Poco::Logger::get("ImageArtifactsOps").error(
                         "Vector index insert FAILED for file_id " + std::to_string(file_id) + " ('" +
-                        r.file_path + "'): requeuing for edge discovery.");
-                    vix->requeueForDiscovery({file_id}, "index_insert_failed");
+                        r.file_path + "'): left pending for edge discovery.");
+                    vix->clearDiscoveryDone({file_id}, "index_insert_failed");
                 }
             }
             return true;

@@ -1,7 +1,22 @@
-# TODO — DISC-1: replace the id watermark with per-file discovery state
+# DISC-1: replace the id watermark with per-file discovery state
 
-> **Status:** open. Not started. A stopgap shipped 2026-08-14 (see §5) that makes the
-> symptom go away; this task removes the cause and deletes the stopgap.
+> **Status: DONE, 2026-08-15.** `scanned_files.discovery_done` replaces the watermark;
+> `duplicate_discovery_requeue`, `trg_scanned_files_requeue_late_processed`,
+> `processRequeue`, `requeueForDiscovery` and the `last_processed_id` selector are gone.
+> See §10 for what shipped and how it differs from the plan in §6.
+>
+> **Why it was still worth doing after the §5 stopgap.** The stopgap narrowed the hole
+> but did not close it. The trigger tested `NEW.id <= MAX(last_processed_id)` against the
+> *persisted* checkpoint, and the checkpoint is only written after a batch commits
+> (`processBatch`, after `discoverEdgesForIds` returns) while `record_progress` advanced
+> the in-memory watermark to the batch's top id. So for the whole duration of a batch
+> (~97 s per 1,000 files), a file reaching `processed = 2` with an id inside the batch's
+> range was neither in the batch's snapshot nor caught by the trigger — and once it sits
+> at 2, the trigger can never fire for it again, because it requires
+> `OLD.processed <> 2`. `mediaProcessor` (30 s) and `duplicateFinder` (1 h) are separate
+> scheduler jobs and the processor's pool completes out of id order, so the stragglers
+> below the batch's top id are exactly the population at risk, on every batch of an
+> import. `FileFinishingDuringADiscoveryBatchIsNotLost` is the regression test for it.
 >
 > **Origin:** deferred as item 5 of DF-3 in
 > [backend_optimization_plan.md](backend_optimization_plan.md) ("the checkpoint stays a
@@ -30,7 +45,9 @@ The fix is to stop inferring discovery state from an id ordering and store it pe
 
 ---
 
-## 2. How discovery works today, and why the watermark is wrong
+## 2. How discovery worked, and why the watermark was wrong
+
+*(§2–§7 are the original analysis and plan, kept as the record of why. §10 is what landed.)*
 
 Batch selection — `duplicate_finder.cpp:510`, inside `processBatch` (`:495`):
 
@@ -151,7 +168,7 @@ With the real neighbours restored, both are vetoed and leave:
 
 ---
 
-## 5. What already shipped (the stopgap this task removes)
+## 5. The stopgap this task removed
 
 Two changes landed 2026-08-14. They work, and the repair is a genuine one-off, but both
 exist only because discovery state is inferred rather than stored.
@@ -195,7 +212,7 @@ work.
 
 ---
 
-## 6. Proposed change
+## 6. Proposed change (see §10 for the four corrections made while building it)
 
 Store discovery state per file instead of inferring it from an id ordering.
 
@@ -254,7 +271,7 @@ its flag cleared.
 
 ---
 
-## 7. Migration
+## 7. Migration (as shipped; verified numbers in §10)
 
 One-time, on the first startup after the change:
 
@@ -277,7 +294,7 @@ and still needed.
 
 ---
 
-## 8. Verification
+## 8. Verification (see §10 for what is covered and what is still owed)
 
 - Unit: port `FileProcessedBelowTheWatermarkIsRequeuedAndRepaired` and
   `FileProcessedAheadOfTheWatermarkIsNotRequeued`
@@ -293,7 +310,7 @@ and still needed.
 
 ---
 
-## 9. Naming collision to clean up while here
+## 9. Naming collision to clean up while here — DONE, see §10
 
 `DF-N` means two different things. In
 [backend_optimization_plan.md](backend_optimization_plan.md): DF-4 = embedding throughput
@@ -301,3 +318,120 @@ and still needed.
 + requeue, DF-5 = this watermark work. DF-3 happens to agree in both. The code comments
 were written against the wrong scheme; renumber them (or drop the prefix) when this task
 lands, so the doc IDs stay the single authority.
+
+---
+
+## 10. What shipped (2026-08-15)
+
+Implemented as §6, with four corrections found while building it.
+
+### Schema
+
+`discovery_done INTEGER NOT NULL DEFAULT 0` on `scanned_files`, declared in
+`kCreateScannedFilesTable` for fresh installs and applied by
+`kAlterScannedFilesAddDiscoveryDone` for existing ones. It is the LAST column in both,
+because `ADD COLUMN` appends and the two definitions have to stay structurally
+identical (same rule as `taken_day` / `is_video`). The partial index is
+`ON scanned_files(id) WHERE processed = 2 AND discovery_done = 0` — indexed on `id`,
+not on `discovery_done`, which §6 had wrong: the column is a constant inside the
+predicate. Same shape as the existing `idx_scanned_files_unprocessed`.
+
+### Corrections to §6
+
+1. **The fallback path's de-duplication rule in §6 point 2 was wrong.** "Record from the
+   lower-id side only" loses edges: a pending file `X` compared against an
+   already-discovered pool peer `Y < X` would record nothing, and `Y` never runs again.
+   The peer's *batch membership* — not its id — is the exact answer to "will the other
+   side look too", so the skip is now
+   `batch_set.count(other.file_id) && other.file_id > current_file_id`.
+
+2. **A flag-only selector spins forever.** `processBatch` loops until a batch comes back
+   empty; a row that is selected but whose artifact fails to load keeps its flag at 0
+   and is re-selected immediately. Fixed with an in-memory, **per-run** cursor
+   (`id > cursor ORDER BY id ASC`), reset to 0 at the start of every run and never
+   persisted. Correctness lives entirely in the flag; the cursor only stops one run from
+   re-attempting what it already tried, so anything it skips is picked up by the next
+   run. This also settles §6 point 4 — ordering stays `id ASC`.
+
+3. **`resetCheckpoint` is the "start discovery over" primitive** (`ResetDuplicates` in
+   the advanced-settings API, and the floor-provenance reset in
+   `DuplicateFinder::initialize`). It now clears `discovery_done` for every file inside
+   the same call. Without that, zeroing the checkpoint would reset nothing and the next
+   run would find no work at all.
+
+4. **§6 missed a consumer:** `ScannedFilesOps::getStatusCounts` fed the UI's dedup
+   progress bar from `SUM(processed = 2 AND id <= last_processed_id)`. It is now
+   `SUM(processed = 2 AND discovery_done = 1)` (and `countProcessedUpTo` became
+   `countDiscovered`, losing its `max_id` parameter). This makes the bar strictly more
+   honest: it used to count files the watermark had passed but that had never run a
+   pass.
+
+### Also changed
+
+- **`kEdgeDiscoveryEpoch` kept, not deleted** (§6's deletion list and its own mapping
+  table disagreed). It is still the versioning hook for future discovery-correctness
+  fixes; its body is now `UPDATE scanned_files SET discovery_done = 0`. Bumped to
+  **3** to sweep up whatever the §5 race window leaked after the epoch-2 repair.
+- **Re-embedding clears the flag.** `ImageArtifactsOps::upsertEmbedding` clears
+  `discovery_done` in the same lease as the write, so a rewritten vector is compared
+  again instead of keeping edges from the old one. This is what finally closes DF-3
+  item 5 as originally stated; nothing did it before.
+- **`VectorIndex::requeueForDiscovery` → `clearDiscoveryDone`**, and it no longer has to
+  create a table on its own connection first.
+- **Batch abort semantics unchanged** (§6 point 3): an aborted batch writes neither
+  edges nor flags, so it stays entirely pending. Keeping partial progress would need
+  restructuring for no real gain.
+- **Epoch sweeps still drive `repairProgress()`** so the UI's repair bar keeps working;
+  ordinary new-file discovery does not, which matches the old requeue-drain semantics.
+  An aborted sweep re-arms, so an interrupted repair still reads as one.
+- **§9 done:** the mis-numbered `DF-4` / `DF-5` comment prefixes in the duplicate-finder
+  files were dropped (the ONNX-side `DF-4` tags are correct per
+  `backend_optimization_plan.md` and were left alone).
+
+### Migration, verified against the live 143k-file library
+
+The one-time migration is guarded by the presence of `duplicate_discovery_requeue`, so
+it runs exactly once and never on a fresh database, and it folds requeued ids back to 0
+before the table is dropped. Run against a copy of `data/dedup_server.db`:
+
+```
+migrated to discovery_done = 1        140,985
+pending and workable                        0
+pending, no artifact row                1,005   (the ex-permanent requeue backlog)
+```
+
+The 1,005 are files marked `processed = 2` whose processing never produced an
+`image_artifacts` row. Under the requeue they were re-joined on every run forever;
+now they are simply rows the selector's `ia.embedding IS NOT NULL` predicate does not
+reach, at zero cost. (That they are `processed = 2` with no artifact at all is a
+separate defect in the processing pipeline, not addressed here.)
+
+### Tests (all in `tests/unit/test_duplicate_finder_range.cpp`, in the build)
+
+| test | what it pins |
+|---|---|
+| `FileFinishingDuringADiscoveryBatchIsNotLost` | **the race the §5 trigger could not see** — reproduces the exact end state (processed, embedded, id behind the watermark, nothing queued) |
+| `FileProcessedAfterDiscoveryPassedItIsStillDiscovered` | §8's ported watermark scenario, passing with no trigger |
+| `NewlyProcessedFileIsDiscoveredWithoutAnyQueue` | the normal path needs no special handling, and records each pair once |
+| `ClearingTheFlagRestoresEdgesTheWatermarkCouldNotReach` | `reconcile()`'s backfill path; one side reopened restores the pair |
+| `ProcessedFileWithoutEmbeddingIsHeldBackNotDropped` | held back, not parked and not dropped |
+| `ErrorResetLeavesTheFileDiscoverable` | `processed < 0 → 0 → 2`, no trigger involved |
+| `DriveRestoreLeavesTheFileDiscoverable` | eject/undo-eject rewrite of `processed` |
+| `ReEmbeddingReopensAFileForDiscovery` | DF-3 item 5 |
+| `ResetCheckpointReopensEveryFileForDiscovery` | correction 3 |
+| `MigrationOffTheIdWatermarkPreservesWhatWasOwed` | discovered vs. owed vs. never-reached, teardown, idempotence |
+| `FreshDatabaseStartsWithNothingDiscovered` | no migration and no stopgap artifacts on a new database |
+| `EdgeDiscoveryEpochBumpReopensEveryFileWithoutWiping` | the sweep is additive |
+| `EmptyEdgeTableWithDiscoveredFilesReopensDiscovery` | "has discovery run" read off the flag |
+
+Full unit suite: 308 passed, 32 skipped (pre-existing ONNX/ImageMagick/MediaProcessor
+environment skips), 0 failed.
+
+### Still open
+
+§8's library-scale re-measurement is only meaningful after the epoch-3 sweep runs on a
+real library (~3.8 h of background work at 104 ms/query). Re-run the §3 heuristic and
+the 400-member `best_neighbour` sample then: `edges, but ALL peers higher-id` should sit
+at the edge-component minima and nothing more, and the edge-table vetoes should agree
+with the true-nearest vetoes. Measured before this work: 12,711 files (9.0%) with no
+pass of their own, falling to 4,920 (3.5%) after the epoch-2 repair.

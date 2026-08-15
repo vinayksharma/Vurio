@@ -234,7 +234,7 @@ namespace MediaDedup
             "WHERE length(ia.embedding) = " + expected_len + " "
             "AND sf.id NOT IN (SELECT file_id FROM " + table_name_ + ")";
 
-        // DF-4: capture the ids BEFORE the insert makes the predicate stop
+        // Capture the ids BEFORE the insert makes the predicate stop
         // matching them. Every one of these was absent from the index while
         // its peers ran discovery, so those peers' KNN queries could not see
         // it and the pairs were lost for good — the id watermark never goes
@@ -251,7 +251,7 @@ namespace MediaDedup
             else
             {
                 Poco::Logger::get("VectorIndex").warning(
-                    "reconcile could not enumerate backfill ids (%s); affected files will not be requeued for edge discovery.",
+                    "reconcile could not enumerate backfill ids (%s); affected files will not be re-queried for edge discovery.",
                     std::string(sqlite3_errmsg(db_)));
             }
         }
@@ -271,41 +271,35 @@ namespace MediaDedup
         out.inserted = sqlite3_changes(db_);
 
         if (!backfilled.empty())
-            out.requeued = requeueForDiscoveryLocked(backfilled, "vector_index_backfill");
+            out.requeued = clearDiscoveryDoneLocked(backfilled, "vector_index_backfill");
 
         Poco::Logger::get("VectorIndex").information(
-            "reconcile complete: backfilled %ld vector(s), purged %ld stale row(s), requeued %ld file(s) for edge discovery",
+            "reconcile complete: backfilled %ld vector(s), purged %ld stale row(s), reopened %ld file(s) for edge discovery",
             static_cast<long>(out.inserted), static_cast<long>(out.purged),
             static_cast<long>(out.requeued));
         return true;
     }
 
-    long VectorIndex::requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason)
+    long VectorIndex::clearDiscoveryDone(const std::vector<int> &file_ids, const std::string &reason)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        return requeueForDiscoveryLocked(file_ids, reason);
+        return clearDiscoveryDoneLocked(file_ids, reason);
     }
 
-    long VectorIndex::requeueForDiscoveryLocked(const std::vector<int> &file_ids, const std::string &reason)
+    long VectorIndex::clearDiscoveryDoneLocked(const std::vector<int> &file_ids, const std::string &reason)
     {
         if (db_ == nullptr || file_ids.empty())
             return 0;
 
-        char *err = nullptr;
-        if (sqlite3_exec(db_, std::string(SQL::kCreateDuplicateDiscoveryRequeueTable).c_str(),
-                         nullptr, nullptr, &err) != SQLITE_OK)
-        {
-            Poco::Logger::get("VectorIndex").error("requeue table create failed: %s",
-                                                   std::string(err ? err : sqlite3_errmsg(db_)));
-            if (err) sqlite3_free(err);
-            return 0;
-        }
-
+        // DISC-1: no table to create first — the column is part of
+        // scanned_files, which necessarily exists if there are ids to clear.
+        // An id with no row simply updates nothing.
         sqlite3_stmt *stmt = nullptr;
-        const char *sql = "INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason) VALUES (?, ?)";
-        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        const std::string sql(SQL::kClearDiscoveryDoneById);
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
         {
-            Poco::Logger::get("VectorIndex").error("requeue prepare failed: %s", std::string(sqlite3_errmsg(db_)));
+            Poco::Logger::get("VectorIndex").error("discovery_done clear prepare failed (%s): %s",
+                                                   reason, std::string(sqlite3_errmsg(db_)));
             return 0;
         }
 
@@ -314,7 +308,6 @@ namespace MediaDedup
         for (int id : file_ids)
         {
             sqlite3_bind_int(stmt, 1, id);
-            sqlite3_bind_text(stmt, 2, reason.c_str(), -1, SQLITE_STATIC);
             if (sqlite3_step(stmt) == SQLITE_DONE)
                 written += sqlite3_changes(db_);
             sqlite3_reset(stmt);
