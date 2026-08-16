@@ -32,6 +32,11 @@ stop_server_log_stream() {
     kill "$TAIL_PID" 2>/dev/null || true
     TAIL_PID=""
   fi
+  # TAIL_PID is the LAST element of the pipeline (tr), so killing it leaves the
+  # `tail -F` at the head of the pipe alive. Startup already pkills strays for
+  # exactly this reason; do it on the way out too, so a teardown actually tears
+  # down instead of relying on the next ./restart to notice.
+  pkill -f "tail -n 0 -F ${BACKEND_DIR}/logs/server_console.log" 2>/dev/null || true
 }
 
 cleanup() {
@@ -41,6 +46,50 @@ cleanup() {
     "${BACKEND_DIR}/scripts/stopall"
   fi
   exit 1
+}
+
+# Tear down everything this script started: log stream, Swift UI / Electron,
+# and the backend. stopall covers both the server and the frontends.
+teardown_all() {
+  stop_server_log_stream
+  if [ -x "${BACKEND_DIR}/scripts/stopall" ]; then
+    "${BACKEND_DIR}/scripts/stopall" || true
+  else
+    (cd "$BACKEND_DIR" && ./scripts/run.sh stop 2>/dev/null || true)
+    pkill -f "VURIO" 2>/dev/null || true
+  fi
+}
+
+# A failure once the backend is already up. The old flow ran the Swift tests
+# against a throwaway backend it stopped straight afterwards, so a failure had
+# nothing to clean up. Now that tests and UI share the ONE backend this script
+# launches, a failure here would otherwise orphan a running server (and leave
+# the next ./restart to kill it, an hour later, mid-whatever). Kill it, and put
+# enough on the terminal to work out why without going digging.
+fail_and_teardown() {
+  local what="$1"
+  local code="$2"
+  local log_file="${BACKEND_DIR}/logs/server_console.log"
+
+  echo ""
+  echo "=================================================================="
+  echo "[restart] FAILED: ${what} exited ${code}"
+  echo "[restart] The backend was already running when this happened, so it"
+  echo "[restart] is being shut down rather than left orphaned."
+  echo "[restart] Server log: ${log_file}"
+  if [ -f "$log_file" ]; then
+    echo "------------------ last 40 lines of server log -------------------"
+    # Same sanitizing as stream_server_log: raw server bytes must never reach
+    # the terminal unfiltered (ESC[5i opens iTerm2's print dialog).
+    tail -n 40 "$log_file" 2>/dev/null \
+      | LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
+      | LC_ALL=C tr -d '\000-\010\013\014\016-\037' || true
+  fi
+  echo "=================================================================="
+  echo ""
+
+  teardown_all
+  exit "$code"
 }
 
 trap cleanup INT TERM
@@ -96,20 +145,16 @@ if [ "$DO_REBUILD" = true ]; then
       (cd "$WEB_UI_DIR" && npm run npm:build)
     fi
   else
-    echo "Rebuilding Swift UI and running unit tests..."
+    echo "Rebuilding Swift UI..."
     (cd "$SWIFT_UI_DIR" && swift build)
-    echo "Starting backend temporarily for tests..."
-    (cd "$BACKEND_DIR" && ./scripts/run.sh server)
-    sleep 2
-    set +e
-    (cd "$SWIFT_UI_DIR" && swift test)
-    TEST_EXIT_CODE=$?
-    set -e
-    echo "Stopping temporary backend..."
-    (cd "$BACKEND_DIR" && ./scripts/run.sh stop)
-    if [ $TEST_EXIT_CODE -ne 0 ]; then
-      exit $TEST_EXIT_CODE
-    fi
+    # The Swift tests used to run here against a backend started and stopped
+    # just for them — two extra server lifecycles for what is a single
+    # read-only GetStatus smoke test. Worse, that throwaway process still ran
+    # the server's one-time startup work: on 2026-08-15 it stamped the edge
+    # discovery epoch and cleared discovery_done on 143,124 rows, then took
+    # SIGTERM one second later, leaving the real backend to sweep for 3h45m
+    # with nothing recording that a repair was in flight. The tests now run
+    # against the single backend launched below.
   fi
 fi
 
@@ -121,10 +166,16 @@ if [ "$START_WEB" = true ]; then
   echo "Starting Electron..."
   sleep 2
   stream_server_log
+  set +e
   if command -v bun &> /dev/null; then
     (cd "$WEB_UI_DIR" && NODE_ENV=production bun run electron)
   else
     (cd "$WEB_UI_DIR" && NODE_ENV=production npm run electron)
+  fi
+  UI_EXIT_CODE=$?
+  set -e
+  if [ $UI_EXIT_CODE -ne 0 ]; then
+    fail_and_teardown "electron" $UI_EXIT_CODE
   fi
   stop_server_log_stream
 else
@@ -132,9 +183,30 @@ else
   echo "Starting Backend (gRPC only)..."
   (cd "$BACKEND_DIR" && ./scripts/run.sh server)
 
-  echo "Starting Swift UI..."
   sleep 2
+  # Streaming starts before the tests so server-side activity during the run is
+  # on screen next to the test output.
   stream_server_log
+
+  if [ "$DO_REBUILD" = true ]; then
+    echo "Running Swift UI unit tests against the running backend..."
+    set +e
+    (cd "$SWIFT_UI_DIR" && swift test)
+    TEST_EXIT_CODE=$?
+    set -e
+    if [ $TEST_EXIT_CODE -ne 0 ]; then
+      fail_and_teardown "swift test" $TEST_EXIT_CODE
+    fi
+    echo "Swift UI unit tests passed."
+  fi
+
+  echo "Starting Swift UI..."
+  set +e
   (cd "$SWIFT_UI_DIR" && swift run VURIO)
+  UI_EXIT_CODE=$?
+  set -e
+  if [ $UI_EXIT_CODE -ne 0 ]; then
+    fail_and_teardown "swift run VURIO" $UI_EXIT_CODE
+  fi
   stop_server_log_stream
 fi
