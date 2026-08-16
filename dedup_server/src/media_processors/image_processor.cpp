@@ -9,11 +9,11 @@
 
 namespace MediaDedup
 {
-    bool ImageProcessor::Process(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
+    ImageProcessOutcome ImageProcessor::Process(const std::string &processing_file_path, const std::string &original_file_path, DatabaseManager &db, std::shared_ptr<UnifiedObservableConfigManager> config_manager)
     {
         if (processing_file_path.empty() || original_file_path.empty())
         {
-            return false;
+            return ImageProcessOutcome::Failed;
         }
 
         try
@@ -68,7 +68,9 @@ namespace MediaDedup
                                              ") is below minimum threshold (" + std::to_string(min_w) + "x" + std::to_string(min_h) + ")";
                         ScannedFilesOps::markIgnored(db, original_file_path, reason);
                         Poco::Logger::get("ImageProcessor").information("Ignored %s: %s", original_file_path, reason);
-                        return true; // We successfully "processed" it by ignoring it
+                        // markIgnored has already written processed = 3. Returning
+                        // "success" here is what let the caller overwrite it with 2.
+                        return ImageProcessOutcome::Ignored;
                     }
                 }
 
@@ -81,12 +83,14 @@ namespace MediaDedup
             // Process using CLIP embedding pipeline
             QualityPipelineConfig config = QualityPipeline::GetConfigFromManager(config_manager, {});
             // Use the processing file path for actual processing, but original file path for metadata storage
-            return QualityPipeline::Run(processing_file_path, original_file_path, config, db);
+            return QualityPipeline::Run(processing_file_path, original_file_path, config, db)
+                       ? ImageProcessOutcome::Succeeded
+                       : ImageProcessOutcome::Failed;
         }
         catch (const std::exception &e)
         {
             Poco::Logger::get("ImageProcessor").error("Image processing failed for %s: %s", processing_file_path, e.what());
-            return false;
+            return ImageProcessOutcome::Failed;
         }
     }
 }

@@ -95,6 +95,70 @@ namespace MediaDedup
         // DB-7: the scanner accumulates new files and writes them through
         // upsertBatch — one transaction, one WAL commit — instead of one
         // autocommit statement per file.
+        // FILT-1: a file the resolution filter ignored used to be un-ignored one
+        // line later — ImageProcessor::Process marked it processed = 3 and
+        // returned "success", and MediaProcessor overwrote that with 2. The row
+        // then carried an ignore_reason while sitting in the state that means
+        // "processed normally": it stayed in the day view the filter exists to
+        // remove it from, and owed a discovery pass it could never have, because
+        // no artifact is ever written for an ignored file. On the reference
+        // library that was 1,005 files — every single one the filter rejected.
+        // ensureTable repairs them; the enum return stops new ones.
+        TEST(ScannedFilesOpsTest, EnsureTableRestoresIgnoredStateOnUnIgnoredFiles)
+        {
+            std::string db_path = testDbPath("test_scanned_files_filt1_repair.sqlite");
+            std::remove(db_path.c_str());
+
+            {
+                DatabaseManager dbm(db_path);
+                ASSERT_TRUE(dbm.initialize());
+                ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+                auto damaged = makeRow("/filt1/lowres.jpg");   // ignored, then overwritten to 2
+                auto ok = makeRow("/filt1/normal.jpg");        // genuinely processed
+                auto ignored = makeRow("/filt1/tiny.jpg");     // scan-time size filter, already correct
+                ASSERT_TRUE(ScannedFilesOps::upsert(dbm, damaged));
+                ASSERT_TRUE(ScannedFilesOps::upsert(dbm, ok));
+                ASSERT_TRUE(ScannedFilesOps::upsert(dbm, ignored));
+
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                sess << "UPDATE scanned_files SET processed = 2, ignore_reason = "
+                        "'Image resolution (640x480) is below minimum threshold (600x600)' "
+                        "WHERE file_path = '/filt1/lowres.jpg'", Poco::Data::Keywords::now;
+                sess << "UPDATE scanned_files SET processed = 2 WHERE file_path = '/filt1/normal.jpg'",
+                    Poco::Data::Keywords::now;
+                sess << "UPDATE scanned_files SET processed = 3, ignore_reason = "
+                        "'File size (2 KB) is below minimum threshold (10 KB)' "
+                        "WHERE file_path = '/filt1/tiny.jpg'", Poco::Data::Keywords::now;
+            }
+
+            // Restart: ensureTable runs the repair.
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            auto stateOf = [&](const std::string &path) {
+                auto row = ScannedFilesOps::getByPath(dbm, path);
+                EXPECT_TRUE(row.has_value()) << path;
+                return row.has_value() ? row->processed : -999;
+            };
+
+            EXPECT_EQ(stateOf("/filt1/lowres.jpg"), 3)
+                << "a file carrying an ignore_reason must not sit in the processed state";
+            EXPECT_EQ(stateOf("/filt1/normal.jpg"), 2)
+                << "a genuinely processed file must be left alone";
+            EXPECT_EQ(stateOf("/filt1/tiny.jpg"), 3)
+                << "an already-correct ignored file must be left alone";
+
+            // Idempotent: a second pass must not move anything further.
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+            EXPECT_EQ(stateOf("/filt1/lowres.jpg"), 3);
+            EXPECT_EQ(stateOf("/filt1/normal.jpg"), 2);
+
+            std::remove(db_path.c_str());
+        }
+
         TEST(ScannedFilesOpsTest, UpsertBatchWritesAllRowsAtomically)
         {
             std::string db_path = testDbPath("test_scanned_files_batch.sqlite");

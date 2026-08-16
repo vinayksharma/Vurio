@@ -363,17 +363,32 @@ namespace MediaDedup
                     try
                     {
                         ImageProcessor image_processor;
-                        bool processing_success = false;
 
                         Poco::Logger::get("MediaProcessor").trace("Calling image_processor.Process with processing_path: %s", processing_file_path);
-                        
-                        // Process image
-                        processing_success = image_processor.Process(processing_file_path, file_path_copy, *db_manager, config_manager);
-                        
-                        Poco::Logger::get("MediaProcessor").trace("image_processor.Process returned: %s", processing_success ? "true" : "false");
 
+                        // Process image
+                        const ImageProcessOutcome outcome =
+                            image_processor.Process(processing_file_path, file_path_copy, *db_manager, config_manager);
+
+                        Poco::Logger::get("MediaProcessor").trace(
+                            "image_processor.Process returned: %s",
+                            std::string(outcome == ImageProcessOutcome::Succeeded ? "succeeded"
+                                        : outcome == ImageProcessOutcome::Ignored ? "ignored"
+                                                                                  : "failed"));
+
+                        // An ignored file has ALREADY been marked (processed = 3)
+                        // by the filter that rejected it. Touching the state here
+                        // is what silently un-ignored every such file: it went
+                        // back to 2, stayed in the day view, and owed a discovery
+                        // pass it could never have (no artifact is written for
+                        // it). No thumbnail either — the day view excludes it.
+                        if (outcome == ImageProcessOutcome::Ignored)
+                        {
+                            Poco::Logger::get("MediaProcessor").debug(
+                                "File ignored by a media filter, leaving its state alone: " + file_path_copy);
+                        }
                         // Update database status within the lambda using connection pool
-                        if (processing_success)
+                        else if (outcome == ImageProcessOutcome::Succeeded)
                         {
                             ScannedFilesOps::markProcessed(*db_manager, file_path_copy, 2);
                             Poco::Logger::get("MediaProcessor").debug("Successfully completed processing file: " + file_path_copy);

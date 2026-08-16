@@ -390,22 +390,25 @@ protected:
     std::shared_ptr<UnifiedObservableConfigManager> config_manager_;
 };
 
-TEST_F(ImageProcessorTest, Process_WithInvalidFile_ReturnsFalse)
+TEST_F(ImageProcessorTest, Process_WithInvalidFile_ReturnsFailed)
 {
     std::string test_file = "/path/to/test/image.jpg";
 
-    bool result = image_processor_->Process(test_file, test_file, *database_manager_, config_manager_);
+    auto result = image_processor_->Process(test_file, test_file, *database_manager_, config_manager_);
 
-    // Pipeline should return false for invalid/non-existent files
-    EXPECT_FALSE(result);
+    // Pipeline should fail for invalid/non-existent files. FILT-1: this is
+    // deliberately not "not Succeeded" — Ignored is a third outcome now, and a
+    // missing file must never be mistaken for a deliberately filtered one.
+    EXPECT_EQ(result, ImageProcessOutcome::Failed);
 }
 
 TEST_F(ImageProcessorTest, ProcessMethods_WithEmptyPath_ReturnExpectedResults)
 {
     std::string empty_file = "";
 
-    // Image processor should return false for empty paths
-    EXPECT_FALSE(image_processor_->Process(empty_file, empty_file, *database_manager_, config_manager_));
+    // Image processor should fail for empty paths
+    EXPECT_EQ(image_processor_->Process(empty_file, empty_file, *database_manager_, config_manager_),
+              ImageProcessOutcome::Failed);
 }
 
 // Note: The fix for storing metadata against original file path instead of transcoded file path
