@@ -549,23 +549,26 @@ namespace MediaDedup
         return 0;
     }
 
-    bool ScannedFilesOps::getStatusCounts(DatabaseManager &db, int max_id, ScanStatusCounts &out)
+    bool ScannedFilesOps::getStatusCounts(DatabaseManager &db, ScanStatusCounts &out)
     {
         try
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            int m_id = max_id;
+            // DISC-1: discovery progress is now the flag, not "id below the
+            // watermark". The old form counted files that sat below the
+            // watermark WITHOUT ever having been compared, so the bar reached
+            // 100% while work was still owed.
             stmt << "SELECT COUNT(*), "
                     "COALESCE(SUM(processed=2 OR processed=3),0), "
                     "COALESCE(SUM(processed < 0 AND processed != -2 AND processed != -99),0), "
                     "COALESCE(SUM(processed=2),0), "
-                    "COALESCE(SUM(processed=2 AND id <= ?),0) "
+                    "COALESCE(SUM(processed=2 AND discovery_done=1),0) "
                     "FROM scanned_files",
                 Keywords::into(out.total), Keywords::into(out.processed), Keywords::into(out.errors),
                 Keywords::into(out.processed_success), Keywords::into(out.processed_up_to),
-                Keywords::use(m_id), Keywords::now;
+                Keywords::now;
             return true;
         }
         catch (const std::exception &e)
@@ -593,15 +596,14 @@ namespace MediaDedup
         return 0;
     }
 
-    int ScannedFilesOps::countProcessedUpTo(DatabaseManager &db, int max_id)
+    int ScannedFilesOps::countDiscovered(DatabaseManager &db)
     {
         try
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
-            int m_id = max_id;
-            stmt << "SELECT COUNT(*) FROM scanned_files WHERE processed = 2 AND id <= ?", Keywords::use(m_id), Keywords::now;
+            stmt << "SELECT COUNT(*) FROM scanned_files WHERE processed = 2 AND discovery_done = 1", Keywords::now;
             RecordSet rs(stmt);
             if (rs.moveFirst())
             {

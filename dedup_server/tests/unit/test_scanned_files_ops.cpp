@@ -178,22 +178,32 @@ namespace MediaDedup
             add("/sc/queued.jpg", -99);
             add("/sc/backpressure.jpg", -2);
 
-            int mid_id = ScannedFilesOps::getByPath(dbm, "/sc/done1.jpg")->id;
+            // DISC-1: the discovery fraction is the per-file flag, not an id
+            // range. Mark exactly one processed file discovered.
+            const int done1_id = ScannedFilesOps::getByPath(dbm, "/sc/done1.jpg")->id;
+            {
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Statement s(lease.get());
+                s << "UPDATE scanned_files SET discovery_done = 1 WHERE id = " + std::to_string(done1_id),
+                    Poco::Data::Keywords::now;
+            }
 
             ScannedFilesOps::ScanStatusCounts counts;
-            ASSERT_TRUE(ScannedFilesOps::getStatusCounts(dbm, mid_id, counts));
+            ASSERT_TRUE(ScannedFilesOps::getStatusCounts(dbm, counts));
 
             EXPECT_EQ(counts.total, ScannedFilesOps::count(dbm));
             EXPECT_EQ(counts.processed, ScannedFilesOps::countProcessed(dbm));
             EXPECT_EQ(counts.errors, ScannedFilesOps::countError(dbm));
             EXPECT_EQ(counts.processed_success, ScannedFilesOps::countProcessedSuccess(dbm));
-            EXPECT_EQ(counts.processed_up_to, ScannedFilesOps::countProcessedUpTo(dbm, mid_id));
+            EXPECT_EQ(counts.processed_up_to, ScannedFilesOps::countDiscovered(dbm));
 
             // Sanity on absolute values too, not just agreement.
             EXPECT_EQ(counts.total, 8);
             EXPECT_EQ(counts.processed, 3);
             EXPECT_EQ(counts.errors, 2);
             EXPECT_EQ(counts.processed_success, 2);
+            EXPECT_EQ(counts.processed_up_to, 1)
+                << "only the file whose discovery pass committed counts as discovered";
         }
 
         // DB-5 (backend_optimization_plan.md): location keys are user-supplied

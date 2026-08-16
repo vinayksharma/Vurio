@@ -119,14 +119,17 @@ namespace MediaDedup
              */
             bool isRunning() const { return running_.load(); }
 
-            /// DF-5: progress of the edge re-discovery ("realignment") queue for
-            /// the CURRENT drain episode. `total` is how many drainable files
-            /// the episode started with, `completed` how many have been through
-            /// a fresh symmetric pass. Both 0 when no episode is running.
+            /// Progress of an edge re-discovery ("realignment") episode —
+            /// a discovery-epoch sweep, where every file's discovery_done was
+            /// cleared and the whole library is re-passed. `total` is how many
+            /// files still need one, `completed` how many have been through a
+            /// fresh symmetric pass. Both 0 when no episode is running; ordinary
+            /// new-file discovery is reported through the scan status counts,
+            /// not here.
             ///
-            /// Published as counters rather than derived from the requeue table
-            /// on demand: GetStatus polls every 2 s, and counting drainable rows
-            /// needs a three-way join that measured 77 ms mid-repair.
+            /// Published as counters rather than counted on demand: GetStatus
+            /// polls every 2 s, and the pending count needs a join that measured
+            /// 77 ms mid-repair.
             struct RepairProgress
             {
                 int total = 0;
@@ -274,64 +277,61 @@ namespace MediaDedup
             };
 
             /**
-             * @brief DF-3: discover similarity edges for one batch of new files
+             * @brief DF-3: discover similarity edges for one batch of files.
              *
              * Records pair scores >= edge_floor_ into duplicate_edges (KNN when
-             * available, otherwise linear scan over run_state.pool) and advances
-             * the checkpoint watermark. Does NOT touch groups — clustering is
-             * rebuildGroupsFromEdges().
+             * available, otherwise linear scan over run_state.pool) and marks
+             * each file discovery_done in the same transaction. Does NOT touch
+             * groups — clustering is rebuildGroupsFromEdges().
              *
              * @param mode Current server mode (EMBEDDING only)
              * @param batch_size Maximum files to process
-             * @param last_processed_id Start processing from this ID + 1
+             * @param cursor DISC-1: in/out, in-memory and PER RUN. Selection
+             *        skips ids at or below it so one run cannot re-select what
+             *        it already attempted; it is never persisted, so a file it
+             *        skips is simply picked up by the next run. Reset to 0 at
+             *        the start of every run. This is NOT a watermark: whether a
+             *        file still needs discovery is decided solely by its
+             *        discovery_done flag.
              * @param run_state Fallback pool, loaded on first use
              * @return Number of files processed
              */
-            int processBatch(const std::string &mode, int batch_size, int &last_processed_id,
+            int processBatch(const std::string &mode, int batch_size, int &cursor,
                              RunState &run_state);
 
             /**
-             * @brief DF-4: record edges for an explicit list of file ids.
+             * @brief Record edges for an explicit list of file ids.
              *
-             * The shared body of both discovery paths — the watermark batch
-             * and the requeue drain. Records edges only; the checkpoint is the
-             * caller's business.
+             * Records edges and sets discovery_done for every file that ran a
+             * pass, in one transaction. A file with no loadable embedding is
+             * left unflagged, so the selector holds it back until it has one.
              *
-             * @param watermark When non-null, the highest id handled is
-             *        published here and same-batch peers are compared from one
-             *        side only (the fallback path's pair de-duplication). Null
-             *        means "compare against everything", which is what a
-             *        requeued file needs — its whole neighbourhood may already
-             *        be behind the watermark.
              * @return Files compared, or -1 if the run was aborted (in which
-             *         case nothing was persisted).
+             *         case nothing was persisted and no flag was set).
              */
             int discoverEdgesForIds(const std::string &mode, const std::vector<int> &file_ids,
-                                    RunState &run_state, std::atomic<int> *watermark);
+                                    RunState &run_state);
 
-            /**
-             * @brief DF-4: re-discover files the id watermark cannot reach.
-             *
-             * Drains duplicate_discovery_requeue — files whose vector reached
-             * the index too late for their peers to see (or which had no
-             * embedding when discovery passed them). Only ids that actually
-             * have an embedding now are taken; the rest stay parked.
-             *
-             * @return Number of files re-discovered.
-             */
-            int processRequeue(const std::string &mode, int batch_size, RunState &run_state);
+            /// DISC-1: is a discovery-epoch sweep still owed? Lives in
+            /// duplicate_edges_meta, NOT in memory: initialize() stamps the new
+            /// epoch immediately but the sweep it triggers can run for hours, so
+            /// an in-memory flag was lost on any restart in between — and the
+            /// stamp is already current by then, so nothing re-armed it. The
+            /// first real epoch-3 sweep ran its full 3 h 45 m with the repair
+            /// indicator dark for exactly that reason. Set when the epoch clears
+            /// every flag, cleared when a run drains the pending set; an aborted
+            /// run leaves it set. False on any error — an unknown state should
+            /// hide the indicator, never strand it.
+            bool repairPending();
+            void setRepairPending(bool pending);
 
-            /// DF-4: park file ids for a later discovery pass. Best-effort:
-            /// a failure here is logged, never fatal to the run.
-            void requeueForDiscovery(const std::vector<int> &file_ids, const std::string &reason);
-
-            /// DF-5: requeued files that can actually be drained right now —
-            /// the same join processRequeue() selects on, so ids parked without
-            /// an embedding are excluded. Counting them is what lets the UI
-            /// show a fraction that reaches 100%: the permanently-parked rows
-            /// (files whose processing failed) would otherwise pin it below.
-            /// Run ONCE per findDuplicates(), not per status poll.
-            int countDrainableRequeue();
+            /// DISC-1: files that still need a discovery pass AND can have one
+            /// right now — the same predicate the selector uses, so files whose
+            /// processing failed (no artifact row) are excluded. Counting them
+            /// is what lets the UI show a fraction that reaches 100%: the
+            /// permanently-unworkable rows would otherwise pin it below.
+            /// Run ONCE per findDuplicates() batch, not per status poll.
+            int countPendingDiscovery();
 
             /**
              * @brief DF-3: rebuild duplicate groups from the persisted edge list
@@ -417,7 +417,7 @@ namespace MediaDedup
 
             std::atomic<bool> running_{false};
             std::atomic<bool> abort_{false};
-            // DF-5: see repairProgress(). Set at the start of a drain episode
+            // See repairProgress(). Set at the start of a repair episode
             // and zeroed when it ends, so "total > 0" means "repair in flight".
             std::atomic<int> repair_total_{0};
             std::atomic<int> repair_completed_{0};
@@ -441,7 +441,7 @@ namespace MediaDedup
             // 0.80 = the loosest threshold the UI slider can request
             // (maxDistance 0.20), so no slider position ever forces a wipe.
             double edge_floor_ = 0.80;
-            // DF-4: how many times further from a representative than from
+            // Join guard: how many times further from a representative than from
             // its best match in the library a file may sit and still join it.
             // Measured on DISTANCE (1 - score), not on the score itself: at
             // the top of the range the difference between 0.9995 and 0.9955 is

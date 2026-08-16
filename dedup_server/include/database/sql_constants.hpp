@@ -77,6 +77,12 @@ namespace MediaDedup
         // view) is declared here for fresh installs AND applied via
         // kAlterScannedFilesAddTakenDay for pre-existing databases — keep the
         // two definitions identical (same ignore_reason precedent).
+        //
+        // discovery_done follows the same rule (kAlterScannedFilesAddDiscoveryDone).
+        // COLUMN ORDER MATTERS for the ALTER-ed columns: ADD COLUMN appends at
+        // the end, so taken_day, is_video and discovery_done must stay last and
+        // in that order here, or a fresh database and a migrated one would not
+        // be structurally identical.
         inline constexpr std::string_view kCreateScannedFilesTable =
             "CREATE TABLE IF NOT EXISTS scanned_files (\n"
             "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
@@ -96,7 +102,8 @@ namespace MediaDedup
             "    exif_blob BLOB,\n"
             "    ignore_reason TEXT,\n"
             "    taken_day TEXT GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL,\n"
-            "    is_video INTEGER GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL\n"
+            "    is_video INTEGER GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL,\n"
+            "    discovery_done INTEGER NOT NULL DEFAULT 0\n"
             ");";
 
         // Index for efficient file_path lookups during scan operations
@@ -368,54 +375,102 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateEdgesIndexScore =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_score ON duplicate_edges(score);";
 
-        // DF-4: files owed a discovery pass that the id watermark cannot
-        // express. Discovery queries KNN once per file against whatever is in
-        // the vector index at that instant and then advances the watermark
-        // forever, so a file whose vector landed late was invisible to every
-        // peer already discovered — and nobody looks again. Recording it here
-        // and re-querying from ITS side repairs both directions, because edges
-        // are symmetric.
+        // DISC-1: per-file edge-discovery state. Discovery used to infer "which
+        // files still need comparing" from a single ascending id watermark,
+        // which is only correct if processed=2 arrives in id order. It does
+        // not: status is written per file_path by a parallel worker pool, and
+        // is reset by restart requeues, error resets and drive restores. Every
+        // file that reached processed=2 behind the watermark was skipped
+        // permanently — it never ran a KNN pass of its own, so it only ever
+        // collected edges from files discovered AFTER it, and two such files
+        // never saw each other. See docs/todo_discovery_watermark.md.
         //
-        // Rows are drained only once the file actually has an embedding; an id
-        // parked here with no artifact row (processed before its embedding was
-        // written) simply waits, costing one join per run.
-        inline constexpr std::string_view kCreateDuplicateDiscoveryRequeueTable =
-            "CREATE TABLE IF NOT EXISTS duplicate_discovery_requeue (\n"
-            "    file_id INTEGER PRIMARY KEY,\n"
-            "    reason TEXT NOT NULL DEFAULT '',\n"
-            "    requeued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
-            ") WITHOUT ROWID;";
+        // The flag is the whole mechanism: 0 = still owed a pass, 1 = its pass
+        // committed. Nothing is inferred from an ordering, so a late
+        // processed=2 is simply a row the selector has not reached yet.
+        inline constexpr std::string_view kAlterScannedFilesAddDiscoveryDone =
+            "ALTER TABLE scanned_files ADD COLUMN discovery_done INTEGER NOT NULL DEFAULT 0";
 
-        // DF-5: the discovery watermark is a single ascending id, but processed
-        // is written per file_path by a parallel worker pool and can go back to
-        // 0 on a retry, an error reset, or a drive restore. Any file that
-        // reaches processed=2 AFTER a higher id advanced the watermark is never
-        // selected for a batch again, so it never queries its own neighbours —
-        // it only collects edges from files discovered later. Two such files
-        // never see each other at all, and the pair is lost permanently.
+        // Partial index over exactly the pending set, so the selector below is
+        // index-served and shrinks to nothing as discovery drains (a flag flip
+        // 0 -> 1 deletes the entry). Indexed on id, not discovery_done: the
+        // column is a constant inside the predicate. Mirrors the shape of
+        // kCreateScannedFilesIndexUnprocessed.
+        inline constexpr std::string_view kCreateScannedFilesIndexPendingDiscovery =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_pending_discovery "
+            "ON scanned_files(id) WHERE processed = 2 AND discovery_done = 0";
+
+        // Selector: no ordering assumption, no watermark. The embedding
+        // predicate is what replaces the old 'no_embedding_at_discovery'
+        // requeue rows — a file processed before its artifact was written is
+        // simply held back until it has a vector, with no row to park and no
+        // permanent backlog to re-join on every run.
         //
-        // The trigger closes that by parking exactly the late arrivals. Files
-        // still ahead of the watermark are left alone: the normal batch path
-        // owns them. MAX() spans every mode because the requeue is not
-        // mode-scoped; with the single EMBEDDING mode in use it is that
-        // mode's watermark.
+        // The bound id is an in-memory, per-RUN cursor, never persisted. It
+        // only stops one run from re-selecting rows it already attempted (a
+        // file whose artifact fails to load keeps its flag at 0, and the batch
+        // loop would otherwise spin on it forever). Correctness lives entirely
+        // in discovery_done; the cursor resets to 0 on every run.
+        inline constexpr std::string_view kSelectPendingDiscovery =
+            "SELECT sf.id FROM scanned_files sf "
+            "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
+            "WHERE sf.processed = 2 AND sf.discovery_done = 0 AND sf.id > ? "
+            "AND ia.embedding IS NOT NULL "
+            "ORDER BY sf.id ASC LIMIT ?";
+
+        // Mirrors kSelectPendingDiscovery's predicate exactly (minus the
+        // cursor) — if this counts a row the selector would skip, the repair
+        // progress bar never finishes.
+        inline constexpr std::string_view kCountPendingDiscovery =
+            "SELECT COUNT(*) FROM scanned_files sf "
+            "JOIN image_artifacts ia ON ia.file_path = sf.file_path "
+            "WHERE sf.processed = 2 AND sf.discovery_done = 0 AND ia.embedding IS NOT NULL";
+
+        inline constexpr std::string_view kMarkDiscoveryDone =
+            "UPDATE scanned_files SET discovery_done = 1 WHERE id = ?";
+
+        // Clearing the flag is everything the requeue table used to express:
+        // a backfilled vector, a failed index insert, a re-embed, a discovery
+        // epoch bump, and "reset duplicates" all reduce to this.
         //
-        // Dropped and recreated on every ensureTables so the body cannot go
-        // stale; both tables it touches are created before it.
+        // The `discovery_done = 1` predicate keeps this from rewriting a row
+        // that is already pending — upsertEmbedding calls it on EVERY embedding
+        // write, and during a first ingest every one of those would otherwise
+        // be a wasted row write. It also makes changes() mean "rows actually
+        // re-opened", which is what the callers report.
+        inline constexpr std::string_view kClearDiscoveryDoneById =
+            "UPDATE scanned_files SET discovery_done = 0 WHERE id = ? AND discovery_done = 1";
+
+        inline constexpr std::string_view kClearDiscoveryDoneAll =
+            "UPDATE scanned_files SET discovery_done = 0";
+
+        // DISC-1 migration, one-time. Everything the old watermark legitimately
+        // covered is already discovered; anything still parked in the requeue
+        // was owed a pass, so it must stay at 0 and be folded in BEFORE the
+        // table is dropped. Guarded by the presence of the old table/trigger,
+        // so it runs exactly once and never on a fresh database.
+        inline constexpr std::string_view kMigrateDiscoveryDoneFromWatermark =
+            "UPDATE scanned_files SET discovery_done = 1\n"
+            " WHERE processed = 2\n"
+            "   AND id <= (SELECT COALESCE(MAX(last_processed_id), 0)\n"
+            "              FROM duplicate_processing_checkpoint)\n"
+            "   AND id NOT IN (SELECT file_id FROM duplicate_discovery_requeue)";
+
+        // DISC-1 teardown of the legacy stopgap. The trigger parked files
+        // that reached processed=2 below the persisted watermark; it could not
+        // see the ones that got there DURING a batch (the checkpoint is only
+        // written after the batch commits, so their id was still ahead of it),
+        // and once such a file sits at 2 the trigger can never fire for it
+        // again. Per-file state has no such window.
         inline constexpr std::string_view kDropRequeueLateProcessedTrigger =
             "DROP TRIGGER IF EXISTS trg_scanned_files_requeue_late_processed;";
 
-        inline constexpr std::string_view kCreateRequeueLateProcessedTrigger =
-            "CREATE TRIGGER trg_scanned_files_requeue_late_processed\n"
-            "AFTER UPDATE OF processed ON scanned_files\n"
-            "WHEN NEW.processed = 2 AND OLD.processed <> 2\n"
-            "     AND NEW.id <= COALESCE((SELECT MAX(last_processed_id)\n"
-            "                             FROM duplicate_processing_checkpoint), 0)\n"
-            "BEGIN\n"
-            "    INSERT OR IGNORE INTO duplicate_discovery_requeue(file_id, reason)\n"
-            "    VALUES (NEW.id, 'processed_below_watermark');\n"
-            "END;";
+        inline constexpr std::string_view kDropDuplicateDiscoveryRequeueTable =
+            "DROP TABLE IF EXISTS duplicate_discovery_requeue;";
 
+        // last_processed_id is retained for schema compatibility but is no
+        // longer read by discovery (DISC-1); the remaining columns are the
+        // last-run stats the status poll reports.
         inline constexpr std::string_view kCreateDuplicateProcessingCheckpointTable =
             "CREATE TABLE IF NOT EXISTS duplicate_processing_checkpoint (\n"
             "    mode TEXT PRIMARY KEY,\n"

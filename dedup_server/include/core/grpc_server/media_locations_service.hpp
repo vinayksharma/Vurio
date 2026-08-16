@@ -6,7 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "core/grpc_server/grpc_service_common.hpp"
-// DF-5: repairProgress() is called inline below, so the full type is needed.
+// repairProgress() is called inline below, so the full type is needed.
 #include "orchestration/duplicate_finder.hpp"
 
 namespace MediaDedup {
@@ -18,7 +18,7 @@ class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsServi
     std::shared_ptr<DatabaseManager> db_owner_; // CC-5
     DatabaseManager* db_;
     std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler_;
-    // DF-5: read only for repairProgress() — in-memory atomics, no DB work on
+    // Read only for repairProgress() — in-memory atomics, no DB work on
     // the 2 s status poll. Optional: null in tests and if the finder is disabled.
     std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder_;
 public:
@@ -35,13 +35,12 @@ public:
         }
         
         if (db_) {
-            auto checkpoint = MediaDedup::DuplicateGroupsOps::getCheckpoint(*db_, "EMBEDDING");
-            int last_processed_id = checkpoint.has_value() ? checkpoint->last_processed_id : 0;
-
             // DB-7: one aggregated query + one lease for all five
-            // scanned_files counts (this poll runs every 2 s).
+            // scanned_files counts (this poll runs every 2 s). DISC-1: the
+            // discovery fraction comes from the per-file flag, so no checkpoint
+            // read is needed here any more.
             MediaDedup::ScannedFilesOps::ScanStatusCounts counts;
-            MediaDedup::ScannedFilesOps::getStatusCounts(*db_, last_processed_id, counts);
+            MediaDedup::ScannedFilesOps::getStatusCounts(*db_, counts);
             reply->set_scanned_files_count(counts.total);
             reply->set_processed_files_count(counts.processed);
             reply->set_error_files_count(counts.errors);
