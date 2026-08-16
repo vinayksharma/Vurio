@@ -238,6 +238,23 @@ namespace MediaDedup
         inline constexpr std::string_view kCountScannedFiles =
             "SELECT COUNT(*) FROM scanned_files";
 
+        // FILT-1 repair: files the resolution filter ignored, then had
+        // un-ignored out from under them. ImageProcessor::Process marked them
+        // processed = 3 and returned "success", and the caller overwrote that
+        // with 2 — so they carry an ignore_reason while sitting in the state
+        // that means "processed normally". They have no image_artifacts row and
+        // never can have one, and processed = 2 keeps them in the day view the
+        // filter exists to remove them from.
+        //
+        // ignore_reason is only ever written alongside an ignore decision (the
+        // scan-time size filter, which already lands on 3, and the resolution
+        // filter), and a rescan clears it for a file that now passes. So
+        // "ignore_reason set AND processed = 2" identifies exactly the damaged
+        // rows. Idempotent: after one run nothing matches.
+        inline constexpr std::string_view kRepairUnIgnoredFiles =
+            "UPDATE scanned_files SET processed = 3 "
+            "WHERE processed = 2 AND ignore_reason IS NOT NULL AND ignore_reason <> ''";
+
         inline constexpr std::string_view kUpdateProcessed =
             "UPDATE scanned_files SET processed=? WHERE file_path=?";
 

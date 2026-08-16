@@ -80,6 +80,26 @@ namespace MediaDedup
             Poco::Logger::get("ScannedFilesOps").debug("taken_day index upgrade check skipped: " + std::string(e.what()));
         }
 
+        // FILT-1: repair rows the resolution filter ignored and the caller then
+        // un-ignored. Cheap and idempotent — after the first run it matches
+        // nothing — so it needs no version marker of its own.
+        try {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            sess << std::string(SQL::kRepairUnIgnoredFiles), Poco::Data::Keywords::now;
+            int repaired = 0;
+            Poco::Data::Statement cnt(sess);
+            cnt << "SELECT changes()", Poco::Data::Keywords::into(repaired), Poco::Data::Keywords::now;
+            if (repaired > 0) {
+                Poco::Logger::get("ScannedFilesOps").information(
+                    "FILT-1: restored ignored state on %d file(s) that had been marked processed despite being filtered out.",
+                    repaired);
+            }
+        } catch (const std::exception &e) {
+            Poco::Logger::get("ScannedFilesOps").warning(
+                "FILT-1 repair failed: " + std::string(e.what()));
+        }
+
         // Create indexes for efficient lookups (critical for FilesManager performance)
         // Note: UNIQUE constraint on file_path already creates an implicit index, but we add explicit one for clarity
         try
