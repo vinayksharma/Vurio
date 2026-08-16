@@ -2014,6 +2014,68 @@ TEST_F(DuplicateFinderRangeTest, MigrationOffTheIdWatermarkPreservesWhatWasOwed)
     std::filesystem::remove(db_path);
 }
 
+// The epoch is stamped at initialize(), but the sweep it triggers can run for
+// hours. An in-memory "repair in flight" flag was therefore lost on any restart
+// in between, and nothing re-armed it because the stamp was already current —
+// the first real epoch-3 sweep ran its full 3 h 45 m with the indicator dark.
+// The marker has to outlive the process.
+TEST_F(DuplicateFinderRangeTest, RepairEpisodeSurvivesARestartMidSweep)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "disc1_repair_restart.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    ASSERT_GT(addProcessedFileWithEmbedding(*db_manager_, "/disc1rr/a.jpg",
+                                            {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}), 0);
+    ASSERT_GT(addProcessedFileWithEmbedding(*db_manager_, "/disc1rr/a2.jpg",
+                                            {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f}), 0);
+
+    auto pending = [&] {
+        return scalarQuery(*db_manager_,
+                           "SELECT COALESCE(discovery_repair_pending, 0) FROM duplicate_edges_meta WHERE id = 1");
+    };
+
+    {
+        DuplicateFinder finder(config_, *db_manager_);
+        ASSERT_TRUE(finder.initialize());
+        finder.findDuplicates();
+    }
+    ASSERT_EQ(pending(), 0) << "an ordinary run is not a repair episode";
+
+    // Pretend this database was written by a pre-fix build, then start up.
+    execSql(*db_manager_, "UPDATE duplicate_edges_meta SET discovery_epoch = 0 WHERE id = 1");
+    {
+        DuplicateFinder seeding(config_, *db_manager_);
+        ASSERT_TRUE(seeding.initialize());
+        // ...and die before running a single batch, which is what happened for
+        // real: the epoch was stamped by one process and swept by another.
+    }
+    EXPECT_EQ(pending(), 1) << "the epoch bump must record the owed sweep durably";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM scanned_files WHERE discovery_done = 0"), 2);
+
+    // Restart. The stamp is already current, so the epoch branch cannot fire
+    // again — only the persisted marker can tell this process a sweep is owed.
+    DuplicateFinder restarted(config_, *db_manager_);
+    ASSERT_TRUE(restarted.initialize());
+    EXPECT_EQ(pending(), 1)
+        << "a restart between the stamp and the sweep must not lose the episode";
+
+    restarted.findDuplicates();
+    EXPECT_EQ(pending(), 0) << "a drained sweep must clear the marker";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM scanned_files WHERE discovery_done = 0"), 0);
+    EXPECT_EQ(restarted.repairProgress().total, 0) << "a finished episode must clear the indicator";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
 // A fresh database has no watermark to migrate from, so nothing may be marked
 // discovered — every file must go through a real pass.
 TEST_F(DuplicateFinderRangeTest, FreshDatabaseStartsWithNothingDiscovered)

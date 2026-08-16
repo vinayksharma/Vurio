@@ -312,6 +312,19 @@ namespace MediaDedup
             int discoverEdgesForIds(const std::string &mode, const std::vector<int> &file_ids,
                                     RunState &run_state);
 
+            /// DISC-1: is a discovery-epoch sweep still owed? Lives in
+            /// duplicate_edges_meta, NOT in memory: initialize() stamps the new
+            /// epoch immediately but the sweep it triggers can run for hours, so
+            /// an in-memory flag was lost on any restart in between — and the
+            /// stamp is already current by then, so nothing re-armed it. The
+            /// first real epoch-3 sweep ran its full 3 h 45 m with the repair
+            /// indicator dark for exactly that reason. Set when the epoch clears
+            /// every flag, cleared when a run drains the pending set; an aborted
+            /// run leaves it set. False on any error — an unknown state should
+            /// hide the indicator, never strand it.
+            bool repairPending();
+            void setRepairPending(bool pending);
+
             /// DISC-1: files that still need a discovery pass AND can have one
             /// right now — the same predicate the selector uses, so files whose
             /// processing failed (no artifact row) are excluded. Counting them
@@ -408,11 +421,6 @@ namespace MediaDedup
             // and zeroed when it ends, so "total > 0" means "repair in flight".
             std::atomic<int> repair_total_{0};
             std::atomic<int> repair_completed_{0};
-            // DISC-1: set by initialize() when a discovery-epoch bump cleared
-            // every discovery_done, consumed by the next findDuplicates() run to
-            // decide whether this pass is a reportable repair episode. Re-armed
-            // if that run is aborted, so an interrupted sweep still reads as one.
-            std::atomic<bool> epoch_repair_pending_{false};
             // DF-3: set by onConfigChange on a threshold move; the next finder
             // run re-clusters from recorded edges even with no new files.
             std::atomic<bool> regroup_requested_{false};

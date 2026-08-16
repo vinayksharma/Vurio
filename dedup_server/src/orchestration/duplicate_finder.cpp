@@ -256,12 +256,21 @@ namespace MediaDedup
                               "id INTEGER PRIMARY KEY CHECK (id = 1), floor REAL NOT NULL)",
                         now;
                 }
-                // Added after the table shipped, so it arrives by ALTER
+                // Added after the table shipped, so they arrive by ALTER
                 // on existing installs. Failing means "already there".
                 try
                 {
                     Statement alter(sess);
                     alter << "ALTER TABLE duplicate_edges_meta ADD COLUMN discovery_epoch INTEGER NOT NULL DEFAULT 0",
+                        now;
+                }
+                catch (const std::exception &)
+                {
+                }
+                try
+                {
+                    Statement alter(sess);
+                    alter << "ALTER TABLE duplicate_edges_meta ADD COLUMN discovery_repair_pending INTEGER NOT NULL DEFAULT 0",
                         now;
                 }
                 catch (const std::exception &)
@@ -292,6 +301,7 @@ namespace MediaDedup
                 }
                 const bool discovery_has_run = discovered_count > 0;
 
+                bool repair_seeded = false;
                 bool need_rediscovery = false;
                 if (discovery_has_run)
                 {
@@ -333,8 +343,14 @@ namespace MediaDedup
                         cnt << "SELECT changes()", into(seeded), now;
                         // Tells findDuplicates() to publish repair progress for
                         // this pass — an epoch sweep is a repair episode the UI
-                        // shows, ordinary new-file discovery is not.
-                        epoch_repair_pending_.store(true);
+                        // shows, ordinary new-file discovery is not. Recorded
+                        // in the row stamped below, not in memory: the epoch is
+                        // stamped here but the sweep can take hours, and a
+                        // restart in between would otherwise leave the whole
+                        // remaining pass unreported (the stamp is already 3, so
+                        // this branch never fires again). That is exactly what
+                        // happened on the first real epoch-3 sweep.
+                        repair_seeded = true;
                         logger.information("Edge discovery epoch %d -> %d: cleared discovery state on %d file(s) for a one-time re-discovery pass (existing edges and groups are kept).",
                                            stored_epoch, kEdgeDiscoveryEpoch, seeded);
                     }
@@ -347,6 +363,13 @@ namespace MediaDedup
                           "ON CONFLICT(id) DO UPDATE SET floor = excluded.floor, "
                           "discovery_epoch = excluded.discovery_epoch",
                         use(f), use(epoch), now;
+                }
+                if (repair_seeded)
+                {
+                    // After the upsert, so the row is guaranteed to exist even
+                    // on an install that had never written one.
+                    Statement rp(sess);
+                    rp << "UPDATE duplicate_edges_meta SET discovery_repair_pending = 1 WHERE id = 1", now;
                 }
             }
             catch (const std::exception &e)
@@ -410,7 +433,7 @@ namespace MediaDedup
                 // Publish repair progress only for an epoch sweep — that is the
                 // multi-hour episode the UI shows a bar for; ordinary new-file
                 // discovery is reported through the scan status counts.
-                const bool repairing = epoch_repair_pending_.exchange(false);
+                const bool repairing = repairPending();
                 repair_completed_.store(0);
                 repair_total_.store(repairing ? countPendingDiscovery() : 0);
 
@@ -443,10 +466,11 @@ namespace MediaDedup
                 // half-full bar on screen until the next run.
                 repair_total_.store(0);
                 repair_completed_.store(0);
-                // An aborted sweep is not a finished one: keep the flag so the
-                // next run still reports it as a repair episode.
-                if (repairing && abort_.load())
-                    epoch_repair_pending_.store(true);
+                // An aborted sweep is not a finished one: the persisted flag
+                // stays set, so the next run — in this process or a later one —
+                // still reports it as a repair episode.
+                if (repairing && !abort_.load())
+                    setRepairPending(false);
 
                 if (abort_.load())
                     logger.information("Duplicate detection run aborted: processed %d files in %d batches",
@@ -773,6 +797,42 @@ namespace MediaDedup
             {
                 logger.error("Exception in discoverEdgesForIds: %s", std::string(e.what()));
                 return -1;
+            }
+        }
+
+        bool DuplicateFinder::repairPending()
+        {
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                std::vector<int> rows;
+                Statement stmt(sess);
+                stmt << "SELECT COALESCE(discovery_repair_pending, 0) FROM duplicate_edges_meta WHERE id = 1",
+                    into(rows), now;
+                return !rows.empty() && rows[0] != 0;
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().warning("repairPending failed: %s", std::string(e.what()));
+                return false; // unknown: hide the indicator rather than strand it
+            }
+        }
+
+        void DuplicateFinder::setRepairPending(bool pending)
+        {
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                int v = pending ? 1 : 0;
+                Statement stmt(sess);
+                stmt << "UPDATE duplicate_edges_meta SET discovery_repair_pending = ? WHERE id = 1",
+                    use(v), now;
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().warning("setRepairPending failed: %s", std::string(e.what()));
             }
         }
 

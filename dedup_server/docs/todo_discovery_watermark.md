@@ -464,18 +464,37 @@ confirms the library is consistent; it does not exercise the race fix. The evide
 that remains `FileFinishingDuringADiscoveryBatchIsNotLost`. The first real test is the
 next bulk import.
 
-### Known gap: the repair indicator does not survive a restart
+### Fixed: the repair indicator now survives a restart
 
-`epoch_repair_pending_` is an in-memory atomic, and the epoch is stamped to 3 at the
-first startup — before the sweep runs. So on a restart mid-sweep, `stored_epoch <
-kEdgeDiscoveryEpoch` is false, the branch never re-arms, and `repairProgress()` returns
-`{0, 0}` for the remainder. **The work still completes correctly** (the flags are
-persisted, so the ordinary selector drains what is left) and the main dedup progress is
-unaffected, because `duplicate_finding_completed`/`total` is now flag-based. Only the
-dedicated repair bar goes dark.
+`epoch_repair_pending_` was an in-memory atomic, and the epoch is stamped at
+`initialize()` — before the sweep it triggers has run a single batch. So a restart in
+between lost it, and nothing re-armed it, because by then `stored_epoch` already equalled
+`kEdgeDiscoveryEpoch` and the branch could not fire again.
 
-The DF-5 requeue derived the episode from a persisted table, so it survived restarts
-("a restart mid-drain starts a fresh episode sized to what is LEFT"). That behaviour was
-not preserved. Fix, if wanted: persist the marker next to `discovery_epoch` in
-`duplicate_edges_meta` — set it when the epoch clears flags, clear it when a run drains,
-read it back in `initialize()`.
+This was not hypothetical. On the first real epoch-3 run the log shows the server started
+at 21:16:47 (epoch stamped, 143,124 flags cleared), restarted at 22:16:55 and 22:17:16,
+and only then began sweeping at 22:17:47. The entire 3 h 45 m pass ran with
+`repairProgress()` at `{0, 0}` and the repair bar dark.
+
+The marker now lives in `duplicate_edges_meta.discovery_repair_pending`, written in the
+same startup that clears the flags (after the epoch upsert, so the row is guaranteed to
+exist) and cleared only when a run actually drains the pending set. An aborted run leaves
+it set, so an interrupted sweep still reads as an episode on the next run — in this
+process or a later one. `repairPending()` returns false on any error: an unknown state
+should hide the indicator, never strand it.
+
+Pinned by `RepairEpisodeSurvivesARestartMidSweep`, which seeds the epoch in one
+`DuplicateFinder`, destroys it before any batch runs, and asserts a second instance still
+sees the episode. Mutation-checked: forcing `repair_seeded = false` fails the test on
+exactly that assertion.
+
+The main dedup progress was never affected — `duplicate_finding_completed`/`total` is
+flag-based and persisted.
+
+### Not a defect: the scheduler interval
+
+An earlier reading of the hour between the epoch stamp and the first sweep batch was
+attributed to something overriding `duplicates.finder.intervalMs`. That was wrong. Every
+`Registering job: duplicateFinder` line in the log, back to 2026-08-11, reads
+`interval: 5000 ms`, matching `config/config.yaml`. The hour was three separate server
+starts, not one long wait.
