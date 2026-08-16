@@ -427,11 +427,55 @@ separate defect in the processing pipeline, not addressed here.)
 Full unit suite: 308 passed, 32 skipped (pre-existing ONNX/ImageMagick/MediaProcessor
 environment skips), 0 failed.
 
-### Still open
+### Verified on the live library (2026-08-16)
 
-§8's library-scale re-measurement is only meaningful after the epoch-3 sweep runs on a
-real library (~3.8 h of background work at 104 ms/query). Re-run the §3 heuristic and
-the 400-member `best_neighbour` sample then: `edges, but ALL peers higher-id` should sit
-at the edge-component minima and nothing more, and the edge-table vetoes should agree
-with the true-nearest vetoes. Measured before this work: 12,711 files (9.0%) with no
-pass of their own, falling to 4,920 (3.5%) after the epoch-2 repair.
+The epoch-3 sweep ran on `data/dedup_server.db`: discovery state cleared on 143,124 rows
+at 21:16:47 UTC, first batch 22:17:47, `processed 140985 files in 141 batches` at
+02:03:31 — **3 h 45 m 44 s**, against the 3.8 h estimate.
+
+Re-running the §3 heuristic before and after that sweep gives identical numbers:
+
+| | before sweep | after sweep |
+|---|---|---|
+| `duplicate_edges` | 14,939,766 | **14,939,766** |
+| zero edges at all | 1,148 | 1,148 |
+| edges, but ALL peers higher-id | 3,772 | 3,772 |
+
+**A full symmetric k=200 pass over every embedded file produced zero new edges.** Two
+conclusions:
+
+1. The edge list is closed under the current index and floor — there is nothing left for
+   discovery to find on this library.
+2. It settles §8's open question about the heuristic's residual. Those 3,772 files are
+   not hiding missing edges: each one just re-ran its own pass and nothing appeared, so
+   they are edge-component minima by construction. The 3.5% residual after the epoch-2
+   repair was entirely heuristic false-positives, not damage.
+
+That also collapses §8's second check. The join guard reads `best_neighbour` from
+`duplicate_edges`, and the edge table is now provably equal to what a fresh KNN pass
+produces, so edge-table vetoes and true-nearest vetoes agree by construction — the 0 vs
+11 disagreement cannot recur. This holds within `knnK = 200` and at or above the 0.80
+edge floor, and assumes the vector index is complete (measured complete at 140,985 rows
+on 2026-08-14; not re-checked here, as vec0 is not loadable from the sqlite3 CLI).
+
+**What this does NOT verify.** The sweep found nothing because this library has had no
+ingest since the epoch-2 repair, so the batch-window race had nothing to leak. It
+confirms the library is consistent; it does not exercise the race fix. The evidence for
+that remains `FileFinishingDuringADiscoveryBatchIsNotLost`. The first real test is the
+next bulk import.
+
+### Known gap: the repair indicator does not survive a restart
+
+`epoch_repair_pending_` is an in-memory atomic, and the epoch is stamped to 3 at the
+first startup — before the sweep runs. So on a restart mid-sweep, `stored_epoch <
+kEdgeDiscoveryEpoch` is false, the branch never re-arms, and `repairProgress()` returns
+`{0, 0}` for the remainder. **The work still completes correctly** (the flags are
+persisted, so the ordinary selector drains what is left) and the main dedup progress is
+unaffected, because `duplicate_finding_completed`/`total` is now flag-based. Only the
+dedicated repair bar goes dark.
+
+The DF-5 requeue derived the episode from a persisted table, so it survived restarts
+("a restart mid-drain starts a fresh episode sized to what is LEFT"). That behaviour was
+not preserved. Fix, if wanted: persist the marker next to `discovery_epoch` in
+`duplicate_edges_meta` — set it when the epoch clears flags, clear it when a run drains,
+read it back in `initialize()`.
