@@ -344,9 +344,19 @@ namespace MediaDedup
              */
             void rebuildGroupsFromEdges(const std::string &mode);
 
-            /// DF-3: drop edges whose endpoints no longer exist in
-            /// scanned_files. Returns true when anything was actually removed.
+            /// DF-3/DF-4: drop edges whose endpoints no longer exist in
+            /// scanned_files. Read-gated (the scan is a SELECT; the DELETE
+            /// only runs when it finds orphans) and called ONCE per process,
+            /// on the first findDuplicates() — the code that deletes
+            /// scanned_files rows now removes their edges in the same
+            /// transaction. Returns true when anything was actually removed
+            /// (or the outcome is unknown), which forces a full re-cluster.
             bool purgeOrphanEdges();
+
+            /// DF-4: read-and-clear duplicate_edges_meta.regroup_pending, the
+            /// flag ScannedFilesOps sets after removing a deleted file's edges.
+            /// True when a re-cluster was requested since the last run.
+            bool consumeRegroupPending();
 
             /**
              * @brief Compute similarity between two files using embedding-based matching
@@ -424,6 +434,9 @@ namespace MediaDedup
             // DF-3: set by onConfigChange on a threshold move; the next finder
             // run re-clusters from recorded edges even with no new files.
             std::atomic<bool> regroup_requested_{false};
+            /// DF-4: the legacy orphan-edge reconcile has run once in this
+            /// process (first findDuplicates() after initialize()).
+            std::atomic<bool> orphan_reconciled_{false};
             std::atomic<int> last_recluster_groups_unchanged_{0};
             mutable std::mutex mutex_;
             GroupEventCallback group_event_cb_;

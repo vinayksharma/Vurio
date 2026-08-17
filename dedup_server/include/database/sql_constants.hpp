@@ -392,6 +392,37 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateEdgesIndexScore =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_score ON duplicate_edges(score);";
 
+        // DF-4: edges are stored canonically (file_a < file_b), so a file's
+        // edges sit in EITHER column. The primary key covers file_a; this
+        // index covers file_b, so deleting one file's edges is two index
+        // searches instead of a scan of the whole table (14.9M rows on a
+        // 143k-file library, ~30 s — held under the WRITE lock when it was a
+        // DELETE, which starved every other writer in the process). Built
+        // once on existing installs (~4 s / +6% file size at that scale).
+        inline constexpr std::string_view kCreateDuplicateEdgesIndexFileB =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_file_b ON duplicate_edges(file_b);";
+
+        // DF-4: targeted edge removal, run INSIDE the transaction that deletes
+        // the scanned_files row(s), so the edge table can never hold an
+        // orphan and the finder no longer needs a per-run full-table purge.
+        // Both forms are index-driven (PK for file_a, idx_..._file_b for
+        // file_b; the OR is a MULTI-INDEX OR).
+        inline constexpr std::string_view kDeleteDuplicateEdgesForFile =
+            "DELETE FROM duplicate_edges WHERE file_a = ? OR file_b = ?";
+        inline constexpr std::string_view kDeleteDuplicateEdgesForLocationA =
+            "DELETE FROM duplicate_edges WHERE file_a IN (SELECT id FROM scanned_files WHERE location_key = ?)";
+        inline constexpr std::string_view kDeleteDuplicateEdgesForLocationB =
+            "DELETE FROM duplicate_edges WHERE file_b IN (SELECT id FROM scanned_files WHERE location_key = ?)";
+
+        // DF-4: removing a file's edges can split a component, so the finder
+        // must re-cluster on its next run. The deleting code cannot reach the
+        // finder object, so the request is a persisted flag on
+        // duplicate_edges_meta (which the finder creates/ALTERs at init and
+        // consumes at the top of every run). Silently a no-op when the meta
+        // table does not exist yet — there are no groups to go stale then.
+        inline constexpr std::string_view kRequestRegroupAfterEdgePurge =
+            "UPDATE duplicate_edges_meta SET regroup_pending = 1 WHERE id = 1";
+
         // DISC-1: per-file edge-discovery state. Discovery used to infer "which
         // files still need comparing" from a single ascending id watermark,
         // which is only correct if processed=2 arrives in id order. It does
@@ -499,19 +530,35 @@ namespace MediaDedup
             "    groups_updated INTEGER NOT NULL DEFAULT 0\n"
             ");";
 
-        // Thumbnail cache table
+        // Thumbnail cache table.
+        // THUMB-1: render_revision is part of the identity of a cached asset.
+        // 0 = "no user edits" (every file today). Once the non-destructive edit
+        // pipeline lands, the same (source_path, thumbnail_size) maps to
+        // different pixels per revision, so it lives in the UNIQUE constraint
+        // NOW (widening a UNIQUE on a populated table later is a rebuild).
+        // Every keyed statement below carries it; see
+        // docs/todo_aspect_ratio_thumbnails.md §4.2(b).
         inline constexpr std::string_view kCreateThumbnailCacheTable =
             "CREATE TABLE IF NOT EXISTS thumbnail_cache (\n"
             "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
             "    source_path TEXT NOT NULL,\n"
             "    cached_path TEXT NOT NULL,\n"
             "    thumbnail_size INTEGER NOT NULL,\n"
+            "    render_revision INTEGER NOT NULL DEFAULT 0,\n"
             "    file_size_bytes INTEGER NOT NULL,\n"
             "    source_modified_at INTEGER NOT NULL,\n"
             "    created_at INTEGER NOT NULL,\n"
             "    last_accessed_at INTEGER NOT NULL,\n"
-            "    UNIQUE(source_path, thumbnail_size)\n"
+            "    UNIQUE(source_path, thumbnail_size, render_revision)\n"
             ");";
+
+        // THUMB-1 migration guard: the pre-render_revision table shape.
+        // ThumbnailCacheOps::ensureTable drops and recreates the table when the
+        // column is missing (a cache table: schema change == cache invalidated).
+        inline constexpr std::string_view kThumbnailCacheHasRenderRevision =
+            "SELECT COUNT(*) FROM pragma_table_info('thumbnail_cache') WHERE name = 'render_revision'";
+        inline constexpr std::string_view kDropThumbnailCacheTable =
+            "DROP TABLE IF EXISTS thumbnail_cache";
 
         // Preview cache table (full resolution transcoded caches)
         inline constexpr std::string_view kCreatePreviewCacheTable =
@@ -671,15 +718,18 @@ namespace MediaDedup
             "ORDER BY dg.representative_created_date DESC, dm.similarity_score DESC";
 
 // Best cached thumbnail path for a source file, independent of which size bucket
-// the pipeline produced. Prefers the smallest bucket >= 128 (adequate for the
-// 70-80px display tiles), otherwise the largest smaller bucket. Populating this
-// lets the Swift client decode the local file directly and skip the gRPC
-// thumbnail round-trip whenever ANY cached thumbnail exists (not only a 256px
-// one). Uses idx_thumbnail_source_path; at most 5 size rows per path to sort.
+// the pipeline produced. Prefers the smallest bucket >= 256 (THUMB-1: the tile
+// asset size — a 70pt-tall 3:1 tile is 420px on a 2x display), otherwise the
+// largest smaller bucket. Populating this lets the Swift client decode the local
+// file directly and skip the gRPC thumbnail round-trip whenever ANY cached
+// thumbnail exists. Uses idx_thumbnail_source_path; at most 5 size rows per
+// path to sort.
+// THUMB-1: the render_revision = 0 literal becomes a correlated lookup of the
+// file's current revision once the non-destructive edit pipeline lands.
 #define VURIO_BEST_THUMB_SUBQUERY(src_col) \
     "(SELECT tc.cached_path FROM thumbnail_cache tc " \
-    "WHERE tc.source_path = " src_col " " \
-    "ORDER BY (tc.thumbnail_size < 128), ABS(tc.thumbnail_size - 128) LIMIT 1)"
+    "WHERE tc.source_path = " src_col " AND tc.render_revision = 0 " \
+    "ORDER BY (tc.thumbnail_size < 256), ABS(tc.thumbnail_size - 256) LIMIT 1)"
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
             "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, "
@@ -687,10 +737,16 @@ namespace MediaDedup
             "FROM duplicate_members dm "
             "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
+        // Feeds DuplicateFile protos (DuplicatesServiceImpl::OnDuplicateGroupEvent),
+        // so it carries exif_resolution (THUMB-1) at index 9. LEFT JOIN: a member
+        // whose scanned_files row is gone must still be returned.
         inline constexpr std::string_view kSelectDuplicateMembersByGroup =
             "SELECT dm.group_id, dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, "
             "dm.is_representative, dm.added_at, "
-            VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path FROM duplicate_members dm "
+            VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path, "
+            "sf.exif_resolution AS exif_resolution "
+            "FROM duplicate_members dm "
+            "LEFT JOIN scanned_files sf ON sf.id = dm.file_id "
             "WHERE dm.group_id=? ORDER BY dm.similarity_score DESC";
 
 // Day-groups ("ALL" view) queries. The taken-time normalization macro these
@@ -779,12 +835,17 @@ namespace MediaDedup
 // paging is stable and a page boundary can never separate a stack's
 // representative from its leading position.
 // Binds: day (branch A), day (branch B) [, limit, offset].
+// Column ordinals (parseDayFileRow depends on them): 0 id, 1 file_path,
+// 2 taken_time, 3 size_bytes, 4 cached_path, 5 group_id, 6 is_representative,
+// 7 similarity_score, 8 slot_time, 9 slot_id, 10 exif_resolution (THUMB-1:
+// appended LAST so the slot_* ordinals VURIO_DAY_FILE_ORDER relies on are
+// unchanged; the search-mode SQL in day_groups_ops.cpp emits the same shape).
 #define VURIO_SELECT_DAY_FILE_BRANCHES \
     "SELECT sf.id AS id, sf.file_path AS file_path, " VURIO_TAKEN_TIME_EXPR " AS taken_time, " \
     "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0) AS size_bytes, " \
     VURIO_BEST_THUMB_SUBQUERY("sf.file_path") " AS cached_path, dm.group_id AS group_id, " \
     "COALESCE(dm.is_representative, 0) AS is_representative, COALESCE(dm.similarity_score, 0) AS similarity_score, " \
-    VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id " \
+    VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id, sf.exif_resolution AS exif_resolution " \
     "FROM scanned_files sf " \
     "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id AND dm.is_representative = 1 " \
     "WHERE " VURIO_DAY_VIEW_FILTER " AND sf.taken_day = ? " \
@@ -793,7 +854,7 @@ namespace MediaDedup
     "SELECT sf.id, sf.file_path, " VURIO_TAKEN_TIME_EXPR ", " \
     "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0), " \
     VURIO_BEST_THUMB_SUBQUERY("sf.file_path") ", dm.group_id, 0, dm.similarity_score, " \
-    VURIO_TAKEN_TIME_EXPR_P("sfr.") ", sfr.id " \
+    VURIO_TAKEN_TIME_EXPR_P("sfr.") ", sfr.id, sf.exif_resolution " \
     "FROM scanned_files sfr " \
     "JOIN duplicate_groups g ON g.representative_file_id = sfr.id " \
     "JOIN duplicate_members dm ON dm.group_id = g.id AND dm.is_representative = 0 " \
@@ -861,32 +922,40 @@ namespace MediaDedup
             "SELECT mode, last_processed_id, last_run_timestamp, files_checked, duplicates_found, "
             "groups_created, groups_updated FROM duplicate_processing_checkpoint WHERE mode=?";
 
-        // Thumbnail cache operations
+        // Thumbnail cache operations.
+        // THUMB-1: every statement keyed on (source_path, thumbnail_size) also
+        // keys on render_revision. The upsert's ON CONFLICT target must name
+        // the UNIQUE constraint EXACTLY or SQLite rejects the statement at
+        // runtime and every thumbnail write fails — keep it in lock-step with
+        // kCreateThumbnailCacheTable. Statements that operate on all revisions
+        // of a path (kDeleteThumbnailByPath) or on cached_path are unchanged.
         inline constexpr std::string_view kUpsertThumbnailCache =
-            "INSERT INTO thumbnail_cache(source_path, cached_path, thumbnail_size, file_size_bytes, "
-            "source_modified_at, created_at, last_accessed_at) VALUES(?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(source_path, thumbnail_size) DO UPDATE SET "
+            "INSERT INTO thumbnail_cache(source_path, cached_path, thumbnail_size, render_revision, file_size_bytes, "
+            "source_modified_at, created_at, last_accessed_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(source_path, thumbnail_size, render_revision) DO UPDATE SET "
             "cached_path=excluded.cached_path, file_size_bytes=excluded.file_size_bytes, "
             "source_modified_at=excluded.source_modified_at, created_at=excluded.created_at, "
             "last_accessed_at=excluded.last_accessed_at";
 
         inline constexpr std::string_view kSelectThumbnailByPath =
-            "SELECT id, source_path, cached_path, thumbnail_size, file_size_bytes, source_modified_at, "
-            "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=?";
+            "SELECT id, source_path, cached_path, thumbnail_size, render_revision, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM thumbnail_cache "
+            "WHERE source_path=? AND thumbnail_size=? AND render_revision=?";
 
         inline constexpr std::string_view kSelectBestFitThumbnail =
-            "SELECT id, source_path, cached_path, thumbnail_size, file_size_bytes, source_modified_at, "
-            "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=? AND thumbnail_size>=? "
+            "SELECT id, source_path, cached_path, thumbnail_size, render_revision, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM thumbnail_cache "
+            "WHERE source_path=? AND thumbnail_size>=? AND render_revision=? "
             "ORDER BY thumbnail_size ASC LIMIT 1";
 
         inline constexpr std::string_view kUpdateThumbnailAccessTime =
-            "UPDATE thumbnail_cache SET last_accessed_at=? WHERE source_path=? AND thumbnail_size=?";
+            "UPDATE thumbnail_cache SET last_accessed_at=? WHERE source_path=? AND thumbnail_size=? AND render_revision=?";
 
         inline constexpr std::string_view kDeleteThumbnailByPath =
             "DELETE FROM thumbnail_cache WHERE source_path=?";
 
         inline constexpr std::string_view kDeleteThumbnailByPathAndSize =
-            "DELETE FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=?";
+            "DELETE FROM thumbnail_cache WHERE source_path=? AND thumbnail_size=? AND render_revision=?";
 
         inline constexpr std::string_view kSelectStaleThumbnails =
             "SELECT id, source_path, cached_path, thumbnail_size FROM thumbnail_cache WHERE source_modified_at < ?";

@@ -92,10 +92,8 @@ namespace MediaDedup
                 return true;
             }
 
-            // Generate unique filename for thumbnail
-            std::stringstream ss;
-            ss << std::hash<std::string>{}(source_path) << "_" << size << ".jpg";
-            std::string cache_filename = ss.str();
+            // Unique filename for the thumbnail (THUMB-1: revision-qualified)
+            std::string cache_filename = ThumbnailCacheOps::cacheFileName(source_path, size, kNoRenderRevision);
 
             // A missing source is NOT evidence the file is corrupt — its
             // volume may simply be disconnected. Classified as infrastructure

@@ -75,6 +75,12 @@ public:
             proto_file->set_size_bytes(member.file_size);
             proto_file->set_is_representative(member.is_representative);
             proto_file->set_similarity_score(member.similarity_score);
+            if (!member.cached_thumbnail_path.empty()) {
+                proto_file->set_cached_thumbnail_path(member.cached_thumbnail_path);
+            }
+            // THUMB-1: display geometry; 0 is the meaningful "unknown".
+            proto_file->set_display_width(member.display_width);
+            proto_file->set_display_height(member.display_height);
             
             bool is_ejected = false;
             std::string normalized_path = member.file_path;
@@ -160,6 +166,9 @@ public:
                 if (!member.cached_thumbnail_path.empty()) {
                     proto_file->set_cached_thumbnail_path(member.cached_thumbnail_path);
                 }
+                // THUMB-1: display geometry; 0 is the meaningful "unknown".
+                proto_file->set_display_width(member.display_width);
+                proto_file->set_display_height(member.display_height);
                 
                 bool is_ejected = false;
                 std::string normalized_path = member.file_path;
@@ -233,6 +242,9 @@ public:
             proto_file->set_is_representative(file.is_representative);
             proto_file->set_similarity_score(file.similarity_score);
         }
+        // THUMB-1: display geometry; 0 is the meaningful "unknown".
+        proto_file->set_display_width(file.display_width);
+        proto_file->set_display_height(file.display_height);
 
         bool is_ejected = false;
         std::string normalized_path = file.file_path;

@@ -17,6 +17,10 @@ namespace MediaDedup
         int group_id = 0; // 0 = not part of any duplicate group
         bool is_representative = false;
         double similarity_score = 0.0;
+        // THUMB-1: display geometry (docs/todo_aspect_ratio_thumbnails.md §3.1);
+        // 0/0 when unknown.
+        int display_width = 0;
+        int display_height = 0;
     };
 
     struct DayGroupRecord

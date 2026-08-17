@@ -1,6 +1,7 @@
 #include "database/day_groups_ops.hpp"
 #include "database/database_manager.hpp"
 #include "database/sql_constants.hpp"
+#include "utils/display_geometry.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
@@ -35,6 +36,14 @@ namespace MediaDedup
                 file.is_representative = file_row[6].convert<bool>();
                 file.similarity_score = file_row[7].convert<double>();
             }
+            // THUMB-1: index 10 = exif_resolution ("WxH", the auto-oriented
+            // base dims). Indices 8/9 are slot_time/slot_id (ordering only).
+            if (file_row.fieldCount() > 10 && !file_row[10].isEmpty())
+            {
+                DisplayDims dims = displayDimensionsFromExifResolution(file_row[10].convert<std::string>());
+                file.display_width = dims.width;
+                file.display_height = dims.height;
+            }
             return file;
         }
 
@@ -65,8 +74,10 @@ namespace MediaDedup
         }
 
         // Search-mode SQL: matched files on their OWN capture day, no group
-        // anchoring/suppression. Column order matches parseDayFileRow; the
-        // duplicate_members join only decorates rows with group badges.
+        // anchoring/suppression. Column order (all 11 columns, including the
+        // slot_time/slot_id ordering pair) matches VURIO_SELECT_DAY_FILE_BRANCHES
+        // so parseDayFileRow handles one shape; the duplicate_members join
+        // only decorates rows with group badges.
         std::string searchDaysCountSql(const std::string &ids)
         {
             return "SELECT COUNT(DISTINCT sf.taken_day) FROM scanned_files sf "
@@ -89,7 +100,9 @@ namespace MediaDedup
                 VURIO_BEST_THUMB_SUBQUERY("sf.file_path") " AS cached_path, "
                 "dm.group_id AS group_id, "
                 "COALESCE(dm.is_representative, 0) AS is_representative, "
-                "COALESCE(dm.similarity_score, 0) AS similarity_score "
+                "COALESCE(dm.similarity_score, 0) AS similarity_score, "
+                VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id, "
+                "sf.exif_resolution AS exif_resolution "
                 "FROM scanned_files sf "
                 "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id "
                 "WHERE " VURIO_DAY_VIEW_FILTER " AND sf.taken_day = ? "

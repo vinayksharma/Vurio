@@ -1785,3 +1785,122 @@ RAF bursts no longer overwhelm the host (≤4 concurrent decodes, each ≤60s); 
 ## Date
 
 2026-07-31
+
+---
+
+# DF-4: Write-Lock Storm From the Per-Run Orphan-Edge Purge (2026-08-17)
+
+## Investigation Summary
+
+After the THUMB-1 cache wipe the console filled with `upsertThumbnail lost the
+write lock (DB locked), retrying …` / `updateExifMetadata lost the write lock …`
+in lock-step 5 s waves, `Thumbnail generated but its cache row could not be
+written; discarding`, `Failed to mark file … with state -99 / 1: DB locked`, and
+the Clear-caches call itself logging `Exception in clearCache: DB locked`.
+
+The stalls started *before* the wipe. Every window lined up exactly with a
+`DuplicateFinder: Starting duplicate detection run…` → `run completed:
+processed 0 files in 0 batches` pair that took **25 s to process nothing**.
+
+## Root Cause
+
+`DuplicateFinder::purgeOrphanEdges()` ran at the top of **every** finder run
+(5 s interval):
+
+```sql
+DELETE FROM duplicate_edges WHERE file_a NOT IN (SELECT id FROM scanned_files)
+                              OR file_b NOT IN (SELECT id FROM scanned_files)
+```
+
+`duplicate_edges` had grown to **14.9M rows** (from ~199k a week earlier); the
+statement is a full covering-index scan, and a `DELETE` takes SQLite's write
+lock at statement start and holds it for the whole scan **even when it matches
+nothing** (measured: 37 s on the live DB, 0 rows). Under WAL there is one
+writer, so every other writer in the process burned its 5 s `busy_timeout`,
+then `DbRetry` backed off 100/200/400/800 ms — the pattern in the log. Writes
+that had no retry (`markProcessed`, `markIgnored`, `markProcessedWithEscalation`)
+were simply lost. Introduced by DF-3 (`cc09cf51`); harmless at 199k edges.
+
+Secondary noise: `identify: unknown image property "%[exif:Make]"` — ImageMagick
+prints one warning per missing EXIF tag to stderr for files with no EXIF block
+(PNG/GIF/BMP), and `readViaIdentifyPing` inherits the console for stderr.
+Cosmetic; values still parse as empty.
+
+## Fixes Applied
+
+- **Edges are removed by the code that deletes the file, in the same
+  transaction** (`ScannedFilesOps::removeByPath`, `completelyRemoveById`,
+  `removeByLocationKey`), so the edge table can never hold an orphan.
+  New `idx_duplicate_edges_file_b` (edges are canonical `file_a < file_b`, the
+  PK covers `file_a`) makes each per-file delete two index seeks (5 ms) and the
+  per-location deletes index-driven; one-time build on existing installs
+  measured at 4.2 s / +107 MB at 14.9M edges.
+- **The finder no longer scans on every run.** `purgeOrphanEdges()` is a
+  read-gated reconcile (a `SELECT EXISTS` probe that holds no write lock, then
+  the `DELETE` only if it found orphans) run **once per process on the first
+  finder run** (off the startup path — the probe is a ~25 s read at this
+  scale) for legacy orphans; a positive result forces that run's re-cluster.
+- **Re-cluster after a deletion is preserved** via a persisted
+  `duplicate_edges_meta.regroup_pending` flag: set by `ScannedFilesOps` when it
+  actually removed edges (a removed edge can split a component), consumed by
+  `DuplicateFinder::consumeRegroupPending()` at the top of each run (a read
+  plus, only when set, a one-row `UPDATE`).
+- `markProcessed`, `markIgnored`, `markProcessedWithEscalation` now go through
+  `DbRetry::withBusyRetry` like the cache writers.
+- `identify -quiet` in `ExifReader::readViaIdentifyPing`.
+
+Tests: `DuplicateFinderRangeTest.DeletingAFileRemovesItsEdgesAndSchedulesARecluster`,
+`RemovingALocationRemovesItsEdges`, `OrphanEdgesAreReconciledOncePerProcessNotEveryRun`.
+
+## Expected Result
+
+The write lock is free between finder runs; thumbnail/EXIF/state writes commit
+on the first attempt; the finder's idle run costs a handful of indexed reads.
+On the first finder run after each start expect one `Orphan-edge reconcile:
+none found (NNNN ms scan)` line (a read; does not block writers), and on the
+first start after the upgrade a ~4 s pause while `idx_duplicate_edges_file_b`
+is built.
+
+## Date
+
+2026-08-17
+
+---
+
+# Scrolled-Off Thumbnails Kept Their Download Slots (2026-08-17)
+
+## Root Cause
+
+`ServerImageLoader` shares one load per cache key (`getOrCreateTask`) and every
+caller awaited the shared `Task`'s `.value`. Awaiting `.value` does **not**
+propagate cancellation to the awaited task, so although `ThumbnailView` uses
+`.task(id:)` (cancelled on disappear) and the loader was written for
+cancellation — `checkCancellation()` in the loop, `waitForToken` dropping its
+queue slot `onCancel`, a `defer` sending `CancelMediaGeneration` — none of it
+ever fired. After a fast scroll through cold rows, up to all 8 download tokens
+sat with off-screen tiles for as long as their generation took (60 s deadline)
+and the tiles actually on screen queued behind them; the server kept
+generating the scrolled-off files first because they had been submitted
+`urgent` earlier.
+
+## Fix
+
+- `joinInFlight` replaces `getOrCreateTask`: each shared load tracks its
+  waiters; a caller's cancellation removes it, and the **last** waiter leaving
+  cancels the shared task (never earlier — a scrolled-off tile must not cancel
+  the load a visible tile of the same file is waiting on). Entries are
+  token-identified so a cancelled task unwinding late cannot evict a fresh
+  entry for the same key. Applies to thumbnails, previews and full-res alike.
+- Cancelling the shared task now does what was always intended: releases the
+  token (or drops the queue slot), returns immediately from the media-ready
+  wait (`waitForReadySignal` is cancellation-aware), and sends the server
+  cancel — skipped if a fresh request for the same asset is already live,
+  since the server task is keyed by path.
+- Prioritisation itself was already in place and is unchanged: client 8-token
+  gate ordered by `layerPriority` (visible stack top → deeper layers →
+  prefetch), FIFO within a layer; server queues on-demand requests `urgent`
+  (front of the TPM queue).
+
+## Date
+
+2026-08-17

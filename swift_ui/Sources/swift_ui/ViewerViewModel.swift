@@ -36,6 +36,9 @@ struct ViewerImage: Identifiable, Equatable {
     var isEjected: Bool
     let isAvailable: Bool
     let isRepresentative: Bool
+    // THUMB-1: server-supplied display geometry (0 = unknown -> square tile).
+    let displayWidth: Int32
+    let displayHeight: Int32
 
     init(_ file: Vurio_Dedup_DayFile) {
         id = file.id
@@ -44,6 +47,8 @@ struct ViewerImage: Identifiable, Equatable {
         isEjected = file.isEjected
         isAvailable = file.isAvailable
         isRepresentative = file.isRepresentative
+        displayWidth = file.displayWidth
+        displayHeight = file.displayHeight
     }
 
     init(_ file: Vurio_Dedup_DuplicateFile) {
@@ -53,6 +58,8 @@ struct ViewerImage: Identifiable, Equatable {
         isEjected = file.isEjected
         isAvailable = file.isAvailable
         isRepresentative = file.isRepresentative
+        displayWidth = file.displayWidth
+        displayHeight = file.displayHeight
     }
 }
 

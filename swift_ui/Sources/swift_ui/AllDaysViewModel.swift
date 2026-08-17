@@ -100,10 +100,10 @@ class AllDaysViewModel: ObservableObject {
         return Task.detached(priority: .background) {
             for file in day.files {
                 try? Task.checkCancellation()
-                if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
+                if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: ServerImageLoader.tileAssetSize)) == nil {
                     // Off-screen prefetch runs below every visible layer so it
                     // never delays thumbnails on screen.
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: ServerImageLoader.tileAssetSize, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
                 }
             }
         }

@@ -63,6 +63,38 @@ TEST(MagickArgsTest, ThumbnailArgsShapeAndOrder)
     EXPECT_EQ(valueAfter(args, "-quality"), "85");
 }
 
+// THUMB-1 (docs/todo_aspect_ratio_thumbnails.md §2, §4.4, §10): the backend
+// must keep producing aspect-preserving assets. `-resize NxN` is the
+// fit-inside-box form; if it ever became `NxN^` + `-extent`/`-gravity`, the
+// server would start cropping and the whole feature would silently revert.
+// And -resize must stay the LAST geometry-affecting operator (only -quality and
+// the output follow) so a future edit chain (crop/rotate, inserted after
+// -auto-orient) is downsampled after it is applied, not before.
+TEST(MagickArgsTest, ThumbnailResizeIsFitFormAndLastGeometryOperator)
+{
+    auto args = ThumbnailGenerator::buildMagickArgs("jpeg:/in/a.jpg", "/out/t.jpg", 256, 85);
+
+    const std::string resize = valueAfter(args, "-resize");
+    EXPECT_EQ(resize, "256x256");
+    EXPECT_EQ(resize.find('^'), std::string::npos) << "'^' is the fill/crop form";
+    EXPECT_EQ(resize.find('!'), std::string::npos) << "'!' ignores aspect";
+    EXPECT_EQ(countOf(args, "-extent"), 0);
+    EXPECT_EQ(countOf(args, "-gravity"), 0);
+    EXPECT_EQ(countOf(args, "-crop"), 0);
+
+    // Everything after "-resize <geometry>" must be exactly: -quality <q> <output>.
+    const int resize_idx = indexOf(args, "-resize");
+    ASSERT_GE(resize_idx, 0);
+    ASSERT_EQ(args.size(), static_cast<size_t>(resize_idx) + 5u)
+        << "unexpected operators after -resize";
+    EXPECT_EQ(args[resize_idx + 2], "-quality");
+    EXPECT_EQ(args[resize_idx + 4], "jpeg:/out/t.jpg");
+
+    // -auto-orient precedes -resize: the render chain composes on the
+    // auto-oriented base (docs §4.1), and hooks in between the two.
+    EXPECT_LT(indexOf(args, "-auto-orient"), resize_idx);
+}
+
 TEST(MagickArgsTest, ThumbnailArgsPropagateSizeAndQuality)
 {
     auto args = ThumbnailGenerator::buildMagickArgs("/in/b.png", "/out/t.jpg", 512, 70);

@@ -23,6 +23,10 @@ struct DayGroupCard: View {
     @State private var expandedGroupIDs: Set<String> = []
     @State private var isCardHovered = false
 
+    /// THUMB-1: every VU tile is this tall; widths follow each image's display
+    /// geometry (ThumbnailGeometry). Row height stays fixed.
+    static let tileHeight: CGFloat = 70
+
     /// Display items: unique files stay singles; a duplicate group's members
     /// (this day's only) coalesce into one stack at the earliest member's slot.
     private enum DayItem: Identifiable {
@@ -150,6 +154,9 @@ struct DayGroupCard: View {
             $0.isEjected = file.isEjected
             $0.cachedThumbnailPath = file.cachedThumbnailPath
             $0.isAvailable = file.isAvailable
+            // THUMB-1: without these the VU tiles silently fall back to square.
+            $0.displayWidth = file.displayWidth
+            $0.displayHeight = file.displayHeight
         }
     }
 
@@ -168,7 +175,7 @@ struct DayGroupCard: View {
             if !isEjecting { onThumbnailDoubleTapped(file) }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: 70, showMatchScore: false)
+        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: Self.tileHeight, showMatchScore: false)
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -176,6 +183,14 @@ struct DayGroupCard: View {
     @ViewBuilder
     private func collapsedStackView(groupID: String, members: [Vurio_Dedup_DayFile]) -> some View {
         let top = members.first ?? members[0]
+        // THUMB-1: every layer is laid out at its own display geometry, but the
+        // stack's footprint in the strip is the TOP member's width — pinned with
+        // .frame(width:) so a wider occluded layer cannot silently widen the
+        // slot. (Members of one group are the same photo, so in practice the
+        // layers share a shape; this only matters for rotated/cropped variants.)
+        let topSize = ThumbnailGeometry.tileSize(height: Self.tileHeight,
+                                                 displayWidth: top.displayWidth,
+                                                 displayHeight: top.displayHeight)
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                 _ = expandedGroupIDs.insert(groupID)
@@ -186,8 +201,11 @@ struct DayGroupCard: View {
                     // Layer priority = stack depth: the visible top (index 0) loads
                     // first; the occluded layers behind it wait until every stack's
                     // top has been delivered, then load one layer at a time.
-                    ThumbnailView(filePath: file.filePath, size: CGSize(width: 70, height: 70), cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: index)
-                        .frame(width: 70, height: 70)
+                    let layerSize = ThumbnailGeometry.tileSize(height: Self.tileHeight,
+                                                               displayWidth: file.displayWidth,
+                                                               displayHeight: file.displayHeight)
+                    ThumbnailView(filePath: file.filePath, size: layerSize, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: index, requestSize: ServerImageLoader.tileAssetSize)
+                        .frame(width: layerSize.width, height: layerSize.height)
                         .cornerRadius(8)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
@@ -198,6 +216,7 @@ struct DayGroupCard: View {
                         .offset(x: CGFloat(index) * 4, y: CGFloat(index) * -2)
                 }
             }
+            .frame(width: topSize.width, height: topSize.height)
             .overlay(alignment: .bottomTrailing) {
                 Text("\u{00D7}\(members.count)")
                     .font(.custom("Menlo", size: 9))

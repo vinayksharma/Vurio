@@ -9,6 +9,13 @@ namespace MediaDedup
 {
     class DatabaseManager;
 
+    // THUMB-1: the render revision of an un-edited image. Every file is at
+    // this revision until the non-destructive edit pipeline lands; it is part
+    // of every thumbnail cache key (DB row, disk filename, client cache) so an
+    // edited image can never be served its pre-edit bitmap. See
+    // docs/todo_aspect_ratio_thumbnails.md §4.2(b).
+    inline constexpr int kNoRenderRevision = 0;
+
     /**
      * @brief Record for a cached thumbnail
      */
@@ -18,6 +25,7 @@ namespace MediaDedup
         std::string source_path;
         std::string cached_path;
         int thumbnail_size = 256;
+        int render_revision = kNoRenderRevision; // THUMB-1
         int64_t file_size_bytes = 0;
         int64_t source_modified_at = 0; // Unix timestamp
         int64_t created_at = 0;         // Unix timestamp
@@ -36,6 +44,14 @@ namespace MediaDedup
          * @return true if successful, false otherwise
          */
         static bool ensureTable(DatabaseManager &db);
+
+        /**
+         * @brief THUMB-1: the on-disk filename for a cached thumbnail —
+         * "<hash(source_path)>_<size>_r<revision>.jpg". The single place both
+         * generation paths (pipeline helper, ThumbnailService) get it from.
+         */
+        static std::string cacheFileName(const std::string &source_path, int size,
+                                         int render_revision = kNoRenderRevision);
 
         /**
          * @brief Get thumbnail record for a source path and size
