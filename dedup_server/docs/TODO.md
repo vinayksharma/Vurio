@@ -31,6 +31,8 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Done
 
+- **Scrolled-off thumbnails kept their download slots — cancellation never
+  reached the shared load.** Fixed 2026-08-17; see `troubleshooting_and_fixes.md`.
 - **DF-4 — the finder's per-run orphan-edge purge held the write lock ~25 s
   every 5 s at 14.9M edges.** Fixed 2026-08-17; see `troubleshooting_and_fixes.md`
   ("DF-4: Write-Lock Storm From the Per-Run Orphan-Edge Purge").

@@ -1865,3 +1865,42 @@ is built.
 
 2026-08-17
 
+---
+
+# Scrolled-Off Thumbnails Kept Their Download Slots (2026-08-17)
+
+## Root Cause
+
+`ServerImageLoader` shares one load per cache key (`getOrCreateTask`) and every
+caller awaited the shared `Task`'s `.value`. Awaiting `.value` does **not**
+propagate cancellation to the awaited task, so although `ThumbnailView` uses
+`.task(id:)` (cancelled on disappear) and the loader was written for
+cancellation — `checkCancellation()` in the loop, `waitForToken` dropping its
+queue slot `onCancel`, a `defer` sending `CancelMediaGeneration` — none of it
+ever fired. After a fast scroll through cold rows, up to all 8 download tokens
+sat with off-screen tiles for as long as their generation took (60 s deadline)
+and the tiles actually on screen queued behind them; the server kept
+generating the scrolled-off files first because they had been submitted
+`urgent` earlier.
+
+## Fix
+
+- `joinInFlight` replaces `getOrCreateTask`: each shared load tracks its
+  waiters; a caller's cancellation removes it, and the **last** waiter leaving
+  cancels the shared task (never earlier — a scrolled-off tile must not cancel
+  the load a visible tile of the same file is waiting on). Entries are
+  token-identified so a cancelled task unwinding late cannot evict a fresh
+  entry for the same key. Applies to thumbnails, previews and full-res alike.
+- Cancelling the shared task now does what was always intended: releases the
+  token (or drops the queue slot), returns immediately from the media-ready
+  wait (`waitForReadySignal` is cancellation-aware), and sends the server
+  cancel — skipped if a fresh request for the same asset is already live,
+  since the server task is keyed by path.
+- Prioritisation itself was already in place and is unchanged: client 8-token
+  gate ordered by `layerPriority` (visible stack top → deeper layers →
+  prefetch), FIFO within a layer; server queues on-demand requests `urgent`
+  (front of the TPM queue).
+
+## Date
+
+2026-08-17

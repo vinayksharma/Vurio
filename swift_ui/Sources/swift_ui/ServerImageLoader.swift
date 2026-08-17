@@ -57,7 +57,20 @@ actor ServerImageLoader {
     // shallower one is still generating.
     private var activeByPriority: [Int: Int] = [:]
     
-    private var inFlightTasks: [String: Task<NSImage, Error>] = [:]
+    // One shared load per cache key, plus the set of callers currently awaiting
+    // it. Cancellation of a CALLER (a tile scrolled off screen, a prefetch page
+    // dropped) must reach the shared task only when the caller was its last
+    // waiter — otherwise a scrolled-off tile would cancel the load a visible
+    // tile of the same file is waiting on. Note that awaiting `task.value`
+    // does NOT propagate cancellation to the task; without this bookkeeping
+    // no load was ever cancelled, so scrolled-off tiles kept their download
+    // tokens (up to the 60 s deadline) and visible tiles queued behind them.
+    private struct InFlight {
+        let token: UUID // identifies this particular task for finished()
+        let task: Task<NSImage, Error>
+        var waiters: Set<UUID>
+    }
+    private var inFlight: [String: InFlight] = [:]
 
     // MARK: Media-ready push events
     // The server answers UNAVAILABLE ("generating") on a cache miss and pushes
@@ -79,22 +92,70 @@ actor ServerImageLoader {
         knownFullRes.contains(filePath)
     }
     
-    private func getOrCreateTask(key: String, operation: @escaping () async throws -> NSImage) -> Task<NSImage, Error> {
-        if let task = inFlightTasks[key] {
-            return task
+    /// Join the shared load for `key`, starting it if there is none (or if the
+    /// existing one has been cancelled by its last waiter leaving and has not
+    /// unwound yet). The caller's cancellation is forwarded to the shared task
+    /// only when it was the last waiter.
+    nonisolated private func joinInFlight(key: String, operation: @escaping @Sendable () async throws -> NSImage) async throws -> NSImage {
+        let waiterID = UUID()
+        let task = await register(key: key, waiterID: waiterID, operation: operation)
+        return try await withTaskCancellationHandler {
+            let outcome: Result<NSImage, Error>
+            do { outcome = .success(try await task.value) } catch { outcome = .failure(error) }
+            await self.leave(key: key, waiterID: waiterID, task: task)
+            return try outcome.get()
+        } onCancel: {
+            Task { await self.leave(key: key, waiterID: waiterID, task: task) }
         }
+    }
+
+    private func register(key: String, waiterID: UUID, operation: @escaping @Sendable () async throws -> NSImage) -> Task<NSImage, Error> {
+        if var entry = inFlight[key], !entry.task.isCancelled {
+            entry.waiters.insert(waiterID)
+            inFlight[key] = entry
+            return entry.task
+        }
+        let token = UUID()
         let task = Task {
             defer {
-                Task { await self.removeInFlightTask(key: key) }
+                Task { await self.finished(key: key, token: token) }
             }
             return try await operation()
         }
-        inFlightTasks[key] = task
+        inFlight[key] = InFlight(token: token, task: task, waiters: [waiterID])
         return task
     }
-    
-    private func removeInFlightTask(key: String) {
-        inFlightTasks.removeValue(forKey: key)
+
+    /// A waiter is done with the shared task (result received or caller
+    /// cancelled). Idempotent per waiter. Cancels the task when nobody is
+    /// left waiting for it and it is still the current one for `key`.
+    private func leave(key: String, waiterID: UUID, task: Task<NSImage, Error>) {
+        guard var entry = inFlight[key], entry.task == task else { return }
+        entry.waiters.remove(waiterID)
+        if entry.waiters.isEmpty {
+            inFlight.removeValue(forKey: key)
+            task.cancel()
+        } else {
+            inFlight[key] = entry
+        }
+    }
+
+    /// The shared task identified by `token` completed (any outcome): forget
+    /// it — but only if it is still the entry for `key`. A task cancelled by
+    /// its last waiter has already been dropped by leave(), and a newer task
+    /// may own the key by the time the cancelled one unwinds.
+    private func finished(key: String, token: UUID) {
+        if let entry = inFlight[key], entry.token == token {
+            inFlight.removeValue(forKey: key)
+        }
+    }
+
+    /// True while some caller is still waiting on a live load for `key`.
+    /// Used to skip a late server-side cancel that would otherwise kill a
+    /// fresh re-request for the same file.
+    private func hasLiveInFlight(key: String) -> Bool {
+        if let entry = inFlight[key] { return !entry.task.isCancelled }
+        return false
     }
 
     private init() {}
@@ -148,12 +209,19 @@ actor ServerImageLoader {
     private func waitForReadySignal(type: String, filePath: String, timeoutNs: UInt64) async {
         let key = "\(type)|\(filePath)"
         let id = UUID()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            addReadyWaiter(key: key, id: id, continuation: continuation)
-            Task {
-                try? await Task.sleep(nanoseconds: timeoutNs)
-                await self.resumeReadyWaiter(key: key, id: id)
+        // Cancellation-aware: a load whose last waiter scrolled off returns
+        // at once (the caller's loop then throws CancellationError and hands
+        // its download token back) instead of after the poll fallback.
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                addReadyWaiter(key: key, id: id, continuation: continuation)
+                Task {
+                    try? await Task.sleep(nanoseconds: timeoutNs)
+                    await self.resumeReadyWaiter(key: key, id: id)
+                }
             }
+        } onCancel: {
+            Task { await self.resumeReadyWaiter(key: key, id: id) }
         }
     }
 
@@ -174,10 +242,9 @@ actor ServerImageLoader {
         let currentPriority = Task.currentPriority
         let key = ThumbnailAssetKey.make(filePath: filePath, size: size)
 
-        let task = await getOrCreateTask(key: key) {
+        return try await joinInFlight(key: key) {
             return try await self.performLoadThumbnail(filePath: filePath, size: size, priority: currentPriority, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
         }
-        return try await task.value
     }
 
     private func performLoadThumbnail(filePath: String, size: Int, priority: TaskPriority?, cachedThumbnailPath: String?, layerPriority: Int) async throws -> NSImage {
@@ -202,7 +269,14 @@ actor ServerImageLoader {
         
         defer {
             if Task.isCancelled {
+                // Every waiter left (scrolled off / prefetch page dropped):
+                // pull the queued generation off the server so visible tiles
+                // are not stuck behind it. Skipped if a fresh request for the
+                // same asset has already been registered, since the server
+                // task is keyed by path and the cancel would hit that one.
+                let cancelKey = ThumbnailAssetKey.make(filePath: filePath, size: size)
                 Task {
+                    if await self.hasLiveInFlight(key: cancelKey) { return }
                     do {
                         var cancelReq = Vurio_Dedup_CancelMediaRequest()
                         cancelReq.filePath = filePath
@@ -306,10 +380,9 @@ actor ServerImageLoader {
         let currentPriority = Task.currentPriority
         let key = "\(filePath)_fullres"
 
-        let task = await getOrCreateTask(key: key) {
+        return try await joinInFlight(key: key) {
             return try await self.performLoadFullResolution(filePath: filePath, priority: currentPriority)
         }
-        return try await task.value
     }
 
     private func performLoadFullResolution(filePath: String, priority: TaskPriority?) async throws -> NSImage {
@@ -412,10 +485,9 @@ actor ServerImageLoader {
         let currentPriority = Task.currentPriority
         let key = "\(filePath)_preview"
         
-        let task = await getOrCreateTask(key: key) {
+        return try await joinInFlight(key: key) {
             return try await self.performLoadPreview(filePath: filePath, priority: currentPriority)
         }
-        return try await task.value
     }
     
     private func performLoadPreview(filePath: String, priority: TaskPriority?) async throws -> NSImage {
