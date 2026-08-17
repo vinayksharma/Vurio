@@ -118,7 +118,7 @@ media.images.raw.srw: true
 tpm.killTimeoutMs: 10000
 media.images.tif: true
 media.video.flv: false
-thumbnail.pipeline.size: 128
+thumbnail.pipeline.size: 256
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

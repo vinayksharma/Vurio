@@ -34,6 +34,10 @@ namespace MediaDedup
         bool is_representative = false;
         std::string added_at;
         std::string cached_thumbnail_path;
+        // THUMB-1: display geometry (docs/todo_aspect_ratio_thumbnails.md §3.1);
+        // 0/0 when unknown.
+        int display_width = 0;
+        int display_height = 0;
     };
 
     struct DuplicateCheckpointRecord

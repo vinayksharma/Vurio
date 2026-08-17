@@ -3,17 +3,21 @@ import QuickLookThumbnailing
 
 struct ThumbnailView: View {
     let filePath: String
+    // THUMB-1: the tile's box. Fixed height, variable width — computed by the
+    // caller from server-supplied display geometry via ThumbnailGeometry, so
+    // it is known before the image arrives and never changes when it lands.
     let size: CGSize
     var cachedThumbnailPath: String? = nil
     // Stack layer for prioritized loading: 0 = top/visible (highest priority),
     // deeper layers load only after all shallower ones are delivered. Defaults to
     // 0 so non-stacked thumbnails always load at top priority.
     var layerPriority: Int = 0
-    // Pixel size to request from the server and key the cache by. Defaults to
-    // the display width. The BINNED representative tile displays at 80 pt but
-    // requests 70, so a file shares one decoded asset ("path_70") across both
-    // tabs, the day-view stacks, and prefetch instead of a second cold fetch.
-    var requestSize: Int? = nil
+    // Pixel size to request from the server and key the cache by. REQUIRED and
+    // deliberately independent of `size`: with variable tile widths, keying by
+    // width would give every file its own cache entry and destroy sharing
+    // across VU / BINNED / the viewer strip. Callers pass
+    // ServerImageLoader.tileAssetSize.
+    let requestSize: Int
 
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
@@ -21,8 +25,8 @@ struct ThumbnailView: View {
     // rendered as a distinct warning tile, never re-requested.
     @State private var unreadableReason: String? = nil
 
-    private var assetSize: Int { requestSize ?? Int(size.width) }
-    private var cacheKey: String { "\(filePath)_\(assetSize)" }
+    private var assetSize: Int { requestSize }
+    private var cacheKey: String { ThumbnailAssetKey.make(filePath: filePath, size: assetSize) }
 
     var body: some View {
         // The cache re-check happens synchronously at render (NSCache is cheap
@@ -32,10 +36,20 @@ struct ThumbnailView: View {
         let displayed = thumbnail ?? ImageCache.shared.getImage(forKey: cacheKey)
         Group {
             if let displayed = displayed {
+                // THUMB-1: `.fit`, never `.fill`. `size` already IS the image's
+                // (clamped) aspect box, so this is a no-op for ordinary images
+                // and letterboxes only the extremes past the 3:1 clamp — the
+                // image is never cropped. The backing colour gives the letterbox
+                // bars a defined surface so they read as part of the tile, not
+                // a hole in the card. `.clipped()` stays as a guard: if a stale
+                // geometry ever disagrees with the bitmap (reachable once edits
+                // can change geometry under a loaded row) the overflow must not
+                // bleed into the neighbouring tile.
                 Image(nsImage: displayed)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size.width, height: size.height)
+                    .background(Theme.surface)
                     .clipped()
             } else if let reason = unreadableReason {
                 VStack(spacing: 2) {

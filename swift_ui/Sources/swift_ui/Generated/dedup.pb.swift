@@ -368,6 +368,15 @@ struct Vurio_Dedup_DuplicateFile: Sendable {
   /// false when the volume this file lives on is disconnected
   var isAvailable: Bool = false
 
+  /// THUMB-1: the image's DISPLAY geometry — the dimensions it will have once
+  /// rendered. Today that is the source's auto-oriented size; once the
+  /// non-destructive edit pipeline lands it is that size with the user's
+  /// crop/rotate chain applied (docs/todo_aspect_ratio_thumbnails.md §3.1).
+  /// 0 when unknown — the client falls back to a square tile.
+  var displayWidth: Int32 = 0
+
+  var displayHeight: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -452,6 +461,11 @@ struct Vurio_Dedup_DayFile: Sendable {
   var isRepresentative: Bool = false
 
   var similarityScore: Double = 0
+
+  /// THUMB-1, see DuplicateFile
+  var displayWidth: Int32 = 0
+
+  var displayHeight: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1615,7 +1629,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0\u{3}is_available\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0\u{3}is_available\0\u{3}display_width\0\u{3}display_height\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1632,6 +1646,8 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 7: try { try decoder.decodeSingularBoolField(value: &self.isEjected) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.cachedThumbnailPath) }()
       case 9: try { try decoder.decodeSingularBoolField(value: &self.isAvailable) }()
+      case 10: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
+      case 11: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
       default: break
       }
     }
@@ -1665,6 +1681,12 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if self.isAvailable != false {
       try visitor.visitSingularBoolField(value: self.isAvailable, fieldNumber: 9)
     }
+    if self.displayWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayWidth, fieldNumber: 10)
+    }
+    if self.displayHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1678,6 +1700,8 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.isEjected != rhs.isEjected {return false}
     if lhs.cachedThumbnailPath != rhs.cachedThumbnailPath {return false}
     if lhs.isAvailable != rhs.isAvailable {return false}
+    if lhs.displayWidth != rhs.displayWidth {return false}
+    if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1800,7 +1824,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DayFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1818,6 +1842,8 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
       case 8: try { try decoder.decodeSingularStringField(value: &self.groupID) }()
       case 9: try { try decoder.decodeSingularBoolField(value: &self.isRepresentative) }()
       case 10: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
+      case 11: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
+      case 12: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
       default: break
       }
     }
@@ -1854,6 +1880,12 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if self.similarityScore.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.similarityScore, fieldNumber: 10)
     }
+    if self.displayWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayWidth, fieldNumber: 11)
+    }
+    if self.displayHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1868,6 +1900,8 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if lhs.groupID != rhs.groupID {return false}
     if lhs.isRepresentative != rhs.isRepresentative {return false}
     if lhs.similarityScore != rhs.similarityScore {return false}
+    if lhs.displayWidth != rhs.displayWidth {return false}
+    if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

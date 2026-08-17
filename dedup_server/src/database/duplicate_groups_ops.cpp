@@ -2,6 +2,7 @@
 #include "database/database_manager.hpp"
 #include "database/sql_constants.hpp"
 #include "database/thumbnail_cache_ops.hpp"
+#include "utils/display_geometry.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Logger.h>
@@ -644,6 +645,14 @@ namespace MediaDedup
                 rec.created_date = row[5].convert<std::string>();
                 rec.is_representative = row[6].convert<bool>();
                 rec.added_at = row[7].convert<std::string>();
+                if (!row[8].isEmpty())
+                    rec.cached_thumbnail_path = row[8].convert<std::string>();
+                if (!row[9].isEmpty())
+                {
+                    DisplayDims dims = displayDimensionsFromExifResolution(row[9].convert<std::string>());
+                    rec.display_width = dims.width;
+                    rec.display_height = dims.height;
+                }
 
                 results.push_back(rec);
             }
@@ -1084,10 +1093,16 @@ namespace MediaDedup
                 // Integer ids composed directly (no injection surface); the
                 // ORDER BY keeps each group's members similarity-sorted, the
                 // contract the per-group query provided.
+                // THUMB-1: LEFT JOIN scanned_files for exif_resolution (index
+                // 9); LEFT so a member whose scanned_files row was deleted is
+                // still returned (it renders as a missing/unavailable tile).
                 std::string members_query =
                     "SELECT dm.group_id, dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, "
                     "dm.is_representative, dm.added_at, "
-                    VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path FROM duplicate_members dm "
+                    VURIO_BEST_THUMB_SUBQUERY("dm.file_path") " AS cached_path, "
+                    "sf.exif_resolution AS exif_resolution "
+                    "FROM duplicate_members dm "
+                    "LEFT JOIN scanned_files sf ON sf.id = dm.file_id "
                     "WHERE dm.group_id IN (" + id_list + ") ORDER BY dm.group_id, dm.similarity_score DESC";
 
                 Statement members_stmt(sess);
@@ -1109,6 +1124,11 @@ namespace MediaDedup
 
                     if (!member_row[8].isEmpty()) {
                         member.cached_thumbnail_path = member_row[8].convert<std::string>();
+                    }
+                    if (!member_row[9].isEmpty()) {
+                        DisplayDims dims = displayDimensionsFromExifResolution(member_row[9].convert<std::string>());
+                        member.display_width = dims.width;
+                        member.display_height = dims.height;
                     }
 
                     auto it = group_index.find(member.group_id);

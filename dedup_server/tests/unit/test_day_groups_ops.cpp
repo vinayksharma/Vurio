@@ -309,3 +309,77 @@ TEST_F(DayGroupsOpsTest, PaginatesOverDays)
     ASSERT_EQ(second.days.size(), 1u);
     EXPECT_EQ(second.days[0].day, "2024-06-01");
 }
+
+// THUMB-1 (docs/todo_aspect_ratio_thumbnails.md §5.3, §10): the day view
+// carries each file's display geometry, parsed from exif_resolution, on every
+// query shape — anchor branch, pulled-member branch, paged getDayFiles, and
+// search mode (which builds its own column list and must match).
+TEST_F(DayGroupsOpsTest, CarriesDisplayGeometryFromExifResolution)
+{
+    int landscape_id = insertFile("/media/landscape.jpg", std::string("2024:06:01 09:00:00"));
+    int portrait_id = insertFile("/media/portrait.jpg", std::string("2024:06:01 09:05:00"));
+    int malformed_id = insertFile("/media/malformed.jpg", std::string("2024:06:01 09:10:00"));
+    insertFile("/media/none.jpg", std::string("2024:06:01 09:15:00"));
+    // updateExifMetadata rewrites the datetime too, so pass it along.
+    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/landscape.jpg", "2024:06:01 09:00:00", "", "3000x2000"));
+    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/portrait.jpg", "2024:06:01 09:05:00", "", "2000x3000"));
+    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/malformed.jpg", "2024:06:01 09:10:00", "", "garbage"));
+
+    // Anchor branch (getDayGroups, unfiltered)
+    auto page = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
+    ASSERT_EQ(page.days.size(), 1u);
+    ASSERT_EQ(page.days[0].files.size(), 4u);
+    EXPECT_EQ(page.days[0].files[0].display_width, 3000);
+    EXPECT_EQ(page.days[0].files[0].display_height, 2000);
+    EXPECT_EQ(page.days[0].files[1].display_width, 2000);
+    EXPECT_EQ(page.days[0].files[1].display_height, 3000);
+    EXPECT_EQ(page.days[0].files[2].display_width, 0) << "malformed -> unknown";
+    EXPECT_EQ(page.days[0].files[2].display_height, 0);
+    EXPECT_EQ(page.days[0].files[3].display_width, 0) << "NULL -> unknown";
+    EXPECT_EQ(page.days[0].files[3].display_height, 0);
+
+    // Paged getDayFiles (same SQL, paged variant)
+    auto paged = DayGroupsOps::getDayFiles(*db_manager_, "2024-06-01", 1, 1);
+    ASSERT_TRUE(paged.ok);
+    ASSERT_EQ(paged.files.size(), 1u);
+    EXPECT_EQ(paged.files[0].file_path, "/media/portrait.jpg");
+    EXPECT_EQ(paged.files[0].display_width, 2000);
+    EXPECT_EQ(paged.files[0].display_height, 3000);
+
+    // Search mode: its own column list must carry the same 11 columns.
+    std::vector<int> match_ids{portrait_id, malformed_id};
+    auto searched = DayGroupsOps::getDayGroups(*db_manager_, 0, 10, 0, &match_ids);
+    ASSERT_EQ(searched.days.size(), 1u);
+    ASSERT_EQ(searched.days[0].files.size(), 2u);
+    EXPECT_EQ(searched.days[0].files[0].file_path, "/media/portrait.jpg");
+    EXPECT_EQ(searched.days[0].files[0].display_width, 2000);
+    EXPECT_EQ(searched.days[0].files[0].display_height, 3000);
+    EXPECT_EQ(searched.days[0].files[1].display_width, 0);
+
+    auto searched_files = DayGroupsOps::getDayFiles(*db_manager_, "2024-06-01", 0, 10, &match_ids);
+    ASSERT_TRUE(searched_files.ok);
+    ASSERT_EQ(searched_files.files.size(), 2u);
+    EXPECT_EQ(searched_files.files[0].display_width, 2000);
+    EXPECT_EQ(searched_files.files[0].display_height, 3000);
+
+    // Pulled-member branch: a non-representative member of a group whose
+    // representative is on this day gets its OWN geometry, not the rep's.
+    int other_day_id = insertFile("/media/otherday.jpg", std::string("2024:05:01 09:00:00"));
+    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/otherday.jpg", "2024:05:01 09:00:00", "", "1000x4000"));
+    int group_id = DuplicateGroupsOps::createGroup(*db_manager_, "exact", landscape_id, "/media/landscape.jpg",
+                                                   100, "2024-06-01 09:00:00", 0.98);
+    ASSERT_GT(group_id, 0);
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, group_id, landscape_id, "/media/landscape.jpg",
+                                              1.0, 100, "2024-06-01 09:00:00", true));
+    ASSERT_TRUE(DuplicateGroupsOps::addMember(*db_manager_, group_id, other_day_id, "/media/otherday.jpg",
+                                              0.9, 100, "2024-05-01 09:00:00", false));
+
+    auto grouped = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
+    ASSERT_EQ(grouped.days.size(), 1u) << "the member is pulled onto the representative's day";
+    ASSERT_EQ(grouped.days[0].files.size(), 5u);
+    EXPECT_EQ(grouped.days[0].files[0].file_path, "/media/landscape.jpg");
+    EXPECT_EQ(grouped.days[0].files[0].display_width, 3000);
+    EXPECT_EQ(grouped.days[0].files[1].file_path, "/media/otherday.jpg");
+    EXPECT_EQ(grouped.days[0].files[1].display_width, 1000);
+    EXPECT_EQ(grouped.days[0].files[1].display_height, 4000);
+}

@@ -102,17 +102,17 @@ class DuplicatesViewModel: ObservableObject {
             let candidates = group.files.filter { !$0.isRepresentative }
 
             // Off-screen prefetch runs below every visible layer so it never
-            // delays thumbnails on screen. Reps use the shared 70 px asset
-            // (the tile upscales to 80 pt at display time).
+            // delays thumbnails on screen. Every tile shares the one
+            // tileAssetSize asset regardless of its display size.
             if let rep = rep {
-                if ImageCache.shared.getImage(forKey: "\(rep.filePath)_70") == nil {
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: 70, cachedThumbnailPath: rep.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
+                if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: rep.filePath, size: ServerImageLoader.tileAssetSize)) == nil {
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: ServerImageLoader.tileAssetSize, cachedThumbnailPath: rep.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
                 }
             }
             for file in candidates {
                 try? Task.checkCancellation()
-                if ImageCache.shared.getImage(forKey: "\(file.filePath)_70") == nil {
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: 70, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
+                if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: ServerImageLoader.tileAssetSize)) == nil {
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: ServerImageLoader.tileAssetSize, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
                 }
             }
         }

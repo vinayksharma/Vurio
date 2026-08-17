@@ -191,6 +191,13 @@ message DuplicateFile {
   bool is_ejected = 7;
   string cached_thumbnail_path = 8;
   bool is_available = 9; // false when the volume this file lives on is disconnected
+  // THUMB-1: the image's DISPLAY geometry — the dimensions it will have once
+  // rendered. Today that is the source's auto-oriented size; once the
+  // non-destructive edit pipeline lands it is that size with the user's
+  // crop/rotate chain applied (docs/todo_aspect_ratio_thumbnails.md §3.1).
+  // 0 when unknown — the client falls back to a square tile.
+  int32 display_width = 10;
+  int32 display_height = 11;
 }
 
 message DuplicateGroup {
@@ -224,6 +231,8 @@ message DayFile {
   string group_id = 8;   // duplicate group id; empty when the file is unique
   bool is_representative = 9;
   double similarity_score = 10;
+  int32 display_width = 11;  // THUMB-1, see DuplicateFile
+  int32 display_height = 12;
 }
 
 message DayGroup {

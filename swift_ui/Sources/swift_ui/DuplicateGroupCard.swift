@@ -31,6 +31,25 @@ struct DuplicateGroupCard: View {
             return Array(group.files.dropFirst())
         }
     }
+
+    /// Spacing of the candidate LazyHStack; the bracket geometry depends on it.
+    private static let candidateSpacing: CGFloat = 12
+    /// Leading padding of the candidate strip; the bracket geometry depends on it.
+    private static let candidateLeadingPadding: CGFloat = 6
+
+    /// THUMB-1 (§6.5): candidate tile widths follow each file's display
+    /// geometry, so the eligibility bracket must be positioned by a prefix-sum
+    /// over the ACTUAL widths — the old `index * (70 + 12)` arithmetic assumed
+    /// every tile was 70 pt and would point the bracket (whose action ejects the
+    /// files it spans) at the wrong photos.
+    private var candidateWidths: [CGFloat] {
+        candidates.map { DuplicateMemberView.tileSize(for: $0, isRep: false, fixedSize: nil).width }
+    }
+
+    /// prefix[i] = sum(widths[0..<i]) + i * spacing (leading x of tile i).
+    private var candidatePrefixOffsets: [CGFloat] {
+        ThumbnailGeometry.prefixOffsets(widths: candidateWidths, spacing: Self.candidateSpacing)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -52,24 +71,27 @@ struct DuplicateGroupCard: View {
                         // Native indicator off: the hover scrollbar below is
                         // consistent with the VU/viewer strips.
                         ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 12) {
+                            LazyHStack(spacing: Self.candidateSpacing) {
                                 ForEach(Array(candidates.enumerated()), id: \.offset) { index, file in
                                     candidateMemberView(file: file, index: index)
                                 }
                             }
                             .padding(.top, 30)
                             .padding(.bottom, 30)
-                            .padding(.leading, 6)
+                            .padding(.leading, Self.candidateLeadingPadding)
                             .padding(.trailing, 12)
                             .overlay(alignment: .bottomLeading) {
                                 let indices = candidates.enumerated().compactMap { index, file in
                                     DuplicateEligibility.distance(similarityScore: file.similarityScore) <= duplicateTightness ? index : nil
                                 }
+                                let widths = candidateWidths
+                                let prefix = candidatePrefixOffsets
                                 
                                 if let first = indices.first, let last = indices.last {
-                                    let count = last - first + 1
-                                    let leftOffset = CGFloat(first) * (70 + 12) + 6 - 4 // Account for leading padding and balance the +8 width
-                                    let width = CGFloat(count) * 70 + CGFloat(count - 1) * 12 + 8
+                                    // Prefix-sum over the actual tile widths (§6.5). The
+                                    // -4 / +8 keep the bracket's 4 pt overhang on each side.
+                                    let leftOffset = prefix[first] + Self.candidateLeadingPadding - 4
+                                    let width = (prefix[last] + widths[last]) - prefix[first] + 8
                                     
                                     let toRestore = indices.compactMap { candidates[$0] }.filter { $0.isEjected }.map { $0.filePath }
                                     let toEject = indices.compactMap { candidates[$0] }.filter { !$0.isEjected }.map { $0.filePath }
@@ -270,10 +292,10 @@ struct DuplicateMemberView: View {
     // the ejected (red) border. Used by the VU day view, which is read-only for
     // eject — all eject management lives on the BINNED tab.
     var allowEject: Bool = true
-    // Overrides the isRep-based tile size (80/70). The VU day view pins every
-    // tile to 70 so a group representative shares one thumbnail cache entry
-    // ("path_70") between the collapsed stack, the expanded set, and prefetch —
-    // instead of a second cold fetch/decode at 80.
+    // Overrides the isRep-based tile HEIGHT (80/70). The VU day view pins every
+    // tile to 70. (THUMB-1: the tile's width is derived from the file's display
+    // geometry, and every tile shares one ServerImageLoader.tileAssetSize asset
+    // regardless of its display size, so this no longer affects cache sharing.)
     var fixedSize: CGFloat? = nil
     // When false, the advanced overlay omits the per-tile match (similarity)
     // score. The VU day view hides scores; BINNED keeps them.
@@ -291,16 +313,30 @@ struct DuplicateMemberView: View {
         !file.isAvailable && !file.isEjected
     }
 
+    /// THUMB-1: fixed tile height; the width follows the image's display
+    /// geometry (clamped 1:3…3:1, never cropped) — see ThumbnailGeometry.
+    static func tileHeight(isRep: Bool, fixedSize: CGFloat?) -> CGFloat {
+        fixedSize ?? (isRep ? 80 : 70)
+    }
+
+    static func tileSize(for file: Vurio_Dedup_DuplicateFile, isRep: Bool, fixedSize: CGFloat?) -> CGSize {
+        ThumbnailGeometry.tileSize(height: tileHeight(isRep: isRep, fixedSize: fixedSize),
+                                   displayWidth: file.displayWidth,
+                                   displayHeight: file.displayHeight)
+    }
+
     var body: some View {
-        let size: CGFloat = fixedSize ?? (isRep ? 80 : 70)
+        let tile = Self.tileSize(for: file, isRep: isRep, fixedSize: fixedSize)
+        let width = tile.width
+        let height = tile.height
         let cornerRadius: CGFloat = 8
 
         ZStack {
-            // requestSize 70: the representative displays at 80 pt but shares the
-            // 70 px asset with candidate tiles, VU day tiles, and prefetch — one
-            // cache entry per file instead of a second cold fetch/decode at 80.
-            ThumbnailView(filePath: file.filePath, size: CGSize(width: size, height: size), cachedThumbnailPath: file.cachedThumbnailPath, requestSize: 70)
-                .frame(width: size, height: size)
+            // One shared asset (tileAssetSize) for every surface — the
+            // representative displays at 80 pt tall, candidates and VU tiles at
+            // 70, all off the same cache entry.
+            ThumbnailView(filePath: file.filePath, size: tile, cachedThumbnailPath: file.cachedThumbnailPath, requestSize: ServerImageLoader.tileAssetSize)
+                .frame(width: width, height: height)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)
                 .contentShape(Rectangle())
@@ -326,7 +362,7 @@ struct DuplicateMemberView: View {
                         }
                         .foregroundColor(Theme.textPrimary)
                     }
-                    .frame(width: size, height: size)
+                    .frame(width: width, height: height)
                 }
                 .buttonStyle(.plain)
                 .help("This file's drive is disconnected. Click to locate it in its new location.")

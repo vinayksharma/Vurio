@@ -5,6 +5,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <functional>
 
 using Poco::Data::Session;
 using Poco::Data::Statement;
@@ -20,6 +21,33 @@ namespace MediaDedup
         {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
+
+            // THUMB-1 migration: a table from before render_revision existed
+            // cannot be widened in place (the UNIQUE constraint needs a
+            // rebuild), and for a CACHE table "schema changed" legitimately
+            // means "cache invalidated" — so drop and recreate. The rows it
+            // discards point at files the user removes with Advanced -> Clear
+            // image caches (docs/todo_aspect_ratio_thumbnails.md §9.1). One-time:
+            // the guard is the old shape itself.
+            {
+                int table_exists = 0;
+                sess << "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='thumbnail_cache'",
+                    into(table_exists), now;
+                if (table_exists > 0)
+                {
+                    int has_revision = 0;
+                    sess << std::string(SQL::kThumbnailCacheHasRenderRevision), into(has_revision), now;
+                    if (has_revision == 0)
+                    {
+                        int old_rows = 0;
+                        sess << "SELECT COUNT(*) FROM thumbnail_cache", into(old_rows), now;
+                        Poco::Logger::get("ThumbnailCacheOps").information(
+                            "thumbnail_cache predates render_revision; dropping and recreating it (%d cached rows invalidated)",
+                            old_rows);
+                        sess << std::string(SQL::kDropThumbnailCacheTable), now;
+                    }
+                }
+            }
 
             // Create table
             sess << std::string(SQL::kCreateThumbnailCacheTable), now;
@@ -39,6 +67,14 @@ namespace MediaDedup
         }
     }
 
+    std::string ThumbnailCacheOps::cacheFileName(const std::string &source_path, int size, int render_revision)
+    {
+        // "<hash>_<size>_r<revision>.jpg" — two revisions of one file must
+        // never collide on disk (THUMB-1 §4.2(b)).
+        return std::to_string(std::hash<std::string>{}(source_path)) + "_" + std::to_string(size) +
+               "_r" + std::to_string(render_revision) + ".jpg";
+    }
+
     std::optional<ThumbnailCacheRecord> ThumbnailCacheOps::getThumbnail(DatabaseManager &db,
                                                                         const std::string &source_path,
                                                                         int size)
@@ -52,18 +88,21 @@ namespace MediaDedup
             ThumbnailCacheRecord record;
             std::string src = source_path;
             int sz = size;
+            int rev = kNoRenderRevision;
 
             stmt << std::string(SQL::kSelectThumbnailByPath),
                 into(record.id),
                 into(record.source_path),
                 into(record.cached_path),
                 into(record.thumbnail_size),
+                into(record.render_revision),
                 into(record.file_size_bytes),
                 into(record.source_modified_at),
                 into(record.created_at),
                 into(record.last_accessed_at),
                 use(src),
-                use(sz);
+                use(sz),
+                use(rev);
 
             if (stmt.execute() > 0)
             {
@@ -96,18 +135,21 @@ namespace MediaDedup
             ThumbnailCacheRecord record;
             std::string src = source_path;
             int sz = min_size;
+            int rev = kNoRenderRevision;
 
             stmt << std::string(SQL::kSelectBestFitThumbnail),
                 into(record.id),
                 into(record.source_path),
                 into(record.cached_path),
                 into(record.thumbnail_size),
+                into(record.render_revision),
                 into(record.file_size_bytes),
                 into(record.source_modified_at),
                 into(record.created_at),
                 into(record.last_accessed_at),
                 use(src),
-                use(sz);
+                use(sz),
+                use(rev);
 
             if (stmt.execute() > 0)
             {
@@ -139,6 +181,7 @@ namespace MediaDedup
             std::string src = record.source_path;
             std::string cached = record.cached_path;
             int sz = record.thumbnail_size;
+            int rev = record.render_revision;
             int64_t fsize = record.file_size_bytes;
             int64_t mod = record.source_modified_at;
             int64_t created = record.created_at;
@@ -148,6 +191,7 @@ namespace MediaDedup
                 use(src),
                 use(cached),
                 use(sz),
+                use(rev),
                 use(fsize),
                 use(mod),
                 use(created),
@@ -172,11 +216,13 @@ namespace MediaDedup
             int64_t ts = timestamp;
             std::string src = source_path;
             int sz = size;
+            int rev = kNoRenderRevision;
 
             stmt << std::string(SQL::kUpdateThumbnailAccessTime),
                 use(ts),
                 use(src),
                 use(sz),
+                use(rev),
                 now;
 
             return true;
@@ -210,7 +256,8 @@ namespace MediaDedup
             {
                 // Delete specific size
                 int sz = size;
-                stmt << std::string(SQL::kDeleteThumbnailByPathAndSize), use(src), use(sz), now;
+                int rev = kNoRenderRevision;
+                stmt << std::string(SQL::kDeleteThumbnailByPathAndSize), use(src), use(sz), use(rev), now;
                 Poco::Logger::get("ThumbnailCacheOps").debug("Deleted thumbnail entry for: %s (size: %d)", source_path, size);
             }
 

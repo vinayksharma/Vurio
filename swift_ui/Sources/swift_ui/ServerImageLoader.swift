@@ -24,6 +24,16 @@ actor ServerImageLoader {
     /// fairness fix this jumped the queue by accident via LIFO ordering.)
     static let viewerImagePriority = -1
 
+    /// THUMB-1: the one pixel size every thumbnail surface requests and keys
+    /// its cache by — VU day strips, BINNED group cards, the viewer filmstrip
+    /// and both prefetchers. A 70 pt-tall tile at the 3:1 aspect clamp is
+    /// 210 pt = 420 px on a 2x display, so the old 128 px asset (what a
+    /// `size: 70` request snapped to) would be visibly soft on landscape
+    /// tiles. All sites MUST use this constant: two sites disagreeing means two
+    /// cold fetches and two decoded copies of every image
+    /// (dedup_server/docs/todo_aspect_ratio_thumbnails.md §7).
+    static let tileAssetSize = 256
+
     /// Long-edge cap for a locally decoded preview. Matches the server's
     /// MAX_PREVIEW_DIMENSION so both paths hand the viewer the same size;
     /// the image is laid out aspect-fit, and past this the extra pixels only
@@ -162,7 +172,7 @@ actor ServerImageLoader {
     ///   at 0.
     nonisolated func loadThumbnail(filePath: String, size: Int, cachedThumbnailPath: String? = nil, layerPriority: Int = 0) async throws -> NSImage {
         let currentPriority = Task.currentPriority
-        let key = "\(filePath)_\(size)"
+        let key = ThumbnailAssetKey.make(filePath: filePath, size: size)
 
         let task = await getOrCreateTask(key: key) {
             return try await self.performLoadThumbnail(filePath: filePath, size: size, priority: currentPriority, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
@@ -175,7 +185,7 @@ actor ServerImageLoader {
         
         if let cachedPath = cachedThumbnailPath, !cachedPath.isEmpty {
             if let image = await self.decodeImageInBackground(filePath: cachedPath, priority: priority) {
-                ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
+                ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size))
                 return image
             }
             logDebug("Failed to load direct cached thumbnail for \(filePath), falling back to gRPC.")
@@ -240,7 +250,7 @@ actor ServerImageLoader {
                 try Task.checkCancellation()
 
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
-                    ImageCache.shared.setImage(image, forKey: "\(filePath)_\(size)")
+                    ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size))
                     logDebug("loadThumbnail SUCCESS for \(filePath)")
                     return image
                 } else {

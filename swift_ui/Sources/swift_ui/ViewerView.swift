@@ -58,9 +58,11 @@ struct ViewerView: View {
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
 
-    /// Pixel size the strip tiles request. The main image area reuses their
-    /// cached bitmap as its placeholder, so the two must key the same asset.
-    private static let stripThumbnailSize = 70
+    /// Point height of the strip tiles (THUMB-1: width varies with each
+    /// image's display geometry). The asset they request is
+    /// ServerImageLoader.tileAssetSize; the main image area reuses that cached
+    /// bitmap as its placeholder, so the two must key the same asset.
+    private static let stripTileHeight: CGFloat = 70
 
     var body: some View {
         VStack(spacing: 0) {
@@ -390,13 +392,16 @@ struct ViewerView: View {
 
     private func stripTile(_ image: ViewerImage) -> some View {
         let isSelected = image.id == model.selectedID
-        let side = CGFloat(Self.stripThumbnailSize)
+        let tile = ThumbnailGeometry.tileSize(height: Self.stripTileHeight,
+                                              displayWidth: image.displayWidth,
+                                              displayHeight: image.displayHeight)
         return ThumbnailView(
             filePath: image.filePath,
-            size: CGSize(width: side, height: side),
-            cachedThumbnailPath: image.cachedThumbnailPath
+            size: tile,
+            cachedThumbnailPath: image.cachedThumbnailPath,
+            requestSize: ServerImageLoader.tileAssetSize
         )
-        .frame(width: side, height: side)
+        .frame(width: tile.width, height: tile.height)
         .cornerRadius(8)
         .opacity(image.isEjected ? 0.3 : 1.0)
         .overlay(
@@ -553,7 +558,7 @@ struct ViewerView: View {
         // transcode on the server and can take seconds to arrive. Same
         // `displayedImagePath` as the preview that replaces it, so the sharpen
         // is an instant in-place swap rather than a second cross-fade.
-        let placeholder = ImageCache.shared.getImage(forKey: "\(filePath)_\(Self.stripThumbnailSize)")
+        let placeholder = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: ServerImageLoader.tileAssetSize))
         withAnimation(Self.imageFade) {
             isLoadingImage = true
             currentImage = placeholder

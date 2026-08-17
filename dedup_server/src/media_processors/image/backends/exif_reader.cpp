@@ -75,11 +75,13 @@ namespace MediaDedup
         std::optional<ExifInfo> readViaIdentifyPing(const std::string &file_path, Poco::Logger &logger)
         {
             // -ping: read headers/EXIF only — never decode pixel data.
+            // THUMB-1: %[orientation] is appended so the reported axes can be
+            // swapped for transposing orientations — see orientationTransposesAxes.
             std::vector<std::string> args = {
                 "identify",
                 "-ping",
                 "-format",
-                "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n",
+                "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n%[orientation]\n",
                 file_path};
 
             Poco::Pipe out_pipe;
@@ -105,7 +107,7 @@ namespace MediaDedup
                     line.pop_back();
                 lines.push_back(line);
             }
-            while (lines.size() < 6)
+            while (lines.size() < 7)
                 lines.push_back("");
 
             ExifInfo info;
@@ -121,6 +123,11 @@ namespace MediaDedup
                     info.height = std::stoi(lines[1]);
             }
             catch (...) {}
+            // %w/%h are the STORED dimensions; the delivered image is rendered
+            // with -auto-orient, so report the auto-oriented axes (ExifInfo
+            // contract). Mirrors the LibRaw flip 5/6 swap above.
+            if (ExifReader::orientationTransposesAxes(lines[6]))
+                std::swap(info.width, info.height);
 
             info.datetime = lines[2].empty() ? lines[3] : lines[2];
             info.camera = lines[4];
@@ -132,6 +139,16 @@ namespace MediaDedup
             }
             return info;
         }
+    }
+
+    bool ExifReader::orientationTransposesAxes(const std::string &orientation)
+    {
+        // ImageMagick's %[orientation] names (EXIF values 5-8 transpose):
+        //   LeftTop = 5, RightTop = 6, RightBottom = 7, LeftBottom = 8.
+        // Anything else (TopLeft, BottomRight, mirrored variants, Undefined,
+        // empty) keeps the stored axes.
+        return orientation == "LeftTop" || orientation == "RightTop" ||
+               orientation == "RightBottom" || orientation == "LeftBottom";
     }
 
     std::optional<ExifInfo> ExifReader::read(const std::string &file_path)

@@ -316,7 +316,9 @@ curl -X DELETE "http://localhost:8080/api/v1/thumbnails/cleanup?check_source=tru
 **File System (cache/thumbnails/):**
 
 - Actual JPEG thumbnail files
-- Hash-based filenames: `<source_hash>_<size>.jpg`
+- Hash-based filenames: `<source_hash>_<size>_r<render_revision>.jpg`
+  (`ThumbnailCacheOps::cacheFileName`; revision is 0 until non-destructive
+  edits exist — THUMB-1)
 - Managed by `DiskCache` with configurable size limits
 - FIFO eviction when cache full
 
@@ -324,8 +326,18 @@ curl -X DELETE "http://localhost:8080/api/v1/thumbnails/cleanup?check_source=tru
 
 - Metadata and path mappings only (no BLOBs!)
 - Tracks source file modification time for invalidation
-- Composite unique constraint on (source_path, thumbnail_size)
-- Supports multiple sizes per source file
+- Composite unique constraint on (source_path, thumbnail_size, render_revision)
+- Supports multiple sizes (and, later, revisions) per source file
+- Thumbnails are generated with `-resize NxN` (fit-inside-box, aspect
+  preserved) — the client lays tiles out at the image's aspect ratio (THUMB-1),
+  so this must never become a fill/crop form (`test_magick_args.cpp` guards it)
+
+**List RPCs (`DuplicateFile.display_width/height`, `DayFile.display_width/height`):**
+
+- THUMB-1: the image's display geometry (auto-oriented base dimensions today,
+  from `scanned_files.exif_resolution` via `computeDisplayDimensions`), so the
+  client can reserve the correct tile width before the bitmap arrives. `0`
+  means unknown → square tile. See `docs/todo_aspect_ratio_thumbnails.md` §3, §5.
 
 ### Generation Flow
 
@@ -413,17 +425,26 @@ CREATE TABLE thumbnail_cache (
     source_path TEXT NOT NULL,
     cached_path TEXT NOT NULL,
     thumbnail_size INTEGER NOT NULL,
+    render_revision INTEGER NOT NULL DEFAULT 0,  -- THUMB-1: 0 = no user edits; part of the asset identity
     file_size_bytes INTEGER NOT NULL,
     source_modified_at INTEGER NOT NULL,  -- Unix timestamp
     created_at INTEGER NOT NULL,          -- Unix timestamp
     last_accessed_at INTEGER NOT NULL,    -- Unix timestamp
-    UNIQUE(source_path, thumbnail_size)   -- Allow multiple sizes per source
+    UNIQUE(source_path, thumbnail_size, render_revision)  -- multiple sizes AND revisions per source
 );
 
 CREATE INDEX idx_thumbnail_source_path ON thumbnail_cache(source_path);
 CREATE INDEX idx_thumbnail_source_modified ON thumbnail_cache(source_modified_at);
 CREATE INDEX idx_thumbnail_last_accessed ON thumbnail_cache(last_accessed_at);
 ```
+
+`render_revision` (THUMB-1, `docs/todo_aspect_ratio_thumbnails.md` §4.2(b)) is
+the seam for the future non-destructive edit pipeline: every keyed statement
+(`kUpsertThumbnailCache`'s `ON CONFLICT` target included), the on-disk filename
+(`<hash>_<size>_r<revision>.jpg`, `ThumbnailCacheOps::cacheFileName`) and the
+best-fit subquery filter on it. `ThumbnailCacheOps::ensureTable` detects a
+pre-revision table (`PRAGMA table_info` lacks the column) and drops/recreates it
+— for a cache table, a schema change legitimately invalidates the cache.
 
 ## Implementation Details
 

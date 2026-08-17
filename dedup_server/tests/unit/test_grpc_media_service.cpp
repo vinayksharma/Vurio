@@ -178,6 +178,53 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     server.stop();
 }
 
+// THUMB-1 (docs/todo_aspect_ratio_thumbnails.md §7, §10): the client now asks
+// for 256. With both a 128 and a 256 asset cached, a size:"256" request must
+// resolve to the 256 entry — not the 128 one that a stale best-fit target
+// would hand back.
+TEST_F(MediaServiceGrpcTest, GetThumbnailSize256ResolvesTo256Entry) {
+    std::string socket_path = "/tmp/test_grpc_media_service_256.sock";
+
+    std::string fake_src = "/tmp/source256.jpg";
+    std::string thumb128 = test_thumb_cache_dir_ + "/thumb_128.jpg";
+    std::string thumb256 = test_thumb_cache_dir_ + "/thumb_256.jpg";
+    for (const auto& p : {thumb128, thumb256}) {
+        std::ofstream ofs(p);
+        ofs << "fake data";
+    }
+
+    for (const auto& [size, path] : std::vector<std::pair<int, std::string>>{{128, thumb128}, {256, thumb256}}) {
+        ThumbnailCacheRecord rec;
+        rec.source_path = fake_src;
+        rec.cached_path = path;
+        rec.thumbnail_size = size;
+        rec.file_size_bytes = 9;
+        EXPECT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, rec));
+    }
+
+    GrpcServerCore server;
+    server.start(socket_path, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:" + socket_path, grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel);
+    ASSERT_FALSE(token.empty());
+
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path(fake_src);
+    req.set_size("256");
+
+    grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_TRUE(status.ok());
+    EXPECT_EQ(resp.file_path(), thumb256);
+
+    server.stop();
+}
+
 TEST_F(MediaServiceGrpcTest, GetPreviewNoTranscodeReturnsOriginalPath) {
     std::string socket_path = "/tmp/test_grpc_media_service_preview.sock";
 
