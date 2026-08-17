@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "orchestration/duplicate_finder.hpp"
+#include "database/sql_constants.hpp"
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include "database/duplicate_groups_ops.hpp"
@@ -2094,6 +2095,178 @@ TEST_F(DuplicateFinderRangeTest, FreshDatabaseStartsWithNothingDiscovered)
     const int id_a = addProcessedFileWithEmbedding(
         *db_manager_, "/disc1fr/a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
     EXPECT_EQ(discoveryDone(*db_manager_, id_a), 0);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// ---------------------------------------------------------------------------
+// DF-4: orphan edges are removed by the code that deletes the file, not by a
+// full-table DELETE scan at the top of every finder run.
+//
+// The per-run purge (DELETE ... WHERE file_a NOT IN (SELECT id ...) OR ...)
+// scanned the whole edge table under SQLite's WRITE lock every 5 s — ~30 s at
+// 14.9M edges — and starved every other writer in the process (thumbnail
+// cache rows, EXIF updates, processed-state marks all hit busy_timeout).
+// ---------------------------------------------------------------------------
+
+// Deleting a scanned file removes its edges (in either column — edges are
+// canonical file_a < file_b) in the same transaction and flags a re-cluster,
+// which the next run consumes and acts on.
+TEST_F(DuplicateFinderRangeTest, DeletingAFileRemovesItsEdgesAndSchedulesARecluster)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_delete.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+    config_->setPropertyValue("duplicates.threshold.similarity", 0.92);
+    config_->setPropertyValue("duplicates.threshold.duplicate", 0.97);
+
+    const int id_a = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/a.jpg", {1.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_b = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/b.jpg", {1.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f, 0.0f});
+    const int id_c = addProcessedFileWithEmbedding(
+        *db_manager_, "/df4/c.jpg", {1.0f, 0.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f, 0.0f});
+    ASSERT_GT(id_a, 0);
+    ASSERT_GT(id_b, 0);
+    ASSERT_GT(id_c, 0);
+
+    DuplicateFinder finder(config_, *db_manager_);
+    ASSERT_TRUE(finder.initialize());
+    finder.findDuplicates();
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 3) << "a-b, a-c, b-c";
+    ASSERT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COALESCE(regroup_pending,0) FROM duplicate_edges_meta WHERE id = 1"), 0);
+
+    // Delete the middle-id file: it is file_b of (a,b) and file_a of (b,c),
+    // so both index paths are exercised.
+    ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_manager_, "/df4/b.jpg"));
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges WHERE file_a = " + std::to_string(id_b) +
+                                            " OR file_b = " + std::to_string(id_b)), 0)
+        << "the deleted file's edges go with it, in the same transaction";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 1) << "a-c survives";
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT regroup_pending FROM duplicate_edges_meta WHERE id = 1"), 1)
+        << "removing edges must request a re-cluster (a removed edge can split a component)";
+
+    // The next run consumes the request and re-clusters from the surviving
+    // edges: a-c is still a group, and the flag is cleared.
+    finder.findDuplicates();
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT regroup_pending FROM duplicate_edges_meta WHERE id = 1"), 0);
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 1);
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_members"), 2) << "a and c";
+
+    // Deleting a file whose edges were the group's only links dissolves it.
+    ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_manager_, "/df4/c.jpg"));
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 0);
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT regroup_pending FROM duplicate_edges_meta WHERE id = 1"), 1);
+    finder.findDuplicates();
+    EXPECT_EQ(DuplicateGroupsOps::countGroupsByMode(*db_manager_, "EMBEDDING"), 0)
+        << "the re-cluster must drop the group whose edges are gone";
+
+    // A run with nothing pending must not touch the flag or the edge table.
+    finder.findDuplicates();
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT regroup_pending FROM duplicate_edges_meta WHERE id = 1"), 0);
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// Removing a whole media location takes its edges too (both columns).
+TEST_F(DuplicateFinderRangeTest, RemovingALocationRemovesItsEdges)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_location.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    // removeByLocationKey sweeps every per-file table; create the ones this
+    // fixture does not otherwise need.
+    execSql(*db_manager_, std::string(SQL::kCreateThumbnailCacheTable));
+    execSql(*db_manager_, std::string(SQL::kCreateProcessingErrorsTable));
+    execSql(*db_manager_, std::string(SQL::kCreateEjectedFilesHistoryTable));
+    execSql(*db_manager_, std::string(SQL::kCreatePreviewCacheTable));
+
+    // Two files in location L1 (ids 1,2) and one in L2 (id 3), edges 1-2, 2-3, 1-3.
+    const int id_1 = addProcessedFileWithEmbedding(*db_manager_, "/L1/a.jpg", {1.0f, 0, 0, 0, 0, 0, 0, 0});
+    const int id_2 = addProcessedFileWithEmbedding(*db_manager_, "/L1/b.jpg", {1.0f, 0, 0, 0, 0, 0, 0, 0});
+    const int id_3 = addProcessedFileWithEmbedding(*db_manager_, "/L2/c.jpg", {1.0f, 0, 0, 0, 0, 0, 0, 0});
+    execSql(*db_manager_, "UPDATE scanned_files SET location_key = 'L1' WHERE id IN (" + std::to_string(id_1) + "," + std::to_string(id_2) + ")");
+    execSql(*db_manager_, "UPDATE scanned_files SET location_key = 'L2' WHERE id = " + std::to_string(id_3));
+    for (auto [a, b] : std::vector<std::pair<int, int>>{{id_1, id_2}, {id_2, id_3}, {id_1, id_3}})
+        execSql(*db_manager_, "INSERT INTO duplicate_edges(file_a, file_b, score) VALUES(" +
+                                  std::to_string(std::min(a, b)) + "," + std::to_string(std::max(a, b)) + ", 0.99)");
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 3);
+
+    ASSERT_TRUE(ScannedFilesOps::removeByLocationKey(*db_manager_, "L1"));
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM scanned_files"), 1);
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 0)
+        << "every edge touching a removed file must go, whichever column it is in";
+
+    db_manager_.reset();
+    std::filesystem::remove(db_path);
+}
+
+// The finder no longer scans the edge table on every run; legacy orphans (from
+// before DF-4, or written behind the server's back) are reconciled once per
+// process — on the first run, off the startup path — and the DELETE only
+// happens if the read-only probe finds any.
+TEST_F(DuplicateFinderRangeTest, OrphanEdgesAreReconciledOncePerProcessNotEveryRun)
+{
+    std::string db_path = (std::filesystem::temp_directory_path() / "df4_orphans.sqlite").string();
+    std::filesystem::remove(db_path);
+    db_manager_ = std::make_unique<DatabaseManager>(db_path);
+    ASSERT_TRUE(db_manager_->initialize());
+    ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_manager_));
+    ASSERT_TRUE(DuplicateGroupsOps::ensureTables(*db_manager_));
+    ASSERT_TRUE(ImageArtifactsOps::ensureTable(*db_manager_));
+    config_->setPropertyValue("duplicates.finder.enabled", true);
+
+    const int id_a = addProcessedFileWithEmbedding(*db_manager_, "/df4o/a.jpg", {1.0f, 0, 0, 0, 0, 0, 0, 0});
+    const int id_b = addProcessedFileWithEmbedding(*db_manager_, "/df4o/b.jpg", {1.0f, 0, 0, 0, 0, 0, 0, 0});
+    execSql(*db_manager_, "INSERT INTO duplicate_edges(file_a, file_b, score) VALUES(" +
+                              std::to_string(std::min(id_a, id_b)) + "," + std::to_string(std::max(id_a, id_b)) + ", 0.99)");
+    // A legacy orphan: endpoints that do not exist in scanned_files.
+    execSql(*db_manager_, "INSERT INTO duplicate_edges(file_a, file_b, score) VALUES(999998, 999999, 0.99)");
+    ASSERT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 2);
+
+    {
+        DuplicateFinder finder(config_, *db_manager_);
+        ASSERT_TRUE(finder.initialize());
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 2)
+            << "initialize() must not pay for the scan (it is on the startup path)";
+        finder.findDuplicates();
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 1)
+            << "the first run reconciles legacy orphans once";
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges WHERE file_a = 999998"), 0);
+
+        // An orphan appearing AFTER that is NOT purged by a later run: that
+        // per-run scan is exactly what DF-4 removes. (It cannot arise from
+        // the server's own deletion paths any more.)
+        execSql(*db_manager_, "INSERT INTO duplicate_edges(file_a, file_b, score) VALUES(999996, 999997, 0.99)");
+        finder.findDuplicates();
+        finder.findDuplicates();
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges WHERE file_a = 999996"), 1)
+            << "findDuplicates() must not run the full-table orphan purge on every run";
+    }
+
+    // The next process (new finder instance) reconciles it on its first run.
+    {
+        DuplicateFinder restarted(config_, *db_manager_);
+        ASSERT_TRUE(restarted.initialize());
+        restarted.findDuplicates();
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges WHERE file_a = 999996"), 0);
+        EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM duplicate_edges"), 1);
+    }
+
+    // The file_b index exists (the targeted deletes depend on it).
+    EXPECT_EQ(scalarQuery(*db_manager_, "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_duplicate_edges_file_b'"), 1);
 
     db_manager_.reset();
     std::filesystem::remove(db_path);

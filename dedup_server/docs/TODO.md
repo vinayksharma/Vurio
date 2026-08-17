@@ -31,6 +31,9 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Done
 
+- **DF-4 — the finder's per-run orphan-edge purge held the write lock ~25 s
+  every 5 s at 14.9M edges.** Fixed 2026-08-17; see `troubleshooting_and_fixes.md`
+  ("DF-4: Write-Lock Storm From the Per-Run Orphan-Edge Purge").
 - **FILT-1 — the low-resolution filter un-ignored every file it rejected.**
   Fixed 2026-08-16 in `e759a3d1`; see `troubleshooting_and_fixes.md`.
 - **DISC-1 — replace the id watermark with per-file discovery state.**

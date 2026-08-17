@@ -75,10 +75,15 @@ namespace MediaDedup
         std::optional<ExifInfo> readViaIdentifyPing(const std::string &file_path, Poco::Logger &logger)
         {
             // -ping: read headers/EXIF only — never decode pixel data.
+            // -quiet: files with no EXIF block (PNG/GIF/BMP...) otherwise make
+            // identify print one 'unknown image property "%[exif:...]"'
+            // warning per tag to stderr, which is inherited by the server
+            // console. The values still parse as empty; only the noise goes.
             // THUMB-1: %[orientation] is appended so the reported axes can be
             // swapped for transposing orientations — see orientationTransposesAxes.
             std::vector<std::string> args = {
                 "identify",
+                "-quiet",
                 "-ping",
                 "-format",
                 "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n%[orientation]\n",

@@ -12,6 +12,57 @@ namespace MediaDedup
 {
     using namespace Poco::Data;
 
+    namespace
+    {
+        // DF-4: edges were removed for deleted file(s) inside `sess`'s open
+        // transaction; ask the finder to re-cluster on its next run (a removed
+        // edge can split a component). Persisted flag because this code has
+        // no handle on the DuplicateFinder. Best-effort: on a database where
+        // the finder has never initialised, duplicate_edges_meta (or the
+        // column) does not exist and there are no groups to go stale.
+        // The edge table is created by DuplicateGroupsOps::ensureTables; a
+        // database where the finder has never run (or a unit-test fixture)
+        // may not have it, and a delete must not fail because of that.
+        bool duplicateEdgesTableExists(Session &sess)
+        {
+            int n = 0;
+            sess << "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='duplicate_edges'",
+                Keywords::into(n), Keywords::now;
+            return n > 0;
+        }
+
+        // DF-4: remove every edge touching `file_id` (either column). Returns
+        // the number removed; 0 when the edge table does not exist.
+        int deleteEdgesForFile(Session &sess, int file_id)
+        {
+            if (!duplicateEdgesTableExists(sess))
+                return 0;
+            Statement del_edges(sess);
+            int id_a = file_id, id_b = file_id;
+            del_edges << std::string(SQL::kDeleteDuplicateEdgesForFile), Keywords::use(id_a), Keywords::use(id_b);
+            del_edges.execute();
+            int purged = 0;
+            sess << "SELECT changes()", Keywords::into(purged), Keywords::now;
+            return purged;
+        }
+
+        void requestRegroupAfterEdgePurge(Session &sess, int purged_edges, const std::string &what)
+        {
+            try
+            {
+                sess << std::string(SQL::kRequestRegroupAfterEdgePurge), Keywords::now;
+                Poco::Logger::get("ScannedFilesOps").information(
+                    "Removed %d duplicate edge(s) for %s; re-cluster requested", purged_edges, what);
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("ScannedFilesOps").debug(
+                    "Removed %d duplicate edge(s) for %s; could not flag re-cluster (%s)",
+                    purged_edges, what, std::string(e.what()));
+            }
+        }
+    }
+
     bool ScannedFilesOps::ensureTable(DatabaseManager &db)
     {
         // Create table first
@@ -234,8 +285,26 @@ namespace MediaDedup
                 sel.execute();
             }
 
-            Statement stmt(sess);
-            stmt << std::string(SQL::kDeleteScannedFile), Keywords::use(p), Keywords::now;
+            // DF-4: the file's similarity edges go in the same transaction as
+            // the row (edges have no FK, so nothing cascades them).
+            try
+            {
+                sess.begin();
+                if (file_id > 0)
+                {
+                    const int purged = deleteEdgesForFile(sess, file_id);
+                    if (purged > 0)
+                        requestRegroupAfterEdgePurge(sess, purged, file_path);
+                }
+                Statement stmt(sess);
+                stmt << std::string(SQL::kDeleteScannedFile), Keywords::use(p), Keywords::now;
+                sess.commit();
+            }
+            catch (...)
+            {
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
 
             if (file_id > 0)
             {
@@ -316,6 +385,23 @@ namespace MediaDedup
 
             Statement del_ejected(sess);
             del_ejected << "DELETE FROM ejected_files_history WHERE original_location_key=?", Keywords::use(key), Keywords::now;
+
+            // DF-4: take the location's similarity edges with it, in the same
+            // transaction, BEFORE the scanned_files rows go (the subqueries
+            // read them). Index-driven on both columns.
+            if (duplicateEdgesTableExists(sess))
+            {
+                Statement del_edges_a(sess);
+                del_edges_a << std::string(SQL::kDeleteDuplicateEdgesForLocationA), Keywords::use(key), Keywords::now;
+                int purged_a = 0;
+                sess << "SELECT changes()", Keywords::into(purged_a), Keywords::now;
+                Statement del_edges_b(sess);
+                del_edges_b << std::string(SQL::kDeleteDuplicateEdgesForLocationB), Keywords::use(key), Keywords::now;
+                int purged_b = 0;
+                sess << "SELECT changes()", Keywords::into(purged_b), Keywords::now;
+                if (purged_a + purged_b > 0)
+                    requestRegroupAfterEdgePurge(sess, purged_a + purged_b, "location " + key);
+            }
 
             Statement del_files(sess);
             del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
@@ -411,6 +497,15 @@ namespace MediaDedup
                 Statement del_previews(sess);
                 del_previews << "DELETE FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
                 del_previews.execute();
+
+                // DF-4: the file's similarity edges go in the same transaction
+                // (edges are canonical file_a < file_b, so check both columns;
+                // PK + idx_duplicate_edges_file_b make this two index seeks).
+                {
+                    const int purged = deleteEdgesForFile(sess, file_id);
+                    if (purged > 0)
+                        requestRegroupAfterEdgePurge(sess, purged, file_path);
+                }
 
                 // Delete the scanned_file row itself. This will CASCADE DELETE
                 // to: duplicate_members, ejected_files_history.
@@ -660,8 +755,11 @@ namespace MediaDedup
 
     bool ScannedFilesOps::markProcessed(DatabaseManager &db, const std::string &file_path, int state)
     {
-        try
-        {
+        // DF-4: a lost state write is not benign — a file left at 1 (picked
+        // up) or never reaching 2/-99 is re-queued or re-processed on the next
+        // pass — so ride out write-lock contention like the cache writers do.
+        const std::string what = "markProcessed(" + file_path + " -> " + std::to_string(state) + ")";
+        return DbRetry::withBusyRetry("ScannedFilesOps", what.c_str(), [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
@@ -670,50 +768,38 @@ namespace MediaDedup
             stmt << std::string(SQL::kUpdateProcessed), Keywords::use(flag), Keywords::use(p), Keywords::now;
 
             Poco::Logger::get("ScannedFilesOps").debug("Successfully updated file " + file_path + " to state " + std::to_string(state));
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file " + file_path + " with state " + std::to_string(state) + ": " + e.what());
-            return false;
-        }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file " + file_path + " with state " + std::to_string(state) + ": unknown error");
-            return false;
-        }
+        });
     }
 
     bool ScannedFilesOps::markIgnored(DatabaseManager &db, const std::string &file_path, const std::string &reason)
     {
-        try
-        {
+        // DF-4: busy-retry, same reasoning as markProcessed (a lost ignore
+        // leaves the file at 1 and it is re-processed on the next pass).
+        const std::string what = "markIgnored(" + file_path + ")";
+        return DbRetry::withBusyRetry("ScannedFilesOps", what.c_str(), [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
             int state = 3; // Ignored
             std::string p = file_path;
             std::string r = reason;
-            stmt << "UPDATE scanned_files SET processed=?, ignore_reason=? WHERE file_path=?", 
+            stmt << "UPDATE scanned_files SET processed=?, ignore_reason=? WHERE file_path=?",
                 Keywords::use(state), Keywords::use(r), Keywords::use(p), Keywords::now;
-            return true;
-        }
-        catch (...)
-        {
-            return false;
-        }
+        });
     }
 
     bool ScannedFilesOps::markProcessedWithEscalation(DatabaseManager &db, const std::string &file_path, int state)
     {
-        try
-        {
-            // DB-7: one UPDATE with the escalation folded into a CASE — the
-            // old shape read the FULL 15-column row (getByPath) purely to
-            // inspect `processed`, then issued a second statement, doubling
-            // the round trips on every processing-failure path. Escalation:
-            // an error landing on an existing error becomes state-100
-            // (e.g. -1 on -6 -> -101); anything else stores `state` as-is.
+        // DB-7: one UPDATE with the escalation folded into a CASE — the
+        // old shape read the FULL 15-column row (getByPath) purely to
+        // inspect `processed`, then issued a second statement, doubling
+        // the round trips on every processing-failure path. Escalation:
+        // an error landing on an existing error becomes state-100
+        // (e.g. -1 on -6 -> -101); anything else stores `state` as-is.
+        // DF-4: busy-retry around the write (see markProcessed).
+        bool found = true;
+        const std::string what = "markProcessedWithEscalation(" + file_path + " -> " + std::to_string(state) + ")";
+        const bool ok = DbRetry::withBusyRetry("ScannedFilesOps", what.c_str(), [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
 
@@ -728,23 +814,14 @@ namespace MediaDedup
             int changed = 0;
             Statement count(sess);
             count << "SELECT changes()", Keywords::into(changed), Keywords::now;
-            if (changed == 0)
-            {
-                Poco::Logger::get("ScannedFilesOps").error("File not found in database for escalation: " + file_path);
-                return false;
-            }
-            return true;
-        }
-        catch (const std::exception &e)
+            found = changed > 0;
+        });
+        if (ok && !found)
         {
-            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file with escalation " + file_path + " with state " + std::to_string(state) + ": " + e.what());
+            Poco::Logger::get("ScannedFilesOps").error("File not found in database for escalation: " + file_path);
             return false;
         }
-        catch (...)
-        {
-            Poco::Logger::get("ScannedFilesOps").error("Failed to mark file with escalation " + file_path + " with state " + std::to_string(state) + ": unknown error");
-            return false;
-        }
+        return ok;
     }
 
     static std::string joinIds(const std::vector<int> &ids)

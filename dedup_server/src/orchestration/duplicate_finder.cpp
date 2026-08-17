@@ -276,6 +276,18 @@ namespace MediaDedup
                 catch (const std::exception &)
                 {
                 }
+                // DF-4: set by ScannedFilesOps when it removes a deleted
+                // file's edges (see kRequestRegroupAfterEdgePurge); consumed
+                // at the top of every run.
+                try
+                {
+                    Statement alter(sess);
+                    alter << "ALTER TABLE duplicate_edges_meta ADD COLUMN regroup_pending INTEGER NOT NULL DEFAULT 0",
+                        now;
+                }
+                catch (const std::exception &)
+                {
+                }
                 double stored_floor = -1.0;
                 {
                     std::vector<double> rows;
@@ -377,6 +389,12 @@ namespace MediaDedup
                 logger.warning("Edge-list migration check failed: %s", std::string(e.what()));
             }
 
+            // DF-4: the one-time orphan reconcile runs on the FIRST finder run
+            // (see findDuplicates), not here — the probe is a full read of the
+            // edge table (~25 s at 14.9M edges) and initialize() sits on the
+            // startup path ahead of the gRPC server.
+            orphan_reconciled_.store(false);
+
             // Subscribe to config changes
             config_subscription_ = ScopedConfigSubscription(
                 cfg_, cfg_->subscribeToConfigChanges([this](const ConfigChangeEvent &event)
@@ -414,10 +432,23 @@ namespace MediaDedup
             {
                 std::string mode_str = "EMBEDDING";
 
-                // DF-3: drop edges referencing deleted files BEFORE clustering
-                // — stale edges would resurrect their groups. A purge can split
-                // a component, so it also forces the full re-cluster below.
-                const bool purged = purgeOrphanEdges();
+                // DF-3/DF-4: edges of deleted files are removed by the code
+                // that deletes the file (ScannedFilesOps), which flags a
+                // re-cluster because a removed edge can split a component.
+                // Consuming the flag is a read plus, only when set, a one-row
+                // UPDATE — not the full-table DELETE scan this used to be.
+                bool purged = consumeRegroupPending();
+
+                // One-time reconcile per process for legacy orphans (edges
+                // that predate DF-4, or were written behind the server's
+                // back). This used to run as a DELETE at the top of EVERY run
+                // — a full scan of the edge table under the WRITE lock (~30 s
+                // at 14.9M edges) every 5 s, starving every other writer in
+                // the process. Now: a READ-gated probe (no lock held against
+                // writers in WAL), the DELETE only if it finds something, and
+                // only on the first run.
+                if (!orphan_reconciled_.exchange(true) && purgeOrphanEdges())
+                    purged = true;
 
                 arena_.clear();
                 RunState run_state;
@@ -519,6 +550,27 @@ namespace MediaDedup
             {
                 auto lease = db_.acquireSessionLease();
                 Session &sess = lease.get();
+
+                // Read first: a SELECT holds no write lock in WAL, so the scan
+                // (which is the expensive part) never blocks other writers.
+                // Only a positive result pays for the DELETE.
+                const auto t0 = std::chrono::steady_clock::now();
+                int any = 0;
+                {
+                    Statement probe(sess);
+                    probe << "SELECT EXISTS(SELECT 1 FROM duplicate_edges "
+                             "WHERE file_a NOT IN (SELECT id FROM scanned_files) "
+                             "OR file_b NOT IN (SELECT id FROM scanned_files))",
+                        into(any), now;
+                }
+                const auto probe_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - t0).count();
+                if (!any)
+                {
+                    finderLogger().information("Orphan-edge reconcile: none found (%ld ms scan)", static_cast<long>(probe_ms));
+                    return false;
+                }
+
                 Statement stmt(sess);
                 stmt << "DELETE FROM duplicate_edges WHERE file_a NOT IN (SELECT id FROM scanned_files) "
                         "OR file_b NOT IN (SELECT id FROM scanned_files)", now;
@@ -528,8 +580,7 @@ namespace MediaDedup
 
                 // DISC-1: nothing to sweep alongside — discovery state is a
                 // column on scanned_files, so a deleted file takes it with it.
-                if (changes > 0)
-                    finderLogger().information("Purged %d orphan duplicate edge(s)", changes);
+                finderLogger().information("Orphan-edge reconcile: purged %d orphan duplicate edge(s)", changes);
                 return changes > 0;
             }
             catch (const std::exception &e)
@@ -538,6 +589,39 @@ namespace MediaDedup
                 // Unknown outcome: assume edges went away so the caller takes
                 // the full pass rather than trusting a stale component map.
                 return true;
+            }
+        }
+
+        bool DuplicateFinder::consumeRegroupPending()
+        {
+            try
+            {
+                auto lease = db_.acquireSessionLease();
+                Session &sess = lease.get();
+                int pending = 0;
+                {
+                    Statement q(sess);
+                    q << "SELECT COALESCE(regroup_pending, 0) FROM duplicate_edges_meta WHERE id = 1",
+                        into(pending), now;
+                }
+                if (!pending)
+                    return false;
+                // Clear-if-set in one statement so a request that lands
+                // between the read and this write is not lost: it simply
+                // stays set (changes()==0 here) and is consumed next run.
+                Statement clear(sess);
+                clear << "UPDATE duplicate_edges_meta SET regroup_pending = 0 WHERE id = 1 AND regroup_pending = 1", now;
+                int changes = 0;
+                Statement count(sess);
+                count << "SELECT changes()", into(changes), now;
+                if (changes > 0)
+                    finderLogger().information("Edges were removed for deleted file(s) since the last run: re-cluster scheduled");
+                return changes > 0;
+            }
+            catch (const std::exception &e)
+            {
+                finderLogger().warning("consumeRegroupPending failed: %s", std::string(e.what()));
+                return false;
             }
         }
 

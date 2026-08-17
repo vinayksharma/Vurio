@@ -392,6 +392,37 @@ namespace MediaDedup
         inline constexpr std::string_view kCreateDuplicateEdgesIndexScore =
             "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_score ON duplicate_edges(score);";
 
+        // DF-4: edges are stored canonically (file_a < file_b), so a file's
+        // edges sit in EITHER column. The primary key covers file_a; this
+        // index covers file_b, so deleting one file's edges is two index
+        // searches instead of a scan of the whole table (14.9M rows on a
+        // 143k-file library, ~30 s — held under the WRITE lock when it was a
+        // DELETE, which starved every other writer in the process). Built
+        // once on existing installs (~4 s / +6% file size at that scale).
+        inline constexpr std::string_view kCreateDuplicateEdgesIndexFileB =
+            "CREATE INDEX IF NOT EXISTS idx_duplicate_edges_file_b ON duplicate_edges(file_b);";
+
+        // DF-4: targeted edge removal, run INSIDE the transaction that deletes
+        // the scanned_files row(s), so the edge table can never hold an
+        // orphan and the finder no longer needs a per-run full-table purge.
+        // Both forms are index-driven (PK for file_a, idx_..._file_b for
+        // file_b; the OR is a MULTI-INDEX OR).
+        inline constexpr std::string_view kDeleteDuplicateEdgesForFile =
+            "DELETE FROM duplicate_edges WHERE file_a = ? OR file_b = ?";
+        inline constexpr std::string_view kDeleteDuplicateEdgesForLocationA =
+            "DELETE FROM duplicate_edges WHERE file_a IN (SELECT id FROM scanned_files WHERE location_key = ?)";
+        inline constexpr std::string_view kDeleteDuplicateEdgesForLocationB =
+            "DELETE FROM duplicate_edges WHERE file_b IN (SELECT id FROM scanned_files WHERE location_key = ?)";
+
+        // DF-4: removing a file's edges can split a component, so the finder
+        // must re-cluster on its next run. The deleting code cannot reach the
+        // finder object, so the request is a persisted flag on
+        // duplicate_edges_meta (which the finder creates/ALTERs at init and
+        // consumes at the top of every run). Silently a no-op when the meta
+        // table does not exist yet — there are no groups to go stale then.
+        inline constexpr std::string_view kRequestRegroupAfterEdgePurge =
+            "UPDATE duplicate_edges_meta SET regroup_pending = 1 WHERE id = 1";
+
         // DISC-1: per-file edge-discovery state. Discovery used to infer "which
         // files still need comparing" from a single ascending id watermark,
         // which is only correct if processed=2 arrives in id order. It does
