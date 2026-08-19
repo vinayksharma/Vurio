@@ -59,6 +59,20 @@ protected:
         return stored ? stored->id : 0;
     }
 
+    // EXIF-1: updateExifMetadata now takes a full ExifInfo and derives the
+    // resolution from width/height. These tests exercise the READING side of
+    // exif_resolution — including malformed values older databases may hold —
+    // so they write the raw column directly.
+    void setExifResolution(const std::string &path, const std::string &resolution)
+    {
+        auto lease = db_manager_->acquireSessionLease();
+        Poco::Data::Session &sess = lease.get();
+        std::string res = resolution;
+        std::string p = path;
+        sess << "UPDATE scanned_files SET exif_resolution = ? WHERE file_path = ?",
+            Poco::Data::Keywords::use(res), Poco::Data::Keywords::use(p), Poco::Data::Keywords::now;
+    }
+
     std::string db_path_;
     std::shared_ptr<DatabaseManager> db_manager_;
 };
@@ -320,10 +334,9 @@ TEST_F(DayGroupsOpsTest, CarriesDisplayGeometryFromExifResolution)
     int portrait_id = insertFile("/media/portrait.jpg", std::string("2024:06:01 09:05:00"));
     int malformed_id = insertFile("/media/malformed.jpg", std::string("2024:06:01 09:10:00"));
     insertFile("/media/none.jpg", std::string("2024:06:01 09:15:00"));
-    // updateExifMetadata rewrites the datetime too, so pass it along.
-    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/landscape.jpg", "2024:06:01 09:00:00", "", "3000x2000"));
-    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/portrait.jpg", "2024:06:01 09:05:00", "", "2000x3000"));
-    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/malformed.jpg", "2024:06:01 09:10:00", "", "garbage"));
+    setExifResolution("/media/landscape.jpg", "3000x2000");
+    setExifResolution("/media/portrait.jpg", "2000x3000");
+    setExifResolution("/media/malformed.jpg", "garbage");
 
     // Anchor branch (getDayGroups, unfiltered)
     auto page = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
@@ -365,7 +378,7 @@ TEST_F(DayGroupsOpsTest, CarriesDisplayGeometryFromExifResolution)
     // Pulled-member branch: a non-representative member of a group whose
     // representative is on this day gets its OWN geometry, not the rep's.
     int other_day_id = insertFile("/media/otherday.jpg", std::string("2024:05:01 09:00:00"));
-    ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_manager_, "/media/otherday.jpg", "2024:05:01 09:00:00", "", "1000x4000"));
+    setExifResolution("/media/otherday.jpg", "1000x4000");
     int group_id = DuplicateGroupsOps::createGroup(*db_manager_, "exact", landscape_id, "/media/landscape.jpg",
                                                    100, "2024-06-01 09:00:00", 0.98);
     ASSERT_GT(group_id, 0);

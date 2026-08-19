@@ -52,7 +52,16 @@ protected:
         auto stored = ScannedFilesOps::getByPath(*db_, path);
         EXPECT_TRUE(stored.has_value());
         if (!exif_resolution.empty())
-            EXPECT_TRUE(ScannedFilesOps::updateExifMetadata(*db_, path, "", "", exif_resolution));
+        {
+            // EXIF-1: updateExifMetadata now derives resolution from ExifInfo
+            // width/height; this test needs raw strings, so write the column.
+            auto lease = db_->acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::string res = exif_resolution;
+            std::string p = path;
+            sess << "UPDATE scanned_files SET exif_resolution = ? WHERE file_path = ?",
+                Poco::Data::Keywords::use(res), Poco::Data::Keywords::use(p), Poco::Data::Keywords::now;
+        }
         return stored ? stored->id : 0;
     }
 

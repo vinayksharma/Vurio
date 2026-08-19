@@ -5,6 +5,7 @@
 #include <Poco/Data/Statement.h>
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
+#include "media_processors/image/backends/exif_reader.hpp"
 #include "database/sql_constants.hpp"
 #include "database/user_settings_ops.hpp"
 #include "test_utils.hpp"
@@ -301,6 +302,82 @@ namespace MediaDedup
             std::remove(db_path.c_str());
         }
 
+        // EXIF-2: a pre-existing database (created before the comprehensive
+        // EXIF columns) must gain them via ensureTable's ALTER migrations —
+        // and a second ensureTable run must be a harmless no-op.
+        TEST(ScannedFilesOpsTest, EnsureTableMigratesOldSchemaToComprehensiveExif)
+        {
+            std::string db_path = testDbPath("test_scanned_files_exif2_migration.sqlite");
+            std::remove(db_path.c_str());
+
+            // Build an old-schema database by hand (pre-EXIF-2 column set).
+            {
+                DatabaseManager dbm(db_path);
+                ASSERT_TRUE(dbm.initialize());
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                sess << "CREATE TABLE scanned_files (\n"
+                        "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+                        "    file_path TEXT NOT NULL UNIQUE,\n"
+                        "    relative_path TEXT, share_name TEXT, file_name TEXT NOT NULL,\n"
+                        "    file_metadata TEXT, processed INTEGER DEFAULT 0, links TEXT,\n"
+                        "    is_network_file BOOLEAN DEFAULT 0, location_key TEXT NOT NULL,\n"
+                        "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+                        "    exif_datetime TEXT, exif_camera TEXT, exif_resolution TEXT, exif_blob BLOB,\n"
+                        "    ignore_reason TEXT)", Poco::Data::Keywords::now;
+                sess << "INSERT INTO scanned_files (file_path, file_name, location_key) "
+                        "VALUES ('/old/pic.jpg', 'pic.jpg', 'mediaLocation:old')", Poco::Data::Keywords::now;
+            }
+
+            // Migration runs inside ensureTable.
+            DatabaseManager dbm(db_path);
+            ASSERT_TRUE(dbm.initialize());
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            auto columnExists = [&](const std::string &col) {
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int found = 0;
+                std::string c = col;
+                Poco::Data::Statement stmt(sess);
+                stmt << "SELECT COUNT(*) FROM pragma_table_info('scanned_files') WHERE name = ?",
+                    Poco::Data::Keywords::into(found), Poco::Data::Keywords::use(c),
+                    Poco::Data::Keywords::now;
+                return found == 1;
+            };
+            for (const char *col : {"exif_make", "exif_model", "exif_lens_model", "exif_iso",
+                                    "exif_f_number", "exif_shutter_speed_apex", "exif_shutter_speed_text",
+                                    "exif_exposure_time", "exif_exposure_comp", "exif_metering_mode",
+                                    "exif_flash_fired", "exif_flash_mode", "exif_focal_length",
+                                    "exif_focal_length_35mm", "exif_focus_distance", "exif_focus_mode",
+                                    "exif_white_balance", "exif_color_space", "exif_scene_mode",
+                                    "exif_brightness", "exif_contrast", "exif_saturation", "exif_sharpness",
+                                    "exif_gps_lat", "exif_gps_lon", "exif_gps_alt", "exif_orientation"})
+                EXPECT_TRUE(columnExists(col)) << "missing migrated column: " << col;
+
+            // The old row survived and the new columns are NULL on it.
+            {
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int null_iso = 0;
+                Poco::Data::Statement stmt(sess);
+                stmt << "SELECT exif_iso IS NULL FROM scanned_files WHERE file_path = '/old/pic.jpg'",
+                    Poco::Data::Keywords::into(null_iso), Poco::Data::Keywords::now;
+                EXPECT_EQ(null_iso, 1);
+            }
+
+            // The new fields are writable on the migrated database.
+            ExifInfo exif;
+            exif.width = 800; exif.height = 600;
+            exif.iso = 400;
+            ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(dbm, "/old/pic.jpg", exif));
+
+            // Idempotent: a second ensureTable run must not fail.
+            ASSERT_TRUE(ScannedFilesOps::ensureTable(dbm));
+
+            std::remove(db_path.c_str());
+        }
+
         // DB-2 (backend_optimization_plan.md): the raw exif_blob is dead — it
         // was 2.83 GB of write-only data. Ingest must keep writing the PARSED
         // EXIF fields while leaving the legacy blob column NULL.
@@ -315,14 +392,42 @@ namespace MediaDedup
 
             auto row = makeRow("/tmp/exif.jpg");
             ASSERT_TRUE(ScannedFilesOps::upsert(dbm, row));
-            ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(
-                dbm, row.file_path, "2024:06:01 10:00:00", "TestCam", "6000x4000"));
+            // EXIF-1: updateExifMetadata now takes the full ExifInfo struct
+            ExifInfo exif;
+            exif.width = 6000;
+            exif.height = 4000;
+            exif.datetime = "2024:06:01 10:00:00";
+            exif.camera = "TestCam";
+            exif.make = "Test";
+            exif.model = "Cam";
+            exif.iso = 1600;
+            exif.f_number = 2.8f;
+            ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(dbm, row.file_path, exif));
 
             auto fetched = ScannedFilesOps::getByPath(dbm, row.file_path);
             ASSERT_TRUE(fetched.has_value());
             EXPECT_EQ(fetched->exif_datetime.value_or(""), "2024:06:01 10:00:00");
             EXPECT_EQ(fetched->exif_camera.value_or(""), "TestCam");
             EXPECT_EQ(fetched->exif_resolution.value_or(""), "6000x4000");
+
+            // EXIF-2: verify the comprehensive fields round-trip through SQL
+            {
+                auto lease = dbm.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int iso = 0;
+                double fnum = 0.0;
+                std::string make_out, model_out;
+                Poco::Data::Statement stmt(sess);
+                std::string p = row.file_path;
+                stmt << "SELECT exif_iso, exif_f_number, exif_make, exif_model FROM scanned_files WHERE file_path = ?",
+                    Poco::Data::Keywords::into(iso), Poco::Data::Keywords::into(fnum),
+                    Poco::Data::Keywords::into(make_out), Poco::Data::Keywords::into(model_out),
+                    Poco::Data::Keywords::use(p), Poco::Data::Keywords::now;
+                EXPECT_EQ(iso, 1600);
+                EXPECT_NEAR(fnum, 2.8, 0.01);
+                EXPECT_EQ(make_out, "Test");
+                EXPECT_EQ(model_out, "Cam");
+            }
 
             // The legacy column stays NULL through both write paths.
             {

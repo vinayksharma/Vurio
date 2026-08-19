@@ -179,8 +179,8 @@ namespace MediaDedup
                     line.pop_back();
                 lines.push_back(line);
             }
-            // Ensure we have all expected lines (31 total)
-            while (lines.size() < 31)
+            // Ensure we have all expected lines (29 total: 0-27 fields, 28 orientation)
+            while (lines.size() < 29)
                 lines.push_back("");
 
             ExifInfo info;
@@ -291,12 +291,12 @@ namespace MediaDedup
             catch (...) {}
 
             // Orientation (lines 28+)
-            if (ExifReader::orientationTransposesAxes(lines[30]))
+            if (ExifReader::orientationTransposesAxes(lines[28]))
                 std::swap(info.width, info.height);
 
             try
             {
-                std::string orientation_str = lines[30];
+                std::string orientation_str = lines[28];
                 if (orientation_str == "LeftTop") info.orientation = 5;
                 else if (orientation_str == "RightTop") info.orientation = 6;
                 else if (orientation_str == "RightBottom") info.orientation = 7;

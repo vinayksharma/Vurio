@@ -148,7 +148,7 @@ namespace MediaDedup
         // Update EXIF metadata (parsed fields only; DB-2 removed the raw blob)
         // EXIF-1: Updated to accept comprehensive EXIF fields from ExifInfo
         static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path,
-                                     const class ExifInfo &exif);
+                                     const struct ExifInfo &exif);
 
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);

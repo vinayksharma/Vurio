@@ -109,6 +109,56 @@ namespace MediaDedup
             // Column likely already exists, ignore
         }
 
+        // EXIF-2: ensure the comprehensive EXIF columns exist (migration for
+        // pre-existing databases; fresh installs get them from the CREATE
+        // TABLE). Each ALTER fails harmlessly if the column already exists.
+        {
+            static constexpr std::string_view kExifMigrations[] = {
+                SQL::kAlterScannedFilesAddExifMake,
+                SQL::kAlterScannedFilesAddExifModel,
+                SQL::kAlterScannedFilesAddExifLensModel,
+                SQL::kAlterScannedFilesAddExifISO,
+                SQL::kAlterScannedFilesAddExifFNumber,
+                SQL::kAlterScannedFilesAddExifShutterSpeedAPEX,
+                SQL::kAlterScannedFilesAddExifShutterSpeedText,
+                SQL::kAlterScannedFilesAddExifExposureTime,
+                SQL::kAlterScannedFilesAddExifExposureComp,
+                SQL::kAlterScannedFilesAddExifMeteringMode,
+                SQL::kAlterScannedFilesAddExifFlashFired,
+                SQL::kAlterScannedFilesAddExifFlashMode,
+                SQL::kAlterScannedFilesAddExifFocalLength,
+                SQL::kAlterScannedFilesAddExifFocalLength35mm,
+                SQL::kAlterScannedFilesAddExifFocusDistance,
+                SQL::kAlterScannedFilesAddExifFocusMode,
+                SQL::kAlterScannedFilesAddExifWhiteBalance,
+                SQL::kAlterScannedFilesAddExifColorSpace,
+                SQL::kAlterScannedFilesAddExifSceneMode,
+                SQL::kAlterScannedFilesAddExifBrightness,
+                SQL::kAlterScannedFilesAddExifContrast,
+                SQL::kAlterScannedFilesAddExifSaturation,
+                SQL::kAlterScannedFilesAddExifSharpness,
+                SQL::kAlterScannedFilesAddExifGPSLat,
+                SQL::kAlterScannedFilesAddExifGPSLon,
+                SQL::kAlterScannedFilesAddExifGPSAlt,
+                SQL::kAlterScannedFilesAddExifOrientation,
+            };
+            int added = 0;
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            for (const auto &migration : kExifMigrations)
+            {
+                try {
+                    sess << std::string(migration), Poco::Data::Keywords::now;
+                    ++added;
+                } catch (const std::exception &) {
+                    // Column already exists, ignore
+                }
+            }
+            if (added > 0)
+                Poco::Logger::get("ScannedFilesOps").information(
+                    "EXIF-2: added %d EXIF column(s) to scanned_files table.", added);
+        }
+
         // DB-1: one-time index upgrade — an older idx_scanned_files_taken_day
         // without the is_video predicate cannot exclude video rows index-side,
         // and the new day-view filter (`is_video = 0`) would not match it.
@@ -179,6 +229,16 @@ namespace MediaDedup
             // DB-6: partial index for the unprocessed sweep (every tick)
             sess << std::string(SQL::kCreateScannedFilesIndexUnprocessed), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created unprocessed partial index for the media sweep");
+
+            // EXIF-2: indices for searchable EXIF fields
+            sess << std::string(SQL::kCreateScannedFilesIndexExifISO), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifFNumber), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifExposureComp), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifMakeModel), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifWhiteBalance), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifDateTime), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifGPS), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created EXIF search indices");
         }
         catch (const std::exception &e)
         {
@@ -1058,40 +1118,70 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
 
+            // Poco Keywords::use requires non-const lvalues — copy all fields.
             std::string p = file_path;
+            std::string dt = exif.datetime;
+            std::string cam = exif.camera;
             std::string exif_res = std::to_string(exif.width) + "x" + std::to_string(exif.height);
+            std::string make = exif.make;
+            std::string model = exif.model;
+            std::string lens_model = exif.lens_model;
+            int iso = static_cast<int>(exif.iso);
+            float f_number = exif.f_number;
+            float shutter_apex = exif.shutter_speed_apex;
+            std::string shutter_text = exif.shutter_speed_text;
+            float exposure_time = exif.exposure_time;
+            float exposure_comp = exif.exposure_comp;
+            std::string metering_mode = exif.metering_mode;
+            std::string flash_fired = exif.flash_fired;
+            std::string flash_mode = exif.flash_mode;
+            float focal_length = exif.focal_length;
+            float focal_length_35mm = exif.focal_length_35mm;
+            float focus_distance = exif.focus_distance;
+            std::string focus_mode = exif.focus_mode;
+            std::string white_balance = exif.white_balance;
+            std::string color_space = exif.color_space;
+            std::string scene_mode = exif.scene_mode;
+            float brightness = exif.brightness;
+            std::string contrast = exif.contrast;
+            std::string saturation = exif.saturation;
+            std::string sharpness = exif.sharpness;
+            float gps_lat = exif.gps_lat;
+            float gps_lon = exif.gps_lon;
+            float gps_alt = exif.gps_alt;
+            int orientation = static_cast<int>(exif.orientation);
 
             stmt << std::string(SQL::kUpdateExifMetadata),
-                Keywords::use(exif.datetime),
-                Keywords::use(exif.camera),
+                Keywords::use(dt),
+                Keywords::use(cam),
                 Keywords::use(exif_res),
-                Keywords::use(exif.make),
-                Keywords::use(exif.model),
-                Keywords::use(exif.lens_model),
-                Keywords::use(exif.iso),
-                Keywords::use(exif.f_number),
-                Keywords::use(exif.shutter_speed_apex),
-                Keywords::use(exif.shutter_speed_text),
-                Keywords::use(exif.exposure_time),
-                Keywords::use(exif.exposure_comp),
-                Keywords::use(exif.metering_mode),
-                Keywords::use(exif.flash_fired),
-                Keywords::use(exif.flash_mode),
-                Keywords::use(exif.focal_length),
-                Keywords::use(exif.focal_length_35mm),
-                Keywords::use(exif.focus_distance),
-                Keywords::use(exif.focus_mode),
-                Keywords::use(exif.white_balance),
-                Keywords::use(exif.color_space),
-                Keywords::use(exif.scene_mode),
-                Keywords::use(exif.brightness),
-                Keywords::use(exif.contrast),
-                Keywords::use(exif.saturation),
-                Keywords::use(exif.sharpness),
-                Keywords::use(exif.gps_lat),
-                Keywords::use(exif.gps_lon),
-                Keywords::use(exif.gps_alt),
-                Keywords::use(exif.orientation),
+                Keywords::use(make),
+                Keywords::use(model),
+                Keywords::use(lens_model),
+                Keywords::use(iso),
+                Keywords::use(f_number),
+                Keywords::use(shutter_apex),
+                Keywords::use(shutter_text),
+                Keywords::use(exposure_time),
+                Keywords::use(exposure_comp),
+                Keywords::use(metering_mode),
+                Keywords::use(flash_fired),
+                Keywords::use(flash_mode),
+                Keywords::use(focal_length),
+                Keywords::use(focal_length_35mm),
+                Keywords::use(focus_distance),
+                Keywords::use(focus_mode),
+                Keywords::use(white_balance),
+                Keywords::use(color_space),
+                Keywords::use(scene_mode),
+                Keywords::use(brightness),
+                Keywords::use(contrast),
+                Keywords::use(saturation),
+                Keywords::use(sharpness),
+                Keywords::use(gps_lat),
+                Keywords::use(gps_lon),
+                Keywords::use(gps_alt),
+                Keywords::use(orientation),
                 Keywords::use(p), Keywords::now;
         });
     }

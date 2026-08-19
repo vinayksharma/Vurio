@@ -829,6 +829,63 @@ namespace MediaDedup
             "ALTER TABLE scanned_files ADD COLUMN is_video INTEGER "
             "GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL";
 
+        // EXIF-2: Migration statements for comprehensive EXIF fields
+        // Each ALTER TABLE adds a single column (SQLite allows one at a time)
+        inline constexpr std::string_view kAlterScannedFilesAddExifMake =
+            "ALTER TABLE scanned_files ADD COLUMN exif_make TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifModel =
+            "ALTER TABLE scanned_files ADD COLUMN exif_model TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifLensModel =
+            "ALTER TABLE scanned_files ADD COLUMN exif_lens_model TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifISO =
+            "ALTER TABLE scanned_files ADD COLUMN exif_iso INTEGER";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFNumber =
+            "ALTER TABLE scanned_files ADD COLUMN exif_f_number REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifShutterSpeedAPEX =
+            "ALTER TABLE scanned_files ADD COLUMN exif_shutter_speed_apex REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifShutterSpeedText =
+            "ALTER TABLE scanned_files ADD COLUMN exif_shutter_speed_text TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifExposureTime =
+            "ALTER TABLE scanned_files ADD COLUMN exif_exposure_time REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifExposureComp =
+            "ALTER TABLE scanned_files ADD COLUMN exif_exposure_comp REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifMeteringMode =
+            "ALTER TABLE scanned_files ADD COLUMN exif_metering_mode TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFlashFired =
+            "ALTER TABLE scanned_files ADD COLUMN exif_flash_fired TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFlashMode =
+            "ALTER TABLE scanned_files ADD COLUMN exif_flash_mode TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFocalLength =
+            "ALTER TABLE scanned_files ADD COLUMN exif_focal_length REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFocalLength35mm =
+            "ALTER TABLE scanned_files ADD COLUMN exif_focal_length_35mm REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFocusDistance =
+            "ALTER TABLE scanned_files ADD COLUMN exif_focus_distance REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifFocusMode =
+            "ALTER TABLE scanned_files ADD COLUMN exif_focus_mode TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifWhiteBalance =
+            "ALTER TABLE scanned_files ADD COLUMN exif_white_balance TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifColorSpace =
+            "ALTER TABLE scanned_files ADD COLUMN exif_color_space TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifSceneMode =
+            "ALTER TABLE scanned_files ADD COLUMN exif_scene_mode TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifBrightness =
+            "ALTER TABLE scanned_files ADD COLUMN exif_brightness REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifContrast =
+            "ALTER TABLE scanned_files ADD COLUMN exif_contrast TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifSaturation =
+            "ALTER TABLE scanned_files ADD COLUMN exif_saturation TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifSharpness =
+            "ALTER TABLE scanned_files ADD COLUMN exif_sharpness TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddExifGPSLat =
+            "ALTER TABLE scanned_files ADD COLUMN exif_gps_lat REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifGPSLon =
+            "ALTER TABLE scanned_files ADD COLUMN exif_gps_lon REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifGPSAlt =
+            "ALTER TABLE scanned_files ADD COLUMN exif_gps_alt REAL";
+        inline constexpr std::string_view kAlterScannedFilesAddExifOrientation =
+            "ALTER TABLE scanned_files ADD COLUMN exif_orientation INTEGER";
+
         // Partial index restricted to the day-view row filter so the planner can
         // serve count/paging/per-day lookups from the index alone. The predicate
         // must stay textually equivalent to VURIO_DAY_VIEW_FILTER — including
