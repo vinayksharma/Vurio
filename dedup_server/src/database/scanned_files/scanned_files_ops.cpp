@@ -4,6 +4,7 @@
 #include "database/db_retry.hpp"
 #include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
+#include "media_processors/image/backends/exif_reader.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
@@ -1047,26 +1048,50 @@ namespace MediaDedup
     }
 
     bool ScannedFilesOps::updateExifMetadata(DatabaseManager &db, const std::string &file_path,
-                                 const std::string &exif_datetime, const std::string &exif_camera,
-                                 const std::string &exif_resolution)
+                                 const ExifInfo &exif)
     {
         // Losing this to write-lock contention silently drops the file's EXIF
         // date, which the day view groups by — the row is never revisited.
+        // EXIF-1: Updated to handle comprehensive EXIF fields
         return DbRetry::withBusyRetry("ScannedFilesOps", "updateExifMetadata", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
 
-            // Bind references directly, they won't go out of scope before the execute
-            std::string dt = exif_datetime;
-            std::string cam = exif_camera;
-            std::string res = exif_resolution;
             std::string p = file_path;
+            std::string exif_res = std::to_string(exif.width) + "x" + std::to_string(exif.height);
 
             stmt << std::string(SQL::kUpdateExifMetadata),
-                Keywords::use(dt),
-                Keywords::use(cam),
-                Keywords::use(res),
+                Keywords::use(exif.datetime),
+                Keywords::use(exif.camera),
+                Keywords::use(exif_res),
+                Keywords::use(exif.make),
+                Keywords::use(exif.model),
+                Keywords::use(exif.lens_model),
+                Keywords::use(exif.iso),
+                Keywords::use(exif.f_number),
+                Keywords::use(exif.shutter_speed_apex),
+                Keywords::use(exif.shutter_speed_text),
+                Keywords::use(exif.exposure_time),
+                Keywords::use(exif.exposure_comp),
+                Keywords::use(exif.metering_mode),
+                Keywords::use(exif.flash_fired),
+                Keywords::use(exif.flash_mode),
+                Keywords::use(exif.focal_length),
+                Keywords::use(exif.focal_length_35mm),
+                Keywords::use(exif.focus_distance),
+                Keywords::use(exif.focus_mode),
+                Keywords::use(exif.white_balance),
+                Keywords::use(exif.color_space),
+                Keywords::use(exif.scene_mode),
+                Keywords::use(exif.brightness),
+                Keywords::use(exif.contrast),
+                Keywords::use(exif.saturation),
+                Keywords::use(exif.sharpness),
+                Keywords::use(exif.gps_lat),
+                Keywords::use(exif.gps_lon),
+                Keywords::use(exif.gps_alt),
+                Keywords::use(exif.orientation),
                 Keywords::use(p), Keywords::now;
         });
     }

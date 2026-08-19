@@ -100,6 +100,34 @@ namespace MediaDedup
             "    exif_camera TEXT,\n"
             "    exif_resolution TEXT,\n"
             "    exif_blob BLOB,\n"
+            // EXIF-1: Comprehensive EXIF fields for searchable queries
+            "    exif_make TEXT,\n"
+            "    exif_model TEXT,\n"
+            "    exif_lens_model TEXT,\n"
+            "    exif_iso INTEGER,\n"
+            "    exif_f_number REAL,\n"
+            "    exif_shutter_speed_apex REAL,\n"
+            "    exif_shutter_speed_text TEXT,\n"
+            "    exif_exposure_time REAL,\n"
+            "    exif_exposure_comp REAL,\n"
+            "    exif_metering_mode TEXT,\n"
+            "    exif_flash_fired TEXT,\n"
+            "    exif_flash_mode TEXT,\n"
+            "    exif_focal_length REAL,\n"
+            "    exif_focal_length_35mm REAL,\n"
+            "    exif_focus_distance REAL,\n"
+            "    exif_focus_mode TEXT,\n"
+            "    exif_white_balance TEXT,\n"
+            "    exif_color_space TEXT,\n"
+            "    exif_scene_mode TEXT,\n"
+            "    exif_brightness REAL,\n"
+            "    exif_contrast TEXT,\n"
+            "    exif_saturation TEXT,\n"
+            "    exif_sharpness TEXT,\n"
+            "    exif_gps_lat REAL,\n"
+            "    exif_gps_lon REAL,\n"
+            "    exif_gps_alt REAL,\n"
+            "    exif_orientation INTEGER,\n"
             "    ignore_reason TEXT,\n"
             "    taken_day TEXT GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL,\n"
             "    is_video INTEGER GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL,\n"
@@ -113,6 +141,28 @@ namespace MediaDedup
         // Composite index for filtered queries by location_key
         inline constexpr std::string_view kCreateScannedFilesIndexLocationProcessed =
             "CREATE INDEX IF NOT EXISTS idx_scanned_files_location_processed ON scanned_files(location_key, processed);";
+
+        // EXIF-1: Indices for searchable EXIF fields
+        inline constexpr std::string_view kCreateScannedFilesIndexExifISO =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_iso ON scanned_files(exif_iso);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifFNumber =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_f_number ON scanned_files(exif_f_number);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifExposureComp =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_exposure_comp ON scanned_files(exif_exposure_comp);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifMakeModel =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_make_model ON scanned_files(exif_make, exif_model);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifWhiteBalance =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_white_balance ON scanned_files(exif_white_balance);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifDateTime =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_datetime ON scanned_files(exif_datetime);";
+
+        inline constexpr std::string_view kCreateScannedFilesIndexExifGPS =
+            "CREATE INDEX IF NOT EXISTS idx_scanned_files_exif_gps ON scanned_files(exif_gps_lat, exif_gps_lon);";
 
         // Processing Errors (error logs for failed file processing)
         inline constexpr std::string_view kCreateProcessingErrorsTable =
@@ -332,8 +382,19 @@ namespace MediaDedup
             "CREATE INDEX IF NOT EXISTS idx_scanned_files_unprocessed ON scanned_files(id) "
             "WHERE processed=0 OR processed=-99 OR (processed >= -100 AND processed < 0);";
 
+        // EXIF-1: Extended to include comprehensive EXIF fields
         inline constexpr std::string_view kUpdateExifMetadata =
-            "UPDATE scanned_files SET exif_datetime=?, exif_camera=?, exif_resolution=? WHERE file_path=?";
+            "UPDATE scanned_files SET "
+            "exif_datetime=?, exif_camera=?, exif_resolution=?, "
+            "exif_make=?, exif_model=?, exif_lens_model=?, "
+            "exif_iso=?, exif_f_number=?, exif_shutter_speed_apex=?, exif_shutter_speed_text=?, "
+            "exif_exposure_time=?, exif_exposure_comp=?, exif_metering_mode=?, "
+            "exif_flash_fired=?, exif_flash_mode=?, "
+            "exif_focal_length=?, exif_focal_length_35mm=?, exif_focus_distance=?, exif_focus_mode=?, "
+            "exif_white_balance=?, exif_color_space=?, exif_scene_mode=?, "
+            "exif_brightness=?, exif_contrast=?, exif_saturation=?, exif_sharpness=?, "
+            "exif_gps_lat=?, exif_gps_lon=?, exif_gps_alt=?, exif_orientation=? "
+            "WHERE file_path=?";
 
         // Image artifacts queries
         inline constexpr std::string_view kSelectImageArtifactsByFile =

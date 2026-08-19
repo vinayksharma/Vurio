@@ -28,20 +28,20 @@ namespace MediaDedup
             // just to report dimensions), `identify -ping` for the rest.
             // (DB-2 already removed the raw EXIF blob dump, which cost a
             // second full decode per file.)
+            // EXIF-1: Now extracting and storing comprehensive EXIF fields
             try {
                 auto exif = ExifReader::read(original_file_path);
                 if (!exif)
                     throw std::runtime_error("no metadata readable");
 
-                const std::string &exif_dt = exif->datetime;
-                const std::string &exif_camera = exif->camera;
                 int width = exif->width;
                 int height = exif->height;
                 std::string exif_res = std::to_string(width) + "x" + std::to_string(height);
 
-                ScannedFilesOps::updateExifMetadata(db, original_file_path, exif_dt, exif_camera, exif_res);
-                Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: DT=%s, Cam=%s, Res=%s",
-                    original_file_path, exif_dt, exif_camera, exif_res);
+                // Store comprehensive EXIF metadata
+                ScannedFilesOps::updateExifMetadata(db, original_file_path, *exif);
+                Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: Camera=%s, ISO=%u, F/%.1f, Res=%s",
+                    original_file_path, exif->camera, exif->iso, exif->f_number, exif_res);
 
                 // Tier 2 Filter logic: Resolution & Date
                 if (config_manager && config_manager->getPropertyValue<bool>("media.filter.enabled", true)) {
@@ -50,15 +50,15 @@ namespace MediaDedup
                     std::string apply_after_date = config_manager->getPropertyValue<std::string>("media.filter.low_res.apply_after_date", "2005-01-01");
 
                     bool is_low_res = (width < min_w || height < min_h);
-                    
+
                     // Check date to see if we should exempt it (historical photos)
                     bool is_after_date = true; // default to true if no valid date
-                    if (!exif_dt.empty()) {
+                    if (!exif->datetime.empty()) {
                         // EXIF date format is usually "YYYY:MM:DD HH:MM:SS"
                         // convert apply_after_date "YYYY-MM-DD" to "YYYY:MM:DD" for simple string comparison
                         std::string target_date = apply_after_date;
                         std::replace(target_date.begin(), target_date.end(), '-', ':');
-                        if (exif_dt < target_date) {
+                        if (exif->datetime < target_date) {
                             is_after_date = false;
                         }
                     }
