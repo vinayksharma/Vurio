@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "media_processors/text/clip_tokenizer.hpp"
+#include "search/exif_query_parser.hpp"
+#include "search/location_geocoder.hpp"
 
 namespace MediaDedup
 {
@@ -54,7 +56,16 @@ namespace MediaDedup
 
     private:
         Result searchUncached(const std::string &query);
+        /// CLIP KNN over the vec0 index (the pre-EXIF-4 search body).
+        Result clipSearch(const std::string &query);
+        /// EXIF-4: drop matches whose rows fail the parsed EXIF constraints.
+        void filterMatchesByExif(std::vector<Match> &matches,
+                                 const ExifQueryConstraints &constraints);
+        /// EXIF-4: pure metadata query ("photos taken with a canon") — no
+        /// semantic text left, so skip CLIP and select ids from SQL alone.
+        Result exifOnlySearch(const ExifQueryConstraints &constraints);
         void ensureTokenizerLoaded();
+        void ensureGeocoderLoaded();
 
         std::shared_ptr<UnifiedObservableConfigManager> config_;
         DatabaseManager *db_;
@@ -65,9 +76,15 @@ namespace MediaDedup
         int embedding_dim_ = 512;
         int knn_k_ = 300;
         double min_score_ = 0.2;
+        // EXIF-4: cap for constraint-only queries (no KNN k to bound them).
+        int exif_only_limit_ = 1000;
+        std::string locations_path_;
 
         std::once_flag tokenizer_once_;
         ClipTokenizer tokenizer_;
+
+        std::once_flag geocoder_once_;
+        LocationGeocoder geocoder_;
 
         std::mutex cache_mutex_;
         // MRU-front query cache: repeated page requests for the same active

@@ -30,48 +30,53 @@ namespace MediaDedup
             return out.substr(b, e - b + 1);
         }
 
-        void parseGPSCoordinate(const std::string &dms, float &out)
+        // EXIF-4 fix: ImageMagick reports many EXIF numerics as rationals
+        // ("28/10" for f/2.8, "1/500" for exposure time). std::stof would
+        // stop at the '/' and return 28 — parse the fraction properly.
+        float parseRationalFloat(const std::string &s, float fallback = 0.0f)
         {
-            // Parse EXIF GPS format: "40 degrees 24' 21.52" or similar variations
-            // Output as decimal degrees
-            if (dms.empty())
-                return;
-
-            out = 0.0f;
             try
             {
-                size_t deg_pos = dms.find("degree");
-                if (deg_pos == std::string::npos)
-                {
-                    // Try simple float parse as fallback
-                    out = std::stof(dms);
-                    return;
-                }
-
-                float degrees = std::stof(dms.substr(0, deg_pos));
-
-                size_t min_pos = dms.find("'", deg_pos);
-                if (min_pos == std::string::npos)
-                {
-                    out = degrees;
-                    return;
-                }
-
-                float minutes = std::stof(dms.substr(deg_pos + 7, min_pos - deg_pos - 7));
-
-                size_t sec_pos = dms.find('"', min_pos);
-                float seconds = 0.0f;
-                if (sec_pos != std::string::npos)
-                {
-                    seconds = std::stof(dms.substr(min_pos + 1, sec_pos - min_pos - 1));
-                }
-
-                out = degrees + minutes / 60.0f + seconds / 3600.0f;
+                auto slash = s.find('/');
+                if (slash == std::string::npos)
+                    return std::stof(s);
+                float num = std::stof(s.substr(0, slash));
+                float den = std::stof(s.substr(slash + 1));
+                return den != 0.0f ? num / den : fallback;
             }
             catch (...)
             {
-                out = 0.0f;
+                return fallback;
             }
+        }
+
+        void parseGPSCoordinate(const std::string &raw, float &out)
+        {
+            // ImageMagick's %[exif:GPSLatitude] is a comma-separated rational
+            // triplet "40/1, 24/1, 2152/100" (degrees, minutes, seconds).
+            // Bare decimals ("44.43") are accepted too.
+            if (raw.empty())
+                return;
+            try
+            {
+                float parts[3] = {0.0f, 0.0f, 0.0f};
+                int count = 0;
+                std::size_t start = 0;
+                while (count < 3 && start <= raw.size())
+                {
+                    std::size_t comma = raw.find(',', start);
+                    std::string piece = raw.substr(
+                        start, comma == std::string::npos ? std::string::npos : comma - start);
+                    parts[count++] = parseRationalFloat(piece);
+                    if (comma == std::string::npos)
+                        break;
+                    start = comma + 1;
+                }
+                if (count == 0)
+                    return;
+                out = parts[0] + parts[1] / 60.0f + parts[2] / 3600.0f;
+            }
+            catch (...) {}
         }
 
         std::optional<ExifInfo> readRawMetadata(const std::string &file_path, Poco::Logger &logger)
@@ -152,6 +157,7 @@ namespace MediaDedup
                 "%[exif:Saturation]\n%[exif:Sharpness]\n"
                 // GPS
                 "%[exif:GPSLatitude]\n%[exif:GPSLongitude]\n%[exif:GPSAltitude]\n"
+                "%[exif:GPSLatitudeRef]\n%[exif:GPSLongitudeRef]\n"
                 // Orientation
                 "%[orientation]\n",
                 file_path};
@@ -179,8 +185,8 @@ namespace MediaDedup
                     line.pop_back();
                 lines.push_back(line);
             }
-            // Ensure we have all expected lines (29 total: 0-27 fields, 28 orientation)
-            while (lines.size() < 29)
+            // Ensure we have all expected lines (31 total: 0-29 fields, 30 orientation)
+            while (lines.size() < 31)
                 lines.push_back("");
 
             ExifInfo info;
@@ -221,47 +227,26 @@ namespace MediaDedup
                     info.iso = std::stoul(lines[7]);
             }
             catch (...) {}
-            try
+            if (!lines[8].empty())
+                info.f_number = parseRationalFloat(lines[8]);
+            if (!lines[9].empty())
             {
-                if (!lines[8].empty())
-                    info.f_number = std::stof(lines[8]);
+                info.shutter_speed_apex = parseRationalFloat(lines[9]);
+                info.shutter_speed_text = lines[9];
             }
-            catch (...) {}
-            try
-            {
-                if (!lines[9].empty())
-                    info.shutter_speed_apex = std::stof(lines[9]);
-            }
-            catch (...) {}
-            try
-            {
-                if (!lines[10].empty())
-                    info.exposure_time = std::stof(lines[10]);
-            }
-            catch (...) {}
-            try
-            {
-                if (!lines[11].empty())
-                    info.exposure_comp = std::stof(lines[11]);
-            }
-            catch (...) {}
+            if (!lines[10].empty())
+                info.exposure_time = parseRationalFloat(lines[10]);
+            if (!lines[11].empty())
+                info.exposure_comp = parseRationalFloat(lines[11]);
             info.metering_mode = lines[12];
             info.flash_fired = lines[13];
             info.flash_mode = lines[14];
 
             // Optics (lines 15-17)
-            try
-            {
-                if (!lines[15].empty())
-                    info.focal_length = std::stof(lines[15]);
-            }
-            catch (...) {}
-            try
-            {
-                if (!lines[16].empty())
-                    info.focal_length_35mm = std::stof(lines[16]);
-            }
-            catch (...) {}
+            if (!lines[15].empty())
+                info.focal_length = parseRationalFloat(lines[15]);
+            if (!lines[16].empty())
+                info.focal_length_35mm = parseRationalFloat(lines[16]);
             info.focus_mode = lines[17];
 
             // White Balance & Color (lines 18-20)
@@ -270,33 +255,30 @@ namespace MediaDedup
             info.scene_mode = lines[20];
 
             // Light & Quality (lines 21-24)
-            try
-            {
-                if (!lines[21].empty())
-                    info.brightness = std::stof(lines[21]);
-            }
-            catch (...) {}
+            if (!lines[21].empty())
+                info.brightness = parseRationalFloat(lines[21]);
             info.contrast = lines[22];
             info.saturation = lines[23];
             info.sharpness = lines[24];
 
-            // GPS (lines 25-27) - parse DMS to decimal
+            // GPS (lines 25-29): DMS rationals to decimal, signed by the
+            // hemisphere refs (S -> negative latitude, W -> negative longitude).
             parseGPSCoordinate(lines[25], info.gps_lat);
             parseGPSCoordinate(lines[26], info.gps_lon);
-            try
-            {
-                if (!lines[27].empty())
-                    info.gps_alt = std::stof(lines[27]);
-            }
-            catch (...) {}
+            if (!lines[27].empty())
+                info.gps_alt = parseRationalFloat(lines[27]);
+            if (!lines[28].empty() && (lines[28][0] == 'S' || lines[28][0] == 's'))
+                info.gps_lat = -info.gps_lat;
+            if (!lines[29].empty() && (lines[29][0] == 'W' || lines[29][0] == 'w'))
+                info.gps_lon = -info.gps_lon;
 
             // Orientation (lines 28+)
-            if (ExifReader::orientationTransposesAxes(lines[28]))
+            if (ExifReader::orientationTransposesAxes(lines[30]))
                 std::swap(info.width, info.height);
 
             try
             {
-                std::string orientation_str = lines[28];
+                std::string orientation_str = lines[30];
                 if (orientation_str == "LeftTop") info.orientation = 5;
                 else if (orientation_str == "RightTop") info.orientation = 6;
                 else if (orientation_str == "RightBottom") info.orientation = 7;
