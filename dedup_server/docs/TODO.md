@@ -10,24 +10,23 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
-- **EXIF-1 — extract comprehensive EXIF metadata (25+ fields).**
-  Extend `ExifInfo` struct and `ExifReader::read()` to extract all major EXIF categories: camera/lens (make, model, lens model), exposure/light (ISO, aperture, shutter speed, exposure compensation, metering mode, flash), optics (focal length, 35mm equivalent, focus distance/mode), white balance/color (WB mode, color space, scene mode, contrast/saturation/sharpness), location/time (GPS, datetime), and geometry (orientation). Uses ImageMagick `-ping` and LibRaw metadata-only parsing.
-  **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
-
-- **EXIF-2 — update database schema with 25+ indexed EXIF columns.**
-  Add comprehensive EXIF columns to `scanned_files` table (camera, exposure, optics, white balance, light, location, geometry). Create 7 indices on ISO, aperture, exposure, camera make/model, white balance, date, and GPS for efficient range and text queries.
-  **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
-
-- **EXIF-3 — implement location geocoding index (place names → GPS bounds).**
-  Create `location_geocoder.hpp` to map location names (e.g., "yellowstone", "utah") to GPS bounding boxes using free GeoJSON data (Natural Earth or OSM). Cache parsed boundaries in memory for O(1) lookup.
-  **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
-
-- **EXIF-4 — parse comprehensive EXIF constraints with numeric operators.**
-  Implement `ParseExifConstraints()` in text_search_engine to detect and extract all EXIF field references with operators: numeric comparisons ("iso above 1600", "shutter faster than 1/500", "f/2.8 or wider"), text matching ("canon camera", "tungsten wb", "manual focus"), location geocoding, and date ranges. Extract remaining semantic text for CLIP KNN.
-  **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
-
-- **EXIF-5 — integrate EXIF filters into text search pipeline.**
-  Modify `SearchQuery()` to parse EXIF constraints, build dynamic SQL WHERE clause, apply post-KNN filtering. Combine CLIP text similarity with EXIF constraints. Run comprehensive unit/integration tests covering all field types and operators.
+- **EXIF-1..5 — comprehensive EXIF-searchable prompt queries.**
+  *Implemented 2026-08-19 on `feature/searchable_exif` (EXIF-1 `10b737a3`,
+  EXIF-2 `73b2e26d`, EXIF-3 `724eecb8`, EXIF-4 `63b039cc`, EXIF-5 in the
+  final commit). All 370 unit tests pass; extraction verified against live
+  library photos (rational f-numbers, EXIF 2.3 PhotographicSensitivity ISO,
+  DMS GPS with hemisphere signs). Remaining before Done: restart the server
+  (ensureTable adds the 27 columns + 7 indices), force a re-process of the
+  existing library so old rows gain EXIF values (new columns are NULL until
+  each file is re-processed), then verify live UI queries like "find all
+  pictures taken with a canon in yellowstone".*
+  Queries now split into EXIF constraints + semantic text: camera makes,
+  ISO / aperture / shutter / focal length with numeric operators, flash
+  on/off, year & month dates, and preposition-triggered place names
+  ("in yellowstone") geocoded to GPS bounds via a bundled Natural Earth
+  gazetteer. Pure-metadata queries skip CLIP entirely (SQL-only path);
+  mixed queries run CLIP KNN then filter matches by SQL. Missing EXIF
+  stores NULL, never 0 — a GPS-less photo can never match a location.
   **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
 
 - **THUMB-1 — render thumbnails at the source image's aspect ratio.**

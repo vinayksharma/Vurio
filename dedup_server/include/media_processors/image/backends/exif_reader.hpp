@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <optional>
 #include <string>
 
@@ -54,10 +55,12 @@ namespace MediaDedup
         std::string saturation;      // "normal", "low", "high"
         std::string sharpness;       // "normal", "soft", "hard"
 
-        // Location & Time (GPS)
-        float gps_lat = 0.0f;        // Latitude (-90 to 90)
-        float gps_lon = 0.0f;        // Longitude (-180 to 180)
-        float gps_alt = 0.0f;        // Altitude in meters
+        // Location & Time (GPS). NaN = not present: (0,0) is a real ocean
+        // fix, so a zero default would put every GPS-less photo there and
+        // corrupt location filters. Stored as NULL when NaN (EXIF-5).
+        float gps_lat = std::numeric_limits<float>::quiet_NaN();
+        float gps_lon = std::numeric_limits<float>::quiet_NaN();
+        float gps_alt = std::numeric_limits<float>::quiet_NaN();
     };
 
     /**

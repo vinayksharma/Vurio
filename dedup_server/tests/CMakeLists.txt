@@ -79,6 +79,7 @@ set(UNIT_TEST_SOURCES
     unit/test_exif_reader.cpp
     unit/test_location_geocoder.cpp
     unit/test_exif_query_parser.cpp
+    unit/test_exif_search_e2e.cpp
     unit/test_display_geometry.cpp
     unit/test_duplicate_members_geometry.cpp
     unit/test_thumbnail_cache_ops.cpp
@@ -280,6 +281,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_preview_cache_ops")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewCacheOpsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_exif_search_e2e")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ExifSearchE2ETest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -781,6 +789,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_exif_reader" AND
       NOT ${test_name} STREQUAL "test_location_geocoder" AND
       NOT ${test_name} STREQUAL "test_exif_query_parser" AND
+      NOT ${test_name} STREQUAL "test_exif_search_e2e" AND
       NOT ${test_name} STREQUAL "test_display_geometry" AND
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
       NOT ${test_name} STREQUAL "test_thumbnail_cache_ops")

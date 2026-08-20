@@ -143,7 +143,7 @@ namespace MediaDedup
                 // Camera & Lens
                 "%[exif:Make]\n%[exif:Model]\n%[exif:LensModel]\n"
                 // Exposure & Light
-                "%[exif:ISOSpeedRatings]\n%[exif:FNumber]\n"
+                "%[exif:ISOSpeedRatings]\n%[exif:PhotographicSensitivity]\n%[exif:FNumber]\n"
                 "%[exif:ShutterSpeedValue]\n%[exif:ExposureTime]\n"
                 "%[exif:ExposureBiasValue]\n%[exif:MeteringMode]\n"
                 "%[exif:Flash]\n%[exif:FlashMode]\n"
@@ -185,33 +185,41 @@ namespace MediaDedup
                     line.pop_back();
                 lines.push_back(line);
             }
-            // Ensure we have all expected lines (31 total: 0-29 fields, 30 orientation)
-            while (lines.size() < 31)
+            // Field count must equal the format string's line count; the
+            // sequential cursor below keeps parsing aligned with it.
+            constexpr std::size_t kFieldCount = 32;
+            while (lines.size() < kFieldCount)
                 lines.push_back("");
 
             ExifInfo info;
+            std::size_t i = 0;
+            auto next = [&]() -> const std::string & { return lines[i++]; };
 
-            // Dimensions (lines 0-1)
+            // Dimensions
             try
             {
-                if (!lines[0].empty())
-                    info.width = std::stoi(lines[0]);
+                const std::string &w = next();
+                if (!w.empty())
+                    info.width = std::stoi(w);
             }
             catch (...) {}
             try
             {
-                if (!lines[1].empty())
-                    info.height = std::stoi(lines[1]);
+                const std::string &h = next();
+                if (!h.empty())
+                    info.height = std::stoi(h);
             }
             catch (...) {}
 
-            // Date/Time (lines 2-3)
-            info.datetime = lines[2].empty() ? lines[3] : lines[2];
+            // Date/Time: DateTimeOriginal preferred over DateTime.
+            const std::string &dt_original = next();
+            const std::string &dt_plain = next();
+            info.datetime = dt_original.empty() ? dt_plain : dt_original;
 
-            // Camera & Lens (lines 4-6)
-            info.make = lines[4];
-            info.model = lines[5];
-            info.lens_model = lines[6];
+            // Camera & Lens
+            info.make = next();
+            info.model = next();
+            info.lens_model = next();
             info.camera = info.make;
             if (!info.model.empty())
             {
@@ -220,75 +228,103 @@ namespace MediaDedup
                 info.camera += info.model;
             }
 
-            // Exposure & Light (lines 7-14)
+            // Exposure & Light. ISO lives under ISOSpeedRatings (EXIF <=2.2)
+            // or PhotographicSensitivity (EXIF 2.3+) depending on camera age.
+            const std::string &iso_legacy = next();
+            const std::string &iso_modern = next();
             try
             {
-                if (!lines[7].empty())
-                    info.iso = std::stoul(lines[7]);
+                const std::string &iso = iso_legacy.empty() ? iso_modern : iso_legacy;
+                if (!iso.empty())
+                    info.iso = std::stoul(iso);
             }
             catch (...) {}
-            if (!lines[8].empty())
-                info.f_number = parseRationalFloat(lines[8]);
-            if (!lines[9].empty())
             {
-                info.shutter_speed_apex = parseRationalFloat(lines[9]);
-                info.shutter_speed_text = lines[9];
+                const std::string &v = next();
+                if (!v.empty())
+                    info.f_number = parseRationalFloat(v);
             }
-            if (!lines[10].empty())
-                info.exposure_time = parseRationalFloat(lines[10]);
-            if (!lines[11].empty())
-                info.exposure_comp = parseRationalFloat(lines[11]);
-            info.metering_mode = lines[12];
-            info.flash_fired = lines[13];
-            info.flash_mode = lines[14];
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                {
+                    info.shutter_speed_apex = parseRationalFloat(v);
+                    info.shutter_speed_text = v;
+                }
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.exposure_time = parseRationalFloat(v);
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.exposure_comp = parseRationalFloat(v);
+            }
+            info.metering_mode = next();
+            info.flash_fired = next();
+            info.flash_mode = next();
 
-            // Optics (lines 15-17)
-            if (!lines[15].empty())
-                info.focal_length = parseRationalFloat(lines[15]);
-            if (!lines[16].empty())
-                info.focal_length_35mm = parseRationalFloat(lines[16]);
-            info.focus_mode = lines[17];
+            // Optics
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.focal_length = parseRationalFloat(v);
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.focal_length_35mm = parseRationalFloat(v);
+            }
+            info.focus_mode = next();
 
-            // White Balance & Color (lines 18-20)
-            info.white_balance = lines[18];
-            info.color_space = lines[19];
-            info.scene_mode = lines[20];
+            // White Balance & Color
+            info.white_balance = next();
+            info.color_space = next();
+            info.scene_mode = next();
 
-            // Light & Quality (lines 21-24)
-            if (!lines[21].empty())
-                info.brightness = parseRationalFloat(lines[21]);
-            info.contrast = lines[22];
-            info.saturation = lines[23];
-            info.sharpness = lines[24];
+            // Light & Quality
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.brightness = parseRationalFloat(v);
+            }
+            info.contrast = next();
+            info.saturation = next();
+            info.sharpness = next();
 
-            // GPS (lines 25-29): DMS rationals to decimal, signed by the
-            // hemisphere refs (S -> negative latitude, W -> negative longitude).
-            parseGPSCoordinate(lines[25], info.gps_lat);
-            parseGPSCoordinate(lines[26], info.gps_lon);
-            if (!lines[27].empty())
-                info.gps_alt = parseRationalFloat(lines[27]);
-            if (!lines[28].empty() && (lines[28][0] == 'S' || lines[28][0] == 's'))
+            // GPS: DMS rationals to decimal, signed by the hemisphere refs
+            // (S -> negative latitude, W -> negative longitude).
+            parseGPSCoordinate(next(), info.gps_lat);
+            parseGPSCoordinate(next(), info.gps_lon);
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.gps_alt = parseRationalFloat(v);
+            }
+            const std::string &lat_ref = next();
+            const std::string &lon_ref = next();
+            if (!lat_ref.empty() && (lat_ref[0] == 'S' || lat_ref[0] == 's'))
                 info.gps_lat = -info.gps_lat;
-            if (!lines[29].empty() && (lines[29][0] == 'W' || lines[29][0] == 'w'))
+            if (!lon_ref.empty() && (lon_ref[0] == 'W' || lon_ref[0] == 'w'))
                 info.gps_lon = -info.gps_lon;
 
-            // Orientation (lines 28+)
-            if (ExifReader::orientationTransposesAxes(lines[30]))
+            // Orientation (last field)
+            const std::string &orientation_str = next();
+            // %w/%h are the STORED dimensions; the delivered image is rendered
+            // with -auto-orient, so report the auto-oriented axes (ExifInfo
+            // contract). Mirrors the LibRaw flip 5/6 swap above.
+            if (ExifReader::orientationTransposesAxes(orientation_str))
                 std::swap(info.width, info.height);
-
-            try
-            {
-                std::string orientation_str = lines[30];
-                if (orientation_str == "LeftTop") info.orientation = 5;
-                else if (orientation_str == "RightTop") info.orientation = 6;
-                else if (orientation_str == "RightBottom") info.orientation = 7;
-                else if (orientation_str == "LeftBottom") info.orientation = 8;
-                else if (orientation_str == "BottomLeft") info.orientation = 4;
-                else if (orientation_str == "BottomRight") info.orientation = 3;
-                else if (orientation_str == "TopRight") info.orientation = 2;
-                else info.orientation = 1; // TopLeft (default)
-            }
-            catch (...) {}
+            if (orientation_str == "LeftTop") info.orientation = 5;
+            else if (orientation_str == "RightTop") info.orientation = 6;
+            else if (orientation_str == "RightBottom") info.orientation = 7;
+            else if (orientation_str == "LeftBottom") info.orientation = 8;
+            else if (orientation_str == "BottomLeft") info.orientation = 4;
+            else if (orientation_str == "BottomRight") info.orientation = 3;
+            else if (orientation_str == "TopRight") info.orientation = 2;
+            else info.orientation = 1; // TopLeft (default)
 
             return info;
         }

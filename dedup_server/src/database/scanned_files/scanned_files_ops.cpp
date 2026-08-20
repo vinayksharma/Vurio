@@ -8,6 +8,8 @@
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
+#include <Poco/Nullable.h>
+#include <cmath>
 
 namespace MediaDedup
 {
@@ -1119,36 +1121,65 @@ namespace MediaDedup
             Statement stmt(sess);
 
             // Poco Keywords::use requires non-const lvalues — copy all fields.
+            // EXIF-5: absent values become NULL, not 0 — a zero ISO/f-number/
+            // exposure is physically impossible and a (0,0) GPS point is a
+            // real ocean fix, so zero defaults would corrupt query filters.
             std::string p = file_path;
             std::string dt = exif.datetime;
             std::string cam = exif.camera;
             std::string exif_res = std::to_string(exif.width) + "x" + std::to_string(exif.height);
-            std::string make = exif.make;
-            std::string model = exif.model;
-            std::string lens_model = exif.lens_model;
-            int iso = static_cast<int>(exif.iso);
-            float f_number = exif.f_number;
-            float shutter_apex = exif.shutter_speed_apex;
-            std::string shutter_text = exif.shutter_speed_text;
-            float exposure_time = exif.exposure_time;
-            float exposure_comp = exif.exposure_comp;
-            std::string metering_mode = exif.metering_mode;
-            std::string flash_fired = exif.flash_fired;
-            std::string flash_mode = exif.flash_mode;
-            float focal_length = exif.focal_length;
-            float focal_length_35mm = exif.focal_length_35mm;
-            float focus_distance = exif.focus_distance;
-            std::string focus_mode = exif.focus_mode;
-            std::string white_balance = exif.white_balance;
-            std::string color_space = exif.color_space;
-            std::string scene_mode = exif.scene_mode;
-            float brightness = exif.brightness;
-            std::string contrast = exif.contrast;
-            std::string saturation = exif.saturation;
-            std::string sharpness = exif.sharpness;
-            float gps_lat = exif.gps_lat;
-            float gps_lon = exif.gps_lon;
-            float gps_alt = exif.gps_alt;
+
+            auto nullableText = [](const std::string &v) {
+                Poco::Nullable<std::string> out;
+                if (!v.empty())
+                    out = v;
+                return out;
+            };
+            auto nullablePositive = [](double v) {
+                Poco::Nullable<double> out;
+                if (v > 0.0)
+                    out = v;
+                return out;
+            };
+
+            Poco::Nullable<std::string> make = nullableText(exif.make);
+            Poco::Nullable<std::string> model = nullableText(exif.model);
+            Poco::Nullable<std::string> lens_model = nullableText(exif.lens_model);
+            Poco::Nullable<int> iso;
+            if (exif.iso > 0)
+                iso = static_cast<int>(exif.iso);
+            Poco::Nullable<double> f_number = nullablePositive(exif.f_number);
+            Poco::Nullable<double> shutter_apex = nullablePositive(exif.shutter_speed_apex);
+            Poco::Nullable<std::string> shutter_text = nullableText(exif.shutter_speed_text);
+            Poco::Nullable<double> exposure_time = nullablePositive(exif.exposure_time);
+            // 0 EV is a real (and the most common) exposure compensation —
+            // it only counts as absent alongside an absent exposure time.
+            Poco::Nullable<double> exposure_comp;
+            if (exif.exposure_comp != 0.0f || !exposure_time.isNull())
+                exposure_comp = static_cast<double>(exif.exposure_comp);
+            Poco::Nullable<std::string> metering_mode = nullableText(exif.metering_mode);
+            Poco::Nullable<std::string> flash_fired = nullableText(exif.flash_fired);
+            Poco::Nullable<std::string> flash_mode = nullableText(exif.flash_mode);
+            Poco::Nullable<double> focal_length = nullablePositive(exif.focal_length);
+            Poco::Nullable<double> focal_length_35mm = nullablePositive(exif.focal_length_35mm);
+            Poco::Nullable<double> focus_distance = nullablePositive(exif.focus_distance);
+            Poco::Nullable<std::string> focus_mode = nullableText(exif.focus_mode);
+            Poco::Nullable<std::string> white_balance = nullableText(exif.white_balance);
+            Poco::Nullable<std::string> color_space = nullableText(exif.color_space);
+            Poco::Nullable<std::string> scene_mode = nullableText(exif.scene_mode);
+            Poco::Nullable<double> brightness;
+            if (exif.brightness != 0.0f)
+                brightness = static_cast<double>(exif.brightness);
+            Poco::Nullable<std::string> contrast = nullableText(exif.contrast);
+            Poco::Nullable<std::string> saturation = nullableText(exif.saturation);
+            Poco::Nullable<std::string> sharpness = nullableText(exif.sharpness);
+            Poco::Nullable<double> gps_lat, gps_lon, gps_alt;
+            if (!std::isnan(exif.gps_lat))
+                gps_lat = static_cast<double>(exif.gps_lat);
+            if (!std::isnan(exif.gps_lon))
+                gps_lon = static_cast<double>(exif.gps_lon);
+            if (!std::isnan(exif.gps_alt))
+                gps_alt = static_cast<double>(exif.gps_alt);
             int orientation = static_cast<int>(exif.orientation);
 
             stmt << std::string(SQL::kUpdateExifMetadata),
