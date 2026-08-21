@@ -19,6 +19,12 @@ struct DayGroupCard: View {
     // Called when the trailing sentinel scrolls into view and the day has more
     // files than are loaded (horizontal-scroll pagination).
     var onLoadMore: (() -> Void)? = nil
+    // How the active search was evaluated (ai = CLIP semantic, xf = EXIF
+    // constraints); nil when no search is active. Rendered as tiny badges
+    // under each tile's bottom-left corner, advanced overlay only.
+    var searchBadges: (ai: Bool, xf: Bool)? = nil
+
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
 
     @State private var expandedGroupIDs: Set<String> = []
     @State private var isCardHovered = false
@@ -176,6 +182,42 @@ struct DayGroupCard: View {
         }, onLocate: {
             onLocateSet(file.filePath)
         }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: Self.tileHeight, showMatchScore: false)
+        .overlay(alignment: .bottomLeading) { searchBadgeStrip }
+    }
+
+    /// Advanced-overlay "ai"/"xf" badges under a tile's bottom-left corner:
+    /// which search paths (CLIP semantic / EXIF constraints) produced the
+    /// current result set. Query-level flags, so every tile shows the same
+    /// pair; enabled = accent, unused = dimmed. Drawn in the strip's bottom
+    /// padding via offset, so the row height is unchanged.
+    @ViewBuilder
+    private var searchBadgeStrip: some View {
+        if advancedOverlayEnabled, let badges = searchBadges {
+            HStack(spacing: 3) {
+                searchBadge("ai", enabled: badges.ai)
+                searchBadge("xf", enabled: badges.xf)
+            }
+            .offset(y: 13)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func searchBadge(_ label: String, enabled: Bool) -> some View {
+        Text(label)
+            .font(.custom("Menlo", size: 7).weight(.bold))
+            .foregroundColor(enabled ? Color.black.opacity(0.85) : Theme.textSecondary.opacity(0.55))
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(enabled ? Theme.textAccent.opacity(0.9) : Theme.surface.opacity(0.7))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(enabled ? Color.clear : Theme.border.opacity(0.6), lineWidth: 0.5)
+            )
+            .help(label == "ai" ? "AI (semantic) search \(enabled ? "used" : "not used") for this result"
+                                : "EXIF metadata search \(enabled ? "used" : "not used") for this result")
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -217,6 +259,7 @@ struct DayGroupCard: View {
                 }
             }
             .frame(width: topSize.width, height: topSize.height)
+            .overlay(alignment: .bottomLeading) { searchBadgeStrip }
             .overlay(alignment: .bottomTrailing) {
                 Text("\u{00D7}\(members.count)")
                     .font(.custom("Menlo", size: 9))

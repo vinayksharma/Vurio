@@ -211,3 +211,28 @@ TEST_F(ExifSearchE2ETest, ExifOnlyResultsAreCappedAndScored)
     EXPECT_EQ(r.matches[0].file_id, nikon_id_);
     EXPECT_DOUBLE_EQ(r.matches[0].score, 1.0);
 }
+
+TEST_F(ExifSearchE2ETest, ResultReportsWhichSearchPathsRan)
+{
+    // Pure metadata query: EXIF only, no CLIP.
+    auto r = engine_->search("photos taken with a canon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_FALSE(r.used_semantic);
+    EXPECT_TRUE(r.used_exif);
+
+    // Cache hit must report the same flags as the original evaluation.
+    r = engine_->search("photos taken with a canon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_FALSE(r.used_semantic);
+    EXPECT_TRUE(r.used_exif);
+
+    // Mixed query: both paths engage. This needs the CLIP model for the
+    // semantic half; in a model-less environment it errors, but the flags
+    // are set either way only on success — so only assert when ok.
+    r = engine_->search("sunset photos taken with a canon");
+    if (r.ok)
+    {
+        EXPECT_TRUE(r.used_semantic);
+        EXPECT_TRUE(r.used_exif);
+    }
+}
