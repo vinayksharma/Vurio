@@ -4,9 +4,12 @@
 #include "database/db_retry.hpp"
 #include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
+#include "media_processors/image/backends/exif_reader.hpp"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
+#include <Poco/Nullable.h>
+#include <cmath>
 
 namespace MediaDedup
 {
@@ -108,6 +111,56 @@ namespace MediaDedup
             // Column likely already exists, ignore
         }
 
+        // EXIF-2: ensure the comprehensive EXIF columns exist (migration for
+        // pre-existing databases; fresh installs get them from the CREATE
+        // TABLE). Each ALTER fails harmlessly if the column already exists.
+        {
+            static constexpr std::string_view kExifMigrations[] = {
+                SQL::kAlterScannedFilesAddExifMake,
+                SQL::kAlterScannedFilesAddExifModel,
+                SQL::kAlterScannedFilesAddExifLensModel,
+                SQL::kAlterScannedFilesAddExifISO,
+                SQL::kAlterScannedFilesAddExifFNumber,
+                SQL::kAlterScannedFilesAddExifShutterSpeedAPEX,
+                SQL::kAlterScannedFilesAddExifShutterSpeedText,
+                SQL::kAlterScannedFilesAddExifExposureTime,
+                SQL::kAlterScannedFilesAddExifExposureComp,
+                SQL::kAlterScannedFilesAddExifMeteringMode,
+                SQL::kAlterScannedFilesAddExifFlashFired,
+                SQL::kAlterScannedFilesAddExifFlashMode,
+                SQL::kAlterScannedFilesAddExifFocalLength,
+                SQL::kAlterScannedFilesAddExifFocalLength35mm,
+                SQL::kAlterScannedFilesAddExifFocusDistance,
+                SQL::kAlterScannedFilesAddExifFocusMode,
+                SQL::kAlterScannedFilesAddExifWhiteBalance,
+                SQL::kAlterScannedFilesAddExifColorSpace,
+                SQL::kAlterScannedFilesAddExifSceneMode,
+                SQL::kAlterScannedFilesAddExifBrightness,
+                SQL::kAlterScannedFilesAddExifContrast,
+                SQL::kAlterScannedFilesAddExifSaturation,
+                SQL::kAlterScannedFilesAddExifSharpness,
+                SQL::kAlterScannedFilesAddExifGPSLat,
+                SQL::kAlterScannedFilesAddExifGPSLon,
+                SQL::kAlterScannedFilesAddExifGPSAlt,
+                SQL::kAlterScannedFilesAddExifOrientation,
+            };
+            int added = 0;
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            for (const auto &migration : kExifMigrations)
+            {
+                try {
+                    sess << std::string(migration), Poco::Data::Keywords::now;
+                    ++added;
+                } catch (const std::exception &) {
+                    // Column already exists, ignore
+                }
+            }
+            if (added > 0)
+                Poco::Logger::get("ScannedFilesOps").information(
+                    "EXIF-2: added %d EXIF column(s) to scanned_files table.", added);
+        }
+
         // DB-1: one-time index upgrade — an older idx_scanned_files_taken_day
         // without the is_video predicate cannot exclude video rows index-side,
         // and the new day-view filter (`is_video = 0`) would not match it.
@@ -178,6 +231,16 @@ namespace MediaDedup
             // DB-6: partial index for the unprocessed sweep (every tick)
             sess << std::string(SQL::kCreateScannedFilesIndexUnprocessed), Poco::Data::Keywords::now;
             Poco::Logger::get("ScannedFilesOps").debug("Created unprocessed partial index for the media sweep");
+
+            // EXIF-2: indices for searchable EXIF fields
+            sess << std::string(SQL::kCreateScannedFilesIndexExifISO), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifFNumber), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifExposureComp), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifMakeModel), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifWhiteBalance), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifDateTime), Poco::Data::Keywords::now;
+            sess << std::string(SQL::kCreateScannedFilesIndexExifGPS), Poco::Data::Keywords::now;
+            Poco::Logger::get("ScannedFilesOps").debug("Created EXIF search indices");
         }
         catch (const std::exception &e)
         {
@@ -1047,26 +1110,109 @@ namespace MediaDedup
     }
 
     bool ScannedFilesOps::updateExifMetadata(DatabaseManager &db, const std::string &file_path,
-                                 const std::string &exif_datetime, const std::string &exif_camera,
-                                 const std::string &exif_resolution)
+                                 const ExifInfo &exif)
     {
         // Losing this to write-lock contention silently drops the file's EXIF
         // date, which the day view groups by — the row is never revisited.
+        // EXIF-1: Updated to handle comprehensive EXIF fields
         return DbRetry::withBusyRetry("ScannedFilesOps", "updateExifMetadata", [&]() {
             auto lease = db.acquireSessionLease();
             Session &sess = lease.get();
             Statement stmt(sess);
 
-            // Bind references directly, they won't go out of scope before the execute
-            std::string dt = exif_datetime;
-            std::string cam = exif_camera;
-            std::string res = exif_resolution;
+            // Poco Keywords::use requires non-const lvalues — copy all fields.
+            // EXIF-5: absent values become NULL, not 0 — a zero ISO/f-number/
+            // exposure is physically impossible and a (0,0) GPS point is a
+            // real ocean fix, so zero defaults would corrupt query filters.
             std::string p = file_path;
+            std::string dt = exif.datetime;
+            std::string cam = exif.camera;
+            std::string exif_res = std::to_string(exif.width) + "x" + std::to_string(exif.height);
+
+            auto nullableText = [](const std::string &v) {
+                Poco::Nullable<std::string> out;
+                if (!v.empty())
+                    out = v;
+                return out;
+            };
+            auto nullablePositive = [](double v) {
+                Poco::Nullable<double> out;
+                if (v > 0.0)
+                    out = v;
+                return out;
+            };
+
+            Poco::Nullable<std::string> make = nullableText(exif.make);
+            Poco::Nullable<std::string> model = nullableText(exif.model);
+            Poco::Nullable<std::string> lens_model = nullableText(exif.lens_model);
+            Poco::Nullable<int> iso;
+            if (exif.iso > 0)
+                iso = static_cast<int>(exif.iso);
+            Poco::Nullable<double> f_number = nullablePositive(exif.f_number);
+            Poco::Nullable<double> shutter_apex = nullablePositive(exif.shutter_speed_apex);
+            Poco::Nullable<std::string> shutter_text = nullableText(exif.shutter_speed_text);
+            Poco::Nullable<double> exposure_time = nullablePositive(exif.exposure_time);
+            // 0 EV is a real (and the most common) exposure compensation —
+            // it only counts as absent alongside an absent exposure time.
+            Poco::Nullable<double> exposure_comp;
+            if (exif.exposure_comp != 0.0f || !exposure_time.isNull())
+                exposure_comp = static_cast<double>(exif.exposure_comp);
+            Poco::Nullable<std::string> metering_mode = nullableText(exif.metering_mode);
+            Poco::Nullable<std::string> flash_fired = nullableText(exif.flash_fired);
+            Poco::Nullable<std::string> flash_mode = nullableText(exif.flash_mode);
+            Poco::Nullable<double> focal_length = nullablePositive(exif.focal_length);
+            Poco::Nullable<double> focal_length_35mm = nullablePositive(exif.focal_length_35mm);
+            Poco::Nullable<double> focus_distance = nullablePositive(exif.focus_distance);
+            Poco::Nullable<std::string> focus_mode = nullableText(exif.focus_mode);
+            Poco::Nullable<std::string> white_balance = nullableText(exif.white_balance);
+            Poco::Nullable<std::string> color_space = nullableText(exif.color_space);
+            Poco::Nullable<std::string> scene_mode = nullableText(exif.scene_mode);
+            Poco::Nullable<double> brightness;
+            if (exif.brightness != 0.0f)
+                brightness = static_cast<double>(exif.brightness);
+            Poco::Nullable<std::string> contrast = nullableText(exif.contrast);
+            Poco::Nullable<std::string> saturation = nullableText(exif.saturation);
+            Poco::Nullable<std::string> sharpness = nullableText(exif.sharpness);
+            Poco::Nullable<double> gps_lat, gps_lon, gps_alt;
+            if (!std::isnan(exif.gps_lat))
+                gps_lat = static_cast<double>(exif.gps_lat);
+            if (!std::isnan(exif.gps_lon))
+                gps_lon = static_cast<double>(exif.gps_lon);
+            if (!std::isnan(exif.gps_alt))
+                gps_alt = static_cast<double>(exif.gps_alt);
+            int orientation = static_cast<int>(exif.orientation);
 
             stmt << std::string(SQL::kUpdateExifMetadata),
                 Keywords::use(dt),
                 Keywords::use(cam),
-                Keywords::use(res),
+                Keywords::use(exif_res),
+                Keywords::use(make),
+                Keywords::use(model),
+                Keywords::use(lens_model),
+                Keywords::use(iso),
+                Keywords::use(f_number),
+                Keywords::use(shutter_apex),
+                Keywords::use(shutter_text),
+                Keywords::use(exposure_time),
+                Keywords::use(exposure_comp),
+                Keywords::use(metering_mode),
+                Keywords::use(flash_fired),
+                Keywords::use(flash_mode),
+                Keywords::use(focal_length),
+                Keywords::use(focal_length_35mm),
+                Keywords::use(focus_distance),
+                Keywords::use(focus_mode),
+                Keywords::use(white_balance),
+                Keywords::use(color_space),
+                Keywords::use(scene_mode),
+                Keywords::use(brightness),
+                Keywords::use(contrast),
+                Keywords::use(saturation),
+                Keywords::use(sharpness),
+                Keywords::use(gps_lat),
+                Keywords::use(gps_lon),
+                Keywords::use(gps_alt),
+                Keywords::use(orientation),
                 Keywords::use(p), Keywords::now;
         });
     }

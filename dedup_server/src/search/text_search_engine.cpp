@@ -5,10 +5,14 @@
 #include "database/vector_index.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
 
+#include <Poco/Data/Session.h>
+#include <Poco/Data/Statement.h>
 #include <Poco/Logger.h>
 
 #include <cmath>
 #include <filesystem>
+#include <sstream>
+#include <unordered_set>
 
 namespace MediaDedup
 {
@@ -37,17 +41,27 @@ namespace MediaDedup
             embedding_dim_ = config_->getPropertyValue<int>("media.image.embeddingDim", embedding_dim_);
             knn_k_ = config_->getPropertyValue<int>("search.knnK", knn_k_);
             min_score_ = config_->getPropertyValue<double>("search.minScore", min_score_);
+            exif_only_limit_ = config_->getPropertyValue<int>("search.exifOnlyLimit", exif_only_limit_);
+            locations_path_ = config_->getPropertyValue<std::string>(
+                "search.locationsPath", "geodata/world_locations.geojson");
 
             // Same project-root resolution as QualityPipeline uses for the
             // image model, so both towers resolve identically from any CWD.
+            std::filesystem::path config_path(config_->getConfigFilePath());
+            std::filesystem::path abs_config = std::filesystem::absolute(config_path);
+            std::filesystem::path project_root = abs_config.parent_path().parent_path();
+
             std::filesystem::path model_p(text_model_path_);
             if (!model_p.is_absolute())
-            {
-                std::filesystem::path config_path(config_->getConfigFilePath());
-                std::filesystem::path abs_config = std::filesystem::absolute(config_path);
-                std::filesystem::path project_root = abs_config.parent_path().parent_path();
                 text_model_path_ = (project_root / model_p).lexically_normal().string();
-            }
+
+            std::filesystem::path loc_p(locations_path_);
+            if (!loc_p.is_absolute())
+                locations_path_ = (project_root / loc_p).lexically_normal().string();
+        }
+        else
+        {
+            locations_path_ = "geodata/world_locations.geojson";
         }
 
         // vocab.json / merges.txt ship beside the models.
@@ -66,6 +80,18 @@ namespace MediaDedup
             if (!tokenizer_.load(vocab_path_, merges_path_))
                 Poco::Logger::get("TextSearchEngine")
                     .error("Failed to load CLIP tokenizer (%s, %s)", vocab_path_, merges_path_);
+        });
+    }
+
+    void TextSearchEngine::ensureGeocoderLoaded()
+    {
+        std::call_once(geocoder_once_, [this] {
+            // Optional: without a gazetteer, location parsing is skipped but
+            // every other EXIF constraint still works.
+            if (!geocoder_.loadFromFile(locations_path_))
+                Poco::Logger::get("TextSearchEngine")
+                    .warning("Location gazetteer unavailable (%s); place-name search disabled",
+                             locations_path_);
         });
     }
 
@@ -105,6 +131,35 @@ namespace MediaDedup
     }
 
     TextSearchEngine::Result TextSearchEngine::searchUncached(const std::string &query)
+    {
+        Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
+
+        // EXIF-4: split the query into structured EXIF constraints and the
+        // semantic remainder, then combine SQL filtering with CLIP ranking.
+        ensureGeocoderLoaded();
+        ExifQueryParser parser(&geocoder_);
+        ExifQueryConstraints constraints = parser.parse(query);
+
+        if (!constraints.hasAny())
+            return clipSearch(query);
+
+        logger.information(
+            "Query '%s': %z numeric constraint(s), %z camera term(s)%s%s; remaining text: '%s'",
+            query, constraints.numeric.size(), constraints.camera_terms.size(),
+            constraints.location ? (", location=" + constraints.location_name) : std::string(),
+            constraints.date_range ? std::string(", date range") : std::string(),
+            constraints.remaining);
+
+        if (constraints.remaining_is_filler)
+            return exifOnlySearch(constraints);
+
+        Result result = clipSearch(constraints.remaining);
+        if (result.ok)
+            filterMatchesByExif(result.matches, constraints);
+        return result;
+    }
+
+    TextSearchEngine::Result TextSearchEngine::clipSearch(const std::string &query)
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
         Result result;
@@ -167,6 +222,145 @@ namespace MediaDedup
         logger.debug("Query '%s': %zu of %zu KNN hits above minScore %.3f",
                      query, result.matches.size(), knn.size(), min_score_);
         result.ok = true;
+        return result;
+    }
+
+    namespace
+    {
+        // Column names come from the parser's fixed tables, never from user
+        // text — but keep an allowlist anyway so a parser bug cannot smuggle
+        // SQL through a column slot.
+        bool allowedExifColumn(const std::string &col)
+        {
+            static const char *kAllowed[] = {"exif_iso", "exif_f_number",
+                                             "exif_exposure_time", "exif_focal_length",
+                                             "exif_exposure_comp"};
+            for (const char *a : kAllowed)
+                if (col == a)
+                    return true;
+            return false;
+        }
+
+        // WHERE fragment for the parsed constraints. Numeric values are
+        // formatted from validated doubles; camera terms come back as binds.
+        std::string buildExifWhere(const ExifQueryConstraints &c,
+                                   std::vector<std::string> &camera_binds)
+        {
+            std::ostringstream w;
+            auto num = [](double v) {
+                std::ostringstream o;
+                o << v;
+                return o.str();
+            };
+            for (const auto &n : c.numeric)
+            {
+                if (!allowedExifColumn(n.column))
+                    continue;
+                if (n.op == "between")
+                    w << " AND " << n.column << " BETWEEN " << num(n.value)
+                      << " AND " << num(n.value2);
+                else if (n.op == ">" || n.op == "<" || n.op == ">=" ||
+                         n.op == "<=" || n.op == "=")
+                    w << " AND " << n.column << " " << n.op << " " << num(n.value);
+            }
+            for (const auto &term : c.camera_terms)
+            {
+                w << " AND exif_camera LIKE ?";
+                camera_binds.push_back("%" + term + "%");
+            }
+            if (c.flash_on)
+                w << " AND (CAST(exif_flash_fired AS INTEGER) & 1) = 1";
+            if (c.flash_off)
+                w << " AND (CAST(exif_flash_fired AS INTEGER) & 1) = 0";
+            if (c.location)
+            {
+                w << " AND exif_gps_lat BETWEEN " << num(c.location->lat_min)
+                  << " AND " << num(c.location->lat_max)
+                  << " AND exif_gps_lon BETWEEN " << num(c.location->lon_min)
+                  << " AND " << num(c.location->lon_max);
+            }
+            if (c.date_range)
+                w << " AND exif_datetime >= '" << c.date_range->first
+                  << "' AND exif_datetime <= '" << c.date_range->second << "'";
+            if (c.month_any_year)
+                w << " AND substr(exif_datetime, 6, 2) = '" << *c.month_any_year << "'";
+            return w.str();
+        }
+    }
+
+    void TextSearchEngine::filterMatchesByExif(std::vector<Match> &matches,
+                                               const ExifQueryConstraints &constraints)
+    {
+        if (matches.empty() || !db_)
+            return;
+        try
+        {
+            std::ostringstream ids;
+            for (std::size_t i = 0; i < matches.size(); ++i)
+                ids << (i ? "," : "") << matches[i].file_id;
+
+            std::vector<std::string> camera_binds;
+            std::string where = buildExifWhere(constraints, camera_binds);
+
+            auto lease = db_->acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::vector<int> surviving;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id FROM scanned_files WHERE id IN (" + ids.str() + ")" + where,
+                Poco::Data::Keywords::into(surviving);
+            for (auto &bind : camera_binds)
+                stmt, Poco::Data::Keywords::use(bind);
+            stmt.execute();
+
+            std::unordered_set<int> keep(surviving.begin(), surviving.end());
+            matches.erase(std::remove_if(matches.begin(), matches.end(),
+                                         [&](const Match &m) { return !keep.count(m.file_id); }),
+                          matches.end());
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("TextSearchEngine")
+                .error("EXIF filter failed (results unfiltered): %s", std::string(e.what()));
+        }
+    }
+
+    TextSearchEngine::Result TextSearchEngine::exifOnlySearch(const ExifQueryConstraints &constraints)
+    {
+        Result result;
+        if (!db_)
+        {
+            result.error = "database_unavailable";
+            return result;
+        }
+        try
+        {
+            std::vector<std::string> camera_binds;
+            std::string where = buildExifWhere(constraints, camera_binds);
+
+            auto lease = db_->acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::vector<int> ids;
+            int limit = exif_only_limit_;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id FROM scanned_files WHERE 1=1" + where +
+                        " ORDER BY exif_datetime DESC LIMIT ?",
+                Poco::Data::Keywords::into(ids);
+            for (auto &bind : camera_binds)
+                stmt, Poco::Data::Keywords::use(bind);
+            stmt, Poco::Data::Keywords::use(limit);
+            stmt.execute();
+
+            result.matches.reserve(ids.size());
+            for (int id : ids)
+                result.matches.push_back({id, 1.0}); // constraint match, no rank
+            result.ok = true;
+            Poco::Logger::get("TextSearchEngine")
+                .debug("EXIF-only query matched %zu file(s)", result.matches.size());
+        }
+        catch (const std::exception &e)
+        {
+            result.error = "exif_query_failed: " + std::string(e.what());
+        }
         return result;
     }
 }

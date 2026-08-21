@@ -77,6 +77,9 @@ set(UNIT_TEST_SOURCES
     unit/test_clip_tokenizer.cpp
     unit/test_duplicate_group_rank.cpp
     unit/test_exif_reader.cpp
+    unit/test_location_geocoder.cpp
+    unit/test_exif_query_parser.cpp
+    unit/test_exif_search_e2e.cpp
     unit/test_display_geometry.cpp
     unit/test_duplicate_members_geometry.cpp
     unit/test_thumbnail_cache_ops.cpp
@@ -278,6 +281,27 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_preview_cache_ops")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewCacheOpsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_exif_search_e2e")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ExifSearchE2ETest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_exif_query_parser")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ExifQueryParser*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_location_geocoder")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="LocationGeocoderTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -621,6 +645,8 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
         ${CMAKE_SOURCE_DIR}/src/search/text_search_engine.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/location_geocoder.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/exif_query_parser.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -761,6 +787,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_clip_tokenizer" AND
       NOT ${test_name} STREQUAL "test_duplicate_group_rank" AND
       NOT ${test_name} STREQUAL "test_exif_reader" AND
+      NOT ${test_name} STREQUAL "test_location_geocoder" AND
+      NOT ${test_name} STREQUAL "test_exif_query_parser" AND
+      NOT ${test_name} STREQUAL "test_exif_search_e2e" AND
       NOT ${test_name} STREQUAL "test_display_geometry" AND
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
       NOT ${test_name} STREQUAL "test_thumbnail_cache_ops")

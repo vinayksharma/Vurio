@@ -30,6 +30,55 @@ namespace MediaDedup
             return out.substr(b, e - b + 1);
         }
 
+        // EXIF-4 fix: ImageMagick reports many EXIF numerics as rationals
+        // ("28/10" for f/2.8, "1/500" for exposure time). std::stof would
+        // stop at the '/' and return 28 — parse the fraction properly.
+        float parseRationalFloat(const std::string &s, float fallback = 0.0f)
+        {
+            try
+            {
+                auto slash = s.find('/');
+                if (slash == std::string::npos)
+                    return std::stof(s);
+                float num = std::stof(s.substr(0, slash));
+                float den = std::stof(s.substr(slash + 1));
+                return den != 0.0f ? num / den : fallback;
+            }
+            catch (...)
+            {
+                return fallback;
+            }
+        }
+
+        void parseGPSCoordinate(const std::string &raw, float &out)
+        {
+            // ImageMagick's %[exif:GPSLatitude] is a comma-separated rational
+            // triplet "40/1, 24/1, 2152/100" (degrees, minutes, seconds).
+            // Bare decimals ("44.43") are accepted too.
+            if (raw.empty())
+                return;
+            try
+            {
+                float parts[3] = {0.0f, 0.0f, 0.0f};
+                int count = 0;
+                std::size_t start = 0;
+                while (count < 3 && start <= raw.size())
+                {
+                    std::size_t comma = raw.find(',', start);
+                    std::string piece = raw.substr(
+                        start, comma == std::string::npos ? std::string::npos : comma - start);
+                    parts[count++] = parseRationalFloat(piece);
+                    if (comma == std::string::npos)
+                        break;
+                    start = comma + 1;
+                }
+                if (count == 0)
+                    return;
+                out = parts[0] + parts[1] / 60.0f + parts[2] / 3600.0f;
+            }
+            catch (...) {}
+        }
+
         std::optional<ExifInfo> readRawMetadata(const std::string &file_path, Poco::Logger &logger)
         {
             auto raw = std::make_unique<LibRaw>();
@@ -81,12 +130,36 @@ namespace MediaDedup
             // console. The values still parse as empty; only the noise goes.
             // THUMB-1: %[orientation] is appended so the reported axes can be
             // swapped for transposing orientations — see orientationTransposesAxes.
+            // EXIF-1: Extended format string to extract 25+ EXIF fields for comprehensive search.
             std::vector<std::string> args = {
                 "identify",
                 "-quiet",
                 "-ping",
                 "-format",
-                "%w\n%h\n%[exif:DateTimeOriginal]\n%[exif:DateTime]\n%[exif:Make]\n%[exif:Model]\n%[orientation]\n",
+                // Dimensions & Orientation
+                "%w\n%h\n"
+                // Date/Time
+                "%[exif:DateTimeOriginal]\n%[exif:DateTime]\n"
+                // Camera & Lens
+                "%[exif:Make]\n%[exif:Model]\n%[exif:LensModel]\n"
+                // Exposure & Light
+                "%[exif:ISOSpeedRatings]\n%[exif:PhotographicSensitivity]\n%[exif:FNumber]\n"
+                "%[exif:ShutterSpeedValue]\n%[exif:ExposureTime]\n"
+                "%[exif:ExposureBiasValue]\n%[exif:MeteringMode]\n"
+                "%[exif:Flash]\n%[exif:FlashMode]\n"
+                // Optics
+                "%[exif:FocalLength]\n%[exif:FocalLengthIn35mmFilm]\n"
+                "%[exif:FocusMode]\n"
+                // White Balance & Color
+                "%[exif:WhiteBalance]\n%[exif:ColorSpace]\n%[exif:SceneCaptureType]\n"
+                // Light & Quality
+                "%[exif:Brightness]\n%[exif:Contrast]\n"
+                "%[exif:Saturation]\n%[exif:Sharpness]\n"
+                // GPS
+                "%[exif:GPSLatitude]\n%[exif:GPSLongitude]\n%[exif:GPSAltitude]\n"
+                "%[exif:GPSLatitudeRef]\n%[exif:GPSLongitudeRef]\n"
+                // Orientation
+                "%[orientation]\n",
                 file_path};
 
             Poco::Pipe out_pipe;
@@ -112,36 +185,147 @@ namespace MediaDedup
                     line.pop_back();
                 lines.push_back(line);
             }
-            while (lines.size() < 7)
+            // Field count must equal the format string's line count; the
+            // sequential cursor below keeps parsing aligned with it.
+            constexpr std::size_t kFieldCount = 32;
+            while (lines.size() < kFieldCount)
                 lines.push_back("");
 
             ExifInfo info;
-            try
-            {
-                if (!lines[0].empty())
-                    info.width = std::stoi(lines[0]);
-            }
-            catch (...) {}
-            try
-            {
-                if (!lines[1].empty())
-                    info.height = std::stoi(lines[1]);
-            }
-            catch (...) {}
-            // %w/%h are the STORED dimensions; the delivered image is rendered
-            // with -auto-orient, so report the auto-oriented axes (ExifInfo
-            // contract). Mirrors the LibRaw flip 5/6 swap above.
-            if (ExifReader::orientationTransposesAxes(lines[6]))
-                std::swap(info.width, info.height);
+            std::size_t i = 0;
+            auto next = [&]() -> const std::string & { return lines[i++]; };
 
-            info.datetime = lines[2].empty() ? lines[3] : lines[2];
-            info.camera = lines[4];
-            if (!lines[5].empty())
+            // Dimensions
+            try
+            {
+                const std::string &w = next();
+                if (!w.empty())
+                    info.width = std::stoi(w);
+            }
+            catch (...) {}
+            try
+            {
+                const std::string &h = next();
+                if (!h.empty())
+                    info.height = std::stoi(h);
+            }
+            catch (...) {}
+
+            // Date/Time: DateTimeOriginal preferred over DateTime.
+            const std::string &dt_original = next();
+            const std::string &dt_plain = next();
+            info.datetime = dt_original.empty() ? dt_plain : dt_original;
+
+            // Camera & Lens
+            info.make = next();
+            info.model = next();
+            info.lens_model = next();
+            info.camera = info.make;
+            if (!info.model.empty())
             {
                 if (!info.camera.empty())
                     info.camera += " ";
-                info.camera += lines[5];
+                info.camera += info.model;
             }
+
+            // Exposure & Light. ISO lives under ISOSpeedRatings (EXIF <=2.2)
+            // or PhotographicSensitivity (EXIF 2.3+) depending on camera age.
+            const std::string &iso_legacy = next();
+            const std::string &iso_modern = next();
+            try
+            {
+                const std::string &iso = iso_legacy.empty() ? iso_modern : iso_legacy;
+                if (!iso.empty())
+                    info.iso = std::stoul(iso);
+            }
+            catch (...) {}
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.f_number = parseRationalFloat(v);
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                {
+                    info.shutter_speed_apex = parseRationalFloat(v);
+                    info.shutter_speed_text = v;
+                }
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.exposure_time = parseRationalFloat(v);
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.exposure_comp = parseRationalFloat(v);
+            }
+            info.metering_mode = next();
+            info.flash_fired = next();
+            info.flash_mode = next();
+
+            // Optics
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.focal_length = parseRationalFloat(v);
+            }
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.focal_length_35mm = parseRationalFloat(v);
+            }
+            info.focus_mode = next();
+
+            // White Balance & Color
+            info.white_balance = next();
+            info.color_space = next();
+            info.scene_mode = next();
+
+            // Light & Quality
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.brightness = parseRationalFloat(v);
+            }
+            info.contrast = next();
+            info.saturation = next();
+            info.sharpness = next();
+
+            // GPS: DMS rationals to decimal, signed by the hemisphere refs
+            // (S -> negative latitude, W -> negative longitude).
+            parseGPSCoordinate(next(), info.gps_lat);
+            parseGPSCoordinate(next(), info.gps_lon);
+            {
+                const std::string &v = next();
+                if (!v.empty())
+                    info.gps_alt = parseRationalFloat(v);
+            }
+            const std::string &lat_ref = next();
+            const std::string &lon_ref = next();
+            if (!lat_ref.empty() && (lat_ref[0] == 'S' || lat_ref[0] == 's'))
+                info.gps_lat = -info.gps_lat;
+            if (!lon_ref.empty() && (lon_ref[0] == 'W' || lon_ref[0] == 'w'))
+                info.gps_lon = -info.gps_lon;
+
+            // Orientation (last field)
+            const std::string &orientation_str = next();
+            // %w/%h are the STORED dimensions; the delivered image is rendered
+            // with -auto-orient, so report the auto-oriented axes (ExifInfo
+            // contract). Mirrors the LibRaw flip 5/6 swap above.
+            if (ExifReader::orientationTransposesAxes(orientation_str))
+                std::swap(info.width, info.height);
+            if (orientation_str == "LeftTop") info.orientation = 5;
+            else if (orientation_str == "RightTop") info.orientation = 6;
+            else if (orientation_str == "RightBottom") info.orientation = 7;
+            else if (orientation_str == "LeftBottom") info.orientation = 8;
+            else if (orientation_str == "BottomLeft") info.orientation = 4;
+            else if (orientation_str == "BottomRight") info.orientation = 3;
+            else if (orientation_str == "TopRight") info.orientation = 2;
+            else info.orientation = 1; // TopLeft (default)
+
             return info;
         }
     }

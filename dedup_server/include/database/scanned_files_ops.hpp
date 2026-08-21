@@ -25,12 +25,43 @@ namespace MediaDedup
         bool is_network_file = false;
         std::string location_key; // Full user_settings.key format (e.g., "mediaLocation:abc123")
         std::string created_at;
+
+        // EXIF metadata
         std::optional<std::string> exif_datetime;
         std::optional<std::string> exif_camera;
         std::optional<std::string> exif_resolution;
         // DB-2: the raw exif_blob is no longer carried or written — it was
         // 2.83 GB of write-only data (half the database). The schema column
         // survives as NULL for old installs.
+
+        // EXIF-1: Comprehensive EXIF fields for searchable queries
+        std::optional<std::string> exif_make;
+        std::optional<std::string> exif_model;
+        std::optional<std::string> exif_lens_model;
+        std::optional<uint32_t> exif_iso;
+        std::optional<float> exif_f_number;
+        std::optional<float> exif_shutter_speed_apex;
+        std::optional<std::string> exif_shutter_speed_text;
+        std::optional<float> exif_exposure_time;
+        std::optional<float> exif_exposure_comp;
+        std::optional<std::string> exif_metering_mode;
+        std::optional<std::string> exif_flash_fired;
+        std::optional<std::string> exif_flash_mode;
+        std::optional<float> exif_focal_length;
+        std::optional<float> exif_focal_length_35mm;
+        std::optional<float> exif_focus_distance;
+        std::optional<std::string> exif_focus_mode;
+        std::optional<std::string> exif_white_balance;
+        std::optional<std::string> exif_color_space;
+        std::optional<std::string> exif_scene_mode;
+        std::optional<float> exif_brightness;
+        std::optional<std::string> exif_contrast;
+        std::optional<std::string> exif_saturation;
+        std::optional<std::string> exif_sharpness;
+        std::optional<float> exif_gps_lat;
+        std::optional<float> exif_gps_lon;
+        std::optional<float> exif_gps_alt;
+        std::optional<uint8_t> exif_orientation;
     };
 
     class ScannedFilesOps
@@ -115,9 +146,9 @@ namespace MediaDedup
         static int upsertBatch(DatabaseManager &db, const std::vector<ScannedFileRow> &rows);
 
         // Update EXIF metadata (parsed fields only; DB-2 removed the raw blob)
+        // EXIF-1: Updated to accept comprehensive EXIF fields from ExifInfo
         static bool updateExifMetadata(DatabaseManager &db, const std::string &file_path,
-                                     const std::string &exif_datetime, const std::string &exif_camera,
-                                     const std::string &exif_resolution);
+                                     const struct ExifInfo &exif);
 
         // Clear processing flags
         static int clearProcessingFlags(DatabaseManager &db);
