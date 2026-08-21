@@ -46,6 +46,12 @@ namespace MediaDedup
             bool ok = false;
             std::string error;          // set when !ok
             std::vector<Match> matches; // ranked best-first
+            // Which halves of the hybrid pipeline produced this result set:
+            // used_semantic = CLIP ranking ran on (part of) the query text;
+            // used_exif = parsed EXIF constraints filtered the rows. Both can
+            // be true for mixed queries ("sunset with a canon").
+            bool used_semantic = false;
+            bool used_exif = false;
         };
 
         TextSearchEngine(std::shared_ptr<UnifiedObservableConfigManager> config,
@@ -95,8 +101,16 @@ namespace MediaDedup
 
         std::mutex cache_mutex_;
         // MRU-front query cache: repeated page requests for the same active
-        // search reuse the KNN result instead of re-running inference.
-        std::list<std::pair<std::string, std::vector<Match>>> cache_;
+        // search reuse the KNN result instead of re-running inference. The
+        // used_* flags ride along so cache hits report them identically.
+        struct CacheEntry
+        {
+            std::string query;
+            std::vector<Match> matches;
+            bool used_semantic = false;
+            bool used_exif = false;
+        };
+        std::list<CacheEntry> cache_;
         static constexpr std::size_t kCacheCapacity = 8;
     };
 }

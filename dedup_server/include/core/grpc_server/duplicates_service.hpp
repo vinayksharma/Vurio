@@ -267,7 +267,9 @@ public:
     bool resolveSearchFilter(const std::string& query,
                              std::vector<int>& ids_storage,
                              const std::vector<int>*& match_ids,
-                             grpc::Status& status) {
+                             grpc::Status& status,
+                             bool* used_ai = nullptr,
+                             bool* used_exif = nullptr) {
         match_ids = nullptr;
         if (query.empty()) return true;
         if (!search_engine_) {
@@ -280,6 +282,8 @@ public:
                                   "Text search failed: " + search.error);
             return false;
         }
+        if (used_ai) *used_ai = search.used_semantic;
+        if (used_exif) *used_exif = search.used_exif;
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
         for (const auto& m : search.matches) ids_storage.push_back(m.file_id);
@@ -298,8 +302,12 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status))
+        bool used_ai = false, used_exif = false;
+        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
+                                 &used_ai, &used_exif))
             return search_status;
+        reply->set_search_used_ai(used_ai);
+        reply->set_search_used_exif(used_exif);
 
         auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day, match_ids);
         if (!page.ok) {
@@ -341,8 +349,12 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status))
+        bool used_ai = false, used_exif = false;
+        if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
+                                 &used_ai, &used_exif))
             return search_status;
+        reply->set_search_used_ai(used_ai);
+        reply->set_search_used_exif(used_exif);
 
         auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit, match_ids);
         if (!page.ok) {

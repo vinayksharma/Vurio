@@ -245,6 +245,11 @@ message DayGroup {
 message GetDayGroupsResponse {
   repeated DayGroup days = 1;
   int32 total_days = 2;
+  // How the active search_query was evaluated (both false when no query):
+  // search_used_ai = CLIP semantic ranking ran on (part of) the text;
+  // search_used_exif = parsed EXIF constraints filtered the rows.
+  bool search_used_ai = 3;
+  bool search_used_exif = 4;
 }
 
 message GetDayFilesRequest {
@@ -258,6 +263,8 @@ message GetDayFilesRequest {
 message GetDayFilesResponse {
   repeated DayFile files = 1;
   int32 total_files = 2; // total files in this day
+  bool search_used_ai = 3;   // see GetDayGroupsResponse
+  bool search_used_exif = 4;
 }
 
 message EjectDuplicatesRequest {

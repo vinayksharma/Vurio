@@ -133,11 +133,13 @@ namespace MediaDedup
             std::lock_guard<std::mutex> lock(cache_mutex_);
             for (auto it = cache_.begin(); it != cache_.end(); ++it)
             {
-                if (it->first == key)
+                if (it->query == key)
                 {
                     cache_.splice(cache_.begin(), cache_, it); // MRU refresh
                     result.ok = true;
-                    result.matches = cache_.front().second;
+                    result.matches = cache_.front().matches;
+                    result.used_semantic = cache_.front().used_semantic;
+                    result.used_exif = cache_.front().used_exif;
                     return result;
                 }
             }
@@ -147,7 +149,7 @@ namespace MediaDedup
         if (result.ok)
         {
             std::lock_guard<std::mutex> lock(cache_mutex_);
-            cache_.emplace_front(key, result.matches);
+            cache_.push_front({key, result.matches, result.used_semantic, result.used_exif});
             while (cache_.size() > kCacheCapacity)
                 cache_.pop_back();
         }
@@ -164,7 +166,11 @@ namespace MediaDedup
         ExifQueryConstraints constraints = parser_->parse(query);
 
         if (!constraints.hasAny())
-            return clipSearch(query);
+        {
+            Result r = clipSearch(query);
+            r.used_semantic = true;
+            return r;
+        }
 
         logger.information(
             "Query '%s': %z numeric constraint(s), %z camera term(s)%s%s; remaining text: '%s'",
@@ -174,9 +180,15 @@ namespace MediaDedup
             constraints.remaining);
 
         if (constraints.remaining_is_filler)
-            return exifOnlySearch(constraints);
+        {
+            Result r = exifOnlySearch(constraints);
+            r.used_exif = true;
+            return r;
+        }
 
         Result result = clipSearch(constraints.remaining);
+        result.used_semantic = true;
+        result.used_exif = true;
         if (result.ok)
             filterMatchesByExif(result.matches, constraints);
         return result;

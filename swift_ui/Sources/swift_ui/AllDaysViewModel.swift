@@ -32,6 +32,12 @@ class AllDaysViewModel: ObservableObject {
     }
     private(set) var activeSearchQuery: String = ""
     var isSearchActive: Bool { !activeSearchQuery.isEmpty }
+
+    // How the server evaluated the active query (advanced-overlay ai/xf
+    // badges): AI = CLIP semantic ranking ran, EXIF = metadata constraints
+    // filtered. Meaningful only while isSearchActive.
+    @Published private(set) var searchUsedAI = false
+    @Published private(set) var searchUsedExif = false
     private var searchDebounceTask: Task<Void, Never>?
 
     private func debounceSearch() {
@@ -144,6 +150,8 @@ class AllDaysViewModel: ObservableObject {
             // A stale response for a superseded query must not overwrite the
             // current filter's day list.
             guard query == activeSearchQuery else { return }
+            searchUsedAI = response.searchUsedAi
+            searchUsedExif = response.searchUsedExif
 
             if !Task.isCancelled {
                 // Resize the slot list when the server's day count moved (files
