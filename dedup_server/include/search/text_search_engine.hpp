@@ -66,6 +66,7 @@ namespace MediaDedup
         Result exifOnlySearch(const ExifQueryConstraints &constraints);
         void ensureTokenizerLoaded();
         void ensureGeocoderLoaded();
+        void ensureParserLoaded();
 
         std::shared_ptr<UnifiedObservableConfigManager> config_;
         DatabaseManager *db_;
@@ -79,12 +80,18 @@ namespace MediaDedup
         // EXIF-4: cap for constraint-only queries (no KNN k to bound them).
         int exif_only_limit_ = 1000;
         std::string locations_path_;
+        std::string keywords_path_; // EXIF-6: JSON keyword vocabulary
 
         std::once_flag tokenizer_once_;
         ClipTokenizer tokenizer_;
 
         std::once_flag geocoder_once_;
         LocationGeocoder geocoder_;
+
+        // EXIF-6: parser compiles its regexes from the keyword file once;
+        // reused across searches (parse() is const and thread-safe).
+        std::once_flag parser_once_;
+        std::unique_ptr<ExifQueryParser> parser_;
 
         std::mutex cache_mutex_;
         // MRU-front query cache: repeated page requests for the same active

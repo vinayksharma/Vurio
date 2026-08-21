@@ -271,6 +271,7 @@ add_executable(media_dedup_server
     src/search/text_search_engine.cpp
     src/search/location_geocoder.cpp
     src/search/exif_query_parser.cpp
+    src/search/exif_keyword_config.cpp
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp

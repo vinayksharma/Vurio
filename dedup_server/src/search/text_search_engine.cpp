@@ -1,5 +1,7 @@
 #include "search/text_search_engine.hpp"
 
+#include "search/exif_keyword_config.hpp"
+
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/vector_index.hpp"
@@ -44,6 +46,8 @@ namespace MediaDedup
             exif_only_limit_ = config_->getPropertyValue<int>("search.exifOnlyLimit", exif_only_limit_);
             locations_path_ = config_->getPropertyValue<std::string>(
                 "search.locationsPath", "geodata/world_locations.geojson");
+            keywords_path_ = config_->getPropertyValue<std::string>(
+                "search.keywordsPath", "config/exif_search_keywords.json");
 
             // Same project-root resolution as QualityPipeline uses for the
             // image model, so both towers resolve identically from any CWD.
@@ -58,10 +62,15 @@ namespace MediaDedup
             std::filesystem::path loc_p(locations_path_);
             if (!loc_p.is_absolute())
                 locations_path_ = (project_root / loc_p).lexically_normal().string();
+
+            std::filesystem::path kw_p(keywords_path_);
+            if (!kw_p.is_absolute())
+                keywords_path_ = (project_root / kw_p).lexically_normal().string();
         }
         else
         {
             locations_path_ = "geodata/world_locations.geojson";
+            keywords_path_ = "config/exif_search_keywords.json";
         }
 
         // vocab.json / merges.txt ship beside the models.
@@ -92,6 +101,21 @@ namespace MediaDedup
                 Poco::Logger::get("TextSearchEngine")
                     .warning("Location gazetteer unavailable (%s); place-name search disabled",
                              locations_path_);
+        });
+    }
+
+    void TextSearchEngine::ensureParserLoaded()
+    {
+        std::call_once(parser_once_, [this] {
+            ensureGeocoderLoaded();
+            // EXIF-6: vocabulary from JSON; built-in defaults are the
+            // fallback, so a missing file degrades to stock keywords.
+            ExifKeywordConfig keywords = ExifKeywordConfig::defaults();
+            if (!keywords.loadFromFile(keywords_path_))
+                Poco::Logger::get("TextSearchEngine")
+                    .warning("EXIF keyword file unavailable (%s); using built-in keywords",
+                             keywords_path_);
+            parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords);
         });
     }
 
@@ -136,9 +160,8 @@ namespace MediaDedup
 
         // EXIF-4: split the query into structured EXIF constraints and the
         // semantic remainder, then combine SQL filtering with CLIP ranking.
-        ensureGeocoderLoaded();
-        ExifQueryParser parser(&geocoder_);
-        ExifQueryConstraints constraints = parser.parse(query);
+        ensureParserLoaded();
+        ExifQueryConstraints constraints = parser_->parse(query);
 
         if (!constraints.hasAny())
             return clipSearch(query);
