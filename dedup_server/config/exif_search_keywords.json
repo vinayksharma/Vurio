@@ -1,0 +1,66 @@
+{
+  "_readme": [
+    "Vocabulary for the EXIF query parser (natural-language photo search).",
+    "Edit this file to teach the parser new words — no rebuild needed,",
+    "changes apply on server restart. All entries must be lowercase;",
+    "multi-word phrases are allowed and match across any whitespace.",
+    "A list present here REPLACES the built-in default list wholesale;",
+    "a list you delete falls back to the built-in defaults.",
+    "The query GRAMMAR (shapes like 'iso above N', 'f/2.8', '1/500',",
+    "4-digit years) is fixed in code — this file only supplies the words",
+    "those patterns alternate over. Path is configurable via the",
+    "'search.keywordsPath' setting (default: config/exif_search_keywords.json)."
+  ],
+
+  "camera": {
+    "brands": [
+      "canon", "nikon", "sony", "fuji", "fujifilm", "panasonic", "lumix",
+      "olympus", "leica", "pentax", "hasselblad", "iphone", "apple",
+      "samsung", "google", "pixel", "dji", "gopro", "ricoh", "sigma", "kodak"
+    ],
+    "context_verbs": ["taken", "shot", "captured", "photographed"],
+    "context_prepositions": ["with", "on", "using", "by"],
+    "articles": ["a", "an", "my"],
+    "suffixes": ["camera"]
+  },
+
+  "comparisons": {
+    "greater": ["above", "over", "greater than", "more than"],
+    "greater_or_equal": ["at least"],
+    "less": ["below", "under", "less than"],
+    "less_or_equal": ["at most"],
+    "aperture_wider": ["wider", "faster", "brighter"],
+    "aperture_narrower": ["narrower", "smaller"],
+    "shutter_faster": ["faster", "quicker"],
+    "shutter_slower": ["slower", "longer"],
+    "focal_longer": ["above", "over", "longer than"],
+    "focal_shorter": ["below", "under", "shorter than"]
+  },
+
+  "flash": {
+    "on_phrases": ["with flash", "flash on", "flash fired", "using flash"],
+    "off_phrases": ["without flash", "no flash", "flash off"]
+  },
+
+  "dates": {
+    "months": [
+      "january", "february", "march", "april", "may", "june",
+      "july", "august", "september", "october", "november", "december"
+    ],
+    "ambiguous_months": ["may"],
+    "prepositions": ["in", "from", "during"]
+  },
+
+  "location": {
+    "prepositions": ["in", "at", "near", "around", "from"]
+  },
+
+  "text": {
+    "imperative_words": ["find", "show", "me", "all"],
+    "filler_words": [
+      "find", "show", "me", "all", "the", "a", "an", "my", "of",
+      "photo", "photos", "picture", "pictures", "pic", "pics",
+      "image", "images", "shot", "shots", "taken", "with", "and"
+    ]
+  }
+}

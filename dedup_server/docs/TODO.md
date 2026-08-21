@@ -27,6 +27,11 @@ before touching code — the line below is an index entry, not a specification.
   gazetteer. Pure-metadata queries skip CLIP entirely (SQL-only path);
   mixed queries run CLIP KNN then filter matches by SQL. Missing EXIF
   stores NULL, never 0 — a GPS-less photo can never match a location.
+  EXIF-6 (2026-08-20): the parser's vocabulary (camera brands, comparison
+  synonyms, flash phrases, months, prepositions, filler words) lives in
+  `config/exif_search_keywords.json` (`search.keywordsPath`), so new words
+  are a JSON edit + restart, no rebuild; built-in defaults are the fallback
+  and a lockstep test keeps file and defaults identical.
   **Full specification: [todo_exif_searchable_queries.md](todo_exif_searchable_queries.md)**
 
 - **THUMB-1 — render thumbnails at the source image's aspect ratio.**

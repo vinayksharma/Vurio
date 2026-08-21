@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
-#include <regex>
 #include <sstream>
-#include <unordered_set>
 
 namespace MediaDedup
 {
@@ -16,6 +14,64 @@ namespace MediaDedup
             std::transform(out.begin(), out.end(), out.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             return out;
+        }
+
+        // Collapse whitespace runs to single spaces so a matched multi-word
+        // synonym ("greater   than") can be looked up in a keyword set.
+        std::string normalizeSpaces(const std::string &s)
+        {
+            std::istringstream stream(s);
+            std::string word, out;
+            while (stream >> word)
+                out += (out.empty() ? "" : " ") + word;
+            return out;
+        }
+
+        // A keyword as a regex fragment: specials escaped, internal
+        // whitespace matching any whitespace run.
+        std::string escapeKeyword(const std::string &word)
+        {
+            std::string out;
+            for (char c : word)
+            {
+                if (std::isspace(static_cast<unsigned char>(c)))
+                {
+                    if (out.size() < 3 || out.compare(out.size() - 3, 3, "\\s+") != 0)
+                        out += "\\s+";
+                }
+                else if (std::string("\\^$.|?*+()[]{}").find(c) != std::string::npos)
+                {
+                    out += '\\';
+                    out += c;
+                }
+                else
+                {
+                    out += c;
+                }
+            }
+            return out;
+        }
+
+        // Alternation over keywords, longest-first so "greater than" is
+        // preferred over a hypothetical "greater". An empty list yields a
+        // never-matching alternative, disabling that pattern cleanly.
+        std::string alternation(std::vector<std::string> words)
+        {
+            if (words.empty())
+                return "(?!)";
+            std::sort(words.begin(), words.end(),
+                      [](const std::string &a, const std::string &b) {
+                          return a.size() > b.size();
+                      });
+            std::string out;
+            for (const auto &w : words)
+                out += (out.empty() ? "" : "|") + escapeKeyword(w);
+            return out;
+        }
+
+        std::unordered_set<std::string> toSet(const std::vector<std::string> &words)
+        {
+            return {words.begin(), words.end()};
         }
 
         // Blank out [begin, end) so consumed tokens vanish from the
@@ -55,17 +111,6 @@ namespace MediaDedup
             return den != 0.0 ? num / den : 0.0;
         }
 
-        int monthNumber(const std::string &name)
-        {
-            static const char *kMonths[] = {"january", "february", "march", "april",
-                                            "may", "june", "july", "august",
-                                            "september", "october", "november", "december"};
-            for (int i = 0; i < 12; ++i)
-                if (name == kMonths[i])
-                    return i + 1;
-            return 0;
-        }
-
         std::string two(int v)
         {
             char buf[3];
@@ -90,6 +135,101 @@ namespace MediaDedup
         }
     }
 
+    // EXIF-6: every keyword alternation below is spliced in from the
+    // ExifKeywordConfig; only the surrounding grammar is fixed here.
+    ExifQueryParser::ExifQueryParser(const LocationGeocoder *geocoder,
+                                     const ExifKeywordConfig &kw)
+        : geocoder_(geocoder)
+    {
+        months_ = kw.months;
+        greater_set_ = toSet(kw.greater_words);
+        greater_equal_set_ = toSet(kw.greater_equal_words);
+        less_set_ = toSet(kw.less_words);
+        less_equal_set_ = toSet(kw.less_equal_words);
+        aperture_wider_set_ = toSet(kw.aperture_wider_words);
+        shutter_faster_set_ = toSet(kw.shutter_faster_words);
+        focal_longer_set_ = toSet(kw.focal_longer_words);
+        imperative_set_ = toSet(kw.imperative_words);
+        filler_set_ = toSet(kw.filler_words);
+
+        // --- ISO --------------------------------------------------------
+        iso_between_ = std::regex(R"(\biso\s+between\s+(\d{2,6})\s+and\s+(\d{2,6})\b)");
+        std::vector<std::string> iso_dirs = kw.greater_words;
+        iso_dirs.insert(iso_dirs.end(), kw.greater_equal_words.begin(), kw.greater_equal_words.end());
+        iso_dirs.insert(iso_dirs.end(), kw.less_words.begin(), kw.less_words.end());
+        iso_dirs.insert(iso_dirs.end(), kw.less_equal_words.begin(), kw.less_equal_words.end());
+        iso_cmp_ = std::regex(R"(\biso\s+()" + alternation(iso_dirs) + R"()\s+(\d{2,6})\b)");
+        iso_eq_ = std::regex(R"(\biso\s*[:=]?\s*(\d{2,6})\b)");
+
+        // --- Aperture ---------------------------------------------------
+        std::vector<std::string> f_dirs = kw.aperture_wider_words;
+        f_dirs.insert(f_dirs.end(), kw.aperture_narrower_words.begin(),
+                      kw.aperture_narrower_words.end());
+        f_cmp_ = std::regex(R"((?:aperture\s+)?()" + alternation(f_dirs) +
+                            R"()\s+than\s+f\s*/?\s*(\d+(?:\.\d+)?))");
+        f_eq_ = std::regex(R"(\bf\s*/\s*(\d+(?:\.\d+)?)|\bf(\d+(?:\.\d+)?)\b)");
+
+        // --- Shutter speed ---------------------------------------------
+        std::vector<std::string> sh_dirs = kw.shutter_faster_words;
+        sh_dirs.insert(sh_dirs.end(), kw.shutter_slower_words.begin(),
+                       kw.shutter_slower_words.end());
+        shutter_cmp_ = std::regex(
+            R"((?:shutter\s+(?:speed\s+)?)?()" + alternation(sh_dirs) +
+            R"()\s+than\s+(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)(?:\s*s(?:ec(?:onds?)?)?)?\b)");
+        shutter_eq_ = std::regex(
+            R"(\bshutter\s+(?:speed\s+)?(?:of\s+)?(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)\b)");
+
+        // --- Focal length ----------------------------------------------
+        // Direction phrases here carry their own "than" where needed
+        // ("longer than" vs bare "above"), so no fixed "than" follows.
+        std::vector<std::string> focal_dirs = kw.focal_longer_words;
+        focal_dirs.insert(focal_dirs.end(), kw.focal_shorter_words.begin(),
+                          kw.focal_shorter_words.end());
+        focal_cmp_ = std::regex(R"((?:focal\s+length\s+)?()" + alternation(focal_dirs) +
+                                R"()\s+(\d{1,4})\s*mm\b)");
+        focal_eq_ = std::regex(R"(\b(\d{1,4})\s*mm\b)");
+
+        // --- Flash ------------------------------------------------------
+        flash_off_ = std::regex(R"(\b(?:)" + alternation(kw.flash_off_phrases) + R"()\b)");
+        flash_on_ = std::regex(R"(\b(?:)" + alternation(kw.flash_on_phrases) + R"()\b)");
+
+        // --- Camera make ------------------------------------------------
+        // The whole "taken with a canon camera" phrase is consumed so no
+        // "taken with a" residue is left for CLIP.
+        camera_ = std::regex(
+            R"((?:(?:)" + alternation(kw.camera_context_verbs) + R"()\s+)?)" +
+            R"((?:(?:)" + alternation(kw.camera_context_prepositions) + R"()\s+)?)" +
+            R"((?:(?:)" + alternation(kw.camera_articles) + R"()\s+)?)" +
+            R"(\b()" + alternation(kw.camera_brands) + R"()\b)" +
+            R"((?:\s+(?:)" + alternation(kw.camera_suffixes) + R"()\b)?)");
+
+        // --- Dates ------------------------------------------------------
+        month_year_ = std::regex(R"(\b()" + alternation(kw.months) +
+                                 R"()\s+((?:19|20)\d{2})\b)");
+        year_ = std::regex(R"(\b((?:19|20)\d{2})\b)");
+        // Bare month names skip the ambiguous ones ("may" as a modal verb
+        // is far more often not a month).
+        std::vector<std::string> bare_months;
+        const auto ambiguous = toSet(kw.ambiguous_months);
+        for (const auto &m : kw.months)
+            if (!ambiguous.count(m))
+                bare_months.push_back(m);
+        month_ = std::regex(R"(\b(?:(?:)" + alternation(kw.month_prepositions) +
+                            R"()\s+)?()" + alternation(bare_months) + R"()\b)");
+
+        // --- Location (preposition-triggered) ---------------------------
+        location_ = std::regex(R"(\b(?:)" + alternation(kw.location_prepositions) +
+                               R"()\s+((?:[a-z][a-z'\-]*)(?:\s+[a-z][a-z'\-]*){0,2}))");
+    }
+
+    int ExifQueryParser::monthNumber(const std::string &name) const
+    {
+        for (std::size_t i = 0; i < months_.size(); ++i)
+            if (name == months_[i])
+                return static_cast<int>(i) + 1;
+        return 0;
+    }
+
     ExifQueryConstraints ExifQueryParser::parse(const std::string &query) const
     {
         ExifQueryConstraints out;
@@ -97,58 +237,44 @@ namespace MediaDedup
 
         // --- ISO --------------------------------------------------------
         // Ranges first so "iso between 400 and 1600" isn't eaten as "iso 400".
-        static const std::regex iso_between(
-            R"(\biso\s+between\s+(\d{2,6})\s+and\s+(\d{2,6})\b)");
-        consumeMatches(text, iso_between, [&](const std::smatch &m) {
+        consumeMatches(text, iso_between_, [&](const std::smatch &m) {
             out.numeric.push_back({"exif_iso", "between",
                                    std::stod(m[1]), std::stod(m[2])});
         });
-        static const std::regex iso_cmp(
-            R"(\biso\s+(above|over|greater than|more than|at least|below|under|less than|at most)\s+(\d{2,6})\b)");
-        consumeMatches(text, iso_cmp, [&](const std::smatch &m) {
-            const std::string dir = m[1];
-            const bool ge = (dir == "at least"), le = (dir == "at most");
-            const bool gt = (dir == "above" || dir == "over" ||
-                             dir == "greater than" || dir == "more than");
-            out.numeric.push_back({"exif_iso", ge ? ">=" : le ? "<=" : gt ? ">" : "<",
-                                   std::stod(m[2]), 0.0});
+        consumeMatches(text, iso_cmp_, [&](const std::smatch &m) {
+            const std::string dir = normalizeSpaces(m[1]);
+            const char *op = greater_equal_set_.count(dir) ? ">="
+                             : less_equal_set_.count(dir)  ? "<="
+                             : greater_set_.count(dir)     ? ">"
+                                                           : "<";
+            out.numeric.push_back({"exif_iso", op, std::stod(m[2]), 0.0});
         });
-        static const std::regex iso_eq(R"(\biso\s*[:=]?\s*(\d{2,6})\b)");
-        consumeMatches(text, iso_eq, [&](const std::smatch &m) {
+        consumeMatches(text, iso_eq_, [&](const std::smatch &m) {
             out.numeric.push_back({"exif_iso", "=", std::stod(m[1]), 0.0});
         });
 
         // --- Aperture ---------------------------------------------------
-        static const std::regex f_cmp(
-            R"((?:aperture\s+)?(wider|faster|brighter|narrower|smaller)\s+than\s+f\s*/?\s*(\d+(?:\.\d+)?))");
-        consumeMatches(text, f_cmp, [&](const std::smatch &m) {
-            const std::string dir = m[1];
+        consumeMatches(text, f_cmp_, [&](const std::smatch &m) {
             // Wider aperture = LOWER f-number.
-            const bool wider = (dir == "wider" || dir == "faster" || dir == "brighter");
+            const bool wider = aperture_wider_set_.count(normalizeSpaces(m[1])) > 0;
             out.numeric.push_back({"exif_f_number", wider ? "<" : ">",
                                    std::stod(m[2]), 0.0});
         });
-        static const std::regex f_eq(R"(\bf\s*/\s*(\d+(?:\.\d+)?)|\bf(\d+(?:\.\d+)?)\b)");
-        consumeMatches(text, f_eq, [&](const std::smatch &m) {
+        consumeMatches(text, f_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1].matched ? m[1] : m[2]);
             out.numeric.push_back({"exif_f_number", "between", v - 0.3, v + 0.3});
         });
 
         // --- Shutter speed ---------------------------------------------
-        static const std::regex shutter_cmp(
-            R"((?:shutter\s+(?:speed\s+)?)?(faster|quicker|slower|longer)\s+than\s+(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)(?:\s*s(?:ec(?:onds?)?)?)?\b)");
-        consumeMatches(text, shutter_cmp, [&](const std::smatch &m) {
+        consumeMatches(text, shutter_cmp_, [&](const std::smatch &m) {
             std::string frac = m[2];
             frac.erase(std::remove(frac.begin(), frac.end(), ' '), frac.end());
-            const std::string dir = m[1];
-            const bool faster = (dir == "faster" || dir == "quicker");
             // Faster shutter = SHORTER exposure time.
+            const bool faster = shutter_faster_set_.count(normalizeSpaces(m[1])) > 0;
             out.numeric.push_back({"exif_exposure_time", faster ? "<" : ">",
                                    shutterToSeconds(frac), 0.0});
         });
-        static const std::regex shutter_eq(
-            R"(\bshutter\s+(?:speed\s+)?(?:of\s+)?(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)\b)");
-        consumeMatches(text, shutter_eq, [&](const std::smatch &m) {
+        consumeMatches(text, shutter_eq_, [&](const std::smatch &m) {
             std::string frac = m[1];
             frac.erase(std::remove(frac.begin(), frac.end(), ' '), frac.end());
             double v = shutterToSeconds(frac);
@@ -156,65 +282,39 @@ namespace MediaDedup
         });
 
         // --- Focal length ----------------------------------------------
-        static const std::regex focal_cmp(
-            R"((?:focal\s+length\s+)?(above|over|longer than|below|under|shorter than)\s+(\d{1,4})\s*mm\b)");
-        consumeMatches(text, focal_cmp, [&](const std::smatch &m) {
-            const std::string dir = m[1];
-            const bool above = (dir == "above" || dir == "over" || dir == "longer than");
+        consumeMatches(text, focal_cmp_, [&](const std::smatch &m) {
+            const bool above = focal_longer_set_.count(normalizeSpaces(m[1])) > 0;
             out.numeric.push_back({"exif_focal_length", above ? ">" : "<",
                                    std::stod(m[2]), 0.0});
         });
-        static const std::regex focal_eq(R"(\b(\d{1,4})\s*mm\b)");
-        consumeMatches(text, focal_eq, [&](const std::smatch &m) {
+        consumeMatches(text, focal_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1]);
             out.numeric.push_back({"exif_focal_length", "between", v - 1.0, v + 1.0});
         });
 
         // --- Flash ------------------------------------------------------
-        static const std::regex flash_off_re(
-            R"(\b(?:without|no)\s+flash\b|\bflash\s+off\b)");
-        consumeMatches(text, flash_off_re, [&](const std::smatch &) {
+        consumeMatches(text, flash_off_, [&](const std::smatch &) {
             out.flash_off = true;
         });
-        static const std::regex flash_on_re(
-            R"(\bwith\s+flash\b|\bflash\s+(?:on|fired)\b|\busing\s+flash\b)");
-        consumeMatches(text, flash_on_re, [&](const std::smatch &) {
+        consumeMatches(text, flash_on_, [&](const std::smatch &) {
             out.flash_on = true;
         });
 
         // --- Camera make ------------------------------------------------
-        // The whole "taken with a canon camera" phrase is consumed so no
-        // "taken with a" residue is left for CLIP.
-        static const std::regex camera_re(
-            R"((?:(?:taken|shot|captured|photographed)\s+)?(?:(?:with|on|using|by)\s+)?(?:(?:a|an|my)\s+)?)"
-            R"(\b(canon|nikon|sony|fuji(?:film)?|panasonic|lumix|olympus|leica|pentax|hasselblad)"
-            R"(|iphone|apple|samsung|google|pixel|dji|gopro|ricoh|sigma|kodak)\b)"
-            R"((?:\s+camera\b)?)");
-        consumeMatches(text, camera_re, [&](const std::smatch &m) {
-            std::string term = m[1];
-            if (term == "fuji")
-                term = "fuji"; // matches FUJIFILM via LIKE
-            if (term == "pixel")
-                term = "pixel"; // Google Pixel models carry "Pixel"
-            out.camera_terms.push_back(term);
+        consumeMatches(text, camera_, [&](const std::smatch &m) {
+            out.camera_terms.push_back(m[1]);
         });
 
         // --- Dates ------------------------------------------------------
-        static const std::regex month_year_re(
-            R"(\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+((?:19|20)\d{2})\b)");
-        consumeMatches(text, month_year_re, [&](const std::smatch &m) {
+        consumeMatches(text, month_year_, [&](const std::smatch &m) {
             out.date_range = monthRange(std::stoi(m[2]), monthNumber(m[1]));
         });
-        static const std::regex year_re(R"(\b((?:19|20)\d{2})\b)");
-        consumeMatches(text, year_re, [&](const std::smatch &m) {
+        consumeMatches(text, year_, [&](const std::smatch &m) {
             if (!out.date_range)
                 out.date_range = yearRange(std::stoi(m[1]));
         });
-        // Bare month name ("august"): that month across every year. "may" is
-        // exempt — as a modal verb it is far more often not a month.
-        static const std::regex month_re(
-            R"(\b(?:in\s+|from\s+|during\s+)?(january|february|march|april|june|july|august|september|october|november|december)\b)");
-        consumeMatches(text, month_re, [&](const std::smatch &m) {
+        // Bare month name ("august"): that month across every year.
+        consumeMatches(text, month_, [&](const std::smatch &m) {
             if (!out.date_range && !out.month_any_year)
                 out.month_any_year = two(monthNumber(m[1]));
         });
@@ -224,11 +324,9 @@ namespace MediaDedup
         // longest span (up to 3 words) after the preposition first.
         if (geocoder_ && geocoder_->size() > 0)
         {
-            static const std::regex loc_re(
-                R"(\b(?:in|at|near|around|from)\s+((?:[a-z][a-z'\-]*)(?:\s+[a-z][a-z'\-]*){0,2}))");
             struct Hit { std::size_t pos, len; std::string span; };
             std::vector<Hit> hits;
-            auto begin = std::sregex_iterator(text.begin(), text.end(), loc_re);
+            auto begin = std::sregex_iterator(text.begin(), text.end(), location_);
             for (auto it = begin; it != std::sregex_iterator(); ++it)
                 hits.push_back({static_cast<std::size_t>(it->position(0)),
                                 static_cast<std::size_t>(it->length(0)), (*it)[1]});
@@ -267,18 +365,12 @@ namespace MediaDedup
         // Imperative noise is stripped from the CLIP text ("find all ...");
         // noun filler ("photos", "pictures") is KEPT — CLIP was trained on
         // caption-like phrases — but neither counts as semantic content.
-        static const std::unordered_set<std::string> kImperative = {
-            "find", "show", "me", "all"};
-        static const std::unordered_set<std::string> kFiller = {
-            "find", "show", "me", "all", "the", "a", "an", "my", "of",
-            "photo", "photos", "picture", "pictures", "pic", "pics",
-            "image", "images", "shot", "shots", "taken", "with", "and"};
         int content_words = 0;
         while (stream >> word)
         {
-            if (!kImperative.count(word))
+            if (!imperative_set_.count(word))
                 rebuilt += (rebuilt.empty() ? "" : " ") + word;
-            if (!kFiller.count(word))
+            if (!filler_set_.count(word))
                 ++content_words;
         }
         out.remaining = rebuilt;

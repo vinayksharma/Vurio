@@ -1,10 +1,13 @@
 #pragma once
 
 #include <optional>
+#include <regex>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "search/exif_keyword_config.hpp"
 #include "search/location_geocoder.hpp"
 
 namespace MediaDedup
@@ -81,18 +84,46 @@ namespace MediaDedup
      *   (guessing turns city names like "Nice" or "Phoenix" into false GPS
      *   filters).
      *
+     * EXIF-6: the pattern SHAPES above are fixed, but every word list they
+     * alternate over (camera brands, comparison synonyms, flash phrases,
+     * months, prepositions, filler words) comes from the ExifKeywordConfig
+     * given at construction — extend `config/exif_search_keywords.json`
+     * instead of editing this class. Regexes are compiled once in the
+     * constructor, so construct the parser once and reuse it.
+     *
      * The geocoder pointer may be null (location parsing is skipped).
      * parse() is const and thread-safe once the geocoder is loaded.
      */
     class ExifQueryParser
     {
     public:
-        explicit ExifQueryParser(const LocationGeocoder *geocoder = nullptr)
-            : geocoder_(geocoder) {}
+        explicit ExifQueryParser(const LocationGeocoder *geocoder = nullptr,
+                                 const ExifKeywordConfig &keywords = ExifKeywordConfig::defaults());
 
         ExifQueryConstraints parse(const std::string &query) const;
 
     private:
+        int monthNumber(const std::string &name) const;
+
         const LocationGeocoder *geocoder_;
+
+        // Keyword-driven state, built once from the ExifKeywordConfig.
+        std::vector<std::string> months_;
+        std::unordered_set<std::string> greater_set_, greater_equal_set_;
+        std::unordered_set<std::string> less_set_, less_equal_set_;
+        std::unordered_set<std::string> aperture_wider_set_;
+        std::unordered_set<std::string> shutter_faster_set_;
+        std::unordered_set<std::string> focal_longer_set_;
+        std::unordered_set<std::string> imperative_set_, filler_set_;
+
+        // Compiled patterns (keyword alternations baked in).
+        std::regex iso_between_, iso_cmp_, iso_eq_;
+        std::regex f_cmp_, f_eq_;
+        std::regex shutter_cmp_, shutter_eq_;
+        std::regex focal_cmp_, focal_eq_;
+        std::regex flash_on_, flash_off_;
+        std::regex camera_;
+        std::regex month_year_, year_, month_;
+        std::regex location_;
     };
 }
