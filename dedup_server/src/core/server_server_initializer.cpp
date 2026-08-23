@@ -10,6 +10,9 @@
 #include "database/thumbnail_cache_ops.hpp"
 #include "database/preview_cache_ops.hpp"
 #include "database/ejected_files_ops.hpp"
+#include "database/faces_ops.hpp"
+#include "media_processors/face/face_scan_service.hpp"
+#include "media_processors/face/vision_face_detector.hpp"
 #include "filesmanager/files_service.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "orchestration/thread_pool_manager.hpp"
@@ -232,6 +235,13 @@ namespace MediaDedup
             MediaBackfill::installHook();
 
             // Ensure ejected_files_history database table exists
+            if (!FacesOps::ensureTable(*database_manager_))
+            {
+                logger.error("Failed to ensure faces tables");
+                return false;
+            }
+            logger.information("Faces tables ensured");
+
             if (!EjectedFilesOps::ensureTable(*database_manager_))
             {
                 logger.error("Failed to ensure ejected_files_history table");
@@ -324,6 +334,39 @@ namespace MediaDedup
             scheduler_service_->registerJob("duplicateFinder", std::chrono::milliseconds(dupIntervalMs), "duplicate_finder",
                                             [df = duplicate_finder_]()
                                             { df->findDuplicates(); });
+
+            // FACE-1: the trailing face sweep (docs/todo_face_recognition.md).
+            // Off by default until the embedder model ships; with the flag on
+            // but no model, faces are still detected and counted — embeddings
+            // arrive on the next version bump once a model exists.
+            if (config_manager_->getPropertyValue<bool>("media.face.enabled", false))
+            {
+                FaceScanService::Options face_opts;
+                face_opts.batch = config_manager_->getPropertyValue<int>("media.face.sweepBatch", 200);
+                std::string embed_model = config_manager_->getPropertyValue<std::string>(
+                    "media.face.embedModelPath", "models/face-embed.onnx");
+                std::filesystem::path embed_p(embed_model);
+                if (!embed_p.is_absolute())
+                {
+                    std::filesystem::path cfg_p = std::filesystem::absolute(
+                        std::filesystem::path(config_manager_->getConfigFilePath()));
+                    embed_model = (cfg_p.parent_path().parent_path() / embed_p).lexically_normal().string();
+                }
+                auto embed_fn = [embed_model](const std::vector<float> &nchw, std::vector<float> &out) {
+                    if (!std::filesystem::exists(embed_model))
+                        return false;
+                    return OnnxAdapter::ComputeFaceEmbedding(nchw, embed_model, 512, out);
+                };
+                face_scan_service_ = std::make_shared<FaceScanService>(
+                    database_manager_.get(), std::make_unique<VisionFaceDetector>(),
+                    embed_fn, face_opts);
+                int face_interval = config_manager_->getPropertyValue<int>("media.face.sweepIntervalMs", 15000);
+                scheduler_service_->registerJob("faceScan", std::chrono::milliseconds(face_interval), "face_scan",
+                                                [fs = face_scan_service_]()
+                                                { fs->runTick(); });
+                logger.information("Face sweep registered: batch=%d, interval=%d ms, model=%s",
+                                   face_opts.batch, face_interval, embed_model);
+            }
 
             // Ensure in-flight work is aborted when the scheduler is paused
             // (e.g. during integrity checks). ORDERING IS LOAD-BEARING: the

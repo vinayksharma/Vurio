@@ -1,6 +1,9 @@
 # FACE — local facial recognition with natural-language person search
 
-Status: designed 2026-08-23, not started. Depends on nothing new; QP-1's
+Status: designed 2026-08-23. FACE-1 implemented 2026-08-23 on
+`feature/face1_extraction` (schema, Vision detector, alignment, ONNX
+embedder hook, sweep job; live-verified detection+alignment on real
+photos). FACE-2..5 not started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
 Decisions (user, 2026-08-23):
@@ -154,7 +157,9 @@ media.face.sweepBatch         (200)   # files per scheduler tick
 
 ## 7. Phases (each independently PR-able)
 
-1. **FACE-1** schema + Vision detector + ONNX embedder + sweep job.
+1. **FACE-1** schema + Vision detector + ONNX embedder + sweep job. ✅
+   (Deviation: vec_face_index moved to FACE-2 — it has no reader until
+   clustering, and its reconcile can backfill from faces.embedding.)
 2. **FACE-2** incremental clustering + consolidation + constraints.
 3. **FACE-3** People tab + naming/merge/correction RPCs.
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden

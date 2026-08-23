@@ -35,6 +35,16 @@ namespace MediaDedup
                                      int embedding_dim,
                                      std::vector<std::uint8_t> &out_blob);
 
+        // FACE-1: run a face-identity embedder on an aligned 112x112 RGB
+        // crop already preprocessed to NCHW floats ((v-127.5)/128, RGB).
+        // The model must have exactly one float tensor input. out_floats
+        // receives embedding_dim floats, NOT normalized.
+        static bool ComputeFaceEmbedding(const std::vector<float> &nchw,
+                                         const std::string &model_path,
+                                         int embedding_dim,
+                                         std::vector<float> &out_floats,
+                                         std::string *out_reason = nullptr);
+
         // Run the CLIP TEXT encoder on pre-tokenized input (see ClipTokenizer).
         // out_floats receives embedding_dim floats, NOT normalized — callers
         // L2-normalize to match the image embeddings stored via

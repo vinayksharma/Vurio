@@ -32,7 +32,9 @@ before touching code — the line below is an index entry, not a specification.
 
 
 - **FACE-1..5 — local facial recognition + natural-language person search.**
-  *Designed 2026-08-23; not started. Decisions: Apple Vision detection
+  *Designed 2026-08-23; FACE-1 implemented 2026-08-23 (schema, Vision
+  detector, alignment, ONNX embedder hook, background sweep — off by
+  default via media.face.enabled until an embedder model ships). Decisions: Apple Vision detection
   (hybrid with a small ONNX identity embedder — Vision has no public
   identity embedding), cluster-first naming, face_count in v1, trailing
   background sweep (ingest untouched; doubles as the ~145k backfill).*
