@@ -33,6 +33,12 @@ class AllDaysViewModel: ObservableObject {
     private(set) var activeSearchQuery: String = ""
     var isSearchActive: Bool { !activeSearchQuery.isEmpty }
 
+    /// True from the moment a new (debounced) query is applied until its
+    /// first page answers — drives the search field's spinner. The server
+    /// side of a query is not instant (LLM parse + CLIP + day filter), and
+    /// with no feedback an emptied day list reads as "no results".
+    @Published private(set) var isSearching = false
+
     private var searchDebounceTask: Task<Void, Never>?
 
     private func debounceSearch() {
@@ -43,7 +49,11 @@ class AllDaysViewModel: ObservableObject {
             let query = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard query != self.activeSearchQuery else { return }
             self.activeSearchQuery = query
+            self.isSearching = true
             await self.refresh()
+            // A newer query may have superseded this one mid-flight; only
+            // the query that is still active gets to stop the spinner.
+            if self.activeSearchQuery == query { self.isSearching = false }
         }
     }
 
@@ -53,7 +63,11 @@ class AllDaysViewModel: ObservableObject {
         searchText = ""
         guard !activeSearchQuery.isEmpty else { return }
         activeSearchQuery = ""
-        Task { await refresh() }
+        isSearching = true
+        Task {
+            await refresh()
+            if activeSearchQuery.isEmpty { isSearching = false }
+        }
     }
 
     // Days are heavier than duplicate groups (a day can hold hundreds of files),

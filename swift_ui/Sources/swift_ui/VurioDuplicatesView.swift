@@ -373,8 +373,16 @@ struct VurioDuplicatesView: View {
     @ViewBuilder
     private var searchFilterRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(Theme.textSecondary)
+            if allViewModel.isSearching {
+                // In-flight feedback: the query round-trip includes the
+                // server's LLM parse (~1.5 s) — silence here reads as broken.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(Theme.textSecondary)
+            }
             TextField(
                 "Search photos — e.g. \"dog on the beach\"",
                 text: Binding(
