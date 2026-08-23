@@ -70,8 +70,29 @@ namespace MediaDedup
         TextSearchEngine(std::shared_ptr<UnifiedObservableConfigManager> config,
                          DatabaseManager *db);
 
+        /**
+         * @brief Which pipeline answers the query (the VU ai/xf toggles).
+         *
+         * Hybrid is the default algebra (bound facts filter, bare facts
+         * union, CLIP ranks). The exclusive modes RE-RUN the query through
+         * one pipeline — they are not post-filters of the hybrid result,
+         * which for a bound query ("babies taken with x-pro1") is an
+         * intersection whose every match carries both flags:
+         * - SemanticOnly: CLIP over the parsed semantic segments (facts
+         *   stripped; the raw query when nothing semantic was parsed).
+         *   EXIF facts are ignored entirely.
+         * - ExifOnly: the fact algebra alone (bound ∩, bare ∪); a query
+         *   with no parseable facts returns an honest empty result.
+         */
+        enum class Mode
+        {
+            Hybrid,
+            SemanticOnly,
+            ExifOnly
+        };
+
         /// Ranked matches for a query. Never throws; failures land in Result.
-        Result search(const std::string &query);
+        Result search(const std::string &query, Mode mode = Mode::Hybrid);
 
         /// QP-1d test seam: force the LLM structurer path with an injected
         /// completion function (no model file involved). Call before the
@@ -79,7 +100,7 @@ namespace MediaDedup
         void setLlmCompleteFnForTests(LlmQueryStructurer::CompleteFn fn);
 
     private:
-        Result searchUncached(const std::string &query);
+        Result searchUncached(const std::string &query, Mode mode);
         /// QP-1d: LLM structurer -> validator -> StructuredQuery. Returns
         /// false (regex fallback) on: structurer unavailable, completion
         /// error/timeout, or every claimed fact rejected by the validator.
@@ -143,6 +164,7 @@ namespace MediaDedup
         struct CacheEntry
         {
             std::string query;
+            Mode mode = Mode::Hybrid;
             std::vector<Match> matches;
             bool used_semantic = false;
             bool used_exif = false;

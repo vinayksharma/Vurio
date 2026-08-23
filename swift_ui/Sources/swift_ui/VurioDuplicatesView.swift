@@ -409,10 +409,10 @@ struct VurioDuplicatesView: View {
             .foregroundColor(Theme.textPrimary)
             if allViewModel.isSearchActive {
                 searchSourceToggle("ai", isOn: allViewModel.searchIncludeAi,
-                                   help: "Show photos matched by the AI (semantic) half. Alone, only exclusively-AI matches; with xf, everything.")
+                                   help: "AI (semantic) pipeline. Alone, the query runs as a pure visual search of its subject — metadata facts are ignored.")
                     { allViewModel.toggleSearchAi() }
                 searchSourceToggle("xf", isOn: allViewModel.searchIncludeExif,
-                                   help: "Show photos matched by the EXIF (fact) half. Alone, only exclusively-EXIF matches; with ai, everything.")
+                                   help: "EXIF (fact) pipeline. Alone, only the query's metadata facts apply — no visual ranking. Both on = the hybrid default.")
                     { allViewModel.toggleSearchExif() }
             }
             if allViewModel.isSearchActive && allViewModel.searchParseDegraded {

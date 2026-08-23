@@ -403,6 +403,57 @@ TEST_F(ExifSearchE2ETest, LlmPathTimeoutFallsBackToRegex)
     EXPECT_FALSE(r2.parse_degraded);
 }
 
+// The ai/xf toggles select the pipeline, not a post-filter (a bound hybrid
+// result is an intersection where every match has both flags — an
+// "exclusively ai" post-filter of it would always be empty).
+TEST_F(ExifSearchE2ETest, ExifOnlyModeRunsTheFactAlgebraAlone)
+{
+    // Bound camera fact + semantic subject: hybrid would intersect with
+    // CLIP; ExifOnly ignores the semantic part and returns the bound set.
+    auto r = engine_->search("sunset taken with a canon",
+                             TextSearchEngine::Mode::ExifOnly);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+    EXPECT_TRUE(r.used_exif);
+    EXPECT_FALSE(r.used_semantic);
+}
+
+TEST_F(ExifSearchE2ETest, ExifOnlyModeWithNoFactsIsHonestlyEmpty)
+{
+    auto r = engine_->search("sunset over the ocean",
+                             TextSearchEngine::Mode::ExifOnly);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.matches.empty());
+    EXPECT_FALSE(r.used_exif);
+}
+
+TEST_F(ExifSearchE2ETest, ExifOnlyModeIntersectsBareWithBound)
+{
+    // Bare aperture probe + bound camera: xf-only = bare ∪ intersected
+    // with the bound set (the fact algebra sans CLIP).
+    auto r = engine_->search("f/1.4 taken with a sony",
+                             TextSearchEngine::Mode::ExifOnly);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
+}
+
+TEST_F(ExifSearchE2ETest, ModeIsPartOfTheCacheKey)
+{
+    // Same query, different pipelines: the cache must not serve the
+    // hybrid result to an ExifOnly request.
+    auto hybrid = engine_->search("f/1.4");
+    ASSERT_TRUE(hybrid.ok);
+    auto exif_only = engine_->search("f/1.4", TextSearchEngine::Mode::ExifOnly);
+    ASSERT_TRUE(exif_only.ok);
+    EXPECT_EQ(idsOf(exif_only), std::vector<int>{sony_id_});
+    EXPECT_TRUE(exif_only.used_exif);
+    EXPECT_FALSE(exif_only.used_semantic);
+    // SemanticOnly with the CLIP model pinned absent: the semantic half
+    // fails cleanly rather than answering from facts.
+    auto sem_only = engine_->search("f/1.4", TextSearchEngine::Mode::SemanticOnly);
+    EXPECT_FALSE(sem_only.ok);
+}
+
 TEST_F(ExifSearchE2ETest, LlmPathExploreFactUnionsInsideBoundFilter)
 {
     // Mixed intent through the LLM path: bound camera, explore aperture.
