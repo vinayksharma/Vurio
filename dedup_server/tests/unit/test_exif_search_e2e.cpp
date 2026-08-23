@@ -244,6 +244,8 @@ TEST_F(ExifSearchE2ETest, ResultReportsWhichSearchPathsRan)
     ASSERT_EQ(r.matches.size(), 1u);
     EXPECT_TRUE(r.matches[0].via_exif);
     EXPECT_FALSE(r.matches[0].via_semantic);
+    // llm.enabled=false is the chosen baseline, not degradation.
+    EXPECT_FALSE(r.parse_degraded);
 
     // Cache hit must report the same flags (query-level and per-match) as
     // the original evaluation.
@@ -384,6 +386,21 @@ TEST_F(ExifSearchE2ETest, LlmPathTimeoutFallsBackToRegex)
     auto r = engine_->search("photos iso above 1600");
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+    // The fallback answered while the LLM was expected: degradation must
+    // be visible, and a degraded result must not be cached (recovery on
+    // the very next attempt gets the full-quality parse).
+    EXPECT_TRUE(r.parse_degraded);
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "iso", "op": "gt", "values": ["1600"], )"
+                     R"("intent": "filter", "span": "iso above 1600"}], "clip_queries": []})";
+            return c;
+        });
+    auto r2 = engine_->search("photos iso above 1600");
+    ASSERT_TRUE(r2.ok) << r2.error;
+    EXPECT_FALSE(r2.parse_degraded);
 }
 
 TEST_F(ExifSearchE2ETest, LlmPathExploreFactUnionsInsideBoundFilter)
