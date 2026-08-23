@@ -8,6 +8,9 @@
 
 #include "media_processors/text/clip_tokenizer.hpp"
 #include "search/exif_query_parser.hpp"
+#include "search/llm_fact_validator.hpp"
+#include "search/llm_query_structurer.hpp"
+#include "search/llm_runtime.hpp"
 #include "search/location_geocoder.hpp"
 
 namespace MediaDedup
@@ -63,10 +66,22 @@ namespace MediaDedup
         /// Ranked matches for a query. Never throws; failures land in Result.
         Result search(const std::string &query);
 
+        /// QP-1d test seam: force the LLM structurer path with an injected
+        /// completion function (no model file involved). Call before the
+        /// first search.
+        void setLlmCompleteFnForTests(LlmQueryStructurer::CompleteFn fn);
+
     private:
         Result searchUncached(const std::string &query);
+        /// QP-1d: LLM structurer -> validator -> StructuredQuery. Returns
+        /// false (regex fallback) on: structurer unavailable, completion
+        /// error/timeout, or every claimed fact rejected by the validator.
+        bool tryLlmStructure(const std::string &query, StructuredQuery &out);
         /// CLIP KNN over the vec0 index (the pre-EXIF-4 search body).
         Result clipSearch(const std::string &query);
+        /// Union of clipSearch over up to 4 segments: max score per file,
+        /// re-ranked. ok when ANY segment succeeds.
+        Result clipSearchUnion(const std::vector<std::string> &queries);
         /// EXIF-4: select ids matching the parsed constraints from SQL alone.
         Result exifOnlySearch(const ExifQueryConstraints &constraints);
         void ensureTokenizerLoaded();
@@ -97,6 +112,14 @@ namespace MediaDedup
         // reused across searches (parse() is const and thread-safe).
         std::once_flag parser_once_;
         std::unique_ptr<ExifQueryParser> parser_;
+
+        // QP-1d: the LLM structurer path. structurer_/llm_validator_ are
+        // always built (cheap); the runtime only when search.llm.enabled.
+        // A missing model file degrades to the regex parser per query.
+        std::unique_ptr<LlmRuntime> llm_;
+        std::unique_ptr<LlmQueryStructurer> structurer_;
+        std::unique_ptr<LlmFactValidator> llm_validator_;
+        LlmQueryStructurer::CompleteFn test_complete_fn_; // test seam
 
         std::mutex cache_mutex_;
         // MRU-front query cache: repeated page requests for the same active

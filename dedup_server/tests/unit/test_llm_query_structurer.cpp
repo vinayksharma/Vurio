@@ -212,3 +212,82 @@ TEST(LlmQueryStructurerTest, SmokeGeneratedGrammarForcesParseableOutput)
         EXPECT_TRUE(f.intent == "filter" || f.intent == "explore") << f.intent;
     }
 }
+
+// --- Golden content checks (real instruct model) ----------------------------
+// Gated on VURIO_GOLDEN_GGUF — must be a real instruct model (the shipped
+// Qwen2.5-1.5B), NOT the storybook smoke model: these assert CONTENT.
+
+TEST(LlmQueryStructurerTest, GoldenStructuresWorkedExamples)
+{
+    const char *model = std::getenv("VURIO_GOLDEN_GGUF");
+    if (!model || !std::filesystem::exists(model))
+        GTEST_SKIP() << "set VURIO_GOLDEN_GGUF to a real instruct model to run";
+
+    LlmRuntime::Options opts;
+    opts.model_path = model;
+    opts.context_tokens = 4096;
+    opts.max_output_tokens = 512;
+    opts.timeout_ms = 60000;
+    LlmRuntime llm(opts);
+    ASSERT_TRUE(llm.available());
+
+    auto st = makeStructurer();
+
+    // Bound camera + semantic subject.
+    {
+        auto out = st.structure("sunset taken with a canon", llm);
+        ASSERT_TRUE(out.ok) << out.error;
+        ASSERT_EQ(out.facts.size(), 1u);
+        EXPECT_EQ(out.facts[0].dim, "camera");
+        EXPECT_EQ(out.facts[0].values, std::vector<std::string>{"canon"});
+        EXPECT_EQ(out.facts[0].intent, "filter");
+        ASSERT_EQ(out.clip_queries.size(), 1u);
+        EXPECT_EQ(out.clip_queries[0], "sunset");
+    }
+
+    // The full difficult query: three bound facts, no semantic text.
+    {
+        auto out = st.structure(
+            "f2.5 to f12 but taken with fuji or canon between 2005 and 2015", llm);
+        ASSERT_TRUE(out.ok) << out.error;
+        ASSERT_EQ(out.facts.size(), 3u);
+        EXPECT_EQ(out.facts[0].dim, "aperture");
+        EXPECT_EQ(out.facts[0].op, "range");
+        EXPECT_EQ(out.facts[0].values, (std::vector<std::string>{"2.5", "12"}));
+        EXPECT_EQ(out.facts[1].dim, "camera");
+        EXPECT_EQ(out.facts[1].values, (std::vector<std::string>{"fuji", "canon"}));
+        EXPECT_EQ(out.facts[2].dim, "date");
+        EXPECT_EQ(out.facts[2].op, "range");
+        EXPECT_EQ(out.facts[2].values, (std::vector<std::string>{"2005", "2015"}));
+        for (const auto &f : out.facts)
+            EXPECT_EQ(f.intent, "filter") << f.dim;
+        EXPECT_TRUE(out.clip_queries.empty());
+    }
+
+    // Loose keyword list: explore intent, semantics kept.
+    {
+        auto out = st.structure("raw, sunset, fuji", llm);
+        ASSERT_TRUE(out.ok) << out.error;
+        bool saw_raw = false, saw_fuji = false;
+        for (const auto &f : out.facts)
+        {
+            if (f.dim == "file_type")
+            {
+                saw_raw = true;
+                EXPECT_EQ(f.intent, "explore");
+            }
+            if (f.dim == "camera")
+            {
+                saw_fuji = true;
+                EXPECT_EQ(f.intent, "explore");
+            }
+        }
+        EXPECT_TRUE(saw_raw);
+        EXPECT_TRUE(saw_fuji);
+        bool clip_has_sunset = false;
+        for (const auto &q : out.clip_queries)
+            if (q.find("sunset") != std::string::npos)
+                clip_has_sunset = true;
+        EXPECT_TRUE(clip_has_sunset);
+    }
+}
