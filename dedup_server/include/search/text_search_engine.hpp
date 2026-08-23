@@ -98,7 +98,11 @@ namespace MediaDedup
         int knn_k_ = 300;
         double min_score_ = 0.2;
         // EXIF-4: cap for constraint-only queries (no KNN k to bound them).
-        int exif_only_limit_ = 1000;
+        // An exact fact match ("x-pro1") legitimately hits tens of
+        // thousands of files; 1000 silently amputated whole eras from the
+        // day view (measured: 26.5k inline ids = 186 KB SQL, 33 ms — the
+        // id-list plumbing is nowhere near its limits).
+        int exif_only_limit_ = 50000;
         std::string locations_path_;
         std::string keywords_path_; // EXIF-6: JSON keyword vocabulary
 
