@@ -31,6 +31,20 @@ before touching code — the line below is an index entry, not a specification.
   **Full specification: [todo_llm_query_structurer.md](todo_llm_query_structurer.md)**
 
 
+- **FACE-1..5 — local facial recognition + natural-language person search.**
+  *Designed 2026-08-23; not started. Decisions: Apple Vision detection
+  (hybrid with a small ONNX identity embedder — Vision has no public
+  identity embedding), cluster-first naming, face_count in v1, trailing
+  background sweep (ingest untouched; doubles as the ~145k backfill).*
+  Faces detected/aligned by Vision, embedded to 512-D identity vectors,
+  clustered incrementally (user constraints win), named in a new VU
+  People tab. Search rides QP-1's registry: `person` and `face_count`
+  dimensions, names resolved by the validator (location playbook — the
+  KV-cached prompt never changes as people are named), unresolved names
+  demote to CLIP. Algebra, toggles, badges, degraded indicator all apply
+  unchanged.
+  **Full specification: [todo_face_recognition.md](todo_face_recognition.md)**
+
 - **RAW-EXIF — RAW files get the full EXIF field set.**
   *Implemented 2026-08-23 on `feature/raw_exif_fields`. Live-verified against
   real DNGs (iPhone X, Fujifilm X-Pro1: ISO/aperture/shutter/focal/lens/GPS
