@@ -275,15 +275,17 @@ public:
             MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
     }
 
-    // The ai/xf toggle predicate: single-select is EXCLUSIVE (only-ai
-    // keeps files the semantic half matched and the EXIF half did not),
-    // both-selected is OR — the whole result set. Both-off arrives only
-    // from older clients and means "no filter".
-    static bool keepMatchForToggles(bool via_ai, bool via_exif,
-                                    bool include_ai, bool include_exif) {
+    // The ai/xf toggles select the PIPELINE the query runs through, not a
+    // post-filter: only-ai re-runs the query as pure CLIP over its parsed
+    // semantic part; only-xf as the fact algebra alone. (A bound hybrid
+    // result is an intersection whose every match carries both flags, so a
+    // post-filter was vacuous there.) Both selected — or both false, from
+    // an older client — is the default hybrid.
+    static MediaDedup::TextSearchEngine::Mode toggleMode(bool include_ai, bool include_exif) {
         if (include_ai == include_exif)
-            return true;
-        return include_ai ? (via_ai && !via_exif) : (via_exif && !via_ai);
+            return MediaDedup::TextSearchEngine::Mode::Hybrid;
+        return include_ai ? MediaDedup::TextSearchEngine::Mode::SemanticOnly
+                          : MediaDedup::TextSearchEngine::Mode::ExifOnly;
     }
 
     // Resolve the request's semantic search filter (if any) into scanned_files
@@ -305,7 +307,7 @@ public:
             status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "Text search unavailable");
             return false;
         }
-        auto search = search_engine_->search(query);
+        auto search = search_engine_->search(query, toggleMode(include_ai, include_exif));
         if (!search.ok) {
             status = grpc::Status(grpc::StatusCode::UNAVAILABLE,
                                   "Text search failed: " + search.error);
@@ -317,8 +319,6 @@ public:
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
         for (const auto& m : search.matches) {
-            if (!keepMatchForToggles(m.via_semantic, m.via_exif, include_ai, include_exif))
-                continue;
             ids_storage.push_back(m.file_id);
             if (match_flags) (*match_flags)[m.file_id] = {m.via_semantic, m.via_exif};
         }

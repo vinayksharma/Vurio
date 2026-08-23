@@ -219,7 +219,7 @@ namespace MediaDedup
         return true;
     }
 
-    TextSearchEngine::Result TextSearchEngine::search(const std::string &query)
+    TextSearchEngine::Result TextSearchEngine::search(const std::string &query, Mode mode)
     {
         Result result;
         const std::string key = trimmed(query);
@@ -233,7 +233,7 @@ namespace MediaDedup
             std::lock_guard<std::mutex> lock(cache_mutex_);
             for (auto it = cache_.begin(); it != cache_.end(); ++it)
             {
-                if (it->query == key)
+                if (it->query == key && it->mode == mode)
                 {
                     cache_.splice(cache_.begin(), cache_, it); // MRU refresh
                     result.ok = true;
@@ -245,21 +245,21 @@ namespace MediaDedup
             }
         }
 
-        result = searchUncached(key);
+        result = searchUncached(key, mode);
         // A degraded parse is never cached: the moment the LLM recovers,
         // re-running the same query gets the full-quality parse instead of
         // a stale simplified one.
         if (result.ok && !result.parse_degraded)
         {
             std::lock_guard<std::mutex> lock(cache_mutex_);
-            cache_.push_front({key, result.matches, result.used_semantic, result.used_exif});
+            cache_.push_front({key, mode, result.matches, result.used_semantic, result.used_exif});
             while (cache_.size() > kCacheCapacity)
                 cache_.pop_back();
         }
         return result;
     }
 
-    TextSearchEngine::Result TextSearchEngine::searchUncached(const std::string &query)
+    TextSearchEngine::Result TextSearchEngine::searchUncached(const std::string &query, Mode mode)
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
 
@@ -283,6 +283,64 @@ namespace MediaDedup
         const bool has_bound = sq.hasBound();
         const bool has_bare = sq.hasBare();
         const bool has_semantic = sq.hasSemantic();
+
+        // Exclusive pipelines (VU ai/xf toggles): the SAME parse, executed
+        // through one half only. Not post-filters — a bound hybrid query is
+        // an intersection whose every match carries both flags, so an
+        // "exclusively ai" filter of it would be vacuously empty.
+        if (mode == Mode::SemanticOnly)
+        {
+            Result r = clipSearchUnion(nullptr, has_semantic ? sq.clip_queries
+                                                             : std::vector<std::string>{query});
+            r.used_semantic = r.ok;
+            r.parse_degraded = parse_degraded;
+            return r;
+        }
+        if (mode == Mode::ExifOnly)
+        {
+            Result r;
+            if (!has_bound && !has_bare)
+            {
+                // No parseable facts: an honest empty result — the query has
+                // no metadata component for this pipeline to act on.
+                r.ok = true;
+                r.parse_degraded = parse_degraded;
+                return r;
+            }
+            if (has_bound && !has_bare)
+                r = exifOnlySearch(sq.bound);
+            else
+            {
+                // Bare facts union; a bound set (if any) intersects them.
+                std::unordered_set<int> bound_ids;
+                if (has_bound)
+                {
+                    Result base = exifOnlySearch(sq.bound);
+                    if (!base.ok)
+                    {
+                        base.parse_degraded = parse_degraded;
+                        return base;
+                    }
+                    for (const auto &m : base.matches)
+                        bound_ids.insert(m.file_id);
+                }
+                r.ok = true;
+                std::unordered_set<int> emitted_ids;
+                for (const auto &b : sq.bare)
+                {
+                    Result br = exifOnlySearch(b);
+                    if (!br.ok)
+                        continue;
+                    for (const auto &m : br.matches)
+                        if ((!has_bound || bound_ids.count(m.file_id)) &&
+                            emitted_ids.insert(m.file_id).second)
+                            r.matches.push_back(m);
+                }
+            }
+            r.used_exif = r.ok;
+            r.parse_degraded = parse_degraded;
+            return r;
+        }
 
         // Case 1: no facts at all — pure CLIP ranking (over the LLM's
         // semantic segments when it produced them, else the raw query).
