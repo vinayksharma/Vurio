@@ -297,23 +297,38 @@ namespace MediaDedup
                 logger.information("Resuming scheduler service...");
                 scheduler->resume();
 
-                // Phase 6: Backfill missing thumbnails/previews. A scan-time
-                // thumbnail failure is non-critical (the file stays processed=2)
-                // and was never revisited, leaving silent gaps that only healed
-                // if the user happened to view the file. The real work lives in
-                // MediaBackfill (server-only TU) behind a hook, so test binaries
-                // compiling this file don't drag in the media-generation stack.
-                if (tpm) {
+                // Phase 6: RAW EXIF refresh. Rows written by the pre-fix
+                // LibRaw reader lack the searchable EXIF columns (ISO,
+                // aperture, shutter, GPS, ...); the sweep refills them with
+                // metadata-only reads — no decode, no thumbnails. The real
+                // work lives in MediaBackfill (server-only TU) behind a
+                // hook, so test binaries compiling this file don't drag in
+                // LibRaw/ImageMagick. (The former thumbnail/preview
+                // backfill is gone: those are generated on demand by
+                // design, and pre-generating them here fought that design.)
+                //
+                // The sweep reports its own file counts through the
+                // progress callback so the dialog shows the sweep's real
+                // position, not the stale numbers of an earlier phase.
+                {
                     {
                         std::lock_guard<std::mutex> lock(state_mutex_);
-                        state_.current_phase = "Backfilling missing thumbnails/previews...";
+                        state_.current_phase = "Refreshing RAW photo metadata...";
+                        state_.total_files = 0;
+                        state_.processed_files = 0;
                     }
-                    MediaBackfillHook::run(db, cfg, tpm);
+                    MediaBackfillHook::run(db, [](std::size_t done, std::size_t total) {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        state_.total_files = total;
+                        state_.processed_files = done;
+                        state_.progress = total ? static_cast<int>((done * 100) / total) : 100;
+                    });
                 }
 
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
                     state_.current_phase = "Complete";
+                    state_.progress = 100;
                     state_.is_running = false;
                 }
 

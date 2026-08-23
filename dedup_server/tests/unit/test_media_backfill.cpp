@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "core/media_backfill.hpp"
 #include "database/database_manager.hpp"
@@ -131,6 +133,24 @@ namespace MediaDedup
             EXPECT_EQ(stats.unreadable, 1);
             EXPECT_EQ(stats.updated, 0);
             std::remove(garbage.c_str());
+        }
+
+        TEST_F(MediaBackfillRawExifTest, ProgressReportsSweepPosition)
+        {
+            insertOldReaderRow("/nowhere/one.NEF");
+            insertOldReaderRow("/nowhere/two.NEF");
+
+            std::vector<std::pair<std::size_t, std::size_t>> ticks;
+            auto stats = MediaBackfill::backfillRawExif(
+                *db_, Poco::Logger::get("MediaBackfillTest"),
+                [&](std::size_t done, std::size_t total) {
+                    ticks.emplace_back(done, total);
+                });
+
+            EXPECT_EQ(stats.candidates, 2u);
+            ASSERT_GE(ticks.size(), 2u);
+            EXPECT_EQ(ticks.front(), (std::pair<std::size_t, std::size_t>{0u, 2u}));
+            EXPECT_EQ(ticks.back(), (std::pair<std::size_t, std::size_t>{2u, 2u}));
         }
     }
 }

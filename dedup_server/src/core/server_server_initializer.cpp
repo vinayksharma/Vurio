@@ -228,10 +228,8 @@ namespace MediaDedup
                     logger.information("Purged %z size=0 full-resolution thumbnail(s)", poisoned.size());
             }
 
-            // MP-2: register the backfill with the REAL cache instances — the
-            // previous hook built a second DiskCache pair over the same
-            // directories (split-brain accounting, void in-use protection).
-            MediaBackfill::installHook(thumbnail_disk_cache_, transcoding_disk_cache_);
+            // RAW-EXIF: register the integrity check's metadata sweep.
+            MediaBackfill::installHook();
 
             // Ensure ejected_files_history database table exists
             if (!EjectedFilesOps::ensureTable(*database_manager_))

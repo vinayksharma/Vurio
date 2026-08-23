@@ -12,65 +12,59 @@ namespace Poco
 namespace MediaDedup
 {
     class DatabaseManager;
-    class UnifiedObservableConfigManager;
-    class ThreadPoolManager;
 
     /**
-     * @brief Seam between the database integrity check and the
-     * thumbnail/preview backfill.
+     * @brief Seam between the database integrity check and the RAW EXIF
+     * backfill sweep.
      *
-     * The backfill needs the whole media-generation stack (ThumbnailHandler,
-     * TranscodingPipeline, DiskCache, ImageMagick/LibRaw); linking that into
-     * every test binary that compiles web_handlers_duplicates.cpp is not
-     * acceptable. The integrity check therefore calls through this hook, and
-     * the real implementation (media_backfill.cpp, linked only into the
-     * server) registers itself at startup. Unregistered (tests) → no-op.
+     * The sweep needs ExifReader (LibRaw/ImageMagick); linking that into
+     * every test binary that compiles integrity_check_service.cpp is not
+     * acceptable. The integrity check therefore calls through this hook,
+     * and the real implementation (media_backfill.cpp, linked only into
+     * the server) registers itself at startup. Unregistered (tests) →
+     * no-op.
+     *
+     * The former thumbnail/preview backfill is gone: thumbnails and
+     * previews are generated on demand by design, and pre-generating
+     * them here fought that design (it also never ran — see the
+     * unexecuted-statement fix — so removing it restores the actual
+     * long-standing behavior).
      */
     class MediaBackfillHook
     {
     public:
-        using Fn = std::function<void(std::shared_ptr<DatabaseManager>,
-                                      std::shared_ptr<UnifiedObservableConfigManager>,
-                                      std::shared_ptr<ThreadPoolManager>)>;
+        /// Called by the sweep as it progresses: (files done, files total).
+        using ProgressFn = std::function<void(std::size_t, std::size_t)>;
+
+        using Fn = std::function<void(std::shared_ptr<DatabaseManager>, ProgressFn)>;
 
         static void install(Fn fn);
 
         /// Runs the installed backfill; silently does nothing when none is installed.
-        static void run(std::shared_ptr<DatabaseManager> db,
-                        std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                        std::shared_ptr<ThreadPoolManager> tpm);
+        static void run(std::shared_ptr<DatabaseManager> db, ProgressFn progress);
     };
 
-    class DiskCache;
-
     /**
-     * @brief The real backfill: enqueues regeneration for processed files
-     * missing a thumbnail_cache row or a needed preview. Linked into the
-     * server binary only; installed onto MediaBackfillHook at startup.
-     *
-     * MP-2: installHook captures the initializer's REAL DiskCache instances —
-     * the backfill previously constructed a second pair over the same
-     * directories (split-brain size accounting, void in-use protection).
+     * @brief The real backfill, linked into the server binary only and
+     * installed onto MediaBackfillHook at startup.
      */
     class MediaBackfill
     {
     public:
-        static void installHook(std::shared_ptr<DiskCache> thumbnail_cache,
-                                std::shared_ptr<DiskCache> transcoding_cache);
-
-        static void run(std::shared_ptr<DatabaseManager> db,
-                        std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                        std::shared_ptr<ThreadPoolManager> tpm,
-                        std::shared_ptr<DiskCache> thumbnail_cache,
-                        std::shared_ptr<DiskCache> transcoding_cache);
+        static void installHook();
 
         /**
-         * @brief RAW-EXIF: one-shot sweep refilling the rich EXIF columns
-         * for RAW rows written by the pre-fix LibRaw reader (which captured
-         * only camera/datetime/dimensions). Selector: RAW extension with
+         * @brief RAW-EXIF: sweep refilling the rich EXIF columns for RAW
+         * rows written by the pre-fix LibRaw reader (which captured only
+         * camera/datetime/dimensions). Selector: RAW extension with
          * exif_camera set but exif_make NULL — a successful re-read fills
          * exif_make, so the sweep converges. Runs inline (LibRaw
-         * metadata-only opens, no demosaic) on the integrity-check thread.
+         * metadata-only opens, no demosaic) on the integrity-check thread,
+         * reporting progress so the UI can show it.
+         *
+         * Cloud-evicted (dataless) files are counted as offline, never
+         * read — a metadata sweep must not trigger a mass re-download of
+         * an evicted OneDrive/iCloud library.
          *
          * Returns the sweep's counts so tests can observe the selector —
          * the original implementation never executed its Poco statement,
@@ -83,7 +77,9 @@ namespace MediaDedup
             int offline = 0;
             int unreadable = 0;
         };
-        static RawExifBackfillStats backfillRawExif(DatabaseManager &db, Poco::Logger &logger);
+        static RawExifBackfillStats backfillRawExif(
+            DatabaseManager &db, Poco::Logger &logger,
+            const MediaBackfillHook::ProgressFn &progress = {});
     };
 
 } // namespace MediaDedup
