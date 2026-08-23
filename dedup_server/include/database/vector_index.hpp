@@ -83,10 +83,20 @@ namespace MediaDedup
         /**
          * K-nearest neighbors using cosine distance.
          * @return Pairs (file_id, distance) ordered by distance ascending (smaller = more similar).
+         *
+         * `scope`: optional id filter — distances are computed ONLY over
+         * these file_ids (sqlite-vec KNN pre-filter via a bound json_each
+         * subquery). Ranking inside a bound EXIF filter, instead of
+         * global-top-K-then-intersect, is what lets "babies taken with
+         * x-pro1" rank all 26k X-Pro1 photos rather than keeping the few
+         * that survived the global top-300. k is clamped to sqlite-vec's
+         * KNN limit (4096) and to the scope size.
          */
+        static constexpr int kMaxKnnK = 4096; // sqlite-vec hard limit on k
         std::vector<std::pair<int, double>> queryKnn(const void *embedding_data,
                                                      std::size_t size_bytes,
-                                                     int k);
+                                                     int k,
+                                                     const std::vector<int> *scope = nullptr);
 
         void close();
 

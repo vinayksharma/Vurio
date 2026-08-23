@@ -85,10 +85,12 @@ namespace MediaDedup
         /// error/timeout, or every claimed fact rejected by the validator.
         bool tryLlmStructure(const std::string &query, StructuredQuery &out);
         /// CLIP KNN over the vec0 index (the pre-EXIF-4 search body).
-        Result clipSearch(const std::string &query);
+        Result clipSearch(const std::string &query,
+                          const std::vector<int> *scope_ids = nullptr);
         /// Union of clipSearch over up to 4 segments: max score per file,
         /// re-ranked. ok when ANY segment succeeds.
-        Result clipSearchUnion(const std::vector<std::string> &queries);
+        Result clipSearchUnion(const std::vector<int> *scope_ids,
+                               const std::vector<std::string> &queries);
         /// EXIF-4: select ids matching the parsed constraints from SQL alone.
         Result exifOnlySearch(const ExifQueryConstraints &constraints);
         void ensureTokenizerLoaded();
