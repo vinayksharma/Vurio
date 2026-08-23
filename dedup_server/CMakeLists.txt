@@ -290,6 +290,8 @@ add_executable(media_dedup_server
     src/search/exif_query_parser.cpp
     src/search/exif_keyword_config.cpp
     src/search/llm_runtime.cpp
+    src/search/query_fact_schema.cpp
+    src/search/llm_query_structurer.cpp
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp

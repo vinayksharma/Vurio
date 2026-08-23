@@ -10,7 +10,20 @@ grammar — refused instead), deadline abort, KV prefix reuse, chat template
 from GGUF metadata with ChatML fallback, `search.llm.*` config keys.
 Hermetic tests plus model-gated smokes (VURIO_TEST_GGUF; verified against
 llama.cpp's CI stories260K model: constrained decode, determinism, timeout,
-recovery). QP-1c–e (registry/prompt, validator, golden tests) not started. Supersedes the §4 regex-grammar
+recovery). **QP-1c implemented 2026-08-23** on `feature/qp1c_structurer_schema`:
+`QueryFactSchema` (include/search/query_fact_schema.hpp) is the dimension
+registry — 9 dimensions (camera, iso, aperture, shutter, focal, flash,
+date, location, file_type; person reserved for QP-2), hints drawn from the
+keyword JSON (which gained a `file_types` map, kept sorted). The registry
+GENERATES the system-prompt schema section and the GBNF grammar; every
+grammar repetition is bounded ({m,n}) so constrained decodes always
+terminate. `LlmQueryStructurer` owns the byte-stable system prompt
+(rules + schema + 9 few-shot examples from the worked-example set) and
+parses the grammar-guaranteed JSON into RawOutput via an injected
+completion function (hermetic tests) or LlmRuntime. A model-gated smoke
+proves the generated grammar forces even a storybook model to emit
+contract-conforming JSON. QP-1d–e (validator/grounding, fallback ladder,
+engine wiring, golden tests) not started. Supersedes the §4 regex-grammar
 expansion of [todo_exif_query_intent.md](todo_exif_query_intent.md) (EXIF-7);
 EXIF-7's result algebra (§3), badges, and user decisions remain the target
 semantics and move unchanged into this plan's engine phase.

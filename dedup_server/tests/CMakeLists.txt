@@ -82,6 +82,7 @@ set(UNIT_TEST_SOURCES
     unit/test_exif_keyword_config.cpp
     unit/test_exif_search_e2e.cpp
     unit/test_llm_runtime.cpp
+    unit/test_llm_query_structurer.cpp
     unit/test_display_geometry.cpp
     unit/test_duplicate_members_geometry.cpp
     unit/test_thumbnail_cache_ops.cpp
@@ -297,6 +298,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_exif_keyword_config")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ExifKeywordConfig*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_llm_query_structurer")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="QueryFactSchemaTest*:LlmQueryStructurerTest*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -665,6 +673,8 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/search/exif_query_parser.cpp
         ${CMAKE_SOURCE_DIR}/src/search/exif_keyword_config.cpp
         ${CMAKE_SOURCE_DIR}/src/search/llm_runtime.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/query_fact_schema.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/llm_query_structurer.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -810,6 +820,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_exif_query_parser" AND
       NOT ${test_name} STREQUAL "test_exif_keyword_config" AND
       NOT ${test_name} STREQUAL "test_llm_runtime" AND
+      NOT ${test_name} STREQUAL "test_llm_query_structurer" AND
       NOT ${test_name} STREQUAL "test_exif_search_e2e" AND
       NOT ${test_name} STREQUAL "test_display_geometry" AND
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
