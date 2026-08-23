@@ -121,7 +121,7 @@ namespace MediaDedup
             if (!llm_->available())
                 return;
             auto r = structurer_->structure("warmup", *llm_);
-            if (r.ok || r.error != "timeout")
+            if (r.ok || (r.error != "timeout" && r.error != "stalled"))
             {
                 Poco::Logger::get("TextSearchEngine")
                     .information("LLM structurer warmed up (%s)",
