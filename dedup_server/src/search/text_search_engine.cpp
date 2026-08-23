@@ -369,10 +369,13 @@ namespace MediaDedup
             }
         }
 
-        // Total cap after merging; CLIP-ranked entries were emitted first,
-        // so ranked results survive truncation. Never trim silently — a
-        // capped result reads as "that's everything" in the UI.
-        if (out.matches.size() > static_cast<std::size_t>(exif_only_limit_))
+        // Optional safety valve (search.exifOnlyLimit > 0). Uncapped by
+        // default: matched ids travel to the day view as one bound JSON
+        // parameter, so a full-library match is a few MB of memory and
+        // nothing more. Never trim silently — a capped result reads as
+        // "that's everything" in the UI.
+        if (exif_only_limit_ > 0 &&
+            out.matches.size() > static_cast<std::size_t>(exif_only_limit_))
         {
             logger.information(
                 "Result cap: trimmed %z of %z matches (search.exifOnlyLimit=%d)",
@@ -590,7 +593,8 @@ namespace MediaDedup
             auto lease = db_->acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             std::vector<int> ids;
-            int limit = exif_only_limit_;
+            // SQLite: LIMIT -1 means unlimited (the default).
+            int limit = exif_only_limit_ > 0 ? exif_only_limit_ : -1;
             Poco::Data::Statement stmt(sess);
             stmt << "SELECT id FROM scanned_files WHERE 1=1" + where +
                         " ORDER BY exif_datetime DESC LIMIT ?",
