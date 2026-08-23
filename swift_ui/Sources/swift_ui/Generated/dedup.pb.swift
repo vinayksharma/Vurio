@@ -467,6 +467,14 @@ struct Vurio_Dedup_DayFile: Sendable {
 
   var displayHeight: Int32 = 0
 
+  /// How the active search_query admitted THIS file (both false when no
+  /// search is active): matched_ai = CLIP ranked it for the semantic text;
+  /// matched_exif = it satisfied the parsed EXIF constraints. Results are a
+  /// union of both halves, so any combination can appear.
+  var matchedAi: Bool = false
+
+  var matchedExif: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -500,9 +508,10 @@ struct Vurio_Dedup_GetDayGroupsResponse: Sendable {
 
   var totalDays: Int32 = 0
 
-  /// How the active search_query was evaluated (both false when no query):
-  /// search_used_ai = CLIP semantic ranking ran on (part of) the text;
-  /// search_used_exif = parsed EXIF constraints filtered the rows.
+  /// Which halves of the hybrid search RAN for the active query (both false
+  /// when no query): search_used_ai = the CLIP semantic half succeeded;
+  /// search_used_exif = EXIF constraints were parsed and evaluated. Per-file
+  /// attribution lives on DayFile.matched_ai / matched_exif.
   var searchUsedAi: Bool = false
 
   var searchUsedExif: Bool = false
@@ -1836,7 +1845,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DayFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1856,6 +1865,8 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
       case 10: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
       case 11: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
       case 12: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
+      case 13: try { try decoder.decodeSingularBoolField(value: &self.matchedAi) }()
+      case 14: try { try decoder.decodeSingularBoolField(value: &self.matchedExif) }()
       default: break
       }
     }
@@ -1898,6 +1909,12 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if self.displayHeight != 0 {
       try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 12)
     }
+    if self.matchedAi != false {
+      try visitor.visitSingularBoolField(value: self.matchedAi, fieldNumber: 13)
+    }
+    if self.matchedExif != false {
+      try visitor.visitSingularBoolField(value: self.matchedExif, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1914,6 +1931,8 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if lhs.similarityScore != rhs.similarityScore {return false}
     if lhs.displayWidth != rhs.displayWidth {return false}
     if lhs.displayHeight != rhs.displayHeight {return false}
+    if lhs.matchedAi != rhs.matchedAi {return false}
+    if lhs.matchedExif != rhs.matchedExif {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

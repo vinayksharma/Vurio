@@ -9,9 +9,10 @@
 
 using namespace MediaDedup;
 
-// EXIF-5: end-to-end over the real search entry point. These queries carry
-// EXIF constraints and only filler text, so TextSearchEngine takes the
-// SQL-only path — no CLIP model needed, which keeps this suite hermetic.
+// EXIF-5: end-to-end over the real search entry point. Constrained queries
+// now run BOTH hybrid halves and union them, so the fixture points the CLIP
+// model at a nonexistent path — the semantic half fails fast and cleanly,
+// which keeps this suite hermetic and the expected id sets exact.
 class ExifSearchE2ETest : public ::testing::Test
 {
 protected:
@@ -30,6 +31,11 @@ protected:
                          "geodata" / "world_locations.geojson";
         config_->createProperty<std::string>("search.locationsPath", gazetteer.string(),
                                              "test gazetteer");
+        // Hermetic: the semantic half must never contribute matches here,
+        // even on a dev machine that has the real model checked out.
+        config_->createProperty<std::string>("media.image.onnx.textModelPath",
+                                             "/nonexistent/clip-text.onnx",
+                                             "disable CLIP for hermetic tests");
 
         // Library fixture: three photos with distinct EXIF signatures.
         canon_id_ = insert("/lib/canon_yellowstone.jpg", [](ExifInfo &e) {
@@ -192,15 +198,17 @@ TEST_F(ExifSearchE2ETest, CombinedConstraints)
     EXPECT_TRUE(r.matches.empty());
 }
 
-TEST_F(ExifSearchE2ETest, SemanticQueryWithConstraintsFailsGracefullyWithoutModels)
+TEST_F(ExifSearchE2ETest, SemanticHalfDownStillReturnsExifMatches)
 {
-    // "sunset" survives as semantic text, so this path needs the CLIP
-    // tokenizer/model. In this hermetic fixture those may be absent — the
-    // engine must return a clean error or a result, never crash.
+    // "sunset" survives as semantic text, but the CLIP model is absent in
+    // this fixture. The union must degrade to the EXIF half alone instead of
+    // erroring out — the constraints are still perfectly answerable.
     TextSearchEngine::Result r;
     EXPECT_NO_THROW(r = engine_->search("sunset photos taken with a canon"));
-    if (!r.ok)
-        EXPECT_FALSE(r.error.empty());
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+    EXPECT_FALSE(r.used_semantic);
+    EXPECT_TRUE(r.used_exif);
 }
 
 TEST_F(ExifSearchE2ETest, ExifOnlyResultsAreCappedAndScored)
@@ -214,25 +222,23 @@ TEST_F(ExifSearchE2ETest, ExifOnlyResultsAreCappedAndScored)
 
 TEST_F(ExifSearchE2ETest, ResultReportsWhichSearchPathsRan)
 {
-    // Pure metadata query: EXIF only, no CLIP.
+    // Metadata query with the semantic half down: only the EXIF half ran,
+    // and each match is attributed to it.
     auto r = engine_->search("photos taken with a canon");
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_FALSE(r.used_semantic);
     EXPECT_TRUE(r.used_exif);
+    ASSERT_EQ(r.matches.size(), 1u);
+    EXPECT_TRUE(r.matches[0].via_exif);
+    EXPECT_FALSE(r.matches[0].via_semantic);
 
-    // Cache hit must report the same flags as the original evaluation.
+    // Cache hit must report the same flags (query-level and per-match) as
+    // the original evaluation.
     r = engine_->search("photos taken with a canon");
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_FALSE(r.used_semantic);
     EXPECT_TRUE(r.used_exif);
-
-    // Mixed query: both paths engage. This needs the CLIP model for the
-    // semantic half; in a model-less environment it errors, but the flags
-    // are set either way only on success — so only assert when ok.
-    r = engine_->search("sunset photos taken with a canon");
-    if (r.ok)
-    {
-        EXPECT_TRUE(r.used_semantic);
-        EXPECT_TRUE(r.used_exif);
-    }
+    ASSERT_EQ(r.matches.size(), 1u);
+    EXPECT_TRUE(r.matches[0].via_exif);
+    EXPECT_FALSE(r.matches[0].via_semantic);
 }

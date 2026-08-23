@@ -233,6 +233,12 @@ message DayFile {
   double similarity_score = 10;
   int32 display_width = 11;  // THUMB-1, see DuplicateFile
   int32 display_height = 12;
+  // How the active search_query admitted THIS file (both false when no
+  // search is active): matched_ai = CLIP ranked it for the semantic text;
+  // matched_exif = it satisfied the parsed EXIF constraints. Results are a
+  // union of both halves, so any combination can appear.
+  bool matched_ai = 13;
+  bool matched_exif = 14;
 }
 
 message DayGroup {
@@ -245,9 +251,10 @@ message DayGroup {
 message GetDayGroupsResponse {
   repeated DayGroup days = 1;
   int32 total_days = 2;
-  // How the active search_query was evaluated (both false when no query):
-  // search_used_ai = CLIP semantic ranking ran on (part of) the text;
-  // search_used_exif = parsed EXIF constraints filtered the rows.
+  // Which halves of the hybrid search RAN for the active query (both false
+  // when no query): search_used_ai = the CLIP semantic half succeeded;
+  // search_used_exif = EXIF constraints were parsed and evaluated. Per-file
+  // attribution lives on DayFile.matched_ai / matched_exif.
   bool search_used_ai = 3;
   bool search_used_exif = 4;
 }
