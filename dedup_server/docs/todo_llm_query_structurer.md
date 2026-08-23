@@ -40,8 +40,19 @@ The e2e fixture pins `search.llm.enabled=false` (a real GGUF now lives in
 models/). Golden tests (VURIO_GOLDEN_GGUF → the shipped Qwen2.5-1.5B
 q4_k_m, downloaded 2026-08-23): the three worked examples structure
 exactly as specified, and the full engine pipeline answers "raw files
-from 2019" — a query the regex parser cannot express. QP-1e remaining:
-broader golden matrix, docs polish, rollout. Supersedes the §4 regex-grammar
+from 2019" — a query the regex parser cannot express. **QP-1e completed
+2026-08-23**: 8-query acceptance matrix (GoldenMatrixTest) over the real
+model asserting the VALIDATED StructuredQuery — every EXIF-7 §11
+acceptance item passes, including the reversed range and both difficult
+queries. Model tuning that came out of it: two few-shot examples
+(month+year as one value + flash; focal-with-unit + location-vs-date
+disambiguation) and three deterministic validator normalizations (unit
+stripping "85mm"/"f/2.8"/"1/500s"; split month/year values recombined;
+bare-year value refined to a month range when the grounded span names a
+month). ~1.5 s/query after a one-time ~2 s model load; hermetic suite
+never touches the model. **QP-1 is complete** — remaining is live
+verification (restart server, search VU) and QP-2 (person dimension,
+once the face DB exists). Supersedes the §4 regex-grammar
 expansion of [todo_exif_query_intent.md](todo_exif_query_intent.md) (EXIF-7);
 EXIF-7's result algebra (§3), badges, and user decisions remain the target
 semantics and move unchanged into this plan's engine phase.

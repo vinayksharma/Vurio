@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include "search/exif_keyword_config.hpp"
+#include "search/llm_fact_validator.hpp"
 #include "search/llm_query_structurer.hpp"
 #include "search/llm_runtime.hpp"
 #include "search/query_fact_schema.hpp"
@@ -291,3 +293,155 @@ TEST(LlmQueryStructurerTest, GoldenStructuresWorkedExamples)
         EXPECT_TRUE(clip_has_sunset);
     }
 }
+
+// --- QP-1e: acceptance matrix (EXIF-7 §11) over the REAL model --------------
+// Each query runs structurer -> validator; assertions are on the validated
+// StructuredQuery — the exact contract the engine executes. Gated on
+// VURIO_GOLDEN_GGUF (the shipped Qwen2.5-1.5B).
+
+namespace
+{
+    class GoldenMatrixTest : public ::testing::Test
+    {
+    protected:
+        void SetUp() override
+        {
+            const char *model = std::getenv("VURIO_GOLDEN_GGUF");
+            if (!model || !std::filesystem::exists(model))
+                GTEST_SKIP() << "set VURIO_GOLDEN_GGUF to a real instruct model";
+
+            LlmRuntime::Options opts;
+            opts.model_path = model;
+            opts.context_tokens = 4096;
+            opts.max_output_tokens = 512;
+            opts.timeout_ms = 60000;
+            llm_ = std::make_unique<LlmRuntime>(opts);
+            ASSERT_TRUE(llm_->available());
+
+            geo_path_ = (std::filesystem::temp_directory_path() / "golden_geo.geojson").string();
+            std::ofstream(geo_path_) << R"({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"name": "Utah"},
+                 "bbox": [-114.03, 36.99, -109.04, 42.00], "geometry": null}]})";
+            ASSERT_TRUE(geocoder_.loadFromFile(geo_path_));
+
+            structurer_ = std::make_unique<LlmQueryStructurer>(
+                QueryFactSchema::fromKeywords(ExifKeywordConfig::defaults()));
+            validator_ = std::make_unique<LlmFactValidator>(
+                ExifKeywordConfig::defaults(), &geocoder_);
+        }
+
+        void TearDown() override { std::remove(geo_path_.c_str()); }
+
+        // structurer -> validator; asserts the parse itself succeeded.
+        StructuredQuery run(const std::string &query)
+        {
+            auto raw = structurer_->structure(query, *llm_);
+            EXPECT_TRUE(raw.ok) << query << ": " << raw.error;
+            auto v = validator_->validate(query, raw);
+            EXPECT_EQ(v.dropped, 0u) << query << ": validator dropped fact(s)";
+            return v.query;
+        }
+
+        std::string geo_path_;
+        LocationGeocoder geocoder_;
+        std::unique_ptr<LlmRuntime> llm_;
+        std::unique_ptr<LlmQueryStructurer> structurer_;
+        std::unique_ptr<LlmFactValidator> validator_;
+    };
+}
+
+TEST_F(GoldenMatrixTest, BoundCameraIntersects)
+{
+    // EXIF-7 §11: "sunset with a canon" -> only canon sunsets.
+    auto q = run("sunset with a canon");
+    EXPECT_EQ(q.bound.camera_terms, std::vector<std::string>{"canon"});
+    EXPECT_TRUE(q.bare.empty());
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_EQ(q.clip_queries[0], "sunset");
+}
+
+TEST_F(GoldenMatrixTest, BareProbeExplores)
+{
+    // EXIF-7 §11: "f2.5" -> superset (explore).
+    auto q = run("f2.5");
+    EXPECT_FALSE(q.bound.hasAny());
+    ASSERT_EQ(q.bare.size(), 1u);
+    ASSERT_EQ(q.bare[0].numeric.size(), 1u);
+    EXPECT_EQ(q.bare[0].numeric[0].column, "exif_f_number");
+}
+
+TEST_F(GoldenMatrixTest, ReversedYearRangeNormalizes)
+{
+    // EXIF-7 §11: "sunset taken with fuji between 2024 and 2018".
+    auto q = run("sunset taken with fuji between 2024 and 2018");
+    EXPECT_EQ(q.bound.camera_terms, std::vector<std::string>{"fuji"});
+    ASSERT_TRUE(q.bound.date_range.has_value());
+    EXPECT_EQ(q.bound.date_range->first, "2018:01:01 00:00:00");
+    EXPECT_EQ(q.bound.date_range->second, "2024:12:31 23:59:59");
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_EQ(q.clip_queries[0], "sunset");
+}
+
+TEST_F(GoldenMatrixTest, BareBrandListUnions)
+{
+    // EXIF-7 §11: "canon, nikon" must return results (within-field OR).
+    auto q = run("canon, nikon");
+    EXPECT_TRUE(q.bound.camera_terms.empty());
+    std::vector<std::string> brands;
+    for (const auto &b : q.bare)
+        for (const auto &t : b.camera_terms)
+            brands.push_back(t);
+    std::sort(brands.begin(), brands.end());
+    EXPECT_EQ(brands, (std::vector<std::string>{"canon", "nikon"}));
+}
+
+TEST_F(GoldenMatrixTest, MonthYearAndFlashBind)
+{
+    auto q = run("photos from august 2024 without flash");
+    EXPECT_TRUE(q.bound.flash_off);
+    EXPECT_FALSE(q.bound.flash_on);
+    ASSERT_TRUE(q.bound.date_range.has_value());
+    EXPECT_EQ(q.bound.date_range->first, "2024:08:01 00:00:00");
+}
+
+TEST_F(GoldenMatrixTest, LocationAndIsoRangeBind)
+{
+    auto q = run("photos taken in utah iso between 400 and 1600");
+    ASSERT_TRUE(q.bound.location.has_value());
+    EXPECT_EQ(q.bound.location_name, "utah");
+    ASSERT_EQ(q.bound.numeric.size(), 1u);
+    EXPECT_EQ(q.bound.numeric[0].column, "exif_iso");
+    EXPECT_EQ(q.bound.numeric[0].op, "between");
+    EXPECT_DOUBLE_EQ(q.bound.numeric[0].value, 400.0);
+    EXPECT_DOUBLE_EQ(q.bound.numeric[0].value2, 1600.0);
+}
+
+TEST_F(GoldenMatrixTest, ScaffoldedFocalBindsWithSemanticSubject)
+{
+    auto q = run("portraits shot at 85mm");
+    ASSERT_EQ(q.bound.numeric.size(), 1u);
+    EXPECT_EQ(q.bound.numeric[0].column, "exif_focal_length");
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_NE(q.clip_queries[0].find("portraits"), std::string::npos);
+}
+
+TEST_F(GoldenMatrixTest, FullDifficultQueryWithSubject)
+{
+    // EXIF-7 §11: the "Flowers" variant — same three bound facts plus CLIP.
+    auto q = run("Flowers, taken at f2.5 to f12, with fuji or canon, "
+                 "between 2005 and 2015");
+    ASSERT_EQ(q.bound.numeric.size(), 1u);
+    EXPECT_EQ(q.bound.numeric[0].column, "exif_f_number");
+    EXPECT_EQ(q.bound.numeric[0].op, "between");
+    EXPECT_DOUBLE_EQ(q.bound.numeric[0].value, 2.5);
+    EXPECT_DOUBLE_EQ(q.bound.numeric[0].value2, 12.0);
+    std::vector<std::string> brands = q.bound.camera_terms;
+    std::sort(brands.begin(), brands.end());
+    EXPECT_EQ(brands, (std::vector<std::string>{"canon", "fuji"}));
+    ASSERT_TRUE(q.bound.date_range.has_value());
+    EXPECT_EQ(q.bound.date_range->first, "2005:01:01 00:00:00");
+    EXPECT_TRUE(q.bare.empty());
+    ASSERT_EQ(q.clip_queries.size(), 1u);
+    EXPECT_EQ(q.clip_queries[0], "flowers");
+}
+

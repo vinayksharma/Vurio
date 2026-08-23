@@ -44,6 +44,12 @@ Output: {"facts": [{"dim": "aperture", "op": "range", "values": ["2.5", "12"], "
 
 Query: shots faster than 1/500 iso above 800
 Output: {"facts": [{"dim": "shutter", "op": "faster", "values": ["1/500"], "intent": "filter", "span": "faster than 1/500"}, {"dim": "iso", "op": "gt", "values": ["800"], "intent": "filter", "span": "iso above 800"}], "clip_queries": []}
+
+Query: beach days from august 2024 without flash
+Output: {"facts": [{"dim": "date", "op": "eq", "values": ["august 2024"], "intent": "filter", "span": "from august 2024"}, {"dim": "flash", "op": "off", "values": [], "intent": "filter", "span": "without flash"}], "clip_queries": ["beach days"]}
+
+Query: macro shots at 100mm in utah
+Output: {"facts": [{"dim": "focal", "op": "eq", "values": ["100"], "intent": "filter", "span": "at 100mm"}, {"dim": "location", "op": "eq", "values": ["utah"], "intent": "filter", "span": "in utah"}], "clip_queries": ["macro shots"]}
 )EX";
     }
 
@@ -71,11 +77,15 @@ Output: {"facts": [{"dim": "shutter", "op": "faster", "values": ["1/500"], "inte
              "from. Never invent facts that are not in the text.\n"
           << "- values: copy values as written, without units or f-prefixes "
              "(2.8 for f/2.8, 500 for iso 500, 50 for 50mm); ranges are "
-             "[low, high].\n"
+             "[low, high]. A month with a year is ONE value (\"august "
+             "2024\").\n"
+          << "- \"in <place>\" is a location fact, never a date; \"in "
+             "<month/year>\" is a date.\n"
           << "- clip_queries: the semantic segments left over (scenes, "
-             "subjects, moods), with command words (find, show me) dropped. "
-             "A query that is only facts and filler gets [] — but a lone "
-             "explore fact also repeats its text as a clip query.\n"
+             "subjects, moods), with command words (find, show me) dropped "
+             "and filter-fact text EXCLUDED. A query that is only facts and "
+             "filler gets [] — but a lone explore fact also repeats its "
+             "text as a clip query.\n"
           << "- Unknown people, pets, or things stay in clip_queries; there "
              "is no fact dimension for them.\n"
           << "\n"

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 
 namespace MediaDedup
@@ -23,6 +24,38 @@ namespace MediaDedup
             while (stream >> word)
                 out += (out.empty() ? "" : " ") + word;
             return out;
+        }
+
+        // The model sometimes echoes units despite the prompt ("85mm",
+        // "f/2.8", "1/500s"). Grounding already proved the text honest;
+        // stripping adornments is deterministic normalization, not trust.
+        std::string stripUnits(const std::string &dim, std::string v)
+        {
+            auto lower = v;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (dim == "aperture")
+            {
+                if (lower.rfind("f/", 0) == 0)
+                    return v.substr(2);
+                if (lower.size() > 1 && lower[0] == 'f' &&
+                    std::isdigit(static_cast<unsigned char>(lower[1])))
+                    return v.substr(1);
+            }
+            if (dim == "focal" && lower.size() > 2 &&
+                lower.compare(lower.size() - 2, 2, "mm") == 0)
+                return v.substr(0, v.size() - 2);
+            if (dim == "shutter")
+            {
+                for (const char *suf : {"seconds", "second", "sec", "s"})
+                {
+                    const std::size_t n = std::strlen(suf);
+                    if (lower.size() > n &&
+                        lower.compare(lower.size() - n, n, suf) == 0)
+                        return v.substr(0, v.size() - n);
+                }
+            }
+            return v;
         }
 
         bool parseNumber(const std::string &s, double &out)
@@ -202,7 +235,8 @@ namespace MediaDedup
                 for (const auto &v : f.values)
                 {
                     double d = 0;
-                    if (!parseNumber(v, d) || d < spec.lo || d > spec.hi)
+                    if (!parseNumber(stripUnits(f.dim, normalize(v)), d) ||
+                        d < spec.lo || d > spec.hi)
                     {
                         parsed = false;
                         break;
@@ -248,7 +282,7 @@ namespace MediaDedup
                 for (const auto &v : f.values)
                 {
                     double d = 0;
-                    std::string compact = v;
+                    std::string compact = stripUnits("shutter", normalize(v));
                     compact.erase(std::remove(compact.begin(), compact.end(), ' '),
                                   compact.end());
                     if (!parseShutterSeconds(compact, d) || d < 1.0 / 64000.0 ||
@@ -291,9 +325,22 @@ namespace MediaDedup
             }
             else if (f.dim == "date")
             {
-                if (f.op == "eq" && f.values.size() == 1)
+                std::vector<std::string> vals;
+                for (const auto &v : f.values)
+                    vals.push_back(normalize(v));
+                // The model sometimes splits "august 2024" into two values;
+                // recombine month+year regardless of order.
+                if (f.op == "eq" && vals.size() == 2)
                 {
-                    const std::string v = normalize(f.values[0]);
+                    int m0 = monthNo(vals[0]), m1 = monthNo(vals[1]), y = 0;
+                    if (m0 > 0 && parseYear(vals[1], y))
+                        vals = {vals[0] + " " + vals[1]};
+                    else if (m1 > 0 && parseYear(vals[0], y))
+                        vals = {vals[1] + " " + vals[0]};
+                }
+                if (f.op == "eq" && vals.size() == 1)
+                {
+                    const std::string v = vals[0];
                     int year = 0;
                     // "august 2024" | "2024" | "august"
                     auto space = v.find(' ');
@@ -308,7 +355,22 @@ namespace MediaDedup
                     }
                     else if (parseYear(v, year))
                     {
-                        target.date_range = yearSpan(year, year);
+                        // A bare-year value whose grounded SPAN names a month
+                        // ("from august 2024" -> value "2024") refines to
+                        // that month — the span is proven query text.
+                        int span_month = 0;
+                        {
+                            std::istringstream words(span_n);
+                            for (std::string w; words >> w;)
+                                if (int m = monthNo(w))
+                                {
+                                    span_month = span_month == 0 ? m : -1;
+                                    break;
+                                }
+                        }
+                        target.date_range = span_month > 0
+                                                ? monthSpan(year, span_month)
+                                                : yearSpan(year, year);
                         ok = true;
                     }
                     else if (int m = monthNo(v); m > 0)
@@ -317,11 +379,10 @@ namespace MediaDedup
                         ok = true;
                     }
                 }
-                else if (f.op == "range" && f.values.size() == 2)
+                else if (f.op == "range" && vals.size() == 2)
                 {
                     int a = 0, b = 0;
-                    if (parseYear(normalize(f.values[0]), a) &&
-                        parseYear(normalize(f.values[1]), b))
+                    if (parseYear(vals[0], a) && parseYear(vals[1], b))
                     {
                         target.date_range = yearSpan(std::min(a, b), std::max(a, b));
                         ok = true;
