@@ -1,4 +1,6 @@
 #include "database/vector_index.hpp"
+
+#include <algorithm>
 #include "database/sql_constants.hpp"
 #include <sqlite3.h>
 #include <Poco/Logger.h>
@@ -319,19 +321,40 @@ namespace MediaDedup
 
     std::vector<std::pair<int, double>> VectorIndex::queryKnn(const void *embedding_data,
                                                              std::size_t size_bytes,
-                                                             int k)
+                                                             int k,
+                                                             const std::vector<int> *scope)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::pair<int, double>> result;
         if (db_ == nullptr || embedding_data == nullptr || k <= 0)
             return result;
+        if (scope && scope->empty())
+            return result; // empty scope can match nothing
 
         const std::size_t expected = static_cast<std::size_t>(embedding_dim_) * sizeof(float);
         if (size_bytes != expected)
             return result;
 
+        k = std::min(k, kMaxKnnK);
+        std::string scope_json;
+        if (scope)
+        {
+            k = std::min<int>(k, static_cast<int>(scope->size()));
+            scope_json.reserve(scope->size() * 8 + 2);
+            scope_json.push_back('[');
+            for (std::size_t i = 0; i < scope->size(); ++i)
+            {
+                if (i)
+                    scope_json.push_back(',');
+                scope_json += std::to_string((*scope)[i]);
+            }
+            scope_json.push_back(']');
+        }
+
         sqlite3_stmt *stmt = nullptr;
         std::string sql = "SELECT file_id, distance FROM " + table_name_ + " WHERE embedding MATCH ? AND k = ?";
+        if (scope)
+            sql += " AND file_id IN (SELECT value FROM json_each(?))";
         int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
         {
@@ -341,6 +364,9 @@ namespace MediaDedup
 
         sqlite3_bind_blob(stmt, 1, embedding_data, static_cast<int>(size_bytes), SQLITE_STATIC);
         sqlite3_bind_int(stmt, 2, k);
+        if (scope)
+            sqlite3_bind_text(stmt, 3, scope_json.c_str(),
+                              static_cast<int>(scope_json.size()), SQLITE_TRANSIENT);
 
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {

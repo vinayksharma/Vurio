@@ -288,8 +288,8 @@ namespace MediaDedup
         // semantic segments when it produced them, else the raw query).
         if (!has_bound && !has_bare)
         {
-            Result r = clipSearchUnion(has_semantic ? sq.clip_queries
-                                                    : std::vector<std::string>{query});
+            Result r = clipSearchUnion(nullptr, has_semantic ? sq.clip_queries
+                                                             : std::vector<std::string>{query});
             r.used_semantic = r.ok;
             r.parse_degraded = parse_degraded;
             return r;
@@ -310,6 +310,26 @@ namespace MediaDedup
             return r;
         }
 
+        // Case 3's bound set is computed FIRST so the semantic ranking can
+        // be scoped to it: KNN over the filter's own files, not the global
+        // top-K intersected afterwards (which starves large filters and
+        // systematically favors whichever twin of a duplicate pair edges
+        // into the global ranking).
+        Result base;
+        std::vector<int> base_ids_vec;
+        if (has_bound)
+        {
+            base = exifOnlySearch(sq.bound);
+            if (!base.ok)
+            {
+                base.parse_degraded = parse_degraded;
+                return base; // filter intent cannot be honored without it
+            }
+            base_ids_vec.reserve(base.matches.size());
+            for (const auto &m : base.matches)
+                base_ids_vec.push_back(m.file_id);
+        }
+
         // Cases 2 and 3: CLIP runs on the semantic text; a fact-only
         // exploration (case 2 with only filler left, e.g. "f2.5") gets the
         // raw query so the semantic half still participates.
@@ -317,7 +337,8 @@ namespace MediaDedup
         bool clip_ran = false;
         if (has_semantic || !has_bound)
         {
-            clip = clipSearchUnion(has_semantic ? sq.clip_queries
+            clip = clipSearchUnion(has_bound ? &base_ids_vec : nullptr,
+                                   has_semantic ? sq.clip_queries
                                                 : std::vector<std::string>{query});
             clip_ran = true;
             if (!clip.ok)
@@ -345,11 +366,8 @@ namespace MediaDedup
         if (has_bound)
         {
             // Case 3: everything intersects the bound filter. CLIP-ranked
-            // hits inside it come first, then bare-fact hits it admits.
-            Result base = exifOnlySearch(sq.bound);
-            if (!base.ok)
-                return base; // filter intent cannot be honored without it
-
+            // hits inside it come first (already scoped to the filter),
+            // then bare-fact hits it admits.
             std::unordered_set<int> base_ids;
             base_ids.reserve(base.matches.size());
             for (const auto &m : base.matches)
@@ -439,6 +457,7 @@ namespace MediaDedup
     }
 
     TextSearchEngine::Result TextSearchEngine::clipSearchUnion(
+        const std::vector<int> *scope_ids,
         const std::vector<std::string> &queries)
     {
         // Multi-embedding union (QP-1 §6): each segment is embedded
@@ -452,7 +471,7 @@ namespace MediaDedup
         {
             if (ran++ >= 4)
                 break;
-            Result r = clipSearch(q);
+            Result r = clipSearch(q, scope_ids);
             if (!r.ok)
             {
                 if (!merged.ok && merged.error.empty())
@@ -483,7 +502,8 @@ namespace MediaDedup
         return merged;
     }
 
-    TextSearchEngine::Result TextSearchEngine::clipSearch(const std::string &query)
+    TextSearchEngine::Result TextSearchEngine::clipSearch(const std::string &query,
+                                                          const std::vector<int> *scope_ids)
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
         Result result;
@@ -532,8 +552,16 @@ namespace MediaDedup
         for (float &v : embedding)
             v *= inv_norm;
 
+        // Scoped mode ranks the WHOLE bound set (up to sqlite-vec's k
+        // limit), not the global top-K: with a filter of 26k files, the
+        // global top-300 keeps only the accidental overlap and starves
+        // the filter of its own best matches.
+        const int k = scope_ids
+                          ? static_cast<int>(std::min<std::size_t>(
+                                scope_ids->size(), VectorIndex::kMaxKnnK))
+                          : knn_k_;
         auto knn = index->queryKnn(embedding.data(),
-                                   embedding.size() * sizeof(float), knn_k_);
+                                   embedding.size() * sizeof(float), k, scope_ids);
         result.matches.reserve(knn.size());
         for (const auto &[file_id, distance] : knn)
         {

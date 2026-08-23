@@ -83,6 +83,48 @@ TEST(VectorIndexTest, InsertQueryRemoveRoundtrip)
     std::filesystem::remove(db_path);
 }
 
+// Scoped KNN (bound EXIF filters): distances are computed only over the
+// given ids, so the filter's own best matches rank — not the accidental
+// overlap with a global top-K.
+TEST(VectorIndexTest, ScopedQueryRanksOnlyTheGivenIds)
+{
+    std::string ext = findVec0();
+    if (ext.empty())
+        GTEST_SKIP() << "vec0 extension not found";
+
+    std::string db_path = tempDb("vec_scoped.sqlite");
+    VectorIndex vix;
+    ASSERT_TRUE(vix.init(db_path, ext, 4));
+
+    auto probe = vecBytes({1.0f, 0.0f, 0.0f, 0.0f});
+    auto near1 = vecBytes({0.95f, 0.05f, 0.0f, 0.0f});
+    auto near2 = vecBytes({0.9f, 0.1f, 0.0f, 0.0f});
+    auto far1 = vecBytes({0.0f, 1.0f, 0.0f, 0.0f});
+    ASSERT_TRUE(vix.insert(1, near1.data(), near1.size()));
+    ASSERT_TRUE(vix.insert(2, near2.data(), near2.size()));
+    ASSERT_TRUE(vix.insert(3, far1.data(), far1.size()));
+
+    // Unscoped: the globally nearest id wins.
+    auto global = vix.queryKnn(probe.data(), probe.size(), 1);
+    ASSERT_EQ(global.size(), 1u);
+    EXPECT_EQ(global[0].first, 1);
+
+    // Scoped to {2, 3}: id 1 is invisible even though it is globally
+    // nearest; the scope's own best (2) ranks first.
+    std::vector<int> scope{2, 3};
+    auto scoped = vix.queryKnn(probe.data(), probe.size(), 10, &scope);
+    ASSERT_EQ(scoped.size(), 2u);
+    EXPECT_EQ(scoped[0].first, 2);
+    EXPECT_EQ(scoped[1].first, 3);
+
+    // Empty scope matches nothing (an empty filter set has no results).
+    std::vector<int> empty_scope;
+    EXPECT_TRUE(vix.queryKnn(probe.data(), probe.size(), 10, &empty_scope).empty());
+
+    vix.close();
+    std::filesystem::remove(db_path);
+}
+
 TEST(VectorIndexTest, ReconcileBackfillsAndPurges)
 {
     std::string ext = findVec0();
