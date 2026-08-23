@@ -64,6 +64,35 @@ namespace MediaDedup
     };
 
     /**
+     * @brief QP-1a: a query split by INTENT (EXIF-7 result algebra).
+     *
+     * Bound facts were matched WITH grammatical scaffolding ("taken with
+     * fuji", "iso above 800", "in yellowstone", any date) and express
+     * filter intent — the engine ANDs them into one hard SQL constraint.
+     * Bare facts are lone tokens ("fuji", "f2.5", "iso 800") and express
+     * exploration — each becomes an independent union branch beside the
+     * CLIP hits. This type is the parser-agnostic contract: the QP-1 LLM
+     * structurer will emit it too, so the engine never knows who parsed.
+     */
+    struct StructuredQuery
+    {
+        // Filter-intent constraints, AND-combined into one WHERE clause.
+        ExifQueryConstraints bound;
+        // Explore-intent facts, ONE fact per entry — union branches.
+        std::vector<ExifQueryConstraints> bare;
+        // Semantic segments for CLIP; empty when only filler remained.
+        std::vector<std::string> clip_queries;
+        // Leftover text after fact extraction (imperatives stripped) and
+        // whether it is filler-only — the pre-QP-1 parse() view of R.
+        std::string remaining;
+        bool remaining_is_filler = true;
+
+        bool hasBound() const { return bound.hasAny(); }
+        bool hasBare() const { return !bare.empty(); }
+        bool hasSemantic() const { return !clip_queries.empty(); }
+    };
+
+    /**
      * @brief Parses EXIF constraints from free-text search queries.
      *
      * Recognized patterns (case-insensitive):
@@ -101,6 +130,13 @@ namespace MediaDedup
                                  const ExifKeywordConfig &keywords = ExifKeywordConfig::defaults());
 
         ExifQueryConstraints parse(const std::string &query) const;
+
+        /// QP-1a: intent-split parse. Binding rules: comparative/range
+        /// numeric forms, scaffolded camera phrases, flash phrases,
+        /// locations, and ALL dates are bound; exact-value probes
+        /// ("iso 800", "f2.5", "50mm", "shutter 1/500") and bare brand
+        /// tokens are bare. parse() is the flattened (binding-blind) view.
+        StructuredQuery parseStructured(const std::string &query) const;
 
     private:
         int monthNumber(const std::string &name) const;

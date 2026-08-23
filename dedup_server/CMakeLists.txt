@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(MediaDedupServer VERSION 1.0.0 LANGUAGES CXX)
+project(MediaDedupServer VERSION 1.0.0 LANGUAGES C CXX) # C: ggml (llama.cpp)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -105,6 +105,23 @@ if(OpenCV_FOUND)
 else()
     message(STATUS "OpenCV not found - image pipelines will use stubs")
 endif()
+
+# QP-1b: llama.cpp for the LLM query structurer, pinned via FetchContent.
+# Metal is on by default on Apple Silicon; the shader library is embedded so
+# no runtime .metal file lookup is needed. Only libllama is built.
+include(FetchContent)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    llama_cpp
+    GIT_REPOSITORY https://github.com/ggerganov/llama.cpp.git
+    GIT_TAG b4589
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(llama_cpp)
 
 # Optional ONNX Runtime (generic, cross-platform friendly)
 # Allow user to provide ONNXRUNTIME_ROOT (var or env) or rely on common prefixes
@@ -272,6 +289,7 @@ add_executable(media_dedup_server
     src/search/location_geocoder.cpp
     src/search/exif_query_parser.cpp
     src/search/exif_keyword_config.cpp
+    src/search/llm_runtime.cpp
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp
@@ -309,6 +327,7 @@ target_link_libraries(media_dedup_server
     ${ImageMagick++_LIBRARIES}
     ${LIBRAW_LIBRARIES}
     ${LIBTIFF_LIBRARIES}
+    llama
 )
 
 # Add include directories and link directories for LibRaw, libtiff, and SQLite
