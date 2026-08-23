@@ -92,6 +92,45 @@ namespace MediaDedup
 
         logger.information("Text search engine configured: model=%s, knnK=%d, minScore=%.3f",
                            text_model_path_, knn_k_, min_score_);
+
+        // QP-1 warmup: the first structurer call after boot pays model load
+        // plus the full system-prompt prefill (seconds). Pay it here, off
+        // the request path, so the user's first search finds a warm KV
+        // prefix. LlmRuntime serializes internally — a search arriving
+        // mid-warmup just queues behind it, never ahead of a cold cache.
+        if (LlmRuntime::enabledInConfig(config_))
+            llm_warmup_thread_ = std::thread([this] { warmupLlm(); });
+    }
+
+    TextSearchEngine::~TextSearchEngine()
+    {
+        if (llm_warmup_thread_.joinable())
+            llm_warmup_thread_.join();
+    }
+
+    void TextSearchEngine::warmupLlm()
+    {
+        ensureParserLoaded();
+        if (!llm_ || !structurer_)
+            return;
+        // Resumable prefill (LlmRuntime keeps successfully decoded KV across
+        // a timeout) means each attempt advances the cache; three attempts
+        // cover load + prefill + decode even on a busy machine.
+        for (int attempt = 0; attempt < 3; ++attempt)
+        {
+            if (!llm_->available())
+                return;
+            auto r = structurer_->structure("warmup", *llm_);
+            if (r.ok || (r.error != "timeout" && r.error != "stalled"))
+            {
+                Poco::Logger::get("TextSearchEngine")
+                    .information("LLM structurer warmed up (%s)",
+                                 r.ok ? std::string("ok") : r.error);
+                return;
+            }
+        }
+        Poco::Logger::get("TextSearchEngine")
+            .warning("LLM structurer warmup still timing out; first searches may be slow");
     }
 
     void TextSearchEngine::ensureTokenizerLoaded()

@@ -43,7 +43,19 @@ namespace MediaDedup
             std::string model_path;
             int context_tokens = 4096;
             int max_output_tokens = 512;
-            int timeout_ms = 2000;
+            // Total wall-clock budget per complete(); 0 (default) = none.
+            // Total cost is already bounded by construction (prompt tokens
+            // + grammar-bounded output) and scales with the hardware — a
+            // fixed total cap tuned on one machine becomes a permanent
+            // regex-fallback on a slower one. Set >0 only to deliberately
+            // bound search latency at the cost of losing the LLM parse.
+            int timeout_ms = 0;
+            // Progress guard: abort when no llama_decode completes within
+            // this window. Hardware-agnostic — it bounds the time per
+            // 128-token prefill batch / per generated token, not the total
+            // — so it trips on wedges (driver hang, runaway decode), never
+            // on a merely slow machine. 0 disables.
+            int stall_ms = 10000;
         };
 
         struct Completion

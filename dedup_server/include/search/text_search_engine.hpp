@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,7 @@ namespace MediaDedup
             bool used_exif = false;
         };
 
+        ~TextSearchEngine();
         TextSearchEngine(std::shared_ptr<UnifiedObservableConfigManager> config,
                          DatabaseManager *db);
 
@@ -87,6 +89,7 @@ namespace MediaDedup
         void ensureTokenizerLoaded();
         void ensureGeocoderLoaded();
         void ensureParserLoaded();
+        void warmupLlm();
 
         std::shared_ptr<UnifiedObservableConfigManager> config_;
         DatabaseManager *db_;
@@ -126,6 +129,7 @@ namespace MediaDedup
         LlmQueryStructurer::CompleteFn test_complete_fn_; // test seam
 
         std::mutex cache_mutex_;
+        std::thread llm_warmup_thread_; // QP-1 warmup; joined in the destructor
         // MRU-front query cache: repeated page requests for the same active
         // search reuse the KNN result instead of re-running inference. The
         // used_* flags ride along so cache hits report them identically.

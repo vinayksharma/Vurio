@@ -42,9 +42,13 @@ namespace MediaDedup
         // Tokens currently held in the KV cache (prompt + generated). The
         // next call reuses the longest common prefix with its own prompt.
         std::vector<llama_token> evaluated;
-        // steady-clock deadline for the in-flight call; 0 = none. Checked
-        // by llama's abort callback during decode.
+        // steady-clock deadlines for the in-flight call; 0 = none. Checked
+        // by llama's abort callback during decode. `deadline_ms` is the
+        // optional TOTAL budget; `stall_deadline_ms` is re-armed after
+        // every successful llama_decode, so it measures forward progress,
+        // not hardware speed.
         std::atomic<int64_t> deadline_ms{0};
+        std::atomic<int64_t> stall_deadline_ms{0};
 
         ~Impl()
         {
@@ -57,8 +61,12 @@ namespace MediaDedup
         static bool abortCallback(void *data)
         {
             auto *impl = static_cast<Impl *>(data);
+            const int64_t now = nowMs();
             const int64_t d = impl->deadline_ms.load(std::memory_order_relaxed);
-            return d != 0 && nowMs() >= d;
+            if (d != 0 && now >= d)
+                return true;
+            const int64_t sd = impl->stall_deadline_ms.load(std::memory_order_relaxed);
+            return sd != 0 && now >= sd;
         }
 
         std::string tokenToPiece(llama_token tok) const
@@ -83,6 +91,7 @@ namespace MediaDedup
         o.max_output_tokens =
             config->getPropertyValue<int>("search.llm.maxOutputTokens", o.max_output_tokens);
         o.timeout_ms = config->getPropertyValue<int>("search.llm.timeoutMs", o.timeout_ms);
+        o.stall_ms = config->getPropertyValue<int>("search.llm.stallTimeoutMs", o.stall_ms);
 
         // Same project-root resolution as the CLIP model path, so both
         // resolve identically from any CWD.
@@ -251,36 +260,66 @@ namespace MediaDedup
         llama_kv_cache_seq_rm(impl.ctx, 0, static_cast<llama_pos>(common), -1);
         impl.evaluated.resize(common);
 
-        impl.deadline_ms.store(nowMs() + opts_.timeout_ms, std::memory_order_relaxed);
+        impl.deadline_ms.store(
+            opts_.timeout_ms > 0 ? nowMs() + opts_.timeout_ms : 0,
+            std::memory_order_relaxed);
+        auto armStallGuard = [&] {
+            impl.stall_deadline_ms.store(
+                opts_.stall_ms > 0 ? nowMs() + opts_.stall_ms : 0,
+                std::memory_order_relaxed);
+        };
+        armStallGuard();
         auto finish = [&](const char *err) {
             impl.deadline_ms.store(0, std::memory_order_relaxed);
+            impl.stall_deadline_ms.store(0, std::memory_order_relaxed);
             if (err)
             {
-                // A failed decode leaves the KV tail in an unknown state;
-                // drop everything so the next call starts clean.
-                llama_kv_cache_seq_rm(impl.ctx, 0, 0, -1);
-                impl.evaluated.clear();
+                // Only the failed batch's KV entries are suspect —
+                // `evaluated` holds exactly the tokens whose llama_decode
+                // SUCCEEDED, so trim to that boundary instead of wiping
+                // the cache. This keeps the warm system-prompt prefix
+                // across a timeout (a full wipe made every subsequent
+                // call re-pay the whole prefill inside its own deadline:
+                // one slow query became a permanent timeout storm), and
+                // it makes prefill resumable — even a too-short deadline
+                // advances the cache a few batches per attempt.
+                llama_kv_cache_seq_rm(impl.ctx, 0,
+                                      static_cast<llama_pos>(impl.evaluated.size()), -1);
                 result.ok = false;
                 result.error = err;
             }
             return result;
         };
-        auto timedOut = [&] {
+        // Which guard tripped decides the error name: "timeout" is the
+        // caller-imposed total budget, "stalled" is a wedge (no decode
+        // progress inside stall_ms) — very different diagnoses in a log.
+        auto abortReason = [&]() -> const char * {
+            const int64_t now = nowMs();
             const int64_t d = impl.deadline_ms.load(std::memory_order_relaxed);
-            return d != 0 && nowMs() >= d;
+            if (d != 0 && now >= d)
+                return "timeout";
+            const int64_t sd = impl.stall_deadline_ms.load(std::memory_order_relaxed);
+            if (sd != 0 && now >= sd)
+                return "stalled";
+            return "decode_failed";
         };
 
         // --- Prefill ----------------------------------------------------
-        const int n_batch = 512;
+        // 128-token batches: the stall guard bounds ONE llama_decode call,
+        // so the batch size sets the slowest viable prefill rate
+        // (128 tokens / stall_ms). Smaller batches keep that bar low
+        // (~13 tok/s at the 10 s default) without measurable Metal cost.
+        const int n_batch = 128;
         for (std::size_t i = common; i < tokens.size(); i += n_batch)
         {
             const int n_eval =
                 static_cast<int>(std::min<std::size_t>(n_batch, tokens.size() - i));
             llama_batch batch = llama_batch_get_one(tokens.data() + i, n_eval);
             if (llama_decode(impl.ctx, batch) != 0)
-                return finish(timedOut() ? "timeout" : "decode_failed");
+                return finish(abortReason());
             impl.evaluated.insert(impl.evaluated.end(), tokens.begin() + i,
                                   tokens.begin() + i + n_eval);
+            armStallGuard();
         }
 
         // --- Sampler: optional grammar, then greedy ---------------------
@@ -322,9 +361,10 @@ namespace MediaDedup
             if (llama_decode(impl.ctx, batch) != 0)
             {
                 llama_sampler_free(chain);
-                return finish(timedOut() ? "timeout" : "decode_failed");
+                return finish(abortReason());
             }
             impl.evaluated.push_back(tok);
+            armStallGuard();
         }
         llama_sampler_free(chain);
 

@@ -47,14 +47,26 @@ TEST(LlmRuntimeTest, OptionsFromConfigReadsKeysAndResolvesRelativePaths)
     config->createProperty<std::string>("search.llm.modelPath",
                                         std::string("/abs/model.gguf"), "test");
     config->createProperty<int>("search.llm.timeoutMs", 1234, "test");
+    config->createProperty<int>("search.llm.stallTimeoutMs", 4321, "test");
 
     auto o = LlmRuntime::optionsFromConfig(config);
     EXPECT_EQ(o.model_path, "/abs/model.gguf"); // absolute: no root rewriting
     EXPECT_EQ(o.timeout_ms, 1234);
+    EXPECT_EQ(o.stall_ms, 4321);
     EXPECT_EQ(o.context_tokens, 4096);   // defaults survive
     EXPECT_EQ(o.max_output_tokens, 512);
 
     EXPECT_TRUE(LlmRuntime::enabledInConfig(config)); // default on
+}
+
+// The default budget model is hardware-agnostic: no total wall-clock cap
+// (a number tuned on one machine is a permanent regex-fallback on a
+// slower one), only the progress guard.
+TEST(LlmRuntimeTest, DefaultBudgetIsProgressGuardedNotWallClock)
+{
+    LlmRuntime::Options o;
+    EXPECT_EQ(o.timeout_ms, 0);
+    EXPECT_GT(o.stall_ms, 0);
 }
 
 TEST(LlmRuntimeTest, OptionsFromConfigResolvesRelativeModelPath)
@@ -145,7 +157,7 @@ TEST(LlmRuntimeTest, SmokeTimeoutAborts)
     opts.model_path = model;
     opts.context_tokens = 512;
     opts.max_output_tokens = 64;
-    opts.timeout_ms = 0; // deadline is already past when decode starts
+    opts.timeout_ms = 1; // total budget expires before decode starts (0 = no cap)
     LlmRuntime llm(opts);
     ASSERT_TRUE(llm.available());
 
