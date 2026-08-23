@@ -370,9 +370,16 @@ namespace MediaDedup
         }
 
         // Total cap after merging; CLIP-ranked entries were emitted first,
-        // so ranked results survive truncation.
+        // so ranked results survive truncation. Never trim silently — a
+        // capped result reads as "that's everything" in the UI.
         if (out.matches.size() > static_cast<std::size_t>(exif_only_limit_))
+        {
+            logger.information(
+                "Result cap: trimmed %z of %z matches (search.exifOnlyLimit=%d)",
+                out.matches.size() - static_cast<std::size_t>(exif_only_limit_),
+                out.matches.size(), exif_only_limit_);
             out.matches.resize(static_cast<std::size_t>(exif_only_limit_));
+        }
         return out;
     }
 
