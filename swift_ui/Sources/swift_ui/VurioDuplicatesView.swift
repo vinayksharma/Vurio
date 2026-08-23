@@ -613,7 +613,9 @@ struct VurioDuplicatesView: View {
                             // the same query or it lands on a different day.
                             openViewer(.timeline(anchorDayIndex: index,
                                                  file: file,
-                                                 searchQuery: allViewModel.activeSearchQuery))
+                                                 searchQuery: allViewModel.activeSearchQuery,
+                                                 searchIncludeAi: allViewModel.searchIncludeAi,
+                                                 searchIncludeExif: allViewModel.searchIncludeExif))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

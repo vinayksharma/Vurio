@@ -15,8 +15,11 @@ enum ViewerContent {
     /// index is the day's global offset (0 = newest), i.e. its VU row index —
     /// so it only addresses the same day when the viewer pages the day list
     /// with the SAME search filter VU was showing. `searchQuery` carries it
-    /// (empty = unfiltered library).
-    case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile, searchQuery: String)
+    /// (empty = unfiltered library), and the ai/xf toggles ride along too —
+    /// they reshape the server-filtered day list, so omitting them lands
+    /// the anchor offset on a different day with unfiltered files.
+    case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile, searchQuery: String,
+                  searchIncludeAi: Bool, searchIncludeExif: Bool)
     /// A duplicate group from BINNED, opened at the double-clicked member.
     case group(Vurio_Dedup_DuplicateGroup, selectedIndex: Int)
 }
@@ -105,6 +108,8 @@ final class ViewerViewModel: ObservableObject {
     /// Search filter the timeline is paging under; every day fetch repeats it so
     /// the viewer's day offsets stay aligned with VU's filtered day list.
     private var searchQuery = ""
+    private var searchIncludeAi = true
+    private var searchIncludeExif = true
     private var windowStart = 0
     private var totalDays: Int32 = 0
     private var loadingNewer = false
@@ -153,6 +158,8 @@ final class ViewerViewModel: ObservableObject {
             isGroupMode = true
             days = []
             searchQuery = ""
+            searchIncludeAi = true
+            searchIncludeExif = true
             items = group.files.map { .image(ViewerImage($0)) }
             let selected = group.files.indices.contains(selectedIndex) ? group.files[selectedIndex] : group.files.first
             selectedID = selected?.id
@@ -160,11 +167,13 @@ final class ViewerViewModel: ObservableObject {
                 scrollTarget = ScrollTarget(id: id, anchor: .center, animated: false)
             }
 
-        case .timeline(let anchorDayIndex, let file, let query):
+        case .timeline(let anchorDayIndex, let file, let query, let includeAi, let includeExif):
             isGroupMode = false
             items = []
             days = []
             searchQuery = query
+            searchIncludeAi = includeAi
+            searchIncludeExif = includeExif
             selectedID = nil
             isLoading = true
             defer { isLoading = false }
@@ -300,6 +309,8 @@ final class ViewerViewModel: ObservableObject {
                 // Must match the filter the day list was paged with, or the
                 // offset addresses a different day than the one clicked.
                 $0.searchQuery = searchQuery
+                $0.searchIncludeAi = searchIncludeAi
+                $0.searchIncludeExif = searchIncludeExif
             }
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
             totalDays = response.totalDays
