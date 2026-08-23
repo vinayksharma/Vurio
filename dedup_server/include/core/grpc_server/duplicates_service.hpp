@@ -275,6 +275,17 @@ public:
             MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
     }
 
+    // The ai/xf toggle predicate: single-select is EXCLUSIVE (only-ai
+    // keeps files the semantic half matched and the EXIF half did not),
+    // both-selected is OR — the whole result set. Both-off arrives only
+    // from older clients and means "no filter".
+    static bool keepMatchForToggles(bool via_ai, bool via_exif,
+                                    bool include_ai, bool include_exif) {
+        if (include_ai == include_exif)
+            return true;
+        return include_ai ? (via_ai && !via_exif) : (via_exif && !via_ai);
+    }
+
     // Resolve the request's semantic search filter (if any) into scanned_files
     // ids. Returns false (with `status` set) when the filter cannot be
     // evaluated; `match_ids` stays null when no filter is active.
@@ -285,7 +296,9 @@ public:
                              bool* used_ai = nullptr,
                              bool* used_exif = nullptr,
                              SearchMatchFlags* match_flags = nullptr,
-                             bool* parse_degraded = nullptr) {
+                             bool* parse_degraded = nullptr,
+                             bool include_ai = true,
+                             bool include_exif = true) {
         match_ids = nullptr;
         if (query.empty()) return true;
         if (!search_engine_) {
@@ -304,6 +317,8 @@ public:
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
         for (const auto& m : search.matches) {
+            if (!keepMatchForToggles(m.via_semantic, m.via_exif, include_ai, include_exif))
+                continue;
             ids_storage.push_back(m.file_id);
             if (match_flags) (*match_flags)[m.file_id] = {m.via_semantic, m.via_exif};
         }
@@ -325,7 +340,8 @@ public:
         bool used_ai = false, used_exif = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif, &match_flags, &parse_degraded))
+                                 &used_ai, &used_exif, &match_flags, &parse_degraded,
+                                 request->search_include_ai(), request->search_include_exif()))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
@@ -375,7 +391,8 @@ public:
         bool used_ai = false, used_exif = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif, &match_flags, &parse_degraded))
+                                 &used_ai, &used_exif, &match_flags, &parse_degraded,
+                                 request->search_include_ai(), request->search_include_exif()))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
