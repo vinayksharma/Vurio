@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 
@@ -70,8 +71,19 @@ namespace MediaDedup
          * exif_camera set but exif_make NULL — a successful re-read fills
          * exif_make, so the sweep converges. Runs inline (LibRaw
          * metadata-only opens, no demosaic) on the integrity-check thread.
+         *
+         * Returns the sweep's counts so tests can observe the selector —
+         * the original implementation never executed its Poco statement,
+         * which silently returned zero candidates forever.
          */
-        static void backfillRawExif(DatabaseManager &db, Poco::Logger &logger);
+        struct RawExifBackfillStats
+        {
+            std::size_t candidates = 0;
+            int updated = 0;
+            int offline = 0;
+            int unreadable = 0;
+        };
+        static RawExifBackfillStats backfillRawExif(DatabaseManager &db, Poco::Logger &logger);
     };
 
 } // namespace MediaDedup

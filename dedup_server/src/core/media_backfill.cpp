@@ -60,6 +60,7 @@ namespace MediaDedup
                 Poco::Data::Statement sel_thumbs(sess);
                 sel_thumbs << "SELECT file_path FROM scanned_files WHERE processed >= 2 "
                               "AND file_path NOT IN (SELECT source_path FROM thumbnail_cache) LIMIT 5000";
+                sel_thumbs.execute();
                 Poco::Data::RecordSet rs_thumbs(sel_thumbs);
                 for (bool more = rs_thumbs.moveFirst(); more; more = rs_thumbs.moveNext())
                 {
@@ -69,6 +70,7 @@ namespace MediaDedup
                 Poco::Data::Statement sel_previews(sess);
                 sel_previews << "SELECT file_path FROM scanned_files WHERE processed >= 2 "
                                 "AND file_path NOT IN (SELECT source_path FROM preview_cache) LIMIT 20000";
+                sel_previews.execute();
                 Poco::Data::RecordSet rs_previews(sel_previews);
                 for (bool more = rs_previews.moveFirst(); more; more = rs_previews.moveNext())
                 {
@@ -162,8 +164,10 @@ namespace MediaDedup
         }
     }
 
-    void MediaBackfill::backfillRawExif(DatabaseManager &db, Poco::Logger &logger)
+    MediaBackfill::RawExifBackfillStats
+    MediaBackfill::backfillRawExif(DatabaseManager &db, Poco::Logger &logger)
     {
+        RawExifBackfillStats stats;
         // RAW-EXIF: the pre-fix LibRaw metadata path wrote only the combined
         // exif_camera, never exif_make — so "camera set, make NULL" is
         // exactly the population written by the old reader. A successful
@@ -193,35 +197,37 @@ namespace MediaDedup
                 sel << "SELECT file_path FROM scanned_files "
                        "WHERE exif_camera IS NOT NULL AND exif_make IS NULL "
                        "AND (" + ext_filter + ") LIMIT 20000";
+                sel.execute();
                 Poco::Data::RecordSet rs(sel);
                 for (bool more = rs.moveFirst(); more; more = rs.moveNext())
                     candidates.push_back(rs[0].convert<std::string>());
             }
+            stats.candidates = candidates.size();
             if (candidates.empty())
-                return;
+                return stats;
 
-            int updated = 0, unreadable = 0, offline = 0;
             for (const auto &path : candidates)
             {
                 if (!std::filesystem::exists(path))
                 {
-                    offline++;
+                    stats.offline++;
                     continue;
                 }
                 auto exif = ExifReader::read(path);
                 if (exif && ScannedFilesOps::updateExifMetadata(db, path, *exif))
-                    updated++;
+                    stats.updated++;
                 else
-                    unreadable++;
+                    stats.unreadable++;
             }
             logger.information(
                 "RAW EXIF backfill: %d of %z updated (%d offline, %d unreadable).",
-                updated, candidates.size(), offline, unreadable);
+                stats.updated, stats.candidates, stats.offline, stats.unreadable);
         }
         catch (const std::exception &e)
         {
             logger.warning("RAW EXIF backfill failed: %s", std::string(e.what()));
         }
+        return stats;
     }
 
 } // namespace MediaDedup
