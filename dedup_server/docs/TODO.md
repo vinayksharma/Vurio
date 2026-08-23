@@ -11,8 +11,13 @@ before touching code — the line below is an index entry, not a specification.
 ## Open
 
 - **QP-1 — local LLM query structurer (llama.cpp + ~1.5B Q4).**
-  *Designed 2026-08-23; not implemented. Supersedes EXIF-7's §4 regex-grammar
-  expansion; EXIF-7's result algebra and decisions carry over unchanged.*
+  *Implemented 2026-08-23 (QP-1a–e, PRs #53–#56). All golden acceptance
+  tests pass against the shipped Qwen2.5-1.5B q4_k_m (~1.5 s/query);
+  hermetic suite green without the model. Remaining before Done: restart
+  the server and verify live VU queries ("raw files from 2019", "sunset
+  taken with a canon", the f2.5-to-f12 difficult query) with the ai/xf
+  badges under the advanced overlay. QP-2 (person dimension) waits on the
+  face DB.*
   A small local quantized instruct model (default Qwen2.5-1.5B-Instruct
   Q4_K_M via llama.cpp, Metal, greedy, GBNF grammar-constrained JSON)
   structures natural-language queries into facts (with filter/explore
@@ -25,24 +30,6 @@ before touching code — the line below is an index entry, not a specification.
   runtime, like the CLIP ONNX.
   **Full specification: [todo_llm_query_structurer.md](todo_llm_query_structurer.md)**
 
-- **EXIF-7 — query intent: bound constraints intersect, bare facts union.**
-  *Designed 2026-08-23; not implemented. §4 (regex ranges/connectives/
-  segmentation) superseded by QP-1 — §4 now specifies target semantics the
-  LLM must produce; the §3 algebra is implemented in QP-1a.*
-  "sunset taken with fuji between 2018 and 2024" states constraints and must
-  intersect; "raw, sunset, fuji" is a loose term list and must union. Each
-  parsed fact gets a binding (scaffolded = bound → hard SQL filter; bare
-  token = soft → union branch beside CLIP). Also in scope: range grammar
-  for dates AND numerics ("between 2005 and 2015", "f2.5 to f12") with
-  reversed-bound normalization, within-field value lists via connectives
-  ("taken with fuji or canon"), connective vocabulary so "but"/"or"/"to"
-  never leak into CLIP, file-type facts ("raw", "jpeg", "video") from the
-  keyword JSON, within-field OR ("canon, nikon" — fixes the AND-of-LIKEs
-  never-match bug), comma segmentation with per-segment CLIP embeddings,
-  and fully-bound queries skipping the AI half entirely.
-  No proto or schema change; per-file ai/xf badges already carry the
-  attribution.
-  **Full specification: [todo_exif_query_intent.md](todo_exif_query_intent.md)**
 
 - **EXIF-1..5 — comprehensive EXIF-searchable prompt queries.**
   *Implemented 2026-08-19 on `feature/searchable_exif` (EXIF-1 `10b737a3`,
@@ -89,6 +76,10 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Done
 
+- **EXIF-7 — query intent: bound constraints intersect, bare facts union.**
+  Completed 2026-08-23 via QP-1a (algebra + regex fallback parser) and
+  QP-1b–e (LLM structurer); every §11 acceptance item golden-tested.
+  Spec: [todo_exif_query_intent.md](todo_exif_query_intent.md).
 - **Scrolled-off thumbnails kept their download slots — cancellation never
   reached the shared load.** Fixed 2026-08-17; see `troubleshooting_and_fixes.md`.
 - **DF-4 — the finder's per-run orphan-edge purge held the write lock ~25 s

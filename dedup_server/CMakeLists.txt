@@ -106,6 +106,36 @@ else()
     message(STATUS "OpenCV not found - image pipelines will use stubs")
 endif()
 
+# Keep FetchContent downloads OUTSIDE the build tree.
+#
+# CMake shallow-clones llama.cpp by TAG, and a shallow clone of a tag forces
+# `--depth 1 --no-single-branch` — i.e. the tip of EVERY branch of a large,
+# very active repo. Measured here: ~290 MB, ~5 minutes. With the default
+# base dir (${CMAKE_BINARY_DIR}/_deps) a single `rm -rf build` throws that
+# away and pays it again. Parking it under the user cache means the download
+# survives any wipe of the build directory and is shared by every build dir.
+#
+# Override with -DFETCHCONTENT_BASE_DIR=<path> (an explicit -D or an existing
+# cache entry wins: the set() below is not FORCEd). Add
+# -DFETCHCONTENT_FULLY_DISCONNECTED=ON to forbid network access once the
+# cache is populated. MUST precede include(FetchContent), which is what
+# establishes the default.
+if(NOT DEFINED FETCHCONTENT_BASE_DIR)
+    if(DEFINED ENV{XDG_CACHE_HOME})
+        set(_vurio_cache_root "$ENV{XDG_CACHE_HOME}")
+    elseif(DEFINED ENV{HOME})
+        set(_vurio_cache_root "$ENV{HOME}/.cache")
+    else()
+        # No usable home (some CI images): fall back to CMake's own default.
+        set(_vurio_cache_root "")
+    endif()
+    if(_vurio_cache_root)
+        set(FETCHCONTENT_BASE_DIR "${_vurio_cache_root}/vurio/deps" CACHE PATH
+            "Where FetchContent stores fetched dependencies; outside the build tree so cleans keep them")
+        message(STATUS "FetchContent cache: ${FETCHCONTENT_BASE_DIR} (survives 'rm -rf build')")
+    endif()
+endif()
+
 # QP-1b: llama.cpp for the LLM query structurer, pinned via FetchContent.
 # Metal is on by default on Apple Silicon; the shader library is embedded so
 # no runtime .metal file lookup is needed. Only libllama is built.
