@@ -59,6 +59,11 @@ namespace MediaDedup
             // query. Per-match attribution lives on Match::via_*.
             bool used_semantic = false;
             bool used_exif = false;
+            // The LLM structurer was expected to parse this query but the
+            // regex fallback answered instead — fact semantics may be
+            // simplified (camera model names, free-form phrasing). Surfaced
+            // to the client so degradation is visible, never silent.
+            bool parse_degraded = false;
         };
 
         ~TextSearchEngine();

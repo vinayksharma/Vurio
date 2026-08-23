@@ -516,6 +516,13 @@ struct Vurio_Dedup_GetDayGroupsResponse: Sendable {
 
   var searchUsedExif: Bool = false
 
+  /// True when the query was answered by the fallback pattern parser even
+  /// though the LLM structurer was expected to run (model failed, stalled,
+  /// or its output was fully rejected). Fact semantics may be simplified —
+  /// e.g. camera MODEL names are only understood by the LLM path. Lets the
+  /// client show "simplified query parsing" instead of degrading silently.
+  var searchParseDegraded: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -556,6 +563,8 @@ struct Vurio_Dedup_GetDayFilesResponse: Sendable {
   var searchUsedAi: Bool = false
 
   var searchUsedExif: Bool = false
+
+  var searchParseDegraded: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1980,7 +1989,7 @@ extension Vurio_Dedup_DayGroup: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
 
 extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayGroupsResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}days\0\u{3}total_days\0\u{3}search_used_ai\0\u{3}search_used_exif\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}days\0\u{3}total_days\0\u{3}search_used_ai\0\u{3}search_used_exif\0\u{3}search_parse_degraded\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1992,6 +2001,7 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.totalDays) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.searchUsedAi) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.searchUsedExif) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.searchParseDegraded) }()
       default: break
       }
     }
@@ -2010,6 +2020,9 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
     if self.searchUsedExif != false {
       try visitor.visitSingularBoolField(value: self.searchUsedExif, fieldNumber: 4)
     }
+    if self.searchParseDegraded != false {
+      try visitor.visitSingularBoolField(value: self.searchParseDegraded, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2018,6 +2031,7 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.totalDays != rhs.totalDays {return false}
     if lhs.searchUsedAi != rhs.searchUsedAi {return false}
     if lhs.searchUsedExif != rhs.searchUsedExif {return false}
+    if lhs.searchParseDegraded != rhs.searchParseDegraded {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2070,7 +2084,7 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Vurio_Dedup_GetDayFilesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayFilesResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}files\0\u{3}total_files\0\u{3}search_used_ai\0\u{3}search_used_exif\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}files\0\u{3}total_files\0\u{3}search_used_ai\0\u{3}search_used_exif\0\u{3}search_parse_degraded\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2082,6 +2096,7 @@ extension Vurio_Dedup_GetDayFilesResponse: SwiftProtobuf.Message, SwiftProtobuf.
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.totalFiles) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.searchUsedAi) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.searchUsedExif) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.searchParseDegraded) }()
       default: break
       }
     }
@@ -2100,6 +2115,9 @@ extension Vurio_Dedup_GetDayFilesResponse: SwiftProtobuf.Message, SwiftProtobuf.
     if self.searchUsedExif != false {
       try visitor.visitSingularBoolField(value: self.searchUsedExif, fieldNumber: 4)
     }
+    if self.searchParseDegraded != false {
+      try visitor.visitSingularBoolField(value: self.searchParseDegraded, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2108,6 +2126,7 @@ extension Vurio_Dedup_GetDayFilesResponse: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.totalFiles != rhs.totalFiles {return false}
     if lhs.searchUsedAi != rhs.searchUsedAi {return false}
     if lhs.searchUsedExif != rhs.searchUsedExif {return false}
+    if lhs.searchParseDegraded != rhs.searchParseDegraded {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

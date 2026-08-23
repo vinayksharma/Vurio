@@ -246,7 +246,10 @@ namespace MediaDedup
         }
 
         result = searchUncached(key);
-        if (result.ok)
+        // A degraded parse is never cached: the moment the LLM recovers,
+        // re-running the same query gets the full-quality parse instead of
+        // a stale simplified one.
+        if (result.ok && !result.parse_degraded)
         {
             std::lock_guard<std::mutex> lock(cache_mutex_);
             cache_.push_front({key, result.matches, result.used_semantic, result.used_exif});
@@ -268,8 +271,15 @@ namespace MediaDedup
         // last rung (structurer off/unavailable/failed/fully rejected).
         ensureParserLoaded();
         StructuredQuery sq;
+        // Degraded = the LLM path was configured (runtime or test seam)
+        // but the regex fallback answered. "Not installed/disabled" is the
+        // chosen baseline, not degradation.
+        bool parse_degraded = false;
         if (!tryLlmStructure(query, sq))
+        {
             sq = parser_->parseStructured(query);
+            parse_degraded = static_cast<bool>(test_complete_fn_) || llm_ != nullptr;
+        }
         const bool has_bound = sq.hasBound();
         const bool has_bare = sq.hasBare();
         const bool has_semantic = sq.hasSemantic();
@@ -281,6 +291,7 @@ namespace MediaDedup
             Result r = clipSearchUnion(has_semantic ? sq.clip_queries
                                                     : std::vector<std::string>{query});
             r.used_semantic = r.ok;
+            r.parse_degraded = parse_degraded;
             return r;
         }
 
@@ -295,6 +306,7 @@ namespace MediaDedup
         {
             Result r = exifOnlySearch(sq.bound);
             r.used_exif = r.ok;
+            r.parse_degraded = parse_degraded;
             return r;
         }
 
@@ -408,6 +420,7 @@ namespace MediaDedup
             }
         }
 
+        out.parse_degraded = parse_degraded;
         // Optional safety valve (search.exifOnlyLimit > 0). Uncapped by
         // default: matched ids travel to the day view as one bound JSON
         // parameter, so a full-library match is a few MB of memory and

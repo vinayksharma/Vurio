@@ -39,6 +39,13 @@ class AllDaysViewModel: ObservableObject {
     /// with no feedback an emptied day list reads as "no results".
     @Published private(set) var isSearching = false
 
+    /// The active query was answered by the server's fallback pattern
+    /// parser instead of the LLM structurer (model failed or its output
+    /// was rejected) — fact semantics may be simplified. Drives the
+    /// warning glyph in the search field; silent degradation is how the
+    /// x-pro1 timeout storm went unnoticed.
+    @Published private(set) var searchParseDegraded = false
+
     private var searchDebounceTask: Task<Void, Never>?
 
     private func debounceSearch() {
@@ -63,6 +70,7 @@ class AllDaysViewModel: ObservableObject {
         searchText = ""
         guard !activeSearchQuery.isEmpty else { return }
         activeSearchQuery = ""
+        searchParseDegraded = false
         isSearching = true
         Task {
             await refresh()
@@ -159,6 +167,7 @@ class AllDaysViewModel: ObservableObject {
             // A stale response for a superseded query must not overwrite the
             // current filter's day list.
             guard query == activeSearchQuery else { return }
+            searchParseDegraded = !query.isEmpty && response.searchParseDegraded
 
             if !Task.isCancelled {
                 // Resize the slot list when the server's day count moved (files

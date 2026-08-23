@@ -257,6 +257,12 @@ message GetDayGroupsResponse {
   // attribution lives on DayFile.matched_ai / matched_exif.
   bool search_used_ai = 3;
   bool search_used_exif = 4;
+  // True when the query was answered by the fallback pattern parser even
+  // though the LLM structurer was expected to run (model failed, stalled,
+  // or its output was fully rejected). Fact semantics may be simplified —
+  // e.g. camera MODEL names are only understood by the LLM path. Lets the
+  // client show "simplified query parsing" instead of degrading silently.
+  bool search_parse_degraded = 5;
 }
 
 message GetDayFilesRequest {
@@ -272,6 +278,7 @@ message GetDayFilesResponse {
   int32 total_files = 2; // total files in this day
   bool search_used_ai = 3;   // see GetDayGroupsResponse
   bool search_used_exif = 4;
+  bool search_parse_degraded = 5;
 }
 
 message EjectDuplicatesRequest {

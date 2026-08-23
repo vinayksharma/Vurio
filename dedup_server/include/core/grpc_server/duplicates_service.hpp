@@ -284,7 +284,8 @@ public:
                              grpc::Status& status,
                              bool* used_ai = nullptr,
                              bool* used_exif = nullptr,
-                             SearchMatchFlags* match_flags = nullptr) {
+                             SearchMatchFlags* match_flags = nullptr,
+                             bool* parse_degraded = nullptr) {
         match_ids = nullptr;
         if (query.empty()) return true;
         if (!search_engine_) {
@@ -299,6 +300,7 @@ public:
         }
         if (used_ai) *used_ai = search.used_semantic;
         if (used_exif) *used_exif = search.used_exif;
+        if (parse_degraded) *parse_degraded = search.parse_degraded;
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
         for (const auto& m : search.matches) {
@@ -320,13 +322,14 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        bool used_ai = false, used_exif = false;
+        bool used_ai = false, used_exif = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif, &match_flags))
+                                 &used_ai, &used_exif, &match_flags, &parse_degraded))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
+        reply->set_search_parse_degraded(parse_degraded);
 
         auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day, match_ids);
         if (!page.ok) {
@@ -369,13 +372,14 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        bool used_ai = false, used_exif = false;
+        bool used_ai = false, used_exif = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif, &match_flags))
+                                 &used_ai, &used_exif, &match_flags, &parse_degraded))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
+        reply->set_search_parse_degraded(parse_degraded);
 
         auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit, match_ids);
         if (!page.ok) {

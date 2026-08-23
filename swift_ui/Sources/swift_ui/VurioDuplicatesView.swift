@@ -392,6 +392,13 @@ struct VurioDuplicatesView: View {
             )
             .textFieldStyle(PlainTextFieldStyle())
             .foregroundColor(Theme.textPrimary)
+            if allViewModel.isSearchActive && allViewModel.searchParseDegraded {
+                // The server answered with the fallback pattern parser —
+                // model-name and free-form facts may not have been applied.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .help("Simplified query parsing — the language model was unavailable for this search, so some filters (like camera model names) may not have been applied.")
+            }
             if !allViewModel.searchText.isEmpty {
                 Button(action: { allViewModel.clearSearch() }) {
                     Image(systemName: "xmark.circle.fill")
