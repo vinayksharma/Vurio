@@ -218,6 +218,12 @@ message GetDayGroupsRequest {
   // When set, days/files are restricted to the ranked matches; each matched
   // file appears on its own capture day (group anchoring is bypassed).
   string search_query = 4;
+  // Post-filter of the search result by match source (the ai/xf toggles).
+  // Only-ai keeps files matched EXCLUSIVELY by the semantic half (ai and
+  // not xf); only-xf the reverse; both = OR (the whole result set). Both
+  // false (an older client) also means no filter.
+  bool search_include_ai = 5;
+  bool search_include_exif = 6;
 }
 
 message DayFile {
@@ -271,6 +277,8 @@ message GetDayFilesRequest {
   int32 limit = 3;
   // Must match the search_query the day list was fetched with (or empty).
   string search_query = 4;
+  bool search_include_ai = 5;   // see GetDayGroupsRequest
+  bool search_include_exif = 6;
 }
 
 message GetDayFilesResponse {

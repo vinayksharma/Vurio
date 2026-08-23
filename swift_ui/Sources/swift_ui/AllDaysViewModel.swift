@@ -46,6 +46,31 @@ class AllDaysViewModel: ObservableObject {
     /// x-pro1 timeout storm went unnoticed.
     @Published private(set) var searchParseDegraded = false
 
+    /// ai/xf result toggles (server-filtered post-filter of the active
+    /// search). Single-select is EXCLUSIVE — only-ai keeps files the
+    /// semantic half matched and the EXIF half did not — both = OR. At
+    /// least one stays on; toggling the last one off is refused.
+    @Published private(set) var searchIncludeAi = true
+    @Published private(set) var searchIncludeExif = true
+
+    func toggleSearchAi() { setSearchToggles(ai: !searchIncludeAi, exif: searchIncludeExif) }
+    func toggleSearchExif() { setSearchToggles(ai: searchIncludeAi, exif: !searchIncludeExif) }
+
+    private func setSearchToggles(ai: Bool, exif: Bool) {
+        guard ai || exif else { return } // never both off
+        guard ai != searchIncludeAi || exif != searchIncludeExif else { return }
+        searchIncludeAi = ai
+        searchIncludeExif = exif
+        guard isSearchActive else { return }
+        // The server filters its cached match list — no LLM/CLIP re-run.
+        isSearching = true
+        let query = activeSearchQuery
+        Task {
+            await refresh()
+            if activeSearchQuery == query { isSearching = false }
+        }
+    }
+
     private var searchDebounceTask: Task<Void, Never>?
 
     private func debounceSearch() {
@@ -56,6 +81,8 @@ class AllDaysViewModel: ObservableObject {
             let query = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard query != self.activeSearchQuery else { return }
             self.activeSearchQuery = query
+            self.searchIncludeAi = true // a fresh query starts unfiltered
+            self.searchIncludeExif = true
             self.isSearching = true
             await self.refresh()
             // A newer query may have superseded this one mid-flight; only
@@ -71,6 +98,8 @@ class AllDaysViewModel: ObservableObject {
         guard !activeSearchQuery.isEmpty else { return }
         activeSearchQuery = ""
         searchParseDegraded = false
+        searchIncludeAi = true
+        searchIncludeExif = true
         isSearching = true
         Task {
             await refresh()
@@ -161,6 +190,8 @@ class AllDaysViewModel: ObservableObject {
                 $0.offset = pageIndex * pageSize
                 $0.filesPerDay = filesPerDay
                 $0.searchQuery = query
+                $0.searchIncludeAi = searchIncludeAi
+                $0.searchIncludeExif = searchIncludeExif
             }
 
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
@@ -237,6 +268,8 @@ class AllDaysViewModel: ObservableObject {
                 $0.offset = Int32(day.files.count)
                 $0.limit = filesPerDay
                 $0.searchQuery = activeSearchQuery
+                $0.searchIncludeAi = searchIncludeAi
+                $0.searchIncludeExif = searchIncludeExif
             }
             let response = try await callWithBusyRetry { try await client.getDayFiles(request) }
 

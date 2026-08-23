@@ -155,6 +155,10 @@ struct VurioDuplicatesView: View {
                 if showAllMode {
                     searchFilterRow
                 }
+                // The identical/similar tightness slider governs duplicate
+                // grouping — a BINNED concern; the VU day view gets only the
+                // search row.
+                if !showAllMode {
                 HStack {
                     HStack(spacing: 4) {
                         Image(systemName: "square.fill.on.square.fill")
@@ -207,6 +211,7 @@ struct VurioDuplicatesView: View {
 
                 }
                 .padding([.horizontal, .bottom])
+                }
                 }
             }
             .background(Theme.surface.opacity(0.3))
@@ -402,6 +407,14 @@ struct VurioDuplicatesView: View {
             )
             .textFieldStyle(PlainTextFieldStyle())
             .foregroundColor(Theme.textPrimary)
+            if allViewModel.isSearchActive {
+                searchSourceToggle("ai", isOn: allViewModel.searchIncludeAi,
+                                   help: "Show photos matched by the AI (semantic) half. Alone, only exclusively-AI matches; with xf, everything.")
+                    { allViewModel.toggleSearchAi() }
+                searchSourceToggle("xf", isOn: allViewModel.searchIncludeExif,
+                                   help: "Show photos matched by the EXIF (fact) half. Alone, only exclusively-EXIF matches; with ai, everything.")
+                    { allViewModel.toggleSearchExif() }
+            }
             if allViewModel.isSearchActive && allViewModel.searchParseDegraded {
                 // The server answered with the fallback pattern parser —
                 // model-name and free-form facts may not have been applied.
@@ -425,6 +438,28 @@ struct VurioDuplicatesView: View {
                 .stroke(Theme.border, lineWidth: 1)
         )
         .padding([.horizontal, .bottom])
+    }
+
+    // ai/xf result-source toggle (VU search row): mirrors the tile badges'
+    // look. Server-filtered — the toggle state rides on the day-view
+    // request and the server filters its cached match list instantly.
+    private func searchSourceToggle(_ label: String, isOn: Bool, help: String,
+                                    action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.custom("Menlo", size: 10).weight(.bold))
+                .foregroundColor(isOn ? Color.black.opacity(0.85) : Theme.textSecondary.opacity(0.7))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(isOn ? Theme.textAccent.opacity(0.9) : Theme.surface.opacity(0.6))
+                )
+                .overlay(
+                    Capsule().stroke(isOn ? Color.clear : Theme.border, lineWidth: 1)
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .help(help)
     }
 
     // The bulk Eject/Restore buttons for the BINNED tab. Extracted so the Filters
@@ -578,7 +613,9 @@ struct VurioDuplicatesView: View {
                             // the same query or it lands on a different day.
                             openViewer(.timeline(anchorDayIndex: index,
                                                  file: file,
-                                                 searchQuery: allViewModel.activeSearchQuery))
+                                                 searchQuery: allViewModel.activeSearchQuery,
+                                                 searchIncludeAi: allViewModel.searchIncludeAi,
+                                                 searchIncludeExif: allViewModel.searchIncludeExif))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

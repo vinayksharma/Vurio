@@ -429,6 +429,14 @@ struct Vurio_Dedup_GetDayGroupsRequest: Sendable {
   /// file appears on its own capture day (group anchoring is bypassed).
   var searchQuery: String = String()
 
+  /// Post-filter of the search result by match source (the ai/xf toggles).
+  /// Only-ai keeps files matched EXCLUSIVELY by the semantic half (ai and
+  /// not xf); only-xf the reverse; both = OR (the whole result set). Both
+  /// false (an older client) also means no filter.
+  var searchIncludeAi: Bool = false
+
+  var searchIncludeExif: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -543,6 +551,11 @@ struct Vurio_Dedup_GetDayFilesRequest: Sendable {
 
   /// Must match the search_query the day list was fetched with (or empty).
   var searchQuery: String = String()
+
+  /// see GetDayGroupsRequest
+  var searchIncludeAi: Bool = false
+
+  var searchIncludeExif: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1809,7 +1822,7 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayGroupsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0\u{3}search_query\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1821,6 +1834,8 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.offset) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.filesPerDay) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeAi) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeExif) }()
       default: break
       }
     }
@@ -1839,6 +1854,12 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if !self.searchQuery.isEmpty {
       try visitor.visitSingularStringField(value: self.searchQuery, fieldNumber: 4)
     }
+    if self.searchIncludeAi != false {
+      try visitor.visitSingularBoolField(value: self.searchIncludeAi, fieldNumber: 5)
+    }
+    if self.searchIncludeExif != false {
+      try visitor.visitSingularBoolField(value: self.searchIncludeExif, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1847,6 +1868,8 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.offset != rhs.offset {return false}
     if lhs.filesPerDay != rhs.filesPerDay {return false}
     if lhs.searchQuery != rhs.searchQuery {return false}
+    if lhs.searchIncludeAi != rhs.searchIncludeAi {return false}
+    if lhs.searchIncludeExif != rhs.searchIncludeExif {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2039,7 +2062,7 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
 
 extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayFilesRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0\u{3}search_query\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2051,6 +2074,8 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.offset) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.limit) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeAi) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeExif) }()
       default: break
       }
     }
@@ -2069,6 +2094,12 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if !self.searchQuery.isEmpty {
       try visitor.visitSingularStringField(value: self.searchQuery, fieldNumber: 4)
     }
+    if self.searchIncludeAi != false {
+      try visitor.visitSingularBoolField(value: self.searchIncludeAi, fieldNumber: 5)
+    }
+    if self.searchIncludeExif != false {
+      try visitor.visitSingularBoolField(value: self.searchIncludeExif, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2077,6 +2108,8 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.offset != rhs.offset {return false}
     if lhs.limit != rhs.limit {return false}
     if lhs.searchQuery != rhs.searchQuery {return false}
+    if lhs.searchIncludeAi != rhs.searchIncludeAi {return false}
+    if lhs.searchIncludeExif != rhs.searchIncludeExif {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
