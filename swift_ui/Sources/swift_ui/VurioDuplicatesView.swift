@@ -561,9 +561,7 @@ struct VurioDuplicatesView: View {
                         onLoadMore: {
                             Task { await allViewModel.loadMoreFiles(day: dayGroup.day) }
                         },
-                        searchBadges: allViewModel.isSearchActive
-                            ? (ai: allViewModel.searchUsedAI, xf: allViewModel.searchUsedExif)
-                            : nil
+                        showSearchBadges: allViewModel.isSearchActive
                     )
                     .padding(.horizontal, 30)
                 } else {

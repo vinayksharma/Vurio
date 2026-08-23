@@ -19,10 +19,11 @@ struct DayGroupCard: View {
     // Called when the trailing sentinel scrolls into view and the day has more
     // files than are loaded (horizontal-scroll pagination).
     var onLoadMore: (() -> Void)? = nil
-    // How the active search was evaluated (ai = CLIP semantic, xf = EXIF
-    // constraints); nil when no search is active. Rendered as tiny badges
-    // under each tile's bottom-left corner, advanced overlay only.
-    var searchBadges: (ai: Bool, xf: Bool)? = nil
+    // True while a search is active: render tiny ai/xf badges under each
+    // tile's bottom-left corner (advanced overlay only). Which badge lights
+    // up is per-file — the server unions the CLIP and EXIF halves and tags
+    // every DayFile with matchedAi / matchedExif.
+    var showSearchBadges: Bool = false
 
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
 
@@ -182,20 +183,20 @@ struct DayGroupCard: View {
         }, onLocate: {
             onLocateSet(file.filePath)
         }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: Self.tileHeight, showMatchScore: false)
-        .overlay(alignment: .bottomLeading) { searchBadgeStrip }
+        .overlay(alignment: .bottomLeading) { searchBadgeStrip(for: file) }
     }
 
     /// Advanced-overlay "ai"/"xf" badges under a tile's bottom-left corner:
-    /// which search paths (CLIP semantic / EXIF constraints) produced the
-    /// current result set. Query-level flags, so every tile shows the same
-    /// pair; enabled = accent, unused = dimmed. Drawn in the strip's bottom
-    /// padding via offset, so the row height is unchanged.
+    /// which search half admitted THIS file (results are a union of CLIP
+    /// semantic and EXIF constraint matches, so tiles differ). Lit = that
+    /// half matched, dimmed = it didn't. Drawn in the strip's bottom padding
+    /// via offset, so the row height is unchanged.
     @ViewBuilder
-    private var searchBadgeStrip: some View {
-        if advancedOverlayEnabled, let badges = searchBadges {
+    private func searchBadgeStrip(for file: Vurio_Dedup_DayFile) -> some View {
+        if advancedOverlayEnabled, showSearchBadges {
             HStack(spacing: 3) {
-                searchBadge("ai", enabled: badges.ai)
-                searchBadge("xf", enabled: badges.xf)
+                searchBadge("ai", enabled: file.matchedAi)
+                searchBadge("xf", enabled: file.matchedExif)
             }
             .offset(y: 13)
             .allowsHitTesting(false)
@@ -216,8 +217,8 @@ struct DayGroupCard: View {
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(enabled ? Color.clear : Theme.border.opacity(0.6), lineWidth: 0.5)
             )
-            .help(label == "ai" ? "AI (semantic) search \(enabled ? "used" : "not used") for this result"
-                                : "EXIF metadata search \(enabled ? "used" : "not used") for this result")
+            .help(label == "ai" ? "This image \(enabled ? "matched" : "did not match") the AI (semantic) search"
+                                : "This image \(enabled ? "matched" : "did not match") the EXIF metadata search")
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count
@@ -259,7 +260,7 @@ struct DayGroupCard: View {
                 }
             }
             .frame(width: topSize.width, height: topSize.height)
-            .overlay(alignment: .bottomLeading) { searchBadgeStrip }
+            .overlay(alignment: .bottomLeading) { searchBadgeStrip(for: top) }
             .overlay(alignment: .bottomTrailing) {
                 Text("\u{00D7}\(members.count)")
                     .font(.custom("Menlo", size: 9))

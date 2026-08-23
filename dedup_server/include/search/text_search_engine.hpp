@@ -39,17 +39,20 @@ namespace MediaDedup
         {
             int file_id = 0;
             double score = 0.0; // 1 - cosine distance, higher = more relevant
+            // Which half of the hybrid search admitted this file: CLIP ranked
+            // it for the semantic text / it satisfied the EXIF constraints.
+            // Results are a union of both halves, so any combination occurs.
+            bool via_semantic = false;
+            bool via_exif = false;
         };
 
         struct Result
         {
             bool ok = false;
             std::string error;          // set when !ok
-            std::vector<Match> matches; // ranked best-first
-            // Which halves of the hybrid pipeline produced this result set:
-            // used_semantic = CLIP ranking ran on (part of) the query text;
-            // used_exif = parsed EXIF constraints filtered the rows. Both can
-            // be true for mixed queries ("sunset with a canon").
+            std::vector<Match> matches; // CLIP-ranked first, then EXIF extras
+            // Which halves of the hybrid pipeline RAN (successfully) for this
+            // query. Per-match attribution lives on Match::via_*.
             bool used_semantic = false;
             bool used_exif = false;
         };
@@ -64,11 +67,7 @@ namespace MediaDedup
         Result searchUncached(const std::string &query);
         /// CLIP KNN over the vec0 index (the pre-EXIF-4 search body).
         Result clipSearch(const std::string &query);
-        /// EXIF-4: drop matches whose rows fail the parsed EXIF constraints.
-        void filterMatchesByExif(std::vector<Match> &matches,
-                                 const ExifQueryConstraints &constraints);
-        /// EXIF-4: pure metadata query ("photos taken with a canon") — no
-        /// semantic text left, so skip CLIP and select ids from SQL alone.
+        /// EXIF-4: select ids matching the parsed constraints from SQL alone.
         Result exifOnlySearch(const ExifQueryConstraints &constraints);
         void ensureTokenizerLoaded();
         void ensureGeocoderLoaded();

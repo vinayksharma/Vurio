@@ -8,6 +8,9 @@
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "search/text_search_engine.hpp"
 
+#include <unordered_map>
+#include <utility>
+
 namespace MediaDedup {
 namespace Core {
 
@@ -226,10 +229,21 @@ public:
 
     // Map one DayFileRecord onto its proto, including the derived
     // is_ejected/is_available flags. Shared by GetDayGroups and GetDayFiles.
+    // file_id -> (matched_ai, matched_exif) for the active search's union.
+    using SearchMatchFlags = std::unordered_map<int, std::pair<bool, bool>>;
+
     void fillDayFileProto(vurio::dedup::DayFile* proto_file,
                           const MediaDedup::DayFileRecord& file,
                           const std::vector<std::string>& ejection_paths,
-                          const std::vector<std::string>& mounted_fs) {
+                          const std::vector<std::string>& mounted_fs,
+                          const SearchMatchFlags* match_flags = nullptr) {
+        if (match_flags) {
+            auto it = match_flags->find(file.file_id);
+            if (it != match_flags->end()) {
+                proto_file->set_matched_ai(it->second.first);
+                proto_file->set_matched_exif(it->second.second);
+            }
+        }
         proto_file->set_id(std::to_string(file.file_id));
         proto_file->set_file_path(file.file_path);
         proto_file->set_taken_time(file.taken_time);
@@ -269,7 +283,8 @@ public:
                              const std::vector<int>*& match_ids,
                              grpc::Status& status,
                              bool* used_ai = nullptr,
-                             bool* used_exif = nullptr) {
+                             bool* used_exif = nullptr,
+                             SearchMatchFlags* match_flags = nullptr) {
         match_ids = nullptr;
         if (query.empty()) return true;
         if (!search_engine_) {
@@ -286,7 +301,10 @@ public:
         if (used_exif) *used_exif = search.used_exif;
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
-        for (const auto& m : search.matches) ids_storage.push_back(m.file_id);
+        for (const auto& m : search.matches) {
+            ids_storage.push_back(m.file_id);
+            if (match_flags) (*match_flags)[m.file_id] = {m.via_semantic, m.via_exif};
+        }
         match_ids = &ids_storage;
         return true;
     }
@@ -303,8 +321,9 @@ public:
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
         bool used_ai = false, used_exif = false;
+        SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif))
+                                 &used_ai, &used_exif, &match_flags))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
@@ -330,7 +349,8 @@ public:
             proto_day->set_total_files(day.total_files);
 
             for (const auto& file : day.files) {
-                fillDayFileProto(proto_day->add_files(), file, ejection_paths, mounted_fs);
+                fillDayFileProto(proto_day->add_files(), file, ejection_paths, mounted_fs,
+                                 match_ids ? &match_flags : nullptr);
             }
         }
         return grpc::Status::OK;
@@ -350,8 +370,9 @@ public:
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
         bool used_ai = false, used_exif = false;
+        SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
-                                 &used_ai, &used_exif))
+                                 &used_ai, &used_exif, &match_flags))
             return search_status;
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
@@ -366,7 +387,8 @@ public:
         auto mounted_fs = MediaDedup::MediaAvailability::mountedFilesystems();
 
         for (const auto& file : page.files) {
-            fillDayFileProto(reply->add_files(), file, ejection_paths, mounted_fs);
+            fillDayFileProto(reply->add_files(), file, ejection_paths, mounted_fs,
+                             match_ids ? &match_flags : nullptr);
         }
         return grpc::Status::OK;
     }

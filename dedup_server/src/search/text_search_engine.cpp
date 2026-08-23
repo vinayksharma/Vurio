@@ -168,7 +168,7 @@ namespace MediaDedup
         if (!constraints.hasAny())
         {
             Result r = clipSearch(query);
-            r.used_semantic = true;
+            r.used_semantic = r.ok;
             return r;
         }
 
@@ -179,18 +179,53 @@ namespace MediaDedup
             constraints.date_range ? std::string(", date range") : std::string(),
             constraints.remaining);
 
-        if (constraints.remaining_is_filler)
-        {
-            Result r = exifOnlySearch(constraints);
-            r.used_exif = true;
-            return r;
-        }
+        // Both halves always run and the result is their UNION: a fact query
+        // like "f2.5" still surfaces what CLIP finds for the text, and a
+        // mixed query keeps semantic hits that fail the constraints. Each
+        // match's via_* flags say which half admitted it (the VU ai/xf
+        // badges), so showing the superset loses no information.
+        Result exif = exifOnlySearch(constraints);
 
-        Result result = clipSearch(constraints.remaining);
-        result.used_semantic = true;
-        result.used_exif = true;
-        if (result.ok)
-            filterMatchesByExif(result.matches, constraints);
+        // When the remainder is pure filler ("photos", "show me") CLIP gets
+        // the raw query text instead, so the semantic half still runs.
+        const std::string semantic_text =
+            constraints.remaining_is_filler ? query : constraints.remaining;
+        Result clip = clipSearch(semantic_text);
+
+        if (!exif.ok && !clip.ok)
+            return exif; // exif's error names the SQL problem
+
+        if (exif.ok != clip.ok)
+            logger.warning("Hybrid search running on one half only (%s down): %s",
+                           std::string(exif.ok ? "semantic" : "exif"),
+                           exif.ok ? clip.error : exif.error);
+
+        Result result;
+        result.ok = true;
+        result.used_semantic = clip.ok;
+        result.used_exif = exif.ok;
+
+        std::unordered_set<int> exif_ids;
+        exif_ids.reserve(exif.matches.size());
+        for (const auto &m : exif.matches)
+            exif_ids.insert(m.file_id);
+
+        // CLIP-ranked matches first (flagged when they also satisfy the
+        // constraints), then the constraint matches CLIP did not rank.
+        result.matches.reserve(clip.matches.size() + exif.matches.size());
+        std::unordered_set<int> emitted;
+        emitted.reserve(clip.matches.size());
+        for (auto m : clip.matches)
+        {
+            m.via_exif = exif_ids.count(m.file_id) > 0;
+            emitted.insert(m.file_id);
+            result.matches.push_back(m);
+        }
+        for (const auto &m : exif.matches)
+        {
+            if (!emitted.count(m.file_id))
+                result.matches.push_back(m);
+        }
         return result;
     }
 
@@ -251,7 +286,7 @@ namespace MediaDedup
             const double score = 1.0 - distance;
             if (score < min_score_)
                 break; // ordered by distance: everything after is worse
-            result.matches.push_back({file_id, score});
+            result.matches.push_back({file_id, score, /*via_semantic=*/true, /*via_exif=*/false});
         }
 
         logger.debug("Query '%s': %zu of %zu KNN hits above minScore %.3f",
@@ -323,42 +358,6 @@ namespace MediaDedup
         }
     }
 
-    void TextSearchEngine::filterMatchesByExif(std::vector<Match> &matches,
-                                               const ExifQueryConstraints &constraints)
-    {
-        if (matches.empty() || !db_)
-            return;
-        try
-        {
-            std::ostringstream ids;
-            for (std::size_t i = 0; i < matches.size(); ++i)
-                ids << (i ? "," : "") << matches[i].file_id;
-
-            std::vector<std::string> camera_binds;
-            std::string where = buildExifWhere(constraints, camera_binds);
-
-            auto lease = db_->acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            std::vector<int> surviving;
-            Poco::Data::Statement stmt(sess);
-            stmt << "SELECT id FROM scanned_files WHERE id IN (" + ids.str() + ")" + where,
-                Poco::Data::Keywords::into(surviving);
-            for (auto &bind : camera_binds)
-                stmt, Poco::Data::Keywords::use(bind);
-            stmt.execute();
-
-            std::unordered_set<int> keep(surviving.begin(), surviving.end());
-            matches.erase(std::remove_if(matches.begin(), matches.end(),
-                                         [&](const Match &m) { return !keep.count(m.file_id); }),
-                          matches.end());
-        }
-        catch (const std::exception &e)
-        {
-            Poco::Logger::get("TextSearchEngine")
-                .error("EXIF filter failed (results unfiltered): %s", std::string(e.what()));
-        }
-    }
-
     TextSearchEngine::Result TextSearchEngine::exifOnlySearch(const ExifQueryConstraints &constraints)
     {
         Result result;
@@ -387,7 +386,7 @@ namespace MediaDedup
 
             result.matches.reserve(ids.size());
             for (int id : ids)
-                result.matches.push_back({id, 1.0}); // constraint match, no rank
+                result.matches.push_back({id, 1.0, /*via_semantic=*/false, /*via_exif=*/true});
             result.ok = true;
             Poco::Logger::get("TextSearchEngine")
                 .debug("EXIF-only query matched %zu file(s)", result.matches.size());
