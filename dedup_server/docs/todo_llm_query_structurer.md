@@ -1,8 +1,16 @@
 # QP-1 — Local LLM Query Structurer
 
-Status: designed 2026-08-23; **QP-1a implemented 2026-08-23** on
-`feature/qp1_query_intent` (StructuredQuery + intent-split regex parser +
-engine algebra; 391 tests pass). QP-1b–e (llama.cpp structurer) not started. Supersedes the §4 regex-grammar
+Status: designed 2026-08-23. **QP-1a implemented** (StructuredQuery +
+intent-split regex parser + engine algebra). **QP-1b implemented
+2026-08-23**: `LlmRuntime` (include/search/llm_runtime.hpp) wraps llama.cpp
+pinned at b4589 via CMake FetchContent (Metal, embedded shaders) — lazy
+load, mutex-serialized context, greedy decode, GBNF-constrained sampling
+with a root-rule pre-check (llama.cpp silently no-ops an unparseable
+grammar — refused instead), deadline abort, KV prefix reuse, chat template
+from GGUF metadata with ChatML fallback, `search.llm.*` config keys.
+Hermetic tests plus model-gated smokes (VURIO_TEST_GGUF; verified against
+llama.cpp's CI stories260K model: constrained decode, determinism, timeout,
+recovery). QP-1c–e (registry/prompt, validator, golden tests) not started. Supersedes the §4 regex-grammar
 expansion of [todo_exif_query_intent.md](todo_exif_query_intent.md) (EXIF-7);
 EXIF-7's result algebra (§3), badges, and user decisions remain the target
 semantics and move unchanged into this plan's engine phase.
