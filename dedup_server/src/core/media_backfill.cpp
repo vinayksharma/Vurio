@@ -1,184 +1,68 @@
 #include "core/media_backfill.hpp"
 
-#include "core/media_generation_failures.hpp"
-#include "core/media_ready_bus.hpp"
-#include "media_processors/thumbnail_service.hpp"
 #include "database/database_manager.hpp"
-#include "database/preview_cache_ops.hpp"
 #include "database/scanned_files_ops.hpp"
-#include "filesmanager/disk_cache.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
-#include "media_processors/image/backends/transcoding_pipeline.hpp"
-#include "orchestration/thread_pool_manager.hpp"
 
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Logger.h>
-#include <chrono>
 #include <filesystem>
+#include <sys/stat.h>
 #include <vector>
 
 namespace MediaDedup
 {
-    void MediaBackfill::installHook(std::shared_ptr<DiskCache> thumbnail_cache,
-                                    std::shared_ptr<DiskCache> transcoding_cache)
+    void MediaBackfill::installHook()
     {
-        // MP-2: the hook captures the initializer's REAL cache instances.
-        MediaBackfillHook::install([thumbnail_cache, transcoding_cache](std::shared_ptr<DatabaseManager> db,
-                                                                        std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                                                                        std::shared_ptr<ThreadPoolManager> tpm) {
-            MediaBackfill::run(db, std::move(cfg), std::move(tpm),
-                               thumbnail_cache, transcoding_cache);
-            // run() only ENQUEUES thumbnail/preview work, so this executes
-            // promptly on the same background thread; the EXIF sweep itself
-            // is the inline (ms-per-file) part.
+        MediaBackfillHook::install([](std::shared_ptr<DatabaseManager> db,
+                                      MediaBackfillHook::ProgressFn progress) {
             if (db)
-                MediaBackfill::backfillRawExif(*db, Poco::Logger::get("MediaBackfill"));
+                MediaBackfill::backfillRawExif(*db, Poco::Logger::get("MediaBackfill"),
+                                               std::move(progress));
         });
     }
 
-    void MediaBackfill::run(std::shared_ptr<DatabaseManager> db,
-                            std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                            std::shared_ptr<ThreadPoolManager> tpm,
-                            std::shared_ptr<DiskCache> thumbnail_cache,
-                            std::shared_ptr<DiskCache> transcoding_cache)
+    namespace
     {
-        Poco::Logger &logger = Poco::Logger::get("MediaBackfill");
-        if (!db || !cfg || !tpm || !thumbnail_cache || !transcoding_cache)
-            return;
-
-        try
+        // Cloud-evicted (dataless) placeholder: opening one makes the file
+        // provider download the ENTIRE object. A metadata sweep must never
+        // trigger a mass re-hydration of an evicted OneDrive/iCloud
+        // library — treat these as offline; a later sweep picks them up
+        // once they are local again.
+        bool isDatalessPlaceholder(const std::string &path)
         {
-            std::vector<std::string> missing_thumbs;
-            std::vector<std::string> preview_candidates;
-            {
-                auto lease = db->acquireSessionLease();
-                Poco::Data::Session &sess = lease.get();
-
-                Poco::Data::Statement sel_thumbs(sess);
-                sel_thumbs << "SELECT file_path FROM scanned_files WHERE processed >= 2 "
-                              "AND file_path NOT IN (SELECT source_path FROM thumbnail_cache) LIMIT 5000";
-                sel_thumbs.execute();
-                Poco::Data::RecordSet rs_thumbs(sel_thumbs);
-                for (bool more = rs_thumbs.moveFirst(); more; more = rs_thumbs.moveNext())
-                {
-                    missing_thumbs.push_back(rs_thumbs[0].convert<std::string>());
-                }
-
-                Poco::Data::Statement sel_previews(sess);
-                sel_previews << "SELECT file_path FROM scanned_files WHERE processed >= 2 "
-                                "AND file_path NOT IN (SELECT source_path FROM preview_cache) LIMIT 20000";
-                sel_previews.execute();
-                Poco::Data::RecordSet rs_previews(sel_previews);
-                for (bool more = rs_previews.moveFirst(); more; more = rs_previews.moveNext())
-                {
-                    preview_candidates.push_back(rs_previews[0].convert<std::string>());
-                }
-            }
-
-            if (missing_thumbs.empty() && preview_candidates.empty())
-                return;
-
-            // MP-2: the initializer's already-initialized cache instances —
-            // no second DiskCache pair over the same directories.
-            auto backfill_thumb_cache = thumbnail_cache;
-            auto backfill_trans_cache = transcoding_cache;
-
-            int thumb_size = cfg->getPropertyValue<int>("thumbnail.pipeline.size", 256);
-            int enqueued_thumbs = 0;
-            for (const auto &path : missing_thumbs)
-            {
-                if (!std::filesystem::exists(path))
-                    continue;
-                tpm->submit("thumbnail_generator", [cfg, db, backfill_thumb_cache, path, thumb_size]() {
-                    ThumbnailService service(cfg, db, backfill_thumb_cache);
-                    std::string cached_path;
-                    ThumbnailService::GenerationFailure kind;
-                    if (service.generateAndCacheThumbnail(path, thumb_size, cached_path, &kind))
-                    {
-                        MediaGenerationFailures::instance().recordSuccess(path, "thumbnail");
-                        MediaReadyBus::instance().publish({path, "thumbnail", true, ""});
-                    }
-                    else if (kind == ThumbnailService::GenerationFailure::Decode)
-                    {
-                        MediaGenerationFailures::instance().recordFailure(
-                            path, "thumbnail", "Thumbnail backfill failed (unsupported or corrupted file)");
-                    }
-                }, path);
-                enqueued_thumbs++;
-            }
-
-            int enqueued_previews = 0;
-            for (const auto &path : preview_candidates)
-            {
-                if (!std::filesystem::exists(path))
-                    continue;
-                if (!TranscodingPipeline::NeedsQhdPreviewCache(path, cfg))
-                    continue;
-                tpm->submit("preview_generator", [cfg, db, backfill_trans_cache, path]() {
-                    TranscodingConfig transcode_config = TranscodingPipeline::GetConfigFromManager(cfg);
-                    if (!transcode_config.enabled)
-                        return;
-                    std::string temp_dir = std::filesystem::temp_directory_path().string();
-                    std::string temp_path;
-                    if (TranscodingPipeline::TranscodeToFile(path, temp_path, transcode_config, temp_dir))
-                    {
-                        std::string final_path;
-                        if (backfill_trans_cache->moveToCache(temp_path, final_path))
-                        {
-                            // A preview with no cache row is invisible to every
-                            // reader and would be transcoded again on the next
-                            // backfill sweep; drop it rather than leak it.
-                            if (!PreviewCacheOps::upsertPreview(
-                                    *db, PreviewCacheOps::makeRecord(path, final_path)))
-                            {
-                                backfill_trans_cache->deleteFromCacheImmediately(final_path);
-                                return;
-                            }
-                            MediaGenerationFailures::instance().recordSuccess(path, "preview");
-                            MediaReadyBus::instance().publish({path, "preview", true, ""});
-                        }
-                        else
-                        {
-                            std::error_code ec;
-                            std::filesystem::remove(temp_path, ec);
-                        }
-                    }
-                    else
-                    {
-                        MediaGenerationFailures::instance().recordFailure(
-                            path, "preview", "Preview backfill failed (unsupported or corrupted file)");
-                    }
-                }, path);
-                enqueued_previews++;
-            }
-
-            logger.information("Backfill enqueued %d missing thumbnails and %d missing previews.",
-                               enqueued_thumbs, enqueued_previews);
-        }
-        catch (const std::exception &e)
-        {
-            logger.warning("Thumbnail/preview backfill failed: %s", std::string(e.what()));
+#ifdef SF_DATALESS
+            struct stat st{};
+            if (::stat(path.c_str(), &st) != 0)
+                return false;
+            return (st.st_flags & SF_DATALESS) != 0;
+#else
+            (void)path;
+            return false;
+#endif
         }
     }
 
     MediaBackfill::RawExifBackfillStats
-    MediaBackfill::backfillRawExif(DatabaseManager &db, Poco::Logger &logger)
+    MediaBackfill::backfillRawExif(DatabaseManager &db, Poco::Logger &logger,
+                                   const MediaBackfillHook::ProgressFn &progress)
     {
-        RawExifBackfillStats stats;
         // RAW-EXIF: the pre-fix LibRaw metadata path wrote only the combined
         // exif_camera, never exif_make — so "camera set, make NULL" is
         // exactly the population written by the old reader. A successful
         // re-read fills exif_make (LibRaw always reports one for files it
         // opens), which removes the row from this selector: the sweep is
         // idempotent and converges. Files it cannot read right now (e.g. on
-        // a disconnected drive) simply stay candidates for a later sweep.
+        // a disconnected drive, or cloud-evicted) simply stay candidates
+        // for a later sweep.
         //
         // Each read is a LibRaw metadata-only open (no demosaic, ms-scale),
         // so the sweep runs inline on this background thread instead of
         // re-processing the whole file through the media pipeline.
+        RawExifBackfillStats stats;
         try
         {
             std::string ext_filter;
@@ -196,7 +80,7 @@ namespace MediaDedup
                 Poco::Data::Statement sel(sess);
                 sel << "SELECT file_path FROM scanned_files "
                        "WHERE exif_camera IS NOT NULL AND exif_make IS NULL "
-                       "AND (" + ext_filter + ") LIMIT 20000";
+                       "AND (" + ext_filter + ")";
                 sel.execute();
                 Poco::Data::RecordSet rs(sel);
                 for (bool more = rs.moveFirst(); more; more = rs.moveNext())
@@ -206,18 +90,25 @@ namespace MediaDedup
             if (candidates.empty())
                 return stats;
 
-            for (const auto &path : candidates)
+            if (progress)
+                progress(0, stats.candidates);
+            for (std::size_t i = 0; i < candidates.size(); ++i)
             {
-                if (!std::filesystem::exists(path))
+                const auto &path = candidates[i];
+                if (!std::filesystem::exists(path) || isDatalessPlaceholder(path))
                 {
                     stats.offline++;
-                    continue;
                 }
-                auto exif = ExifReader::read(path);
-                if (exif && ScannedFilesOps::updateExifMetadata(db, path, *exif))
-                    stats.updated++;
                 else
-                    stats.unreadable++;
+                {
+                    auto exif = ExifReader::read(path);
+                    if (exif && ScannedFilesOps::updateExifMetadata(db, path, *exif))
+                        stats.updated++;
+                    else
+                        stats.unreadable++;
+                }
+                if (progress && ((i + 1) % 50 == 0 || i + 1 == candidates.size()))
+                    progress(i + 1, stats.candidates);
             }
             logger.information(
                 "RAW EXIF backfill: %d of %z updated (%d offline, %d unreadable).",

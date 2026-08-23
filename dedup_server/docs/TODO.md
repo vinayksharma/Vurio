@@ -49,6 +49,13 @@ before touching code — the line below is an index entry, not a specification.
   those rows inline (ms per file, no demosaic) and converges once each row
   gains a make. Offline files (disconnected drives) stay candidates for a
   later sweep.
+  Follow-ups (2026-08-23): the sweep's selector statements were never
+  executed (pre-existing Poco bug, PR #58); the integrity-check dialog now
+  shows the sweep honestly ("Refreshing RAW photo metadata..." with live
+  N-of-M via the progress callback); cloud-evicted (SF_DATALESS) files are
+  skipped so the sweep never triggers a mass OneDrive/iCloud download; and
+  the never-functional MP-2 thumbnail/preview backfill was removed — those
+  are generated on demand by design.
 
 - **EXIF-1..5 — comprehensive EXIF-searchable prompt queries.**
   *Implemented 2026-08-19 on `feature/searchable_exif` (EXIF-1 `10b737a3`,

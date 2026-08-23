@@ -16,9 +16,7 @@ namespace MediaDedup
         g_hook = std::move(fn);
     }
 
-    void MediaBackfillHook::run(std::shared_ptr<DatabaseManager> db,
-                                std::shared_ptr<UnifiedObservableConfigManager> cfg,
-                                std::shared_ptr<ThreadPoolManager> tpm)
+    void MediaBackfillHook::run(std::shared_ptr<DatabaseManager> db, ProgressFn progress)
     {
         Fn fn;
         {
@@ -26,7 +24,7 @@ namespace MediaDedup
             fn = g_hook;
         }
         if (fn)
-            fn(std::move(db), std::move(cfg), std::move(tpm));
+            fn(std::move(db), std::move(progress));
     }
 
 } // namespace MediaDedup
