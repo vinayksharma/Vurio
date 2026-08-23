@@ -106,7 +106,7 @@ query ──► MRU cache ──► LlmQueryStructurer ──► Validator ─�
 - **Config**: `search.llm.modelPath` (default
   `models/qwen2.5-1.5b-instruct-q4_k_m.gguf`, project-root resolved like the
   CLIP model), `search.llm.enabled` (default true), `search.llm.timeoutMs`
-  (default 2000). Missing file → warn once, regex fallback; the feature is
+  (default 4000; a cold call pays model load + system-prompt prefill, and real queries measure 2.1-4.1 s cold). Missing file → warn once, regex fallback; the feature is
   additive exactly like the CLIP model file.
 - **Decoding**: greedy, temperature 0 → deterministic for a given query.
   System prompt (schema + few-shot) is prefix/KV-cached once; per query only

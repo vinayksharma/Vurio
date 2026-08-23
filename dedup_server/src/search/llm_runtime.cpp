@@ -256,10 +256,17 @@ namespace MediaDedup
             impl.deadline_ms.store(0, std::memory_order_relaxed);
             if (err)
             {
-                // A failed decode leaves the KV tail in an unknown state;
-                // drop everything so the next call starts clean.
-                llama_kv_cache_seq_rm(impl.ctx, 0, 0, -1);
-                impl.evaluated.clear();
+                // Only the failed batch's KV entries are suspect —
+                // `evaluated` holds exactly the tokens whose llama_decode
+                // SUCCEEDED, so trim to that boundary instead of wiping
+                // the cache. This keeps the warm system-prompt prefix
+                // across a timeout (a full wipe made every subsequent
+                // call re-pay the whole prefill inside its own deadline:
+                // one slow query became a permanent timeout storm), and
+                // it makes prefill resumable — even a too-short deadline
+                // advances the cache a few batches per attempt.
+                llama_kv_cache_seq_rm(impl.ctx, 0,
+                                      static_cast<llama_pos>(impl.evaluated.size()), -1);
                 result.ok = false;
                 result.error = err;
             }

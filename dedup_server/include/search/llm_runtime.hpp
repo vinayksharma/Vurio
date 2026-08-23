@@ -43,7 +43,7 @@ namespace MediaDedup
             std::string model_path;
             int context_tokens = 4096;
             int max_output_tokens = 512;
-            int timeout_ms = 2000;
+            int timeout_ms = 4000;
         };
 
         struct Completion
