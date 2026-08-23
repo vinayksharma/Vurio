@@ -301,12 +301,22 @@ struct VurioDuplicatesView: View {
     @ViewBuilder
     private var vuList: some View {
         if allViewModel.days.isEmpty {
-            VStack {
+            VStack(spacing: 10) {
                 Spacer()
-                Text(allViewModel.isSearchActive
-                     ? "No photos match \"\(allViewModel.activeSearchQuery)\"."
-                     : "No days available.")
-                    .foregroundColor(Theme.textSecondary)
+                if allViewModel.isSearching {
+                    // The day list is reset while a query is in flight —
+                    // "no results" is not knowable yet and reads as a
+                    // failed search during the LLM + CLIP round-trip.
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Searching…")
+                        .foregroundColor(Theme.textSecondary)
+                } else {
+                    Text(allViewModel.isSearchActive
+                         ? "No photos match \"\(allViewModel.activeSearchQuery)\"."
+                         : "No days available.")
+                        .foregroundColor(Theme.textSecondary)
+                }
                 Spacer()
             }
             .frame(maxWidth: .infinity)
