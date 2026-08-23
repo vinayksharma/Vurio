@@ -3,6 +3,11 @@
 #include <functional>
 #include <memory>
 
+namespace Poco
+{
+    class Logger;
+}
+
 namespace MediaDedup
 {
     class DatabaseManager;
@@ -57,6 +62,16 @@ namespace MediaDedup
                         std::shared_ptr<ThreadPoolManager> tpm,
                         std::shared_ptr<DiskCache> thumbnail_cache,
                         std::shared_ptr<DiskCache> transcoding_cache);
+
+        /**
+         * @brief RAW-EXIF: one-shot sweep refilling the rich EXIF columns
+         * for RAW rows written by the pre-fix LibRaw reader (which captured
+         * only camera/datetime/dimensions). Selector: RAW extension with
+         * exif_camera set but exif_make NULL — a successful re-read fills
+         * exif_make, so the sweep converges. Runs inline (LibRaw
+         * metadata-only opens, no demosaic) on the integrity-check thread.
+         */
+        static void backfillRawExif(DatabaseManager &db, Poco::Logger &logger);
     };
 
 } // namespace MediaDedup

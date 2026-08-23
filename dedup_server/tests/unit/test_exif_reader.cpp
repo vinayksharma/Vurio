@@ -13,10 +13,12 @@
 #include <Poco/PipeStream.h>
 #include <Poco/Process.h>
 #include <Poco/StreamCopier.h>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -178,4 +180,58 @@ TEST(ExifReaderOrientationNames, TransposingNamesOnly)
     EXPECT_FALSE(ExifReader::orientationTransposesAxes("BottomLeft"));
     EXPECT_FALSE(ExifReader::orientationTransposesAxes("Undefined"));
     EXPECT_FALSE(ExifReader::orientationTransposesAxes(""));
+}
+
+// RAW-EXIF: pure conversion helpers for the LibRaw metadata path. LibRaw
+// rejects minimal hand-built DNGs, so no openable RAW fixture can live
+// in-tree — the conversions are tested here and the extraction itself is
+// verified against live RAW files (see docs/TODO.md).
+
+TEST(ExifReaderRawHelpers, ShutterTextSubSecondBecomesFraction)
+{
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(1.0f / 500.0f), "1/500");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(0.0005f), "1/2000");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(1.0f / 8000.0f), "1/8000");
+}
+
+TEST(ExifReaderRawHelpers, ShutterTextLongExposuresKeepSeconds)
+{
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(1.0f), "1s");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(2.5f), "2.5s");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(30.0f), "30s");
+    // 1/0.7 rounds to denominator 1, which is not a fraction.
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(0.7f), "0.7s");
+}
+
+TEST(ExifReaderRawHelpers, ShutterTextRejectsNonPositive)
+{
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(0.0f), "");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(-1.0f), "");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(std::numeric_limits<float>::infinity()), "");
+    EXPECT_EQ(ExifReader::shutterTextFromSeconds(std::numeric_limits<float>::quiet_NaN()), "");
+}
+
+TEST(ExifReaderRawHelpers, GpsDmsConvertsAndSigns)
+{
+    EXPECT_NEAR(ExifReader::gpsDecimalFromDms(40.0f, 26.0f, 46.0f, 'N'), 40.446111f, 1e-4f);
+    EXPECT_NEAR(ExifReader::gpsDecimalFromDms(40.0f, 26.0f, 46.0f, 'S'), -40.446111f, 1e-4f);
+    EXPECT_NEAR(ExifReader::gpsDecimalFromDms(79.0f, 58.0f, 56.0f, 'w'), -79.982222f, 1e-4f);
+    EXPECT_NEAR(ExifReader::gpsDecimalFromDms(2.0f, 21.0f, 3.0f, 'e'), 2.350833f, 1e-4f);
+}
+
+TEST(ExifReaderRawHelpers, GpsWithoutHemisphereRefIsNaN)
+{
+    // LibRaw zero-fills parsed_gps when no GPS IFD exists; a zeroed ref
+    // char must NOT produce a (0,0) ocean fix.
+    EXPECT_TRUE(std::isnan(ExifReader::gpsDecimalFromDms(0.0f, 0.0f, 0.0f, '\0')));
+    EXPECT_TRUE(std::isnan(ExifReader::gpsDecimalFromDms(40.0f, 26.0f, 46.0f, 'X')));
+}
+
+TEST(ExifReaderRawHelpers, LibRawFlipMapsToExifOrientation)
+{
+    EXPECT_EQ(ExifReader::orientationFromLibRawFlip(0), 1);
+    EXPECT_EQ(ExifReader::orientationFromLibRawFlip(3), 3);
+    EXPECT_EQ(ExifReader::orientationFromLibRawFlip(5), 8);
+    EXPECT_EQ(ExifReader::orientationFromLibRawFlip(6), 6);
+    EXPECT_EQ(ExifReader::orientationFromLibRawFlip(42), 1);
 }

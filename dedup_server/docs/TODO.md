@@ -31,6 +31,25 @@ before touching code — the line below is an index entry, not a specification.
   **Full specification: [todo_llm_query_structurer.md](todo_llm_query_structurer.md)**
 
 
+- **RAW-EXIF — RAW files get the full EXIF field set.**
+  *Implemented 2026-08-23 on `feature/raw_exif_fields`. Live-verified against
+  real DNGs (iPhone X, Fujifilm X-Pro1: ISO/aperture/shutter/focal/lens/GPS
+  all extracted; GPS matches Spotlight's values).*
+  The MP-1 LibRaw metadata path captured only camera/datetime/dimensions, so
+  every RAW row had NULL in each column a bound search filter touches —
+  "f2.5" or "iso above 800" silently excluded every RAW photo. LibRaw parses
+  the exposure block in the same metadata-only `open_file()`; the fields are
+  now copied out (make/model/lens, ISO, aperture, shutter as exposure time +
+  APEX + text, focal + 35mm-equivalent, GPS from `parsed_gps` with
+  hemisphere refs — no ref means NaN, never a (0,0) ocean fix — and
+  orientation from LibRaw flip). Backfill: the old reader never wrote
+  `exif_make`, so "RAW extension, `exif_camera` set, `exif_make` NULL" is
+  exactly the old-reader population; `MediaBackfill::backfillRawExif` (runs
+  after the thumbnail/preview backfill in integrity-check Phase 6) re-reads
+  those rows inline (ms per file, no demosaic) and converges once each row
+  gains a make. Offline files (disconnected drives) stay candidates for a
+  later sweep.
+
 - **EXIF-1..5 — comprehensive EXIF-searchable prompt queries.**
   *Implemented 2026-08-19 on `feature/searchable_exif` (EXIF-1 `10b737a3`,
   EXIF-2 `73b2e26d`, EXIF-3 `724eecb8`, EXIF-4 `63b039cc`, EXIF-5 in the
