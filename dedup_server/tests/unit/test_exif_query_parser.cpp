@@ -265,3 +265,136 @@ TEST_F(ExifQueryParserLocationTest, FullCombinedQuery)
     EXPECT_EQ(c.remaining, "sunset pictures");
     EXPECT_FALSE(c.remaining_is_filler);
 }
+
+// --- QP-1a: intent-split parsing (bound vs bare) ---------------------------
+
+TEST(ExifQueryParserIntentTest, ScaffoldedCameraIsBoundBareBrandIsBare)
+{
+    ExifQueryParser parser;
+
+    auto bound = parser.parseStructured("photos taken with a canon");
+    ASSERT_EQ(bound.bound.camera_terms.size(), 1u);
+    EXPECT_EQ(bound.bound.camera_terms[0], "canon");
+    EXPECT_TRUE(bound.bare.empty());
+    EXPECT_TRUE(bound.remaining_is_filler);
+
+    auto bare = parser.parseStructured("canon");
+    EXPECT_TRUE(bare.bound.camera_terms.empty());
+    ASSERT_EQ(bare.bare.size(), 1u);
+    ASSERT_EQ(bare.bare[0].camera_terms.size(), 1u);
+    EXPECT_EQ(bare.bare[0].camera_terms[0], "canon");
+
+    // Suffix alone also scaffolds: "canon camera".
+    auto suffixed = parser.parseStructured("canon camera");
+    ASSERT_EQ(suffixed.bound.camera_terms.size(), 1u);
+    EXPECT_TRUE(suffixed.bare.empty());
+}
+
+TEST(ExifQueryParserIntentTest, ComparativeIsBoundExactProbeIsBare)
+{
+    ExifQueryParser parser;
+
+    auto cmp = parser.parseStructured("photos iso above 800");
+    ASSERT_EQ(cmp.bound.numeric.size(), 1u);
+    EXPECT_EQ(cmp.bound.numeric[0].op, ">");
+    EXPECT_TRUE(cmp.bare.empty());
+
+    auto probe = parser.parseStructured("iso 800");
+    EXPECT_TRUE(probe.bound.numeric.empty());
+    ASSERT_EQ(probe.bare.size(), 1u);
+    ASSERT_EQ(probe.bare[0].numeric.size(), 1u);
+    EXPECT_EQ(probe.bare[0].numeric[0].column, "exif_iso");
+    EXPECT_EQ(probe.bare[0].numeric[0].op, "=");
+
+    // The motivating case: a lone aperture probe is exploration.
+    auto f = parser.parseStructured("f2.5");
+    EXPECT_TRUE(f.bound.numeric.empty());
+    ASSERT_EQ(f.bare.size(), 1u);
+    EXPECT_EQ(f.bare[0].numeric[0].column, "exif_f_number");
+    EXPECT_EQ(f.bare[0].numeric[0].op, "between");
+    EXPECT_TRUE(f.clip_queries.empty()) << "nothing semantic remains; the "
+                                           "engine unions CLIP on the raw query";
+}
+
+TEST(ExifQueryParserIntentTest, BareDatesAreBound)
+{
+    // User decision 2026-08-23: a date token has no visual meaning for
+    // CLIP, so even scaffold-less dates express filter intent.
+    ExifQueryParser parser;
+
+    auto year = parser.parseStructured("sunset 2024");
+    ASSERT_TRUE(year.bound.date_range.has_value());
+    EXPECT_TRUE(year.bare.empty());
+    ASSERT_EQ(year.clip_queries.size(), 1u);
+    EXPECT_EQ(year.clip_queries[0], "sunset");
+
+    auto month = parser.parseStructured("beach august");
+    ASSERT_TRUE(month.bound.month_any_year.has_value());
+    EXPECT_EQ(*month.bound.month_any_year, "08");
+
+    // "may" keeps its ambiguity exemption: bare it stays semantic.
+    auto may = parser.parseStructured("may flowers");
+    EXPECT_FALSE(may.bound.month_any_year.has_value());
+    ASSERT_EQ(may.clip_queries.size(), 1u);
+    EXPECT_EQ(may.clip_queries[0], "may flowers");
+}
+
+TEST(ExifQueryParserIntentTest, MultipleBareBrandsBecomeSeparateBranches)
+{
+    // "canon, nikon" — each bare brand is its own union branch (within-field
+    // OR at the engine level), fixing the old AND-of-LIKEs that could never
+    // match. The comma residue must not count as semantic content.
+    ExifQueryParser parser;
+    auto sq = parser.parseStructured("canon, nikon");
+    EXPECT_TRUE(sq.bound.camera_terms.empty());
+    ASSERT_EQ(sq.bare.size(), 2u);
+    EXPECT_EQ(sq.bare[0].camera_terms[0], "canon");
+    EXPECT_EQ(sq.bare[1].camera_terms[0], "nikon");
+    EXPECT_TRUE(sq.remaining_is_filler);
+    EXPECT_TRUE(sq.clip_queries.empty());
+}
+
+TEST(ExifQueryParserIntentTest, MixedQuerySplitsByIntent)
+{
+    // Bound camera + bare aperture probe + semantic text, all in one query.
+    ExifQueryParser parser;
+    auto sq = parser.parseStructured("sunset taken with a canon, f2.5");
+    ASSERT_EQ(sq.bound.camera_terms.size(), 1u);
+    EXPECT_EQ(sq.bound.camera_terms[0], "canon");
+    ASSERT_EQ(sq.bare.size(), 1u);
+    EXPECT_EQ(sq.bare[0].numeric[0].column, "exif_f_number");
+    ASSERT_EQ(sq.clip_queries.size(), 1u);
+    EXPECT_EQ(sq.clip_queries[0], "sunset");
+}
+
+TEST(ExifQueryParserIntentTest, FlatParseMatchesStructuredView)
+{
+    // parse() is the binding-blind flattening of parseStructured().
+    ExifQueryParser parser;
+    const std::string q = "sunset taken with a canon iso 800 in 2024";
+    auto flat = parser.parse(q);
+    auto sq = parser.parseStructured(q);
+
+    std::size_t structured_numeric = sq.bound.numeric.size();
+    std::size_t structured_cameras = sq.bound.camera_terms.size();
+    for (const auto &b : sq.bare)
+    {
+        structured_numeric += b.numeric.size();
+        structured_cameras += b.camera_terms.size();
+    }
+    EXPECT_EQ(flat.numeric.size(), structured_numeric);
+    EXPECT_EQ(flat.camera_terms.size(), structured_cameras);
+    EXPECT_EQ(flat.date_range.has_value(), sq.bound.date_range.has_value());
+    EXPECT_EQ(flat.remaining, sq.remaining);
+    EXPECT_EQ(flat.remaining_is_filler, sq.remaining_is_filler);
+}
+
+TEST(ExifQueryParserIntentTest, ReversedIsoRangeIsNormalized)
+{
+    ExifQueryParser parser;
+    auto sq = parser.parseStructured("iso between 1600 and 400");
+    ASSERT_EQ(sq.bound.numeric.size(), 1u);
+    EXPECT_EQ(sq.bound.numeric[0].op, "between");
+    EXPECT_DOUBLE_EQ(sq.bound.numeric[0].value, 400.0);
+    EXPECT_DOUBLE_EQ(sq.bound.numeric[0].value2, 1600.0);
+}

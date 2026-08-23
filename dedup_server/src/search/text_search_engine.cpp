@@ -20,6 +20,15 @@ namespace MediaDedup
 {
     namespace
     {
+        // Rough count of bound facts for the log line.
+        std::size_t bound_fact_count(const ExifQueryConstraints &c)
+        {
+            return c.numeric.size() + c.camera_terms.size() +
+                   (c.flash_on ? 1 : 0) + (c.flash_off ? 1 : 0) +
+                   (c.location ? 1 : 0) + (c.date_range ? 1 : 0) +
+                   (c.month_any_year ? 1 : 0);
+        }
+
         std::string trimmed(const std::string &s)
         {
             const auto begin = s.find_first_not_of(" \t\r\n");
@@ -160,12 +169,18 @@ namespace MediaDedup
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
 
-        // EXIF-4: split the query into structured EXIF constraints and the
-        // semantic remainder, then combine SQL filtering with CLIP ranking.
+        // QP-1a: the parser splits the query by INTENT (EXIF-7 algebra) —
+        // bound facts AND together into a hard filter, bare facts are union
+        // branches beside the CLIP hits, clip_queries carry the semantic
+        // text. Per-match via_* flags feed the VU ai/xf badges.
         ensureParserLoaded();
-        ExifQueryConstraints constraints = parser_->parse(query);
+        StructuredQuery sq = parser_->parseStructured(query);
+        const bool has_bound = sq.hasBound();
+        const bool has_bare = sq.hasBare();
+        const bool has_semantic = sq.hasSemantic();
 
-        if (!constraints.hasAny())
+        // Case 1: no facts at all — pure CLIP ranking.
+        if (!has_bound && !has_bare)
         {
             Result r = clipSearch(query);
             r.used_semantic = r.ok;
@@ -173,60 +188,133 @@ namespace MediaDedup
         }
 
         logger.information(
-            "Query '%s': %z numeric constraint(s), %z camera term(s)%s%s; remaining text: '%s'",
-            query, constraints.numeric.size(), constraints.camera_terms.size(),
-            constraints.location ? (", location=" + constraints.location_name) : std::string(),
-            constraints.date_range ? std::string(", date range") : std::string(),
-            constraints.remaining);
+            "Query '%s': %z bound constraint(s), %z bare fact(s), semantic text '%s'",
+            query, bound_fact_count(sq.bound), sq.bare.size(),
+            has_semantic ? sq.clip_queries.front() : std::string());
 
-        // Both halves always run and the result is their UNION: a fact query
-        // like "f2.5" still surfaces what CLIP finds for the text, and a
-        // mixed query keeps semantic hits that fail the constraints. Each
-        // match's via_* flags say which half admitted it (the VU ai/xf
-        // badges), so showing the superset loses no information.
-        Result exif = exifOnlySearch(constraints);
+        // Case 4: fully bound, nothing semantic ("taken with fuji in 2024")
+        // — a pure filter. The AI half is deliberately skipped.
+        if (has_bound && !has_bare && !has_semantic)
+        {
+            Result r = exifOnlySearch(sq.bound);
+            r.used_exif = r.ok;
+            return r;
+        }
 
-        // When the remainder is pure filler ("photos", "show me") CLIP gets
-        // the raw query text instead, so the semantic half still runs.
-        const std::string semantic_text =
-            constraints.remaining_is_filler ? query : constraints.remaining;
-        Result clip = clipSearch(semantic_text);
+        // Cases 2 and 3: CLIP runs on the semantic text; a fact-only
+        // exploration (case 2 with only filler left, e.g. "f2.5") gets the
+        // raw query so the semantic half still participates.
+        Result clip;
+        bool clip_ran = false;
+        if (has_semantic || !has_bound)
+        {
+            clip = clipSearch(has_semantic ? sq.clip_queries.front() : query);
+            clip_ran = true;
+            if (!clip.ok)
+                logger.warning("Semantic half unavailable (%s); answering from EXIF alone",
+                               clip.error);
+        }
+        const bool clip_ok = clip_ran && clip.ok;
 
-        if (!exif.ok && !clip.ok)
-            return exif; // exif's error names the SQL problem
+        // Bare facts: each is an independent union branch.
+        std::vector<Result> branches;
+        branches.reserve(sq.bare.size());
+        bool any_bare_ok = false;
+        for (const auto &b : sq.bare)
+        {
+            branches.push_back(exifOnlySearch(b));
+            if (branches.back().ok)
+                any_bare_ok = true;
+            else
+                logger.error("Bare-fact branch failed: %s", branches.back().error);
+        }
 
-        if (exif.ok != clip.ok)
-            logger.warning("Hybrid search running on one half only (%s down): %s",
-                           std::string(exif.ok ? "semantic" : "exif"),
-                           exif.ok ? clip.error : exif.error);
-
-        Result result;
-        result.ok = true;
-        result.used_semantic = clip.ok;
-        result.used_exif = exif.ok;
-
-        std::unordered_set<int> exif_ids;
-        exif_ids.reserve(exif.matches.size());
-        for (const auto &m : exif.matches)
-            exif_ids.insert(m.file_id);
-
-        // CLIP-ranked matches first (flagged when they also satisfy the
-        // constraints), then the constraint matches CLIP did not rank.
-        result.matches.reserve(clip.matches.size() + exif.matches.size());
+        Result out;
         std::unordered_set<int> emitted;
-        emitted.reserve(clip.matches.size());
-        for (auto m : clip.matches)
+
+        if (has_bound)
         {
-            m.via_exif = exif_ids.count(m.file_id) > 0;
-            emitted.insert(m.file_id);
-            result.matches.push_back(m);
+            // Case 3: everything intersects the bound filter. CLIP-ranked
+            // hits inside it come first, then bare-fact hits it admits.
+            Result base = exifOnlySearch(sq.bound);
+            if (!base.ok)
+                return base; // filter intent cannot be honored without it
+
+            std::unordered_set<int> base_ids;
+            base_ids.reserve(base.matches.size());
+            for (const auto &m : base.matches)
+                base_ids.insert(m.file_id);
+
+            out.ok = true;
+            out.used_exif = true;
+            out.used_semantic = clip_ok;
+            if (clip_ok)
+            {
+                for (auto m : clip.matches)
+                {
+                    if (base_ids.count(m.file_id) && emitted.insert(m.file_id).second)
+                    {
+                        m.via_exif = true; // it satisfies the bound filter
+                        out.matches.push_back(m);
+                    }
+                }
+            }
+            for (const auto &br : branches)
+            {
+                if (!br.ok)
+                    continue;
+                for (const auto &m : br.matches)
+                    if (base_ids.count(m.file_id) && emitted.insert(m.file_id).second)
+                        out.matches.push_back(m);
+            }
+            // Semantic half down and no bare refinement: degrade to the
+            // bound set itself rather than an artificial empty intersection.
+            if (clip_ran && !clip_ok && !has_bare)
+                out.matches = std::move(base.matches);
         }
-        for (const auto &m : exif.matches)
+        else
         {
-            if (!emitted.count(m.file_id))
-                result.matches.push_back(m);
+            // Case 2: exploration union of the CLIP hits and every
+            // bare-fact branch, deduplicated, CLIP-ranked first.
+            if (!clip_ok && !any_bare_ok)
+                return branches.empty() ? clip : branches.front();
+
+            out.ok = true;
+            out.used_semantic = clip_ok;
+            out.used_exif = any_bare_ok;
+
+            std::unordered_set<int> bare_ids;
+            for (const auto &br : branches)
+                if (br.ok)
+                    for (const auto &m : br.matches)
+                        bare_ids.insert(m.file_id);
+
+            if (clip_ok)
+            {
+                for (auto m : clip.matches)
+                {
+                    if (emitted.insert(m.file_id).second)
+                    {
+                        m.via_exif = bare_ids.count(m.file_id) > 0;
+                        out.matches.push_back(m);
+                    }
+                }
+            }
+            for (const auto &br : branches)
+            {
+                if (!br.ok)
+                    continue;
+                for (const auto &m : br.matches)
+                    if (emitted.insert(m.file_id).second)
+                        out.matches.push_back(m);
+            }
         }
-        return result;
+
+        // Total cap after merging; CLIP-ranked entries were emitted first,
+        // so ranked results survive truncation.
+        if (out.matches.size() > static_cast<std::size_t>(exif_only_limit_))
+            out.matches.resize(static_cast<std::size_t>(exif_only_limit_));
+        return out;
     }
 
     TextSearchEngine::Result TextSearchEngine::clipSearch(const std::string &query)

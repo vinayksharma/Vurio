@@ -1,6 +1,8 @@
 # QP-1 — Local LLM Query Structurer
 
-Status: designed 2026-08-23, not implemented. Supersedes the §4 regex-grammar
+Status: designed 2026-08-23; **QP-1a implemented 2026-08-23** on
+`feature/qp1_query_intent` (StructuredQuery + intent-split regex parser +
+engine algebra; 391 tests pass). QP-1b–e (llama.cpp structurer) not started. Supersedes the §4 regex-grammar
 expansion of [todo_exif_query_intent.md](todo_exif_query_intent.md) (EXIF-7);
 EXIF-7's result algebra (§3), badges, and user decisions remain the target
 semantics and move unchanged into this plan's engine phase.
