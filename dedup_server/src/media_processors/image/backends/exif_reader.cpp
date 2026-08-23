@@ -6,7 +6,10 @@
 #include <Poco/PipeStream.h>
 #include <Poco/Process.h>
 #include <Poco/StreamCopier.h>
+#include <cmath>
+#include <cstdio>
 #include <ctime>
+#include <limits>
 #include <filesystem>
 #include <libraw/libraw.h>
 #include <memory>
@@ -95,14 +98,14 @@ namespace MediaDedup
             if (raw->imgdata.sizes.flip == 5 || raw->imgdata.sizes.flip == 6)
                 std::swap(info.width, info.height);
 
-            std::string make = trimmed(raw->imgdata.idata.make);
-            std::string model = trimmed(raw->imgdata.idata.model);
-            info.camera = make;
-            if (!model.empty())
+            info.make = trimmed(raw->imgdata.idata.make);
+            info.model = trimmed(raw->imgdata.idata.model);
+            info.camera = info.make;
+            if (!info.model.empty())
             {
                 if (!info.camera.empty())
                     info.camera += " ";
-                info.camera += model;
+                info.camera += info.model;
             }
 
             if (raw->imgdata.other.timestamp > 0)
@@ -116,6 +119,46 @@ namespace MediaDedup
                         info.datetime = buf;
                 }
             }
+
+            // RAW-EXIF: LibRaw parses the exposure block in the same
+            // metadata-only open_file() — the fields were simply never
+            // copied out, leaving RAW rows NULL in every column a bound
+            // search filter can touch ("f2.5" silently excluded every
+            // RAW photo). Zero/NaN means absent; updateExifMetadata maps
+            // those to NULL.
+            const libraw_imgother_t &other = raw->imgdata.other;
+            if (other.iso_speed > 0.0f)
+                info.iso = static_cast<uint32_t>(other.iso_speed + 0.5f);
+            if (other.aperture > 0.0f && std::isfinite(other.aperture))
+                info.f_number = other.aperture;
+            if (other.shutter > 0.0f && std::isfinite(other.shutter))
+            {
+                info.exposure_time = other.shutter;
+                info.shutter_speed_apex = std::log2(1.0f / other.shutter);
+                info.shutter_speed_text = ExifReader::shutterTextFromSeconds(other.shutter);
+            }
+            if (other.focal_len > 0.0f && std::isfinite(other.focal_len))
+                info.focal_length = other.focal_len;
+
+            const libraw_lensinfo_t &lens = raw->imgdata.lens;
+            info.lens_model = trimmed(lens.Lens);
+            if (lens.FocalLengthIn35mmFormat > 0)
+                info.focal_length_35mm = static_cast<float>(lens.FocalLengthIn35mmFormat);
+
+            const libraw_gps_info_t &gps = other.parsed_gps;
+            if (gps.gpsparsed)
+            {
+                info.gps_lat = ExifReader::gpsDecimalFromDms(
+                    gps.latitude[0], gps.latitude[1], gps.latitude[2], gps.latref);
+                info.gps_lon = ExifReader::gpsDecimalFromDms(
+                    gps.longitude[0], gps.longitude[1], gps.longitude[2], gps.longref);
+                // altref 1 = below sea level. Altitude only means anything
+                // alongside a real fix.
+                if (!std::isnan(info.gps_lat) && !std::isnan(info.gps_lon))
+                    info.gps_alt = gps.altref == 1 ? -gps.altitude : gps.altitude;
+            }
+
+            info.orientation = ExifReader::orientationFromLibRawFlip(raw->imgdata.sizes.flip);
 
             raw->recycle();
             return info;
@@ -338,6 +381,50 @@ namespace MediaDedup
         // empty) keeps the stored axes.
         return orientation == "LeftTop" || orientation == "RightTop" ||
                orientation == "RightBottom" || orientation == "LeftBottom";
+    }
+
+    std::string ExifReader::shutterTextFromSeconds(float seconds)
+    {
+        if (!(seconds > 0.0f) || !std::isfinite(seconds))
+            return {};
+        if (seconds < 1.0f)
+        {
+            long denom = std::lround(1.0f / seconds);
+            if (denom > 1)
+                return "1/" + std::to_string(denom);
+        }
+        // %g trims trailing zeros: 2.5 -> "2.5s", 30 -> "30s".
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%gs", static_cast<double>(seconds));
+        return buf;
+    }
+
+    float ExifReader::gpsDecimalFromDms(float degrees, float minutes,
+                                        float seconds, char hemisphere)
+    {
+        float decimal = degrees + minutes / 60.0f + seconds / 3600.0f;
+        switch (hemisphere)
+        {
+        case 'N': case 'n': case 'E': case 'e':
+            return decimal;
+        case 'S': case 's': case 'W': case 'w':
+            return -decimal;
+        default:
+            // No hemisphere letter = no GPS IFD was actually present;
+            // LibRaw zero-fills the struct and (0,0) is a real ocean fix.
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+    }
+
+    uint8_t ExifReader::orientationFromLibRawFlip(int flip)
+    {
+        switch (flip)
+        {
+        case 3: return 3;  // 180°
+        case 5: return 8;  // 90° counter-clockwise
+        case 6: return 6;  // 90° clockwise
+        default: return 1;
+        }
     }
 
     std::optional<ExifInfo> ExifReader::read(const std::string &file_path)

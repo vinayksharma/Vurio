@@ -88,5 +88,27 @@ namespace MediaDedup
          * RightBottom, LeftBottom (EXIF 5-8). Exposed for unit tests.
          */
         static bool orientationTransposesAxes(const std::string &orientation);
+
+        // RAW-EXIF conversion helpers for the LibRaw metadata path. Pure
+        // functions, exposed for unit tests: no LibRaw-openable fixture can
+        // be synthesized in-tree (LibRaw rejects minimal hand-built DNGs),
+        // so the conversions are tested directly and the extraction itself
+        // is verified against live RAW files.
+
+        /// "1/500" for sub-second exposures, "2.5s"/"30s" otherwise; empty
+        /// when seconds is not a positive finite value.
+        static std::string shutterTextFromSeconds(float seconds);
+
+        /// DMS triplet + hemisphere ref ('N'/'S'/'E'/'W', case-insensitive)
+        /// to signed decimal degrees; NaN when the ref is not a valid
+        /// hemisphere letter (LibRaw leaves it 0 when no GPS IFD exists,
+        /// and (0,0) is a real ocean fix — see the ExifInfo GPS contract).
+        static float gpsDecimalFromDms(float degrees, float minutes,
+                                       float seconds, char hemisphere);
+
+        /// LibRaw imgdata.sizes.flip to the EXIF Orientation code the same
+        /// rendering implies: 0->1, 3->3 (180°), 5->8 (90° CCW), 6->6
+        /// (90° CW); anything else -> 1.
+        static uint8_t orientationFromLibRawFlip(int flip);
     };
 }
