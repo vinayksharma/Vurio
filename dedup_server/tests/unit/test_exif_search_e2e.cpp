@@ -242,3 +242,73 @@ TEST_F(ExifSearchE2ETest, ResultReportsWhichSearchPathsRan)
     EXPECT_TRUE(r.matches[0].via_exif);
     EXPECT_FALSE(r.matches[0].via_semantic);
 }
+
+// --- QP-1a: intent algebra over the real entry point -----------------------
+
+TEST_F(ExifSearchE2ETest, BareFactExplorationDegradesToExifUnion)
+{
+    // "f/1.4" is a bare probe (explore intent): CLIP ∪ aperture matches.
+    // With the model pinned absent, the union degrades to the EXIF branch.
+    auto r = engine_->search("f/1.4");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
+    EXPECT_TRUE(r.used_exif);
+    EXPECT_FALSE(r.used_semantic);
+    ASSERT_EQ(r.matches.size(), 1u);
+    EXPECT_TRUE(r.matches[0].via_exif);
+    EXPECT_FALSE(r.matches[0].via_semantic);
+}
+
+TEST_F(ExifSearchE2ETest, BareFactIntersectsBoundConstraint)
+{
+    // Bound camera + bare aperture: the bare branch only surfaces what the
+    // bound filter admits. Sony shot at f/1.4 → match; Canon at f/2.8 → the
+    // same bare probe inside the canon filter finds nothing, and filter
+    // intent means NO fallback to all canon photos.
+    auto r = engine_->search("taken with a sony f/1.4");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
+    EXPECT_TRUE(r.used_exif);
+
+    r = engine_->search("taken with a canon f/1.4");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.matches.empty())
+        << "bound canon ∩ bare f/1.4 must be empty, not degrade to all canon";
+}
+
+TEST_F(ExifSearchE2ETest, BareBrandListUnionsWithinField)
+{
+    // "canon, nikon" — two bare branches union (within-field OR); the old
+    // parser ANDed the LIKEs and could never match.
+    auto r = engine_->search("canon, nikon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), (std::vector<int>{canon_id_, nikon_id_}));
+    for (const auto &m : r.matches)
+        EXPECT_TRUE(m.via_exif);
+}
+
+TEST_F(ExifSearchE2ETest, BareYearIsABoundFilter)
+{
+    // User decision: bare dates express filter intent. "2023" alone must
+    // take the pure-SQL path (no facts besides the bound year, filler-only
+    // remainder) and return only the 2023 photo.
+    auto r = engine_->search("photos 2023");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
+    EXPECT_TRUE(r.used_exif);
+    EXPECT_FALSE(r.used_semantic);
+}
+
+TEST_F(ExifSearchE2ETest, MixedIntentQueryFiltersByBoundOnly)
+{
+    // "sunset taken with a canon f/2.8": bound camera, bare aperture probe,
+    // semantic "sunset". Model absent → CLIP contributes nothing; the bare
+    // f/2.8 branch inside the canon filter still finds the canon shot.
+    auto r = engine_->search("sunset taken with a canon f/2.8");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+    EXPECT_FALSE(r.used_semantic);
+    EXPECT_TRUE(r.used_exif);
+    ASSERT_EQ(r.matches.size(), 1u);
+    EXPECT_TRUE(r.matches[0].via_exif);
+}

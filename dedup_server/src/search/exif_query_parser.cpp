@@ -195,13 +195,16 @@ namespace MediaDedup
 
         // --- Camera make ------------------------------------------------
         // The whole "taken with a canon camera" phrase is consumed so no
-        // "taken with a" residue is left for CLIP.
+        // "taken with a" residue is left for CLIP. QP-1a: the scaffold
+        // groups (verb/preposition/article/suffix) CAPTURE, so parse can
+        // tell a bound "taken with a canon" from a bare "canon" — brand is
+        // group 4, scaffolding participation is groups 1-3 and 5.
         camera_ = std::regex(
-            R"((?:(?:)" + alternation(kw.camera_context_verbs) + R"()\s+)?)" +
-            R"((?:(?:)" + alternation(kw.camera_context_prepositions) + R"()\s+)?)" +
-            R"((?:(?:)" + alternation(kw.camera_articles) + R"()\s+)?)" +
+            R"(((?:)" + alternation(kw.camera_context_verbs) + R"()\s+)?)" +
+            R"(((?:)" + alternation(kw.camera_context_prepositions) + R"()\s+)?)" +
+            R"(((?:)" + alternation(kw.camera_articles) + R"()\s+)?)" +
             R"(\b()" + alternation(kw.camera_brands) + R"()\b)" +
-            R"((?:\s+(?:)" + alternation(kw.camera_suffixes) + R"()\b)?)");
+            R"((\s+(?:)" + alternation(kw.camera_suffixes) + R"()\b)?)");
 
         // --- Dates ------------------------------------------------------
         month_year_ = std::regex(R"(\b()" + alternation(kw.months) +
@@ -232,14 +235,47 @@ namespace MediaDedup
 
     ExifQueryConstraints ExifQueryParser::parse(const std::string &query) const
     {
-        ExifQueryConstraints out;
+        // Flattened (binding-blind) view of parseStructured(): every fact
+        // lands in one constraint set — the pre-QP-1 contract, kept for the
+        // golden tests and any caller that doesn't care about intent.
+        StructuredQuery sq = parseStructured(query);
+        ExifQueryConstraints out = std::move(sq.bound);
+        for (auto &b : sq.bare)
+        {
+            for (const auto &n : b.numeric)
+                out.numeric.push_back(n);
+            for (auto &t : b.camera_terms)
+                out.camera_terms.push_back(std::move(t));
+        }
+        out.remaining = std::move(sq.remaining);
+        out.remaining_is_filler = sq.remaining_is_filler;
+        return out;
+    }
+
+    StructuredQuery ExifQueryParser::parseStructured(const std::string &query) const
+    {
+        // QP-1a binding rules (EXIF-7 §2): comparative/range forms,
+        // scaffolded camera phrases, flash phrases, locations, and ALL
+        // dates are bound (filter intent); exact-value probes ("iso 800",
+        // "f2.5", "50mm", "shutter 1/500") and bare brand tokens are bare
+        // (explore intent) — each bare fact is its own union branch.
+        StructuredQuery sq;
+        ExifQueryConstraints &bound = sq.bound;
+        auto bareNumeric = [&sq](const char *col, const char *op, double v, double v2) {
+            ExifQueryConstraints c;
+            c.numeric.push_back({col, op, v, v2});
+            sq.bare.push_back(std::move(c));
+        };
+
         std::string text = toLower(query);
 
         // --- ISO --------------------------------------------------------
         // Ranges first so "iso between 400 and 1600" isn't eaten as "iso 400".
         consumeMatches(text, iso_between_, [&](const std::smatch &m) {
-            out.numeric.push_back({"exif_iso", "between",
-                                   std::stod(m[1]), std::stod(m[2])});
+            double lo = std::stod(m[1]), hi = std::stod(m[2]);
+            if (lo > hi)
+                std::swap(lo, hi); // "between 1600 and 400" still means the range
+            bound.numeric.push_back({"exif_iso", "between", lo, hi});
         });
         consumeMatches(text, iso_cmp_, [&](const std::smatch &m) {
             const std::string dir = normalizeSpaces(m[1]);
@@ -247,22 +283,22 @@ namespace MediaDedup
                              : less_equal_set_.count(dir)  ? "<="
                              : greater_set_.count(dir)     ? ">"
                                                            : "<";
-            out.numeric.push_back({"exif_iso", op, std::stod(m[2]), 0.0});
+            bound.numeric.push_back({"exif_iso", op, std::stod(m[2]), 0.0});
         });
         consumeMatches(text, iso_eq_, [&](const std::smatch &m) {
-            out.numeric.push_back({"exif_iso", "=", std::stod(m[1]), 0.0});
+            bareNumeric("exif_iso", "=", std::stod(m[1]), 0.0);
         });
 
         // --- Aperture ---------------------------------------------------
         consumeMatches(text, f_cmp_, [&](const std::smatch &m) {
             // Wider aperture = LOWER f-number.
             const bool wider = aperture_wider_set_.count(normalizeSpaces(m[1])) > 0;
-            out.numeric.push_back({"exif_f_number", wider ? "<" : ">",
-                                   std::stod(m[2]), 0.0});
+            bound.numeric.push_back({"exif_f_number", wider ? "<" : ">",
+                                     std::stod(m[2]), 0.0});
         });
         consumeMatches(text, f_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1].matched ? m[1] : m[2]);
-            out.numeric.push_back({"exif_f_number", "between", v - 0.3, v + 0.3});
+            bareNumeric("exif_f_number", "between", v - 0.3, v + 0.3);
         });
 
         // --- Shutter speed ---------------------------------------------
@@ -271,55 +307,66 @@ namespace MediaDedup
             frac.erase(std::remove(frac.begin(), frac.end(), ' '), frac.end());
             // Faster shutter = SHORTER exposure time.
             const bool faster = shutter_faster_set_.count(normalizeSpaces(m[1])) > 0;
-            out.numeric.push_back({"exif_exposure_time", faster ? "<" : ">",
-                                   shutterToSeconds(frac), 0.0});
+            bound.numeric.push_back({"exif_exposure_time", faster ? "<" : ">",
+                                     shutterToSeconds(frac), 0.0});
         });
         consumeMatches(text, shutter_eq_, [&](const std::smatch &m) {
             std::string frac = m[1];
             frac.erase(std::remove(frac.begin(), frac.end(), ' '), frac.end());
             double v = shutterToSeconds(frac);
-            out.numeric.push_back({"exif_exposure_time", "between", v * 0.7, v * 1.4});
+            bareNumeric("exif_exposure_time", "between", v * 0.7, v * 1.4);
         });
 
         // --- Focal length ----------------------------------------------
         consumeMatches(text, focal_cmp_, [&](const std::smatch &m) {
             const bool above = focal_longer_set_.count(normalizeSpaces(m[1])) > 0;
-            out.numeric.push_back({"exif_focal_length", above ? ">" : "<",
-                                   std::stod(m[2]), 0.0});
+            bound.numeric.push_back({"exif_focal_length", above ? ">" : "<",
+                                     std::stod(m[2]), 0.0});
         });
         consumeMatches(text, focal_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1]);
-            out.numeric.push_back({"exif_focal_length", "between", v - 1.0, v + 1.0});
+            bareNumeric("exif_focal_length", "between", v - 1.0, v + 1.0);
         });
 
-        // --- Flash ------------------------------------------------------
+        // --- Flash (phrases are inherently scaffolded => bound) ---------
         consumeMatches(text, flash_off_, [&](const std::smatch &) {
-            out.flash_off = true;
+            bound.flash_off = true;
         });
         consumeMatches(text, flash_on_, [&](const std::smatch &) {
-            out.flash_on = true;
+            bound.flash_on = true;
         });
 
         // --- Camera make ------------------------------------------------
         consumeMatches(text, camera_, [&](const std::smatch &m) {
-            out.camera_terms.push_back(m[1]);
+            const bool scaffolded = m[1].matched || m[2].matched ||
+                                    m[3].matched || m[5].matched;
+            if (scaffolded)
+            {
+                bound.camera_terms.push_back(m[4]);
+            }
+            else
+            {
+                ExifQueryConstraints c;
+                c.camera_terms.push_back(m[4]);
+                sq.bare.push_back(std::move(c));
+            }
         });
 
-        // --- Dates ------------------------------------------------------
+        // --- Dates (always bound: a date token has no visual meaning) ---
         consumeMatches(text, month_year_, [&](const std::smatch &m) {
-            out.date_range = monthRange(std::stoi(m[2]), monthNumber(m[1]));
+            bound.date_range = monthRange(std::stoi(m[2]), monthNumber(m[1]));
         });
         consumeMatches(text, year_, [&](const std::smatch &m) {
-            if (!out.date_range)
-                out.date_range = yearRange(std::stoi(m[1]));
+            if (!bound.date_range)
+                bound.date_range = yearRange(std::stoi(m[1]));
         });
         // Bare month name ("august"): that month across every year.
         consumeMatches(text, month_, [&](const std::smatch &m) {
-            if (!out.date_range && !out.month_any_year)
-                out.month_any_year = two(monthNumber(m[1]));
+            if (!bound.date_range && !bound.month_any_year)
+                bound.month_any_year = two(monthNumber(m[1]));
         });
 
-        // --- Location (preposition-triggered) ---------------------------
+        // --- Location (preposition-triggered => bound) ------------------
         // "in yellowstone", "at grand canyon", "near paris". Tries the
         // longest span (up to 3 words) after the preposition first.
         if (geocoder_ && geocoder_->size() > 0)
@@ -332,7 +379,7 @@ namespace MediaDedup
                                 static_cast<std::size_t>(it->length(0)), (*it)[1]});
             for (const auto &h : hits)
             {
-                if (out.location)
+                if (bound.location)
                     break;
                 // Longest word-prefix of the span that the gazetteer knows.
                 std::istringstream words(h.span);
@@ -347,8 +394,8 @@ namespace MediaDedup
                     auto bounds = geocoder_->lookup(candidate);
                     if (bounds)
                     {
-                        out.location = bounds;
-                        out.location_name = candidate;
+                        bound.location = bounds;
+                        bound.location_name = candidate;
                         // Consume the preposition plus the words that matched.
                         std::size_t span_start = h.pos + h.len - h.span.size();
                         std::size_t matched_len = candidate.size();
@@ -365,16 +412,28 @@ namespace MediaDedup
         // Imperative noise is stripped from the CLIP text ("find all ...");
         // noun filler ("photos", "pictures") is KEPT — CLIP was trained on
         // caption-like phrases — but neither counts as semantic content.
+        // Punctuation-only residue (a comma a fact left behind) is dropped
+        // and never counts as content.
         int content_words = 0;
+        auto hasAlnum = [](const std::string &w) {
+            for (char c : w)
+                if (std::isalnum(static_cast<unsigned char>(c)))
+                    return true;
+            return false;
+        };
         while (stream >> word)
         {
+            if (!hasAlnum(word))
+                continue;
             if (!imperative_set_.count(word))
                 rebuilt += (rebuilt.empty() ? "" : " ") + word;
             if (!filler_set_.count(word))
                 ++content_words;
         }
-        out.remaining = rebuilt;
-        out.remaining_is_filler = (content_words == 0);
-        return out;
+        sq.remaining = rebuilt;
+        sq.remaining_is_filler = (content_words == 0);
+        if (!sq.remaining_is_filler && !sq.remaining.empty())
+            sq.clip_queries.push_back(sq.remaining);
+        return sq;
     }
 }
