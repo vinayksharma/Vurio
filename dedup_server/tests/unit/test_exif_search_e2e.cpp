@@ -36,6 +36,11 @@ protected:
         config_->createProperty<std::string>("media.image.onnx.textModelPath",
                                              "/nonexistent/clip-text.onnx",
                                              "disable CLIP for hermetic tests");
+        // QP-1d: the real GGUF may exist on a dev machine — force the
+        // regex path so every test here stays hermetic and fast. The LLM
+        // path is exercised via the test seam below.
+        config_->createProperty<bool>("search.llm.enabled", false,
+                                      "disable LLM for hermetic tests");
 
         // Library fixture: three photos with distinct EXIF signatures.
         canon_id_ = insert("/lib/canon_yellowstone.jpg", [](ExifInfo &e) {
@@ -63,6 +68,14 @@ protected:
             e.flash_fired = "16"; // bit 0 clear: did not fire
             e.gps_lat = 40.5f;    // inside Utah's bbox
             e.gps_lon = -111.9f;
+        });
+        // QP-1d: a raw file for file_type facts. Attributes deliberately
+        // avoid every other fixture assertion (unused brand/year, no ISO).
+        raw_id_ = insert("/lib/vacation_2019.NEF", [](ExifInfo &e) {
+            e.datetime = "2019:09:10 08:00:00";
+            e.make = "Hasselblad";
+            e.model = "X1D";
+            e.camera = "Hasselblad X1D";
         });
         nikon_id_ = insert("/lib/nikon_nogps.jpg", [](ExifInfo &e) {
             e.datetime = "2024:01:02 12:00:00";
@@ -118,7 +131,7 @@ protected:
     std::unique_ptr<DatabaseManager> db_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
     std::unique_ptr<TextSearchEngine> engine_;
-    int canon_id_ = 0, sony_id_ = 0, nikon_id_ = 0;
+    int canon_id_ = 0, sony_id_ = 0, nikon_id_ = 0, raw_id_ = 0;
 };
 
 TEST_F(ExifSearchE2ETest, CameraMakeQuery)
@@ -311,4 +324,107 @@ TEST_F(ExifSearchE2ETest, MixedIntentQueryFiltersByBoundOnly)
     EXPECT_TRUE(r.used_exif);
     ASSERT_EQ(r.matches.size(), 1u);
     EXPECT_TRUE(r.matches[0].via_exif);
+}
+
+// --- QP-1d: LLM structurer path through the fallback ladder -----------------
+// The seam injects a canned completion, so these run hermetically; the
+// validator, SQL conversion, and engine algebra downstream are all real.
+
+TEST_F(ExifSearchE2ETest, LlmPathFiltersByFileTypeAndDate)
+{
+    // The regex parser has no file_type dimension — only the LLM path can
+    // produce this result, which proves the structurer was used.
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "file_type", "op": "in", "values": ["raw"], )"
+                     R"("intent": "filter", "span": "raw files"}, )"
+                     R"({"dim": "date", "op": "eq", "values": ["2019"], )"
+                     R"("intent": "filter", "span": "2019"}], "clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("raw files from 2019");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{raw_id_})
+        << "extension match must be case-insensitive (.NEF) and ANDed with "
+           "the year";
+    EXPECT_TRUE(r.used_exif);
+    EXPECT_FALSE(r.used_semantic);
+}
+
+TEST_F(ExifSearchE2ETest, LlmPathHallucinationFallsBackToRegex)
+{
+    // The model claims a fact whose span is nowhere in the query — the
+    // validator rejects everything, the ladder drops to the regex parser,
+    // and the query still resolves correctly.
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "camera", "op": "in", "values": ["sony"], )"
+                     R"("intent": "filter", "span": "shot on my sony"}], )"
+                     R"("clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("photos taken with a canon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_})
+        << "the hallucinated sony filter must never run";
+}
+
+TEST_F(ExifSearchE2ETest, LlmPathTimeoutFallsBackToRegex)
+{
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.error = "timeout";
+            return c;
+        });
+    auto r = engine_->search("photos iso above 1600");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+}
+
+TEST_F(ExifSearchE2ETest, LlmPathExploreFactUnionsInsideBoundFilter)
+{
+    // Mixed intent through the LLM path: bound camera, explore aperture.
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "camera", "op": "in", "values": ["sony"], )"
+                     R"("intent": "filter", "span": "taken with a sony"}, )"
+                     R"({"dim": "aperture", "op": "eq", "values": ["1.4"], )"
+                     R"("intent": "explore", "span": "f1.4"}], "clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("taken with a sony f1.4");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
+    ASSERT_EQ(r.matches.size(), 1u);
+    EXPECT_TRUE(r.matches[0].via_exif);
+}
+
+TEST_F(ExifSearchE2ETest, GoldenFullPipelineWithRealModel)
+{
+    // The complete QP-1 pipeline — engine -> LlmRuntime (real GGUF) ->
+    // structurer -> validator -> SQL — on a query the regex parser cannot
+    // answer (file_type is LLM-only). Gated on a real instruct model.
+    const char *model = std::getenv("VURIO_GOLDEN_GGUF");
+    if (!model || !std::filesystem::exists(model))
+        GTEST_SKIP() << "set VURIO_GOLDEN_GGUF to a real instruct model to run";
+
+    auto config = std::make_shared<UnifiedObservableConfigManager>("", false);
+    config->createProperty<std::string>("media.image.onnx.textModelPath",
+                                        "/nonexistent/clip-text.onnx", "no CLIP");
+    config->createProperty<std::string>("search.llm.modelPath",
+                                        std::string(model), "real model");
+    TextSearchEngine engine(config, db_.get());
+
+    auto r = engine.search("raw files from 2019");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{raw_id_})
+        << "only the LLM path can produce a file_type filter";
+    EXPECT_TRUE(r.used_exif);
 }

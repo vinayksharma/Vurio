@@ -11,9 +11,11 @@
 #include <Poco/Data/Statement.h>
 #include <Poco/Logger.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace MediaDedup
@@ -125,7 +127,57 @@ namespace MediaDedup
                     .warning("EXIF keyword file unavailable (%s); using built-in keywords",
                              keywords_path_);
             parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords);
+
+            // QP-1d: the LLM structurer path shares the same vocabulary.
+            structurer_ = std::make_unique<LlmQueryStructurer>(
+                QueryFactSchema::fromKeywords(keywords));
+            llm_validator_ = std::make_unique<LlmFactValidator>(keywords, &geocoder_);
+            if (LlmRuntime::enabledInConfig(config_))
+                llm_ = std::make_unique<LlmRuntime>(LlmRuntime::optionsFromConfig(config_));
         });
+    }
+
+    void TextSearchEngine::setLlmCompleteFnForTests(LlmQueryStructurer::CompleteFn fn)
+    {
+        test_complete_fn_ = std::move(fn);
+    }
+
+    bool TextSearchEngine::tryLlmStructure(const std::string &query, StructuredQuery &out)
+    {
+        if (!structurer_ || !llm_validator_)
+            return false;
+
+        LlmQueryStructurer::RawOutput raw;
+        if (test_complete_fn_)
+            raw = structurer_->structure(query, test_complete_fn_);
+        else if (llm_ && llm_->available())
+            raw = structurer_->structure(query, *llm_);
+        else
+            return false;
+
+        Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
+        if (!raw.ok)
+        {
+            logger.warning("LLM structurer failed (%s); using pattern parser", raw.error);
+            return false;
+        }
+
+        auto v = llm_validator_->validate(query, raw);
+        // The model claimed facts but none survived grounding/validation:
+        // distrust the whole parse rather than searching with only its
+        // (equally unverified) clip segments.
+        if (!raw.facts.empty() && v.accepted == 0)
+        {
+            logger.warning("LLM structurer output fully rejected (%z fact(s) dropped); "
+                           "using pattern parser",
+                           v.dropped);
+            return false;
+        }
+        if (v.dropped > 0)
+            logger.information("LLM structurer: %z fact(s) accepted, %z dropped",
+                               v.accepted, v.dropped);
+        out = std::move(v.query);
+        return true;
     }
 
     TextSearchEngine::Result TextSearchEngine::search(const std::string &query)
@@ -169,20 +221,26 @@ namespace MediaDedup
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
 
-        // QP-1a: the parser splits the query by INTENT (EXIF-7 algebra) —
-        // bound facts AND together into a hard filter, bare facts are union
-        // branches beside the CLIP hits, clip_queries carry the semantic
-        // text. Per-match via_* flags feed the VU ai/xf badges.
+        // The query is split by INTENT (EXIF-7 algebra) — bound facts AND
+        // together into a hard filter, bare facts are union branches beside
+        // the CLIP hits, clip_queries carry the semantic text. Per-match
+        // via_* flags feed the VU ai/xf badges. QP-1d: the LLM structurer
+        // is the primary parser; the regex parser is the fallback ladder's
+        // last rung (structurer off/unavailable/failed/fully rejected).
         ensureParserLoaded();
-        StructuredQuery sq = parser_->parseStructured(query);
+        StructuredQuery sq;
+        if (!tryLlmStructure(query, sq))
+            sq = parser_->parseStructured(query);
         const bool has_bound = sq.hasBound();
         const bool has_bare = sq.hasBare();
         const bool has_semantic = sq.hasSemantic();
 
-        // Case 1: no facts at all — pure CLIP ranking.
+        // Case 1: no facts at all — pure CLIP ranking (over the LLM's
+        // semantic segments when it produced them, else the raw query).
         if (!has_bound && !has_bare)
         {
-            Result r = clipSearch(query);
+            Result r = clipSearchUnion(has_semantic ? sq.clip_queries
+                                                    : std::vector<std::string>{query});
             r.used_semantic = r.ok;
             return r;
         }
@@ -208,7 +266,8 @@ namespace MediaDedup
         bool clip_ran = false;
         if (has_semantic || !has_bound)
         {
-            clip = clipSearch(has_semantic ? sq.clip_queries.front() : query);
+            clip = clipSearchUnion(has_semantic ? sq.clip_queries
+                                                : std::vector<std::string>{query});
             clip_ran = true;
             if (!clip.ok)
                 logger.warning("Semantic half unavailable (%s); answering from EXIF alone",
@@ -317,6 +376,51 @@ namespace MediaDedup
         return out;
     }
 
+    TextSearchEngine::Result TextSearchEngine::clipSearchUnion(
+        const std::vector<std::string> &queries)
+    {
+        // Multi-embedding union (QP-1 §6): each segment is embedded
+        // separately and a file keeps its best score across segments —
+        // "raw, sunset, fuji" finds Mt-Fuji-looking photos via CLIP("fuji")
+        // even though "fuji" is also a camera fact.
+        Result merged;
+        std::unordered_map<int, std::size_t> index_of;
+        std::size_t ran = 0;
+        for (const auto &q : queries)
+        {
+            if (ran++ >= 4)
+                break;
+            Result r = clipSearch(q);
+            if (!r.ok)
+            {
+                if (!merged.ok && merged.error.empty())
+                    merged.error = r.error;
+                continue;
+            }
+            merged.ok = true;
+            for (const auto &m : r.matches)
+            {
+                auto it = index_of.find(m.file_id);
+                if (it == index_of.end())
+                {
+                    index_of.emplace(m.file_id, merged.matches.size());
+                    merged.matches.push_back(m);
+                }
+                else if (m.score > merged.matches[it->second].score)
+                {
+                    merged.matches[it->second].score = m.score;
+                }
+            }
+        }
+        if (merged.ok)
+        {
+            merged.error.clear();
+            std::sort(merged.matches.begin(), merged.matches.end(),
+                      [](const Match &a, const Match &b) { return a.score > b.score; });
+        }
+        return merged;
+    }
+
     TextSearchEngine::Result TextSearchEngine::clipSearch(const std::string &query)
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
@@ -421,10 +525,27 @@ namespace MediaDedup
                          n.op == "<=" || n.op == "=")
                     w << " AND " << n.column << " " << n.op << " " << num(n.value);
             }
-            for (const auto &term : c.camera_terms)
+            // Within-field OR (EXIF-7 §3): a photo has one camera, so
+            // multiple values of the field alternate; fields AND together.
+            if (!c.camera_terms.empty())
             {
-                w << " AND exif_camera LIKE ?";
-                camera_binds.push_back("%" + term + "%");
+                w << " AND (";
+                for (std::size_t i = 0; i < c.camera_terms.size(); ++i)
+                {
+                    w << (i ? " OR " : "") << "exif_camera LIKE ?";
+                    camera_binds.push_back("%" + c.camera_terms[i] + "%");
+                }
+                w << ")";
+            }
+            if (!c.file_extensions.empty())
+            {
+                w << " AND (";
+                for (std::size_t i = 0; i < c.file_extensions.size(); ++i)
+                {
+                    w << (i ? " OR " : "") << "lower(file_name) LIKE ?";
+                    camera_binds.push_back("%." + c.file_extensions[i]);
+                }
+                w << ")";
             }
             if (c.flash_on)
                 w << " AND (CAST(exif_flash_fired AS INTEGER) & 1) = 1";

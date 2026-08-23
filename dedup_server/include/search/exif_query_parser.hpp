@@ -33,7 +33,12 @@ namespace MediaDedup
         std::vector<Numeric> numeric;
 
         // Each term filters exif_camera LIKE '%term%' (make+model string).
+        // Multiple terms OR together (within-field OR, EXIF-7 §3).
         std::vector<std::string> camera_terms;
+
+        // QP-1d: file-type facts ("raw", "jpeg") resolved to extension
+        // lists; matches lower(file_name) suffixes, OR within the list.
+        std::vector<std::string> file_extensions;
 
         // EXIF Flash tag bit 0 = "flash fired".
         bool flash_on = false;
@@ -58,7 +63,8 @@ namespace MediaDedup
 
         bool hasAny() const
         {
-            return !numeric.empty() || !camera_terms.empty() || flash_on || flash_off ||
+            return !numeric.empty() || !camera_terms.empty() || !file_extensions.empty() ||
+                   flash_on || flash_off ||
                    location.has_value() || date_range.has_value() || month_any_year.has_value();
         }
     };

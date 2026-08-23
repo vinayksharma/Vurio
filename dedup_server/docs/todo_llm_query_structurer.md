@@ -22,8 +22,26 @@ terminate. `LlmQueryStructurer` owns the byte-stable system prompt
 parses the grammar-guaranteed JSON into RawOutput via an injected
 completion function (hermetic tests) or LlmRuntime. A model-gated smoke
 proves the generated grammar forces even a storybook model to emit
-contract-conforming JSON. QP-1d–e (validator/grounding, fallback ladder,
-engine wiring, golden tests) not started. Supersedes the §4 regex-grammar
+contract-conforming JSON. **QP-1d implemented 2026-08-23** on
+`feature/qp1d_validator_wiring`: `LlmFactValidator`
+(include/search/llm_fact_validator.hpp) is the trust boundary — span
+grounding (fact span must occur in the query, every value inside its
+span; clip_queries grounded too, capped at 4), registry checks (dims,
+per-dim ops, sanity ranges, reversed-range normalization), resolution
+(file_type via the keyword JSON's file_types → new
+`ExifQueryConstraints::file_extensions` + case-insensitive extension SQL;
+locations via gazetteer, unresolved places demoted to clip_queries).
+Engine wiring: LLM structurer is the PRIMARY parser with the full ladder
+(disabled/model-missing/error/timeout/fully-rejected → regex parser);
+`clipSearchUnion` implements multi-segment CLIP (§6, max score per file);
+`buildExifWhere` camera terms now OR within the field (EXIF-7 §3).
+Test seam `setLlmCompleteFnForTests` exercises the ladder hermetically.
+The e2e fixture pins `search.llm.enabled=false` (a real GGUF now lives in
+models/). Golden tests (VURIO_GOLDEN_GGUF → the shipped Qwen2.5-1.5B
+q4_k_m, downloaded 2026-08-23): the three worked examples structure
+exactly as specified, and the full engine pipeline answers "raw files
+from 2019" — a query the regex parser cannot express. QP-1e remaining:
+broader golden matrix, docs polish, rollout. Supersedes the §4 regex-grammar
 expansion of [todo_exif_query_intent.md](todo_exif_query_intent.md) (EXIF-7);
 EXIF-7's result algebra (§3), badges, and user decisions remain the target
 semantics and move unchanged into this plan's engine phase.
