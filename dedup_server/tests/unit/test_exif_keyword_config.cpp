@@ -106,6 +106,37 @@ TEST(ExifKeywordConfigTest, ShippedKeywordFileMatchesBuiltInDefaults)
     EXPECT_EQ(loaded.location_prepositions, defaults.location_prepositions);
     EXPECT_EQ(loaded.imperative_words, defaults.imperative_words);
     EXPECT_EQ(loaded.filler_words, defaults.filler_words);
+    EXPECT_EQ(loaded.file_types, defaults.file_types);
+}
+
+TEST(ExifKeywordConfigTest, FileTypesOverlayReplacesWholesale)
+{
+    auto path = writeTemp("kw_filetypes.json", R"({
+        "file_types": {"Sidecar": ["XMP"], "raw": ["dng"]}
+    })");
+    auto c = ExifKeywordConfig::defaults();
+    ASSERT_TRUE(c.loadFromFile(path));
+    ASSERT_EQ(c.file_types.size(), 2u);
+    // Lowercased names and extensions; present map replaces the default one.
+    bool saw_sidecar = false, saw_raw = false;
+    for (const auto &[name, exts] : c.file_types)
+    {
+        if (name == "sidecar")
+        {
+            saw_sidecar = true;
+            EXPECT_EQ(exts, (std::vector<std::string>{"xmp"}));
+        }
+        if (name == "raw")
+        {
+            saw_raw = true;
+            EXPECT_EQ(exts, (std::vector<std::string>{"dng"}));
+        }
+    }
+    EXPECT_TRUE(saw_sidecar);
+    EXPECT_TRUE(saw_raw);
+    // Untouched lists keep defaults.
+    EXPECT_EQ(c.camera_brands, ExifKeywordConfig::defaults().camera_brands);
+    std::remove(path.c_str());
 }
 
 TEST(ExifKeywordConfigTest, ParserPicksUpCustomVocabulary)

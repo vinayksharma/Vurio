@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace MediaDedup
@@ -60,6 +61,11 @@ namespace MediaDedup
         // --- Remaining-text handling ------------------------------------
         std::vector<std::string> imperative_words;           // stripped from CLIP text
         std::vector<std::string> filler_words;               // don't count as semantic content
+
+        // --- File types (QP-1c: "raw", "jpeg", "video" facts) -----------
+        // Ordered (type name, extensions) pairs; names are what users say,
+        // extensions match scanned_files.file_name suffixes.
+        std::vector<std::pair<std::string, std::vector<std::string>>> file_types;
 
         /// Built-in vocabulary; behavior without any JSON file.
         static ExifKeywordConfig defaults();

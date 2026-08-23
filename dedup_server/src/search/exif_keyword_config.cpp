@@ -77,6 +77,18 @@ namespace MediaDedup
 
         c.location_prepositions = {"in", "at", "near", "around", "from"};
 
+        // Alphabetical by name — file_types is kept sorted (JSON object
+        // iteration order is not insertion order, so sorted is the only
+        // stable contract).
+        c.file_types = {
+            {"heic", {"heic", "heif"}},
+            {"jpeg", {"jpg", "jpeg"}},
+            {"png", {"png"}},
+            {"raw", {"cr2", "cr3", "nef", "nrw", "arw", "raf", "orf", "rw2", "dng", "pef", "srw", "x3f"}},
+            {"tiff", {"tif", "tiff"}},
+            {"video", {"mp4", "mov", "m4v", "avi", "mkv", "webm"}},
+        };
+
         c.imperative_words = {"find", "show", "me", "all"};
         c.filler_words = {"find", "show", "me", "all", "the", "a", "an", "my", "of",
                           "photo", "photos", "picture", "pictures", "pic", "pics",
@@ -160,6 +172,34 @@ namespace MediaDedup
 
         Poco::JSON::Object::Ptr location = section("location");
         overlayList(location, "prepositions", location_prepositions);
+
+        // file_types: an object of {type name -> [extensions]}. Present
+        // replaces the whole map (same wholesale semantics as the lists).
+        if (root->has("file_types"))
+        {
+            Poco::JSON::Object::Ptr ft = root->getObject("file_types");
+            if (!ft.isNull())
+            {
+                std::vector<std::pair<std::string, std::vector<std::string>>> types;
+                for (const auto &name : *ft)
+                {
+                    std::vector<std::string> exts;
+                    Poco::JSON::Array::Ptr arr = ft->getArray(name.first);
+                    if (!arr.isNull())
+                        for (std::size_t i = 0; i < arr->size(); ++i)
+                        {
+                            std::string v = toLower(arr->get(i).toString());
+                            if (!v.empty())
+                                exts.push_back(v);
+                        }
+                    if (!exts.empty())
+                        types.emplace_back(toLower(name.first), std::move(exts));
+                }
+                std::sort(types.begin(), types.end(),
+                          [](const auto &a, const auto &b) { return a.first < b.first; });
+                file_types = std::move(types);
+            }
+        }
 
         Poco::JSON::Object::Ptr text = section("text");
         overlayList(text, "imperative_words", imperative_words);

@@ -55,6 +55,15 @@
     "prepositions": ["in", "at", "near", "around", "from"]
   },
 
+  "file_types": {
+    "raw": ["cr2", "cr3", "nef", "nrw", "arw", "raf", "orf", "rw2", "dng", "pef", "srw", "x3f"],
+    "jpeg": ["jpg", "jpeg"],
+    "png": ["png"],
+    "heic": ["heic", "heif"],
+    "tiff": ["tif", "tiff"],
+    "video": ["mp4", "mov", "m4v", "avi", "mkv", "webm"]
+  },
+
   "text": {
     "imperative_words": ["find", "show", "me", "all"],
     "filler_words": [
