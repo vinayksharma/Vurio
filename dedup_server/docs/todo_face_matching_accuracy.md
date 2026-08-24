@@ -91,12 +91,17 @@ case — acceptable; assign stays a brute-force scan.
 **Consolidation with exemplars** — exemplar-max matching must not make
 merging trigger-happy (one noisy exemplar pair could fuse two strangers), so
 merging keeps a two-stage test:
-- pre-filter: centroid cosine `>= 0.50` (`merge_prefilter`) — cheap, prunes
-  the O(n²) pass to near-pairs;
+- pre-filter: centroid cosine `>= 0.35` (`merge_prefilter`) — cheap, prunes
+  the O(n²) pass; deliberately below the join threshold because two looks
+  of one person can have distant blended centroids;
 - verify: merge when centroid cosine `>= merge_threshold` (exactly today's
-  behavior), **or** when at least `min(2, |Ea|·|Eb|)` cross-exemplar pairs
-  reach `merge_threshold` — two independent agreeing looks, or the only
-  available pair for singleton clusters.
+  behavior), **or** when any single cross-exemplar pair reaches
+  `exemplar_merge_threshold` (default **0.70**). One strong pair is
+  decisive by design: spread-deduplication keeps at most one exemplar per
+  look per cluster, so a genuinely shared look yields exactly one pair —
+  requiring two would block the common case — while the 0.70 bar sits
+  above every different-person cosine live calibration measured (≤ 0.51)
+  and inside the same-person range (0.67–0.83).
 All thresholds live in `FaceClusterer::Options` like the FACE-2 ones and are
 calibrated live the same way (§5 of todo_face_recognition.md).
 
