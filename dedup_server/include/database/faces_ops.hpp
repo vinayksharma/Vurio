@@ -247,6 +247,16 @@ namespace MediaDedup
                                      std::vector<ClusterFace> &faces,
                                      const std::vector<std::vector<float>> &embeddings);
 
+        // ---- FACE-7e: dissolve ("Regroup faces") -------------------------
+
+        /// Dissolve the cluster: detach its faces (embeddings kept — the
+        /// sweep's catch-up regroups them within a few ticks), delete the
+        /// cluster/exemplars/pin, drop cannot-links against it, and
+        /// orphan-clean the person + aliases when this was their only
+        /// cluster. The undo story for a bad merge. Returns false when the
+        /// cluster does not exist.
+        static bool dissolveCluster(DatabaseManager &db, int cluster_id);
+
         // ---- FACE-6: pinned covers ---------------------------------------
 
         /// Pin `face_id` as the cluster's representative (cover) face. The

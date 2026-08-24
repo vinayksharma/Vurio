@@ -226,6 +226,14 @@ message RemoveFaceFromClusterRequest {
   int32 face_id = 1;
 }
 
+// FACE-7e "Regroup faces": dissolve the cluster — detach its faces
+// (embeddings kept), delete the cluster/exemplars/pin, orphan-clean the
+// person + aliases, drop cannot-links against it. The sweep's catch-up
+// regroups the loose faces within a few ticks under current match rules.
+message DissolveFaceClusterRequest {
+  int32 cluster_id = 1;
+}
+
 // FACE-6: pin a specific face as the cluster's representative (cover) face.
 // A pinned cover survives automatic quality-based re-election permanently;
 // it unpins only when that face leaves the cluster.
@@ -251,6 +259,7 @@ service DuplicatesService {
   rpc ListClusterFaces(ListClusterFacesRequest) returns (ListClusterFacesResponse);
   rpc RemoveFaceFromCluster(RemoveFaceFromClusterRequest) returns (FaceClusterActionResponse);
   rpc SetFaceClusterCover(SetFaceClusterCoverRequest) returns (FaceClusterActionResponse);
+  rpc DissolveFaceCluster(DissolveFaceClusterRequest) returns (FaceClusterActionResponse);
   // Fetch more files for a single day (horizontal-scroll pagination within a
   // day row); offset/limit page over the day's files in taken_time order.
   rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);

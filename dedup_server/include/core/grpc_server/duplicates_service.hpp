@@ -396,6 +396,15 @@ public:
         return grpc::Status::OK;
     }
 
+    grpc::Status DissolveFaceCluster(grpc::ServerContext*, const vurio::dedup::DissolveFaceClusterRequest* request,
+                                     vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::dissolveCluster(*db_, request->cluster_id());
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to dissolve cluster");
+        return grpc::Status::OK;
+    }
+
     grpc::Status SetFaceClusterCover(grpc::ServerContext*, const vurio::dedup::SetFaceClusterCoverRequest* request,
                                      vurio::dedup::FaceClusterActionResponse* reply) override {
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");

@@ -135,6 +135,32 @@ quality-desc. The pinned cover is never flagged (it is the anchor). One
 right-click on a flagged face runs the existing FACE-3b removal; the next
 open re-scores.
 
+### 2.5 FACE-7e — merge confirmation and "Regroup faces" (decided 2026-08-24)
+
+Same-name merges are irreversible-in-place, so two guards ride along:
+
+- **Confirmation dialog.** Before committing a rename whose name another
+  cluster already carries (checked case-insensitively against the full
+  list, hidden included), the client asks: "Combine with the existing
+  ⟨name⟩ (N photos)? Both groups become one person." Cancel reverts the
+  field. The cmd-click merge flow stays dialog-free — it is already an
+  explicit act.
+- **Regroup faces.** The escape hatch for a bad merge: a destructive
+  context-menu action (confirmation dialog) that dissolves the cluster —
+  faces detached (`cluster_id`/`person_id` NULL, embeddings kept), the
+  cluster row, exemplars, and pinned cover deleted, the person + aliases
+  orphan-cleaned when this was their only cluster, and cannot-links
+  *against* the dissolved cluster dropped (corrections against a wrong
+  grouping are as suspect as the grouping). The sweep's existing catch-up
+  re-adopts the loose faces within a few ticks; each face rejoins by its
+  own embedding under the FACE-7 exemplar/margin rules, so a wrongly
+  fused pair of people separates naturally. Deliberately NOT a file
+  re-scan: embeddings are deterministic per model version (re-scan is
+  `kFaceScanVersion`'s job), and re-scanning shared photos would wipe
+  other people's faces from their clusters.
+
+New RPC: `DissolveFaceCluster(cluster_id)` → `FaceClusterActionResponse`.
+
 ## 3. Schema & proto
 
 ```sql

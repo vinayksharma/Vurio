@@ -954,6 +954,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_SetFaceClusterCoverRequest, Vurio_Dedup_FaceClusterActionResponse>
 
+  func dissolveFaceCluster(
+    _ request: Vurio_Dedup_DissolveFaceClusterRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
   func getDayFiles(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions?
@@ -1157,6 +1162,24 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeSetFaceClusterCoverInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to DissolveFaceCluster
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to DissolveFaceCluster.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func dissolveFaceCluster(
+    _ request: Vurio_Dedup_DissolveFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.dissolveFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDissolveFaceClusterInterceptors() ?? []
     )
   }
 
@@ -1404,6 +1427,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetFaceClusterCoverRequest, Vurio_Dedup_FaceClusterActionResponse>
 
+  func makeDissolveFaceClusterCall(
+    _ request: Vurio_Dedup_DissolveFaceClusterRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
   func makeGetDayFilesCall(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions?
@@ -1555,6 +1583,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeSetFaceClusterCoverInterceptors() ?? []
+    )
+  }
+
+  internal func makeDissolveFaceClusterCall(
+    _ request: Vurio_Dedup_DissolveFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.dissolveFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDissolveFaceClusterInterceptors() ?? []
     )
   }
 
@@ -1753,6 +1793,18 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
+  internal func dissolveFaceCluster(
+    _ request: Vurio_Dedup_DissolveFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.dissolveFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDissolveFaceClusterInterceptors() ?? []
+    )
+  }
+
   internal func getDayFiles(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions? = nil
@@ -1884,6 +1936,9 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when invoking 'setFaceClusterCover'.
   func makeSetFaceClusterCoverInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetFaceClusterCoverRequest, Vurio_Dedup_FaceClusterActionResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'dissolveFaceCluster'.
+  func makeDissolveFaceClusterInterceptors() -> [ClientInterceptor<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
   /// - Returns: Interceptors to use when invoking 'getDayFiles'.
   func makeGetDayFilesInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
 
@@ -1920,6 +1975,7 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listClusterFaces,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.removeFaceFromCluster,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.setFaceClusterCover,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.dissolveFaceCluster,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.undoEjectDuplicates,
@@ -1982,6 +2038,12 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     internal static let setFaceClusterCover = GRPCMethodDescriptor(
       name: "SetFaceClusterCover",
       path: "/vurio.dedup.DuplicatesService/SetFaceClusterCover",
+      type: GRPCCallType.unary
+    )
+
+    internal static let dissolveFaceCluster = GRPCMethodDescriptor(
+      name: "DissolveFaceCluster",
+      path: "/vurio.dedup.DuplicatesService/DissolveFaceCluster",
       type: GRPCCallType.unary
     )
 
@@ -4029,6 +4091,8 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
 
   func setFaceClusterCover(request: Vurio_Dedup_SetFaceClusterCoverRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
 
+  func dissolveFaceCluster(request: Vurio_Dedup_DissolveFaceClusterRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
+
   /// Fetch more files for a single day (horizontal-scroll pagination within a
   /// day row); offset/limit page over the day's files in taken_time order.
   func getDayFiles(request: Vurio_Dedup_GetDayFilesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetDayFilesResponse>
@@ -4142,6 +4206,15 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
         interceptors: self.interceptors?.makeSetFaceClusterCoverInterceptors() ?? [],
         userFunction: self.setFaceClusterCover(request:context:)
+      )
+
+    case "DissolveFaceCluster":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_DissolveFaceClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeDissolveFaceClusterInterceptors() ?? [],
+        userFunction: self.dissolveFaceCluster(request:context:)
       )
 
     case "GetDayFiles":
@@ -4269,6 +4342,11 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
 
   func setFaceClusterCover(
     request: Vurio_Dedup_SetFaceClusterCoverRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse
+
+  func dissolveFaceCluster(
+    request: Vurio_Dedup_DissolveFaceClusterRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_FaceClusterActionResponse
 
@@ -4416,6 +4494,15 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.setFaceClusterCover(request: $0, context: $1) }
       )
 
+    case "DissolveFaceCluster":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_DissolveFaceClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeDissolveFaceClusterInterceptors() ?? [],
+        wrapping: { try await self.dissolveFaceCluster(request: $0, context: $1) }
+      )
+
     case "GetDayFiles":
       return GRPCAsyncServerHandler(
         context: context,
@@ -4523,6 +4610,10 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSetFaceClusterCoverInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetFaceClusterCoverRequest, Vurio_Dedup_FaceClusterActionResponse>]
 
+  /// - Returns: Interceptors to use when handling 'dissolveFaceCluster'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeDissolveFaceClusterInterceptors() -> [ServerInterceptor<Vurio_Dedup_DissolveFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
   /// - Returns: Interceptors to use when handling 'getDayFiles'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetDayFilesInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
@@ -4566,6 +4657,7 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.listClusterFaces,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.removeFaceFromCluster,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.setFaceClusterCover,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.dissolveFaceCluster,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
@@ -4628,6 +4720,12 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     internal static let setFaceClusterCover = GRPCMethodDescriptor(
       name: "SetFaceClusterCover",
       path: "/vurio.dedup.DuplicatesService/SetFaceClusterCover",
+      type: GRPCCallType.unary
+    )
+
+    internal static let dissolveFaceCluster = GRPCMethodDescriptor(
+      name: "DissolveFaceCluster",
+      path: "/vurio.dedup.DuplicatesService/DissolveFaceCluster",
       type: GRPCCallType.unary
     )
 

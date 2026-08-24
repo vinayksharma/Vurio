@@ -1218,6 +1218,76 @@ namespace MediaDedup
         return chosen;
     }
 
+    // ---- FACE-7e: dissolve ("Regroup faces") -----------------------------
+
+    bool FacesOps::dissolveCluster(DatabaseManager &db, int cluster_id)
+    {
+        int person_id = 0;
+        {
+            try
+            {
+                auto lease = db.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int cid = cluster_id;
+                int exists = 0;
+                Poco::Data::Statement sel(sess);
+                sel << "SELECT COUNT(*), COALESCE(MAX(person_id), 0) FROM face_clusters "
+                       "WHERE id = ?",
+                    use(cid), into(exists), into(person_id), now;
+                if (exists <= 0)
+                    return false;
+            }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("FacesOps").error("dissolveCluster: %s",
+                                                    std::string(e.what()));
+                return false;
+            }
+        }
+
+        const bool detached = DbRetry::withBusyRetry("FacesOps", "dissolveCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            // Detach, keep embeddings: the catch-up regroups these faces
+            // under the current match rules — a wrongly fused pair of
+            // people separates naturally. Deliberately NOT a file rescan
+            // (that is kFaceScanVersion's job, and would wipe other
+            // people's faces from shared photos).
+            Poco::Data::Statement upd(sess);
+            upd << "UPDATE faces SET cluster_id = NULL, person_id = NULL "
+                   "WHERE cluster_id = ?",
+                use(cid), now;
+            // Corrections against a wrong grouping die with it.
+            Poco::Data::Statement dell(sess);
+            dell << "DELETE FROM face_cannot_link WHERE cluster_id = ?", use(cid), now;
+            return true;
+        });
+        if (!detached || !deleteCluster(db, cluster_id)) // exemplars die too
+            return false;
+
+        if (person_id > 0)
+        {
+            // Orphan-clean the person + aliases when this was their only
+            // cluster (the nameCluster rename-away pattern).
+            return DbRetry::withBusyRetry("FacesOps", "dissolveCluster.person", [&]() {
+                auto lease = db.acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int pid = person_id;
+                Poco::Data::Statement del(sess);
+                del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
+                       "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
+                    use(pid), use(pid), now;
+                Poco::Data::Statement dela(sess);
+                dela << "DELETE FROM person_aliases WHERE person_id = ? AND NOT EXISTS "
+                        "(SELECT 1 FROM persons WHERE id = ?)",
+                    use(pid), use(pid), now;
+                return true;
+            });
+        }
+        return true;
+    }
+
     // ---- FACE-6: pinned covers -------------------------------------------
 
     bool FacesOps::setClusterCover(DatabaseManager &db, int cluster_id, int face_id)

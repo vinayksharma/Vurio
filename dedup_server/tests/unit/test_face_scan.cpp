@@ -1091,6 +1091,53 @@ namespace MediaDedup
                     EXPECT_FALSE(f.suspect);
         }
 
+        TEST_F(FaceScanTest, DissolveClusterDetachesCleansAndRegroups)
+        {
+            int fid = insertProcessed("/nowhere/n8.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.8), c1);
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            const int alice = FacesOps::personIdByName(*db_, "Alice");
+            ASSERT_TRUE(FacesOps::setPersonAliases(*db_, alice, {"mom"}));
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f2));
+            const int outsider = mkFace(unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(FacesOps::addCannotLink(*db_, outsider, c1));
+
+            ASSERT_TRUE(FacesOps::dissolveCluster(*db_, c1));
+            EXPECT_FALSE(FacesOps::dissolveCluster(*db_, c1)); // already gone
+
+            // Cluster, person, aliases, and corrections against it are gone.
+            EXPECT_TRUE(FacesOps::listClusterInfos(*db_, true).empty());
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), 0);
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "mom"), 0);
+            EXPECT_TRUE(FacesOps::listCannotLinks(*db_).empty());
+
+            // Faces kept their embeddings and await the catch-up…
+            auto loose = FacesOps::listUnclusteredFaces(*db_, 0.2, 10);
+            EXPECT_EQ(loose.size(), 3u); // f1, f2, and the outsider
+
+            // …which regroups them into a fresh cluster.
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            const int c2 = cl2.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_GT(c2, 0);
+            EXPECT_NE(c2, c1);
+            EXPECT_EQ(cl2.assign(f2, unit4(1, 0.05f, 0, 0), 0.8), c2);
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

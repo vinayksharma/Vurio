@@ -491,6 +491,22 @@ struct Vurio_Dedup_RemoveFaceFromClusterRequest: Sendable {
   init() {}
 }
 
+/// FACE-7e "Regroup faces": dissolve the cluster — detach its faces
+/// (embeddings kept), delete the cluster/exemplars/pin, orphan-clean the
+/// person + aliases, drop cannot-links against it. The sweep's catch-up
+/// regroups the loose faces within a few ticks under current match rules.
+struct Vurio_Dedup_DissolveFaceClusterRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var clusterID: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 /// FACE-6: pin a specific face as the cluster's representative (cover) face.
 /// A pinned cover survives automatic quality-based re-election permanently;
 /// it unpins only when that face leaves the cluster.
@@ -2228,6 +2244,36 @@ extension Vurio_Dedup_RemoveFaceFromClusterRequest: SwiftProtobuf.Message, Swift
 
   static func ==(lhs: Vurio_Dedup_RemoveFaceFromClusterRequest, rhs: Vurio_Dedup_RemoveFaceFromClusterRequest) -> Bool {
     if lhs.faceID != rhs.faceID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_DissolveFaceClusterRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".DissolveFaceClusterRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.clusterID) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.clusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.clusterID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_DissolveFaceClusterRequest, rhs: Vurio_Dedup_DissolveFaceClusterRequest) -> Bool {
+    if lhs.clusterID != rhs.clusterID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
