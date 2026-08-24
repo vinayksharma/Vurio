@@ -225,11 +225,24 @@ final class PeopleViewModel: ObservableObject {
 
 /// The cover face: the file's thumbnail cropped to the face bbox (expanded
 /// for context), no extra image RPC — the crop happens client-side.
+///
+/// Low-res-first, high-res-after: the 512px whole-image thumbnail gives an
+/// instant (often soft — a 10%-of-frame face is ~80 crop pixels) first
+/// paint; when that crop carries fewer pixels than the tile displays, the
+/// viewer's preview pipeline (QHD local decode, server transcode for RAW,
+/// disk-cached) re-crops the same bbox at native resolution and swaps it
+/// in. The upgraded crop is tiny and cached per face, so the next open is
+/// instantly sharp; the big preview bitmap lives in the 40-slot LRU pool.
 struct FaceCropView: View {
     let filePath: String
     let x: Double, y: Double, w: Double, h: Double
+    /// Approximate rendered size, in points — the upgrade trigger. Tiles
+    /// whose thumb-crop already covers this (retina) never pay a decode.
+    var displayPoints: CGFloat = 120
 
     @State private var image: NSImage? = nil
+
+    static let pad = 0.3
 
     var body: some View {
         ZStack {
@@ -248,9 +261,24 @@ struct FaceCropView: View {
         // photo must re-crop, not keep the old face (FACE-6).
         .task(id: "\(filePath)#\(x),\(y),\(w),\(h)") {
             guard !filePath.isEmpty else { return }
-            guard let thumb = try? await ServerImageLoader.shared.loadThumbnail(
-                filePath: filePath, size: 512) else { return }
-            image = Self.crop(thumb, x: x, y: y, w: w, h: h)
+            let hiKey = "\(filePath)#face_\(x)_\(y)_\(w)_\(h)_hi"
+            if let cached = ImageCache.shared.getImage(forKey: hiKey) {
+                image = cached
+                return
+            }
+            if let thumb = try? await ServerImageLoader.shared.loadThumbnail(
+                filePath: filePath, size: 512) {
+                image = Self.crop(thumb, x: x, y: y, w: w, h: h)
+            }
+            // Adaptive upgrade: measure what the thumb-crop actually carries.
+            let gotPx = image?.representations.first.map { max($0.pixelsWide, $0.pixelsHigh) } ?? 0
+            let neededPx = Int(displayPoints * 2) // retina
+            guard gotPx < neededPx else { return }
+            guard let preview = try? await ServerImageLoader.shared.loadPreview(filePath: filePath),
+                  let hi = Self.crop(preview, x: x, y: y, w: w, h: h)
+            else { return }
+            image = hi
+            ImageCache.shared.setImage(hi, forKey: hiKey)
         }
     }
 
@@ -261,7 +289,7 @@ struct FaceCropView: View {
               let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return source }
         let W = Double(cg.width), H = Double(cg.height)
-        let pad = 0.3
+        let pad = Self.pad
         let cx = max(0, (x - w * pad) * W)
         let cy = max(0, (y - h * pad) * H)
         let cw = min(W - cx, w * (1 + 2 * pad) * W)
@@ -495,7 +523,8 @@ struct PeopleView: View {
                             // fit against its own cluster) wears the warning
                             // ring — surfaced for review, never auto-removed.
                             FaceCropView(filePath: face.filePath,
-                                         x: face.x, y: face.y, w: face.w, h: face.h)
+                                         x: face.x, y: face.y, w: face.w, h: face.h,
+                                         displayPoints: 80)
                                 .frame(width: 80, height: 80)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8)
@@ -559,11 +588,13 @@ struct PeopleView: View {
         if let sel = selectedCoverID,
            let face = model.reviewFaces.first(where: { $0.faceID == sel }) {
             FaceCropView(filePath: face.filePath,
-                         x: face.x, y: face.y, w: face.w, h: face.h)
+                         x: face.x, y: face.y, w: face.w, h: face.h,
+                         displayPoints: 44)
         } else {
             FaceCropView(filePath: cluster.coverFilePath,
                          x: cluster.coverX, y: cluster.coverY,
-                         w: cluster.coverW, h: cluster.coverH)
+                         w: cluster.coverW, h: cluster.coverH,
+                         displayPoints: 44)
         }
     }
 
