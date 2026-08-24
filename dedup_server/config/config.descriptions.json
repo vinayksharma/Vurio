@@ -1212,5 +1212,31 @@
       "type": "paragraph",
       "text": "The maximum number of times a scheduled task can fail in a row before the scheduler disables it or alerts."
     }
+  ],
+  "media.face.enabled": "Face Recognition",
+  "media.face.enabled.long": [
+    {
+      "type": "headline",
+      "text": "Face Recognition"
+    },
+    {
+      "type": "paragraph",
+      "text": "Detect faces in your photos and group them into people on the PEOPLE tab. The sweep runs in the background and catches up on new photos automatically."
+    }
+  ],
+  "media.face.mergePurgeCutoff": "Face Match Strictness",
+  "media.face.mergePurgeCutoff.long": [
+    {
+      "type": "headline",
+      "text": "Face Match Strictness"
+    },
+    {
+      "type": "paragraph",
+      "text": "How well a face must match its person group to stay in it. Faces below this bar are ringed amber in the group popup, and when groups are combined (or this value is changed) they are set aside for re-grouping — nothing is deleted, they simply return to the pool and are re-matched."
+    },
+    {
+      "type": "paragraph",
+      "text": "On this library, faces of different people score at most about 0.51 against each other, while the same person across photos scores 0.67 or higher. The default 0.53 sits just above the stranger band. Raising it purges more aggressively (may set aside hard angles and blurry shots); lowering it keeps more faces. 0 disables purging entirely."
+    }
   ]
 }

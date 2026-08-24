@@ -1157,5 +1157,184 @@ namespace MediaDedup
             EXPECT_TRUE(FacesOps::listSweepCandidates(*db_, 10).empty());
             std::remove(img.c_str());
         }
+
+        // ---- FACE-8: merge-time purge at the configurable cutoff ---------
+
+        TEST_F(FaceScanTest, MergePurgeShedsMisfitWithoutCannotLink)
+        {
+            int fid = insertProcessed("/nowhere/p1.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.85);
+            const int f3 = mkFace(unit4(1, 0, 0.05f, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.85), c1);
+            ASSERT_EQ(cl.assign(f3, unit4(1, 0, 0.05f, 0), 0.8), c1);
+            // The stranger founds its own cluster…
+            const int fm = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c2 = cl.assign(fm, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c2 > 0 && c2 != c1);
+
+            // …and a user merge at the cutoff sheds it: against the combined
+            // model (self-excluded) it scores ~0.33, below 0.53.
+            int purged = -1;
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2},
+                                                FacesOps::kSuspectFitBar, &purged));
+            EXPECT_EQ(purged, 1);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 3);
+            // Detached to the pool, NOT constrained — a statistical verdict
+            // leaves the door open (unlike "not this person").
+            EXPECT_TRUE(FacesOps::listCannotLinks(*db_).empty());
+            bool misfit_unclustered = false;
+            for (const auto &u : FacesOps::listUnclusteredFaces(*db_, 0.0, 10))
+                if (u.face_id == fm)
+                    misfit_unclustered = true;
+            EXPECT_TRUE(misfit_unclustered);
+        }
+
+        TEST_F(FaceScanTest, MergePurgeSparesPinnedCoverAndZeroCutoffDisables)
+        {
+            int fid = insertProcessed("/nowhere/p2.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(mkFace(unit4(1, 0.05f, 0, 0), 0.85),
+                                unit4(1, 0.05f, 0, 0), 0.85), c1);
+            const int fm = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c2 = cl.assign(fm, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c2 > 0 && c2 != c1);
+
+            // cutoff 0 = purging disabled: the misfit rides along.
+            int purged = -1;
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2}, 0.0, &purged));
+            EXPECT_EQ(purged, 0);
+            {
+                auto infos = FacesOps::listClusterInfos(*db_, true);
+                ASSERT_EQ(infos.size(), 1u);
+                EXPECT_EQ(infos[0].face_count, 3);
+            }
+
+            // Pin the misfit as cover: the human-verified anchor is exempt
+            // even below the bar…
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, fm));
+            EXPECT_EQ(FacesOps::purgeMisfits(*db_, c1, FacesOps::kSuspectFitBar), 0);
+
+            // …but once unpinned (pin a member face instead), a direct purge
+            // — the config-change sweep path — sheds it.
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f1));
+            EXPECT_EQ(FacesOps::purgeMisfits(*db_, c1, FacesOps::kSuspectFitBar), 1);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 2);
+        }
+
+        TEST_F(FaceScanTest, SuspectBarIsCallerConfigurable)
+        {
+            int fid = insertProcessed("/nowhere/p3.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(mkFace(unit4(1, 0.15f, 0, 0), 0.8),
+                                unit4(1, 0.15f, 0, 0), 0.8), c1);
+
+            int total = 0;
+            // Two slightly-apart faces: fits are high but < 0.999.
+            auto strict = FacesOps::listClusterFaces(*db_, c1, 0, 10, total, 0.999);
+            ASSERT_EQ(strict.size(), 2u);
+            int suspects = 0;
+            for (const auto &f : strict)
+                suspects += f.suspect ? 1 : 0;
+            EXPECT_GT(suspects, 0);
+
+            // Bar 0 (purging off): the ring never shows.
+            auto lax = FacesOps::listClusterFaces(*db_, c1, 0, 10, total, 0.0);
+            for (const auto &f : lax)
+                EXPECT_FALSE(f.suspect);
+        }
+
+        TEST_F(FaceScanTest, ClearAllFaceGroupsWipesPeopleLayerAndRegroups)
+        {
+            int fid = insertProcessed("/nowhere/c1.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.8);
+            const int f3 = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.8), c1);
+            const int c2 = cl.assign(f3, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+            // Name + alias + pin + cannot-link: every people-layer artifact.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            const int alice = FacesOps::personIdByName(*db_, "Alice");
+            ASSERT_TRUE(FacesOps::setPersonAliases(*db_, alice, {"mom"}));
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f2));
+            ASSERT_TRUE(FacesOps::addCannotLink(*db_, f3, c1));
+
+            ASSERT_TRUE(FacesOps::clearAllFaceGroups(*db_));
+
+            EXPECT_TRUE(FacesOps::listClusterInfos(*db_, true).empty());
+            EXPECT_TRUE(FacesOps::listCannotLinks(*db_).empty());
+            EXPECT_TRUE(FacesOps::listClusterExemplars(*db_).empty());
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), 0);
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "mom"), 0);
+            // Faces + embeddings survive, unclustered…
+            EXPECT_EQ(FacesOps::listUnclusteredFaces(*db_, 0.0, 10).size(), 3u);
+
+            // …and the sweep's catch-up regroups them into fresh unnamed
+            // clusters, unconstrained by the dropped cannot-link.
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            int adopted = 0;
+            for (const auto &u : FacesOps::listUnclusteredFaces(*db_, opts.min_quality, 10))
+                if (cl2.assign(u.face_id, u.embedding, u.quality) > 0)
+                    adopted++;
+            EXPECT_EQ(adopted, 3);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 2u);
+            for (const auto &i : infos)
+                EXPECT_TRUE(i.name.empty());
+        }
     }
 }

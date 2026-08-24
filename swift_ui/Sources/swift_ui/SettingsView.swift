@@ -82,6 +82,10 @@ struct SettingsView: View {
                                             MatchScoreSliderSection(viewModel: viewModel)
                                         }
                                         
+                                        if sectionName == "Media - Face" {
+                                            FaceCutoffSliderSection(viewModel: viewModel)
+                                        }
+                                        
                                         Divider()
                                             .padding(.vertical, 5)
                                     }

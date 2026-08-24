@@ -2135,6 +2135,11 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientProtocol: GRPCClient 
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
 
+  func clearAllFaceGroups(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
   func pauseProcessing(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -2304,6 +2309,26 @@ extension Vurio_Dedup_AdvancedSettingsServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? []
+    )
+  }
+
+  /// FACE-8b: wipe the people layer — every cluster, person, alias,
+  /// cannot-link, exemplar and pin. Detected faces and embeddings stay; the
+  /// sweep regroups from scratch (fresh unnamed clusters within ticks).
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ClearAllFaceGroups.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func clearAllFaceGroups(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllFaceGroups.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllFaceGroupsInterceptors() ?? []
     )
   }
 
@@ -2552,6 +2577,11 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol: GRPCCl
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
 
+  func makeClearAllFaceGroupsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>
+
   func makePauseProcessingCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -2684,6 +2714,18 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? []
+    )
+  }
+
+  internal func makeClearAllFaceGroupsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllFaceGroups.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllFaceGroupsInterceptors() ?? []
     )
   }
 
@@ -2870,6 +2912,18 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncClientProtocol {
     )
   }
 
+  internal func clearAllFaceGroups(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllFaceGroups.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearAllFaceGroupsInterceptors() ?? []
+    )
+  }
+
   internal func pauseProcessing(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
@@ -3007,6 +3061,9 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceClientInterceptorFactoryPro
   /// - Returns: Interceptors to use when invoking 'resetDuplicates'.
   func makeResetDuplicatesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'clearAllFaceGroups'.
+  func makeClearAllFaceGroupsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
   /// - Returns: Interceptors to use when invoking 'pauseProcessing'.
   func makePauseProcessingInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
 
@@ -3044,6 +3101,7 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.undoEjectIgnored,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.purgeEjectedAndErrored,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resetDuplicates,
+      Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.clearAllFaceGroups,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.pauseProcessing,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.resumeProcessing,
       Vurio_Dedup_AdvancedSettingsServiceClientMetadata.Methods.startDatabaseIntegrityCheck,
@@ -3095,6 +3153,12 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceClientMetadata {
     internal static let resetDuplicates = GRPCMethodDescriptor(
       name: "ResetDuplicates",
       path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearAllFaceGroups = GRPCMethodDescriptor(
+      name: "ClearAllFaceGroups",
+      path: "/vurio.dedup.AdvancedSettingsService/ClearAllFaceGroups",
       type: GRPCCallType.unary
     )
 
@@ -4794,6 +4858,11 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceProvider: CallHandlerProvid
 
   func resetDuplicates(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
 
+  /// FACE-8b: wipe the people layer — every cluster, person, alias,
+  /// cannot-link, exemplar and pin. Detected faces and embeddings stay; the
+  /// sweep regroups from scratch (fresh unnamed clusters within ticks).
+  func clearAllFaceGroups(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
+
   func pauseProcessing(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
 
   func resumeProcessing(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdvancedActionResponse>
@@ -4884,6 +4953,15 @@ extension Vurio_Dedup_AdvancedSettingsServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
         interceptors: self.interceptors?.makeResetDuplicatesInterceptors() ?? [],
         userFunction: self.resetDuplicates(request:context:)
+      )
+
+    case "ClearAllFaceGroups":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeClearAllFaceGroupsInterceptors() ?? [],
+        userFunction: self.clearAllFaceGroups(request:context:)
       )
 
     case "PauseProcessing":
@@ -5005,6 +5083,14 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceAsyncProvider: CallHandlerP
   ) async throws -> Vurio_Dedup_AdvancedActionResponse
 
   func resetDuplicates(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdvancedActionResponse
+
+  /// FACE-8b: wipe the people layer — every cluster, person, alias,
+  /// cannot-link, exemplar and pin. Detected faces and embeddings stay; the
+  /// sweep regroups from scratch (fresh unnamed clusters within ticks).
+  func clearAllFaceGroups(
     request: Vurio_Dedup_Empty,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_AdvancedActionResponse
@@ -5132,6 +5218,15 @@ extension Vurio_Dedup_AdvancedSettingsServiceAsyncProvider {
         wrapping: { try await self.resetDuplicates(request: $0, context: $1) }
       )
 
+    case "ClearAllFaceGroups":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdvancedActionResponse>(),
+        interceptors: self.interceptors?.makeClearAllFaceGroupsInterceptors() ?? [],
+        wrapping: { try await self.clearAllFaceGroups(request: $0, context: $1) }
+      )
+
     case "PauseProcessing":
       return GRPCAsyncServerHandler(
         context: context,
@@ -5240,6 +5335,10 @@ internal protocol Vurio_Dedup_AdvancedSettingsServiceServerInterceptorFactoryPro
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeResetDuplicatesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
 
+  /// - Returns: Interceptors to use when handling 'clearAllFaceGroups'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeClearAllFaceGroupsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
+
   /// - Returns: Interceptors to use when handling 'pauseProcessing'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makePauseProcessingInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_AdvancedActionResponse>]
@@ -5285,6 +5384,7 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.undoEjectIgnored,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.purgeEjectedAndErrored,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resetDuplicates,
+      Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.clearAllFaceGroups,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.pauseProcessing,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.resumeProcessing,
       Vurio_Dedup_AdvancedSettingsServiceServerMetadata.Methods.startDatabaseIntegrityCheck,
@@ -5336,6 +5436,12 @@ internal enum Vurio_Dedup_AdvancedSettingsServiceServerMetadata {
     internal static let resetDuplicates = GRPCMethodDescriptor(
       name: "ResetDuplicates",
       path: "/vurio.dedup.AdvancedSettingsService/ResetDuplicates",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearAllFaceGroups = GRPCMethodDescriptor(
+      name: "ClearAllFaceGroups",
+      path: "/vurio.dedup.AdvancedSettingsService/ClearAllFaceGroups",
       type: GRPCCallType.unary
     )
 

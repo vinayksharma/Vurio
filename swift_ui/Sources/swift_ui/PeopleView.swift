@@ -79,6 +79,8 @@ final class PeopleViewModel: ObservableObject {
                     if !response.success {
                         MessageCenter.shared.post("People: \(response.errorMessage)")
                         failed = true
+                    } else if response.purgedFaces > 0 {
+                        MessageCenter.shared.post(purgeNotice(response.purgedFaces))
                     }
                 } catch {
                     guard !isGrpcCancellation(error) else { return }
@@ -206,6 +208,12 @@ final class PeopleViewModel: ObservableObject {
         await loadReviewFaces()
     }
 
+    private func purgeNotice(_ count: Int32) -> String {
+        count == 1
+            ? "1 face didn't match well and was set aside for re-grouping"
+            : "\(count) faces didn't match well and were set aside for re-grouping"
+    }
+
     private func action(
         _ rpc: (Vurio_Dedup_DuplicatesServiceAsyncClient) async throws -> Vurio_Dedup_FaceClusterActionResponse
     ) async {
@@ -214,6 +222,10 @@ final class PeopleViewModel: ObservableObject {
             let response = try await rpc(client)
             if !response.success {
                 MessageCenter.shared.post("People: \(response.errorMessage)")
+            } else if response.purgedFaces > 0 {
+                // FACE-8: members shed by the merge-time purge — say so, or
+                // the shrinking count reads as photos silently vanishing.
+                MessageCenter.shared.post(purgeNotice(response.purgedFaces))
             }
         } catch {
             guard !isGrpcCancellation(error) else { return }

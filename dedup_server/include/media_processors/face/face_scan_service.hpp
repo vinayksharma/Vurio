@@ -2,6 +2,7 @@
 
 #include "media_processors/face/face_detector.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -55,6 +56,7 @@ namespace MediaDedup
             int unreadable = 0;
             int clustered = 0; // faces assigned to clusters this tick
             int merges = 0;    // consolidation merges this tick
+            int purged = 0;    // FACE-8: misfits shed by a purge sweep this tick
             bool exhausted = false; // selector returned fewer than the batch
         };
 
@@ -66,6 +68,14 @@ namespace MediaDedup
 
         /// Process one batch. Safe to call on a scheduler thread.
         TickStats runTick();
+
+        /// FACE-8: request a one-shot purge pass over ALL clusters at
+        /// `cutoff` on the next tick — the config-change adaptation path.
+        /// Thread-safe (the config event fires on a gRPC thread; the
+        /// clusterer is single-threaded by contract, so the value latches
+        /// into an atomic the tick consumes). Detached faces re-enter the
+        /// unclustered pool and the same sweep re-homes them.
+        void requestPurgeSweep(double cutoff) { pending_purge_cutoff_.store(cutoff); }
 
         /// ArcFace preprocessing of an aligned 112x112 RGB crop:
         /// (v - 127.5) / 128, channel-planar RGB (NCHW). Exposed for tests.
@@ -81,5 +91,7 @@ namespace MediaDedup
         // Files skipped as offline this process lifetime — keeps the ordered
         // selector from feeding the same disconnected volume every tick.
         std::unordered_set<int> skipped_offline_;
+        // FACE-8: cutoff latched by requestPurgeSweep; < 0 = nothing pending.
+        std::atomic<double> pending_purge_cutoff_{-1.0};
     };
 }

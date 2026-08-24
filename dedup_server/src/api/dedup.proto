@@ -189,6 +189,10 @@ message SetFaceClusterHiddenRequest {
 message FaceClusterActionResponse {
   bool success = 1;
   string error_message = 2;
+  // FACE-8: faces detached back to the unclustered pool by the merge-time
+  // purge filter (0 when purging is disabled or nothing fell below the
+  // cutoff). The client surfaces the count so members don't silently vanish.
+  int32 purged_faces = 3;
 }
 
 // FACE-3b: the cluster's individual faces, for the review grid.
@@ -472,6 +476,10 @@ service AdvancedSettingsService {
   
   rpc PurgeEjectedAndErrored(Empty) returns (AdvancedActionResponse);
   rpc ResetDuplicates(Empty) returns (AdvancedActionResponse);
+  // FACE-8b: wipe the people layer — every cluster, person, alias,
+  // cannot-link, exemplar and pin. Detected faces and embeddings stay; the
+  // sweep regroups from scratch (fresh unnamed clusters within ticks).
+  rpc ClearAllFaceGroups(Empty) returns (AdvancedActionResponse);
   
   rpc PauseProcessing(Empty) returns (AdvancedActionResponse);
   rpc ResumeProcessing(Empty) returns (AdvancedActionResponse);

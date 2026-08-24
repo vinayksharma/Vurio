@@ -590,8 +590,11 @@ namespace MediaDedup
     }
 
     bool FacesOps::mergeClusters(DatabaseManager &db, int target_id,
-                                 const std::vector<int> &source_ids)
+                                 const std::vector<int> &source_ids,
+                                 double purge_cutoff, int *purged)
     {
+        if (purged)
+            *purged = 0;
         // Combine centroids size-weighted in C++ (they are small blobs).
         auto clusters = listClusters(db);
         const ClusterRow *target = nullptr;
@@ -661,7 +664,7 @@ namespace MediaDedup
             return false;
         // Persist the (possibly adopted) name on the surviving cluster and
         // its members.
-        return DbRetry::withBusyRetry("FacesOps", "mergeClusters.name", [&]() {
+        const bool named = DbRetry::withBusyRetry("FacesOps", "mergeClusters.name", [&]() {
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Nullable<int> pid;
@@ -676,10 +679,21 @@ namespace MediaDedup
                 use(pid), use(tid), now;
             return true;
         });
+        if (!named)
+            return false;
+        // FACE-8: filter the combined membership — a merge is the moment
+        // both looks' evidence is present, so misfits stand out sharpest.
+        const int n = purgeMisfits(db, target_id, purge_cutoff);
+        if (purged)
+            *purged = n;
+        return true;
     }
 
-    int FacesOps::mergePersonClusters(DatabaseManager &db, int person_id)
+    int FacesOps::mergePersonClusters(DatabaseManager &db, int person_id,
+                                      double purge_cutoff, int *purged)
     {
+        if (purged)
+            *purged = 0;
         if (person_id <= 0)
             return 0;
         // Largest cluster wins (ties: lowest id) — the accumulated evidence
@@ -705,7 +719,7 @@ namespace MediaDedup
             return 0;
         if (sources.empty())
             return target;
-        return mergeClusters(db, target, sources) ? target : 0;
+        return mergeClusters(db, target, sources, purge_cutoff, purged) ? target : 0;
     }
 
     bool FacesOps::setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden)
@@ -815,7 +829,8 @@ namespace MediaDedup
     std::vector<FacesOps::ClusterFace> FacesOps::listClusterFaces(DatabaseManager &db,
                                                                   int cluster_id,
                                                                   int offset, int limit,
-                                                                  int &total)
+                                                                  int &total,
+                                                                  double suspect_bar)
     {
         std::vector<ClusterFace> out;
         total = 0;
@@ -854,7 +869,7 @@ namespace MediaDedup
                                     : blobToFloats(rs[7].extract<Poco::Data::BLOB>()));
                 out.push_back(std::move(f));
             }
-            annotateFaceFits(db, cluster_id, out, embeddings);
+            annotateFaceFits(db, cluster_id, out, embeddings, suspect_bar);
         }
         catch (const std::exception &e)
         {
@@ -865,7 +880,8 @@ namespace MediaDedup
 
     void FacesOps::annotateFaceFits(DatabaseManager &db, int cluster_id,
                                     std::vector<ClusterFace> &faces,
-                                    const std::vector<std::vector<float>> &embeddings)
+                                    const std::vector<std::vector<float>> &embeddings,
+                                    double suspect_bar)
     {
         // FACE-7d: fit = the face's score against its own cluster (centroid
         // plus exemplars, the exemplar set excluding the face itself — a
@@ -899,9 +915,83 @@ namespace MediaDedup
                     best = std::max(best, cosineF(embeddings[i], e.embedding));
             faces[i].fit = best;
             // The pinned cover is the human-verified anchor — never suspect.
-            faces[i].suspect = best < kSuspectFitBar &&
+            faces[i].suspect = best < suspect_bar &&
                                !(pinned != 0 && faces[i].face_id == pinned_cover);
         }
+    }
+
+    int FacesOps::purgeMisfits(DatabaseManager &db, int cluster_id, double cutoff)
+    {
+        if (cutoff <= 0)
+            return 0;
+        // Judge against the CURRENT membership's model: refresh exemplars
+        // first so a just-merged cluster scores faces with both looks'
+        // exemplars, not the stale pre-merge set.
+        refreshClusterExemplars(db, cluster_id);
+
+        std::vector<float> centroid;
+        int pinned_cover = 0;
+        bool found = false;
+        for (const auto &c : listClusters(db))
+            if (c.id == cluster_id)
+            {
+                centroid = c.centroid;
+                pinned_cover = c.cover_pinned ? c.cover_face_id : 0;
+                found = true;
+                break;
+            }
+        if (!found || centroid.empty())
+            return 0;
+        std::vector<ExemplarRow> exemplars;
+        for (auto &e : listClusterExemplars(db))
+            if (e.cluster_id == cluster_id)
+                exemplars.push_back(std::move(e));
+
+        std::vector<int> evict;
+        try
+        {
+            for (const auto &m : loadMembers(db, cluster_id))
+            {
+                // The pinned cover is the human-verified anchor — exempt.
+                if (m.id == pinned_cover)
+                    continue;
+                double best = cosineF(m.embedding, centroid);
+                for (const auto &e : exemplars)
+                    if (e.face_id != m.id) // a face must not vouch for itself
+                        best = std::max(best, cosineF(m.embedding, e.embedding));
+                if (best < cutoff)
+                    evict.push_back(m.id);
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("purgeMisfits: %s", std::string(e.what()));
+            return 0;
+        }
+        if (evict.empty())
+            return 0;
+
+        const bool ok = DbRetry::withBusyRetry("FacesOps", "purgeMisfits", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            for (int face_id : evict)
+            {
+                int fid = face_id;
+                Poco::Data::Statement stmt(sess);
+                stmt << "UPDATE faces SET cluster_id = NULL, person_id = NULL WHERE id = ?",
+                    use(fid), now;
+            }
+            return true;
+        });
+        if (!ok)
+            return 0;
+        // Rebuild size/centroid/cover — and the exemplars again — from the
+        // cleaned membership (recomputeCluster deletes an emptied cluster).
+        recomputeCluster(db, cluster_id);
+        Poco::Logger::get("FacesOps")
+            .information("purgeMisfits: cluster %d shed %z face(s) below fit %.2f",
+                         cluster_id, evict.size(), cutoff);
+        return static_cast<int>(evict.size());
     }
 
     bool FacesOps::addCannotLink(DatabaseManager &db, int face_id, int cluster_id)
@@ -1289,6 +1379,31 @@ namespace MediaDedup
     }
 
     // ---- FACE-6: pinned covers -------------------------------------------
+
+    bool FacesOps::clearAllFaceGroups(DatabaseManager &db)
+    {
+        // FACE-8b: dissolveCluster, globally — one statement per table
+        // instead of per-cluster loops. Faces keep their embeddings, so the
+        // sweep's catch-up rebuilds fresh unnamed clusters within ticks;
+        // cannot-links go too (they reference cluster ids that no longer
+        // exist, and a factory reset means forgetting the corrections).
+        return DbRetry::withBusyRetry("FacesOps", "clearAllFaceGroups", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            for (const char *sql :
+                 {"UPDATE faces SET cluster_id = NULL, person_id = NULL",
+                  "DELETE FROM face_cluster_exemplars",
+                  "DELETE FROM face_cannot_link",
+                  "DELETE FROM face_clusters",
+                  "DELETE FROM person_aliases",
+                  "DELETE FROM persons"})
+            {
+                Poco::Data::Statement stmt(sess);
+                stmt << std::string(sql), now;
+            }
+            return true;
+        });
+    }
 
     bool FacesOps::setClusterCover(DatabaseManager &db, int cluster_id, int face_id)
     {

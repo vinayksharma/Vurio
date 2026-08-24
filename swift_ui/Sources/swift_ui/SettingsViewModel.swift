@@ -32,7 +32,9 @@ class SettingsViewModel: ObservableObject {
         
         let excludedKeys: Set<String> = [
             "duplicates.threshold.duplicate",
-            "duplicates.threshold.similarity"
+            "duplicates.threshold.similarity",
+            // FACE-8: rendered by FaceCutoffSliderSection, not a generic row.
+            "media.face.mergePurgeCutoff"
         ]
 
         // Key prefixes hidden from Settings. Video is not supported at this
@@ -175,6 +177,10 @@ class SettingsViewModel: ObservableObject {
     
     func resetDuplicates() async {
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.resetDuplicates(Vurio_Dedup_Empty()) }, successMessage: "Duplicates reset")
+    }
+    
+    func clearAllFaceGroups() async {
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.clearAllFaceGroups(Vurio_Dedup_Empty()) }, successMessage: "All face groups cleared — regrouping starts automatically")
     }
     
     func purgeEjectedAndErrored() async {

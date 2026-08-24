@@ -6,6 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "core/grpc_server/grpc_service_common.hpp"
+#include "database/faces_ops.hpp"
 #include "core/grpc_server/full_res_cache_registry.hpp"
 
 namespace MediaDedup {
@@ -126,6 +127,21 @@ public:
             if (!MediaDedup::DuplicateGroupsOps::resetCheckpoint(*db_, mode)) success = false;
             reply->set_success(success);
             if (!success) reply->set_error_message("Failed to reset duplicates");
+        } catch (const std::exception& e) {
+            reply->set_success(false);
+            reply->set_error_message(e.what());
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ClearAllFaceGroups(grpc::ServerContext* context, const vurio::dedup::Empty* request,
+                                    vurio::dedup::AdvancedActionResponse* reply) override {
+        try {
+            // FACE-8b: names, aliases and groupings gone; detected faces and
+            // embeddings stay, so the sweep regroups from scratch.
+            const bool success = MediaDedup::FacesOps::clearAllFaceGroups(*db_);
+            reply->set_success(success);
+            if (!success) reply->set_error_message("Failed to clear face groups");
         } catch (const std::exception& e) {
             reply->set_success(false);
             reply->set_error_message(e.what());
