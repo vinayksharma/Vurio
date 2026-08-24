@@ -140,6 +140,29 @@ final class PeopleViewModel: ObservableObject {
         }
     }
 
+    /// FACE-7e: does another (possibly hidden) cluster already carry this
+    /// name? Drives the combine-confirmation dialog before a rename lands.
+    func hasOtherCluster(named name: String, excluding id: Int32) async -> Bool {
+        guard let client = VurioGrpcClient.shared.duplicates else { return false }
+        let request = Vurio_Dedup_ListFaceClustersRequest.with { $0.includeHidden = true }
+        guard let response = try? await callWithBusyRetry({ try await client.listFaceClusters(request) })
+        else { return false }
+        return response.clusters.contains {
+            $0.id != id && !$0.name.isEmpty &&
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
+    /// FACE-7e "Regroup faces": dissolve the cluster server-side; its faces
+    /// keep their embeddings and re-sort into groups as the sweep runs.
+    func dissolve(_ id: Int32) async {
+        await action { client in
+            let request = Vurio_Dedup_DissolveFaceClusterRequest.with { $0.clusterID = id }
+            return try await client.dissolveFaceCluster(request)
+        }
+        if reviewing?.id == id { reviewing = nil }
+    }
+
     /// FACE-6: pin a face as the cluster's representative (cover) face; the
     /// pin survives automatic quality elections until that face leaves the
     /// cluster. Closes the popup — the card updates on the reload.
@@ -251,6 +274,19 @@ struct PeopleView: View {
     @FocusState private var nameFieldFocused: Bool
     @FocusState private var aliasFieldFocused: Bool
 
+    // FACE-7e: a rename that collides with an existing name waits for the
+    // user's confirmation (the server merges the groups on commit). Two
+    // slots because the alert must attach where it presents: inside the
+    // sheet for the inline header, at the root for the card dialog.
+    struct PendingMerge {
+        let clusterId: Int32
+        let name: String
+        let aliases: [String]
+    }
+    @State private var sheetPendingMerge: PendingMerge? = nil
+    @State private var cardPendingMerge: PendingMerge? = nil
+    @State private var dissolving: Vurio_Dedup_FaceClusterInfo? = nil
+
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)]
 
     var body: some View {
@@ -311,17 +347,53 @@ struct PeopleView: View {
             TextField("Aliases (comma separated) — e.g. mom, ma", text: $aliasText)
             Button("Save") {
                 if let cluster = renaming {
+                    let name = renameText.trimmingCharacters(in: .whitespaces)
                     let aliases = aliasText
                         .split(separator: ",")
                         .map { $0.trimmingCharacters(in: .whitespaces) }
                         .filter { !$0.isEmpty }
-                    Task { await model.rename(cluster.id, to: renameText, aliases: aliases) }
+                    // FACE-7e: colliding name ⇒ the server merges — confirm.
+                    Task {
+                        if !name.isEmpty,
+                           await model.hasOtherCluster(named: name, excluding: cluster.id) {
+                            cardPendingMerge = PendingMerge(clusterId: cluster.id,
+                                                            name: name, aliases: aliases)
+                        } else {
+                            await model.rename(cluster.id, to: name, aliases: aliases)
+                        }
+                    }
                 }
                 renaming = nil
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         } message: {
             Text("Search understands aliases too: \"photos of mom at the beach\".")
+        }
+        .alert("Combine people?", isPresented: Binding(
+            get: { cardPendingMerge != nil },
+            set: { if !$0 { cardPendingMerge = nil } }
+        )) {
+            Button("Combine") {
+                if let p = cardPendingMerge {
+                    Task { await model.rename(p.clusterId, to: p.name, aliases: p.aliases) }
+                }
+                cardPendingMerge = nil
+            }
+            Button("Cancel", role: .cancel) { cardPendingMerge = nil }
+        } message: {
+            Text("Another group is already named \"\(cardPendingMerge?.name ?? "")\". Both groups become one person — you can \"Regroup faces\" later to re-sort them.")
+        }
+        .alert("Regroup faces?", isPresented: Binding(
+            get: { dissolving != nil },
+            set: { if !$0 { dissolving = nil } }
+        )) {
+            Button("Regroup", role: .destructive) {
+                if let c = dissolving { Task { await model.dissolve(c.id) } }
+                dissolving = nil
+            }
+            Button("Cancel", role: .cancel) { dissolving = nil }
+        } message: {
+            Text("\"\(dissolving.map { $0.name.isEmpty ? "Unnamed" : $0.name } ?? "")\" is dissolved: the name and aliases are cleared, and its faces re-sort into groups automatically as the face scan runs. Use this to undo a bad merge.")
         }
     }
 
@@ -397,13 +469,20 @@ struct PeopleView: View {
                               spacing: 10) {
                         ForEach(model.reviewFaces, id: \.faceID) { face in
                             let isCover = face.faceID == cluster.coverFaceID
+                            // FACE-7d: cover ring wins; a suspect face (low
+                            // fit against its own cluster) wears the warning
+                            // ring — surfaced for review, never auto-removed.
                             FaceCropView(filePath: face.filePath,
                                          x: face.x, y: face.y, w: face.w, h: face.h)
                                 .frame(width: 80, height: 80)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isCover ? Theme.accent : Theme.border,
-                                            lineWidth: isCover ? 2 : 1))
+                                    .stroke(isCover ? Theme.accent
+                                            : face.suspect ? Theme.warning : Theme.border,
+                                            lineWidth: isCover || face.suspect ? 2 : 1))
+                                .help(face.suspect
+                                      ? "may not be \(cluster.name.isEmpty ? "the same person" : cluster.name) — right-click to remove"
+                                      : "")
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     Task { await model.setCover(cluster: cluster.id,
@@ -431,6 +510,24 @@ struct PeopleView: View {
         .onChange(of: aliasFieldFocused) { _, focused in
             if !focused { sheetAliasText = committedAliases }
         }
+        .alert("Combine people?", isPresented: Binding(
+            get: { sheetPendingMerge != nil },
+            set: { if !$0 { sheetPendingMerge = nil } }
+        )) {
+            Button("Combine") {
+                if let p = sheetPendingMerge {
+                    committedName = p.name
+                    Task { await model.rename(p.clusterId, to: p.name, aliases: p.aliases) }
+                }
+                sheetPendingMerge = nil
+            }
+            Button("Cancel", role: .cancel) {
+                sheetNameText = committedName
+                sheetPendingMerge = nil
+            }
+        } message: {
+            Text("Another group is already named \"\(sheetPendingMerge?.name ?? "")\". Both groups become one person — you can \"Regroup faces\" later to re-sort them.")
+        }
     }
 
     /// Enter in either header field commits name AND aliases together —
@@ -449,8 +546,18 @@ struct PeopleView: View {
         } else {
             aliases = cluster.aliases
         }
-        committedName = name
-        Task { await model.rename(cluster.id, to: name, aliases: aliases) }
+        // FACE-7e: a colliding name means the server will merge the groups
+        // — confirm first. committedName only advances once the rename is
+        // actually sent, so Cancel reverts the field.
+        Task {
+            if !name.isEmpty, await model.hasOtherCluster(named: name, excluding: cluster.id) {
+                sheetPendingMerge = PendingMerge(clusterId: cluster.id, name: name,
+                                                aliases: aliases)
+            } else {
+                committedName = name
+                await model.rename(cluster.id, to: name, aliases: aliases)
+            }
+        }
     }
 
     @ViewBuilder
@@ -505,6 +612,11 @@ struct PeopleView: View {
             }
             Button(cluster.hidden ? "Unhide" : "Hide") {
                 Task { await model.setHidden(cluster.id, !cluster.hidden) }
+            }
+            // FACE-7e: the undo for a bad merge — dissolve and let the
+            // sweep re-sort the faces from their stored embeddings.
+            Button("Regroup faces…", role: .destructive) {
+                dissolving = cluster
             }
         }
     }

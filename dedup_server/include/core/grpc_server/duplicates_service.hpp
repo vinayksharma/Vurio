@@ -334,6 +334,11 @@ public:
                 std::vector<std::string> aliases(request->aliases().begin(),
                                                  request->aliases().end());
                 ok = MediaDedup::FacesOps::setPersonAliases(*db_, pid, aliases);
+                // FACE-7a: naming a cluster with an existing name merges the
+                // person's clusters into one — the same-name act is the
+                // user's identity statement.
+                if (ok)
+                    ok = MediaDedup::FacesOps::mergePersonClusters(*db_, pid) > 0;
             }
         }
         reply->set_success(ok);
@@ -375,6 +380,8 @@ public:
             p->set_w(f.w);
             p->set_h(f.h);
             p->set_quality(f.quality);
+            p->set_fit(f.fit);
+            p->set_suspect(f.suspect);
         }
         reply->set_total(total);
         return grpc::Status::OK;
@@ -386,6 +393,15 @@ public:
         const bool ok = MediaDedup::FacesOps::removeFaceFromCluster(*db_, request->face_id());
         reply->set_success(ok);
         if (!ok) reply->set_error_message("Failed to remove face");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status DissolveFaceCluster(grpc::ServerContext*, const vurio::dedup::DissolveFaceClusterRequest* request,
+                                     vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::dissolveCluster(*db_, request->cluster_id());
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to dissolve cluster");
         return grpc::Status::OK;
     }
 
