@@ -139,5 +139,45 @@ namespace MediaDedup
         /// search validator resolves person facts through this — names are
         /// runtime user data and never enter the LLM prompt.
         static int personIdByName(DatabaseManager &db, const std::string &name);
+
+        // ---- FACE-3b: per-face corrections -------------------------------
+
+        struct ClusterFace
+        {
+            int face_id = 0;
+            std::string file_path;
+            double x = 0, y = 0, w = 0, h = 0;
+            double quality = 0;
+        };
+
+        /// A cluster's faces for the review grid, quality desc.
+        static std::vector<ClusterFace> listClusterFaces(DatabaseManager &db, int cluster_id,
+                                                         int offset, int limit, int &total);
+
+        /// "Not this person": detach the face (cluster_id/person_id NULL),
+        /// record the cannot-link, and recompute the source cluster from its
+        /// remaining members (deleted when empty). The sweep's catch-up
+        /// re-adopts the face on its next tick, honoring the constraint.
+        static bool removeFaceFromCluster(DatabaseManager &db, int face_id);
+
+        static bool addCannotLink(DatabaseManager &db, int face_id, int cluster_id);
+
+        struct CannotLink
+        {
+            int face_id = 0;
+            int forbidden_cluster_id = 0;
+            int current_cluster_id = 0; // 0 = currently unclustered
+        };
+        /// All constraints, joined with each face's CURRENT cluster so the
+        /// clusterer can block consolidation merges without per-pair queries.
+        static std::vector<CannotLink> listCannotLinks(DatabaseManager &db);
+        /// A merge dissolves `from` into `to`: constraints follow, because
+        /// "not the person of `from`" means "not the person of `to`" once
+        /// they are the same identity.
+        static bool repointCannotLinks(DatabaseManager &db, int from, int to);
+
+        /// Recompute size/centroid/cover from current members; deletes the
+        /// cluster row when no members remain. Returns false on DB failure.
+        static bool recomputeCluster(DatabaseManager &db, int cluster_id);
     };
 }

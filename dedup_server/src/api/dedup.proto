@@ -182,6 +182,35 @@ message FaceClusterActionResponse {
   string error_message = 2;
 }
 
+// FACE-3b: the cluster's individual faces, for the review grid.
+message ClusterFaceInfo {
+  int32 face_id = 1;
+  string file_path = 2;   // crop the thumbnail with the bbox client-side
+  double x = 3;
+  double y = 4;
+  double w = 5;
+  double h = 6;
+  double quality = 7;
+}
+
+message ListClusterFacesRequest {
+  int32 cluster_id = 1;
+  int32 offset = 2;
+  int32 limit = 3;
+}
+
+message ListClusterFacesResponse {
+  repeated ClusterFaceInfo faces = 1; // quality desc
+  int32 total = 2;
+}
+
+// "Not this person": detach the face from its cluster, record a
+// cannot-link so re-clustering never re-joins it (the constraint follows
+// merges), and let the sweep's catch-up re-adopt the face elsewhere.
+message RemoveFaceFromClusterRequest {
+  int32 face_id = 1;
+}
+
 // ---------------------------------------------------------
 // Duplicates Service
 // ---------------------------------------------------------
@@ -196,6 +225,8 @@ service DuplicatesService {
   rpc NameFaceCluster(NameFaceClusterRequest) returns (FaceClusterActionResponse);
   rpc MergeFaceClusters(MergeFaceClustersRequest) returns (FaceClusterActionResponse);
   rpc SetFaceClusterHidden(SetFaceClusterHiddenRequest) returns (FaceClusterActionResponse);
+  rpc ListClusterFaces(ListClusterFacesRequest) returns (ListClusterFacesResponse);
+  rpc RemoveFaceFromCluster(RemoveFaceFromClusterRequest) returns (FaceClusterActionResponse);
   // Fetch more files for a single day (horizontal-scroll pagination within a
   // day row); offset/limit page over the day's files in taken_time order.
   rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);

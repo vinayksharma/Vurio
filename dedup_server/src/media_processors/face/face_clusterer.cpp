@@ -53,8 +53,17 @@ namespace MediaDedup
             c.person_id = row.person_id;
             clusters_[row.id] = std::move(c);
         }
+        cannot_links_.clear();
+        cluster_forbidden_.clear();
+        for (const auto &l : FacesOps::listCannotLinks(*db_))
+        {
+            cannot_links_[l.face_id].insert(l.forbidden_cluster_id);
+            if (l.current_cluster_id > 0)
+                cluster_forbidden_[l.current_cluster_id].insert(l.forbidden_cluster_id);
+        }
         Poco::Logger::get("FaceClusterer")
-            .information("Loaded %z face cluster(s)", clusters_.size());
+            .information("Loaded %z face cluster(s), %z cannot-link constraint(s)",
+                         clusters_.size(), cannot_links_.size());
     }
 
     void FaceClusterer::persist(int id, const Cluster &c)
@@ -74,10 +83,15 @@ namespace MediaDedup
         if (!db_ || embedding.empty() || quality < options_.min_quality)
             return 0;
 
+        const auto forbidden_it = cannot_links_.find(face_id);
         int best_id = 0;
         double best_cos = -1.0;
         for (const auto &[id, c] : clusters_)
         {
+            // FACE-3b: "not this person" is absolute — the best-matching
+            // cluster is skipped entirely when the user has excluded it.
+            if (forbidden_it != cannot_links_.end() && forbidden_it->second.count(id))
+                continue;
             const double cos = cosine(embedding, c.centroid);
             if (cos > best_cos)
             {
@@ -101,6 +115,9 @@ namespace MediaDedup
             }
             persist(best_id, c);
             FacesOps::setFaceCluster(*db_, face_id, best_id);
+            if (forbidden_it != cannot_links_.end())
+                cluster_forbidden_[best_id].insert(forbidden_it->second.begin(),
+                                                   forbidden_it->second.end());
             return best_id;
         }
 
@@ -119,7 +136,22 @@ namespace MediaDedup
             return 0;
         clusters_[id] = std::move(c);
         FacesOps::setFaceCluster(*db_, face_id, id);
+        if (forbidden_it != cannot_links_.end())
+            cluster_forbidden_[id].insert(forbidden_it->second.begin(),
+                                          forbidden_it->second.end());
         return id;
+    }
+
+    bool FaceClusterer::mergeViolatesCannotLink(int lose, int win) const
+    {
+        // "f is not cluster C's person" means f's current cluster and C
+        // must never UNIFY — in either direction. A one-way check would
+        // let C dissolve into f's cluster and reunite them anyway.
+        const auto a = cluster_forbidden_.find(lose);
+        if (a != cluster_forbidden_.end() && a->second.count(win) > 0)
+            return true;
+        const auto b = cluster_forbidden_.find(win);
+        return b != cluster_forbidden_.end() && b->second.count(lose) > 0;
     }
 
     int FaceClusterer::consolidate()
@@ -153,6 +185,12 @@ namespace MediaDedup
                     if (a_named && b_named &&
                         it_a->second.person_id != it_b->second.person_id)
                         continue;
+                    // FACE-3b: a merge moves the loser's faces into the
+                    // winner — blocked when any of those faces is forbidden
+                    // from the winner ("not this person" must survive
+                    // consolidation).
+                    if (mergeViolatesCannotLink(lose->first, win->first))
+                        continue;
 
                     Cluster &w = win->second;
                     Cluster &l = lose->second;
@@ -166,7 +204,31 @@ namespace MediaDedup
                         w.cover_face_id = l.cover_face_id;
                     }
                     FacesOps::moveClusterMembers(*db_, lose->first, win->first);
+                    // Constraints against the dissolved cluster follow the
+                    // identity into the winner — in the DB and in both
+                    // in-memory mirrors.
+                    FacesOps::repointCannotLinks(*db_, lose->first, win->first);
                     FacesOps::deleteCluster(*db_, lose->first);
+                    {
+                        const int lose_id = lose->first, win_id = win->first;
+                        auto moved = cluster_forbidden_.find(lose_id);
+                        if (moved != cluster_forbidden_.end())
+                        {
+                            cluster_forbidden_[win_id].insert(moved->second.begin(),
+                                                              moved->second.end());
+                            cluster_forbidden_.erase(moved);
+                        }
+                        for (auto &[fid, set] : cannot_links_)
+                            if (set.erase(lose_id))
+                                set.insert(win_id);
+                        for (auto &[cid, set] : cluster_forbidden_)
+                            if (set.erase(lose_id))
+                                set.insert(win_id);
+                        // A cluster forbidden from itself is meaningless.
+                        cluster_forbidden_[win_id].erase(win_id);
+                        if (cluster_forbidden_[win_id].empty())
+                            cluster_forbidden_.erase(win_id);
+                    }
                     persist(win->first, w);
                     clusters_.erase(lose->first);
                     merges++;

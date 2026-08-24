@@ -77,6 +77,43 @@ final class PeopleViewModel: ObservableObject {
         }
     }
 
+    /// FACE-3b: the review sheet's faces for one cluster.
+    @Published var reviewing: Vurio_Dedup_FaceClusterInfo? = nil
+    @Published private(set) var reviewFaces: [Vurio_Dedup_ClusterFaceInfo] = []
+
+    func openReview(_ cluster: Vurio_Dedup_FaceClusterInfo) async {
+        reviewing = cluster
+        await loadReviewFaces()
+    }
+
+    private func loadReviewFaces() async {
+        guard let cluster = reviewing,
+              let client = VurioGrpcClient.shared.duplicates else { return }
+        do {
+            let request = Vurio_Dedup_ListClusterFacesRequest.with {
+                $0.clusterID = cluster.id
+                $0.limit = 500
+            }
+            let response = try await callWithBusyRetry { try await client.listClusterFaces(request) }
+            reviewFaces = response.faces
+        } catch {
+            guard !isGrpcCancellation(error) else { return }
+            MessageCenter.shared.post("Failed to load faces: \(error.localizedDescription)")
+        }
+    }
+
+    /// "Not this person": the server records a cannot-link, recomputes the
+    /// cluster, and the sweep re-homes the face within a tick.
+    func removeFace(_ faceId: Int32) async {
+        await action { client in
+            let request = Vurio_Dedup_RemoveFaceFromClusterRequest.with {
+                $0.faceID = faceId
+            }
+            return try await client.removeFaceFromCluster(request)
+        }
+        await loadReviewFaces()
+    }
+
     private func action(
         _ rpc: (Vurio_Dedup_DuplicatesServiceAsyncClient) async throws -> Vurio_Dedup_FaceClusterActionResponse
     ) async {
@@ -193,6 +230,12 @@ struct PeopleView: View {
         }
         .background(Theme.background)
         .task { await model.load() }
+        .sheet(isPresented: Binding(
+            get: { model.reviewing != nil },
+            set: { if !$0 { model.reviewing = nil } }
+        )) {
+            reviewSheet
+        }
         .alert("Name this person", isPresented: Binding(
             get: { renaming != nil },
             set: { if !$0 { renaming = nil } }
@@ -206,6 +249,46 @@ struct PeopleView: View {
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
+    }
+
+    // FACE-3b: the per-face review grid. Right-click a face that doesn't
+    // belong -> "Not this person" detaches it, records the constraint, and
+    // the sweep re-homes it (never back here).
+    @ViewBuilder
+    private var reviewSheet: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(model.reviewing.map { $0.name.isEmpty ? "Unnamed" : $0.name } ?? "")
+                    .font(.headline)
+                Text("— right-click a face that isn't them")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+                Spacer()
+                Button("Done") { model.reviewing = nil }
+            }
+            .padding()
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 100), spacing: 10)],
+                          spacing: 10) {
+                    ForEach(model.reviewFaces, id: \.faceID) { face in
+                        FaceCropView(filePath: face.filePath,
+                                     x: face.x, y: face.y, w: face.w, h: face.h)
+                            .frame(width: 80, height: 80)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8)
+                                .stroke(Theme.border, lineWidth: 1))
+                            .contextMenu {
+                                Button("Not this person", role: .destructive) {
+                                    Task { await model.removeFace(face.faceID) }
+                                }
+                            }
+                    }
+                }
+                .padding()
+            }
+        }
+        .frame(minWidth: 520, minHeight: 420)
+        .background(Theme.background)
     }
 
     @ViewBuilder
@@ -244,6 +327,9 @@ struct PeopleView: View {
             Button(cluster.name.isEmpty ? "Name…" : "Rename…") {
                 renameText = cluster.name
                 renaming = cluster
+            }
+            Button("Review faces…") {
+                Task { await model.openReview(cluster) }
             }
             if model.selection.count >= 2 && selected {
                 Button("Merge \(model.selection.count - 1) selected into this") {

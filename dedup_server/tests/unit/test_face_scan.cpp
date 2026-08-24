@@ -429,6 +429,139 @@ namespace MediaDedup
             EXPECT_TRUE(infos[0].name.empty());
         }
 
+        // ---- FACE-3b: "not this person" ---------------------------------
+
+        TEST_F(FaceScanTest, RemoveFaceRecordsConstraintAndNeverRejoins)
+        {
+            int fid = insertProcessed("/nowhere/r.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts; // join 0.58
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(0.98f, 0.2f, 0, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(0.98f, 0.2f, 0, 0), 0.8), c1);
+
+            // "Not this person" on f2: constraint recorded, cluster
+            // recomputed (size 1, cover back to f1).
+            ASSERT_TRUE(FacesOps::removeFaceFromCluster(*db_, f2));
+            auto links = FacesOps::listCannotLinks(*db_);
+            ASSERT_EQ(links.size(), 1u);
+            EXPECT_EQ(links[0].face_id, f2);
+            EXPECT_EQ(links[0].forbidden_cluster_id, c1);
+            EXPECT_EQ(links[0].current_cluster_id, 0);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 1);
+
+            // The catch-up re-adopts f2 but must NOT rejoin c1 — even
+            // though c1 is its best match, it founds a new cluster.
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            const int c2 = cl2.assign(f2, unit4(0.98f, 0.2f, 0, 0), 0.8);
+            ASSERT_GT(c2, 0);
+            EXPECT_NE(c2, c1);
+        }
+
+        TEST_F(FaceScanTest, ConsolidationHonorsAndRepointsCannotLinks)
+        {
+            int fid = insertProcessed("/nowhere/s.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999; // force separate clusters
+            opts.merge_threshold = 0.9;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(0.99f, 0.14f, 0, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(f2, unit4(0.99f, 0.14f, 0, 0), 0.8);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+
+            // f2 is "not the person of c1": near-identical centroids, but
+            // the merge is blocked — the correction survives consolidation.
+            ASSERT_TRUE(FacesOps::addCannotLink(*db_, f2, c1));
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            EXPECT_EQ(cl2.consolidate(), 0);
+            EXPECT_EQ(cl2.clusterCount(), 2u);
+
+            // A third cluster CAN merge into c1; a constraint against the
+            // dissolved cluster follows the identity into the winner.
+            const int f3 = mkFace(unit4(0.995f, -0.1f, 0, 0), 0.7);
+            const int c3 = cl2.assign(f3, unit4(0.995f, -0.1f, 0, 0), 0.7);
+            ASSERT_TRUE(c3 > 0 && c3 != c1 && c3 != c2);
+            const int f4 = mkFace(unit4(0, 0, 1, 0), 0.9);
+            ASSERT_GT(cl2.assign(f4, unit4(0, 0, 1, 0), 0.9), 0);
+            ASSERT_TRUE(FacesOps::addCannotLink(*db_, f4, c3));
+
+            FaceClusterer cl3(db_.get(), opts);
+            cl3.load();
+            const int merges = cl3.consolidate();
+            EXPECT_GE(merges, 1); // c3 merged with a twin (either direction)
+            // Whichever direction merged, f4's constraint must now point at
+            // f3's CURRENT cluster — the identity, not a dangling id.
+            int f3_cluster = 0;
+            for (const auto &face : FacesOps::listFacesForFile(*db_, fid))
+                if (face.id == f3)
+                {
+                    int total = 0;
+                    for (const auto &info : FacesOps::listClusterInfos(*db_, true))
+                        for (const auto &cf : FacesOps::listClusterFaces(*db_, info.id, 0, 100, total))
+                            if (cf.face_id == f3)
+                                f3_cluster = info.id;
+                }
+            ASSERT_GT(f3_cluster, 0);
+            bool follows = false;
+            for (const auto &l : FacesOps::listCannotLinks(*db_))
+                if (l.face_id == f4 && l.forbidden_cluster_id == f3_cluster)
+                    follows = true;
+            EXPECT_TRUE(follows) << "constraint must follow the dissolved cluster's identity";
+        }
+
+        TEST_F(FaceScanTest, ListClusterFacesPagesByQuality)
+        {
+            int fid = insertProcessed("/nowhere/t.jpg");
+            FaceClusterer cl(db_.get(), {});
+            cl.load();
+            int cluster = 0;
+            for (double q : {0.5, 0.9, 0.7})
+            {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                const int id = FacesOps::insertFace(*db_, r);
+                cluster = cl.assign(id, unit4(1, 0, 0, 0), q);
+            }
+            int total = 0;
+            auto faces = FacesOps::listClusterFaces(*db_, cluster, 0, 2, total);
+            EXPECT_EQ(total, 3);
+            ASSERT_EQ(faces.size(), 2u);
+            EXPECT_DOUBLE_EQ(faces[0].quality, 0.9);
+            EXPECT_DOUBLE_EQ(faces[1].quality, 0.7);
+            EXPECT_EQ(faces[0].file_path, "/nowhere/t.jpg");
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

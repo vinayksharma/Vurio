@@ -346,6 +346,35 @@ public:
         return grpc::Status::OK;
     }
 
+    grpc::Status ListClusterFaces(grpc::ServerContext*, const vurio::dedup::ListClusterFacesRequest* request,
+                                  vurio::dedup::ListClusterFacesResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        int total = 0;
+        const int limit = request->limit() > 0 ? request->limit() : 200;
+        for (const auto& f : MediaDedup::FacesOps::listClusterFaces(
+                 *db_, request->cluster_id(), request->offset(), limit, total)) {
+            auto* p = reply->add_faces();
+            p->set_face_id(f.face_id);
+            p->set_file_path(f.file_path);
+            p->set_x(f.x);
+            p->set_y(f.y);
+            p->set_w(f.w);
+            p->set_h(f.h);
+            p->set_quality(f.quality);
+        }
+        reply->set_total(total);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status RemoveFaceFromCluster(grpc::ServerContext*, const vurio::dedup::RemoveFaceFromClusterRequest* request,
+                                       vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::removeFaceFromCluster(*db_, request->face_id());
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to remove face");
+        return grpc::Status::OK;
+    }
+
     // The ai/xf toggles select the PIPELINE the query runs through, not a
     // post-filter: only-ai re-runs the query as pure CLIP over its parsed
     // semantic part; only-xf as the fact algebra alone. (A bound hybrid

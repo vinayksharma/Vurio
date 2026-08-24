@@ -9,7 +9,10 @@ implemented 2026-08-23 (People tab: clusters grid, name/merge/hide,
 day-view drill-down; "not this person" face-level corrections and the
 cannot/must-link constraints deferred to FACE-3b). FACE-4 (QP-2)
 implemented 2026-08-23: person + face_count dimensions live end-to-end,
-10/10 golden real-model tests. FACE-5 not started. Depends on nothing new; QP-1's
+10/10 golden real-model tests. FACE-3b implemented 2026-08-24 (per-face
+"not this person" review grid + cannot-link constraints, bidirectional
+merge blocking, constraints follow merged identities). FACE-5 not
+started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
 Decisions (user, 2026-08-23):
@@ -179,6 +182,15 @@ media.face.sweepBatch         (200)   # files per scheduler tick
    client-side bbox crops of the ordinary thumbnail. Deferred to
    FACE-3b: per-face "not this person" corrections and the cannot/
    must-link constraint schema — they need a face-grid UI.)
+   FACE-3b ✅ (2026-08-24): "Review faces…" grid per cluster;
+   "Not this person" detaches the face, records a cannot-link,
+   recomputes the cluster, and the sweep re-homes the face honoring the
+   constraint. Merges are blocked BIDIRECTIONALLY when they would
+   reunite a corrected face with the excluded identity, and constraints
+   re-point when their target cluster dissolves into a winner.
+   Must-link stays unimplemented: with no split operation, a manual
+   merge is physically permanent — there is nothing for must-link to
+   enforce yet.
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden
    matrix additions. ✅ (Golden tuning found two small-model behaviors,
    fixed at the validator layer: valueless facts skip as noise without

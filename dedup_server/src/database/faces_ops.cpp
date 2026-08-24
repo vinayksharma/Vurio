@@ -68,7 +68,12 @@ namespace MediaDedup
               // FACE-2: cover election needs the cover's quality without a join.
               "ALTER TABLE face_clusters ADD COLUMN cover_quality REAL NOT NULL DEFAULT 0",
               // FACE-3: user-hidden clusters (people they don't care about).
-              "ALTER TABLE face_clusters ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"})
+              "ALTER TABLE face_clusters ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+              // FACE-3b: "not this person" constraints. CREATE-as-ALTER is a
+              // no-op when present, keeping one migration list.
+              "CREATE TABLE IF NOT EXISTS face_cannot_link ("
+              "face_id INTEGER NOT NULL, cluster_id INTEGER NOT NULL, "
+              "PRIMARY KEY (face_id, cluster_id)) WITHOUT ROWID"})
         {
             try
             {
@@ -625,5 +630,223 @@ namespace MediaDedup
             Poco::Logger::get("FacesOps").error("personIdByName: %s", std::string(e.what()));
         }
         return id;
+    }
+
+    // ---- FACE-3b: per-face corrections -----------------------------------
+
+    std::vector<FacesOps::ClusterFace> FacesOps::listClusterFaces(DatabaseManager &db,
+                                                                  int cluster_id,
+                                                                  int offset, int limit,
+                                                                  int &total)
+    {
+        std::vector<ClusterFace> out;
+        total = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            {
+                Poco::Data::Statement count(sess);
+                count << "SELECT COUNT(*) FROM faces WHERE cluster_id = ?",
+                    use(cid), into(total), now;
+            }
+            int off = offset, lim = limit;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT f.id, COALESCE(sf.file_path, ''), f.bbox_x, f.bbox_y, "
+                    "f.bbox_w, f.bbox_h, f.quality "
+                    "FROM faces f LEFT JOIN scanned_files sf ON sf.id = f.file_id "
+                    "WHERE f.cluster_id = ? ORDER BY f.quality DESC, f.id LIMIT ? OFFSET ?",
+                use(cid), use(lim), use(off);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                ClusterFace f;
+                f.face_id = rs[0].convert<int>();
+                f.file_path = rs[1].convert<std::string>();
+                f.x = rs[2].convert<double>();
+                f.y = rs[3].convert<double>();
+                f.w = rs[4].convert<double>();
+                f.h = rs[5].convert<double>();
+                f.quality = rs[6].convert<double>();
+                out.push_back(std::move(f));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listClusterFaces: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    bool FacesOps::addCannotLink(DatabaseManager &db, int face_id, int cluster_id)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "addCannotLink", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id, cid = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "INSERT OR IGNORE INTO face_cannot_link (face_id, cluster_id) VALUES (?, ?)",
+                use(fid), use(cid), now;
+            return true;
+        });
+    }
+
+    std::vector<FacesOps::CannotLink> FacesOps::listCannotLinks(DatabaseManager &db)
+    {
+        std::vector<CannotLink> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT l.face_id, l.cluster_id, COALESCE(f.cluster_id, 0) "
+                    "FROM face_cannot_link l LEFT JOIN faces f ON f.id = l.face_id";
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+                out.push_back({rs[0].convert<int>(), rs[1].convert<int>(), rs[2].convert<int>()});
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listCannotLinks: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    bool FacesOps::repointCannotLinks(DatabaseManager &db, int from, int to)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "repointCannotLinks", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int f = from, t = to;
+            // INSERT-then-DELETE instead of UPDATE: a face may already carry
+            // a constraint against `to`, and UPDATE would collide on the PK.
+            Poco::Data::Statement ins(sess);
+            ins << "INSERT OR IGNORE INTO face_cannot_link (face_id, cluster_id) "
+                   "SELECT face_id, ? FROM face_cannot_link WHERE cluster_id = ?",
+                use(t), use(f), now;
+            Poco::Data::Statement del(sess);
+            del << "DELETE FROM face_cannot_link WHERE cluster_id = ?", use(f), now;
+            return true;
+        });
+    }
+
+    bool FacesOps::recomputeCluster(DatabaseManager &db, int cluster_id)
+    {
+        // Load remaining members' embeddings and rebuild the row in C++
+        // (blobs are small; a cluster rarely exceeds a few thousand faces).
+        struct Member
+        {
+            int id;
+            double quality;
+            std::vector<float> embedding;
+        };
+        std::vector<Member> members;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id, quality, embedding FROM faces "
+                    "WHERE cluster_id = ? AND embedding IS NOT NULL",
+                use(cid);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                Member m;
+                m.id = rs[0].convert<int>();
+                m.quality = rs[1].convert<double>();
+                m.embedding = blobToFloats(rs[2].extract<Poco::Data::BLOB>());
+                members.push_back(std::move(m));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("recomputeCluster: %s", std::string(e.what()));
+            return false;
+        }
+
+        if (members.empty())
+            return deleteCluster(db, cluster_id);
+
+        std::vector<double> acc(members[0].embedding.size(), 0.0);
+        const Member *cover = &members[0];
+        for (const auto &m : members)
+        {
+            if (m.embedding.size() == acc.size())
+                for (std::size_t i = 0; i < acc.size(); ++i)
+                    acc[i] += m.embedding[i];
+            if (m.quality > cover->quality)
+                cover = &m;
+        }
+        double norm = 0;
+        for (double v : acc)
+            norm += v * v;
+
+        ClusterRow row;
+        row.id = cluster_id;
+        row.size = static_cast<int>(members.size());
+        row.cover_face_id = cover->id;
+        row.cover_quality = cover->quality;
+        row.centroid.resize(acc.size());
+        const double inv = norm > 0 ? 1.0 / std::sqrt(norm) : 0.0;
+        for (std::size_t i = 0; i < acc.size(); ++i)
+            row.centroid[i] = static_cast<float>(acc[i] * inv);
+        // Preserve the person assignment.
+        int person_id = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT COALESCE(person_id, 0) FROM face_clusters WHERE id = ?",
+                use(cid), into(person_id), now;
+        }
+        catch (...)
+        {
+        }
+        row.person_id = person_id;
+        return updateCluster(db, row);
+    }
+
+    bool FacesOps::removeFaceFromCluster(DatabaseManager &db, int face_id)
+    {
+        int cluster_id = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT COALESCE(cluster_id, 0) FROM faces WHERE id = ?",
+                use(fid), into(cluster_id), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("removeFaceFromCluster: %s", std::string(e.what()));
+            return false;
+        }
+        if (cluster_id <= 0)
+            return false;
+
+        if (!addCannotLink(db, face_id, cluster_id))
+            return false;
+        const bool cleared = DbRetry::withBusyRetry("FacesOps", "removeFace.clear", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE faces SET cluster_id = NULL, person_id = NULL WHERE id = ?",
+                use(fid), now;
+            return true;
+        });
+        if (!cleared)
+            return false;
+        return recomputeCluster(db, cluster_id);
     }
 }

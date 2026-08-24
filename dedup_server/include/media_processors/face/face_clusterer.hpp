@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace MediaDedup
@@ -38,7 +39,8 @@ namespace MediaDedup
 
         FaceClusterer(DatabaseManager *db, Options options);
 
-        /// Mirror face_clusters into memory. Call once before assigning.
+        /// Mirror face_clusters AND the cannot-link constraints into
+        /// memory. Called at each tick start (RPC edits land within a tick).
         void load();
 
         /// Assign one embedded face (unit-normalized floats) to a cluster —
@@ -65,9 +67,17 @@ namespace MediaDedup
         };
 
         void persist(int id, const Cluster &c);
+        bool mergeViolatesCannotLink(int lose, int win) const;
 
         DatabaseManager *db_;
         Options options_;
         std::unordered_map<int, Cluster> clusters_;
+        // FACE-3b: face_id -> clusters it must never join ("not this
+        // person"); consolidation must not merge a cluster into one that
+        // any of its members is forbidden from.
+        std::unordered_map<int, std::unordered_set<int>> cannot_links_;
+        // current cluster -> clusters it must never merge INTO (union of
+        // its members' constraints); maintained through in-memory merges.
+        std::unordered_map<int, std::unordered_set<int>> cluster_forbidden_;
     };
 }
