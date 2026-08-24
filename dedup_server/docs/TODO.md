@@ -10,6 +10,14 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
+- **STRIP-1 — film strips resize to fill the available width on window resize.**
+  *Reported 2026-08-24; not yet designed.*
+  The horizontal film strips (VU day strips and BINNED group cards) keep the
+  width they were laid out with, so growing or shrinking the window leaves a
+  ragged right-hand gap or clips the strip instead of reflowing. They should
+  track the container's width and re-lay out the tiles to fill it whenever the
+  window size changes.
+
 - **QP-1 — local LLM query structurer (llama.cpp + ~1.5B Q4).**
   *Implemented 2026-08-23 (QP-1a–e, PRs #53–#56). All golden acceptance
   tests pass against the shipped Qwen2.5-1.5B q4_k_m (~1.5 s/query);
