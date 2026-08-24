@@ -313,6 +313,7 @@ struct ContentView: View {
     enum SidebarItem: Hashable {
         case vu
         case binned
+        case people
         case settings
         case scroller
     }
@@ -327,6 +328,9 @@ struct ContentView: View {
                 }
                 NavigationLink(value: SidebarItem.binned) {
                     SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
+                }
+                NavigationLink(value: SidebarItem.people) {
+                    SidebarLinkLabel(icon: "person.2", title: "PEOPLE", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.settings) {
                     SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
@@ -357,6 +361,11 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 80, ideal: 200, max: 250)
             .navigationTitle("")
+            .onReceive(PeopleNavigator.shared.$pending) { pending in
+                // A People drill-down shows in VU; VurioDuplicatesView
+                // consumes the payload itself.
+                if pending != nil { selection = .vu }
+            }
             } detail: {
                 ZStack {
                     // One panel drives both tabs: VU shows the day-based ALL view,
@@ -370,6 +379,10 @@ struct ContentView: View {
                     )
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)
+
+                    PeopleView()
+                        .opacity(selection == .people ? 1 : 0)
+                        .allowsHitTesting(selection == .people)
 
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)

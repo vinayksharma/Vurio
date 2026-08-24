@@ -53,6 +53,30 @@ class AllDaysViewModel: ObservableObject {
     @Published private(set) var searchIncludeAi = true
     @Published private(set) var searchIncludeExif = true
 
+    /// FACE-3: restrict the day list to one face cluster (People drill-down).
+    /// Composes with an active search by intersection, server-side.
+    @Published private(set) var personFilter: PeopleNavigator.ClusterFilter? = nil
+
+    func setPersonFilter(_ filter: PeopleNavigator.ClusterFilter) {
+        guard personFilter != filter else { return }
+        personFilter = filter
+        isSearching = true
+        Task {
+            await refresh()
+            isSearching = false
+        }
+    }
+
+    func clearPersonFilter() {
+        guard personFilter != nil else { return }
+        personFilter = nil
+        isSearching = true
+        Task {
+            await refresh()
+            isSearching = false
+        }
+    }
+
     func toggleSearchAi() { setSearchToggles(ai: !searchIncludeAi, exif: searchIncludeExif) }
     func toggleSearchExif() { setSearchToggles(ai: searchIncludeAi, exif: !searchIncludeExif) }
 
@@ -192,6 +216,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.searchQuery = query
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.filterClusterID = personFilter?.id ?? 0
             }
 
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
@@ -270,6 +295,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.searchQuery = activeSearchQuery
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.filterClusterID = personFilter?.id ?? 0
             }
             let response = try await callWithBusyRetry { try await client.getDayFiles(request) }
 

@@ -68,6 +68,14 @@ namespace MediaDedup
         if (!db_ || !detector_ || !embed_)
             return stats;
 
+        // FACE-3: People-tab RPCs (name/merge/hide) edit clusters from gRPC
+        // threads. Reloading the mirror at tick start — instead of sharing
+        // mutable state across threads — keeps the clusterer at most one
+        // tick stale, with no locks. Thousands of clusters reload in
+        // milliseconds.
+        if (clusterer_)
+            clusterer_->load();
+
         // Over-fetch by the files already known offline so a disconnected
         // volume at the head of the id order can't starve the batch.
         const int fetch = options_.batch + static_cast<int>(skipped_offline_.size());

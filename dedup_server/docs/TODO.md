@@ -36,7 +36,10 @@ before touching code — the line below is an index entry, not a specification.
   detector, alignment, ONNX embedder hook, background sweep). FACE-2
   implemented 2026-08-23: centroid clustering (join 0.58 / merge 0.65,
   live-calibrated), consolidation, catch-up for pre-clustering faces,
-  and a face-scan progress overlay on the VU status bar. Model:
+  and a face-scan progress overlay on the VU status bar. FACE-3
+  implemented 2026-08-23: PEOPLE tab (cluster grid with client-side
+  face crops, name/rename, cmd-click multi-select merge, hide) and
+  person drill-down into the VU day view. Model:
   AuraFace-v1 glintr100 (Apache-2.0) at models/face-embed.onnx;
   media.face.enabled is on. Decisions: Apple Vision detection
   (hybrid with a small ONNX identity embedder — Vision has no public

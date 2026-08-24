@@ -281,6 +281,122 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_FaceClusterInfo: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var id: Int32 = 0
+
+  /// empty = unnamed
+  var name: String = String()
+
+  var faceCount: Int32 = 0
+
+  /// distinct photos
+  var fileCount: Int32 = 0
+
+  /// Cover face: crop the cover file's thumbnail with this normalized bbox
+  /// (top-left origin) client-side — no extra image RPC needed.
+  var coverFilePath: String = String()
+
+  var coverX: Double = 0
+
+  var coverY: Double = 0
+
+  var coverW: Double = 0
+
+  var coverH: Double = 0
+
+  var hidden: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ListFaceClustersRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var includeHidden: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ListFaceClustersResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// size desc
+  var clusters: [Vurio_Dedup_FaceClusterInfo] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_NameFaceClusterRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var clusterID: Int32 = 0
+
+  /// empty clears the name
+  var name: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_MergeFaceClustersRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var targetID: Int32 = 0
+
+  var sourceIds: [Int32] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_SetFaceClusterHiddenRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var clusterID: Int32 = 0
+
+  var hidden: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_FaceClusterActionResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var success: Bool = false
+
+  var errorMessage: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_GetGroupIndexRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -446,6 +562,11 @@ struct Vurio_Dedup_GetDayGroupsRequest: Sendable {
 
   var searchIncludeExif: Bool = false
 
+  /// FACE-3: restrict the day view to one face cluster's photos (the People
+  /// tab drill-down). 0 = no filter. Combines with search_query by
+  /// intersection when both are set.
+  var filterClusterID: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -565,6 +686,8 @@ struct Vurio_Dedup_GetDayFilesRequest: Sendable {
   var searchIncludeAi: Bool = false
 
   var searchIncludeExif: Bool = false
+
+  var filterClusterID: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1529,6 +1652,281 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
   }
 }
 
+extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FaceClusterInfo"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.faceCount) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.fileCount) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.coverFilePath) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.coverX) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.coverY) }()
+      case 8: try { try decoder.decodeSingularDoubleField(value: &self.coverW) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self.coverH) }()
+      case 10: try { try decoder.decodeSingularBoolField(value: &self.hidden) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.id != 0 {
+      try visitor.visitSingularInt32Field(value: self.id, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if self.faceCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.faceCount, fieldNumber: 3)
+    }
+    if self.fileCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.fileCount, fieldNumber: 4)
+    }
+    if !self.coverFilePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.coverFilePath, fieldNumber: 5)
+    }
+    if self.coverX.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.coverX, fieldNumber: 6)
+    }
+    if self.coverY.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.coverY, fieldNumber: 7)
+    }
+    if self.coverW.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.coverW, fieldNumber: 8)
+    }
+    if self.coverH.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.coverH, fieldNumber: 9)
+    }
+    if self.hidden != false {
+      try visitor.visitSingularBoolField(value: self.hidden, fieldNumber: 10)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_FaceClusterInfo, rhs: Vurio_Dedup_FaceClusterInfo) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.faceCount != rhs.faceCount {return false}
+    if lhs.fileCount != rhs.fileCount {return false}
+    if lhs.coverFilePath != rhs.coverFilePath {return false}
+    if lhs.coverX != rhs.coverX {return false}
+    if lhs.coverY != rhs.coverY {return false}
+    if lhs.coverW != rhs.coverW {return false}
+    if lhs.coverH != rhs.coverH {return false}
+    if lhs.hidden != rhs.hidden {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ListFaceClustersRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ListFaceClustersRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}include_hidden\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.includeHidden) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.includeHidden != false {
+      try visitor.visitSingularBoolField(value: self.includeHidden, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ListFaceClustersRequest, rhs: Vurio_Dedup_ListFaceClustersRequest) -> Bool {
+    if lhs.includeHidden != rhs.includeHidden {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ListFaceClustersResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ListFaceClustersResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}clusters\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.clusters) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.clusters.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.clusters, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ListFaceClustersResponse, rhs: Vurio_Dedup_ListFaceClustersResponse) -> Bool {
+    if lhs.clusters != rhs.clusters {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_NameFaceClusterRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".NameFaceClusterRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0\u{1}name\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.clusterID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.clusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.clusterID, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_NameFaceClusterRequest, rhs: Vurio_Dedup_NameFaceClusterRequest) -> Bool {
+    if lhs.clusterID != rhs.clusterID {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_MergeFaceClustersRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".MergeFaceClustersRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}target_id\0\u{3}source_ids\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.targetID) }()
+      case 2: try { try decoder.decodeRepeatedInt32Field(value: &self.sourceIds) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.targetID != 0 {
+      try visitor.visitSingularInt32Field(value: self.targetID, fieldNumber: 1)
+    }
+    if !self.sourceIds.isEmpty {
+      try visitor.visitPackedInt32Field(value: self.sourceIds, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_MergeFaceClustersRequest, rhs: Vurio_Dedup_MergeFaceClustersRequest) -> Bool {
+    if lhs.targetID != rhs.targetID {return false}
+    if lhs.sourceIds != rhs.sourceIds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_SetFaceClusterHiddenRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetFaceClusterHiddenRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0\u{1}hidden\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.clusterID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.hidden) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.clusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.clusterID, fieldNumber: 1)
+    }
+    if self.hidden != false {
+      try visitor.visitSingularBoolField(value: self.hidden, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_SetFaceClusterHiddenRequest, rhs: Vurio_Dedup_SetFaceClusterHiddenRequest) -> Bool {
+    if lhs.clusterID != rhs.clusterID {return false}
+    if lhs.hidden != rhs.hidden {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_FaceClusterActionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FaceClusterActionResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.success != false {
+      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_FaceClusterActionResponse, rhs: Vurio_Dedup_FaceClusterActionResponse) -> Bool {
+    if lhs.success != rhs.success {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_GetGroupIndexRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetGroupIndexRequest"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}group_id\0")
@@ -1841,7 +2239,7 @@ extension Vurio_Dedup_GetGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayGroupsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}limit\0\u{1}offset\0\u{3}files_per_day\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0\u{3}filter_cluster_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1855,6 +2253,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
       case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeAi) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeExif) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.filterClusterID) }()
       default: break
       }
     }
@@ -1879,6 +2278,9 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if self.searchIncludeExif != false {
       try visitor.visitSingularBoolField(value: self.searchIncludeExif, fieldNumber: 6)
     }
+    if self.filterClusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.filterClusterID, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1889,6 +2291,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.searchQuery != rhs.searchQuery {return false}
     if lhs.searchIncludeAi != rhs.searchIncludeAi {return false}
     if lhs.searchIncludeExif != rhs.searchIncludeExif {return false}
+    if lhs.filterClusterID != rhs.filterClusterID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2081,7 +2484,7 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
 
 extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayFilesRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}day\0\u{1}offset\0\u{1}limit\0\u{3}search_query\0\u{3}search_include_ai\0\u{3}search_include_exif\0\u{3}filter_cluster_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2095,6 +2498,7 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
       case 4: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeAi) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.searchIncludeExif) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.filterClusterID) }()
       default: break
       }
     }
@@ -2119,6 +2523,9 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if self.searchIncludeExif != false {
       try visitor.visitSingularBoolField(value: self.searchIncludeExif, fieldNumber: 6)
     }
+    if self.filterClusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.filterClusterID, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2129,6 +2536,7 @@ extension Vurio_Dedup_GetDayFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.searchQuery != rhs.searchQuery {return false}
     if lhs.searchIncludeAi != rhs.searchIncludeAi {return false}
     if lhs.searchIncludeExif != rhs.searchIncludeExif {return false}
+    if lhs.filterClusterID != rhs.filterClusterID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

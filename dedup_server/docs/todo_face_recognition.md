@@ -4,7 +4,10 @@ Status: designed 2026-08-23. FACE-1 implemented 2026-08-23 on
 `feature/face1_extraction` (schema, Vision detector, alignment, ONNX
 embedder hook, sweep job; live-verified detection+alignment on real
 photos). FACE-2 implemented 2026-08-23 (centroid clustering in the
-sweep + consolidation + status-bar progress overlay). FACE-3..5 not
+sweep + consolidation + status-bar progress overlay). FACE-3
+implemented 2026-08-23 (People tab: clusters grid, name/merge/hide,
+day-view drill-down; "not this person" face-level corrections and the
+cannot/must-link constraints deferred to FACE-3b). FACE-4..5 not
 started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
@@ -168,7 +171,13 @@ media.face.sweepBatch         (200)   # files per scheduler tick
    is deferred until a real reader exists; the cannot/must-link
    constraint schema moves to FACE-3 where the UI defines its
    semantics. Two differently-NAMED clusters never auto-merge.)
-3. **FACE-3** People tab + naming/merge/correction RPCs.
+3. **FACE-3** People tab + naming/merge RPCs. ✅ (ListFaceClusters/
+   NameFaceCluster/MergeFaceClusters/SetFaceClusterHidden on
+   DuplicatesService; drill-down = filter_cluster_id on the day-view
+   requests, composing with search by intersection; cover crops are
+   client-side bbox crops of the ordinary thumbnail. Deferred to
+   FACE-3b: per-face "not this person" corrections and the cannot/
+   must-link constraint schema — they need a face-grid UI.)
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden
    matrix additions.
 5. **FACE-5** polish: aliases/nicknames, pets question, video frames —

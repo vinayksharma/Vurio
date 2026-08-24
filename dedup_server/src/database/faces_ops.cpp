@@ -8,6 +8,8 @@
 #include <Poco/Data/Statement.h>
 #include <Poco/Nullable.h>
 #include <Poco/Logger.h>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace MediaDedup
@@ -64,7 +66,9 @@ namespace MediaDedup
              {"ALTER TABLE scanned_files ADD COLUMN face_scan_version INTEGER NOT NULL DEFAULT 0",
               "ALTER TABLE scanned_files ADD COLUMN face_count INTEGER",
               // FACE-2: cover election needs the cover's quality without a join.
-              "ALTER TABLE face_clusters ADD COLUMN cover_quality REAL NOT NULL DEFAULT 0"})
+              "ALTER TABLE face_clusters ADD COLUMN cover_quality REAL NOT NULL DEFAULT 0",
+              // FACE-3: user-hidden clusters (people they don't care about).
+              "ALTER TABLE face_clusters ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"})
         {
             try
             {
@@ -393,5 +397,212 @@ namespace MediaDedup
             Poco::Logger::get("FacesOps").error("scanProgress: %s", std::string(e.what()));
             return false;
         }
+    }
+
+    // ---- FACE-3: People tab ----------------------------------------------
+
+    std::vector<FacesOps::ClusterInfo> FacesOps::listClusterInfos(DatabaseManager &db,
+                                                                  bool include_hidden)
+    {
+        std::vector<ClusterInfo> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            std::string sql =
+                "SELECT c.id, COALESCE(p.name, ''), c.size, "
+                "  (SELECT COUNT(DISTINCT f.file_id) FROM faces f WHERE f.cluster_id = c.id), "
+                "  COALESCE(sf.file_path, ''), "
+                "  COALESCE(cf.bbox_x, 0), COALESCE(cf.bbox_y, 0), "
+                "  COALESCE(cf.bbox_w, 0), COALESCE(cf.bbox_h, 0), c.hidden "
+                "FROM face_clusters c "
+                "LEFT JOIN persons p ON p.id = c.person_id "
+                "LEFT JOIN faces cf ON cf.id = c.cover_face_id "
+                "LEFT JOIN scanned_files sf ON sf.id = cf.file_id ";
+            if (!include_hidden)
+                sql += "WHERE c.hidden = 0 ";
+            sql += "ORDER BY c.size DESC, c.id";
+            stmt << sql;
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                ClusterInfo c;
+                c.id = rs[0].convert<int>();
+                c.name = rs[1].convert<std::string>();
+                c.face_count = rs[2].convert<int>();
+                c.file_count = rs[3].convert<int>();
+                c.cover_file_path = rs[4].convert<std::string>();
+                c.cover_x = rs[5].convert<double>();
+                c.cover_y = rs[6].convert<double>();
+                c.cover_w = rs[7].convert<double>();
+                c.cover_h = rs[8].convert<double>();
+                c.hidden = rs[9].convert<int>() != 0;
+                out.push_back(std::move(c));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listClusterInfos: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    bool FacesOps::nameCluster(DatabaseManager &db, int cluster_id, const std::string &name)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "nameCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+
+            int old_person = 0;
+            {
+                Poco::Data::Statement sel(sess);
+                sel << "SELECT COALESCE(person_id, 0) FROM face_clusters WHERE id = ?",
+                    use(cid), into(old_person), now;
+            }
+
+            int person_id = 0;
+            if (!name.empty())
+            {
+                std::string n = name;
+                Poco::Data::Statement ins(sess);
+                ins << "INSERT INTO persons (name) VALUES (?) "
+                       "ON CONFLICT(name) DO UPDATE SET name = excluded.name",
+                    use(n), now;
+                Poco::Data::Statement sel(sess);
+                sel << "SELECT id FROM persons WHERE name = ? COLLATE NOCASE",
+                    use(n), into(person_id), now;
+                if (person_id <= 0)
+                    return false;
+            }
+
+            {
+                Poco::Nullable<int> pid;
+                if (person_id > 0)
+                    pid = person_id;
+                Poco::Data::Statement upd(sess);
+                upd << "UPDATE face_clusters SET person_id = ? WHERE id = ?",
+                    use(pid), use(cid), now;
+                Poco::Data::Statement updf(sess);
+                updf << "UPDATE faces SET person_id = ? WHERE cluster_id = ?",
+                    use(pid), use(cid), now;
+            }
+
+            // The old person may be orphaned now (a rename away from it).
+            if (old_person > 0 && old_person != person_id)
+            {
+                Poco::Data::Statement del(sess);
+                int op = old_person;
+                del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
+                       "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
+                    use(op), use(op), now;
+            }
+            return true;
+        });
+    }
+
+    bool FacesOps::mergeClusters(DatabaseManager &db, int target_id,
+                                 const std::vector<int> &source_ids)
+    {
+        // Combine centroids size-weighted in C++ (they are small blobs).
+        auto clusters = listClusters(db);
+        const ClusterRow *target = nullptr;
+        std::vector<const ClusterRow *> sources;
+        for (const auto &c : clusters)
+        {
+            if (c.id == target_id)
+                target = &c;
+            else if (std::find(source_ids.begin(), source_ids.end(), c.id) != source_ids.end())
+                sources.push_back(&c);
+        }
+        if (!target || sources.empty())
+            return false;
+
+        ClusterRow merged = *target;
+        std::vector<double> acc(merged.centroid.begin(), merged.centroid.end());
+        for (auto &v : acc)
+            v *= merged.size;
+        for (const auto *s : sources)
+        {
+            if (s->centroid.size() != acc.size())
+                continue;
+            for (std::size_t i = 0; i < acc.size(); ++i)
+                acc[i] += static_cast<double>(s->centroid[i]) * s->size;
+            merged.size += s->size;
+            if (s->cover_quality > merged.cover_quality)
+            {
+                merged.cover_quality = s->cover_quality;
+                merged.cover_face_id = s->cover_face_id;
+            }
+            if (merged.person_id == 0 && s->person_id != 0)
+                merged.person_id = s->person_id;
+        }
+        double norm = 0;
+        for (double v : acc)
+            norm += v * v;
+        if (norm > 0)
+        {
+            const double inv = 1.0 / std::sqrt(norm);
+            for (std::size_t i = 0; i < acc.size(); ++i)
+                merged.centroid[i] = static_cast<float>(acc[i] * inv);
+        }
+
+        for (const auto *s : sources)
+        {
+            moveClusterMembers(db, s->id, target_id);
+            deleteCluster(db, s->id);
+        }
+        if (!updateCluster(db, merged))
+            return false;
+        // Persist the (possibly adopted) name on the surviving cluster and
+        // its members.
+        return DbRetry::withBusyRetry("FacesOps", "mergeClusters.name", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Nullable<int> pid;
+            if (merged.person_id > 0)
+                pid = merged.person_id;
+            int tid = target_id;
+            Poco::Data::Statement upd(sess);
+            upd << "UPDATE face_clusters SET person_id = ? WHERE id = ?",
+                use(pid), use(tid), now;
+            Poco::Data::Statement updf(sess);
+            updf << "UPDATE faces SET person_id = ? WHERE cluster_id = ?",
+                use(pid), use(tid), now;
+            return true;
+        });
+    }
+
+    bool FacesOps::setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "setClusterHidden", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id, h = hidden ? 1 : 0;
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE face_clusters SET hidden = ? WHERE id = ?", use(h), use(cid), now;
+            return true;
+        });
+    }
+
+    std::vector<int> FacesOps::listClusterFileIds(DatabaseManager &db, int cluster_id)
+    {
+        std::vector<int> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT DISTINCT file_id FROM faces WHERE cluster_id = ? ORDER BY file_id",
+                use(cid), into(out), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listClusterFileIds: %s", std::string(e.what()));
+        }
+        return out;
     }
 }

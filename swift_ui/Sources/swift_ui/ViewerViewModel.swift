@@ -19,7 +19,8 @@ enum ViewerContent {
     /// they reshape the server-filtered day list, so omitting them lands
     /// the anchor offset on a different day with unfiltered files.
     case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile, searchQuery: String,
-                  searchIncludeAi: Bool, searchIncludeExif: Bool)
+                  searchIncludeAi: Bool, searchIncludeExif: Bool,
+                  filterClusterId: Int32 = 0)
     /// A duplicate group from BINNED, opened at the double-clicked member.
     case group(Vurio_Dedup_DuplicateGroup, selectedIndex: Int)
 }
@@ -110,6 +111,7 @@ final class ViewerViewModel: ObservableObject {
     private var searchQuery = ""
     private var searchIncludeAi = true
     private var searchIncludeExif = true
+    private var filterClusterId: Int32 = 0
     private var windowStart = 0
     private var totalDays: Int32 = 0
     private var loadingNewer = false
@@ -160,6 +162,7 @@ final class ViewerViewModel: ObservableObject {
             searchQuery = ""
             searchIncludeAi = true
             searchIncludeExif = true
+            filterClusterId = 0
             items = group.files.map { .image(ViewerImage($0)) }
             let selected = group.files.indices.contains(selectedIndex) ? group.files[selectedIndex] : group.files.first
             selectedID = selected?.id
@@ -167,13 +170,14 @@ final class ViewerViewModel: ObservableObject {
                 scrollTarget = ScrollTarget(id: id, anchor: .center, animated: false)
             }
 
-        case .timeline(let anchorDayIndex, let file, let query, let includeAi, let includeExif):
+        case .timeline(let anchorDayIndex, let file, let query, let includeAi, let includeExif, let clusterId):
             isGroupMode = false
             items = []
             days = []
             searchQuery = query
             searchIncludeAi = includeAi
             searchIncludeExif = includeExif
+            filterClusterId = clusterId
             selectedID = nil
             isLoading = true
             defer { isLoading = false }
@@ -311,6 +315,7 @@ final class ViewerViewModel: ObservableObject {
                 $0.searchQuery = searchQuery
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.filterClusterID = filterClusterId
             }
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }
             totalDays = response.totalDays

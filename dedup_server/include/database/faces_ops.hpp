@@ -99,5 +99,40 @@ namespace MediaDedup
         /// FACE sweep progress for the status bar: eligible images vs images
         /// already swept at the current version. One aggregate query.
         static bool scanProgress(DatabaseManager &db, int &total, int &completed);
+
+        // ---- FACE-3: People tab ------------------------------------------
+
+        struct ClusterInfo
+        {
+            int id = 0;
+            std::string name; // empty = unnamed
+            int face_count = 0;
+            int file_count = 0;
+            std::string cover_file_path;
+            double cover_x = 0, cover_y = 0, cover_w = 0, cover_h = 0;
+            bool hidden = false;
+        };
+
+        /// Clusters for the People grid, size desc, with the cover face's
+        /// file path + bbox so the client can crop the thumbnail itself.
+        static std::vector<ClusterInfo> listClusterInfos(DatabaseManager &db, bool include_hidden);
+
+        /// Assign/clear a cluster's person name. Creates (or reuses, case-
+        /// insensitively) the persons row; members' faces.person_id follow.
+        /// An orphaned persons row (no clusters left) is removed.
+        static bool nameCluster(DatabaseManager &db, int cluster_id, const std::string &name);
+
+        /// User-forced merge: sources' faces move to target, centroids
+        /// combine size-weighted, the target's name (or the first named
+        /// source's) survives. The clusterer picks the result up on its
+        /// next tick reload.
+        static bool mergeClusters(DatabaseManager &db, int target_id,
+                                  const std::vector<int> &source_ids);
+
+        static bool setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden);
+
+        /// Distinct file ids containing a face of this cluster (day-view
+        /// drill-down filter).
+        static std::vector<int> listClusterFileIds(DatabaseManager &db, int cluster_id);
     };
 }

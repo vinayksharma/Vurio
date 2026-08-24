@@ -366,6 +366,69 @@ namespace MediaDedup
             EXPECT_TRUE(FacesOps::listUnclusteredFaces(*db_, 0.2, 10).empty());
         }
 
+        // ---- FACE-3: People operations ----------------------------------
+
+        TEST_F(FaceScanTest, NameMergeHideClusters)
+        {
+            int fid = insertProcessed("/nowhere/p.jpg");
+            int fid2 = insertProcessed("/nowhere/q.jpg");
+            auto mkFace = [&](int file, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int c1 = cl.assign(mkFace(fid, 0.9), unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(mkFace(fid2, 0.8), unit4(0, 1, 0, 0), 0.8);
+            ASSERT_TRUE(c1 > 0 && c2 > 0);
+
+            // Name c1; the info list carries it, sorted by size.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            auto infos = FacesOps::listClusterInfos(*db_, false);
+            ASSERT_EQ(infos.size(), 2u);
+            const auto &named = infos[0].id == c1 ? infos[0] : infos[1];
+            EXPECT_EQ(named.name, "Alice");
+            EXPECT_EQ(named.file_count, 1);
+            EXPECT_FALSE(named.cover_file_path.empty());
+
+            // Renaming to a new name removes the orphaned person.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alicia"));
+            infos = FacesOps::listClusterInfos(*db_, false);
+            const auto &renamed = infos[0].id == c1 ? infos[0] : infos[1];
+            EXPECT_EQ(renamed.name, "Alicia");
+
+            // Hide c2: gone from the default list, present with include_hidden.
+            ASSERT_TRUE(FacesOps::setClusterHidden(*db_, c2, true));
+            EXPECT_EQ(FacesOps::listClusterInfos(*db_, false).size(), 1u);
+            EXPECT_EQ(FacesOps::listClusterInfos(*db_, true).size(), 2u);
+
+            // Forced merge: c2 into c1; the name survives, members move.
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2}));
+            infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].id, c1);
+            EXPECT_EQ(infos[0].name, "Alicia");
+            EXPECT_EQ(infos[0].face_count, 2);
+            EXPECT_EQ(infos[0].file_count, 2);
+
+            auto file_ids = FacesOps::listClusterFileIds(*db_, c1);
+            ASSERT_EQ(file_ids.size(), 2u);
+            EXPECT_EQ(file_ids[0], std::min(fid, fid2));
+
+            // Clearing the name orphans and removes the person.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, ""));
+            infos = FacesOps::listClusterInfos(*db_, true);
+            EXPECT_TRUE(infos[0].name.empty());
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

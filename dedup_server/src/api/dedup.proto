@@ -136,6 +136,53 @@ message GetStatusResponse {
 }
 
 // ---------------------------------------------------------
+// FACE-3: People (face clusters)
+// ---------------------------------------------------------
+
+message FaceClusterInfo {
+  int32 id = 1;
+  string name = 2;          // empty = unnamed
+  int32 face_count = 3;
+  int32 file_count = 4;     // distinct photos
+  // Cover face: crop the cover file's thumbnail with this normalized bbox
+  // (top-left origin) client-side — no extra image RPC needed.
+  string cover_file_path = 5;
+  double cover_x = 6;
+  double cover_y = 7;
+  double cover_w = 8;
+  double cover_h = 9;
+  bool hidden = 10;
+}
+
+message ListFaceClustersRequest {
+  bool include_hidden = 1;
+}
+
+message ListFaceClustersResponse {
+  repeated FaceClusterInfo clusters = 1; // size desc
+}
+
+message NameFaceClusterRequest {
+  int32 cluster_id = 1;
+  string name = 2; // empty clears the name
+}
+
+message MergeFaceClustersRequest {
+  int32 target_id = 1;
+  repeated int32 source_ids = 2;
+}
+
+message SetFaceClusterHiddenRequest {
+  int32 cluster_id = 1;
+  bool hidden = 2;
+}
+
+message FaceClusterActionResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// ---------------------------------------------------------
 // Duplicates Service
 // ---------------------------------------------------------
 service DuplicatesService {
@@ -144,6 +191,11 @@ service DuplicatesService {
   // (EXIF datetime, falling back to file mtime, then scan time),
   // paginated over days (newest day first).
   rpc GetDayGroups(GetDayGroupsRequest) returns (GetDayGroupsResponse);
+  // FACE-3: People tab.
+  rpc ListFaceClusters(ListFaceClustersRequest) returns (ListFaceClustersResponse);
+  rpc NameFaceCluster(NameFaceClusterRequest) returns (FaceClusterActionResponse);
+  rpc MergeFaceClusters(MergeFaceClustersRequest) returns (FaceClusterActionResponse);
+  rpc SetFaceClusterHidden(SetFaceClusterHiddenRequest) returns (FaceClusterActionResponse);
   // Fetch more files for a single day (horizontal-scroll pagination within a
   // day row); offset/limit page over the day's files in taken_time order.
   rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);
@@ -231,6 +283,10 @@ message GetDayGroupsRequest {
   // default.
   bool search_include_ai = 5;
   bool search_include_exif = 6;
+  // FACE-3: restrict the day view to one face cluster's photos (the People
+  // tab drill-down). 0 = no filter. Combines with search_query by
+  // intersection when both are set.
+  int32 filter_cluster_id = 7;
 }
 
 message DayFile {
@@ -286,6 +342,7 @@ message GetDayFilesRequest {
   string search_query = 4;
   bool search_include_ai = 5;   // see GetDayGroupsRequest
   bool search_include_exif = 6;
+  int32 filter_cluster_id = 7;
 }
 
 message GetDayFilesResponse {

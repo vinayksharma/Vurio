@@ -5,6 +5,7 @@
 // is constructible from tests (which previously documented being unable to
 // instantiate the TU-private impls).
 
+#include "database/faces_ops.hpp"
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "search/text_search_engine.hpp"
 
@@ -275,6 +276,76 @@ public:
             MediaDedup::MediaAvailability::isPathAvailable(file.file_path, mounted_fs));
     }
 
+    // FACE-3: restrict the day view to one cluster's photos. Composes with
+    // an active search by intersection; alone, the cluster's file ids ARE
+    // the match list (order irrelevant — the day view groups by day).
+    void applyClusterFilter(int cluster_id,
+                            std::vector<int>& ids_storage,
+                            const std::vector<int>*& match_ids) {
+        if (cluster_id <= 0 || !db_) return;
+        auto cluster_ids = MediaDedup::FacesOps::listClusterFileIds(*db_, cluster_id);
+        if (match_ids == nullptr) {
+            ids_storage = std::move(cluster_ids);
+        } else {
+            std::unordered_set<int> keep(cluster_ids.begin(), cluster_ids.end());
+            std::vector<int> both;
+            both.reserve(ids_storage.size());
+            for (int id : ids_storage)
+                if (keep.count(id))
+                    both.push_back(id);
+            ids_storage = std::move(both);
+        }
+        match_ids = &ids_storage;
+    }
+
+public:
+    grpc::Status ListFaceClusters(grpc::ServerContext*, const vurio::dedup::ListFaceClustersRequest* request,
+                                  vurio::dedup::ListFaceClustersResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        for (const auto& c : MediaDedup::FacesOps::listClusterInfos(*db_, request->include_hidden())) {
+            auto* p = reply->add_clusters();
+            p->set_id(c.id);
+            p->set_name(c.name);
+            p->set_face_count(c.face_count);
+            p->set_file_count(c.file_count);
+            p->set_cover_file_path(c.cover_file_path);
+            p->set_cover_x(c.cover_x);
+            p->set_cover_y(c.cover_y);
+            p->set_cover_w(c.cover_w);
+            p->set_cover_h(c.cover_h);
+            p->set_hidden(c.hidden);
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status NameFaceCluster(grpc::ServerContext*, const vurio::dedup::NameFaceClusterRequest* request,
+                                 vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::nameCluster(*db_, request->cluster_id(), request->name());
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to name cluster");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status MergeFaceClusters(grpc::ServerContext*, const vurio::dedup::MergeFaceClustersRequest* request,
+                                   vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        std::vector<int> sources(request->source_ids().begin(), request->source_ids().end());
+        const bool ok = MediaDedup::FacesOps::mergeClusters(*db_, request->target_id(), sources);
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to merge clusters");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SetFaceClusterHidden(grpc::ServerContext*, const vurio::dedup::SetFaceClusterHiddenRequest* request,
+                                      vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::setClusterHidden(*db_, request->cluster_id(), request->hidden());
+        reply->set_success(ok);
+        if (!ok) reply->set_error_message("Failed to update cluster");
+        return grpc::Status::OK;
+    }
+
     // The ai/xf toggles select the PIPELINE the query runs through, not a
     // post-filter: only-ai re-runs the query as pure CLIP over its parsed
     // semantic part; only-xf as the fact algebra alone. (A bound hybrid
@@ -343,6 +414,7 @@ public:
                                  &used_ai, &used_exif, &match_flags, &parse_degraded,
                                  request->search_include_ai(), request->search_include_exif()))
             return search_status;
+        applyClusterFilter(request->filter_cluster_id(), search_ids, match_ids);
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
         reply->set_search_parse_degraded(parse_degraded);
@@ -394,6 +466,7 @@ public:
                                  &used_ai, &used_exif, &match_flags, &parse_degraded,
                                  request->search_include_ai(), request->search_include_exif()))
             return search_status;
+        applyClusterFilter(request->filter_cluster_id(), search_ids, match_ids);
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
         reply->set_search_parse_degraded(parse_degraded);
