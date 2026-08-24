@@ -3,7 +3,16 @@
 Status: designed 2026-08-23. FACE-1 implemented 2026-08-23 on
 `feature/face1_extraction` (schema, Vision detector, alignment, ONNX
 embedder hook, sweep job; live-verified detection+alignment on real
-photos). FACE-2..5 not started. Depends on nothing new; QP-1's
+photos). FACE-2 implemented 2026-08-23 (centroid clustering in the
+sweep + consolidation + status-bar progress overlay). FACE-3
+implemented 2026-08-23 (People tab: clusters grid, name/merge/hide,
+day-view drill-down; "not this person" face-level corrections and the
+cannot/must-link constraints deferred to FACE-3b). FACE-4 (QP-2)
+implemented 2026-08-23: person + face_count dimensions live end-to-end,
+10/10 golden real-model tests. FACE-3b implemented 2026-08-24 (per-face
+"not this person" review grid + cannot-link constraints, bidirectional
+merge blocking, constraints follow merged identities). FACE-5 not
+started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
 Decisions (user, 2026-08-23):
@@ -160,12 +169,48 @@ media.face.sweepBatch         (200)   # files per scheduler tick
 1. **FACE-1** schema + Vision detector + ONNX embedder + sweep job. ✅
    (Deviation: vec_face_index moved to FACE-2 — it has no reader until
    clustering, and its reconcile can backfill from faces.embedding.)
-2. **FACE-2** incremental clustering + consolidation + constraints.
-3. **FACE-3** People tab + naming/merge/correction RPCs.
+2. **FACE-2** incremental clustering + consolidation. ✅ (Deviations:
+   centroid-based assignment instead of vec_face_index KNN — centroids
+   resist single-linkage chaining and need no index, so vec_face_index
+   is deferred until a real reader exists; the cannot/must-link
+   constraint schema moves to FACE-3 where the UI defines its
+   semantics. Two differently-NAMED clusters never auto-merge.)
+3. **FACE-3** People tab + naming/merge RPCs. ✅ (ListFaceClusters/
+   NameFaceCluster/MergeFaceClusters/SetFaceClusterHidden on
+   DuplicatesService; drill-down = filter_cluster_id on the day-view
+   requests, composing with search by intersection; cover crops are
+   client-side bbox crops of the ordinary thumbnail. Deferred to
+   FACE-3b: per-face "not this person" corrections and the cannot/
+   must-link constraint schema — they need a face-grid UI.)
+   FACE-3b ✅ (2026-08-24): "Review faces…" grid per cluster;
+   "Not this person" detaches the face, records a cannot-link,
+   recomputes the cluster, and the sweep re-homes the face honoring the
+   constraint. Merges are blocked BIDIRECTIONALLY when they would
+   reunite a corrected face with the excluded identity, and constraints
+   re-point when their target cluster dissolves into a winner.
+   Must-link stays unimplemented: with no split operation, a manual
+   merge is physically permanent — there is nothing for must-link to
+   enforce yet.
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden
-   matrix additions.
-5. **FACE-5** polish: aliases/nicknames, pets question, video frames —
-   explicitly deferred.
+   matrix additions. ✅ (Golden tuning found two small-model behaviors,
+   fixed at the validator layer: valueless facts skip as noise without
+   feeding the distrust heuristic, and accepted fact spans are stripped
+   from clip queries when the model echoes the whole query.)
+5. **FACE-5** polish. ✅ aliases (2026-08-24): `person_aliases` table,
+   globally unique NOCASE, canonical names win on collision, aliases
+   ride the naming dialog and RPC (replace-all), orphan cleanup
+   cascades. Search resolves "photos of mom at the beach" once mom is
+   an alias.
+   **Pets: decided, not built** — no local pet-identity embedder exists
+   (ArcFace is human faces); pet names demote to CLIP and search
+   visually, which is the designed behavior. Revisit if a local
+   pet-identity model appears.
+   **Video faces: deferred with reasons** — the library has ZERO videos
+   (every media.video.* type is disabled), the server has no video
+   frame-extraction machinery at all, and the day view excludes videos
+   by design. Face-scanning videos is therefore not polish but the tail
+   end of a video-support program (ingestion → frame extraction →
+   display → then faces); it belongs to that future effort.
 
 ## 8. Testing
 

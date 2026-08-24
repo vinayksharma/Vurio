@@ -65,6 +65,10 @@ struct VurioDuplicatesView: View {
             }
             .clipped()
         }
+        // FACE-3: always attached (the search row is often collapsed away).
+        .onReceive(PeopleNavigator.shared.$pending) { pending in
+            applyPendingPersonFilter(pending)
+        }
     }
 
     private var activeViewerOpen: Bool {
@@ -383,11 +387,39 @@ struct VurioDuplicatesView: View {
         }
     }
 
+    // FACE-3: a cluster picked in the People tab lands here (the tab switch
+    // happens in ContentView, which watches the same bus).
+    private func applyPendingPersonFilter(_ pending: PeopleNavigator.ClusterFilter?) {
+        guard let pending else { return }
+        PeopleNavigator.shared.pending = nil
+        allViewModel.setPersonFilter(pending)
+        // The chip lives in the filters card — make sure it's visible so the
+        // filter is discoverable and clearable.
+        isFiltersCollapsed = false
+    }
+
     // VU search field: debounced in AllDaysViewModel (300 ms after the last
     // keystroke the day list reloads filtered to CLIP matches).
     @ViewBuilder
     private var searchFilterRow: some View {
         HStack(spacing: 8) {
+            if let person = allViewModel.personFilter {
+                // FACE-3 drill-down chip: the day list is showing one
+                // person's photos (composes with search by intersection).
+                HStack(spacing: 4) {
+                    Image(systemName: "person.crop.circle")
+                    Text(person.name.uppercased())
+                        .font(.caption.weight(.bold))
+                    Button(action: { allViewModel.clearPersonFilter() }) {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .foregroundColor(Color.black.opacity(0.85))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Theme.textAccent.opacity(0.9)))
+            }
             if allViewModel.isSearching {
                 // In-flight feedback: the query round-trip includes the
                 // server's LLM parse (~1.5 s) — silence here reads as broken.
@@ -615,7 +647,8 @@ struct VurioDuplicatesView: View {
                                                  file: file,
                                                  searchQuery: allViewModel.activeSearchQuery,
                                                  searchIncludeAi: allViewModel.searchIncludeAi,
-                                                 searchIncludeExif: allViewModel.searchIncludeExif))
+                                                 searchIncludeExif: allViewModel.searchIncludeExif,
+                                                 filterClusterId: allViewModel.personFilter?.id ?? 0))
                         },
                         onLocateSet: { memberPath in
                             locateMissingFile(memberPath: memberPath)

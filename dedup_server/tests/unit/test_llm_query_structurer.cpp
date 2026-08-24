@@ -35,11 +35,11 @@ TEST(QueryFactSchemaTest, RegistryCoversAllDimensions)
 {
     auto s = QueryFactSchema::fromKeywords(ExifKeywordConfig::defaults());
     const char *expected[] = {"camera", "iso",  "aperture", "shutter",  "focal",
-                              "flash",  "date", "location", "file_type"};
+                              "flash",  "date", "location", "file_type",
+                              "person", "face_count"}; // QP-2 (FACE-4)
     for (const char *name : expected)
         EXPECT_NE(s.find(name), nullptr) << name;
-    EXPECT_EQ(s.find("person"), nullptr) << "person joins in QP-2, not before";
-    EXPECT_EQ(s.dimensions().size(), 9u);
+    EXPECT_EQ(s.dimensions().size(), 11u);
 }
 
 TEST(QueryFactSchemaTest, HintsComeFromTheKeywordConfig)
@@ -327,7 +327,11 @@ namespace
             structurer_ = std::make_unique<LlmQueryStructurer>(
                 QueryFactSchema::fromKeywords(ExifKeywordConfig::defaults()));
             validator_ = std::make_unique<LlmFactValidator>(
-                ExifKeywordConfig::defaults(), &geocoder_);
+                ExifKeywordConfig::defaults(), &geocoder_,
+                // QP-2: the golden library knows one named person.
+                [](const std::string &name) -> int {
+                    return name == "alice" ? 7 : 0;
+                });
         }
 
         void TearDown() override { std::remove(geo_path_.c_str()); }
@@ -445,3 +449,28 @@ TEST_F(GoldenMatrixTest, FullDifficultQueryWithSubject)
     EXPECT_EQ(q.clip_queries[0], "flowers");
 }
 
+TEST_F(GoldenMatrixTest, PersonBindsAndSubjectStaysSemantic)
+{
+    // QP-2 (FACE-4): "of alice" is a person filter; the subject stays CLIP.
+    auto q = run("photos of alice at the beach");
+    EXPECT_EQ(q.bound.person_ids, std::vector<int>{7});
+    ASSERT_EQ(q.clip_queries.size(), 1u);
+    // The validator strips accepted fact spans from clip text, so however
+    // the model phrases it, the person's name never reaches CLIP.
+    EXPECT_NE(q.clip_queries[0].find("beach"), std::string::npos) << q.clip_queries[0];
+    EXPECT_EQ(q.clip_queries[0].find("alice"), std::string::npos) << q.clip_queries[0];
+    EXPECT_TRUE(q.bare.empty());
+}
+
+TEST_F(GoldenMatrixTest, FaceCountBindsWithDate)
+{
+    auto q = run("group photos with 3 people from 2020");
+    ASSERT_EQ(q.bound.numeric.size(), 1u);
+    EXPECT_EQ(q.bound.numeric[0].column, "face_count");
+    EXPECT_EQ(q.bound.numeric[0].op, "=");
+    EXPECT_DOUBLE_EQ(q.bound.numeric[0].value, 3.0);
+    ASSERT_TRUE(q.bound.date_range.has_value());
+    EXPECT_EQ(q.bound.date_range->first, "2020:01:01 00:00:00");
+    ASSERT_GE(q.clip_queries.size(), 1u);
+    EXPECT_EQ(q.clip_queries[0], "group photos");
+}

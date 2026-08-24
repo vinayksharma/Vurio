@@ -657,6 +657,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/media_backfill.cpp
     ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_align.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_clusterer.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_scan_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_service.cpp
     ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp

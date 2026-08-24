@@ -61,6 +61,8 @@ class AppState: ObservableObject {
     // DF-5: edge re-discovery ("realignment") in flight. The server reports 0/0
     // whenever no episode is running, which is what hides the indicator.
     @Published var repairTotal: Int32 = 0
+    @Published var faceScanTotal: Int32 = 0
+    @Published var faceScanCompleted: Int32 = 0
     @Published var repairCompleted: Int32 = 0
     /// Estimated seconds left, nil until the rate is known. Derived here rather
     /// than server-side so no run history has to be persisted.
@@ -70,6 +72,12 @@ class AppState: ObservableObject {
     private var repairRate: Double = 0 // EMA, files/sec
 
     var isRepairing: Bool { repairTotal > 0 && repairCompleted < repairTotal }
+    /// FACE-1 sweep in flight: some eligible images not yet face-scanned.
+    var isFaceScanning: Bool { faceScanTotal > 0 && faceScanCompleted < faceScanTotal }
+    var faceScanFraction: Double {
+        guard faceScanTotal > 0 else { return 0 }
+        return min(1.0, Double(faceScanCompleted) / Double(faceScanTotal))
+    }
     var repairFraction: Double {
         guard repairTotal > 0 else { return 0 }
         return min(1.0, Double(repairCompleted) / Double(repairTotal))
@@ -184,6 +192,8 @@ class AppState: ObservableObject {
                     self.setIfChanged(\.duplicateFindingCompleted, response.duplicateFindingCompleted)
                     self.setIfChanged(\.isPaused, response.isPaused)
                     self.updateRepairProgress(total: response.repairTotal, completed: response.repairCompleted)
+                    self.setIfChanged(\.faceScanTotal, response.faceScanTotal)
+                    self.setIfChanged(\.faceScanCompleted, response.faceScanCompleted)
                     let needs = dirsChanged || !self.hasScannedEjectedBins
                     return needs
                 }
@@ -303,6 +313,7 @@ struct ContentView: View {
     enum SidebarItem: Hashable {
         case vu
         case binned
+        case people
         case settings
         case scroller
     }
@@ -317,6 +328,9 @@ struct ContentView: View {
                 }
                 NavigationLink(value: SidebarItem.binned) {
                     SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
+                }
+                NavigationLink(value: SidebarItem.people) {
+                    SidebarLinkLabel(icon: "person.2", title: "PEOPLE", isCompact: isCompact)
                 }
                 NavigationLink(value: SidebarItem.settings) {
                     SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
@@ -347,6 +361,11 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 80, ideal: 200, max: 250)
             .navigationTitle("")
+            .onReceive(PeopleNavigator.shared.$pending) { pending in
+                // A People drill-down shows in VU; VurioDuplicatesView
+                // consumes the payload itself.
+                if pending != nil { selection = .vu }
+            }
             } detail: {
                 ZStack {
                     // One panel drives both tabs: VU shows the day-based ALL view,
@@ -360,6 +379,10 @@ struct ContentView: View {
                     )
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)
+
+                    PeopleView()
+                        .opacity(selection == .people ? 1 : 0)
+                        .allowsHitTesting(selection == .people)
 
                     SettingsView()
                         .opacity(selection == .settings ? 1 : 0)
@@ -550,6 +573,14 @@ struct CalloutOverlayView: View {
         return "\(max(s, 1))S"
     }
 
+    private var faceScanLines: String {
+        guard appState.isFaceScanning else { return "" }
+        let pct = appState.faceScanFraction.formatted(.percent.precision(.fractionLength(0)))
+        var text = "\nFACE SCAN: \(pct) "
+        text += "(\(appState.faceScanCompleted.formatted(.number)) OF \(appState.faceScanTotal.formatted(.number)))"
+        return text
+    }
+
     private var repairLines: String {
         guard appState.isRepairing else { return "" }
         let pct = appState.repairFraction.formatted(.percent.precision(.fractionLength(0)))
@@ -565,7 +596,9 @@ struct CalloutOverlayView: View {
     }
 
     var calloutText: String {
-        baseText + (showRepair ? repairLines : "")
+        // The face-scan line always rides the callout while a sweep runs —
+        // it has no segment of its own, only the thin bottom overlay.
+        baseText + (showRepair ? repairLines : "") + faceScanLines
     }
 
     private var baseText: String {
@@ -741,6 +774,18 @@ struct StatusBarView: View {
                                 .fill(Theme.warning.opacity(0.55))
                                 .frame(width: repairWidth, height: 2)
                                 .animation(.easeInOut(duration: 0.5), value: repairWidth)
+                                .allowsHitTesting(false)
+                        }
+                        // FACE-1 sweep: same thin-overlay idea as the repair
+                        // line (a different population than the main bar), but
+                        // anchored to the bar's bottom edge so both can show.
+                        if appState.isFaceScanning {
+                            let faceWidth = max(0, totalWidth * CGFloat(appState.faceScanFraction))
+                            Capsule()
+                                .fill(Theme.textAccent.opacity(0.65))
+                                .frame(width: faceWidth, height: 2)
+                                .offset(y: 3)
+                                .animation(.easeInOut(duration: 0.5), value: faceWidth)
                                 .allowsHitTesting(false)
                         }
                     }

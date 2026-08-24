@@ -919,6 +919,36 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>
 
+  func listFaceClusters(
+    _ request: Vurio_Dedup_ListFaceClustersRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse>
+
+  func nameFaceCluster(
+    _ request: Vurio_Dedup_NameFaceClusterRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func mergeFaceClusters(
+    _ request: Vurio_Dedup_MergeFaceClustersRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func setFaceClusterHidden(
+    _ request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func listClusterFaces(
+    _ request: Vurio_Dedup_ListClusterFacesRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse>
+
+  func removeFaceFromCluster(
+    _ request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
   func getDayFiles(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions?
@@ -996,6 +1026,114 @@ extension Vurio_Dedup_DuplicatesServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? []
+    )
+  }
+
+  /// FACE-3: People tab.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ListFaceClusters.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func listFaceClusters(
+    _ request: Vurio_Dedup_ListFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListFaceClustersInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to NameFaceCluster
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to NameFaceCluster.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func nameFaceCluster(
+    _ request: Vurio_Dedup_NameFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.nameFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeNameFaceClusterInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to MergeFaceClusters
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to MergeFaceClusters.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func mergeFaceClusters(
+    _ request: Vurio_Dedup_MergeFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.mergeFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMergeFaceClustersInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to SetFaceClusterHidden
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetFaceClusterHidden.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setFaceClusterHidden(
+    _ request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.setFaceClusterHidden.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetFaceClusterHiddenInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ListClusterFaces
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ListClusterFaces.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func listClusterFaces(
+    _ request: Vurio_Dedup_ListClusterFacesRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listClusterFaces.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListClusterFacesInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to RemoveFaceFromCluster
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to RemoveFaceFromCluster.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func removeFaceFromCluster(
+    _ request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.removeFaceFromCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRemoveFaceFromClusterInterceptors() ?? []
     )
   }
 
@@ -1208,6 +1346,36 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>
 
+  func makeListFaceClustersCall(
+    _ request: Vurio_Dedup_ListFaceClustersRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse>
+
+  func makeNameFaceClusterCall(
+    _ request: Vurio_Dedup_NameFaceClusterRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func makeMergeFaceClustersCall(
+    _ request: Vurio_Dedup_MergeFaceClustersRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func makeSetFaceClusterHiddenCall(
+    _ request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse>
+
+  func makeListClusterFacesCall(
+    _ request: Vurio_Dedup_ListClusterFacesRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse>
+
+  func makeRemoveFaceFromClusterCall(
+    _ request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse>
+
   func makeGetDayFilesCall(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions?
@@ -1275,6 +1443,78 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? []
+    )
+  }
+
+  internal func makeListFaceClustersCall(
+    _ request: Vurio_Dedup_ListFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListFaceClustersInterceptors() ?? []
+    )
+  }
+
+  internal func makeNameFaceClusterCall(
+    _ request: Vurio_Dedup_NameFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.nameFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeNameFaceClusterInterceptors() ?? []
+    )
+  }
+
+  internal func makeMergeFaceClustersCall(
+    _ request: Vurio_Dedup_MergeFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.mergeFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMergeFaceClustersInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetFaceClusterHiddenCall(
+    _ request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.setFaceClusterHidden.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetFaceClusterHiddenInterceptors() ?? []
+    )
+  }
+
+  internal func makeListClusterFacesCall(
+    _ request: Vurio_Dedup_ListClusterFacesRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listClusterFaces.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListClusterFacesInterceptors() ?? []
+    )
+  }
+
+  internal func makeRemoveFaceFromClusterCall(
+    _ request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.removeFaceFromCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRemoveFaceFromClusterInterceptors() ?? []
     )
   }
 
@@ -1389,6 +1629,78 @@ extension Vurio_Dedup_DuplicatesServiceAsyncClientProtocol {
     )
   }
 
+  internal func listFaceClusters(
+    _ request: Vurio_Dedup_ListFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ListFaceClustersResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListFaceClustersInterceptors() ?? []
+    )
+  }
+
+  internal func nameFaceCluster(
+    _ request: Vurio_Dedup_NameFaceClusterRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.nameFaceCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeNameFaceClusterInterceptors() ?? []
+    )
+  }
+
+  internal func mergeFaceClusters(
+    _ request: Vurio_Dedup_MergeFaceClustersRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.mergeFaceClusters.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMergeFaceClustersInterceptors() ?? []
+    )
+  }
+
+  internal func setFaceClusterHidden(
+    _ request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.setFaceClusterHidden.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetFaceClusterHiddenInterceptors() ?? []
+    )
+  }
+
+  internal func listClusterFaces(
+    _ request: Vurio_Dedup_ListClusterFacesRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ListClusterFacesResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listClusterFaces.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListClusterFacesInterceptors() ?? []
+    )
+  }
+
+  internal func removeFaceFromCluster(
+    _ request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.removeFaceFromCluster.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRemoveFaceFromClusterInterceptors() ?? []
+    )
+  }
+
   internal func getDayFiles(
     _ request: Vurio_Dedup_GetDayFilesRequest,
     callOptions: CallOptions? = nil
@@ -1499,6 +1811,24 @@ internal protocol Vurio_Dedup_DuplicatesServiceClientInterceptorFactoryProtocol:
   /// - Returns: Interceptors to use when invoking 'getDayGroups'.
   func makeGetDayGroupsInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'listFaceClusters'.
+  func makeListFaceClustersInterceptors() -> [ClientInterceptor<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'nameFaceCluster'.
+  func makeNameFaceClusterInterceptors() -> [ClientInterceptor<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'mergeFaceClusters'.
+  func makeMergeFaceClustersInterceptors() -> [ClientInterceptor<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'setFaceClusterHidden'.
+  func makeSetFaceClusterHiddenInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'listClusterFaces'.
+  func makeListClusterFacesInterceptors() -> [ClientInterceptor<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'removeFaceFromCluster'.
+  func makeRemoveFaceFromClusterInterceptors() -> [ClientInterceptor<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
   /// - Returns: Interceptors to use when invoking 'getDayFiles'.
   func makeGetDayFilesInterceptors() -> [ClientInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
 
@@ -1528,6 +1858,12 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     methods: [
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayGroups,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listFaceClusters,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.nameFaceCluster,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.mergeFaceClusters,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.setFaceClusterHidden,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.listClusterFaces,
+      Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.removeFaceFromCluster,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceClientMetadata.Methods.undoEjectDuplicates,
@@ -1548,6 +1884,42 @@ internal enum Vurio_Dedup_DuplicatesServiceClientMetadata {
     internal static let getDayGroups = GRPCMethodDescriptor(
       name: "GetDayGroups",
       path: "/vurio.dedup.DuplicatesService/GetDayGroups",
+      type: GRPCCallType.unary
+    )
+
+    internal static let listFaceClusters = GRPCMethodDescriptor(
+      name: "ListFaceClusters",
+      path: "/vurio.dedup.DuplicatesService/ListFaceClusters",
+      type: GRPCCallType.unary
+    )
+
+    internal static let nameFaceCluster = GRPCMethodDescriptor(
+      name: "NameFaceCluster",
+      path: "/vurio.dedup.DuplicatesService/NameFaceCluster",
+      type: GRPCCallType.unary
+    )
+
+    internal static let mergeFaceClusters = GRPCMethodDescriptor(
+      name: "MergeFaceClusters",
+      path: "/vurio.dedup.DuplicatesService/MergeFaceClusters",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setFaceClusterHidden = GRPCMethodDescriptor(
+      name: "SetFaceClusterHidden",
+      path: "/vurio.dedup.DuplicatesService/SetFaceClusterHidden",
+      type: GRPCCallType.unary
+    )
+
+    internal static let listClusterFaces = GRPCMethodDescriptor(
+      name: "ListClusterFaces",
+      path: "/vurio.dedup.DuplicatesService/ListClusterFaces",
+      type: GRPCCallType.unary
+    )
+
+    internal static let removeFaceFromCluster = GRPCMethodDescriptor(
+      name: "RemoveFaceFromCluster",
+      path: "/vurio.dedup.DuplicatesService/RemoveFaceFromCluster",
       type: GRPCCallType.unary
     )
 
@@ -3580,6 +3952,19 @@ internal protocol Vurio_Dedup_DuplicatesServiceProvider: CallHandlerProvider {
   /// paginated over days (newest day first).
   func getDayGroups(request: Vurio_Dedup_GetDayGroupsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetDayGroupsResponse>
 
+  /// FACE-3: People tab.
+  func listFaceClusters(request: Vurio_Dedup_ListFaceClustersRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ListFaceClustersResponse>
+
+  func nameFaceCluster(request: Vurio_Dedup_NameFaceClusterRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
+
+  func mergeFaceClusters(request: Vurio_Dedup_MergeFaceClustersRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
+
+  func setFaceClusterHidden(request: Vurio_Dedup_SetFaceClusterHiddenRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
+
+  func listClusterFaces(request: Vurio_Dedup_ListClusterFacesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ListClusterFacesResponse>
+
+  func removeFaceFromCluster(request: Vurio_Dedup_RemoveFaceFromClusterRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_FaceClusterActionResponse>
+
   /// Fetch more files for a single day (horizontal-scroll pagination within a
   /// day row); offset/limit page over the day's files in taken_time order.
   func getDayFiles(request: Vurio_Dedup_GetDayFilesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_GetDayFilesResponse>
@@ -3630,6 +4015,60 @@ extension Vurio_Dedup_DuplicatesServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_GetDayGroupsResponse>(),
         interceptors: self.interceptors?.makeGetDayGroupsInterceptors() ?? [],
         userFunction: self.getDayGroups(request:context:)
+      )
+
+    case "ListFaceClusters":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ListFaceClustersRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ListFaceClustersResponse>(),
+        interceptors: self.interceptors?.makeListFaceClustersInterceptors() ?? [],
+        userFunction: self.listFaceClusters(request:context:)
+      )
+
+    case "NameFaceCluster":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_NameFaceClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeNameFaceClusterInterceptors() ?? [],
+        userFunction: self.nameFaceCluster(request:context:)
+      )
+
+    case "MergeFaceClusters":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_MergeFaceClustersRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeMergeFaceClustersInterceptors() ?? [],
+        userFunction: self.mergeFaceClusters(request:context:)
+      )
+
+    case "SetFaceClusterHidden":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetFaceClusterHiddenRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeSetFaceClusterHiddenInterceptors() ?? [],
+        userFunction: self.setFaceClusterHidden(request:context:)
+      )
+
+    case "ListClusterFaces":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ListClusterFacesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ListClusterFacesResponse>(),
+        interceptors: self.interceptors?.makeListClusterFacesInterceptors() ?? [],
+        userFunction: self.listClusterFaces(request:context:)
+      )
+
+    case "RemoveFaceFromCluster":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RemoveFaceFromClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeRemoveFaceFromClusterInterceptors() ?? [],
+        userFunction: self.removeFaceFromCluster(request:context:)
       )
 
     case "GetDayFiles":
@@ -3724,6 +4163,37 @@ internal protocol Vurio_Dedup_DuplicatesServiceAsyncProvider: CallHandlerProvide
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_GetDayGroupsResponse
 
+  /// FACE-3: People tab.
+  func listFaceClusters(
+    request: Vurio_Dedup_ListFaceClustersRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ListFaceClustersResponse
+
+  func nameFaceCluster(
+    request: Vurio_Dedup_NameFaceClusterRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse
+
+  func mergeFaceClusters(
+    request: Vurio_Dedup_MergeFaceClustersRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse
+
+  func setFaceClusterHidden(
+    request: Vurio_Dedup_SetFaceClusterHiddenRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse
+
+  func listClusterFaces(
+    request: Vurio_Dedup_ListClusterFacesRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ListClusterFacesResponse
+
+  func removeFaceFromCluster(
+    request: Vurio_Dedup_RemoveFaceFromClusterRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_FaceClusterActionResponse
+
   /// Fetch more files for a single day (horizontal-scroll pagination within a
   /// day row); offset/limit page over the day's files in taken_time order.
   func getDayFiles(
@@ -3805,6 +4275,60 @@ extension Vurio_Dedup_DuplicatesServiceAsyncProvider {
         wrapping: { try await self.getDayGroups(request: $0, context: $1) }
       )
 
+    case "ListFaceClusters":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ListFaceClustersRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ListFaceClustersResponse>(),
+        interceptors: self.interceptors?.makeListFaceClustersInterceptors() ?? [],
+        wrapping: { try await self.listFaceClusters(request: $0, context: $1) }
+      )
+
+    case "NameFaceCluster":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_NameFaceClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeNameFaceClusterInterceptors() ?? [],
+        wrapping: { try await self.nameFaceCluster(request: $0, context: $1) }
+      )
+
+    case "MergeFaceClusters":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_MergeFaceClustersRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeMergeFaceClustersInterceptors() ?? [],
+        wrapping: { try await self.mergeFaceClusters(request: $0, context: $1) }
+      )
+
+    case "SetFaceClusterHidden":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetFaceClusterHiddenRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeSetFaceClusterHiddenInterceptors() ?? [],
+        wrapping: { try await self.setFaceClusterHidden(request: $0, context: $1) }
+      )
+
+    case "ListClusterFaces":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ListClusterFacesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ListClusterFacesResponse>(),
+        interceptors: self.interceptors?.makeListClusterFacesInterceptors() ?? [],
+        wrapping: { try await self.listClusterFaces(request: $0, context: $1) }
+      )
+
+    case "RemoveFaceFromCluster":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RemoveFaceFromClusterRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_FaceClusterActionResponse>(),
+        interceptors: self.interceptors?.makeRemoveFaceFromClusterInterceptors() ?? [],
+        wrapping: { try await self.removeFaceFromCluster(request: $0, context: $1) }
+      )
+
     case "GetDayFiles":
       return GRPCAsyncServerHandler(
         context: context,
@@ -3884,6 +4408,30 @@ internal protocol Vurio_Dedup_DuplicatesServiceServerInterceptorFactoryProtocol:
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetDayGroupsInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetDayGroupsRequest, Vurio_Dedup_GetDayGroupsResponse>]
 
+  /// - Returns: Interceptors to use when handling 'listFaceClusters'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeListFaceClustersInterceptors() -> [ServerInterceptor<Vurio_Dedup_ListFaceClustersRequest, Vurio_Dedup_ListFaceClustersResponse>]
+
+  /// - Returns: Interceptors to use when handling 'nameFaceCluster'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeNameFaceClusterInterceptors() -> [ServerInterceptor<Vurio_Dedup_NameFaceClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'mergeFaceClusters'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeMergeFaceClustersInterceptors() -> [ServerInterceptor<Vurio_Dedup_MergeFaceClustersRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'setFaceClusterHidden'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetFaceClusterHiddenInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetFaceClusterHiddenRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
+  /// - Returns: Interceptors to use when handling 'listClusterFaces'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeListClusterFacesInterceptors() -> [ServerInterceptor<Vurio_Dedup_ListClusterFacesRequest, Vurio_Dedup_ListClusterFacesResponse>]
+
+  /// - Returns: Interceptors to use when handling 'removeFaceFromCluster'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeRemoveFaceFromClusterInterceptors() -> [ServerInterceptor<Vurio_Dedup_RemoveFaceFromClusterRequest, Vurio_Dedup_FaceClusterActionResponse>]
+
   /// - Returns: Interceptors to use when handling 'getDayFiles'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetDayFilesInterceptors() -> [ServerInterceptor<Vurio_Dedup_GetDayFilesRequest, Vurio_Dedup_GetDayFilesResponse>]
@@ -3920,6 +4468,12 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     methods: [
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDuplicateGroups,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayGroups,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.listFaceClusters,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.nameFaceCluster,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.mergeFaceClusters,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.setFaceClusterHidden,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.listClusterFaces,
+      Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.removeFaceFromCluster,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.getDayFiles,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.ejectDuplicates,
       Vurio_Dedup_DuplicatesServiceServerMetadata.Methods.undoEjectDuplicates,
@@ -3940,6 +4494,42 @@ internal enum Vurio_Dedup_DuplicatesServiceServerMetadata {
     internal static let getDayGroups = GRPCMethodDescriptor(
       name: "GetDayGroups",
       path: "/vurio.dedup.DuplicatesService/GetDayGroups",
+      type: GRPCCallType.unary
+    )
+
+    internal static let listFaceClusters = GRPCMethodDescriptor(
+      name: "ListFaceClusters",
+      path: "/vurio.dedup.DuplicatesService/ListFaceClusters",
+      type: GRPCCallType.unary
+    )
+
+    internal static let nameFaceCluster = GRPCMethodDescriptor(
+      name: "NameFaceCluster",
+      path: "/vurio.dedup.DuplicatesService/NameFaceCluster",
+      type: GRPCCallType.unary
+    )
+
+    internal static let mergeFaceClusters = GRPCMethodDescriptor(
+      name: "MergeFaceClusters",
+      path: "/vurio.dedup.DuplicatesService/MergeFaceClusters",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setFaceClusterHidden = GRPCMethodDescriptor(
+      name: "SetFaceClusterHidden",
+      path: "/vurio.dedup.DuplicatesService/SetFaceClusterHidden",
+      type: GRPCCallType.unary
+    )
+
+    internal static let listClusterFaces = GRPCMethodDescriptor(
+      name: "ListClusterFaces",
+      path: "/vurio.dedup.DuplicatesService/ListClusterFaces",
+      type: GRPCCallType.unary
+    )
+
+    internal static let removeFaceFromCluster = GRPCMethodDescriptor(
+      name: "RemoveFaceFromCluster",
+      path: "/vurio.dedup.DuplicatesService/RemoveFaceFromCluster",
       type: GRPCCallType.unary
     )
 

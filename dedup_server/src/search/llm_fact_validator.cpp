@@ -120,8 +120,10 @@ namespace MediaDedup
     }
 
     LlmFactValidator::LlmFactValidator(ExifKeywordConfig keywords,
-                                       const LocationGeocoder *geocoder)
-        : keywords_(std::move(keywords)), geocoder_(geocoder)
+                                       const LocationGeocoder *geocoder,
+                                       PersonResolver person_resolver)
+        : keywords_(std::move(keywords)), geocoder_(geocoder),
+          person_resolver_(std::move(person_resolver))
     {
     }
 
@@ -147,6 +149,7 @@ namespace MediaDedup
             return 0;
         };
 
+        std::vector<std::string> accepted_spans;
         for (const auto &f : raw.facts)
         {
             // --- Grounding: span in query, every value in span -----------
@@ -168,6 +171,17 @@ namespace MediaDedup
             if (!values_grounded)
             {
                 drop(f, "value not grounded in span");
+                continue;
+            }
+
+            // A value-carrying fact with NO values makes no claim: there is
+            // nothing to verify and nothing to lose — skip it as noise
+            // without counting a drop (a drop feeds the distrust-the-parse
+            // heuristic, and noise is not a lie).
+            if (f.values.empty() && f.dim != "flash")
+            {
+                logger.information("Skipped valueless %s fact (noise): span='%s'",
+                                   f.dim, f.span);
                 continue;
             }
 
@@ -389,6 +403,77 @@ namespace MediaDedup
                     }
                 }
             }
+            else if (f.dim == "person" && f.op == "in" && !f.values.empty())
+            {
+                // The location playbook: resolved names filter, unresolved
+                // names demote to CLIP so the semantic content survives
+                // ("photos of ziggy the dog" still searches visually).
+                std::vector<std::string> unresolved;
+                for (const auto &v : f.values)
+                {
+                    const std::string name = normalize(v);
+                    const int pid = person_resolver_ ? person_resolver_(name) : 0;
+                    if (pid > 0)
+                        target.person_ids.push_back(pid);
+                    else
+                        unresolved.push_back(name);
+                }
+                if (!target.person_ids.empty())
+                {
+                    ok = true;
+                    for (const auto &n : unresolved)
+                        sq.clip_queries.push_back(n);
+                }
+                else
+                {
+                    for (const auto &n : unresolved)
+                        sq.clip_queries.push_back(n);
+                    drop(f, "no value matched a named person; demoted to clip query");
+                    continue;
+                }
+            }
+            else if (f.dim == "face_count")
+            {
+                auto parseCount = [](const std::string &v, int &out) {
+                    try
+                    {
+                        std::size_t used = 0;
+                        out = std::stoi(v, &used);
+                        return used == v.size() && out >= 0 && out <= 50;
+                    }
+                    catch (...)
+                    {
+                        return false;
+                    }
+                };
+                if ((f.op == "eq" || f.op == "gt" || f.op == "lt") && f.values.size() == 1)
+                {
+                    int n = 0;
+                    if (parseCount(f.values[0], n))
+                    {
+                        ExifQueryConstraints::Numeric c;
+                        c.column = "face_count";
+                        c.op = f.op == "eq" ? "=" : (f.op == "gt" ? ">" : "<");
+                        c.value = n;
+                        target.numeric.push_back(c);
+                        ok = true;
+                    }
+                }
+                else if (f.op == "range" && f.values.size() == 2)
+                {
+                    int a = 0, b = 0;
+                    if (parseCount(f.values[0], a) && parseCount(f.values[1], b))
+                    {
+                        ExifQueryConstraints::Numeric c;
+                        c.column = "face_count";
+                        c.op = "between";
+                        c.value = std::min(a, b);
+                        c.value2 = std::max(a, b);
+                        target.numeric.push_back(c);
+                        ok = true;
+                    }
+                }
+            }
             else if (f.dim == "location" && f.op == "eq" && f.values.size() == 1)
             {
                 const std::string name = normalize(f.values[0]);
@@ -418,6 +503,7 @@ namespace MediaDedup
                 continue;
             }
             ++result.accepted;
+            accepted_spans.push_back(span_n);
             if (!filter && branch.hasAny())
                 sq.bare.push_back(std::move(branch));
         }
@@ -427,11 +513,28 @@ namespace MediaDedup
         {
             if (sq.clip_queries.size() >= 4)
                 break;
-            const std::string q_n = normalize(q);
-            if (!q_n.empty() && query_n.find(q_n) != std::string::npos)
-                sq.clip_queries.push_back(q_n);
-            else if (!q_n.empty())
+            std::string q_n = normalize(q);
+            if (q_n.empty())
+                continue;
+            if (query_n.find(q_n) == std::string::npos)
+            {
                 logger.information("Dropped ungrounded clip query: '%s'", q);
+                continue;
+            }
+            // The prompt says filter-fact text is EXCLUDED from clip
+            // queries; when the model echoes it anyway (small models echo
+            // the whole query), enforce the rule deterministically: strip
+            // every accepted fact's span. Spans are grounded literals, so
+            // plain substring removal is exact.
+            for (const auto &span : accepted_spans)
+            {
+                for (std::size_t pos = q_n.find(span); pos != std::string::npos;
+                     pos = q_n.find(span))
+                    q_n.erase(pos, span.size());
+            }
+            q_n = normalize(q_n);
+            if (!q_n.empty())
+                sq.clip_queries.push_back(q_n);
         }
 
         // parse()-compatibility fields of StructuredQuery.

@@ -59,6 +59,20 @@ namespace MediaDedup
              "file format by name",
              {"in"},
              type_names},
+            // QP-2 (FACE-4): named-person and face-count search. Person
+            // NAMES are deliberately not hints — they are user data that
+            // changes at runtime, and the prompt must stay byte-stable for
+            // the KV prefix cache. The validator resolves them instead.
+            {"person",
+             "a person's given name (of alice, with bob); unknown names are "
+             "fine — they are verified later",
+             {"in"},
+             {}},
+            {"face_count",
+             "how many people/faces are in the photo; values are plain "
+             "numbers (3 for \"3 people\")",
+             {"eq", "gt", "lt", "range"},
+             {}},
         };
         return s;
     }

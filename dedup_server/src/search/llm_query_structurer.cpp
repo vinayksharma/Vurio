@@ -50,6 +50,12 @@ Output: {"facts": [{"dim": "date", "op": "eq", "values": ["august 2024"], "inten
 
 Query: macro shots at 100mm in utah
 Output: {"facts": [{"dim": "focal", "op": "eq", "values": ["100"], "intent": "filter", "span": "at 100mm"}, {"dim": "location", "op": "eq", "values": ["utah"], "intent": "filter", "span": "in utah"}], "clip_queries": ["macro shots"]}
+
+Query: photos of alice at the beach
+Output: {"facts": [{"dim": "person", "op": "in", "values": ["alice"], "intent": "filter", "span": "of alice"}], "clip_queries": ["beach"]}
+
+Query: group photos with 3 people from 2020
+Output: {"facts": [{"dim": "face_count", "op": "eq", "values": ["3"], "intent": "filter", "span": "with 3 people"}, {"dim": "date", "op": "eq", "values": ["2020"], "intent": "filter", "span": "from 2020"}], "clip_queries": ["group photos"]}
 )EX";
     }
 
@@ -86,8 +92,11 @@ Output: {"facts": [{"dim": "focal", "op": "eq", "values": ["100"], "intent": "fi
              "and filter-fact text EXCLUDED. A query that is only facts and "
              "filler gets [] — but a lone explore fact also repeats its "
              "text as a clip query.\n"
-          << "- Unknown people, pets, or things stay in clip_queries; there "
-             "is no fact dimension for them.\n"
+          << "- \"of <name>\" / \"with <name>\" where <name> is a person's "
+             "given name is a person fact (unknown names are fine — they "
+             "are verified later). Pets and things stay in clip_queries.\n"
+          << "- \"N people\" / \"N persons\" / \"N faces\" is a face_count "
+             "fact; \"group photo\" alone is NOT (it stays semantic).\n"
           << "\n"
           << kExamples;
         system_prompt_ = p.str();

@@ -3,6 +3,7 @@
 #include "database/database_manager.hpp"
 #include "database/faces_ops.hpp"
 #include "media_processors/face/face_align.hpp"
+#include "media_processors/face/face_clusterer.hpp"
 
 #include <Poco/Logger.h>
 #include <cmath>
@@ -38,10 +39,13 @@ namespace MediaDedup
     }
 
     FaceScanService::FaceScanService(DatabaseManager *db, std::unique_ptr<FaceDetector> detector,
-                                     EmbedFn embed, Options options)
-        : db_(db), detector_(std::move(detector)), embed_(std::move(embed)),
-          options_(options)
+                                     EmbedFn embed, Options options,
+                                     std::shared_ptr<FaceClusterer> clusterer)
+        : db_(db), detector_(std::move(detector)), clusterer_(std::move(clusterer)),
+          embed_(std::move(embed)), options_(options)
     {
+        if (clusterer_)
+            clusterer_->load();
     }
 
     std::vector<float> FaceScanService::preprocessToNchw(const std::vector<std::uint8_t> &rgb112)
@@ -63,6 +67,14 @@ namespace MediaDedup
         TickStats stats;
         if (!db_ || !detector_ || !embed_)
             return stats;
+
+        // FACE-3: People-tab RPCs (name/merge/hide) edit clusters from gRPC
+        // threads. Reloading the mirror at tick start — instead of sharing
+        // mutable state across threads — keeps the clusterer at most one
+        // tick stale, with no locks. Thousands of clusters reload in
+        // milliseconds.
+        if (clusterer_)
+            clusterer_->load();
 
         // Over-fetch by the files already known offline so a disconnected
         // volume at the head of the id order can't starve the batch.
@@ -109,7 +121,7 @@ namespace MediaDedup
                 row.quality = face.quality;
 
                 std::vector<std::uint8_t> crop;
-                std::vector<float> embedding;
+                std::vector<float> unit_embedding;
                 if (FaceAlign::alignFace(image, face, crop))
                 {
                     std::vector<float> raw;
@@ -124,6 +136,7 @@ namespace MediaDedup
                             const float inv = static_cast<float>(1.0 / std::sqrt(norm_sq));
                             for (float &v : raw)
                                 v *= inv;
+                            unit_embedding = raw;
                             row.embedding.resize(raw.size() * sizeof(float));
                             std::memcpy(row.embedding.data(), raw.data(), row.embedding.size());
                         }
@@ -132,18 +145,45 @@ namespace MediaDedup
                 // A face without an embedding (no landmarks, embedder off)
                 // is still stored: it counts for face_count and can be
                 // re-embedded by a version bump later.
-                if (FacesOps::insertFace(*db_, row) > 0)
+                const int face_id = FacesOps::insertFace(*db_, row);
+                if (face_id > 0)
+                {
                     stored++;
+                    // FACE-2: cluster at extraction time.
+                    if (clusterer_ && !unit_embedding.empty() &&
+                        clusterer_->assign(face_id, unit_embedding, row.quality) > 0)
+                        stats.clustered++;
+                }
             }
             FacesOps::markFileScanned(*db_, c.file_id, stored);
             stats.scanned++;
             stats.faces += stored;
         }
 
-        if (stats.scanned > 0 || stats.offline > 0)
+        // FACE-2 catch-up: adopt faces stored before clustering existed
+        // (or while a tick was interrupted), a bounded batch per tick.
+        if (clusterer_)
+        {
+            // The quality gate lives in the SQL too: below-gate faces are
+            // never selected, so they cannot clog the head of the batch.
+            for (const auto &f : FacesOps::listUnclusteredFaces(
+                     *db_, clusterer_->minQuality(), options_.batch))
+                if (clusterer_->assign(f.face_id, f.embedding, f.quality) > 0)
+                    stats.clustered++;
+
+            // Consolidation is O(clusters^2): run it when the sweep has
+            // caught up, and periodically during the backfill.
+            tick_count_++;
+            if (stats.exhausted || tick_count_ % 40 == 0)
+                stats.merges = clusterer_->consolidate();
+        }
+
+        if (stats.scanned > 0 || stats.offline > 0 || stats.clustered > 0 || stats.merges > 0)
             scanLogger().information(
-                "Face sweep tick: %d file(s) scanned, %d face(s), %d offline, %d unreadable%s",
-                stats.scanned, stats.faces, stats.offline, stats.unreadable,
+                "Face sweep tick: %d file(s) scanned, %d face(s), %d clustered, "
+                "%d merge(s), %d offline, %d unreadable%s",
+                stats.scanned, stats.faces, stats.clustered, stats.merges,
+                stats.offline, stats.unreadable,
                 std::string(stats.exhausted ? " (caught up)" : ""));
         return stats;
     }

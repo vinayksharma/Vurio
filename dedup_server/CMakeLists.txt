@@ -289,6 +289,7 @@ add_executable(media_dedup_server
     src/core/media_backfill_hook.cpp
     src/database/faces_ops.cpp
     src/media_processors/face/face_align.cpp
+    src/media_processors/face/face_clusterer.cpp
     src/media_processors/face/face_scan_service.cpp
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp

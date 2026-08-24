@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <optional>
 #include <regex>
 #include <string>
@@ -54,6 +56,12 @@ namespace MediaDedup
         // Month with no year: match substr(exif_datetime, 6, 2) == "08".
         std::optional<std::string> month_any_year;
 
+        // QP-2 (FACE-4): resolved person ids (persons.id); a file matches
+        // when it has a face assigned to ANY of them (OR within the field,
+        // like camera_terms). face_count rides `numeric` on the
+        // scanned_files.face_count column.
+        std::vector<int> person_ids;
+
         // What's left for semantic search after the EXIF tokens are removed.
         std::string remaining;
 
@@ -64,7 +72,7 @@ namespace MediaDedup
         bool hasAny() const
         {
             return !numeric.empty() || !camera_terms.empty() || !file_extensions.empty() ||
-                   flash_on || flash_off ||
+                   !person_ids.empty() || flash_on || flash_off ||
                    location.has_value() || date_range.has_value() || month_any_year.has_value();
         }
     };
@@ -132,8 +140,13 @@ namespace MediaDedup
     class ExifQueryParser
     {
     public:
+        /// QP-2: name -> persons.id (0 = unknown), evaluated at parse time
+        /// because person names are runtime user data.
+        using PersonResolver = std::function<int(const std::string &)>;
+
         explicit ExifQueryParser(const LocationGeocoder *geocoder = nullptr,
-                                 const ExifKeywordConfig &keywords = ExifKeywordConfig::defaults());
+                                 const ExifKeywordConfig &keywords = ExifKeywordConfig::defaults(),
+                                 PersonResolver person_resolver = nullptr);
 
         ExifQueryConstraints parse(const std::string &query) const;
 
@@ -148,6 +161,7 @@ namespace MediaDedup
         int monthNumber(const std::string &name) const;
 
         const LocationGeocoder *geocoder_;
+        PersonResolver person_resolver_;
 
         // Keyword-driven state, built once from the ExifKeywordConfig.
         std::vector<std::string> months_;
