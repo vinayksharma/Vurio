@@ -165,4 +165,4 @@ thumbnail.jpeg.quality: 85
 thumbnail.qhd_preview.threshold_mb: 5
 media.video.ogv: false
 media.video.m2ts: false
-scheduler.drift.mode: anchored
+scheduler.drift.mode: anchoredmedia.face.enabled: true
