@@ -432,6 +432,14 @@ struct Vurio_Dedup_ClusterFaceInfo: Sendable {
 
   var quality: Double = 0
 
+  /// FACE-7d: the face's score against its own cluster (best of centroid and
+  /// exemplars, the exemplar set excluding the face itself). `suspect` marks
+  /// it for review in the popup — surfaced, never auto-removed; the pinned
+  /// cover is never suspect.
+  var fit: Double = 0
+
+  var suspect: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -2052,7 +2060,7 @@ extension Vurio_Dedup_FaceClusterActionResponse: SwiftProtobuf.Message, SwiftPro
 
 extension Vurio_Dedup_ClusterFaceInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ClusterFaceInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}face_id\0\u{3}file_path\0\u{1}x\0\u{1}y\0\u{1}w\0\u{1}h\0\u{1}quality\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}face_id\0\u{3}file_path\0\u{1}x\0\u{1}y\0\u{1}w\0\u{1}h\0\u{1}quality\0\u{1}fit\0\u{1}suspect\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2067,6 +2075,8 @@ extension Vurio_Dedup_ClusterFaceInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 5: try { try decoder.decodeSingularDoubleField(value: &self.w) }()
       case 6: try { try decoder.decodeSingularDoubleField(value: &self.h) }()
       case 7: try { try decoder.decodeSingularDoubleField(value: &self.quality) }()
+      case 8: try { try decoder.decodeSingularDoubleField(value: &self.fit) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.suspect) }()
       default: break
       }
     }
@@ -2094,6 +2104,12 @@ extension Vurio_Dedup_ClusterFaceInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.quality.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.quality, fieldNumber: 7)
     }
+    if self.fit.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.fit, fieldNumber: 8)
+    }
+    if self.suspect != false {
+      try visitor.visitSingularBoolField(value: self.suspect, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2105,6 +2121,8 @@ extension Vurio_Dedup_ClusterFaceInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.w != rhs.w {return false}
     if lhs.h != rhs.h {return false}
     if lhs.quality != rhs.quality {return false}
+    if lhs.fit != rhs.fit {return false}
+    if lhs.suspect != rhs.suspect {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

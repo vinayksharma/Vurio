@@ -136,6 +136,13 @@ namespace MediaDedup
         static bool mergeClusters(DatabaseManager &db, int target_id,
                                   const std::vector<int> &source_ids);
 
+        /// FACE-7a: same-name commit merges the person's clusters — all of
+        /// them into the largest (ties: lowest id). Naming two clusters the
+        /// same is a deliberate identity statement, stronger than any
+        /// centroid threshold. Returns the surviving cluster id (0 when the
+        /// person has no clusters or the merge failed).
+        static int mergePersonClusters(DatabaseManager &db, int person_id);
+
         static bool setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden);
 
         /// Distinct file ids containing a face of this cluster (day-view
@@ -165,9 +172,14 @@ namespace MediaDedup
             std::string file_path;
             double x = 0, y = 0, w = 0, h = 0;
             double quality = 0;
+            // FACE-7d: score against the face's own cluster (self-excluded
+            // from the exemplar set); suspect flags it for popup review.
+            double fit = 1.0;
+            bool suspect = false;
         };
 
-        /// A cluster's faces for the review grid, quality desc.
+        /// A cluster's faces for the review grid, quality desc, each scored
+        /// against its own cluster (FACE-7d).
         static std::vector<ClusterFace> listClusterFaces(DatabaseManager &db, int cluster_id,
                                                          int offset, int limit, int &total);
 
@@ -198,6 +210,42 @@ namespace MediaDedup
         /// FACE-6: a pinned cover survives while the pinned face is still a
         /// member; once it leaves, the pin clears and quality elects.
         static bool recomputeCluster(DatabaseManager &db, int cluster_id);
+
+        // ---- FACE-7b: exemplars ------------------------------------------
+
+        /// Faces below this fit against their own cluster are flagged
+        /// `suspect` for popup review — join_threshold (0.58) minus slack.
+        static constexpr double kSuspectFitBar = 0.53;
+
+        struct ExemplarRow
+        {
+            int cluster_id = 0;
+            int face_id = 0;
+            std::vector<float> embedding; // unit-normalized
+        };
+
+        /// Replace a cluster's exemplar set wholesale.
+        static bool setClusterExemplars(DatabaseManager &db, int cluster_id,
+                                        const std::vector<int> &face_ids);
+
+        /// Every cluster's exemplars with embeddings, membership-checked
+        /// (a face the sweep re-homed stops being an exemplar of its old
+        /// cluster). One query; loaded with the clusterer mirror.
+        static std::vector<ExemplarRow> listClusterExemplars(DatabaseManager &db);
+
+        /// Re-select a cluster's exemplars: quality-first farthest-point
+        /// sampling (a face joins the set only at cosine < spread to every
+        /// adopted exemplar); the FACE-6 pinned cover always participates.
+        /// Returns the chosen face ids (empty on failure or empty cluster).
+        static std::vector<int> refreshClusterExemplars(DatabaseManager &db, int cluster_id,
+                                                        int k = 5, double spread = 0.80,
+                                                        double min_quality = 0.4);
+
+        /// FACE-7d: fill fit/suspect on listed faces (parallel embeddings
+        /// vector, one entry per face; empty = no embedding).
+        static void annotateFaceFits(DatabaseManager &db, int cluster_id,
+                                     std::vector<ClusterFace> &faces,
+                                     const std::vector<std::vector<float>> &embeddings);
 
         // ---- FACE-6: pinned covers ---------------------------------------
 

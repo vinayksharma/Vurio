@@ -802,6 +802,295 @@ namespace MediaDedup
             EXPECT_FALSE(rows[0].cover_pinned);
         }
 
+        // ---- FACE-7: matching accuracy ----------------------------------
+
+        TEST_F(FaceScanTest, SameNameMergeCombinesClusters)
+        {
+            int fid = insertProcessed("/nowhere/n1.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            // c1 twice the size of c2 — the survivor.
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.8);
+            const int f3 = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.8), c1);
+            const int c2 = cl.assign(f3, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            const int alice = FacesOps::personIdByName(*db_, "Alice");
+            ASSERT_TRUE(FacesOps::setPersonAliases(*db_, alice, {"mom"}));
+            // The same-name act on c2 makes them one identity.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c2, "Alice"));
+            EXPECT_EQ(FacesOps::mergePersonClusters(*db_, alice), c1);
+
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].id, c1);
+            EXPECT_EQ(infos[0].name, "Alice");
+            EXPECT_EQ(infos[0].face_count, 3);
+            EXPECT_EQ(infos[0].aliases, (std::vector<std::string>{"mom"}));
+        }
+
+        TEST_F(FaceScanTest, UserMergeRepointsCannotLinks)
+        {
+            int fid = insertProcessed("/nowhere/n2.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(0, 1, 0, 0), 0.8);
+            const int f3 = mkFace(unit4(0, 0, 1, 0), 0.7);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(f2, unit4(0, 1, 0, 0), 0.8);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+
+            // f3 is "not the person of c2"; the user then merges c2 into c1
+            // — the constraint must follow the identity into c1 (this was
+            // silently dropped before FACE-7a).
+            ASSERT_TRUE(FacesOps::addCannotLink(*db_, f3, c2));
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2}));
+            auto links = FacesOps::listCannotLinks(*db_);
+            ASSERT_EQ(links.size(), 1u);
+            EXPECT_EQ(links[0].face_id, f3);
+            EXPECT_EQ(links[0].forbidden_cluster_id, c1);
+        }
+
+        TEST_F(FaceScanTest, ExemplarSelectionQualitySpreadAndPin)
+        {
+            int fid = insertProcessed("/nowhere/n3.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FacesOps::ClusterRow row;
+            row.centroid = unit4(1, 0, 0, 0);
+            row.size = 4;
+            const int cid = FacesOps::insertCluster(*db_, row);
+            ASSERT_GT(cid, 0);
+            const int a = mkFace(unit4(1, 0, 0, 0), 0.9);           // best
+            const int b = mkFace(unit4(0.9f, 0.436f, 0, 0), 0.8);   // same look as a
+            const int c = mkFace(unit4(0, 1, 0, 0), 0.7);           // distinct look
+            const int d = mkFace(unit4(0, 0, 1, 0), 0.3);           // below quality bar
+            for (int f : {a, b, c, d})
+                ASSERT_TRUE(FacesOps::setFaceCluster(*db_, f, cid));
+
+            // Quality-first, spread-deduped: b (cos 0.9 to a) collapses into
+            // a's look; d misses the quality bar.
+            auto chosen = FacesOps::refreshClusterExemplars(*db_, cid);
+            EXPECT_EQ(chosen, (std::vector<int>{a, c}));
+
+            // The pinned cover joins regardless of quality.
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, cid, d));
+            chosen = FacesOps::refreshClusterExemplars(*db_, cid);
+            EXPECT_EQ(chosen, (std::vector<int>{d, a, c}));
+        }
+
+        TEST_F(FaceScanTest, ExemplarScoringJoinsSecondaryMode)
+        {
+            int fid = insertProcessed("/nowhere/n4.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FacesOps::ClusterRow row;
+            row.centroid = unit4(1, 0, 0, 0);
+            row.size = 2;
+            const int cid = FacesOps::insertCluster(*db_, row);
+            const int a = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int c = mkFace(unit4(0, 1, 0, 0), 0.7); // secondary look
+            ASSERT_TRUE(FacesOps::setFaceCluster(*db_, a, cid));
+            ASSERT_TRUE(FacesOps::setFaceCluster(*db_, c, cid));
+            ASSERT_EQ(FacesOps::refreshClusterExemplars(*db_, cid),
+                      (std::vector<int>{a, c}));
+
+            // A face matching the secondary exemplar but nearly orthogonal
+            // to the centroid joins the cluster — pre-FACE-7 it would have
+            // founded a new one.
+            FaceClusterer cl(db_.get(), {});
+            cl.load();
+            const int nf = mkFace(unit4(0, 0.999f, 0.04f, 0), 0.8);
+            EXPECT_EQ(cl.assign(nf, unit4(0, 0.999f, 0.04f, 0), 0.8), cid);
+        }
+
+        TEST_F(FaceScanTest, ConsolidationMergesViaExemplarAgreement)
+        {
+            int fid = insertProcessed("/nowhere/n5.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            auto mean2 = [](std::vector<float> a, std::vector<float> b) {
+                std::vector<float> m(a.size());
+                double n = 0;
+                for (std::size_t i = 0; i < a.size(); ++i)
+                {
+                    m[i] = a[i] + b[i];
+                    n += double(m[i]) * m[i];
+                }
+                for (auto &x : m)
+                    x = float(x / std::sqrt(n));
+                return m;
+            };
+            auto mkCluster = [&](std::vector<std::pair<std::vector<float>, double>> faces,
+                                 std::vector<float> centroid) {
+                FacesOps::ClusterRow row;
+                row.centroid = std::move(centroid);
+                row.size = static_cast<int>(faces.size());
+                const int cid = FacesOps::insertCluster(*db_, row);
+                for (auto &[v, q] : faces)
+                    FacesOps::setFaceCluster(*db_, mkFace(v, q), cid);
+                FacesOps::refreshClusterExemplars(*db_, cid);
+                return cid;
+            };
+
+            // A and B share one look — (0.6,0.8) vs (0.62,0.785), cosine
+            // ~0.9998 — but their blended centroids sit at ~0.715, below the
+            // 0.9 centroid bar. The shared-look exemplar pair must merge
+            // them; C overlaps A only weakly and must survive.
+            const int ca = mkCluster({{unit4(1, 0, 0, 0), 0.9},
+                                      {unit4(0.6f, 0.8f, 0, 0), 0.8}},
+                                     mean2(unit4(1, 0, 0, 0), unit4(0.6f, 0.8f, 0, 0)));
+            const int cb = mkCluster({{unit4(0.62f, 0.785f, 0, 0), 0.9},
+                                      {unit4(0, 1, 0, 0), 0.8}},
+                                     mean2(unit4(0.62f, 0.785f, 0, 0), unit4(0, 1, 0, 0)));
+            const int cc = mkCluster({{unit4(0.5f, 0, 0.866f, 0), 0.9}},
+                                     unit4(0.5f, 0, 0.866f, 0));
+
+            FaceClusterer::Options opts;
+            opts.merge_threshold = 0.9;
+            opts.exemplar_merge_threshold = 0.95;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            EXPECT_EQ(cl.consolidate(), 1);
+            EXPECT_EQ(cl.clusterCount(), 2u);
+            // A+B merged (either direction), C intact.
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 2u);
+            for (const auto &r : rows)
+                if (r.id == cc)
+                    EXPECT_EQ(r.size, 1);
+                else
+                    EXPECT_EQ(r.size, 4);
+            (void)ca;
+            (void)cb;
+        }
+
+        TEST_F(FaceScanTest, AmbiguousFaceWaitsUnclustered)
+        {
+            int fid = insertProcessed("/nowhere/n6.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            auto mkCluster = [&](std::vector<float> v, double q) {
+                FacesOps::ClusterRow row;
+                row.centroid = v;
+                row.size = 1;
+                const int cid = FacesOps::insertCluster(*db_, row);
+                FacesOps::setFaceCluster(*db_, mkFace(v, q), cid);
+                return cid;
+            };
+            const int c1 = mkCluster(unit4(1, 0, 0, 0), 0.9);
+            const int c2 = mkCluster(unit4(0.995f, 0.0999f, 0, 0), 0.9);
+
+            // Equidistant between two people: a guess, not a match — wait.
+            FaceClusterer cl(db_.get(), {});
+            cl.load();
+            const int nf = mkFace(unit4(0.9988f, 0.05f, 0, 0), 0.8);
+            EXPECT_EQ(cl.assign(nf, unit4(0.9988f, 0.05f, 0, 0), 0.8), 0);
+
+            // Once the competition resolves (c2 gone), the same face joins.
+            ASSERT_TRUE(FacesOps::moveClusterMembers(*db_, c2, c1));
+            ASSERT_TRUE(FacesOps::deleteCluster(*db_, c2));
+            FaceClusterer cl2(db_.get(), {});
+            cl2.load();
+            EXPECT_EQ(cl2.assign(nf, unit4(0.9988f, 0.05f, 0, 0), 0.8), c1);
+        }
+
+        TEST_F(FaceScanTest, SuspectFlagsOffIdentityFaceNeverThePin)
+        {
+            int fid = insertProcessed("/nowhere/n7.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FacesOps::ClusterRow row;
+            row.centroid = unit4(1, 0, 0, 0);
+            row.size = 3;
+            const int cid = FacesOps::insertCluster(*db_, row);
+            const int a = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int b = mkFace(unit4(0.99f, 0.14f, 0, 0), 0.8);
+            const int x = mkFace(unit4(0, 1, 0, 0), 0.7); // not this person
+            for (int f : {a, b, x})
+                ASSERT_TRUE(FacesOps::setFaceCluster(*db_, f, cid));
+            FacesOps::refreshClusterExemplars(*db_, cid);
+
+            int total = 0;
+            auto faces = FacesOps::listClusterFaces(*db_, cid, 0, 10, total);
+            ASSERT_EQ(faces.size(), 3u);
+            for (const auto &f : faces)
+            {
+                // fit excludes self: x scores only against a/b/centroid.
+                if (f.face_id == x)
+                {
+                    EXPECT_LT(f.fit, 0.2);
+                    EXPECT_TRUE(f.suspect);
+                }
+                else
+                {
+                    EXPECT_GT(f.fit, 0.9);
+                    EXPECT_FALSE(f.suspect);
+                }
+            }
+
+            // The pinned cover is the human-verified anchor — never suspect.
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, cid, x));
+            faces = FacesOps::listClusterFaces(*db_, cid, 0, 10, total);
+            for (const auto &f : faces)
+                if (f.face_id == x)
+                    EXPECT_FALSE(f.suspect);
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

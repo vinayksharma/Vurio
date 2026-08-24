@@ -397,13 +397,20 @@ struct PeopleView: View {
                               spacing: 10) {
                         ForEach(model.reviewFaces, id: \.faceID) { face in
                             let isCover = face.faceID == cluster.coverFaceID
+                            // FACE-7d: cover ring wins; a suspect face (low
+                            // fit against its own cluster) wears the warning
+                            // ring — surfaced for review, never auto-removed.
                             FaceCropView(filePath: face.filePath,
                                          x: face.x, y: face.y, w: face.w, h: face.h)
                                 .frame(width: 80, height: 80)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isCover ? Theme.accent : Theme.border,
-                                            lineWidth: isCover ? 2 : 1))
+                                    .stroke(isCover ? Theme.accent
+                                            : face.suspect ? Theme.warning : Theme.border,
+                                            lineWidth: isCover || face.suspect ? 2 : 1))
+                                .help(face.suspect
+                                      ? "may not be \(cluster.name.isEmpty ? "the same person" : cluster.name) — right-click to remove"
+                                      : "")
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     Task { await model.setCover(cluster: cluster.id,

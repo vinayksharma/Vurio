@@ -35,6 +35,22 @@ namespace MediaDedup
             double join_threshold = 0.58;
             double merge_threshold = 0.65;
             double min_quality = 0.2; // below: stored but never clustered
+            // FACE-7c: a face joins only when the best cluster beats the
+            // runner-up by this margin — ambiguous faces wait unclustered
+            // for the catch-up instead of guessing. 0 = pre-FACE-7 joins.
+            double join_margin = 0.05;
+            // FACE-7b: exemplar-path consolidation. Candidate pairs pass a
+            // cheap centroid pre-filter, then merge when any cross-exemplar
+            // pair reaches exemplar_merge_threshold — a single strong pair
+            // is decisive because live calibration put different-person
+            // cosines at <= 0.51 (todo_face_recognition.md §5), while the
+            // blended centroids of two looks of one person can sit far
+            // apart. Exemplar selection knobs mirror FacesOps defaults.
+            double merge_prefilter = 0.35;
+            double exemplar_merge_threshold = 0.70;
+            int exemplar_k = 5;
+            double exemplar_spread = 0.80;
+            double exemplar_min_quality = 0.4;
         };
 
         FaceClusterer(DatabaseManager *db, Options options);
@@ -66,10 +82,19 @@ namespace MediaDedup
             // FACE-6: user-pinned cover — quality-based election skips it.
             bool cover_pinned = false;
             int person_id = 0;
+            // FACE-7b: exemplar embeddings; matching scores against the best
+            // of {centroid} ∪ exemplars, so a multi-mode identity matches
+            // each of its looks instead of their blended average.
+            std::vector<std::vector<float>> exemplars;
         };
 
         void persist(int id, const Cluster &c);
         bool mergeViolatesCannotLink(int lose, int win) const;
+        /// FACE-7b: max cosine over centroid and exemplars.
+        double score(const Cluster &c, const std::vector<float> &embedding) const;
+        /// FACE-7b: persist + reload exemplars for clusters whose
+        /// membership changed; called from consolidate().
+        void refreshDirtyExemplars();
 
         DatabaseManager *db_;
         Options options_;
@@ -81,5 +106,9 @@ namespace MediaDedup
         // current cluster -> clusters it must never merge INTO (union of
         // its members' constraints); maintained through in-memory merges.
         std::unordered_map<int, std::unordered_set<int>> cluster_forbidden_;
+        // FACE-7b: clusters whose membership changed since their exemplars
+        // were selected; consolidate() re-selects these lazily (selection
+        // needs the members' embeddings — too heavy per join).
+        std::unordered_set<int> exemplars_dirty_;
     };
 }

@@ -200,6 +200,12 @@ message ClusterFaceInfo {
   double w = 5;
   double h = 6;
   double quality = 7;
+  // FACE-7d: the face's score against its own cluster (best of centroid and
+  // exemplars, the exemplar set excluding the face itself). `suspect` marks
+  // it for review in the popup — surfaced, never auto-removed; the pinned
+  // cover is never suspect.
+  double fit = 8;
+  bool suspect = 9;
 }
 
 message ListClusterFacesRequest {

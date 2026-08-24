@@ -80,7 +80,12 @@ namespace MediaDedup
               "alias TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, "
               "person_id INTEGER NOT NULL) WITHOUT ROWID",
               // FACE-6: user-pinned cover faces survive automatic election.
-              "ALTER TABLE face_clusters ADD COLUMN cover_pinned INTEGER NOT NULL DEFAULT 0"})
+              "ALTER TABLE face_clusters ADD COLUMN cover_pinned INTEGER NOT NULL DEFAULT 0",
+              // FACE-7b: up to K exemplar faces per cluster; matching scores
+              // against the best exemplar instead of one blended centroid.
+              "CREATE TABLE IF NOT EXISTS face_cluster_exemplars ("
+              "cluster_id INTEGER NOT NULL, face_id INTEGER NOT NULL, "
+              "PRIMARY KEY (cluster_id, face_id)) WITHOUT ROWID"})
         {
             try
             {
@@ -258,6 +263,51 @@ namespace MediaDedup
         }
     }
 
+    namespace
+    {
+        // FACE-7: shared by exemplar selection and fit scoring.
+        double cosineF(const std::vector<float> &a, const std::vector<float> &b)
+        {
+            if (a.size() != b.size() || a.empty())
+                return -1.0;
+            double dot = 0;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                dot += static_cast<double>(a[i]) * b[i];
+            return dot; // unit-normalized inputs
+        }
+
+        struct MemberFace
+        {
+            int id = 0;
+            double quality = 0;
+            std::vector<float> embedding;
+        };
+
+        std::vector<MemberFace> loadMembers(DatabaseManager &db, int cluster_id)
+        {
+            std::vector<MemberFace> out;
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id, quality, embedding FROM faces "
+                    "WHERE cluster_id = ? AND embedding IS NOT NULL",
+                use(cid);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                MemberFace m;
+                m.id = rs[0].convert<int>();
+                m.quality = rs[1].convert<double>();
+                m.embedding = blobToFloats(rs[2].extract<Poco::Data::BLOB>());
+                out.push_back(std::move(m));
+            }
+            return out;
+        }
+    }
+
+
     std::vector<FacesOps::ClusterRow> FacesOps::listClusters(DatabaseManager &db)
     {
         std::vector<ClusterRow> out;
@@ -336,6 +386,9 @@ namespace MediaDedup
             int id = cluster_id;
             Poco::Data::Statement stmt(sess);
             stmt << "DELETE FROM face_clusters WHERE id = ?", use(id), now;
+            // FACE-7b: exemplar rows die with the cluster.
+            Poco::Data::Statement dele(sess);
+            dele << "DELETE FROM face_cluster_exemplars WHERE cluster_id = ?", use(id), now;
             return true;
         });
     }
@@ -598,6 +651,10 @@ namespace MediaDedup
         for (const auto *s : sources)
         {
             moveClusterMembers(db, s->id, target_id);
+            // FACE-7a: "not the person of the source" means "not the person
+            // of the target" once they are one identity — the constraint
+            // follows the merge here exactly as it does in consolidation.
+            repointCannotLinks(db, s->id, target_id);
             deleteCluster(db, s->id);
         }
         if (!updateCluster(db, merged))
@@ -619,6 +676,36 @@ namespace MediaDedup
                 use(pid), use(tid), now;
             return true;
         });
+    }
+
+    int FacesOps::mergePersonClusters(DatabaseManager &db, int person_id)
+    {
+        if (person_id <= 0)
+            return 0;
+        // Largest cluster wins (ties: lowest id) — the accumulated evidence
+        // is the identity; FACE-6 pin rules make a pinned cover survive
+        // regardless of merge direction.
+        int target = 0, target_size = -1;
+        std::vector<int> sources;
+        for (const auto &c : listClusters(db))
+        {
+            if (c.person_id != person_id)
+                continue;
+            if (c.size > target_size)
+            {
+                if (target > 0)
+                    sources.push_back(target);
+                target = c.id;
+                target_size = c.size;
+            }
+            else
+                sources.push_back(c.id);
+        }
+        if (target <= 0)
+            return 0;
+        if (sources.empty())
+            return target;
+        return mergeClusters(db, target, sources) ? target : 0;
     }
 
     bool FacesOps::setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden)
@@ -745,12 +832,13 @@ namespace MediaDedup
             int off = offset, lim = limit;
             Poco::Data::Statement stmt(sess);
             stmt << "SELECT f.id, COALESCE(sf.file_path, ''), f.bbox_x, f.bbox_y, "
-                    "f.bbox_w, f.bbox_h, f.quality "
+                    "f.bbox_w, f.bbox_h, f.quality, f.embedding "
                     "FROM faces f LEFT JOIN scanned_files sf ON sf.id = f.file_id "
                     "WHERE f.cluster_id = ? ORDER BY f.quality DESC, f.id LIMIT ? OFFSET ?",
                 use(cid), use(lim), use(off);
             stmt.execute();
             Poco::Data::RecordSet rs(stmt);
+            std::vector<std::vector<float>> embeddings;
             for (bool more = rs.moveFirst(); more; more = rs.moveNext())
             {
                 ClusterFace f;
@@ -761,14 +849,59 @@ namespace MediaDedup
                 f.w = rs[4].convert<double>();
                 f.h = rs[5].convert<double>();
                 f.quality = rs[6].convert<double>();
+                embeddings.emplace_back(
+                    rs[7].isEmpty() ? std::vector<float>{}
+                                    : blobToFloats(rs[7].extract<Poco::Data::BLOB>()));
                 out.push_back(std::move(f));
             }
+            annotateFaceFits(db, cluster_id, out, embeddings);
         }
         catch (const std::exception &e)
         {
             Poco::Logger::get("FacesOps").error("listClusterFaces: %s", std::string(e.what()));
         }
         return out;
+    }
+
+    void FacesOps::annotateFaceFits(DatabaseManager &db, int cluster_id,
+                                    std::vector<ClusterFace> &faces,
+                                    const std::vector<std::vector<float>> &embeddings)
+    {
+        // FACE-7d: fit = the face's score against its own cluster (centroid
+        // plus exemplars, the exemplar set excluding the face itself — a
+        // face must not vouch for itself). Low fit flags the face for
+        // review in the popup; nothing is ever auto-removed.
+        std::vector<float> centroid;
+        int pinned_cover = 0, pinned = 0;
+        for (const auto &c : listClusters(db))
+            if (c.id == cluster_id)
+            {
+                centroid = c.centroid;
+                pinned_cover = c.cover_face_id;
+                pinned = c.cover_pinned ? 1 : 0;
+                break;
+            }
+        std::vector<ExemplarRow> exemplars;
+        for (auto &e : listClusterExemplars(db))
+            if (e.cluster_id == cluster_id)
+                exemplars.push_back(std::move(e));
+
+        for (std::size_t i = 0; i < faces.size() && i < embeddings.size(); ++i)
+        {
+            if (embeddings[i].empty())
+            {
+                faces[i].fit = 1.0; // no embedding: nothing to judge it by
+                continue;
+            }
+            double best = cosineF(embeddings[i], centroid);
+            for (const auto &e : exemplars)
+                if (e.face_id != faces[i].face_id)
+                    best = std::max(best, cosineF(embeddings[i], e.embedding));
+            faces[i].fit = best;
+            // The pinned cover is the human-verified anchor — never suspect.
+            faces[i].suspect = best < kSuspectFitBar &&
+                               !(pinned != 0 && faces[i].face_id == pinned_cover);
+        }
     }
 
     bool FacesOps::addCannotLink(DatabaseManager &db, int face_id, int cluster_id)
@@ -918,7 +1051,11 @@ namespace MediaDedup
         for (std::size_t i = 0; i < acc.size(); ++i)
             row.centroid[i] = static_cast<float>(acc[i] * inv);
         row.person_id = person_id;
-        return updateCluster(db, row);
+        if (!updateCluster(db, row))
+            return false;
+        // FACE-7b: membership changed — re-select the exemplars.
+        refreshClusterExemplars(db, cluster_id);
+        return true;
     }
 
     bool FacesOps::removeFaceFromCluster(DatabaseManager &db, int face_id)
@@ -955,6 +1092,130 @@ namespace MediaDedup
         if (!cleared)
             return false;
         return recomputeCluster(db, cluster_id);
+    }
+
+    // ---- FACE-7b: exemplars ----------------------------------------------
+
+    bool FacesOps::setClusterExemplars(DatabaseManager &db, int cluster_id,
+                                       const std::vector<int> &face_ids)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "setClusterExemplars", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement del(sess);
+            del << "DELETE FROM face_cluster_exemplars WHERE cluster_id = ?", use(cid), now;
+            for (int fid : face_ids)
+            {
+                int f = fid;
+                Poco::Data::Statement ins(sess);
+                ins << "INSERT OR IGNORE INTO face_cluster_exemplars (cluster_id, face_id) "
+                       "VALUES (?, ?)",
+                    use(cid), use(f), now;
+            }
+            return true;
+        });
+    }
+
+    std::vector<FacesOps::ExemplarRow> FacesOps::listClusterExemplars(DatabaseManager &db)
+    {
+        std::vector<ExemplarRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            // A face that left its cluster (re-homed by the sweep) is not a
+            // valid exemplar anymore — the membership join filters it out
+            // until the owning cluster re-selects.
+            stmt << "SELECT e.cluster_id, e.face_id, f.embedding "
+                    "FROM face_cluster_exemplars e "
+                    "JOIN faces f ON f.id = e.face_id AND f.cluster_id = e.cluster_id "
+                    "WHERE f.embedding IS NOT NULL";
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                ExemplarRow r;
+                r.cluster_id = rs[0].convert<int>();
+                r.face_id = rs[1].convert<int>();
+                r.embedding = blobToFloats(rs[2].extract<Poco::Data::BLOB>());
+                out.push_back(std::move(r));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listClusterExemplars: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    std::vector<int> FacesOps::refreshClusterExemplars(DatabaseManager &db, int cluster_id,
+                                                       int k, double spread,
+                                                       double min_quality)
+    {
+        std::vector<MemberFace> members;
+        int pinned_cover = 0, pinned = 0;
+        try
+        {
+            members = loadMembers(db, cluster_id);
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT COALESCE(cover_face_id, 0), cover_pinned FROM face_clusters "
+                   "WHERE id = ?",
+                use(cid), into(pinned_cover), into(pinned), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("refreshClusterExemplars: %s",
+                                                std::string(e.what()));
+            return {};
+        }
+
+        // Quality-first farthest-point selection: the best face seeds the
+        // set, later faces enter only when they represent a genuinely
+        // different look (cosine < spread to every adopted exemplar). The
+        // FACE-6 pinned cover is the human-verified anchor and always
+        // participates, regardless of quality.
+        std::stable_sort(members.begin(), members.end(),
+                         [](const MemberFace &a, const MemberFace &b) {
+                             return a.quality > b.quality;
+                         });
+        std::vector<int> chosen;
+        std::vector<const std::vector<float> *> chosen_vecs;
+        if (pinned != 0)
+            for (const auto &m : members)
+                if (m.id == pinned_cover)
+                {
+                    chosen.push_back(m.id);
+                    chosen_vecs.push_back(&m.embedding);
+                    break;
+                }
+        for (const auto &m : members)
+        {
+            if (static_cast<int>(chosen.size()) >= k)
+                break;
+            if (m.quality < min_quality)
+                break; // quality-sorted: nothing below qualifies either
+            if (std::find(chosen.begin(), chosen.end(), m.id) != chosen.end())
+                continue;
+            bool distinct = true;
+            for (const auto *v : chosen_vecs)
+                if (cosineF(m.embedding, *v) >= spread)
+                {
+                    distinct = false;
+                    break;
+                }
+            if (!distinct)
+                continue;
+            chosen.push_back(m.id);
+            chosen_vecs.push_back(&m.embedding);
+        }
+        if (!setClusterExemplars(db, cluster_id, chosen))
+            return {};
+        return chosen;
     }
 
     // ---- FACE-6: pinned covers -------------------------------------------

@@ -334,6 +334,11 @@ public:
                 std::vector<std::string> aliases(request->aliases().begin(),
                                                  request->aliases().end());
                 ok = MediaDedup::FacesOps::setPersonAliases(*db_, pid, aliases);
+                // FACE-7a: naming a cluster with an existing name merges the
+                // person's clusters into one — the same-name act is the
+                // user's identity statement.
+                if (ok)
+                    ok = MediaDedup::FacesOps::mergePersonClusters(*db_, pid) > 0;
             }
         }
         reply->set_success(ok);
@@ -375,6 +380,8 @@ public:
             p->set_w(f.w);
             p->set_h(f.h);
             p->set_quality(f.quality);
+            p->set_fit(f.fit);
+            p->set_suspect(f.suspect);
         }
         reply->set_total(total);
         return grpc::Status::OK;
