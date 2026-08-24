@@ -279,6 +279,12 @@ namespace MediaDedup
         /// cluster does not exist.
         static bool dissolveCluster(DatabaseManager &db, int cluster_id);
 
+        /// FACE-8b (Settings → Advanced): factory-reset the people layer.
+        /// Detaches every face (embeddings kept) and deletes all clusters,
+        /// exemplars, cannot-links, persons and aliases. The sweep's
+        /// catch-up regroups from scratch — dissolveCluster, globally.
+        static bool clearAllFaceGroups(DatabaseManager &db);
+
         // ---- FACE-6: pinned covers ---------------------------------------
 
         /// Pin `face_id` as the cluster's representative (cover) face. The

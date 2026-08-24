@@ -179,6 +179,10 @@ class SettingsViewModel: ObservableObject {
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.resetDuplicates(Vurio_Dedup_Empty()) }, successMessage: "Duplicates reset")
     }
     
+    func clearAllFaceGroups() async {
+        await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.clearAllFaceGroups(Vurio_Dedup_Empty()) }, successMessage: "All face groups cleared — regrouping starts automatically")
+    }
+    
     func purgeEjectedAndErrored() async {
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.purgeEjectedAndErrored(Vurio_Dedup_Empty()) }, successMessage: "Purged ejected and errored files", mutatesEjectedBins: true)
     }

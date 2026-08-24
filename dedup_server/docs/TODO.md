@@ -19,7 +19,9 @@ before touching code — the line below is an index entry, not a specification.
   combined model falls below the bar — back to the pool, no cannot-link,
   pinned cover exempt — and the count is surfaced in the UI. Changing the
   knob queues a live purge sweep over all clusters (config event → face
-  tick), no restart.
+  tick), no restart. FACE-8b adds Settings → Advanced → "Clear All Faces":
+  factory-reset the people layer (groups, names, aliases, corrections);
+  faces/embeddings stay and the sweep regroups from scratch.
   **Full specification: [todo_face_purge_cutoff.md](todo_face_purge_cutoff.md)**
 
 - **FACE-7 — matching accuracy: same-name merge, multi-exemplar clusters, join margin, outlier review.**

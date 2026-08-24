@@ -108,6 +108,16 @@ lenient→aggressive gradient track, a live value readout, and an on/off
 toggle that writes `0` (purging disabled). Saves through the panel's normal
 Save Changes flow; the key is excluded from the generic rows.
 
+## 6b. FACE-8b: "Clear All Faces" (Settings → Advanced)
+
+A destructive maintenance action beside Reset Duplicates: factory-reset the
+people layer. `AdvancedSettingsService.ClearAllFaceGroups` →
+`FacesOps::clearAllFaceGroups`: detach every face (embeddings kept), delete
+all clusters, exemplars, cannot-links, persons and aliases — dissolveCluster,
+globally. The sweep's catch-up regroups everything into fresh unnamed
+clusters within ticks; photos and detected faces are untouched. The UI is a
+confirm-guarded destructive ActionRow ("names cannot be recovered").
+
 ## 7. Manual verification
 
 1. Settings shows "Media – Face" with the Face Recognition toggle (proper
@@ -121,3 +131,6 @@ Save Changes flow; the key is excluded from the generic rows.
 4. Toggle strictness off (writes 0) ⇒ no amber rings in any popup; merges
    purge nothing.
 5. Pin a below-bar face as cover ⇒ it survives merges and sweeps.
+6. Advanced → Clear All Faces ⇒ PEOPLE tab empties, then repopulates with
+   unnamed groups over the following sweep ticks; search no longer resolves
+   the old names/aliases.

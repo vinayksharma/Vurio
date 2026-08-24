@@ -476,6 +476,10 @@ service AdvancedSettingsService {
   
   rpc PurgeEjectedAndErrored(Empty) returns (AdvancedActionResponse);
   rpc ResetDuplicates(Empty) returns (AdvancedActionResponse);
+  // FACE-8b: wipe the people layer — every cluster, person, alias,
+  // cannot-link, exemplar and pin. Detected faces and embeddings stay; the
+  // sweep regroups from scratch (fresh unnamed clusters within ticks).
+  rpc ClearAllFaceGroups(Empty) returns (AdvancedActionResponse);
   
   rpc PauseProcessing(Empty) returns (AdvancedActionResponse);
   rpc ResumeProcessing(Empty) returns (AdvancedActionResponse);

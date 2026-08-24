@@ -1380,6 +1380,31 @@ namespace MediaDedup
 
     // ---- FACE-6: pinned covers -------------------------------------------
 
+    bool FacesOps::clearAllFaceGroups(DatabaseManager &db)
+    {
+        // FACE-8b: dissolveCluster, globally — one statement per table
+        // instead of per-cluster loops. Faces keep their embeddings, so the
+        // sweep's catch-up rebuilds fresh unnamed clusters within ticks;
+        // cannot-links go too (they reference cluster ids that no longer
+        // exist, and a factory reset means forgetting the corrections).
+        return DbRetry::withBusyRetry("FacesOps", "clearAllFaceGroups", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            for (const char *sql :
+                 {"UPDATE faces SET cluster_id = NULL, person_id = NULL",
+                  "DELETE FROM face_cluster_exemplars",
+                  "DELETE FROM face_cannot_link",
+                  "DELETE FROM face_clusters",
+                  "DELETE FROM person_aliases",
+                  "DELETE FROM persons"})
+            {
+                Poco::Data::Statement stmt(sess);
+                stmt << std::string(sql), now;
+            }
+            return true;
+        });
+    }
+
     bool FacesOps::setClusterCover(DatabaseManager &db, int cluster_id, int face_id)
     {
         // Validate membership first — the popup may race the sweep

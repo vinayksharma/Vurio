@@ -104,6 +104,19 @@ struct AdvancedSection: View {
                     )
                     
                     ActionRow(
+                        title: "Clear All Faces",
+                        description: "Remove every person group, name and alias and let face recognition regroup from scratch. Detected faces and your photos are untouched.",
+                        buttons: [
+                            ActionButton(title: "Clear All Faces", role: .destructive,
+                                         confirmTitle: "Clear All Faces?",
+                                         confirmMessage: "WARNING: This removes ALL person groups, every name and alias you have given, and all per-face corrections. Your photos and the detected faces are untouched, and regrouping starts automatically in the background — but the names cannot be recovered.",
+                                         systemImage: "person.crop.circle.badge.xmark",
+                                         action: { Task { await viewModel.clearAllFaceGroups() } })
+                        ],
+                        isRunning: viewModel.isAnyActionRunning
+                    )
+                    
+                    ActionRow(
                         title: "Purge Ejected and Errored",
                         description: "Permanently remove files in the '_ejected' and '_errored' folders from the database. You will lose the ability to undo their ejection, but no actual source files will be deleted.",
                         buttons: [
