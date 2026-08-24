@@ -102,7 +102,14 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             for (const char *idx :
                  {"CREATE INDEX IF NOT EXISTS idx_faces_file_id ON faces(file_id)",
-                  "CREATE INDEX IF NOT EXISTS idx_faces_cluster_id ON faces(cluster_id)",
+                  // (cluster_id, file_id) so listClusterInfos' per-cluster
+                  // COUNT(DISTINCT file_id) is a covering index SEARCH. On
+                  // cluster_id alone the planner fell back to a full faces
+                  // scan PER CLUSTER — 7k clusters x 75k faces made the
+                  // PEOPLE tab take minutes on a cold cache. Supersedes the
+                  // old idx_faces_cluster_id (left prefix), which is dropped.
+                  "DROP INDEX IF EXISTS idx_faces_cluster_id",
+                  "CREATE INDEX IF NOT EXISTS idx_faces_cluster_file ON faces(cluster_id, file_id)",
                   "CREATE INDEX IF NOT EXISTS idx_faces_person_id ON faces(person_id)",
                   // The sweep selector's partial index: eligible files only.
                   "CREATE INDEX IF NOT EXISTS idx_scanned_files_face_scan ON scanned_files(face_scan_version) "
