@@ -483,6 +483,100 @@ namespace MediaDedup
 #endif
     }
 
+    bool OnnxAdapter::ComputeFaceEmbedding(const std::vector<float> &nchw,
+                                           const std::string &model_path,
+                                           int embedding_dim,
+                                           std::vector<float> &out_floats,
+                                           std::string *out_reason)
+    {
+#if defined(HAVE_ONNXRUNTIME) && defined(HAVE_OPENCV)
+        try
+        {
+            if (model_path.empty())
+            {
+                if (out_reason)
+                    *out_reason = "model_path_missing";
+                return false;
+            }
+            const std::size_t expected = static_cast<std::size_t>(3) * 112 * 112;
+            if (nchw.size() != expected)
+            {
+                if (out_reason)
+                    *out_reason = "bad_face_tensor_size";
+                return false;
+            }
+            if (!session_manager_)
+            {
+                if (out_reason)
+                    *out_reason = "session_manager_not_initialized";
+                return false;
+            }
+            auto session_lease = session_manager_->borrowSession(model_path);
+            OnnxSessionWrapper *wrapper = session_lease.getWrapper();
+            if (!wrapper || !wrapper->session)
+            {
+                if (out_reason)
+                    *out_reason = "failed_to_borrow_session";
+                return false;
+            }
+            const auto &io = wrapper->io;
+            if (io.num_inputs != 1)
+            {
+                if (out_reason)
+                    *out_reason = "face_model_must_have_one_input";
+                return false;
+            }
+            if (io.output_name.empty())
+            {
+                if (out_reason)
+                    *out_reason = "model_has_no_output";
+                return false;
+            }
+
+            static Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+            const std::vector<int64_t> shape = {1, 3, 112, 112};
+            Ort::Value input = Ort::Value::CreateTensor<float>(
+                mem, const_cast<float *>(nchw.data()), nchw.size(), shape.data(), shape.size());
+
+            const char *out_names[] = {io.output_name.c_str()};
+            auto results = wrapper->session->Run(Ort::RunOptions{nullptr},
+                                                 io.input_name_ptrs.data(), &input, 1,
+                                                 out_names, 1);
+            if (results.empty() || !results[0].IsTensor())
+            {
+                if (out_reason)
+                    *out_reason = "inference_empty_or_non_tensor_output";
+                return false;
+            }
+            const auto info = results[0].GetTensorTypeAndShapeInfo();
+            if (info.GetElementCount() != static_cast<std::size_t>(embedding_dim))
+            {
+                if (out_reason)
+                    *out_reason = "unexpected_face_embedding_dim";
+                return false;
+            }
+            const float *data = results[0].GetTensorData<float>();
+            out_floats.assign(data, data + embedding_dim);
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            adapterLogger().error("ONNX face embedding exception: %s", std::string(e.what()));
+            if (out_reason)
+                *out_reason = std::string("onnx_exception: ") + e.what();
+            return false;
+        }
+#else
+        (void)nchw;
+        (void)model_path;
+        (void)embedding_dim;
+        (void)out_floats;
+        if (out_reason)
+            *out_reason = "onnxruntime_unavailable";
+        return false;
+#endif
+    }
+
     bool OnnxAdapter::ComputeTextEmbedding(const std::vector<std::int64_t> &input_ids,
                                            const std::vector<std::int64_t> &attention_mask,
                                            const std::string &model_path,

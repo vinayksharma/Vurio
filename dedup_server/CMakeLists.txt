@@ -287,6 +287,9 @@ add_executable(media_dedup_server
     src/core/media_generation_failures.cpp
     src/core/media_backfill.cpp
     src/core/media_backfill_hook.cpp
+    src/database/faces_ops.cpp
+    src/media_processors/face/face_align.cpp
+    src/media_processors/face/face_scan_service.cpp
     src/orchestration/thread_pool_manager.cpp
     src/orchestration/scheduler_service.cpp
     src/orchestration/files_manager.cpp
@@ -340,6 +343,19 @@ add_executable(media_dedup_server
 # Run download_models when building the server so models/ exists and is populated (real or placeholder)
 if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     add_dependencies(media_dedup_server download_models)
+endif()
+
+# FACE-1: the Vision face detector is Objective-C++ and Apple-only. The
+# rest of the face pipeline is portable C++ behind the FaceDetector seam.
+if(APPLE)
+    # Compiled as CXX with -x objective-c++ so no enable_language(OBJCXX)
+    # is needed (enabling it mid-project breaks the llama.cpp subproject's
+    # implicit link directories).
+    target_sources(media_dedup_server PRIVATE src/media_processors/face/vision_face_detector.mm)
+    set_source_files_properties(src/media_processors/face/vision_face_detector.mm
+        PROPERTIES LANGUAGE CXX COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
+    target_link_libraries(media_dedup_server
+        "-framework Vision" "-framework ImageIO" "-framework CoreGraphics" "-framework Foundation")
 endif()
 
 # Link libraries
