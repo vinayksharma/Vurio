@@ -372,6 +372,27 @@ namespace MediaDedup
                                                 { fs->runTick(); });
                 logger.information("Face sweep registered: batch=%d, interval=%d ms, model=%s",
                                    face_opts.batch, face_interval, embed_model);
+
+                // FACE-8: the purge cutoff adapts live — when the Settings
+                // panel saves media.face.mergePurgeCutoff, latch a one-shot
+                // purge sweep onto the face job's next tick (the RPC merge
+                // paths read the new value directly; this covers the
+                // already-clustered faces, the accepted re-binning).
+                config_manager_->subscribeToConfigChanges(
+                    [weakFace = std::weak_ptr<FaceScanService>(face_scan_service_),
+                     cfg = config_manager_](const ConfigChangeEvent &event)
+                    {
+                        if (event.key != "media.face.mergePurgeCutoff")
+                            return;
+                        auto face = weakFace.lock();
+                        if (!face)
+                            return;
+                        const double cutoff = cfg->getPropertyValue<double>(
+                            "media.face.mergePurgeCutoff", FacesOps::kSuspectFitBar);
+                        Poco::Logger::get("ServerInitializer")
+                            .information("Face purge cutoff changed to %.2f — purge sweep queued", cutoff);
+                        face->requestPurgeSweep(cutoff);
+                    });
             }
 
             // Ensure in-flight work is aborted when the scheduler is paused

@@ -132,16 +132,19 @@ namespace MediaDedup
         /// User-forced merge: sources' faces move to target, centroids
         /// combine size-weighted, the target's name (or the first named
         /// source's) survives. The clusterer picks the result up on its
-        /// next tick reload.
+        /// next tick reload. FACE-8: with purge_cutoff > 0 the merged
+        /// cluster is purged of misfits afterwards (count via *purged).
         static bool mergeClusters(DatabaseManager &db, int target_id,
-                                  const std::vector<int> &source_ids);
+                                  const std::vector<int> &source_ids,
+                                  double purge_cutoff = 0.0, int *purged = nullptr);
 
         /// FACE-7a: same-name commit merges the person's clusters — all of
         /// them into the largest (ties: lowest id). Naming two clusters the
         /// same is a deliberate identity statement, stronger than any
         /// centroid threshold. Returns the surviving cluster id (0 when the
         /// person has no clusters or the merge failed).
-        static int mergePersonClusters(DatabaseManager &db, int person_id);
+        static int mergePersonClusters(DatabaseManager &db, int person_id,
+                                       double purge_cutoff = 0.0, int *purged = nullptr);
 
         static bool setClusterHidden(DatabaseManager &db, int cluster_id, bool hidden);
 
@@ -179,9 +182,13 @@ namespace MediaDedup
         };
 
         /// A cluster's faces for the review grid, quality desc, each scored
-        /// against its own cluster (FACE-7d).
+        /// against its own cluster (FACE-7d). FACE-8: suspect_bar is the
+        /// configurable fit cutoff (media.face.mergePurgeCutoff) — the same
+        /// value the purge uses, so the amber ring shows exactly what a
+        /// merge would set aside.
         static std::vector<ClusterFace> listClusterFaces(DatabaseManager &db, int cluster_id,
-                                                         int offset, int limit, int &total);
+                                                         int offset, int limit, int &total,
+                                                         double suspect_bar = kSuspectFitBar);
 
         /// "Not this person": detach the face (cluster_id/person_id NULL),
         /// record the cannot-link, and recompute the source cluster from its
@@ -242,10 +249,25 @@ namespace MediaDedup
                                                         double min_quality = 0.4);
 
         /// FACE-7d: fill fit/suspect on listed faces (parallel embeddings
-        /// vector, one entry per face; empty = no embedding).
+        /// vector, one entry per face; empty = no embedding). FACE-8: the
+        /// suspect bar is the caller's configurable cutoff.
         static void annotateFaceFits(DatabaseManager &db, int cluster_id,
                                      std::vector<ClusterFace> &faces,
-                                     const std::vector<std::vector<float>> &embeddings);
+                                     const std::vector<std::vector<float>> &embeddings,
+                                     double suspect_bar = kSuspectFitBar);
+
+        /// FACE-8: detach members whose fit against their own cluster
+        /// (centroid ∪ exemplars, self-excluded — annotateFaceFits' score)
+        /// falls below `cutoff`, then recompute the cluster. Exemplars are
+        /// refreshed first so a just-merged cluster is judged by its
+        /// combined model. Detached faces keep their embeddings and return
+        /// to the unclustered pool with NO cannot-link — a statistical
+        /// judgment, not a human verdict; they cannot immediately rejoin
+        /// because joining needs join_threshold (0.58) against the same
+        /// scoring function. The pinned cover is exempt. One pass, no
+        /// fixed-point loop (iterating can cascade into a minority look).
+        /// Returns the number of faces detached; cutoff <= 0 disables.
+        static int purgeMisfits(DatabaseManager &db, int cluster_id, double cutoff);
 
         // ---- FACE-7e: dissolve ("Regroup faces") -------------------------
 

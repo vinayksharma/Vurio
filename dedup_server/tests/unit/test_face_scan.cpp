@@ -1157,5 +1157,131 @@ namespace MediaDedup
             EXPECT_TRUE(FacesOps::listSweepCandidates(*db_, 10).empty());
             std::remove(img.c_str());
         }
+
+        // ---- FACE-8: merge-time purge at the configurable cutoff ---------
+
+        TEST_F(FaceScanTest, MergePurgeShedsMisfitWithoutCannotLink)
+        {
+            int fid = insertProcessed("/nowhere/p1.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.85);
+            const int f3 = mkFace(unit4(1, 0, 0.05f, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.85), c1);
+            ASSERT_EQ(cl.assign(f3, unit4(1, 0, 0.05f, 0), 0.8), c1);
+            // The stranger founds its own cluster…
+            const int fm = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c2 = cl.assign(fm, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c2 > 0 && c2 != c1);
+
+            // …and a user merge at the cutoff sheds it: against the combined
+            // model (self-excluded) it scores ~0.33, below 0.53.
+            int purged = -1;
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2},
+                                                FacesOps::kSuspectFitBar, &purged));
+            EXPECT_EQ(purged, 1);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 3);
+            // Detached to the pool, NOT constrained — a statistical verdict
+            // leaves the door open (unlike "not this person").
+            EXPECT_TRUE(FacesOps::listCannotLinks(*db_).empty());
+            bool misfit_unclustered = false;
+            for (const auto &u : FacesOps::listUnclusteredFaces(*db_, 0.0, 10))
+                if (u.face_id == fm)
+                    misfit_unclustered = true;
+            EXPECT_TRUE(misfit_unclustered);
+        }
+
+        TEST_F(FaceScanTest, MergePurgeSparesPinnedCoverAndZeroCutoffDisables)
+        {
+            int fid = insertProcessed("/nowhere/p2.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(mkFace(unit4(1, 0.05f, 0, 0), 0.85),
+                                unit4(1, 0.05f, 0, 0), 0.85), c1);
+            const int fm = mkFace(unit4(0, 1, 0, 0), 0.7);
+            const int c2 = cl.assign(fm, unit4(0, 1, 0, 0), 0.7);
+            ASSERT_TRUE(c2 > 0 && c2 != c1);
+
+            // cutoff 0 = purging disabled: the misfit rides along.
+            int purged = -1;
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2}, 0.0, &purged));
+            EXPECT_EQ(purged, 0);
+            {
+                auto infos = FacesOps::listClusterInfos(*db_, true);
+                ASSERT_EQ(infos.size(), 1u);
+                EXPECT_EQ(infos[0].face_count, 3);
+            }
+
+            // Pin the misfit as cover: the human-verified anchor is exempt
+            // even below the bar…
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, fm));
+            EXPECT_EQ(FacesOps::purgeMisfits(*db_, c1, FacesOps::kSuspectFitBar), 0);
+
+            // …but once unpinned (pin a member face instead), a direct purge
+            // — the config-change sweep path — sheds it.
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f1));
+            EXPECT_EQ(FacesOps::purgeMisfits(*db_, c1, FacesOps::kSuspectFitBar), 1);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 2);
+        }
+
+        TEST_F(FaceScanTest, SuspectBarIsCallerConfigurable)
+        {
+            int fid = insertProcessed("/nowhere/p3.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(mkFace(unit4(1, 0.15f, 0, 0), 0.8),
+                                unit4(1, 0.15f, 0, 0), 0.8), c1);
+
+            int total = 0;
+            // Two slightly-apart faces: fits are high but < 0.999.
+            auto strict = FacesOps::listClusterFaces(*db_, c1, 0, 10, total, 0.999);
+            ASSERT_EQ(strict.size(), 2u);
+            int suspects = 0;
+            for (const auto &f : strict)
+                suspects += f.suspect ? 1 : 0;
+            EXPECT_GT(suspects, 0);
+
+            // Bar 0 (purging off): the ring never shows.
+            auto lax = FacesOps::listClusterFaces(*db_, c1, 0, 10, total, 0.0);
+            for (const auto &f : lax)
+                EXPECT_FALSE(f.suspect);
+        }
     }
 }

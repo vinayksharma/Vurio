@@ -658,5 +658,13 @@
   "tpm.types.thumbnail_generator.share": {
     "type": "double",
     "default": 1.0
+  },
+  "media.face.enabled": {
+    "type": "bool",
+    "default": false
+  },
+  "media.face.mergePurgeCutoff": {
+    "type": "double",
+    "default": 0.53
   }
 }

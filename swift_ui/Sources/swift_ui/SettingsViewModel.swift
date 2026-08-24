@@ -32,7 +32,9 @@ class SettingsViewModel: ObservableObject {
         
         let excludedKeys: Set<String> = [
             "duplicates.threshold.duplicate",
-            "duplicates.threshold.similarity"
+            "duplicates.threshold.similarity",
+            // FACE-8: rendered by FaceCutoffSliderSection, not a generic row.
+            "media.face.mergePurgeCutoff"
         ]
 
         // Key prefixes hidden from Settings. Video is not supported at this

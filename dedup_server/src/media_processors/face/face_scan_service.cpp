@@ -68,6 +68,21 @@ namespace MediaDedup
         if (!db_ || !detector_ || !embed_)
             return stats;
 
+        // FACE-8: a changed purge cutoff (Settings -> Save Changes) runs a
+        // one-shot filter over every cluster BEFORE the mirror reload, so
+        // the tick already sees the cleaned state. The shed faces are
+        // unclustered again and this very sweep's catch-up re-homes them —
+        // the accepted "re-binning" side effect of moving the knob.
+        const double purge_cutoff = pending_purge_cutoff_.exchange(-1.0);
+        if (purge_cutoff >= 0)
+        {
+            for (const auto &c : FacesOps::listClusters(*db_))
+                stats.purged += FacesOps::purgeMisfits(*db_, c.id, purge_cutoff);
+            scanLogger().information(
+                "Face purge sweep: cutoff %.2f, %d face(s) set aside for re-grouping",
+                purge_cutoff, stats.purged);
+        }
+
         // FACE-3: People-tab RPCs (name/merge/hide) edit clusters from gRPC
         // threads. Reloading the mirror at tick start — instead of sharing
         // mutable state across threads — keeps the clusterer at most one
@@ -178,7 +193,8 @@ namespace MediaDedup
                 stats.merges = clusterer_->consolidate();
         }
 
-        if (stats.scanned > 0 || stats.offline > 0 || stats.clustered > 0 || stats.merges > 0)
+        if (stats.scanned > 0 || stats.offline > 0 || stats.clustered > 0 || stats.merges > 0 ||
+            stats.purged > 0)
             scanLogger().information(
                 "Face sweep tick: %d file(s) scanned, %d face(s), %d clustered, "
                 "%d merge(s), %d offline, %d unreadable%s",

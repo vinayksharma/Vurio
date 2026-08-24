@@ -6,6 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "database/faces_ops.hpp"
+#include "config/unified_observable_config.hpp"
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "search/text_search_engine.hpp"
 
@@ -21,6 +22,19 @@ class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Serv
     // Optional CLIP text->image search backend for the day-view search filter
     // (owned by GrpcServerCore; null in tests that don't exercise search).
     MediaDedup::TextSearchEngine* search_engine_ = nullptr;
+    // FACE-8: live config for the merge-purge / suspect-fit cutoff (null in
+    // tests -> the kSuspectFitBar default applies).
+    std::shared_ptr<UnifiedObservableConfigManager> config_;
+
+    // The unified FACE-8 knob: one value drives the popup's amber suspect
+    // ring AND the merge-time purge, so what's flagged is what a merge
+    // would set aside. 0 disables purging (the ring then never shows).
+    double faceFitCutoff() const {
+        return config_ ? config_->getPropertyValue<double>(
+                             "media.face.mergePurgeCutoff",
+                             MediaDedup::FacesOps::kSuspectFitBar)
+                       : MediaDedup::FacesOps::kSuspectFitBar;
+    }
 
     struct StreamQueue {
         std::mutex mutex;
@@ -42,8 +56,9 @@ class DuplicatesServiceImpl final : public vurio::dedup::DuplicatesService::Serv
 
 public:
     explicit DuplicatesServiceImpl(DatabaseManager* db,
-                                   MediaDedup::TextSearchEngine* search_engine = nullptr)
-        : db_(db), search_engine_(search_engine) {}
+                                   MediaDedup::TextSearchEngine* search_engine = nullptr,
+                                   std::shared_ptr<UnifiedObservableConfigManager> config = nullptr)
+        : db_(db), search_engine_(search_engine), config_(std::move(config)) {}
 
     void OnDuplicateGroupEvent(int group_id, bool is_new) {
         if (!db_) return;
@@ -336,9 +351,14 @@ public:
                 ok = MediaDedup::FacesOps::setPersonAliases(*db_, pid, aliases);
                 // FACE-7a: naming a cluster with an existing name merges the
                 // person's clusters into one — the same-name act is the
-                // user's identity statement.
-                if (ok)
-                    ok = MediaDedup::FacesOps::mergePersonClusters(*db_, pid) > 0;
+                // user's identity statement. FACE-8: the merged result is
+                // purged of misfit faces at the configured cutoff.
+                if (ok) {
+                    int purged = 0;
+                    ok = MediaDedup::FacesOps::mergePersonClusters(
+                             *db_, pid, faceFitCutoff(), &purged) > 0;
+                    reply->set_purged_faces(purged);
+                }
             }
         }
         reply->set_success(ok);
@@ -350,8 +370,11 @@ public:
                                    vurio::dedup::FaceClusterActionResponse* reply) override {
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
         std::vector<int> sources(request->source_ids().begin(), request->source_ids().end());
-        const bool ok = MediaDedup::FacesOps::mergeClusters(*db_, request->target_id(), sources);
+        int purged = 0;
+        const bool ok = MediaDedup::FacesOps::mergeClusters(
+            *db_, request->target_id(), sources, faceFitCutoff(), &purged);
         reply->set_success(ok);
+        reply->set_purged_faces(purged);
         if (!ok) reply->set_error_message("Failed to merge clusters");
         return grpc::Status::OK;
     }
@@ -371,7 +394,8 @@ public:
         int total = 0;
         const int limit = request->limit() > 0 ? request->limit() : 200;
         for (const auto& f : MediaDedup::FacesOps::listClusterFaces(
-                 *db_, request->cluster_id(), request->offset(), limit, total)) {
+                 *db_, request->cluster_id(), request->offset(), limit, total,
+                 faceFitCutoff())) {
             auto* p = reply->add_faces();
             p->set_face_id(f.face_id);
             p->set_file_path(f.file_path);

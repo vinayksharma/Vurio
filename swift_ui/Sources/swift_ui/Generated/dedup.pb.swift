@@ -406,6 +406,11 @@ struct Vurio_Dedup_FaceClusterActionResponse: Sendable {
 
   var errorMessage: String = String()
 
+  /// FACE-8: faces detached back to the unclustered pool by the merge-time
+  /// purge filter (0 when purging is disabled or nothing fell below the
+  /// cutoff). The client surfaces the count so members don't silently vanish.
+  var purgedFaces: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -2041,7 +2046,7 @@ extension Vurio_Dedup_SetFaceClusterHiddenRequest: SwiftProtobuf.Message, SwiftP
 
 extension Vurio_Dedup_FaceClusterActionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".FaceClusterActionResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}purged_faces\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2051,6 +2056,7 @@ extension Vurio_Dedup_FaceClusterActionResponse: SwiftProtobuf.Message, SwiftPro
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.purgedFaces) }()
       default: break
       }
     }
@@ -2063,12 +2069,16 @@ extension Vurio_Dedup_FaceClusterActionResponse: SwiftProtobuf.Message, SwiftPro
     if !self.errorMessage.isEmpty {
       try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 2)
     }
+    if self.purgedFaces != 0 {
+      try visitor.visitSingularInt32Field(value: self.purgedFaces, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_FaceClusterActionResponse, rhs: Vurio_Dedup_FaceClusterActionResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.purgedFaces != rhs.purgedFaces {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

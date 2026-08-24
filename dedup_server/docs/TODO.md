@@ -10,8 +10,21 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
+- **FACE-8 — configurable purge cutoff: merges filter misfits, live from Settings.**
+  *Designed & implemented 2026-08-24. Remaining before Done: the spec's §7
+  manual pass on the live library.*
+  One Settings knob (`media.face.mergePurgeCutoff`, default 0.53, 0 = off)
+  drives both the popup's amber suspect ring and a merge-time purge: every
+  cluster merge (same-name or manual) detaches faces whose fit against the
+  combined model falls below the bar — back to the pool, no cannot-link,
+  pinned cover exempt — and the count is surfaced in the UI. Changing the
+  knob queues a live purge sweep over all clusters (config event → face
+  tick), no restart.
+  **Full specification: [todo_face_purge_cutoff.md](todo_face_purge_cutoff.md)**
+
 - **FACE-7 — matching accuracy: same-name merge, multi-exemplar clusters, join margin, outlier review.**
-  *Designed 2026-08-24; not yet implemented.*
+  *Designed 2026-08-24; implemented 2026-08-24 (7a–7e). Remaining before
+  Done: the spec's §5 manual pass / live threshold calibration.*
   Naming a cluster with an existing name merges the person's clusters (and
   fixes user-forced merges dropping cannot-links); clusters gain up to 5
   exemplar faces (pinned cover always among them) so matching scores
