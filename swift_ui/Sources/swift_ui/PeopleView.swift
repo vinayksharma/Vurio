@@ -121,7 +121,24 @@ final class PeopleViewModel: ObservableObject {
 
     func openReview(_ cluster: Vurio_Dedup_FaceClusterInfo) async {
         reviewing = cluster
+        reviewFaces = [] // never show the previous person's grid
+        // The grid load waits for pairing; the popup must too, or a click
+        // right after a server restart opens an empty dialog.
+        await VurioGrpcClient.shared.waitUntilPaired()
         await loadReviewFaces()
+        if reviewFaces.isEmpty {
+            // The card is a snapshot and the sweep merges/re-homes clusters
+            // continuously — this id may have just died. One retry for a
+            // transient, then bail out honestly instead of an empty popup.
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            await loadReviewFaces()
+        }
+        if reviewFaces.isEmpty {
+            reviewing = nil
+            MessageCenter.shared.post(
+                "That group just changed — the face scan reorganizes groups as it runs. List refreshed.")
+            await load()
+        }
     }
 
     private func loadReviewFaces() async {
