@@ -314,6 +314,13 @@ struct Vurio_Dedup_FaceClusterInfo: Sendable {
   /// them like the canonical name (canonical wins on collision).
   var aliases: [String] = []
 
+  /// FACE-6: the cover face was pinned by the user (survives automatic
+  /// quality-based re-election), and which face is the cover today — the
+  /// popup rings it so the user can see the current representative.
+  var coverPinned: Bool = false
+
+  var coverFaceID: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -468,6 +475,23 @@ struct Vurio_Dedup_RemoveFaceFromClusterRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  var faceID: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// FACE-6: pin a specific face as the cluster's representative (cover) face.
+/// A pinned cover survives automatic quality-based re-election permanently;
+/// it unpins only when that face leaves the cluster.
+struct Vurio_Dedup_SetFaceClusterCoverRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var clusterID: Int32 = 0
 
   var faceID: Int32 = 0
 
@@ -1733,7 +1757,7 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".FaceClusterInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0\u{1}aliases\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0\u{1}aliases\0\u{3}cover_pinned\0\u{3}cover_face_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1752,6 +1776,8 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 9: try { try decoder.decodeSingularDoubleField(value: &self.coverH) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.hidden) }()
       case 11: try { try decoder.decodeRepeatedStringField(value: &self.aliases) }()
+      case 12: try { try decoder.decodeSingularBoolField(value: &self.coverPinned) }()
+      case 13: try { try decoder.decodeSingularInt32Field(value: &self.coverFaceID) }()
       default: break
       }
     }
@@ -1791,6 +1817,12 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.aliases.isEmpty {
       try visitor.visitRepeatedStringField(value: self.aliases, fieldNumber: 11)
     }
+    if self.coverPinned != false {
+      try visitor.visitSingularBoolField(value: self.coverPinned, fieldNumber: 12)
+    }
+    if self.coverFaceID != 0 {
+      try visitor.visitSingularInt32Field(value: self.coverFaceID, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1806,6 +1838,8 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.coverH != rhs.coverH {return false}
     if lhs.hidden != rhs.hidden {return false}
     if lhs.aliases != rhs.aliases {return false}
+    if lhs.coverPinned != rhs.coverPinned {return false}
+    if lhs.coverFaceID != rhs.coverFaceID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2175,6 +2209,41 @@ extension Vurio_Dedup_RemoveFaceFromClusterRequest: SwiftProtobuf.Message, Swift
   }
 
   static func ==(lhs: Vurio_Dedup_RemoveFaceFromClusterRequest, rhs: Vurio_Dedup_RemoveFaceFromClusterRequest) -> Bool {
+    if lhs.faceID != rhs.faceID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_SetFaceClusterCoverRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetFaceClusterCoverRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0\u{3}face_id\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.clusterID) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.faceID) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.clusterID != 0 {
+      try visitor.visitSingularInt32Field(value: self.clusterID, fieldNumber: 1)
+    }
+    if self.faceID != 0 {
+      try visitor.visitSingularInt32Field(value: self.faceID, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_SetFaceClusterCoverRequest, rhs: Vurio_Dedup_SetFaceClusterCoverRequest) -> Bool {
+    if lhs.clusterID != rhs.clusterID {return false}
     if lhs.faceID != rhs.faceID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

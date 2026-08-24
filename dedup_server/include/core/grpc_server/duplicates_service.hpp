@@ -316,6 +316,8 @@ public:
             p->set_hidden(c.hidden);
             for (const auto& a : c.aliases)
                 p->add_aliases(a);
+            p->set_cover_pinned(c.cover_pinned);
+            p->set_cover_face_id(c.cover_face_id);
         }
         return grpc::Status::OK;
     }
@@ -384,6 +386,17 @@ public:
         const bool ok = MediaDedup::FacesOps::removeFaceFromCluster(*db_, request->face_id());
         reply->set_success(ok);
         if (!ok) reply->set_error_message("Failed to remove face");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SetFaceClusterCover(grpc::ServerContext*, const vurio::dedup::SetFaceClusterCoverRequest* request,
+                                     vurio::dedup::FaceClusterActionResponse* reply) override {
+        if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
+        const bool ok = MediaDedup::FacesOps::setClusterCover(
+            *db_, request->cluster_id(), request->face_id());
+        reply->set_success(ok);
+        // The popup may race the sweep re-homing the face elsewhere.
+        if (!ok) reply->set_error_message("face is not in this cluster");
         return grpc::Status::OK;
     }
 

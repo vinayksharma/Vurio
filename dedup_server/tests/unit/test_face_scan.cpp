@@ -603,6 +603,205 @@ namespace MediaDedup
             EXPECT_EQ(FacesOps::personIdByName(*db_, "mom"), 0);
         }
 
+        // ---- FACE-6: pinned covers --------------------------------------
+
+        TEST_F(FaceScanTest, PinnedCoverSurvivesQualityElection)
+        {
+            int fid = insertProcessed("/nowhere/v.jpg");
+            auto mkFace = [&](double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(0.9), f2 = mkFace(0.5);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.5), c1);
+
+            // Pin the mediocre face; the row carries the pin and its quality.
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f2));
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, f2);
+            EXPECT_NEAR(rows[0].cover_quality, 0.5, 1e-9);
+            EXPECT_TRUE(rows[0].cover_pinned);
+
+            // A higher-quality join must not displace the pin.
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            const int f3 = mkFace(0.95);
+            ASSERT_EQ(cl2.assign(f3, unit4(1, 0, 0.02f, 0), 0.95), c1);
+            rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, f2);
+            EXPECT_TRUE(rows[0].cover_pinned);
+
+            // The info list exposes the cover id + pin for the popup ring.
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].cover_face_id, f2);
+            EXPECT_TRUE(infos[0].cover_pinned);
+        }
+
+        TEST_F(FaceScanTest, SetClusterCoverRejectsNonMembers)
+        {
+            int fid = insertProcessed("/nowhere/w.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(0, 1, 0, 0), 0.8);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(f2, unit4(0, 1, 0, 0), 0.8);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+
+            // A face from another cluster, and one from no cluster at all.
+            EXPECT_FALSE(FacesOps::setClusterCover(*db_, c1, f2));
+            const int loose = mkFace(unit4(0, 0, 1, 0), 0.7);
+            EXPECT_FALSE(FacesOps::setClusterCover(*db_, c1, loose));
+            auto rows = FacesOps::listClusters(*db_);
+            for (const auto &r : rows)
+                EXPECT_FALSE(r.cover_pinned);
+        }
+
+        TEST_F(FaceScanTest, MergePropagatesPinnedCovers)
+        {
+            int fid = insertProcessed("/nowhere/x.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+
+            auto coverOf = [&](int id) {
+                for (const auto &r : FacesOps::listClusters(*db_))
+                    if (r.id == id)
+                        return std::make_pair(r.cover_face_id, r.cover_pinned);
+                return std::make_pair(0, false);
+            };
+
+            // pinned source -> unpinned target: the pin crosses the merge.
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(0, 1, 0, 0), 0.5);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(f2, unit4(0, 1, 0, 0), 0.5);
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c2, f2));
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c2}));
+            EXPECT_EQ(coverOf(c1), std::make_pair(f2, true));
+
+            // pinned target <- unpinned higher-quality source: pin wins.
+            const int f3 = mkFace(unit4(0, 0, 1, 0), 0.99);
+            const int c3 = cl.assign(f3, unit4(0, 0, 1, 0), 0.99);
+            ASSERT_GT(c3, 0);
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c3}));
+            EXPECT_EQ(coverOf(c1), std::make_pair(f2, true));
+
+            // both pinned: the target the user chose keeps its own.
+            const int f4 = mkFace(unit4(0, 0, 0, 1), 0.6);
+            const int c4 = cl.assign(f4, unit4(0, 0, 0, 1), 0.6);
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c4, f4));
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, c1, {c4}));
+            EXPECT_EQ(coverOf(c1), std::make_pair(f2, true));
+        }
+
+        TEST_F(FaceScanTest, ConsolidationRespectsAndCarriesPins)
+        {
+            int fid = insertProcessed("/nowhere/y.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999; // force separate clusters
+            opts.merge_threshold = 0.9;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+
+            // The loser (smaller cluster) carries a pin; the winner must
+            // adopt it through the in-memory merge.
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f1b = mkFace(unit4(1, 0.01f, 0, 0), 0.4);
+            const int f2 = mkFace(unit4(0.99f, 0.14f, 0, 0), 0.5);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f1b, unit4(1, 0.01f, 0, 0), 0.4), c1);
+            const int c2 = cl.assign(f2, unit4(0.99f, 0.14f, 0, 0), 0.5);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c2, f2));
+
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            EXPECT_EQ(cl2.consolidate(), 1);
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, f2);
+            EXPECT_TRUE(rows[0].cover_pinned);
+        }
+
+        TEST_F(FaceScanTest, RemovingPinnedCoverUnpinsAndReelects)
+        {
+            int fid = insertProcessed("/nowhere/z.jpg");
+            auto mkFace = [&](std::vector<float> v, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+            FaceClusterer cl(db_.get(), {});
+            cl.load();
+            const int f1 = mkFace(unit4(1, 0, 0, 0), 0.9);
+            const int f2 = mkFace(unit4(1, 0.05f, 0, 0), 0.5);
+            const int f3 = mkFace(unit4(1, 0, 0.05f, 0), 0.7);
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.5), c1);
+            ASSERT_EQ(cl.assign(f3, unit4(1, 0, 0.05f, 0), 0.7), c1);
+            ASSERT_TRUE(FacesOps::setClusterCover(*db_, c1, f2));
+
+            // Removing a NON-cover member leaves the pin alone…
+            ASSERT_TRUE(FacesOps::removeFaceFromCluster(*db_, f3));
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, f2);
+            EXPECT_TRUE(rows[0].cover_pinned);
+
+            // …removing the pinned cover unpins and re-elects by quality.
+            ASSERT_TRUE(FacesOps::removeFaceFromCluster(*db_, f2));
+            rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, f1);
+            EXPECT_NEAR(rows[0].cover_quality, 0.9, 1e-9);
+            EXPECT_FALSE(rows[0].cover_pinned);
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

@@ -10,6 +10,20 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
+- **FACE-6 — face-stack popup: click-to-open, inline rename, lens search, pick-the-cover.**
+  *Designed 2026-08-24; implemented 2026-08-24 (backend pin plumbing +
+  unit tests green, popup reworked, Swift/C++ stubs regenerated).
+  Remaining before Done: the spec's §6 manual pass on the live library.*
+  Single click on a PEOPLE-tab card opens the face stack (replacing both the
+  click drill-down and the context-menu review sheet): inline name/alias
+  editing in the header, a lens icon that runs the person's VU search, click
+  a face to pin it as the cluster's representative cover (a new
+  `SetFaceClusterCover` RPC + `cover_pinned` column — the pin survives all
+  five automatic quality-election sites and merges, unpinning only when that
+  face leaves the cluster), and right-click reads "Not the same person" /
+  "Not ⟨name⟩" over the existing FACE-3b cannot-link removal.
+  **Full specification: [todo_face_stack_popup.md](todo_face_stack_popup.md)**
+
 - **STRIP-1 — film strips resize to fill the available width on window resize.**
   *Reported 2026-08-24; not yet designed.*
   The horizontal film strips (VU day strips and BINNED group cards) keep the

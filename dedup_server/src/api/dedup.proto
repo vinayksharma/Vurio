@@ -155,6 +155,11 @@ message FaceClusterInfo {
   // FACE-5: the person's alternative names ("mom", "ma"); search resolves
   // them like the canonical name (canonical wins on collision).
   repeated string aliases = 11;
+  // FACE-6: the cover face was pinned by the user (survives automatic
+  // quality-based re-election), and which face is the cover today — the
+  // popup rings it so the user can see the current representative.
+  bool cover_pinned = 12;
+  int32 cover_face_id = 13;
 }
 
 message ListFaceClustersRequest {
@@ -215,6 +220,14 @@ message RemoveFaceFromClusterRequest {
   int32 face_id = 1;
 }
 
+// FACE-6: pin a specific face as the cluster's representative (cover) face.
+// A pinned cover survives automatic quality-based re-election permanently;
+// it unpins only when that face leaves the cluster.
+message SetFaceClusterCoverRequest {
+  int32 cluster_id = 1;
+  int32 face_id = 2;
+}
+
 // ---------------------------------------------------------
 // Duplicates Service
 // ---------------------------------------------------------
@@ -231,6 +244,7 @@ service DuplicatesService {
   rpc SetFaceClusterHidden(SetFaceClusterHiddenRequest) returns (FaceClusterActionResponse);
   rpc ListClusterFaces(ListClusterFacesRequest) returns (ListClusterFacesResponse);
   rpc RemoveFaceFromCluster(RemoveFaceFromClusterRequest) returns (FaceClusterActionResponse);
+  rpc SetFaceClusterCover(SetFaceClusterCoverRequest) returns (FaceClusterActionResponse);
   // Fetch more files for a single day (horizontal-scroll pagination within a
   // day row); offset/limit page over the day's files in taken_time order.
   rpc GetDayFiles(GetDayFilesRequest) returns (GetDayFilesResponse);

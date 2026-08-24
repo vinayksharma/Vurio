@@ -50,6 +50,7 @@ namespace MediaDedup
             c.size = row.size;
             c.cover_face_id = row.cover_face_id;
             c.cover_quality = row.cover_quality;
+            c.cover_pinned = row.cover_pinned;
             c.person_id = row.person_id;
             clusters_[row.id] = std::move(c);
         }
@@ -74,6 +75,7 @@ namespace MediaDedup
         row.size = c.size;
         row.cover_face_id = c.cover_face_id;
         row.cover_quality = c.cover_quality;
+        row.cover_pinned = c.cover_pinned;
         row.person_id = c.person_id;
         FacesOps::updateCluster(*db_, row);
     }
@@ -108,7 +110,8 @@ namespace MediaDedup
                 c.centroid[i] = c.centroid[i] * c.size + embedding[i];
             renormalize(c.centroid);
             c.size++;
-            if (quality > c.cover_quality)
+            // FACE-6: a user-pinned cover is never displaced by quality.
+            if (!c.cover_pinned && quality > c.cover_quality)
             {
                 c.cover_quality = quality;
                 c.cover_face_id = face_id;
@@ -198,10 +201,14 @@ namespace MediaDedup
                         w.centroid[i] = w.centroid[i] * w.size + l.centroid[i] * l.size;
                     renormalize(w.centroid);
                     w.size += l.size;
-                    if (l.cover_quality > w.cover_quality)
+                    // FACE-6: pinned beats unpinned; both pinned keeps the
+                    // winner's; both unpinned falls back to quality.
+                    if (!w.cover_pinned &&
+                        (l.cover_pinned || l.cover_quality > w.cover_quality))
                     {
                         w.cover_quality = l.cover_quality;
                         w.cover_face_id = l.cover_face_id;
+                        w.cover_pinned = l.cover_pinned;
                     }
                     FacesOps::moveClusterMembers(*db_, lose->first, win->first);
                     // Constraints against the dissolved cluster follow the

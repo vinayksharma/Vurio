@@ -74,6 +74,9 @@ namespace MediaDedup
             int size = 0;
             int cover_face_id = 0;
             double cover_quality = 0;
+            // FACE-6: the user pinned this cover; automatic quality-based
+            // re-election must leave it alone while the face is a member.
+            bool cover_pinned = false;
             int person_id = 0; // 0 = unnamed
         };
 
@@ -113,6 +116,8 @@ namespace MediaDedup
             bool hidden = false;
             int person_id = 0;
             std::vector<std::string> aliases; // FACE-5
+            int cover_face_id = 0;    // FACE-6: ring the cover in the popup
+            bool cover_pinned = false; // FACE-6
         };
 
         /// Clusters for the People grid, size desc, with the cover face's
@@ -190,6 +195,17 @@ namespace MediaDedup
 
         /// Recompute size/centroid/cover from current members; deletes the
         /// cluster row when no members remain. Returns false on DB failure.
+        /// FACE-6: a pinned cover survives while the pinned face is still a
+        /// member; once it leaves, the pin clears and quality elects.
         static bool recomputeCluster(DatabaseManager &db, int cluster_id);
+
+        // ---- FACE-6: pinned covers ---------------------------------------
+
+        /// Pin `face_id` as the cluster's representative (cover) face. The
+        /// pin survives every automatic quality-based election and merges;
+        /// it clears only when that face leaves the cluster. Returns false
+        /// when the face is not currently a member (the popup may race the
+        /// sweep re-homing a face).
+        static bool setClusterCover(DatabaseManager &db, int cluster_id, int face_id);
     };
 }
