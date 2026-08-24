@@ -21,6 +21,16 @@ before touching code — the line below is an index entry, not a specification.
   never auto-removed.
   **Full specification: [todo_face_matching_accuracy.md](todo_face_matching_accuracy.md)**
 
+- **STAMP-1 — film-camera date-stamp treatment for the day date/time label.**
+  *Designed 2026-08-24; not yet implemented.*
+  The DSEG7 date/time stamp above each VU day strip (and the VIEWER's day
+  separators — shared `DateStampLabel`) becomes a burned-in film date-back
+  print: true DSEG7 Classic *Italic* (newly bundled, OFL), size 11→9,
+  amber dimmed to 0.72 opacity, two-layer halation glow (tight core +
+  wide halo), and a faint all-segments ghost "8888" layer behind the lit
+  digits. Text format and callers unchanged.
+  **Full specification: [todo_film_date_stamp.md](todo_film_date_stamp.md)**
+
 - **FACE-6 — face-stack popup: click-to-open, inline rename, lens search, pick-the-cover.**
   *Designed 2026-08-24; implemented 2026-08-24 (backend pin plumbing +
   unit tests green, popup reworked, Swift/C++ stubs regenerated).
