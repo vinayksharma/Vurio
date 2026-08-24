@@ -196,8 +196,21 @@ media.face.sweepBatch         (200)   # files per scheduler tick
    fixed at the validator layer: valueless facts skip as noise without
    feeding the distrust heuristic, and accepted fact spans are stripped
    from clip queries when the model echoes the whole query.)
-5. **FACE-5** polish: aliases/nicknames, pets question, video frames —
-   explicitly deferred.
+5. **FACE-5** polish. ✅ aliases (2026-08-24): `person_aliases` table,
+   globally unique NOCASE, canonical names win on collision, aliases
+   ride the naming dialog and RPC (replace-all), orphan cleanup
+   cascades. Search resolves "photos of mom at the beach" once mom is
+   an alias.
+   **Pets: decided, not built** — no local pet-identity embedder exists
+   (ArcFace is human faces); pet names demote to CLIP and search
+   visually, which is the designed behavior. Revisit if a local
+   pet-identity model appears.
+   **Video faces: deferred with reasons** — the library has ZERO videos
+   (every media.video.* type is disabled), the server has no video
+   frame-extraction machinery at all, and the day view excludes videos
+   by design. Face-scanning videos is therefore not polish but the tail
+   end of a video-support program (ingestion → frame extraction →
+   display → then faces); it belongs to that future effort.
 
 ## 8. Testing
 

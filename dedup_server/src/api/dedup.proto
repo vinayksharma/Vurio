@@ -152,6 +152,9 @@ message FaceClusterInfo {
   double cover_w = 8;
   double cover_h = 9;
   bool hidden = 10;
+  // FACE-5: the person's alternative names ("mom", "ma"); search resolves
+  // them like the canonical name (canonical wins on collision).
+  repeated string aliases = 11;
 }
 
 message ListFaceClustersRequest {
@@ -165,6 +168,7 @@ message ListFaceClustersResponse {
 message NameFaceClusterRequest {
   int32 cluster_id = 1;
   string name = 2; // empty clears the name
+  repeated string aliases = 3; // FACE-5: replaces the person's alias set
 }
 
 message MergeFaceClustersRequest {

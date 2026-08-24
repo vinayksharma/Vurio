@@ -111,6 +111,8 @@ namespace MediaDedup
             std::string cover_file_path;
             double cover_x = 0, cover_y = 0, cover_w = 0, cover_h = 0;
             bool hidden = false;
+            int person_id = 0;
+            std::vector<std::string> aliases; // FACE-5
         };
 
         /// Clusters for the People grid, size desc, with the cover face's
@@ -138,7 +140,17 @@ namespace MediaDedup
         /// QP-2: case-insensitive persons.name lookup (0 = unknown). The
         /// search validator resolves person facts through this — names are
         /// runtime user data and never enter the LLM prompt.
+        /// Canonical names win over aliases when both exist.
         static int personIdByName(DatabaseManager &db, const std::string &name);
+
+        // ---- FACE-5: aliases ---------------------------------------------
+
+        /// Replace a person's aliases. Aliases are globally unique (an
+        /// alias resolves to exactly one person); one already claimed by
+        /// another person is skipped, never stolen.
+        static bool setPersonAliases(DatabaseManager &db, int person_id,
+                                     const std::vector<std::string> &aliases);
+        static std::vector<std::string> listPersonAliases(DatabaseManager &db, int person_id);
 
         // ---- FACE-3b: per-face corrections -------------------------------
 

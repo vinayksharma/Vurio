@@ -314,6 +314,8 @@ public:
             p->set_cover_w(c.cover_w);
             p->set_cover_h(c.cover_h);
             p->set_hidden(c.hidden);
+            for (const auto& a : c.aliases)
+                p->add_aliases(a);
         }
         return grpc::Status::OK;
     }
@@ -321,7 +323,17 @@ public:
     grpc::Status NameFaceCluster(grpc::ServerContext*, const vurio::dedup::NameFaceClusterRequest* request,
                                  vurio::dedup::FaceClusterActionResponse* reply) override {
         if (!db_) return grpc::Status(grpc::StatusCode::INTERNAL, "Database missing");
-        const bool ok = MediaDedup::FacesOps::nameCluster(*db_, request->cluster_id(), request->name());
+        bool ok = MediaDedup::FacesOps::nameCluster(*db_, request->cluster_id(), request->name());
+        // FACE-5: aliases ride the same call (replace-all semantics). Only
+        // meaningful while the cluster is named.
+        if (ok && !request->name().empty()) {
+            const int pid = MediaDedup::FacesOps::personIdByName(*db_, request->name());
+            if (pid > 0) {
+                std::vector<std::string> aliases(request->aliases().begin(),
+                                                 request->aliases().end());
+                ok = MediaDedup::FacesOps::setPersonAliases(*db_, pid, aliases);
+            }
+        }
         reply->set_success(ok);
         if (!ok) reply->set_error_message("Failed to name cluster");
         return grpc::Status::OK;

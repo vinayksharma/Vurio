@@ -43,11 +43,12 @@ final class PeopleViewModel: ObservableObject {
         }
     }
 
-    func rename(_ id: Int32, to name: String) async {
+    func rename(_ id: Int32, to name: String, aliases: [String] = []) async {
         await action { client in
             let request = Vurio_Dedup_NameFaceClusterRequest.with {
                 $0.clusterID = id
                 $0.name = name
+                $0.aliases = aliases
             }
             return try await client.nameFaceCluster(request)
         }
@@ -183,6 +184,7 @@ struct PeopleView: View {
     @StateObject private var model = PeopleViewModel()
     @State private var renaming: Vurio_Dedup_FaceClusterInfo? = nil
     @State private var renameText = ""
+    @State private var aliasText = "" // FACE-5: comma-separated aliases
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)]
 
@@ -241,13 +243,20 @@ struct PeopleView: View {
             set: { if !$0 { renaming = nil } }
         )) {
             TextField("Name", text: $renameText)
+            TextField("Aliases (comma separated) — e.g. mom, ma", text: $aliasText)
             Button("Save") {
                 if let cluster = renaming {
-                    Task { await model.rename(cluster.id, to: renameText) }
+                    let aliases = aliasText
+                        .split(separator: ",")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty }
+                    Task { await model.rename(cluster.id, to: renameText, aliases: aliases) }
                 }
                 renaming = nil
             }
             Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("Search understands aliases too: \"photos of mom at the beach\".")
         }
     }
 
@@ -326,6 +335,7 @@ struct PeopleView: View {
         .contextMenu {
             Button(cluster.name.isEmpty ? "Name…" : "Rename…") {
                 renameText = cluster.name
+                aliasText = cluster.aliases.joined(separator: ", ")
                 renaming = cluster
             }
             Button("Review faces…") {

@@ -73,7 +73,12 @@ namespace MediaDedup
               // no-op when present, keeping one migration list.
               "CREATE TABLE IF NOT EXISTS face_cannot_link ("
               "face_id INTEGER NOT NULL, cluster_id INTEGER NOT NULL, "
-              "PRIMARY KEY (face_id, cluster_id)) WITHOUT ROWID"})
+              "PRIMARY KEY (face_id, cluster_id)) WITHOUT ROWID",
+              // FACE-5: alternative names ("mom" -> Alice). Globally unique:
+              // an alias resolves to exactly one person.
+              "CREATE TABLE IF NOT EXISTS person_aliases ("
+              "alias TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, "
+              "person_id INTEGER NOT NULL) WITHOUT ROWID"})
         {
             try
             {
@@ -420,7 +425,8 @@ namespace MediaDedup
                 "  (SELECT COUNT(DISTINCT f.file_id) FROM faces f WHERE f.cluster_id = c.id), "
                 "  COALESCE(sf.file_path, ''), "
                 "  COALESCE(cf.bbox_x, 0), COALESCE(cf.bbox_y, 0), "
-                "  COALESCE(cf.bbox_w, 0), COALESCE(cf.bbox_h, 0), c.hidden "
+                "  COALESCE(cf.bbox_w, 0), COALESCE(cf.bbox_h, 0), c.hidden, "
+                "  COALESCE(c.person_id, 0) "
                 "FROM face_clusters c "
                 "LEFT JOIN persons p ON p.id = c.person_id "
                 "LEFT JOIN faces cf ON cf.id = c.cover_face_id "
@@ -444,6 +450,7 @@ namespace MediaDedup
                 c.cover_w = rs[7].convert<double>();
                 c.cover_h = rs[8].convert<double>();
                 c.hidden = rs[9].convert<int>() != 0;
+                c.person_id = rs[10].convert<int>();
                 out.push_back(std::move(c));
             }
         }
@@ -451,6 +458,9 @@ namespace MediaDedup
         {
             Poco::Logger::get("FacesOps").error("listClusterInfos: %s", std::string(e.what()));
         }
+        for (auto &c : out)
+            if (c.person_id > 0)
+                c.aliases = listPersonAliases(db, c.person_id);
         return out;
     }
 
@@ -502,6 +512,11 @@ namespace MediaDedup
                 int op = old_person;
                 del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
                        "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
+                    use(op), use(op), now;
+                // FACE-5: a removed person takes its aliases with it.
+                Poco::Data::Statement dela(sess);
+                dela << "DELETE FROM person_aliases WHERE person_id = ? AND NOT EXISTS "
+                        "(SELECT 1 FROM persons WHERE id = ?)",
                     use(op), use(op), now;
             }
             return true;
@@ -622,14 +637,64 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             std::string n = name;
             Poco::Data::Statement stmt(sess);
+            // Canonical names win over aliases when both exist.
             stmt << "SELECT id FROM persons WHERE name = ? COLLATE NOCASE LIMIT 1",
                 use(n), into(id), now;
+            if (id <= 0)
+            {
+                Poco::Data::Statement alias(sess);
+                alias << "SELECT person_id FROM person_aliases WHERE alias = ? LIMIT 1",
+                    use(n), into(id), now;
+            }
         }
         catch (const std::exception &e)
         {
             Poco::Logger::get("FacesOps").error("personIdByName: %s", std::string(e.what()));
         }
         return id;
+    }
+
+    bool FacesOps::setPersonAliases(DatabaseManager &db, int person_id,
+                                    const std::vector<std::string> &aliases)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "setPersonAliases", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int pid = person_id;
+            Poco::Data::Statement del(sess);
+            del << "DELETE FROM person_aliases WHERE person_id = ?", use(pid), now;
+            for (const auto &a : aliases)
+            {
+                if (a.empty())
+                    continue;
+                std::string alias = a;
+                Poco::Data::Statement ins(sess);
+                // OR IGNORE: an alias already claimed by another person is
+                // skipped, never stolen.
+                ins << "INSERT OR IGNORE INTO person_aliases (alias, person_id) VALUES (?, ?)",
+                    use(alias), use(pid), now;
+            }
+            return true;
+        });
+    }
+
+    std::vector<std::string> FacesOps::listPersonAliases(DatabaseManager &db, int person_id)
+    {
+        std::vector<std::string> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int pid = person_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT alias FROM person_aliases WHERE person_id = ? ORDER BY alias",
+                use(pid), into(out), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listPersonAliases: %s", std::string(e.what()));
+        }
+        return out;
     }
 
     // ---- FACE-3b: per-face corrections -----------------------------------

@@ -310,6 +310,10 @@ struct Vurio_Dedup_FaceClusterInfo: Sendable {
 
   var hidden: Bool = false
 
+  /// FACE-5: the person's alternative names ("mom", "ma"); search resolves
+  /// them like the canonical name (canonical wins on collision).
+  var aliases: [String] = []
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -349,6 +353,9 @@ struct Vurio_Dedup_NameFaceClusterRequest: Sendable {
 
   /// empty clears the name
   var name: String = String()
+
+  /// FACE-5: replaces the person's alias set
+  var aliases: [String] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1726,7 +1733,7 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".FaceClusterInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0\u{1}aliases\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1744,6 +1751,7 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 8: try { try decoder.decodeSingularDoubleField(value: &self.coverW) }()
       case 9: try { try decoder.decodeSingularDoubleField(value: &self.coverH) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.hidden) }()
+      case 11: try { try decoder.decodeRepeatedStringField(value: &self.aliases) }()
       default: break
       }
     }
@@ -1780,6 +1788,9 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.hidden != false {
       try visitor.visitSingularBoolField(value: self.hidden, fieldNumber: 10)
     }
+    if !self.aliases.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.aliases, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1794,6 +1805,7 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.coverW != rhs.coverW {return false}
     if lhs.coverH != rhs.coverH {return false}
     if lhs.hidden != rhs.hidden {return false}
+    if lhs.aliases != rhs.aliases {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1861,7 +1873,7 @@ extension Vurio_Dedup_ListFaceClustersResponse: SwiftProtobuf.Message, SwiftProt
 
 extension Vurio_Dedup_NameFaceClusterRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".NameFaceClusterRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0\u{1}name\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cluster_id\0\u{1}name\0\u{1}aliases\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1871,6 +1883,7 @@ extension Vurio_Dedup_NameFaceClusterRequest: SwiftProtobuf.Message, SwiftProtob
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularInt32Field(value: &self.clusterID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeRepeatedStringField(value: &self.aliases) }()
       default: break
       }
     }
@@ -1883,12 +1896,16 @@ extension Vurio_Dedup_NameFaceClusterRequest: SwiftProtobuf.Message, SwiftProtob
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
     }
+    if !self.aliases.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.aliases, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_NameFaceClusterRequest, rhs: Vurio_Dedup_NameFaceClusterRequest) -> Bool {
     if lhs.clusterID != rhs.clusterID {return false}
     if lhs.name != rhs.name {return false}
+    if lhs.aliases != rhs.aliases {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

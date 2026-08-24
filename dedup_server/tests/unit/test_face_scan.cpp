@@ -562,6 +562,47 @@ namespace MediaDedup
             EXPECT_EQ(faces[0].file_path, "/nowhere/t.jpg");
         }
 
+        // ---- FACE-5: aliases --------------------------------------------
+
+        TEST_F(FaceScanTest, AliasesResolveAndFollowThePerson)
+        {
+            int fid = insertProcessed("/nowhere/u.jpg");
+            FacesOps::FaceRow r;
+            r.file_id = fid;
+            r.quality = 0.9;
+            auto v = unit4(1, 0, 0, 0);
+            r.embedding.resize(v.size() * sizeof(float));
+            std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+            const int face = FacesOps::insertFace(*db_, r);
+            FaceClusterer cl(db_.get(), {});
+            cl.load();
+            const int c1 = cl.assign(face, v, 0.9);
+            ASSERT_GT(c1, 0);
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            const int alice = FacesOps::personIdByName(*db_, "alice");
+            ASSERT_GT(alice, 0);
+
+            ASSERT_TRUE(FacesOps::setPersonAliases(*db_, alice, {"mom", "Ma"}));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "mom"), alice);
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "MA"), alice); // NOCASE
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "dad"), 0);
+
+            // Aliases surface on the cluster info for the UI prefill.
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].aliases, (std::vector<std::string>{"Ma", "mom"}));
+
+            // Canonical names win over a colliding alias: an alias "alice"
+            // for a second person must not shadow the real Alice.
+            ASSERT_TRUE(FacesOps::setPersonAliases(*db_, alice, {"mom"}));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "ma"), 0); // replaced set
+
+            // Renaming away removes the orphaned person AND its aliases.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, ""));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "alice"), 0);
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "mom"), 0);
+        }
+
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)
         {
             auto img = tempImagePath("face_bad.jpg");

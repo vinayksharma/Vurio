@@ -42,7 +42,12 @@ before touching code — the line below is an index entry, not a specification.
   person drill-down into the VU day view. FACE-4 (QP-2) implemented
   2026-08-23: "photos of alice at the beach" and "group photos with 3
   people from 2020" parse to person/face_count filters; unresolved names
-  demote to CLIP; regex fallback handles scaffolded known names. Model:
+  demote to CLIP; regex fallback handles scaffolded known names. FACE-3b
+  (2026-08-24): per-face "not this person" + cannot-links (bidirectional
+  merge blocking). FACE-5 (2026-08-24): person aliases ("mom" -> Alice);
+  pets stay CLIP's job (no local pet-identity model); video faces
+  deferred to a future video-support program (library has no videos,
+  no frame extraction exists, day view excludes videos). Model:
   AuraFace-v1 glintr100 (Apache-2.0) at models/face-embed.onnx;
   media.face.enabled is on. Decisions: Apple Vision detection
   (hybrid with a small ONNX identity embedder — Vision has no public
