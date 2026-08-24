@@ -165,7 +165,8 @@ final class PeopleViewModel: ObservableObject {
 
     /// FACE-6: pin a face as the cluster's representative (cover) face; the
     /// pin survives automatic quality elections until that face leaves the
-    /// cluster. Closes the popup — the card updates on the reload.
+    /// cluster. The popup stages picks and commits on Done — closing is the
+    /// caller's business, not the RPC's.
     func setCover(cluster clusterId: Int32, face faceId: Int32) async {
         await action { client in
             let request = Vurio_Dedup_SetFaceClusterCoverRequest.with {
@@ -174,7 +175,6 @@ final class PeopleViewModel: ObservableObject {
             }
             return try await client.setFaceClusterCover(request)
         }
-        reviewing = nil
     }
 
     /// "Not this person": the server records a cannot-link, recomputes the
@@ -262,13 +262,12 @@ struct PeopleView: View {
     @State private var renameText = ""
     @State private var aliasText = "" // FACE-5: comma-separated aliases
 
-    // FACE-6: the popup's inline name/alias editor. The committed values
-    // are what the server last accepted (or the seed); losing focus
-    // without Enter reverts to them — no silent saves.
+    // FACE-6 (revised): the popup is transactional — name, aliases, and
+    // the staged representative (cover) pick live here until Done commits
+    // them; Escape (or any close that isn't Done) discards.
     @State private var sheetNameText = ""
     @State private var sheetAliasText = ""
-    @State private var committedName = ""
-    @State private var committedAliases = ""
+    @State private var selectedCoverID: Int32? = nil
     @State private var showAliases = false
     @State private var lensHovering = false
     @FocusState private var nameFieldFocused: Bool
@@ -397,69 +396,75 @@ struct PeopleView: View {
         }
     }
 
-    // FACE-6: the face-stack popup — the person's home. Inline rename in
-    // the header, a lens that runs the person's VU search, click a face to
-    // pin it as the cover, right-click one that isn't them to detach it
-    // (the FACE-3b cannot-link path).
+    // FACE-6 (revised): the face-stack popup — the person's transactional
+    // editor. The header shows the (staged) representative face next to the
+    // name; clicking a face in the grid only stages it. Done is the single
+    // commit point (cover first, then name+aliases); Escape discards.
     @ViewBuilder
     private var reviewSheet: some View {
         VStack(spacing: 0) {
             if let cluster = model.reviewing {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        TextField("Unnamed", text: $sheetNameText)
-                            .textFieldStyle(.plain)
-                            .font(.headline)
-                            .focused($nameFieldFocused)
-                            .onSubmit { commitRename(cluster) }
-                            .frame(maxWidth: 220)
-                        Button {
-                            if !showAliases {
-                                // Seed the editor from the live alias set at
-                                // open time — popup-open state can't go stale.
-                                sheetAliasText = cluster.aliases.joined(separator: ", ")
-                                committedAliases = sheetAliasText
+                    HStack(spacing: 10) {
+                        stagedCover(cluster)
+                            .frame(width: 44, height: 44)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(
+                                selectedCoverID != nil ? Theme.accent : Theme.border,
+                                lineWidth: selectedCoverID != nil ? 2 : 1))
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                TextField("Unnamed", text: $sheetNameText)
+                                    .textFieldStyle(.plain)
+                                    .font(.headline)
+                                    .focused($nameFieldFocused)
+                                    .onSubmit { nameFieldFocused = false } // stage only
+                                    .frame(maxWidth: 220)
+                                Button {
+                                    if !showAliases {
+                                        sheetAliasText = cluster.aliases.joined(separator: ", ")
+                                    }
+                                    withAnimation { showAliases.toggle() }
+                                } label: {
+                                    HStack(spacing: 2) {
+                                        Text("aka…")
+                                        Image(systemName: showAliases ? "chevron.down" : "chevron.right")
+                                            .font(.system(size: 8))
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                }
+                                .buttonStyle(.plain)
+                                Button {
+                                    let name = cluster.name.isEmpty ? "Unnamed" : cluster.name
+                                    PeopleNavigator.shared.pending = .init(id: cluster.id, name: name)
+                                    model.reviewing = nil
+                                } label: {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(lensHovering ? Theme.textPrimary : Theme.textSecondary)
+                                }
+                                .buttonStyle(.plain)
+                                .onHover { lensHovering = $0 }
+                                .help("Show this person's photos")
                             }
-                            withAnimation { showAliases.toggle() }
-                        } label: {
-                            HStack(spacing: 2) {
-                                Text("aka…")
-                                Image(systemName: showAliases ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 8))
+                            if showAliases {
+                                TextField("Aliases (comma separated) — e.g. mom, ma",
+                                          text: $sheetAliasText)
+                                    .textFieldStyle(.plain)
+                                    .font(.caption)
+                                    .focused($aliasFieldFocused)
+                                    .onSubmit { aliasFieldFocused = false } // stage only
+                            } else if !cluster.aliases.isEmpty {
+                                Text("(\(cluster.aliases.joined(separator: ", ")))")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
                             }
-                            .font(.caption)
-                            .foregroundColor(Theme.textSecondary)
                         }
-                        .buttonStyle(.plain)
-                        Button {
-                            let name = cluster.name.isEmpty ? "Unnamed" : cluster.name
-                            PeopleNavigator.shared.pending = .init(id: cluster.id, name: name)
-                            model.reviewing = nil
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(lensHovering ? Theme.textPrimary : Theme.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { lensHovering = $0 }
-                        .help("Show this person's photos")
                         Spacer()
-                        Button("Done") { model.reviewing = nil }
+                        Button("Done") { commitAndClose(cluster) }
                     }
-                    if showAliases {
-                        TextField("Aliases (comma separated) — e.g. mom, ma",
-                                  text: $sheetAliasText)
-                            .textFieldStyle(.plain)
-                            .font(.caption)
-                            .focused($aliasFieldFocused)
-                            .onSubmit { commitRename(cluster) }
-                    } else if !cluster.aliases.isEmpty {
-                        // The akas at a glance; the chevron opens the editor.
-                        Text("(\(cluster.aliases.joined(separator: ", ")))")
-                            .font(.caption)
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    Text("click a face to make it the cover — right-click one that isn't them")
+                    Text("click a face to choose the cover — right-click one that isn't them. Done applies your changes; Esc discards them.")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }
@@ -468,7 +473,7 @@ struct PeopleView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 100), spacing: 10)],
                               spacing: 10) {
                         ForEach(model.reviewFaces, id: \.faceID) { face in
-                            let isCover = face.faceID == cluster.coverFaceID
+                            let isCover = face.faceID == (selectedCoverID ?? cluster.coverFaceID)
                             // FACE-7d: cover ring wins; a suspect face (low
                             // fit against its own cluster) wears the warning
                             // ring — surfaced for review, never auto-removed.
@@ -485,8 +490,9 @@ struct PeopleView: View {
                                       : "")
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    Task { await model.setCover(cluster: cluster.id,
-                                                                face: face.faceID) }
+                                    // Stage the pick; the header preview
+                                    // updates, nothing commits until Done.
+                                    selectedCoverID = face.faceID
                                 }
                                 .contextMenu {
                                     Button(cluster.name.isEmpty
@@ -504,37 +510,52 @@ struct PeopleView: View {
         }
         .frame(minWidth: 520, minHeight: 420)
         .background(Theme.background)
-        .onChange(of: nameFieldFocused) { _, focused in
-            if !focused { sheetNameText = committedName } // blur without Enter reverts
-        }
-        .onChange(of: aliasFieldFocused) { _, focused in
-            if !focused { sheetAliasText = committedAliases }
+        .onExitCommand { model.reviewing = nil } // Esc: discard staged edits
+        .onChange(of: model.reviewFaces) { _, faces in
+            // A staged pick that got removed ("not this person") is void.
+            if let sel = selectedCoverID, !faces.contains(where: { $0.faceID == sel }) {
+                selectedCoverID = nil
+            }
         }
         .alert("Combine people?", isPresented: Binding(
             get: { sheetPendingMerge != nil },
             set: { if !$0 { sheetPendingMerge = nil } }
         )) {
             Button("Combine") {
-                if let p = sheetPendingMerge {
-                    committedName = p.name
-                    Task { await model.rename(p.clusterId, to: p.name, aliases: p.aliases) }
+                if let p = sheetPendingMerge, let cluster = model.reviewing {
+                    Task { await finishCommit(cluster, name: p.name, aliases: p.aliases,
+                                              renameNeeded: true) }
                 }
                 sheetPendingMerge = nil
             }
-            Button("Cancel", role: .cancel) {
-                sheetNameText = committedName
-                sheetPendingMerge = nil
-            }
+            // Cancel keeps the popup open with everything still staged.
+            Button("Cancel", role: .cancel) { sheetPendingMerge = nil }
         } message: {
             Text("Another group is already named \"\(sheetPendingMerge?.name ?? "")\". Both groups become one person — you can \"Regroup faces\" later to re-sort them.")
         }
     }
 
-    /// Enter in either header field commits name AND aliases together —
-    /// NameFaceClusterRequest.aliases replaces the alias set, so a name-only
-    /// edit must not wipe it: with the alias editor closed, the cluster's
-    /// current aliases are re-sent untouched.
-    private func commitRename(_ cluster: Vurio_Dedup_FaceClusterInfo) {
+    /// The header's representative preview: the staged pick when there is
+    /// one, else the cluster's current cover.
+    @ViewBuilder
+    private func stagedCover(_ cluster: Vurio_Dedup_FaceClusterInfo) -> some View {
+        if let sel = selectedCoverID,
+           let face = model.reviewFaces.first(where: { $0.faceID == sel }) {
+            FaceCropView(filePath: face.filePath,
+                         x: face.x, y: face.y, w: face.w, h: face.h)
+        } else {
+            FaceCropView(filePath: cluster.coverFilePath,
+                         x: cluster.coverX, y: cluster.coverY,
+                         w: cluster.coverW, h: cluster.coverH)
+        }
+    }
+
+    /// Done: the popup's single commit point. The staged cover goes first —
+    /// a FACE-7a merge triggered by the rename then carries the user's pick
+    /// through as a pin — then name+aliases (only when actually changed, so
+    /// a cover-only Done on one of two same-named groups never merges them),
+    /// pausing for the FACE-7e combine confirmation when the name collides.
+    private func commitAndClose(_ cluster: Vurio_Dedup_FaceClusterInfo) {
         let name = sheetNameText.trimmingCharacters(in: .whitespaces)
         let aliases: [String]
         if showAliases {
@@ -542,22 +563,31 @@ struct PeopleView: View {
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
-            committedAliases = sheetAliasText
         } else {
             aliases = cluster.aliases
         }
-        // FACE-7e: a colliding name means the server will merge the groups
-        // — confirm first. committedName only advances once the rename is
-        // actually sent, so Cancel reverts the field.
+        let renameNeeded = name != cluster.name || aliases != cluster.aliases
         Task {
-            if !name.isEmpty, await model.hasOtherCluster(named: name, excluding: cluster.id) {
+            if renameNeeded, !name.isEmpty,
+               await model.hasOtherCluster(named: name, excluding: cluster.id) {
                 sheetPendingMerge = PendingMerge(clusterId: cluster.id, name: name,
                                                 aliases: aliases)
-            } else {
-                committedName = name
-                await model.rename(cluster.id, to: name, aliases: aliases)
+                return
             }
+            await finishCommit(cluster, name: name, aliases: aliases,
+                               renameNeeded: renameNeeded)
         }
+    }
+
+    private func finishCommit(_ cluster: Vurio_Dedup_FaceClusterInfo, name: String,
+                              aliases: [String], renameNeeded: Bool) async {
+        if let sel = selectedCoverID, sel != cluster.coverFaceID {
+            await model.setCover(cluster: cluster.id, face: sel)
+        }
+        if renameNeeded {
+            await model.rename(cluster.id, to: name, aliases: aliases)
+        }
+        model.reviewing = nil
     }
 
     @ViewBuilder
@@ -589,8 +619,7 @@ struct PeopleView: View {
             // the chevron seeds the editor when opened.
             sheetNameText = cluster.name
             sheetAliasText = cluster.aliases.joined(separator: ", ")
-            committedName = cluster.name
-            committedAliases = sheetAliasText
+            selectedCoverID = nil
             showAliases = false
             Task { await model.openReview(cluster) }
         }

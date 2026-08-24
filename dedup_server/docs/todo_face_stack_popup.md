@@ -4,6 +4,19 @@ Status: implemented 2026-08-24 (schema, pin plumbing through all five
 election sites, `SetFaceClusterCover` RPC, popup rework, §5 unit tests);
 remaining before Done: the §6 manual pass on the live library.
 
+Revised 2026-08-24 (transactional popup, supersedes §2.2/§2.3 commit
+semantics): the popup stages every edit locally — the name, the aliases,
+and the representative (cover) pick. Clicking a face no longer commits or
+closes; it stages the pick and updates a cover preview shown in the header
+next to the name. **Done is the single commit point** (cover first, so a
+FACE-7a same-name merge triggered by the rename carries the pick through
+as a pin; then name+aliases, only when actually changed; pausing for the
+FACE-7e combine confirmation on a colliding name). **Escape — or any
+close that isn't Done — discards** all staged edits. Enter in the fields
+only drops focus. This replaced the Enter-commits/blur-reverts design,
+whose typed-then-clicked-Done edits were silently discarded and read as
+"renaming doesn't work".
+
 Manual-pass fixes (2026-08-24): the header shows the akas under the name
 in brackets, and the alias editor is seeded when the chevron opens it (the
 old open-popup-time seeding went stale on the second open); a name-only
