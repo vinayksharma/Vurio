@@ -9,9 +9,14 @@ struct VurioApp: App {
     init() {
         // Run as a regular macOS app so it has a menu and dock icon, and can be brought to foreground
         NSApplication.shared.setActivationPolicy(.regular)
-        // Bundled 7-segment font for the day-view date stamps ("DSEG7 Classic").
-        if let fontURL = Bundle.module.url(forResource: "DSEG7Classic-Regular", withExtension: "ttf", subdirectory: "Fonts") {
-            CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+        // Bundled 7-segment fonts for the day-view date stamps ("DSEG7
+        // Classic"). STAMP-1 renders with the true Italic — slanted segments
+        // like a real quartz date-back; the Regular stays registered for
+        // anything else that asks for the upright face.
+        for face in ["DSEG7Classic-Regular", "DSEG7Classic-Italic"] {
+            if let fontURL = Bundle.module.url(forResource: face, withExtension: "ttf", subdirectory: "Fonts") {
+                CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+            }
         }
         // Connect to the C++ backend via UDS
         VurioGrpcClient.shared.connect()

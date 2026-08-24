@@ -1,6 +1,9 @@
 # STAMP-1 — Film-camera date-stamp treatment for the day date/time label
 
-Status: designed 2026-08-24, not yet implemented.
+Status: implemented 2026-08-24 (Italic v0.46 bundled + registered,
+DateStampLabel reworked per §3, viewer size override dropped; PostScript
+name and ghost/lit width identity verified programmatically). Remaining
+before Done: the §5 visual pass / opacity tuning by eye.
 Scope: `swift_ui/` only. Applies to **both** consumers of the shared
 `DateStampLabel` — the VU day strips and the VIEWER tab's day separators
 (decision: restyle the shared component once, keep the surfaces consistent).

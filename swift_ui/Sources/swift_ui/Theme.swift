@@ -25,17 +25,43 @@ struct Theme {
     static let dateStampAmber = Color(hex: "#FFB000")
 }
 
-// 7-segment "date stamp" label used on day panels (ALL view). Renders with the
-// bundled DSEG7 Classic font registered at app startup.
+// 7-segment "date stamp" label used on day panels (ALL view) and the
+// VIEWER's day separators. STAMP-1: styled as the burned-in quartz
+// date-back print on old film photos — true-italic DSEG7 segments, small
+// and dim, two-layer phosphor bloom, and the faint all-segments ghost
+// "8888" that real LED date-backs show behind the lit digits.
 struct DateStampLabel: View {
     let text: String
-    var size: CGFloat = 11
+    var size: CGFloat = 9
+
+    // The face's PostScript name — the family+trait route through
+    // .custom does not reliably resolve the italic.
+    private var stampFont: Font { .custom("DSEG7Classic-Italic", size: size) }
+    private var amber: Color { Theme.dateStampAmber }
 
     var body: some View {
-        Text(text)
-            .font(.custom("DSEG7 Classic", size: size))
-            .foregroundColor(Theme.dateStampAmber)
-            .shadow(color: Theme.dateStampAmber.opacity(0.6), radius: 3)
+        ZStack(alignment: .leading) {
+            // Ghost layer: every digit as "8" (all seven segments on).
+            // DSEG7 draws each character in an identical fixed cell, so the
+            // two layers align cell for cell — no offset, no width change.
+            Text(ghostText)
+                .font(stampFont)
+                .foregroundColor(amber.opacity(0.08))
+            // Lit layer, dimmed like underexposed film; the tight shadow
+            // fattens the 9 pt segments back to lit-LED weight, the wide
+            // one is the halation into the emulsion.
+            Text(text)
+                .font(stampFont)
+                .foregroundColor(amber.opacity(0.72))
+                .shadow(color: amber.opacity(0.85), radius: 1.5)
+                .shadow(color: amber.opacity(0.45), radius: 6)
+        }
+    }
+
+    private var ghostText: String {
+        // Non-digit cells (-, :, spaces) pass through — DSEG renders them
+        // in their own cells, so widths stay identical.
+        String(text.map { $0.isASCII && $0.isNumber ? "8" : $0 })
     }
 }
 
