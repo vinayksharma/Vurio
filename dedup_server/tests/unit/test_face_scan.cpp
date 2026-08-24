@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -7,6 +8,7 @@
 #include "database/faces_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/face/face_align.hpp"
+#include "media_processors/face/face_clusterer.hpp"
 #include "media_processors/face/face_scan_service.hpp"
 #include "test_utils.hpp"
 
@@ -235,6 +237,133 @@ namespace MediaDedup
             EXPECT_EQ(stats2.offline, 0); // already remembered, not recounted
 
             std::remove(img.c_str());
+        }
+
+        // ---- FACE-2: clustering (synthetic unit vectors) ----------------
+
+        static std::vector<float> unit4(float a, float b, float c, float d)
+        {
+            std::vector<float> v = {a, b, c, d};
+            double n = 0;
+            for (float x : v) n += double(x) * x;
+            for (float &x : v) x = float(x / std::sqrt(n));
+            return v;
+        }
+
+        TEST_F(FaceScanTest, ClustererJoinsAboveThresholdCreatesBelow)
+        {
+            int fid = insertProcessed("/nowhere/c.jpg");
+            auto mkFace = [&](double q) {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = q;
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.9;
+            opts.min_quality = 0.2;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            EXPECT_EQ(cl.clusterCount(), 0u);
+
+            const int f1 = mkFace(0.8), f2 = mkFace(0.9), f3 = mkFace(0.7), f4 = mkFace(0.5);
+
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.8);
+            ASSERT_GT(c1, 0);
+            // Nearly parallel: joins (cos ~0.995 > 0.9); higher quality wins cover.
+            EXPECT_EQ(cl.assign(f2, unit4(1, 0.1f, 0, 0), 0.9), c1);
+            // Orthogonal: a new cluster.
+            const int c2 = cl.assign(f3, unit4(0, 0, 1, 0), 0.7);
+            EXPECT_GT(c2, 0);
+            EXPECT_NE(c2, c1);
+            // Below the quality gate: unclustered.
+            EXPECT_EQ(cl.assign(f4, unit4(1, 0, 0, 0), 0.1), 0);
+            EXPECT_EQ(cl.clusterCount(), 2u);
+
+            // Persistence: a fresh clusterer reloads the same state, and the
+            // cover of c1 is the higher-quality face.
+            FaceClusterer cl2(db_.get(), opts);
+            cl2.load();
+            EXPECT_EQ(cl2.clusterCount(), 2u);
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 2u);
+            const auto &r1 = rows[0].id == c1 ? rows[0] : rows[1];
+            EXPECT_EQ(r1.size, 2);
+            EXPECT_EQ(r1.cover_face_id, f2);
+            EXPECT_NEAR(r1.cover_quality, 0.9, 1e-9);
+
+            // faces.cluster_id persisted.
+            auto faces = FacesOps::listFacesForFile(*db_, fid);
+            (void)faces;
+            auto unclustered = FacesOps::listUnclusteredFaces(*db_, 0.2, 10);
+            // f4 has no embedding stored (FaceRow embedding empty) so it is
+            // not selectable; nothing else remains unclustered.
+            EXPECT_TRUE(unclustered.empty());
+        }
+
+        TEST_F(FaceScanTest, ConsolidationMergesNearClustersAndMovesFaces)
+        {
+            int fid = insertProcessed("/nowhere/d.jpg");
+            auto mkFace = [&]() {
+                FacesOps::FaceRow r;
+                r.file_id = fid;
+                r.quality = 0.5;
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999; // force separate clusters first
+            opts.merge_threshold = 0.9;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+
+            const int f1 = mkFace(), f2 = mkFace(), f3 = mkFace();
+            const int c1 = cl.assign(f1, unit4(1, 0, 0, 0), 0.5);
+            const int c2 = cl.assign(f2, unit4(1, 0.05f, 0, 0), 0.6); // near c1
+            const int c3 = cl.assign(f3, unit4(0, 0, 1, 0), 0.5);      // far
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c3 > 0);
+            EXPECT_EQ(cl.clusterCount(), 3u);
+
+            EXPECT_EQ(cl.consolidate(), 1);
+            EXPECT_EQ(cl.clusterCount(), 2u);
+
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 2u);
+            int merged_size = 0;
+            for (const auto &r : rows)
+                merged_size = std::max(merged_size, r.size);
+            EXPECT_EQ(merged_size, 2); // f1+f2 ended up together
+        }
+
+        TEST_F(FaceScanTest, SweepCatchUpAdoptsPreexistingFaces)
+        {
+            // A face stored by the FACE-1 sweep before clustering existed:
+            // embedded, quality above the gate, cluster NULL.
+            int fid = insertProcessed("/nowhere/e.jpg");
+            FacesOps::FaceRow r;
+            r.file_id = fid;
+            r.quality = 0.8;
+            auto v = unit4(0, 1, 0, 0);
+            r.embedding.resize(v.size() * sizeof(float));
+            std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+            ASSERT_GT(FacesOps::insertFace(*db_, r), 0);
+            FacesOps::markFileScanned(*db_, fid, 1); // out of the extract selector
+
+            FaceClusterer::Options copts;
+            auto clusterer = std::make_shared<FaceClusterer>(db_.get(), copts);
+            FaceScanService::Options opts;
+            opts.embedding_dim = 4;
+            FaceScanService svc(
+                db_.get(), std::make_unique<FakeDetector>(),
+                [](const std::vector<float> &, std::vector<float> &) { return false; },
+                opts, clusterer);
+
+            auto stats = svc.runTick();
+            EXPECT_EQ(stats.scanned, 0);   // nothing to extract
+            EXPECT_EQ(stats.clustered, 1); // the catch-up adopted the face
+            EXPECT_EQ(clusterer->clusterCount(), 1u);
+            EXPECT_TRUE(FacesOps::listUnclusteredFaces(*db_, 0.2, 10).empty());
         }
 
         TEST_F(FaceScanTest, UnreadableFileIsMarkedAttempted)

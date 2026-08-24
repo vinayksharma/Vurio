@@ -5,6 +5,7 @@
 // is constructible from tests (which previously documented being unable to
 // instantiate the TU-private impls).
 
+#include "database/faces_ops.hpp"
 #include "core/grpc_server/grpc_service_common.hpp"
 // repairProgress() is called inline below, so the full type is needed.
 #include "orchestration/duplicate_finder.hpp"
@@ -21,11 +22,13 @@ class MediaLocationsServiceImpl final : public vurio::dedup::MediaLocationsServi
     // Read only for repairProgress() — in-memory atomics, no DB work on
     // the 2 s status poll. Optional: null in tests and if the finder is disabled.
     std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder_;
+    bool face_scan_enabled_ = false;
 public:
     explicit MediaLocationsServiceImpl(std::shared_ptr<FilesService> f, std::shared_ptr<ThreadPoolManager> tpm, DatabaseManager* db, std::shared_ptr<MediaDedup::Orchestration::SchedulerService> scheduler,
-                                       std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder = nullptr)
+                                       std::shared_ptr<MediaDedup::Orchestration::DuplicateFinder> duplicate_finder = nullptr,
+                                       bool face_scan_enabled = false)
         : files_(std::move(f)), tpm_(std::move(tpm)), db_(db), scheduler_(std::move(scheduler)),
-          duplicate_finder_(std::move(duplicate_finder)) {}
+          duplicate_finder_(std::move(duplicate_finder)), face_scan_enabled_(face_scan_enabled) {}
 
     grpc::Status GetStatus(grpc::ServerContext* context, const vurio::dedup::GetStatusRequest* request,
                            vurio::dedup::GetStatusResponse* reply) override {
@@ -72,6 +75,16 @@ public:
             auto repair = duplicate_finder_->repairProgress();
             reply->set_repair_total(repair.total);
             reply->set_repair_completed(repair.completed);
+        }
+        // FACE-1: sweep progress for the status bar's thin overlay. Only
+        // reported while the feature is on — a disabled sweep must not
+        // render as a permanently stuck indicator.
+        if (face_scan_enabled_ && db_) {
+            int face_total = 0, face_done = 0;
+            if (MediaDedup::FacesOps::scanProgress(*db_, face_total, face_done)) {
+                reply->set_face_scan_total(face_total);
+                reply->set_face_scan_completed(face_done);
+            }
         }
 
         return grpc::Status::OK;

@@ -127,6 +127,12 @@ message GetStatusResponse {
   // is the signal the UI uses to hide the indicator entirely.
   int32 repair_total = 13;
   int32 repair_completed = 14;
+  // FACE-1 sweep progress: eligible images vs images already face-scanned
+  // at the current version. Rendered as a thin overlay on the status bar
+  // (the repair-indicator pattern); equal (or zero) = hidden. Both stay 0
+  // when media.face.enabled is off.
+  int32 face_scan_total = 15;
+  int32 face_scan_completed = 16;
 }
 
 // ---------------------------------------------------------

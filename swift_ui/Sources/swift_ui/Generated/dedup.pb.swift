@@ -268,6 +268,14 @@ struct Vurio_Dedup_GetStatusResponse: Sendable {
 
   var repairCompleted: Int32 = 0
 
+  /// FACE-1 sweep progress: eligible images vs images already face-scanned
+  /// at the current version. Rendered as a thin overlay on the status bar
+  /// (the repair-indicator pattern); equal (or zero) = hidden. Both stay 0
+  /// when media.face.enabled is off.
+  var faceScanTotal: Int32 = 0
+
+  var faceScanCompleted: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -429,10 +437,11 @@ struct Vurio_Dedup_GetDayGroupsRequest: Sendable {
   /// file appears on its own capture day (group anchoring is bypassed).
   var searchQuery: String = String()
 
-  /// Post-filter of the search result by match source (the ai/xf toggles).
-  /// Only-ai keeps files matched EXCLUSIVELY by the semantic half (ai and
-  /// not xf); only-xf the reverse; both = OR (the whole result set). Both
-  /// false (an older client) also means no filter.
+  /// The ai/xf toggles: select which PIPELINE answers the query. Only-ai
+  /// re-runs it as pure CLIP over the parsed semantic part (facts ignored);
+  /// only-xf as the fact algebra alone (no facts parsed => empty result).
+  /// Both true — or both false, from an older client — is the hybrid
+  /// default.
   var searchIncludeAi: Bool = false
 
   var searchIncludeExif: Bool = false
@@ -1417,7 +1426,7 @@ extension Vurio_Dedup_GetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0\u{3}repair_total\0\u{3}repair_completed\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}registered_dirs\0\u{3}scanned_files_count\0\u{3}processed_files_count\0\u{3}error_files_count\0\u{3}thread_count\0\u{3}max_threads\0\u{3}duplicate_groups_count\0\u{3}ejected_dirs\0\u{3}duplicate_files_count\0\u{3}duplicate_finding_total\0\u{3}duplicate_finding_completed\0\u{3}is_paused\0\u{3}repair_total\0\u{3}repair_completed\0\u{3}face_scan_total\0\u{3}face_scan_completed\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1439,6 +1448,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       case 12: try { try decoder.decodeSingularBoolField(value: &self.isPaused) }()
       case 13: try { try decoder.decodeSingularInt32Field(value: &self.repairTotal) }()
       case 14: try { try decoder.decodeSingularInt32Field(value: &self.repairCompleted) }()
+      case 15: try { try decoder.decodeSingularInt32Field(value: &self.faceScanTotal) }()
+      case 16: try { try decoder.decodeSingularInt32Field(value: &self.faceScanCompleted) }()
       default: break
       }
     }
@@ -1487,6 +1498,12 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if self.repairCompleted != 0 {
       try visitor.visitSingularInt32Field(value: self.repairCompleted, fieldNumber: 14)
     }
+    if self.faceScanTotal != 0 {
+      try visitor.visitSingularInt32Field(value: self.faceScanTotal, fieldNumber: 15)
+    }
+    if self.faceScanCompleted != 0 {
+      try visitor.visitSingularInt32Field(value: self.faceScanCompleted, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1505,6 +1522,8 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.isPaused != rhs.isPaused {return false}
     if lhs.repairTotal != rhs.repairTotal {return false}
     if lhs.repairCompleted != rhs.repairCompleted {return false}
+    if lhs.faceScanTotal != rhs.faceScanTotal {return false}
+    if lhs.faceScanCompleted != rhs.faceScanCompleted {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

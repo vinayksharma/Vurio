@@ -3,7 +3,9 @@
 Status: designed 2026-08-23. FACE-1 implemented 2026-08-23 on
 `feature/face1_extraction` (schema, Vision detector, alignment, ONNX
 embedder hook, sweep job; live-verified detection+alignment on real
-photos). FACE-2..5 not started. Depends on nothing new; QP-1's
+photos). FACE-2 implemented 2026-08-23 (centroid clustering in the
+sweep + consolidation + status-bar progress overlay). FACE-3..5 not
+started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
 Decisions (user, 2026-08-23):
@@ -160,7 +162,12 @@ media.face.sweepBatch         (200)   # files per scheduler tick
 1. **FACE-1** schema + Vision detector + ONNX embedder + sweep job. ✅
    (Deviation: vec_face_index moved to FACE-2 — it has no reader until
    clustering, and its reconcile can backfill from faces.embedding.)
-2. **FACE-2** incremental clustering + consolidation + constraints.
+2. **FACE-2** incremental clustering + consolidation. ✅ (Deviations:
+   centroid-based assignment instead of vec_face_index KNN — centroids
+   resist single-linkage chaining and need no index, so vec_face_index
+   is deferred until a real reader exists; the cannot/must-link
+   constraint schema moves to FACE-3 where the UI defines its
+   semantics. Two differently-NAMED clusters never auto-merge.)
 3. **FACE-3** People tab + naming/merge/correction RPCs.
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden
    matrix additions.

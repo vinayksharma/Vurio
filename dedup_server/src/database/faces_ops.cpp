@@ -8,6 +8,7 @@
 #include <Poco/Data/Statement.h>
 #include <Poco/Nullable.h>
 #include <Poco/Logger.h>
+#include <cstring>
 
 namespace MediaDedup
 {
@@ -61,7 +62,9 @@ namespace MediaDedup
         // means the column already exists).
         for (const char *alter :
              {"ALTER TABLE scanned_files ADD COLUMN face_scan_version INTEGER NOT NULL DEFAULT 0",
-              "ALTER TABLE scanned_files ADD COLUMN face_count INTEGER"})
+              "ALTER TABLE scanned_files ADD COLUMN face_count INTEGER",
+              // FACE-2: cover election needs the cover's quality without a join.
+              "ALTER TABLE face_clusters ADD COLUMN cover_quality REAL NOT NULL DEFAULT 0"})
         {
             try
             {
@@ -212,5 +215,183 @@ namespace MediaDedup
             Poco::Logger::get("FacesOps").error("listFacesForFile: %s", std::string(e.what()));
         }
         return out;
+    }
+
+    // ---- FACE-2: clusters ------------------------------------------------
+
+    namespace
+    {
+        std::vector<float> blobToFloats(const Poco::Data::BLOB &blob)
+        {
+            std::vector<float> out(blob.size() / sizeof(float));
+            std::memcpy(out.data(), blob.rawContent(), out.size() * sizeof(float));
+            return out;
+        }
+
+        Poco::Data::BLOB floatsToBlob(const std::vector<float> &v)
+        {
+            return Poco::Data::BLOB(
+                reinterpret_cast<const unsigned char *>(v.data()), v.size() * sizeof(float));
+        }
+    }
+
+    std::vector<FacesOps::ClusterRow> FacesOps::listClusters(DatabaseManager &db)
+    {
+        std::vector<ClusterRow> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id, centroid, size, COALESCE(cover_face_id, 0), cover_quality, "
+                    "COALESCE(person_id, 0) FROM face_clusters ORDER BY id";
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                ClusterRow r;
+                r.id = rs[0].convert<int>();
+                if (!rs[1].isEmpty())
+                    r.centroid = blobToFloats(rs[1].extract<Poco::Data::BLOB>());
+                r.size = rs[2].convert<int>();
+                r.cover_face_id = rs[3].convert<int>();
+                r.cover_quality = rs[4].convert<double>();
+                r.person_id = rs[5].convert<int>();
+                out.push_back(std::move(r));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listClusters: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    int FacesOps::insertCluster(DatabaseManager &db, const ClusterRow &row)
+    {
+        int id = 0;
+        DbRetry::withBusyRetry("FacesOps", "insertCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::BLOB blob = floatsToBlob(row.centroid);
+            int size = row.size, cover = row.cover_face_id;
+            double cq = row.cover_quality;
+            Poco::Data::Statement stmt(sess);
+            stmt << "INSERT INTO face_clusters (centroid, size, cover_face_id, cover_quality) "
+                    "VALUES (?, ?, ?, ?)",
+                use(blob), use(size), use(cover), use(cq), now;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT last_insert_rowid()", into(id), now;
+            return true;
+        });
+        return id;
+    }
+
+    bool FacesOps::updateCluster(DatabaseManager &db, const ClusterRow &row)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "updateCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::BLOB blob = floatsToBlob(row.centroid);
+            int id = row.id, size = row.size, cover = row.cover_face_id;
+            double cq = row.cover_quality;
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE face_clusters SET centroid = ?, size = ?, cover_face_id = ?, "
+                    "cover_quality = ? WHERE id = ?",
+                use(blob), use(size), use(cover), use(cq), use(id), now;
+            return true;
+        });
+    }
+
+    bool FacesOps::deleteCluster(DatabaseManager &db, int cluster_id)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "deleteCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int id = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "DELETE FROM face_clusters WHERE id = ?", use(id), now;
+            return true;
+        });
+    }
+
+    bool FacesOps::setFaceCluster(DatabaseManager &db, int face_id, int cluster_id)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "setFaceCluster", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id, cid = cluster_id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE faces SET cluster_id = ? WHERE id = ?", use(cid), use(fid), now;
+            return true;
+        });
+    }
+
+    bool FacesOps::moveClusterMembers(DatabaseManager &db, int from, int to)
+    {
+        return DbRetry::withBusyRetry("FacesOps", "moveClusterMembers", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int f = from, t = to;
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE faces SET cluster_id = ? WHERE cluster_id = ?", use(t), use(f), now;
+            return true;
+        });
+    }
+
+    std::vector<FacesOps::UnclusteredFace> FacesOps::listUnclusteredFaces(DatabaseManager &db,
+                                                                          double min_quality, int limit)
+    {
+        std::vector<UnclusteredFace> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            double q = min_quality;
+            int lim = limit;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id, quality, embedding FROM faces "
+                    "WHERE cluster_id IS NULL AND embedding IS NOT NULL AND quality >= ? "
+                    "ORDER BY id LIMIT ?",
+                use(q), use(lim);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            for (bool more = rs.moveFirst(); more; more = rs.moveNext())
+            {
+                UnclusteredFace f;
+                f.face_id = rs[0].convert<int>();
+                f.quality = rs[1].convert<double>();
+                f.embedding = blobToFloats(rs[2].extract<Poco::Data::BLOB>());
+                out.push_back(std::move(f));
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("listUnclusteredFaces: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
+    bool FacesOps::scanProgress(DatabaseManager &db, int &total, int &completed)
+    {
+        total = 0;
+        completed = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int version = kFaceScanVersion;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT COUNT(*), "
+                    "COALESCE(SUM(CASE WHEN face_scan_version >= ? THEN 1 ELSE 0 END), 0) "
+                    "FROM scanned_files WHERE processed >= 2 AND is_video = 0",
+                use(version), into(total), into(completed), now;
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("scanProgress: %s", std::string(e.what()));
+            return false;
+        }
     }
 }

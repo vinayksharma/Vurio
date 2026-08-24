@@ -90,7 +90,9 @@ void GrpcServerCore::start(const std::string& socket_path,
     if (files_manager) {
         files_service = files_manager->getFilesService();
     }
-    auto media_service = std::make_unique<MediaLocationsServiceImpl>(files_service, thread_pool_manager, database_manager.get(), scheduler_service, duplicate_finder);
+    auto media_service = std::make_unique<MediaLocationsServiceImpl>(
+        files_service, thread_pool_manager, database_manager.get(), scheduler_service, duplicate_finder,
+        config_manager && config_manager->getPropertyValue<bool>("media.face.enabled", false));
     text_search_engine_ = std::make_shared<TextSearchEngine>(config_manager, database_manager.get());
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager.get(), text_search_engine_.get());
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);

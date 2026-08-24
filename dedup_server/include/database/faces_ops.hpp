@@ -64,5 +64,40 @@ namespace MediaDedup
         static bool deleteFacesForFile(DatabaseManager &db, int file_id);
 
         static std::vector<FaceRow> listFacesForFile(DatabaseManager &db, int file_id);
+
+        // ---- FACE-2: clusters --------------------------------------------
+
+        struct ClusterRow
+        {
+            int id = 0;
+            std::vector<float> centroid; // unit-normalized
+            int size = 0;
+            int cover_face_id = 0;
+            double cover_quality = 0;
+            int person_id = 0; // 0 = unnamed
+        };
+
+        struct UnclusteredFace
+        {
+            int face_id = 0;
+            double quality = 0;
+            std::vector<float> embedding;
+        };
+
+        static std::vector<ClusterRow> listClusters(DatabaseManager &db);
+        static int insertCluster(DatabaseManager &db, const ClusterRow &row);
+        static bool updateCluster(DatabaseManager &db, const ClusterRow &row);
+        static bool deleteCluster(DatabaseManager &db, int cluster_id);
+        static bool setFaceCluster(DatabaseManager &db, int face_id, int cluster_id);
+        /// Re-point every face of `from` at `to` (consolidation merge).
+        static bool moveClusterMembers(DatabaseManager &db, int from, int to);
+        /// Embedded faces awaiting a cluster (quality >= min), oldest first —
+        /// the catch-up path for faces stored before clustering existed.
+        static std::vector<UnclusteredFace> listUnclusteredFaces(DatabaseManager &db,
+                                                                 double min_quality, int limit);
+
+        /// FACE sweep progress for the status bar: eligible images vs images
+        /// already swept at the current version. One aggregate query.
+        static bool scanProgress(DatabaseManager &db, int &total, int &completed);
     };
 }

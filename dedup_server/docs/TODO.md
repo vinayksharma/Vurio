@@ -33,8 +33,12 @@ before touching code — the line below is an index entry, not a specification.
 
 - **FACE-1..5 — local facial recognition + natural-language person search.**
   *Designed 2026-08-23; FACE-1 implemented 2026-08-23 (schema, Vision
-  detector, alignment, ONNX embedder hook, background sweep — off by
-  default via media.face.enabled until an embedder model ships). Decisions: Apple Vision detection
+  detector, alignment, ONNX embedder hook, background sweep). FACE-2
+  implemented 2026-08-23: centroid clustering (join 0.58 / merge 0.65,
+  live-calibrated), consolidation, catch-up for pre-clustering faces,
+  and a face-scan progress overlay on the VU status bar. Model:
+  AuraFace-v1 glintr100 (Apache-2.0) at models/face-embed.onnx;
+  media.face.enabled is on. Decisions: Apple Vision detection
   (hybrid with a small ONNX identity embedder — Vision has no public
   identity embedding), cluster-first naming, face_count in v1, trailing
   background sweep (ingest untouched; doubles as the ~145k backfill).*

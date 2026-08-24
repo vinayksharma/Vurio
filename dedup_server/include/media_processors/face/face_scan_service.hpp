@@ -11,6 +11,7 @@
 namespace MediaDedup
 {
     class DatabaseManager;
+    class FaceClusterer;
 
     /**
      * @brief FACE-1 sweep: the trailing background job that detects, aligns
@@ -52,11 +53,16 @@ namespace MediaDedup
             int faces = 0;     // faces stored this tick
             int offline = 0;   // skipped, not marked
             int unreadable = 0;
+            int clustered = 0; // faces assigned to clusters this tick
+            int merges = 0;    // consolidation merges this tick
             bool exhausted = false; // selector returned fewer than the batch
         };
 
+        /// `clusterer` (FACE-2) is optional: without it, faces are stored
+        /// unclustered and the catch-up path adopts them once it exists.
         FaceScanService(DatabaseManager *db, std::unique_ptr<FaceDetector> detector,
-                        EmbedFn embed, Options options);
+                        EmbedFn embed, Options options,
+                        std::shared_ptr<FaceClusterer> clusterer = nullptr);
 
         /// Process one batch. Safe to call on a scheduler thread.
         TickStats runTick();
@@ -68,6 +74,8 @@ namespace MediaDedup
     private:
         DatabaseManager *db_;
         std::unique_ptr<FaceDetector> detector_;
+        std::shared_ptr<FaceClusterer> clusterer_;
+        long long tick_count_ = 0;
         EmbedFn embed_;
         Options options_;
         // Files skipped as offline this process lifetime — keeps the ordered

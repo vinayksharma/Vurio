@@ -11,6 +11,7 @@
 #include "database/preview_cache_ops.hpp"
 #include "database/ejected_files_ops.hpp"
 #include "database/faces_ops.hpp"
+#include "media_processors/face/face_clusterer.hpp"
 #include "media_processors/face/face_scan_service.hpp"
 #include "media_processors/face/vision_face_detector.hpp"
 #include "filesmanager/files_service.hpp"
@@ -357,9 +358,14 @@ namespace MediaDedup
                         return false;
                     return OnnxAdapter::ComputeFaceEmbedding(nchw, embed_model, 512, out);
                 };
+                FaceClusterer::Options cluster_opts;
+                cluster_opts.join_threshold = config_manager_->getPropertyValue<double>("media.face.joinThreshold", 0.58);
+                cluster_opts.merge_threshold = config_manager_->getPropertyValue<double>("media.face.mergeThreshold", 0.65);
+                cluster_opts.min_quality = config_manager_->getPropertyValue<double>("media.face.minQuality", 0.2);
+                auto clusterer = std::make_shared<FaceClusterer>(database_manager_.get(), cluster_opts);
                 face_scan_service_ = std::make_shared<FaceScanService>(
                     database_manager_.get(), std::make_unique<VisionFaceDetector>(),
-                    embed_fn, face_opts);
+                    embed_fn, face_opts, clusterer);
                 int face_interval = config_manager_->getPropertyValue<int>("media.face.sweepIntervalMs", 15000);
                 scheduler_service_->registerJob("faceScan", std::chrono::milliseconds(face_interval), "face_scan",
                                                 [fs = face_scan_service_]()
