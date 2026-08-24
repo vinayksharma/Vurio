@@ -4,6 +4,7 @@
 
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
+#include "database/faces_ops.hpp"
 #include "database/vector_index.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
 
@@ -165,12 +166,19 @@ namespace MediaDedup
                 Poco::Logger::get("TextSearchEngine")
                     .warning("EXIF keyword file unavailable (%s); using built-in keywords",
                              keywords_path_);
-            parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords);
+            // QP-2 (FACE-4): person names resolve against the live persons
+            // table at parse time — the location-gazetteer playbook, which
+            // is what keeps the LLM prompt byte-stable as people get named.
+            auto person_resolver = [this](const std::string &name) -> int {
+                return db_ ? FacesOps::personIdByName(*db_, name) : 0;
+            };
+            parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords, person_resolver);
 
             // QP-1d: the LLM structurer path shares the same vocabulary.
             structurer_ = std::make_unique<LlmQueryStructurer>(
                 QueryFactSchema::fromKeywords(keywords));
-            llm_validator_ = std::make_unique<LlmFactValidator>(keywords, &geocoder_);
+            llm_validator_ = std::make_unique<LlmFactValidator>(keywords, &geocoder_,
+                                                                person_resolver);
             if (LlmRuntime::enabledInConfig(config_))
                 llm_ = std::make_unique<LlmRuntime>(LlmRuntime::optionsFromConfig(config_));
         });
@@ -644,7 +652,10 @@ namespace MediaDedup
         {
             static const char *kAllowed[] = {"exif_iso", "exif_f_number",
                                              "exif_exposure_time", "exif_focal_length",
-                                             "exif_exposure_comp"};
+                                             "exif_exposure_comp",
+                                             // QP-2 (FACE-4): the sweep-maintained
+                                             // people count (NULL = unscanned).
+                                             "face_count"};
             for (const char *a : kAllowed)
                 if (col == a)
                     return true;
@@ -675,7 +686,18 @@ namespace MediaDedup
             }
             // Within-field OR (EXIF-7 §3): a photo has one camera, so
             // multiple values of the field alternate; fields AND together.
-            if (!c.camera_terms.empty())
+            if (!c.person_ids.empty())
+            {
+                // QP-2: a photo matches when ANY named person's face is in it
+                // (OR within the field, like camera_terms). Ids are internal
+                // integers — safe to inline.
+                w << " AND EXISTS (SELECT 1 FROM faces fp WHERE fp.file_id = scanned_files.id"
+                     " AND fp.person_id IN (";
+                for (std::size_t i = 0; i < c.person_ids.size(); ++i)
+                    w << (i ? "," : "") << c.person_ids[i];
+                w << "))";
+            }
+                        if (!c.camera_terms.empty())
             {
                 w << " AND (";
                 for (std::size_t i = 0; i < c.camera_terms.size(); ++i)

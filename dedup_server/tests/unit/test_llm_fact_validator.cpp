@@ -140,7 +140,7 @@ TEST(LlmFactValidatorTest, UnknownDimAndWrongOpAreDropped)
 {
     auto v = makeValidator();
     auto r = v.validate("weird 42 iso above 800",
-                        output({{"person", "in", {"42"}, "filter", "weird 42"},
+                        output({{"vehicle", "in", {"42"}, "filter", "weird 42"},
                                 {"iso", "faster", {"800"}, "filter", "iso above 800"}}));
     EXPECT_EQ(r.accepted, 0u);
     EXPECT_EQ(r.dropped, 2u);
@@ -237,4 +237,73 @@ TEST(LlmFactValidatorTest, UngroundedClipQueriesAreDroppedAndCapped)
     // "zeppelin" is not in the query; the rest cap at 4.
     EXPECT_EQ(r.query.clip_queries,
               (std::vector<std::string>{"a", "b", "c", "d"}));
+}
+
+// ---- QP-2 (FACE-4): person + face_count -------------------------------
+
+namespace
+{
+    LlmFactValidator makePersonValidator()
+    {
+        return LlmFactValidator(ExifKeywordConfig::defaults(), nullptr,
+                                [](const std::string &name) -> int {
+                                    if (name == "alice") return 7;
+                                    if (name == "bob") return 9;
+                                    return 0;
+                                });
+    }
+}
+
+TEST(LlmFactValidatorTest, PersonResolvesToBoundFilter)
+{
+    auto v = makePersonValidator();
+    auto r = v.validate("photos of alice at the beach",
+                        output({{"person", "in", {"alice"}, "filter", "of alice"}},
+                               {"beach"}));
+    ASSERT_EQ(r.accepted, 1u);
+    EXPECT_EQ(r.query.bound.person_ids, std::vector<int>{7});
+    EXPECT_EQ(r.query.clip_queries, std::vector<std::string>{"beach"});
+}
+
+TEST(LlmFactValidatorTest, UnknownPersonDemotesToClipQuery)
+{
+    auto v = makePersonValidator();
+    auto r = v.validate("photos of ziggy",
+                        output({{"person", "in", {"ziggy"}, "filter", "of ziggy"}}));
+    EXPECT_EQ(r.accepted, 0u);
+    EXPECT_EQ(r.dropped, 1u);
+    ASSERT_EQ(r.query.clip_queries.size(), 1u);
+    EXPECT_EQ(r.query.clip_queries[0], "ziggy"); // semantic content survives
+}
+
+TEST(LlmFactValidatorTest, MixedPersonListKeepsResolvedDemotesRest)
+{
+    auto v = makePersonValidator();
+    auto r = v.validate("alice and ziggy together",
+                        output({{"person", "in", {"alice", "ziggy"}, "filter",
+                                 "alice and ziggy"}}));
+    ASSERT_EQ(r.accepted, 1u);
+    EXPECT_EQ(r.query.bound.person_ids, std::vector<int>{7});
+    ASSERT_EQ(r.query.clip_queries.size(), 1u);
+    EXPECT_EQ(r.query.clip_queries[0], "ziggy");
+}
+
+TEST(LlmFactValidatorTest, FaceCountConvertsAndClamps)
+{
+    auto v = makePersonValidator();
+    auto r = v.validate("with 3 people between 2 and 5 faces more than 90 people",
+                        output({{"face_count", "eq", {"3"}, "filter", "with 3 people"},
+                                {"face_count", "range", {"5", "2"}, "filter",
+                                 "between 2 and 5 faces"},
+                                {"face_count", "gt", {"90"}, "filter",
+                                 "more than 90 people"}}));
+    EXPECT_EQ(r.accepted, 2u);
+    EXPECT_EQ(r.dropped, 1u); // 90 people is outside sanity (0-50)
+    ASSERT_EQ(r.query.bound.numeric.size(), 2u);
+    EXPECT_EQ(r.query.bound.numeric[0].column, "face_count");
+    EXPECT_EQ(r.query.bound.numeric[0].op, "=");
+    EXPECT_DOUBLE_EQ(r.query.bound.numeric[0].value, 3.0);
+    EXPECT_EQ(r.query.bound.numeric[1].op, "between");
+    EXPECT_DOUBLE_EQ(r.query.bound.numeric[1].value, 2.0); // reversed range fixed
+    EXPECT_DOUBLE_EQ(r.query.bound.numeric[1].value2, 5.0);
 }

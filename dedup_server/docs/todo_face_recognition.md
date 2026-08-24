@@ -7,8 +7,9 @@ photos). FACE-2 implemented 2026-08-23 (centroid clustering in the
 sweep + consolidation + status-bar progress overlay). FACE-3
 implemented 2026-08-23 (People tab: clusters grid, name/merge/hide,
 day-view drill-down; "not this person" face-level corrections and the
-cannot/must-link constraints deferred to FACE-3b). FACE-4..5 not
-started. Depends on nothing new; QP-1's
+cannot/must-link constraints deferred to FACE-3b). FACE-4 (QP-2)
+implemented 2026-08-23: person + face_count dimensions live end-to-end,
+10/10 golden real-model tests. FACE-5 not started. Depends on nothing new; QP-1's
 dimension registry was built to receive the `person` dimension (QP-2).
 
 Decisions (user, 2026-08-23):
@@ -179,7 +180,10 @@ media.face.sweepBatch         (200)   # files per scheduler tick
    FACE-3b: per-face "not this person" corrections and the cannot/
    must-link constraint schema — they need a face-grid UI.)
 4. **FACE-4** QP-2 dimensions, prompt few-shots, validator, SQL, golden
-   matrix additions.
+   matrix additions. ✅ (Golden tuning found two small-model behaviors,
+   fixed at the validator layer: valueless facts skip as noise without
+   feeding the distrust heuristic, and accepted fact spans are stripped
+   from clip queries when the model echoes the whole query.)
 5. **FACE-5** polish: aliases/nicknames, pets question, video frames —
    explicitly deferred.
 

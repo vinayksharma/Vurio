@@ -134,5 +134,10 @@ namespace MediaDedup
         /// Distinct file ids containing a face of this cluster (day-view
         /// drill-down filter).
         static std::vector<int> listClusterFileIds(DatabaseManager &db, int cluster_id);
+
+        /// QP-2: case-insensitive persons.name lookup (0 = unknown). The
+        /// search validator resolves person facts through this — names are
+        /// runtime user data and never enter the LLM prompt.
+        static int personIdByName(DatabaseManager &db, const std::string &name);
     };
 }

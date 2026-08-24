@@ -3,6 +3,8 @@
 #include <filesystem>
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
+#include "database/faces_ops.hpp"
+#include "media_processors/face/face_clusterer.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
 #include "search/text_search_engine.hpp"
@@ -23,6 +25,7 @@ protected:
         db_ = std::make_unique<DatabaseManager>(db_path_);
         ASSERT_TRUE(db_->initialize());
         ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_));
+        ASSERT_TRUE(FacesOps::ensureTable(*db_));
 
         config_ = std::make_shared<UnifiedObservableConfigManager>("", false);
         // Absolute path -> the engine skips project-root rewriting.
@@ -406,6 +409,95 @@ TEST_F(ExifSearchE2ETest, LlmPathTimeoutFallsBackToRegex)
 // The ai/xf toggles select the pipeline, not a post-filter (a bound hybrid
 // result is an intersection where every match has both flags — an
 // "exclusively ai" post-filter of it would always be empty).
+// ---- QP-2 (FACE-4): person + face_count search ------------------------
+
+TEST_F(ExifSearchE2ETest, PersonFilterThroughLlmSeam)
+{
+    // Alice's face is in the canon photo; the sony photo has no faces.
+    FacesOps::FaceRow face;
+    face.file_id = canon_id_;
+    face.quality = 0.9;
+    ASSERT_GT(FacesOps::insertFace(*db_, face), 0);
+    FacesOps::markFileScanned(*db_, canon_id_, 1);
+    // Cluster + name it "alice" so the resolver can find her.
+    FaceClusterer cl(db_.get(), {});
+    cl.load();
+    std::vector<float> v(4, 0.5f);
+    const int cluster = cl.assign(
+        [&] {
+            auto faces = FacesOps::listFacesForFile(*db_, canon_id_);
+            return faces.empty() ? 0 : faces[0].id;
+        }(),
+        v, 0.9);
+    ASSERT_GT(cluster, 0);
+    ASSERT_TRUE(FacesOps::nameCluster(*db_, cluster, "Alice"));
+
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "person", "op": "in", "values": ["alice"], )"
+                     R"("intent": "filter", "span": "of alice"}], "clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("photos of alice");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+    EXPECT_TRUE(r.used_exif);
+
+    // Regex fallback handles the scaffolded form too (resolver-verified).
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.error = "timeout";
+            return c;
+        });
+    auto r2 = engine_->search("pictures of alice");
+    ASSERT_TRUE(r2.ok) << r2.error;
+    EXPECT_EQ(idsOf(r2), std::vector<int>{canon_id_});
+    EXPECT_TRUE(r2.parse_degraded);
+}
+
+TEST_F(ExifSearchE2ETest, FaceCountFiltersThroughLlmSeam)
+{
+    // canon: 2 faces; sony: scanned, 0 faces; nikon: unscanned (NULL).
+    for (int i = 0; i < 2; ++i)
+    {
+        FacesOps::FaceRow face;
+        face.file_id = canon_id_;
+        face.quality = 0.5;
+        ASSERT_GT(FacesOps::insertFace(*db_, face), 0);
+    }
+    FacesOps::markFileScanned(*db_, canon_id_, 2);
+    FacesOps::markFileScanned(*db_, sony_id_, 0);
+
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "face_count", "op": "eq", "values": ["2"], )"
+                     R"("intent": "filter", "span": "with 2 people"}], "clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("with 2 people");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+
+    // face_count = 0 finds the scanned-and-empty file, never the
+    // unscanned one (NULL is not 0 — the EXIF NULL discipline).
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "face_count", "op": "eq", "values": ["0"], )"
+                     R"("intent": "filter", "span": "with 0 people"}], "clip_queries": []})";
+            return c;
+        });
+    auto r2 = engine_->search("with 0 people");
+    ASSERT_TRUE(r2.ok) << r2.error;
+    EXPECT_EQ(idsOf(r2), std::vector<int>{sony_id_});
+}
+
 TEST_F(ExifSearchE2ETest, ExifOnlyModeRunsTheFactAlgebraAlone)
 {
     // Bound camera fact + semantic subject: hybrid would intersect with

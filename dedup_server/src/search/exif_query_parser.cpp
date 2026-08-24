@@ -138,8 +138,9 @@ namespace MediaDedup
     // EXIF-6: every keyword alternation below is spliced in from the
     // ExifKeywordConfig; only the surrounding grammar is fixed here.
     ExifQueryParser::ExifQueryParser(const LocationGeocoder *geocoder,
-                                     const ExifKeywordConfig &kw)
-        : geocoder_(geocoder)
+                                     const ExifKeywordConfig &kw,
+                                     PersonResolver person_resolver)
+        : geocoder_(geocoder), person_resolver_(std::move(person_resolver))
     {
         months_ = kw.months;
         greater_set_ = toSet(kw.greater_words);
@@ -351,6 +352,34 @@ namespace MediaDedup
                 sq.bare.push_back(std::move(c));
             }
         });
+
+        // --- Person names (QP-2 regex fallback) -------------------------
+        // Scaffolded only: "of <name>" / "with <name>" where <name> is a
+        // KNOWN named person (resolver-verified at parse time — names are
+        // runtime user data). Consumption is CONDITIONAL on resolution:
+        // "of sunset" must stay in the semantic text. Bare-name
+        // exploration needs the LLM path; the degraded-parse indicator
+        // covers its absence.
+        if (person_resolver_)
+        {
+            static const std::regex person_re(R"(\b(of|with)\s+([a-z]+)\b)");
+            struct Hit { std::size_t pos, len; std::string name; };
+            std::vector<Hit> resolved;
+            for (auto it = std::sregex_iterator(text.begin(), text.end(), person_re);
+                 it != std::sregex_iterator(); ++it)
+            {
+                const std::string name = (*it)[2];
+                const int pid = person_resolver_(name);
+                if (pid > 0)
+                {
+                    bound.person_ids.push_back(pid);
+                    resolved.push_back({static_cast<std::size_t>(it->position(0)),
+                                        static_cast<std::size_t>(it->length(0)), name});
+                }
+            }
+            for (const auto &h : resolved)
+                consume(text, h.pos, h.len);
+        }
 
         // --- Dates (always bound: a date token has no visual meaning) ---
         consumeMatches(text, month_year_, [&](const std::smatch &m) {

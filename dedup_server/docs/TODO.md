@@ -39,7 +39,10 @@ before touching code — the line below is an index entry, not a specification.
   and a face-scan progress overlay on the VU status bar. FACE-3
   implemented 2026-08-23: PEOPLE tab (cluster grid with client-side
   face crops, name/rename, cmd-click multi-select merge, hide) and
-  person drill-down into the VU day view. Model:
+  person drill-down into the VU day view. FACE-4 (QP-2) implemented
+  2026-08-23: "photos of alice at the beach" and "group photos with 3
+  people from 2020" parse to person/face_count filters; unresolved names
+  demote to CLIP; regex fallback handles scaffolded known names. Model:
   AuraFace-v1 glintr100 (Apache-2.0) at models/face-embed.onnx;
   media.face.enabled is on. Decisions: Apple Vision detection
   (hybrid with a small ONNX identity embedder — Vision has no public

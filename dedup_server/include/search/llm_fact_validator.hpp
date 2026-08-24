@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 
 #include "search/exif_keyword_config.hpp"
@@ -37,7 +38,13 @@ namespace MediaDedup
     class LlmFactValidator
     {
     public:
-        LlmFactValidator(ExifKeywordConfig keywords, const LocationGeocoder *geocoder);
+        /// QP-2: name -> persons.id (0 = unknown). Live per query — person
+        /// names are user data that changes at runtime, which is exactly why
+        /// they are NOT prompt hints (the location-gazetteer playbook).
+        using PersonResolver = std::function<int(const std::string &)>;
+
+        LlmFactValidator(ExifKeywordConfig keywords, const LocationGeocoder *geocoder,
+                         PersonResolver person_resolver = nullptr);
 
         struct Result
         {
@@ -52,5 +59,6 @@ namespace MediaDedup
     private:
         ExifKeywordConfig keywords_;
         const LocationGeocoder *geocoder_;
+        PersonResolver person_resolver_;
     };
 }

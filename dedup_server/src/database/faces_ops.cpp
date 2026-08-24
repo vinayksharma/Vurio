@@ -605,4 +605,25 @@ namespace MediaDedup
         }
         return out;
     }
+
+    int FacesOps::personIdByName(DatabaseManager &db, const std::string &name)
+    {
+        if (name.empty())
+            return 0;
+        int id = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            std::string n = name;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT id FROM persons WHERE name = ? COLLATE NOCASE LIMIT 1",
+                use(n), into(id), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("personIdByName: %s", std::string(e.what()));
+        }
+        return id;
+    }
 }
