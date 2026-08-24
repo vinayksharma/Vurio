@@ -10,6 +10,17 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
+- **FACE-7 — matching accuracy: same-name merge, multi-exemplar clusters, join margin, outlier review.**
+  *Designed 2026-08-24; not yet implemented.*
+  Naming a cluster with an existing name merges the person's clusters (and
+  fixes user-forced merges dropping cannot-links); clusters gain up to 5
+  exemplar faces (pinned cover always among them) so matching scores
+  against the best exemplar instead of one blended centroid; joins require
+  a best-vs-runner-up margin so ambiguous faces wait instead of guessing;
+  and the face-stack popup flags low-fit faces for review — surfaced,
+  never auto-removed.
+  **Full specification: [todo_face_matching_accuracy.md](todo_face_matching_accuracy.md)**
+
 - **FACE-6 — face-stack popup: click-to-open, inline rename, lens search, pick-the-cover.**
   *Designed 2026-08-24; implemented 2026-08-24 (backend pin plumbing +
   unit tests green, popup reworked, Swift/C++ stubs regenerated).
