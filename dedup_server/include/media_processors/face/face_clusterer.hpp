@@ -63,6 +63,8 @@ namespace MediaDedup
             int size = 0;
             int cover_face_id = 0;
             double cover_quality = 0;
+            // FACE-6: user-pinned cover — quality-based election skips it.
+            bool cover_pinned = false;
             int person_id = 0;
         };
 

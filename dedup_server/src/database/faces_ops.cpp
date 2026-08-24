@@ -78,7 +78,9 @@ namespace MediaDedup
               // an alias resolves to exactly one person.
               "CREATE TABLE IF NOT EXISTS person_aliases ("
               "alias TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, "
-              "person_id INTEGER NOT NULL) WITHOUT ROWID"})
+              "person_id INTEGER NOT NULL) WITHOUT ROWID",
+              // FACE-6: user-pinned cover faces survive automatic election.
+              "ALTER TABLE face_clusters ADD COLUMN cover_pinned INTEGER NOT NULL DEFAULT 0"})
         {
             try
             {
@@ -258,7 +260,7 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             Poco::Data::Statement stmt(sess);
             stmt << "SELECT id, centroid, size, COALESCE(cover_face_id, 0), cover_quality, "
-                    "COALESCE(person_id, 0) FROM face_clusters ORDER BY id";
+                    "COALESCE(person_id, 0), cover_pinned FROM face_clusters ORDER BY id";
             stmt.execute();
             Poco::Data::RecordSet rs(stmt);
             for (bool more = rs.moveFirst(); more; more = rs.moveNext())
@@ -271,6 +273,7 @@ namespace MediaDedup
                 r.cover_face_id = rs[3].convert<int>();
                 r.cover_quality = rs[4].convert<double>();
                 r.person_id = rs[5].convert<int>();
+                r.cover_pinned = rs[6].convert<int>() != 0;
                 out.push_back(std::move(r));
             }
         }
@@ -288,12 +291,12 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Data::BLOB blob = floatsToBlob(row.centroid);
-            int size = row.size, cover = row.cover_face_id;
+            int size = row.size, cover = row.cover_face_id, pinned = row.cover_pinned ? 1 : 0;
             double cq = row.cover_quality;
             Poco::Data::Statement stmt(sess);
-            stmt << "INSERT INTO face_clusters (centroid, size, cover_face_id, cover_quality) "
-                    "VALUES (?, ?, ?, ?)",
-                use(blob), use(size), use(cover), use(cq), now;
+            stmt << "INSERT INTO face_clusters (centroid, size, cover_face_id, cover_quality, "
+                    "cover_pinned) VALUES (?, ?, ?, ?, ?)",
+                use(blob), use(size), use(cover), use(cq), use(pinned), now;
             Poco::Data::Statement sel(sess);
             sel << "SELECT last_insert_rowid()", into(id), now;
             return true;
@@ -307,12 +310,13 @@ namespace MediaDedup
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             Poco::Data::BLOB blob = floatsToBlob(row.centroid);
-            int id = row.id, size = row.size, cover = row.cover_face_id;
+            int id = row.id, size = row.size, cover = row.cover_face_id,
+                pinned = row.cover_pinned ? 1 : 0;
             double cq = row.cover_quality;
             Poco::Data::Statement stmt(sess);
             stmt << "UPDATE face_clusters SET centroid = ?, size = ?, cover_face_id = ?, "
-                    "cover_quality = ? WHERE id = ?",
-                use(blob), use(size), use(cover), use(cq), use(id), now;
+                    "cover_quality = ?, cover_pinned = ? WHERE id = ?",
+                use(blob), use(size), use(cover), use(cq), use(pinned), use(id), now;
             return true;
         });
     }
@@ -426,7 +430,7 @@ namespace MediaDedup
                 "  COALESCE(sf.file_path, ''), "
                 "  COALESCE(cf.bbox_x, 0), COALESCE(cf.bbox_y, 0), "
                 "  COALESCE(cf.bbox_w, 0), COALESCE(cf.bbox_h, 0), c.hidden, "
-                "  COALESCE(c.person_id, 0) "
+                "  COALESCE(c.person_id, 0), COALESCE(c.cover_face_id, 0), c.cover_pinned "
                 "FROM face_clusters c "
                 "LEFT JOIN persons p ON p.id = c.person_id "
                 "LEFT JOIN faces cf ON cf.id = c.cover_face_id "
@@ -451,6 +455,8 @@ namespace MediaDedup
                 c.cover_h = rs[8].convert<double>();
                 c.hidden = rs[9].convert<int>() != 0;
                 c.person_id = rs[10].convert<int>();
+                c.cover_face_id = rs[11].convert<int>();
+                c.cover_pinned = rs[12].convert<int>() != 0;
                 out.push_back(std::move(c));
             }
         }
@@ -551,10 +557,23 @@ namespace MediaDedup
             for (std::size_t i = 0; i < acc.size(); ++i)
                 acc[i] += static_cast<double>(s->centroid[i]) * s->size;
             merged.size += s->size;
-            if (s->cover_quality > merged.cover_quality)
+            // FACE-6 cover election: a pin is a statement about the person,
+            // so it survives the merge. Pinned beats unpinned; both pinned
+            // keeps the target's (the cluster the user chose); both
+            // unpinned falls back to quality.
+            if (!merged.cover_pinned)
             {
-                merged.cover_quality = s->cover_quality;
-                merged.cover_face_id = s->cover_face_id;
+                if (s->cover_pinned)
+                {
+                    merged.cover_quality = s->cover_quality;
+                    merged.cover_face_id = s->cover_face_id;
+                    merged.cover_pinned = true;
+                }
+                else if (s->cover_quality > merged.cover_quality)
+                {
+                    merged.cover_quality = s->cover_quality;
+                    merged.cover_face_id = s->cover_face_id;
+                }
             }
             if (merged.person_id == 0 && s->person_id != 0)
                 merged.person_id = s->person_id;
@@ -838,8 +857,25 @@ namespace MediaDedup
         if (members.empty())
             return deleteCluster(db, cluster_id);
 
+        // Preserve the person assignment and the FACE-6 pin state.
+        int person_id = 0, pinned_cover = 0, pinned = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = cluster_id;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT COALESCE(person_id, 0), COALESCE(cover_face_id, 0), cover_pinned "
+                   "FROM face_clusters WHERE id = ?",
+                use(cid), into(person_id), into(pinned_cover), into(pinned), now;
+        }
+        catch (...)
+        {
+        }
+
         std::vector<double> acc(members[0].embedding.size(), 0.0);
         const Member *cover = &members[0];
+        const Member *pinned_member = nullptr;
         for (const auto &m : members)
         {
             if (m.embedding.size() == acc.size())
@@ -847,6 +883,8 @@ namespace MediaDedup
                     acc[i] += m.embedding[i];
             if (m.quality > cover->quality)
                 cover = &m;
+            if (pinned != 0 && m.id == pinned_cover)
+                pinned_member = &m;
         }
         double norm = 0;
         for (double v : acc)
@@ -855,26 +893,23 @@ namespace MediaDedup
         ClusterRow row;
         row.id = cluster_id;
         row.size = static_cast<int>(members.size());
-        row.cover_face_id = cover->id;
-        row.cover_quality = cover->quality;
+        // FACE-6: a pinned cover stays as long as the face is still a
+        // member; once it leaves, the pin clears and quality elects.
+        if (pinned_member)
+        {
+            row.cover_face_id = pinned_member->id;
+            row.cover_quality = pinned_member->quality;
+            row.cover_pinned = true;
+        }
+        else
+        {
+            row.cover_face_id = cover->id;
+            row.cover_quality = cover->quality;
+        }
         row.centroid.resize(acc.size());
         const double inv = norm > 0 ? 1.0 / std::sqrt(norm) : 0.0;
         for (std::size_t i = 0; i < acc.size(); ++i)
             row.centroid[i] = static_cast<float>(acc[i] * inv);
-        // Preserve the person assignment.
-        int person_id = 0;
-        try
-        {
-            auto lease = db.acquireSessionLease();
-            Poco::Data::Session &sess = lease.get();
-            int cid = cluster_id;
-            Poco::Data::Statement sel(sess);
-            sel << "SELECT COALESCE(person_id, 0) FROM face_clusters WHERE id = ?",
-                use(cid), into(person_id), now;
-        }
-        catch (...)
-        {
-        }
         row.person_id = person_id;
         return updateCluster(db, row);
     }
@@ -913,5 +948,45 @@ namespace MediaDedup
         if (!cleared)
             return false;
         return recomputeCluster(db, cluster_id);
+    }
+
+    // ---- FACE-6: pinned covers -------------------------------------------
+
+    bool FacesOps::setClusterCover(DatabaseManager &db, int cluster_id, int face_id)
+    {
+        // Validate membership first — the popup may race the sweep
+        // re-homing the face into another cluster.
+        double quality = 0;
+        int member = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id, cid = cluster_id;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT COUNT(*), COALESCE(MAX(quality), 0) FROM faces "
+                   "WHERE id = ? AND cluster_id = ?",
+                use(fid), use(cid), into(member), into(quality), now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("setClusterCover: %s", std::string(e.what()));
+            return false;
+        }
+        if (member <= 0)
+            return false;
+
+        return DbRetry::withBusyRetry("FacesOps", "setClusterCover", [&]() {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int fid = face_id, cid = cluster_id;
+            double q = quality;
+            // cover_quality stays accurate for merge comparisons.
+            Poco::Data::Statement stmt(sess);
+            stmt << "UPDATE face_clusters SET cover_face_id = ?, cover_quality = ?, "
+                    "cover_pinned = 1 WHERE id = ?",
+                use(fid), use(q), use(cid), now;
+            return true;
+        });
     }
 }
