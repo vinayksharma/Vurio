@@ -384,7 +384,7 @@ struct ViewerView: View {
 
     /// Vertical DSEG7 day separator between the timeline's day sections.
     private func dayStamp(_ day: String) -> some View {
-        DateStampLabel(text: day, size: 10)
+        DateStampLabel(text: day) // STAMP-1: shared default size, both surfaces match
             .fixedSize()
             .rotationEffect(.degrees(-90))
             .frame(width: 24, height: 90)

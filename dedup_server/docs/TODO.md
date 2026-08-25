@@ -37,7 +37,8 @@ before touching code — the line below is an index entry, not a specification.
   **Full specification: [todo_face_matching_accuracy.md](todo_face_matching_accuracy.md)**
 
 - **STAMP-1 — film-camera date-stamp treatment for the day date/time label.**
-  *Designed 2026-08-24; not yet implemented.*
+  *Designed 2026-08-24; implemented 2026-08-24. Remaining before Done: the
+  spec's §5 visual pass (tune opacities/radii by eye).*
   The DSEG7 date/time stamp above each VU day strip (and the VIEWER's day
   separators — shared `DateStampLabel`) becomes a burned-in film date-back
   print: true DSEG7 Classic *Italic* (newly bundled, OFL), size 11→9,
