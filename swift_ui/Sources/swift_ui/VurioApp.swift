@@ -578,12 +578,17 @@ struct CalloutOverlayView: View {
         return "\(max(s, 1))S"
     }
 
-    private var faceScanLines: String {
-        guard appState.isFaceScanning else { return "" }
-        let pct = appState.faceScanFraction.formatted(.percent.precision(.fractionLength(0)))
-        var text = "\nFACE SCAN: \(pct) "
-        text += "(\(appState.faceScanCompleted.formatted(.number)) OF \(appState.faceScanTotal.formatted(.number)))"
-        return text
+    /// "(x/y)" — the raw numbers behind a stat, in the advanced-overlay
+    /// font (Menlo 9, dimmed) so the user can see how each percentage is
+    /// computed. Pure counts with no natural denominator show just "(x)".
+    private func counts(_ x: Int32, _ y: Int32? = nil) -> String {
+        if let y { return "(\(x.formatted(.number))/\(y.formatted(.number)))" }
+        return "(\(x.formatted(.number)))"
+    }
+
+    private func pctText(_ x: Int32, _ y: Int32) -> String {
+        guard y > 0 else { return "" }
+        return min(1.0, Double(x) / Double(y)).formatted(.percent.precision(.fractionLength(0)))
     }
 
     private var repairLines: String {
@@ -601,9 +606,9 @@ struct CalloutOverlayView: View {
     }
 
     var calloutText: String {
-        // Both sweep rings live on the status dot, so their detail lines
-        // ride the dot's callout only (see baseText's .statusDot case) — bar
-        // segments keep to the scanned/processed story.
+        // Bar segments keep their one-line callouts; the status dot
+        // renders dotStatsPanel instead of text while online (offline falls
+        // back to the plain SERVER OFFLINE string).
         baseText + (showRepair ? repairLines : "")
     }
 
@@ -618,27 +623,81 @@ struct CalloutOverlayView: View {
         case .remaining:
             return "\(appState.scannedFilesCount.formatted(.number)) FILES SCANNED"
         case .statusDot:
-            if !appState.isOnline { return "SERVER OFFLINE" }
-            
-            var text = "\(appState.registeredDirs.count.formatted(.number)) REGISTERED PATHS"
-            
-            if appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                let findingFraction = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
-                text += "\nFINDING DUPLICATES: \(findingFraction.formatted(.percent.precision(.fractionLength(0)))) COMPLETE OF PROCESSED FILES"
-            }
-            text += faceScanLines
-            
-            if advancedOverlayEnabled {
-                text += "\n\(appState.threadCount.formatted(.number)) / \(appState.maxThreads.formatted(.number)) ACTIVE THREADS"
-            }
-            
-            return text
+            // Online, the dot renders dotStatsPanel instead of text; only
+            // the offline state falls back to this string path.
+            return appState.isOnline ? "" : "SERVER OFFLINE"
         case .none:
             return ""
         }
     }
     
-    @State private var textWidth: CGFloat = 80
+    /// The dot's rich panel: every pipeline stat, each with a splotch keyed
+    /// to its bar-segment or sweep-ring color, and the raw (x/y) behind each
+    /// percentage. Sweeps stay listed while caught up so the panel keeps a
+    /// stable shape.
+    @ViewBuilder
+    private var dotStatsPanel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            statRow(Theme.surfaceElevated, "FILES SCANNED",
+                    counts(appState.scannedFilesCount))
+            statRow(Theme.accent,
+                    "FILES PROCESSED \(pctText(appState.processedFilesCount, appState.scannedFilesCount))",
+                    counts(appState.processedFilesCount, appState.scannedFilesCount))
+            statRow(Theme.similarityRing,
+                    appState.duplicateFindingTotal > 0
+                        ? "SIMILARITY SCAN \(pctText(appState.duplicateFindingCompleted, appState.duplicateFindingTotal))"
+                        : "SIMILARITY SCAN CAUGHT UP",
+                    appState.duplicateFindingTotal > 0
+                        ? counts(appState.duplicateFindingCompleted, appState.duplicateFindingTotal)
+                        : nil)
+            statRow(Theme.success, "DUPLICATES FOUND",
+                    counts(appState.duplicateFilesCount))
+            statRow(Theme.faceRing,
+                    appState.faceScanTotal > 0
+                        ? "FACE SCAN \(pctText(appState.faceScanCompleted, appState.faceScanTotal))"
+                        : "FACE SCAN CAUGHT UP",
+                    appState.faceScanTotal > 0
+                        ? counts(appState.faceScanCompleted, appState.faceScanTotal)
+                        : nil)
+            statRow(Theme.error, "ERRORS",
+                    counts(appState.errorFilesCount))
+            if advancedOverlayEnabled {
+                statRow(nil, "ACTIVE THREADS",
+                        counts(appState.threadCount, appState.maxThreads))
+            }
+            statRow(nil, "REGISTERED PATHS",
+                    counts(Int32(appState.registeredDirs.count)))
+            Text(appState.isPaused ? "CLICK THE CENTER TO RESUME ALL PROCESSING"
+                                   : "CLICK THE CENTER TO PAUSE ALL PROCESSING")
+                .font(.custom("Menlo", size: 8))
+                .foregroundColor(Color.gray)
+                .padding(.top, 2)
+        }
+    }
+
+    /// One stat line: splotch (clear when the stat has no bar/ring color, so
+    /// labels stay aligned), label, and the raw counts dimmed beside it.
+    @ViewBuilder
+    private func statRow(_ splotch: Color?, _ label: String, _ detail: String?) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(splotch ?? Color.clear)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .font(.custom("Menlo", size: 10))
+                .foregroundColor(.white)
+            if let detail {
+                Text(detail)
+                    .font(.custom("Menlo", size: 9))
+                    .foregroundColor(Color.gray)
+            }
+        }
+    }
+
+    /// Measured size of the rendered callout content (plain text or the
+    /// stats panel) — drives the elbow line length and vertical centering,
+    /// replacing the old line-count * 14 height estimate the panel broke.
+    @State private var measuredSize = CGSize(width: 80, height: 14)
 
     var body: some View {
         let isRightHalf = hoverX > totalWidth * 0.6
@@ -647,10 +706,7 @@ struct CalloutOverlayView: View {
         let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
         let elbowPoint = CGPoint(x: startPoint.x + (15 * direction), y: startPoint.y - 15)
         
-        let lineCount = CGFloat(calloutText.components(separatedBy: "\n").count)
-        let textHeight = lineCount * 14.0
-        
-        let lineLength = max(textWidth + 10, 50)
+        let lineLength = max(measuredSize.width + 10, 50)
         let endPoint = CGPoint(x: elbowPoint.x + (lineLength * direction), y: elbowPoint.y)
         
         ZStack(alignment: .topLeading) {
@@ -661,33 +717,39 @@ struct CalloutOverlayView: View {
             }
             .stroke(Color.gray.opacity(0.8), lineWidth: 1.5)
             
-            Text(calloutText)
-                .font(.custom("Menlo", size: 10))
-                .foregroundColor(.white)
-                .multilineTextAlignment(.leading)
-                .lineLimit(nil)
-                .fixedSize(horizontal: true, vertical: true)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(
-                    GeometryReader { geo in
-                        Color.black.opacity(0.8)
-                            .cornerRadius(4)
-                            .onAppear {
-                                DispatchQueue.main.async { self.textWidth = geo.size.width }
-                            }
-                            .onChange(of: calloutText) { _, _ in
-                                DispatchQueue.main.async { self.textWidth = geo.size.width }
-                            }
-                    }
-                )
-                .position(
-                    x: elbowPoint.x + ((lineLength / 2) * direction),
-                    y: elbowPoint.y - (textHeight / 2) - 5
-                )
+            Group {
+                if segment == .statusDot && appState.isOnline {
+                    dotStatsPanel
+                } else {
+                    Text(calloutText)
+                        .font(.custom("Menlo", size: 10))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: true, vertical: true)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(
+                GeometryReader { geo in
+                    Color.black.opacity(0.8)
+                        .cornerRadius(4)
+                        .onAppear {
+                            DispatchQueue.main.async { self.measuredSize = geo.size }
+                        }
+                        .onChange(of: geo.size) { _, size in
+                            DispatchQueue.main.async { self.measuredSize = size }
+                        }
+                }
+            )
+            .position(
+                x: elbowPoint.x + ((lineLength / 2) * direction),
+                y: elbowPoint.y - (measuredSize.height / 2) - 5
+            )
         }
         .animation(.easeOut(duration: 0.15), value: hoverX)
-        .animation(.easeOut(duration: 0.15), value: textWidth)
+        .animation(.easeOut(duration: 0.15), value: measuredSize)
     }
 }
 
@@ -847,21 +909,21 @@ struct StatusBarView: View {
                         let findingPercent = appState.isOnline ? min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) : 0.0
                         Circle()
                             .trim(from: 0, to: CGFloat(findingPercent))
-                            .stroke(Theme.sweepRing, lineWidth: 2)
+                            .stroke(Theme.similarityRing, lineWidth: 2)
                             .rotationEffect(.degrees(-90))
                             .frame(width: 14, height: 14)
                             .animation(.linear(duration: 0.5), value: findingPercent)
                     }
 
-                    // Face sweep: the outer ring. Both rings are trailing
-                    // sweeps over processed files, so they stack concentric
-                    // on the dot — faces in the blue the old under-bar line
-                    // used, one ring outside the finder's.
+                    // Face sweep: the outer ring, one ring outside the
+                    // finder's. Both are trailing sweeps over processed
+                    // files, so they stack concentric on the dot — in the
+                    // pastel pair that keys the callout panel's splotches.
                     if !appState.isPaused && appState.isFaceScanning {
                         let facePercent = appState.isOnline ? min(1.0, appState.faceScanFraction) : 0.0
                         Circle()
                             .trim(from: 0, to: CGFloat(facePercent))
-                            .stroke(Theme.textAccent, lineWidth: 2)
+                            .stroke(Theme.faceRing, lineWidth: 2)
                             .rotationEffect(.degrees(-90))
                             .frame(width: 19, height: 19)
                             .animation(.linear(duration: 0.5), value: facePercent)

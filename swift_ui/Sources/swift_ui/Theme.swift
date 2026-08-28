@@ -24,10 +24,12 @@ struct Theme {
     // Amber of a film-camera quartz date-back; used by DateStampLabel.
     static let dateStampAmber = Color(hex: "#FFB000")
 
-    // Status-dot sweep rings (duplicate finder). A trailing sweep is routine
-    // background work, so deliberately NOT warning orange — that read as an
-    // alert. Teal sits apart from success green, accent blue, and error red.
-    static let sweepRing = Color(hex: "#14B8A6")
+    // Status-dot sweep rings. Trailing sweeps are routine background work,
+    // so pastels — deliberately apart from the progress bar's blue/green/red
+    // (the rings must not read as a restatement of the bar, nor as alerts).
+    // Lavender = similarity scan (duplicate finding), peach = face scan.
+    static let similarityRing = Color(hex: "#B4A7E5")
+    static let faceRing = Color(hex: "#F0C297")
 }
 
 // 7-segment "date stamp" label used on day panels (ALL view) and the
