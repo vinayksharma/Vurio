@@ -1336,5 +1336,42 @@ namespace MediaDedup
             for (const auto &i : infos)
                 EXPECT_TRUE(i.name.empty());
         }
+
+        // Fresh-database boot order: at startup FacesOps::ensureTable runs
+        // BEFORE FilesManager creates scanned_files. The ALTERs against the
+        // missing table used to fail inside a swallow-all catch, leaving the
+        // sweep columns off and every face tick erroring — ensureTable must
+        // claim the bare table itself. (The fixture above creates
+        // scanned_files first, which is why it never caught this.)
+        TEST(FaceScanFreshDbTest, EnsureTableBeforeScannedFilesCreatesSweepColumns)
+        {
+            const auto path = (std::filesystem::path(TestUtils::getTestDataPath()) /
+                               "databases" / "test_face_fresh_boot.sqlite")
+                                  .string();
+            std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+            std::remove(path.c_str());
+            {
+                DatabaseManager db(path);
+                ASSERT_TRUE(db.initialize());
+                ASSERT_TRUE(FacesOps::ensureTable(db));
+                // The rest of startup layers its migrations on top.
+                ASSERT_TRUE(ScannedFilesOps::ensureTable(db));
+
+                ScannedFileRow row;
+                row.file_path = "/tmp/fresh_boot.jpg";
+                row.file_name = "fresh_boot.jpg";
+                row.location_key = "mediaLocation:test";
+                row.processed = 2;
+                ASSERT_TRUE(ScannedFilesOps::upsert(db, row));
+
+                // Eligible on the first tick: face_scan_version exists and
+                // defaulted to 0.
+                auto candidates = FacesOps::listSweepCandidates(db, 10);
+                ASSERT_EQ(candidates.size(), 1u);
+                EXPECT_TRUE(FacesOps::markFileScanned(db, candidates[0].file_id, 0));
+                EXPECT_TRUE(FacesOps::listSweepCandidates(db, 10).empty());
+            }
+            std::remove(path.c_str());
+        }
     }
 }
