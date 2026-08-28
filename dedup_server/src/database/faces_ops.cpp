@@ -2,10 +2,12 @@
 
 #include "database/database_manager.hpp"
 #include "database/db_retry.hpp"
+#include "database/sql_constants.hpp"
 
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <Poco/Exception.h>
 #include <Poco/Nullable.h>
 #include <Poco/Logger.h>
 #include <algorithm>
@@ -60,8 +62,17 @@ namespace MediaDedup
             !db.ensureTableExists("persons", kCreatePersons))
             return false;
 
-        // scanned_files migrations (each ALTER adds one column; a failure
-        // means the column already exists).
+        // On a fresh database this runs before FilesManager creates
+        // scanned_files, and ALTERing a missing table fails — silently, until
+        // the sweep's queries error on every tick. Claim the bare table here
+        // (the duplicate_groups_ops.cpp pattern): ScannedFilesOps::ensureTable
+        // opens with this same idempotent call and layers its migrations on
+        // top, so creating it early costs nothing.
+        if (!db.ensureTableExists("scanned_files", SQL::kCreateScannedFilesTable))
+            return false;
+
+        // scanned_files migrations (each ALTER adds one column; the expected
+        // failure is "duplicate column" on every boot after the first).
         for (const char *alter :
              {"ALTER TABLE scanned_files ADD COLUMN face_scan_version INTEGER NOT NULL DEFAULT 0",
               "ALTER TABLE scanned_files ADD COLUMN face_count INTEGER",
@@ -95,10 +106,37 @@ namespace MediaDedup
                 stmt << std::string(alter), now;
                 Poco::Logger::get("FacesOps").information("Applied migration: %s", std::string(alter));
             }
-            catch (const std::exception &)
+            catch (const Poco::Exception &e)
             {
-                // Column already exists.
+                // "duplicate column" is the normal re-boot case; anything
+                // else (locked, missing table) must not be masked as it —
+                // that silence is how the fresh-DB boot shipped broken.
+                const std::string detail = e.displayText();
+                if (detail.find("duplicate column") == std::string::npos)
+                    Poco::Logger::get("FacesOps").warning("Migration failed: %s — %s",
+                                                          std::string(alter), detail);
             }
+            catch (const std::exception &e)
+            {
+                Poco::Logger::get("FacesOps").warning("Migration failed: %s — %s",
+                                                      std::string(alter), std::string(e.what()));
+            }
+        }
+
+        // The sweep is dead without these columns; fail initialization loudly
+        // instead of erroring on every tick.
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT face_scan_version, face_count FROM scanned_files LIMIT 0", now;
+        }
+        catch (const std::exception &)
+        {
+            Poco::Logger::get("FacesOps").error(
+                "scanned_files is missing the face sweep columns after migration");
+            return false;
         }
 
         try
