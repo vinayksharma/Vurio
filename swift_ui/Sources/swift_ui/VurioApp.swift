@@ -408,6 +408,11 @@ struct ContentView: View {
                 }
             }
         .frame(minWidth: 1027, minHeight: 800)
+        // The status bar's hover callout, hoisted above both columns so it
+        // can spill past the navigation pane.
+        .overlay {
+            StatusCalloutHost()
+        }
         .overlay(
             Group {
                 if appState.isIntegrityCheckRunning {
@@ -552,6 +557,43 @@ enum HoverSegment: Equatable {
     case statusDot
 }
 
+/// Hover state for the status bar's callout, published so the panel can be
+/// drawn from a window-level overlay (StatusCalloutHost). Inside the sidebar
+/// column the callout was capped at the pane's width; at window level it has
+/// the whole window to expand into. Points are in the window's .global space.
+final class CalloutState: ObservableObject {
+    static let shared = CalloutState()
+    @Published var segment: HoverSegment = .none
+    @Published var point: CGPoint = .zero
+    @Published var showRepair = false
+}
+
+/// Window-level host for the status bar's callout: drawn above both
+/// split-view columns, so the panel expands past the navigation pane instead
+/// of clipping (or z-fighting the detail column) at its boundary.
+struct StatusCalloutHost: View {
+    @EnvironmentObject var appState: AppState
+    @ObservedObject private var callout = CalloutState.shared
+
+    var body: some View {
+        GeometryReader { geo in
+            if callout.segment != .none {
+                let origin = geo.frame(in: .global).origin
+                CalloutOverlayView(
+                    segment: callout.segment,
+                    appState: appState,
+                    hoverX: callout.point.x - origin.x,
+                    hoverY: callout.point.y - origin.y,
+                    totalWidth: geo.size.width,
+                    showRepair: callout.showRepair
+                )
+                .allowsHitTesting(false)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 struct CalloutOverlayView: View {
     let segment: HoverSegment
     let appState: AppState
@@ -618,7 +660,7 @@ struct CalloutOverlayView: View {
         case .processed:
             return "\(appState.processedFilesCount.formatted(.number)) / \(appState.scannedFilesCount.formatted(.number)) FILES PROCESSED"
         case .duplicates:
-            return "\(appState.duplicateFilesCount.formatted(.number)) DUPLICATES FOUND"
+            return "\(appState.duplicateFilesCount.formatted(.number)) SIMILAR IMAGES FOUND"
         case .errors:
             return "\(appState.errorFilesCount.formatted(.number)) ERRORS"
         case .remaining:
@@ -651,7 +693,7 @@ struct CalloutOverlayView: View {
                     appState.duplicateFindingTotal > 0
                         ? counts(appState.duplicateFindingCompleted, appState.duplicateFindingTotal)
                         : nil)
-            statRow(Theme.success, "DUPLICATES FOUND",
+            statRow(Theme.success, "SIMILAR IMAGES FOUND",
                     counts(appState.duplicateFilesCount))
             statRow(Theme.faceRing,
                     appState.faceScanTotal > 0
@@ -701,10 +743,10 @@ struct CalloutOverlayView: View {
     @State private var measuredSize = CGSize(width: 80, height: 14)
 
     var body: some View {
-        // The bar lives at the bottom of the narrow sidebar pane, so the
-        // callout rises straight up from the hover point and the panel sits
-        // above it, x-clamped to the pane — the sidebar has vertical room
-        // where the old sideways elbow had none.
+        // The callout rises straight up from the hover point with the panel
+        // stacked above it. Drawn at window level (StatusCalloutHost), so
+        // totalWidth is the whole window: the panel escapes the narrow
+        // navigation pane and only clamps at the window edges.
         let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
         let elbowPoint = CGPoint(x: hoverX, y: startPoint.y - 12)
         let halfW = measuredSize.width / 2
@@ -756,11 +798,9 @@ struct CalloutOverlayView: View {
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var messageCenter: MessageCenter
-    @State private var hoveredSegment: HoverSegment = .none
-    @State private var hoverPosition: CGPoint = .zero
-    // DF-5: pointer is within the realignment line's span (full bar height, so
-    // it is not a 2pt hit target).
-    @State private var hoveringRepair = false
+    // Global frame of the padded status-bar container — hover points are
+    // published to CalloutState in window coordinates against it.
+    @State private var containerFrame: CGRect = .zero
     @State private var isBreathing = false
 
     var body: some View {
@@ -850,25 +890,29 @@ struct StatusBarView: View {
                         .onContinuousHover { phase in
                             switch phase {
                             case .active(let location):
-                                hoveringRepair = appState.isRepairing && location.x <= repairWidth
-                                // Store the hover x in the status-bar's coordinate space (not
-                                // the bar's local space) so the callout — drawn in that space —
-                                // stays aligned even when a status message offsets/resizes the
-                                // progress bar.
-                                let barMinX = geometry.frame(in: .named("sb")).minX
-                                hoverPosition = CGPoint(x: location.x + barMinX, y: location.y)
+                                // DF-5: pointer within the realignment line's
+                                // span (full bar height, not a 2pt hit target).
+                                let overRepair = appState.isRepairing && location.x <= repairWidth
+                                let segment: HoverSegment
                                 if location.x <= max(0, completedWidth - duplicateWidth) {
-                                    hoveredSegment = .processed
+                                    segment = .processed
                                 } else if location.x <= completedWidth {
-                                    hoveredSegment = .duplicates
+                                    segment = .duplicates
                                 } else if location.x <= completedWidth + errorWidth {
-                                    hoveredSegment = .errors
+                                    segment = .errors
                                 } else {
-                                    hoveredSegment = .remaining
+                                    segment = .remaining
                                 }
+                                // Publish in window coordinates: the callout
+                                // is drawn by StatusCalloutHost at window
+                                // level so it can expand past the pane.
+                                let bar = geometry.frame(in: .global)
+                                CalloutState.shared.point = CGPoint(x: bar.minX + location.x, y: bar.midY)
+                                CalloutState.shared.showRepair = overRepair
+                                CalloutState.shared.segment = segment
                             case .ended:
-                                hoveredSegment = .none
-                                hoveringRepair = false
+                                CalloutState.shared.segment = .none
+                                CalloutState.shared.showRepair = false
                             }
                         }
                     }
@@ -940,9 +984,15 @@ struct StatusBarView: View {
                     .onContinuousHover { phase in
                         switch phase {
                         case .active:
-                            hoveredSegment = .statusDot
+                            // The dot's center in window coordinates (12pt
+                            // padding + half its 14pt footprint from the
+                            // container's bottom-right corner).
+                            CalloutState.shared.point = CGPoint(x: containerFrame.maxX - 19,
+                                                                y: containerFrame.maxY - 15)
+                            CalloutState.shared.showRepair = false
+                            CalloutState.shared.segment = .statusDot
                         case .ended:
-                            hoveredSegment = .none
+                            CalloutState.shared.segment = .none
                         }
                     }
                 }
@@ -950,22 +1000,15 @@ struct StatusBarView: View {
             .animation(.easeInOut(duration: 0.35), value: messageCenter.message)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .coordinateSpace(name: "sb")
-            .overlay {
+            .background(
                 GeometryReader { geo in
-                    if hoveredSegment != .none {
-                        CalloutOverlayView(
-                            segment: hoveredSegment,
-                            appState: appState,
-                            hoverX: hoveredSegment == .statusDot ? geo.size.width - 24 : hoverPosition.x,
-                            hoverY: geo.size.height / 2,
-                            totalWidth: geo.size.width,
-                            showRepair: hoveringRepair && hoveredSegment != .statusDot
-                        )
-                        .allowsHitTesting(false)
-                    }
+                    Color.clear
+                        .onAppear { containerFrame = geo.frame(in: .global) }
+                        .onChange(of: geo.frame(in: .global)) { _, frame in
+                            containerFrame = frame
+                        }
                 }
-            }
+            )
         }
         .background(
             Theme.background.opacity(0.3)
