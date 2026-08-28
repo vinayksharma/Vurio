@@ -353,6 +353,11 @@ struct ContentView: View {
                     .padding(.bottom, 8)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
             }
+            // The pipeline status bar docks at the bottom of the navigation
+            // pane (it was a full-width window inset before).
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                StatusBarView()
+            }
             .background(
                 GeometryReader { geometry in
                     Color.clear
@@ -402,10 +407,6 @@ struct ContentView: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                StatusBarView()
-            }
-            .contentMargins(.bottom, 30, for: .scrollIndicators)
         .frame(minWidth: 1027, minHeight: 800)
         .overlay(
             Group {
@@ -700,20 +701,19 @@ struct CalloutOverlayView: View {
     @State private var measuredSize = CGSize(width: 80, height: 14)
 
     var body: some View {
-        let isRightHalf = hoverX > totalWidth * 0.6
-        let direction: CGFloat = isRightHalf ? -1 : 1
-        
+        // The bar lives at the bottom of the narrow sidebar pane, so the
+        // callout rises straight up from the hover point and the panel sits
+        // above it, x-clamped to the pane — the sidebar has vertical room
+        // where the old sideways elbow had none.
         let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
-        let elbowPoint = CGPoint(x: startPoint.x + (15 * direction), y: startPoint.y - 15)
-        
-        let lineLength = max(measuredSize.width + 10, 50)
-        let endPoint = CGPoint(x: elbowPoint.x + (lineLength * direction), y: elbowPoint.y)
+        let elbowPoint = CGPoint(x: hoverX, y: startPoint.y - 12)
+        let halfW = measuredSize.width / 2
+        let panelX = min(max(halfW + 4, hoverX), max(halfW + 4, totalWidth - halfW - 4))
         
         ZStack(alignment: .topLeading) {
             Path { path in
                 path.move(to: startPoint)
                 path.addLine(to: elbowPoint)
-                path.addLine(to: endPoint)
             }
             .stroke(Color.gray.opacity(0.8), lineWidth: 1.5)
             
@@ -744,8 +744,8 @@ struct CalloutOverlayView: View {
                 }
             )
             .position(
-                x: elbowPoint.x + ((lineLength / 2) * direction),
-                y: elbowPoint.y - (measuredSize.height / 2) - 5
+                x: panelX,
+                y: elbowPoint.y - (measuredSize.height / 2) - 4
             )
         }
         .animation(.easeOut(duration: 0.15), value: hoverX)
@@ -767,18 +767,18 @@ struct StatusBarView: View {
         VStack(spacing: 0) {
             Divider().background(Theme.border)
 
-            HStack(spacing: 12) {
-                // Transient status message: slides in from the left and compresses
-                // the progress bar into the remaining space. Dismisses on click
+            VStack(spacing: 6) {
+                // Transient status message: the sidebar pane is too narrow
+                // for the old side-by-side layout, so the message gets its
+                // own line above the bar row. Dismisses on click
                 // (auto-dismiss after a few seconds is handled by MessageCenter).
                 if let message = messageCenter.message {
                     Text(message)
                         .font(.custom("Menlo", size: 9))
                         .foregroundColor(Theme.textPrimary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.tail)
-                        .layoutPriority(1)
-                        .frame(maxWidth: 340, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         // Clicking keeps the message up for another full duration
                         // instead of dismissing it.
@@ -786,167 +786,169 @@ struct StatusBarView: View {
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
-                // Segmented Progress Bar
-                GeometryReader { geometry in
-                    let totalWidth = geometry.size.width
-                    let completedPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
-                    let duplicatePercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
-                    let errorPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                HStack(spacing: 10) {
+                    // Segmented Progress Bar
+                    GeometryReader { geometry in
+                        let totalWidth = geometry.size.width
+                        let completedPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.processedFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                        let duplicatePercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.duplicateFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
+                        let errorPercent = (appState.isOnline && appState.scannedFilesCount > 0) ? min(100.0, (Double(appState.errorFilesCount) / Double(appState.scannedFilesCount)) * 100.0) : 0.0
                     
-                    let completedWidth = max(0, totalWidth * CGFloat(completedPercent / 100.0))
-                    let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
-                    let errorWidth = max(0, totalWidth * CGFloat(errorPercent / 100.0))
-                    // DF-5: spans the WHOLE bar, not the processed portion — it is
-                    // progress through the repair queue, not through the library.
-                    let repairWidth = max(0, totalWidth * CGFloat(appState.repairFraction))
+                        let completedWidth = max(0, totalWidth * CGFloat(completedPercent / 100.0))
+                        let duplicateWidth = max(0, totalWidth * CGFloat(duplicatePercent / 100.0))
+                        let errorWidth = max(0, totalWidth * CGFloat(errorPercent / 100.0))
+                        // DF-5: spans the WHOLE bar, not the processed portion — it is
+                        // progress through the repair queue, not through the library.
+                        let repairWidth = max(0, totalWidth * CGFloat(appState.repairFraction))
                     
-                    let blueColor = Theme.accent
-                    let greenColor = Theme.success
-                    let redColor = Theme.error
-                    let emptyColor = Theme.surfaceElevated
+                        let blueColor = Theme.accent
+                        let greenColor = Theme.success
+                        let redColor = Theme.error
+                        let emptyColor = Theme.surfaceElevated
                     
-                    ZStack(alignment: .leading) {
-                        // Main Bar
                         ZStack(alignment: .leading) {
-                            // Background track
-                            Rectangle()
-                                .fill(emptyColor)
+                            // Main Bar
+                            ZStack(alignment: .leading) {
+                                // Background track
+                                Rectangle()
+                                    .fill(emptyColor)
                             
-                            // Processed (Blue)
-                            Rectangle()
-                                .fill(blueColor)
-                                .frame(width: max(0, completedWidth - duplicateWidth))
+                                // Processed (Blue)
+                                Rectangle()
+                                    .fill(blueColor)
+                                    .frame(width: max(0, completedWidth - duplicateWidth))
                             
-                            // Duplicates (Green)
-                            Rectangle()
-                                .fill(greenColor)
-                                .frame(width: duplicateWidth)
-                                .offset(x: max(0, completedWidth - duplicateWidth))
+                                // Duplicates (Green)
+                                Rectangle()
+                                    .fill(greenColor)
+                                    .frame(width: duplicateWidth)
+                                    .offset(x: max(0, completedWidth - duplicateWidth))
                                 
-                            // Errors (Red)
-                            Rectangle()
-                                .fill(redColor)
-                                .frame(width: errorWidth)
-                                .offset(x: completedWidth)
-                        }
-                        .clipShape(Capsule())
-                        .animation(.easeInOut(duration: 0.5), value: completedWidth)
-                        .animation(.easeInOut(duration: 0.5), value: duplicateWidth)
-                        .animation(.easeInOut(duration: 0.5), value: errorWidth)
+                                // Errors (Red)
+                                Rectangle()
+                                    .fill(redColor)
+                                    .frame(width: errorWidth)
+                                    .offset(x: completedWidth)
+                            }
+                            .clipShape(Capsule())
+                            .animation(.easeInOut(duration: 0.5), value: completedWidth)
+                            .animation(.easeInOut(duration: 0.5), value: duplicateWidth)
+                            .animation(.easeInOut(duration: 0.5), value: errorWidth)
 
-                        // DF-5: realignment overlay. A thin translucent line laid
-                        // ON the bar (not a fourth segment) because it measures a
-                        // different population — files being re-compared — and must
-                        // not read as part of the scanned/processed accounting.
-                        if appState.isRepairing {
-                            Capsule()
-                                .fill(Theme.warning.opacity(0.55))
-                                .frame(width: repairWidth, height: 2)
-                                .animation(.easeInOut(duration: 0.5), value: repairWidth)
-                                .allowsHitTesting(false)
+                            // DF-5: realignment overlay. A thin translucent line laid
+                            // ON the bar (not a fourth segment) because it measures a
+                            // different population — files being re-compared — and must
+                            // not read as part of the scanned/processed accounting.
+                            if appState.isRepairing {
+                                Capsule()
+                                    .fill(Theme.warning.opacity(0.55))
+                                    .frame(width: repairWidth, height: 2)
+                                    .animation(.easeInOut(duration: 0.5), value: repairWidth)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                hoveringRepair = appState.isRepairing && location.x <= repairWidth
+                                // Store the hover x in the status-bar's coordinate space (not
+                                // the bar's local space) so the callout — drawn in that space —
+                                // stays aligned even when a status message offsets/resizes the
+                                // progress bar.
+                                let barMinX = geometry.frame(in: .named("sb")).minX
+                                hoverPosition = CGPoint(x: location.x + barMinX, y: location.y)
+                                if location.x <= max(0, completedWidth - duplicateWidth) {
+                                    hoveredSegment = .processed
+                                } else if location.x <= completedWidth {
+                                    hoveredSegment = .duplicates
+                                } else if location.x <= completedWidth + errorWidth {
+                                    hoveredSegment = .errors
+                                } else {
+                                    hoveredSegment = .remaining
+                                }
+                            case .ended:
+                                hoveredSegment = .none
+                                hoveringRepair = false
+                            }
                         }
                     }
+                    .frame(height: 8)
+                
+                    // Status Dot with Glow and Progress Ring
+                    Button(action: {
+                        Task {
+                            await appState.togglePause()
+                        }
+                    }) {
+                        ZStack {
+                            if appState.isPaused {
+                                // Blinking Red Pause Indicator
+                                Image(systemName: "pause.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(Theme.error)
+                                    .shadow(color: Theme.error, radius: isBreathing ? 6 : 2)
+                                    .opacity(isBreathing ? 1.0 : 0.4)
+                                    .brightness(isBreathing ? 0.2 : 0.0)
+                                    .frame(width: 14, height: 14)
+                                    .onAppear {
+                                        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                                            isBreathing = true
+                                        }
+                                    }
+                                    .onDisappear {
+                                        isBreathing = false
+                                    }
+                            } else {
+                                Circle()
+                                    .fill(appState.isOnline ? Theme.success : Theme.error)
+                                    .brightness(0.3)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: appState.isOnline ? Theme.success : Theme.error, radius: 6)
+                            }
+                    
+                        if !appState.isPaused && appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
+                            let findingPercent = appState.isOnline ? min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) : 0.0
+                            Circle()
+                                .trim(from: 0, to: CGFloat(findingPercent))
+                                .stroke(Theme.similarityRing, lineWidth: 2)
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 14, height: 14)
+                                .animation(.linear(duration: 0.5), value: findingPercent)
+                        }
+
+                        // Face sweep: the outer ring, one ring outside the
+                        // finder's. Both are trailing sweeps over processed
+                        // files, so they stack concentric on the dot — in the
+                        // pastel pair that keys the callout panel's splotches.
+                        if !appState.isPaused && appState.isFaceScanning {
+                            let facePercent = appState.isOnline ? min(1.0, appState.faceScanFraction) : 0.0
+                            Circle()
+                                .trim(from: 0, to: CGFloat(facePercent))
+                                .stroke(Theme.faceRing, lineWidth: 2)
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 19, height: 19)
+                                .animation(.linear(duration: 0.5), value: facePercent)
+                        }
+                    }
+                    // Constant footprint no matter what's showing (bare dot,
+                    // pause icon, rings) — the rings draw past these bounds into
+                    // the row padding instead of resizing the status bar, which
+                    // made everything jump when a sweep started.
+                    .frame(width: 14, height: 14)
+                    }
+                    .buttonStyle(.plain)
                     .onContinuousHover { phase in
                         switch phase {
-                        case .active(let location):
-                            hoveringRepair = appState.isRepairing && location.x <= repairWidth
-                            // Store the hover x in the status-bar's coordinate space (not
-                            // the bar's local space) so the callout — drawn in that space —
-                            // stays aligned even when a status message offsets/resizes the
-                            // progress bar.
-                            let barMinX = geometry.frame(in: .named("sb")).minX
-                            hoverPosition = CGPoint(x: location.x + barMinX, y: location.y)
-                            if location.x <= max(0, completedWidth - duplicateWidth) {
-                                hoveredSegment = .processed
-                            } else if location.x <= completedWidth {
-                                hoveredSegment = .duplicates
-                            } else if location.x <= completedWidth + errorWidth {
-                                hoveredSegment = .errors
-                            } else {
-                                hoveredSegment = .remaining
-                            }
+                        case .active:
+                            hoveredSegment = .statusDot
                         case .ended:
                             hoveredSegment = .none
-                            hoveringRepair = false
                         }
-                    }
-                }
-                .frame(height: 8)
-                
-                // Status Dot with Glow and Progress Ring
-                Button(action: {
-                    Task {
-                        await appState.togglePause()
-                    }
-                }) {
-                    ZStack {
-                        if appState.isPaused {
-                            // Blinking Red Pause Indicator
-                            Image(systemName: "pause.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(Theme.error)
-                                .shadow(color: Theme.error, radius: isBreathing ? 6 : 2)
-                                .opacity(isBreathing ? 1.0 : 0.4)
-                                .brightness(isBreathing ? 0.2 : 0.0)
-                                .frame(width: 14, height: 14)
-                                .onAppear {
-                                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                                        isBreathing = true
-                                    }
-                                }
-                                .onDisappear {
-                                    isBreathing = false
-                                }
-                        } else {
-                            Circle()
-                                .fill(appState.isOnline ? Theme.success : Theme.error)
-                                .brightness(0.3)
-                                .frame(width: 8, height: 8)
-                                .shadow(color: appState.isOnline ? Theme.success : Theme.error, radius: 6)
-                        }
-                    
-                    if !appState.isPaused && appState.duplicateFindingTotal > 0 && appState.duplicateFindingCompleted < appState.duplicateFindingTotal {
-                        let findingPercent = appState.isOnline ? min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) : 0.0
-                        Circle()
-                            .trim(from: 0, to: CGFloat(findingPercent))
-                            .stroke(Theme.similarityRing, lineWidth: 2)
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 14, height: 14)
-                            .animation(.linear(duration: 0.5), value: findingPercent)
-                    }
-
-                    // Face sweep: the outer ring, one ring outside the
-                    // finder's. Both are trailing sweeps over processed
-                    // files, so they stack concentric on the dot — in the
-                    // pastel pair that keys the callout panel's splotches.
-                    if !appState.isPaused && appState.isFaceScanning {
-                        let facePercent = appState.isOnline ? min(1.0, appState.faceScanFraction) : 0.0
-                        Circle()
-                            .trim(from: 0, to: CGFloat(facePercent))
-                            .stroke(Theme.faceRing, lineWidth: 2)
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 19, height: 19)
-                            .animation(.linear(duration: 0.5), value: facePercent)
-                    }
-                }
-                // Constant footprint no matter what's showing (bare dot,
-                // pause icon, rings) — the rings draw past these bounds into
-                // the row padding instead of resizing the status bar, which
-                // made everything jump when a sweep started.
-                .frame(width: 14, height: 14)
-                }
-                .buttonStyle(.plain)
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active:
-                        hoveredSegment = .statusDot
-                    case .ended:
-                        hoveredSegment = .none
                     }
                 }
             }
             .animation(.easeInOut(duration: 0.35), value: messageCenter.message)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .coordinateSpace(name: "sb")
             .overlay {
