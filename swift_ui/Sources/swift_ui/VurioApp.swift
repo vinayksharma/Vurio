@@ -601,9 +601,10 @@ struct CalloutOverlayView: View {
     }
 
     var calloutText: String {
-        // The face-scan line always rides the callout while a sweep runs —
-        // it has no segment of its own, only the thin bottom overlay.
-        baseText + (showRepair ? repairLines : "") + faceScanLines
+        // Both sweep rings live on the status dot, so their detail lines
+        // ride the dot's callout only (see baseText's .statusDot case) — bar
+        // segments keep to the scanned/processed story.
+        baseText + (showRepair ? repairLines : "")
     }
 
     private var baseText: String {
@@ -625,6 +626,7 @@ struct CalloutOverlayView: View {
                 let findingFraction = min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal))
                 text += "\nFINDING DUPLICATES: \(findingFraction.formatted(.percent.precision(.fractionLength(0)))) COMPLETE OF PROCESSED FILES"
             }
+            text += faceScanLines
             
             if advancedOverlayEnabled {
                 text += "\n\(appState.threadCount.formatted(.number)) / \(appState.maxThreads.formatted(.number)) ACTIVE THREADS"
@@ -781,18 +783,6 @@ struct StatusBarView: View {
                                 .animation(.easeInOut(duration: 0.5), value: repairWidth)
                                 .allowsHitTesting(false)
                         }
-                        // FACE-1 sweep: same thin-overlay idea as the repair
-                        // line (a different population than the main bar), but
-                        // anchored to the bar's bottom edge so both can show.
-                        if appState.isFaceScanning {
-                            let faceWidth = max(0, totalWidth * CGFloat(appState.faceScanFraction))
-                            Capsule()
-                                .fill(Theme.textAccent.opacity(0.65))
-                                .frame(width: faceWidth, height: 2)
-                                .offset(y: 3)
-                                .animation(.easeInOut(duration: 0.5), value: faceWidth)
-                                .allowsHitTesting(false)
-                        }
                     }
                     .onContinuousHover { phase in
                         switch phase {
@@ -857,12 +847,31 @@ struct StatusBarView: View {
                         let findingPercent = appState.isOnline ? min(1.0, Double(appState.duplicateFindingCompleted) / Double(appState.duplicateFindingTotal)) : 0.0
                         Circle()
                             .trim(from: 0, to: CGFloat(findingPercent))
-                            .stroke(Theme.warning, lineWidth: 2)
+                            .stroke(Theme.sweepRing, lineWidth: 2)
                             .rotationEffect(.degrees(-90))
                             .frame(width: 14, height: 14)
                             .animation(.linear(duration: 0.5), value: findingPercent)
                     }
+
+                    // Face sweep: the outer ring. Both rings are trailing
+                    // sweeps over processed files, so they stack concentric
+                    // on the dot — faces in the blue the old under-bar line
+                    // used, one ring outside the finder's.
+                    if !appState.isPaused && appState.isFaceScanning {
+                        let facePercent = appState.isOnline ? min(1.0, appState.faceScanFraction) : 0.0
+                        Circle()
+                            .trim(from: 0, to: CGFloat(facePercent))
+                            .stroke(Theme.textAccent, lineWidth: 2)
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 19, height: 19)
+                            .animation(.linear(duration: 0.5), value: facePercent)
+                    }
                 }
+                // Constant footprint no matter what's showing (bare dot,
+                // pause icon, rings) — the rings draw past these bounds into
+                // the row padding instead of resizing the status bar, which
+                // made everything jump when a sweep started.
+                .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.plain)
                 .onContinuousHover { phase in
