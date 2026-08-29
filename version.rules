@@ -1,0 +1,9 @@
+# VER-1 version rules. Only `major` is human-managed — see
+# dedup_server/docs/todo_version_management.md §2.
+# minor  = number of merge commits on the current history since major_base
+# patch  = number of non-merge commits since the most recent merge commit
+#
+# To bump the major: set major, then set major_base to $(git rev-parse main),
+# commit, and merge like any other change.
+major = 1
+major_base = c6689aaa56cac680b4a39431ef8a796eec818bbc

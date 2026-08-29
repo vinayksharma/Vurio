@@ -22,6 +22,7 @@
 #include "orchestration/duplicate_finder.hpp"
 #include "media_processors/media_processor.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
+#include "generated/version_info.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <thread>
@@ -37,6 +38,11 @@ namespace MediaDedup
     bool ServerInitializer::initializeConfiguration()
     {
         Poco::Logger &logger = Poco::Logger::get("ServerInitializer");
+
+        // VER-1: stamp every log with the build identity (version on main
+        // builds, branch name elsewhere, '*' when built from a dirty tree).
+        logger.information("Vurio dedup server %s starting",
+                           std::string(VersionInfo::kDisplay));
 
         try
         {

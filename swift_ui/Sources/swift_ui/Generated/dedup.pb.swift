@@ -27,6 +27,17 @@ struct Vurio_Dedup_HandshakeRequest: Sendable {
 
   var cookie: String = String()
 
+  /// VER-1: client build identity, checked by the server. Version and commit
+  /// must equal the server's for pairing to succeed; branch/dirty are logged
+  /// only.
+  var clientVersion: String = String()
+
+  var clientCommit: String = String()
+
+  var clientBranch: String = String()
+
+  var clientDirty: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -42,6 +53,17 @@ struct Vurio_Dedup_HandshakeResponse: Sendable {
   var sessionToken: String = String()
 
   var errorMessage: String = String()
+
+  /// VER-1: server build identity. Filled whenever the cookie was valid
+  /// (success or version mismatch); left empty on cookie rejection so an
+  /// unpaired caller learns nothing about the build.
+  var serverVersion: String = String()
+
+  var serverCommit: String = String()
+
+  var serverBranch: String = String()
+
+  var serverDirty: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1172,7 +1194,7 @@ fileprivate let _protobuf_package = "vurio.dedup"
 
 extension Vurio_Dedup_HandshakeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".HandshakeRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cookie\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cookie\0\u{3}client_version\0\u{3}client_commit\0\u{3}client_branch\0\u{3}client_dirty\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1181,6 +1203,10 @@ extension Vurio_Dedup_HandshakeRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.cookie) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.clientVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.clientCommit) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.clientBranch) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.clientDirty) }()
       default: break
       }
     }
@@ -1190,11 +1216,27 @@ extension Vurio_Dedup_HandshakeRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
     if !self.cookie.isEmpty {
       try visitor.visitSingularStringField(value: self.cookie, fieldNumber: 1)
     }
+    if !self.clientVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.clientVersion, fieldNumber: 2)
+    }
+    if !self.clientCommit.isEmpty {
+      try visitor.visitSingularStringField(value: self.clientCommit, fieldNumber: 3)
+    }
+    if !self.clientBranch.isEmpty {
+      try visitor.visitSingularStringField(value: self.clientBranch, fieldNumber: 4)
+    }
+    if self.clientDirty != false {
+      try visitor.visitSingularBoolField(value: self.clientDirty, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_HandshakeRequest, rhs: Vurio_Dedup_HandshakeRequest) -> Bool {
     if lhs.cookie != rhs.cookie {return false}
+    if lhs.clientVersion != rhs.clientVersion {return false}
+    if lhs.clientCommit != rhs.clientCommit {return false}
+    if lhs.clientBranch != rhs.clientBranch {return false}
+    if lhs.clientDirty != rhs.clientDirty {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1202,7 +1244,7 @@ extension Vurio_Dedup_HandshakeRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_HandshakeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".HandshakeResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}ok\0\u{3}session_token\0\u{3}error_message\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}ok\0\u{3}session_token\0\u{3}error_message\0\u{3}server_version\0\u{3}server_commit\0\u{3}server_branch\0\u{3}server_dirty\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1213,6 +1255,10 @@ extension Vurio_Dedup_HandshakeResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       case 1: try { try decoder.decodeSingularBoolField(value: &self.ok) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.sessionToken) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.serverVersion) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.serverCommit) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.serverBranch) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.serverDirty) }()
       default: break
       }
     }
@@ -1228,6 +1274,18 @@ extension Vurio_Dedup_HandshakeResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.errorMessage.isEmpty {
       try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 3)
     }
+    if !self.serverVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.serverVersion, fieldNumber: 4)
+    }
+    if !self.serverCommit.isEmpty {
+      try visitor.visitSingularStringField(value: self.serverCommit, fieldNumber: 5)
+    }
+    if !self.serverBranch.isEmpty {
+      try visitor.visitSingularStringField(value: self.serverBranch, fieldNumber: 6)
+    }
+    if self.serverDirty != false {
+      try visitor.visitSingularBoolField(value: self.serverDirty, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1235,6 +1293,10 @@ extension Vurio_Dedup_HandshakeResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.ok != rhs.ok {return false}
     if lhs.sessionToken != rhs.sessionToken {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.serverVersion != rhs.serverVersion {return false}
+    if lhs.serverCommit != rhs.serverCommit {return false}
+    if lhs.serverBranch != rhs.serverBranch {return false}
+    if lhs.serverDirty != rhs.serverDirty {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
