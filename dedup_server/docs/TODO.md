@@ -10,6 +10,19 @@ before touching code — the line below is an index entry, not a specification.
 
 ## Open
 
+- **VER-1 — git-derived versioning, sidebar build display, build-pair handshake check.**
+  *Designed 2026-08-28. Not yet implemented.*
+  Version computed from git at build time (major from a committed
+  `version.rules` file; minor = merge-commit count, so every PR merge to main
+  bumps it automatically; patch = commits since the last merge). One generator
+  script embeds identical version/branch/commit/dirty constants into both the
+  C++ server and the Swift client. Sidebar shows the build identity above the
+  progress bar when the advanced overlay is on — version on main builds,
+  branch name on any other branch, `*` for dirty trees. The pairing Handshake
+  is extended so client and server prove they were built from the same commit;
+  on mismatch both log, the client shows the error, and both exit.
+  **Full specification: [todo_version_management.md](todo_version_management.md)**
+
 - **FACE-8 — configurable purge cutoff: merges filter misfits, live from Settings.**
   *Designed & implemented 2026-08-24. Remaining before Done: the spec's §7
   manual pass on the live library.*
