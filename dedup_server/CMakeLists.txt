@@ -71,6 +71,26 @@ add_custom_command(
 )
 include_directories(${PROTO_BUILD_DIR})
 
+# VER-1: compute the build version from git and (re)write the generated
+# embeddings for BOTH the C++ server and the Swift client. Runs once at
+# configure so a fresh build finds the header, and again on every build via
+# the custom target below; the script only touches files whose content
+# changed, so unchanged trees do not recompile.
+execute_process(
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/gen_version_info.sh
+            ${CMAKE_CURRENT_SOURCE_DIR}/..
+    RESULT_VARIABLE GEN_VERSION_RESULT
+)
+if(NOT GEN_VERSION_RESULT EQUAL 0)
+    message(FATAL_ERROR "gen_version_info.sh failed (bad or missing version.rules?)")
+endif()
+add_custom_target(gen_version_info ALL
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/gen_version_info.sh
+            ${CMAKE_CURRENT_SOURCE_DIR}/..
+    BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/generated/version_info.hpp
+    COMMENT "VER-1: computing build version from git"
+)
+
 # Find yaml-cpp
 find_package(yaml-cpp REQUIRED)
 
@@ -229,6 +249,7 @@ endif()
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}    # VER-1: for "generated/version_info.hpp"
     ${ImageMagick++_INCLUDE_DIRS}
 )
 
@@ -345,6 +366,12 @@ add_executable(media_dedup_server
 if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     add_dependencies(media_dedup_server download_models)
 endif()
+
+# VER-1: refresh the version embeddings before compiling anything that
+# includes generated/version_info.hpp. all_unit_tests is defined in
+# tests/CMakeLists.txt; CMake targets are global, so wiring it here works.
+add_dependencies(media_dedup_server gen_version_info)
+add_dependencies(all_unit_tests gen_version_info)
 
 # FACE-1: the Vision face detector is Objective-C++ and Apple-only. The
 # rest of the face pipeline is portable C++ behind the FaceDetector seam.

@@ -81,6 +81,9 @@ protected:
 
 #include <grpcpp/grpcpp.h>
 #include "dedup.grpc.pb.h"
+#include "core/grpc_server/security_service.hpp"
+#include "core/grpc_server/version_check.hpp"
+#include "generated/version_info.hpp"
 
 // Every gRPC call except Handshake requires the per-instance session token
 // (x-vurio-token). start() writes the pairing cookie to ~/.vurio/grpc.cookie;
@@ -94,6 +97,12 @@ static std::string pairWithServer(const std::shared_ptr<grpc::Channel>& channel)
     auto security = vurio::dedup::SecurityService::NewStub(channel);
     vurio::dedup::HandshakeRequest req;
     req.set_cookie(cookie);
+    // VER-1: a real client sends its build identity; the test binary embeds
+    // the same generated constants as the server, so the pair matches.
+    req.set_client_version(MediaDedup::VersionInfo::kVersion);
+    req.set_client_commit(MediaDedup::VersionInfo::kCommit);
+    req.set_client_branch(MediaDedup::VersionInfo::kBranch);
+    req.set_client_dirty(MediaDedup::VersionInfo::kDirty);
     vurio::dedup::HandshakeResponse resp;
     grpc::ClientContext ctx;
     grpc::Status st = security->Handshake(&ctx, req, &resp);
@@ -361,4 +370,112 @@ TEST_F(MediaServiceGrpcTest, ServiceImplsAreDirectlyConstructible) {
     grpc::ServerContext cctx;
     grpc::Status cst = config_svc.GetConfig(&cctx, &creq, &cresp);
     EXPECT_TRUE(cst.ok());
+}
+
+// ---------------------------------------------------------------------------
+// VER-1: build-pair rule and handshake version check (spec §9).
+// SecurityServiceImpl is header-only and constructed directly — no gRPC
+// server needed. The mismatch exit hook is injected as a counter so the
+// default (which terminates the process) never runs under the test runner.
+// ---------------------------------------------------------------------------
+
+TEST(VersionCheckTest, BuildPairMatchesTable) {
+    // equal → true
+    EXPECT_TRUE(MediaDedup::Core::buildPairMatches("1.4.2", "8488a3de", "1.4.2", "8488a3de"));
+    // commit differs → false
+    EXPECT_FALSE(MediaDedup::Core::buildPairMatches("1.4.2", "8488a3de", "1.4.2", "deadbeef"));
+    // version differs → false
+    EXPECT_FALSE(MediaDedup::Core::buildPairMatches("1.4.2", "8488a3de", "1.4.3", "8488a3de"));
+    // empty client fields (pre-VER-1 client) → false, even if server empty too
+    EXPECT_FALSE(MediaDedup::Core::buildPairMatches("", "", "1.4.2", "8488a3de"));
+    EXPECT_FALSE(MediaDedup::Core::buildPairMatches("", "", "", ""));
+    // NOTE: dirty flags are absent from the signature by design — dirtiness
+    // is display-only and never part of the pairing rule (VER-1 §6.2).
+}
+
+namespace {
+// Scoped cookie for direct SecurityServiceImpl calls: sets the auth state,
+// restores the previous values on destruction so the gRPC-server-based
+// fixtures in this file are unaffected.
+struct ScopedPairingCookie {
+    std::string prev_cookie, prev_token;
+    explicit ScopedPairingCookie(const std::string &cookie, const std::string &token) {
+        auto &st = MediaDedup::Core::GrpcAuth::authState();
+        std::lock_guard<std::mutex> lk(st.mutex);
+        prev_cookie = st.pairing_cookie;
+        prev_token = st.session_token;
+        st.pairing_cookie = cookie;
+        st.session_token = token;
+    }
+    ~ScopedPairingCookie() {
+        auto &st = MediaDedup::Core::GrpcAuth::authState();
+        std::lock_guard<std::mutex> lk(st.mutex);
+        st.pairing_cookie = prev_cookie;
+        st.session_token = prev_token;
+    }
+};
+} // namespace
+
+TEST(VersionCheckTest, HandshakeMismatchRejectsAndFiresExitHook) {
+    ScopedPairingCookie scoped("test-cookie-ver1", "test-token-ver1");
+    int mismatch_fired = 0;
+    MediaDedup::Core::SecurityServiceImpl svc([&] { ++mismatch_fired; });
+
+    vurio::dedup::HandshakeRequest req;
+    req.set_cookie("test-cookie-ver1");
+    req.set_client_version(MediaDedup::VersionInfo::kVersion);
+    req.set_client_commit("00000000"); // wrong commit
+    req.set_client_branch("stale_branch");
+    vurio::dedup::HandshakeResponse resp;
+    ASSERT_TRUE(svc.Handshake(nullptr, &req, &resp).ok());
+
+    EXPECT_FALSE(resp.ok());
+    EXPECT_TRUE(resp.session_token().empty());
+    EXPECT_EQ(resp.error_message().rfind("VERSION_MISMATCH: ", 0), 0u)
+        << resp.error_message();
+    // Cookie was valid, so the server identity IS disclosed in the reply.
+    EXPECT_EQ(resp.server_commit(), MediaDedup::VersionInfo::kCommit);
+    EXPECT_EQ(resp.server_version(), MediaDedup::VersionInfo::kVersion);
+    EXPECT_EQ(mismatch_fired, 1);
+}
+
+TEST(VersionCheckTest, HandshakeMatchSucceedsWithoutFiringHook) {
+    ScopedPairingCookie scoped("test-cookie-ver1", "test-token-ver1");
+    int mismatch_fired = 0;
+    MediaDedup::Core::SecurityServiceImpl svc([&] { ++mismatch_fired; });
+
+    vurio::dedup::HandshakeRequest req;
+    req.set_cookie("test-cookie-ver1");
+    req.set_client_version(MediaDedup::VersionInfo::kVersion);
+    req.set_client_commit(MediaDedup::VersionInfo::kCommit);
+    req.set_client_branch(MediaDedup::VersionInfo::kBranch);
+    req.set_client_dirty(MediaDedup::VersionInfo::kDirty);
+    vurio::dedup::HandshakeResponse resp;
+    ASSERT_TRUE(svc.Handshake(nullptr, &req, &resp).ok());
+
+    EXPECT_TRUE(resp.ok());
+    EXPECT_EQ(resp.session_token(), "test-token-ver1");
+    EXPECT_EQ(resp.server_commit(), MediaDedup::VersionInfo::kCommit);
+    EXPECT_EQ(mismatch_fired, 0);
+}
+
+TEST(VersionCheckTest, WrongCookieDisclosesNoVersionAndNoExit) {
+    ScopedPairingCookie scoped("test-cookie-ver1", "test-token-ver1");
+    int mismatch_fired = 0;
+    MediaDedup::Core::SecurityServiceImpl svc([&] { ++mismatch_fired; });
+
+    vurio::dedup::HandshakeRequest req;
+    req.set_cookie("wrong-cookie");
+    req.set_client_version("9.9.9");
+    req.set_client_commit("ffffffff");
+    vurio::dedup::HandshakeResponse resp;
+    ASSERT_TRUE(svc.Handshake(nullptr, &req, &resp).ok());
+
+    EXPECT_FALSE(resp.ok());
+    // Cookie rejection wins over the version check: no build info leaks to
+    // an unpaired caller, and no exit fires (§6.3.1, §8).
+    EXPECT_TRUE(resp.server_version().empty());
+    EXPECT_TRUE(resp.server_commit().empty());
+    EXPECT_EQ(resp.error_message(), "Handshake failed: invalid pairing cookie");
+    EXPECT_EQ(mismatch_fired, 0);
 }

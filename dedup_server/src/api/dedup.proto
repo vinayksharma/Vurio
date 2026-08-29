@@ -16,12 +16,26 @@ service SecurityService {
 
 message HandshakeRequest {
   string cookie = 1;
+  // VER-1: client build identity, checked by the server. Version and commit
+  // must equal the server's for pairing to succeed; branch/dirty are logged
+  // only.
+  string client_version = 2;
+  string client_commit = 3;
+  string client_branch = 4;
+  bool client_dirty = 5;
 }
 
 message HandshakeResponse {
   bool ok = 1;
   string session_token = 2;
   string error_message = 3;
+  // VER-1: server build identity. Filled whenever the cookie was valid
+  // (success or version mismatch); left empty on cookie rejection so an
+  // unpaired caller learns nothing about the build.
+  string server_version = 4;
+  string server_commit = 5;
+  string server_branch = 6;
+  bool server_dirty = 7;
 }
 
 // ---------------------------------------------------------

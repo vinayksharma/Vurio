@@ -122,3 +122,9 @@ scan_results.db-shm
 scan_results.db-wal
 *.db-shm
 *.db-wal
+
+# VER-1: build-time generated version embeddings. MUST stay untracked —
+# a tracked copy would dirty the tree on every build, which would flip the
+# dirty flag inside the very file being generated (feedback loop).
+dedup_server/generated/version_info.hpp
+swift_ui/Sources/swift_ui/Generated/VersionInfo.swift

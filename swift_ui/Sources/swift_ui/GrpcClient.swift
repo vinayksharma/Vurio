@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import GRPC
 import NIO
@@ -95,8 +96,32 @@ final class VurioGrpcClient {
         for attempt in 1...60 {
             if let cookie = Self.readCookie() {
                 do {
-                    let req = Vurio_Dedup_HandshakeRequest.with { $0.cookie = cookie }
+                    let req = Vurio_Dedup_HandshakeRequest.with {
+                        $0.cookie = cookie
+                        // VER-1: prove which build this client is; the server
+                        // requires version+commit to match its own.
+                        $0.clientVersion = VersionInfo.version
+                        $0.clientCommit  = VersionInfo.commit
+                        $0.clientBranch  = VersionInfo.branch
+                        $0.clientDirty   = VersionInfo.dirty
+                    }
                     let resp = try await security.handshake(req)
+                    // VER-1 fatal paths — never retried. The prefix is the
+                    // machine-readable marker set by the server; the second
+                    // arm is belt-and-braces for a pre-VER-1 server, whose
+                    // response fields come back empty.
+                    if resp.errorMessage.hasPrefix("VERSION_MISMATCH: ") {
+                        await Self.fatalVersionMismatch(resp.errorMessage)
+                        return
+                    }
+                    if resp.ok && (resp.serverCommit != VersionInfo.commit
+                                   || resp.serverVersion != VersionInfo.version) {
+                        await Self.fatalVersionMismatch(
+                            "VERSION_MISMATCH: server did not report a matching build "
+                            + "(server \"\(resp.serverVersion)\" @ \"\(resp.serverCommit)\", "
+                            + "app \(VersionInfo.display)). Rebuild both from the same commit.")
+                        return
+                    }
                     if resp.ok {
                         var options = CallOptions()
                         options.customMetadata.add(name: "x-vurio-token", value: resp.sessionToken)
@@ -118,6 +143,21 @@ final class VurioGrpcClient {
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
         print("gRPC pairing failed after retries; service clients unavailable")
+    }
+
+    /// VER-1: client and server are not builds of the same commit. Log, show
+    /// the server's explanation, and exit — the server side is exiting too,
+    /// so there is nothing to retry against.
+    @MainActor
+    private static func fatalVersionMismatch(_ message: String) {
+        print("FATAL \(message)")
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Vurio version mismatch"
+        alert.informativeText = message
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
+        NSApplication.shared.terminate(nil)
     }
 
     /// Re-read the cookie and re-pair (e.g. after the server was restarted and

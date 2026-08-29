@@ -798,6 +798,9 @@ struct CalloutOverlayView: View {
 struct StatusBarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var messageCenter: MessageCenter
+    // VER-1: the build-identity line is a developer affordance, shown only
+    // with the advanced overlay (same flag as the thumbnail overlays).
+    @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
     // Global frame of the padded status-bar container — hover points are
     // published to CalloutState in window coordinates against it.
     @State private var containerFrame: CGRect = .zero
@@ -808,6 +811,17 @@ struct StatusBarView: View {
             Divider().background(Theme.border)
 
             VStack(spacing: 6) {
+                // VER-1: build identity, advanced-overlay only. Shows the
+                // version when built from main, the branch name otherwise;
+                // '*' marks a build from a dirty tree.
+                if advancedOverlayEnabled {
+                    Text(VersionInfo.display)
+                        .font(.custom("Menlo", size: 9))
+                        .foregroundColor(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help("Build: \(VersionInfo.branch) @ \(VersionInfo.commit)\(VersionInfo.dirty ? " (uncommitted changes)" : "")")
+                }
+
                 // Transient status message: the sidebar pane is too narrow
                 // for the old side-by-side layout, so the message gets its
                 // own line above the bar row. Dismisses on click
