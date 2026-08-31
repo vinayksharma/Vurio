@@ -206,7 +206,15 @@ final class ViewerViewModel: ObservableObject {
 
     /// Prepend newer days (lower day index) when the leading sentinel appears.
     func loadNewer() async {
-        guard canLoadNewer, !loadingNewer else { return }
+        // The leading sentinel is trivially visible the instant the strip
+        // mounts (it starts at scroll offset 0, before the initial
+        // scroll-to-selection has had a chance to move it) — firing here
+        // would prepend days and then re-anchor the viewport at the OLD
+        // leading edge, stomping that still-pending center scroll once this
+        // fetch resolves. Bailing out while a scroll is outstanding defers
+        // the prefetch; the sentinel naturally re-fires onAppear once real
+        // scrolling brings it back into view.
+        guard canLoadNewer, !loadingNewer, scrollTarget == nil else { return }
         loadingNewer = true
         defer { loadingNewer = false }
 
