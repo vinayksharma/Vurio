@@ -290,6 +290,12 @@ class VurioDocumentView<RowContent: View>: NSView {
     }
 
     func boundsDidChange() {
+        // The clip view's bounds change on scroll AND on window resize. On a
+        // resize the document must follow the new clip width (a programmatic
+        // document view has no autoresizing mask, so nothing else updates it)
+        // or the pooled row hosting views — and the strips inside them — stay
+        // at a stale width until the item count happens to change.
+        updateDocumentSize()
         layoutVisibleRows()
     }
 

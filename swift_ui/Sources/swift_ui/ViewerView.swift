@@ -309,6 +309,41 @@ struct ViewerView: View {
 
     // MARK: - Thumbnail strip
 
+    private func applyScrollTarget(_ target: ViewerViewModel.ScrollTarget?, proxy: ScrollViewProxy) {
+        guard let target else { return }
+        func scrollNow() {
+            if target.animated {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(target.id, anchor: target.anchor)
+                }
+            } else {
+                proxy.scrollTo(target.id, anchor: target.anchor)
+            }
+        }
+        // Applied on the next runloop turn so freshly (pre)pended/rebuilt
+        // items are laid out before the scroll is restored.
+        DispatchQueue.main.async {
+            scrollNow()
+            model.scrollTarget = nil
+        }
+        // One tick is not always enough on a freshly (re)mounted strip: with
+        // a lot of content ahead of the target (a big day, or lopsided
+        // neighbor days) the LazyHStack's document geometry is still settling
+        // and the scrollTo above silently resolves short. Arrow-key
+        // navigation never hits this because the strip has settled by then.
+        // Re-issue the scroll a couple more times — idempotent when the first
+        // attempt landed right — bailing if the selection has since moved so
+        // a late retry can't stomp a newer position.
+        if target.anchor == .center {
+            for delay in [0.08, 0.25] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    guard target.id == model.selectedID else { return }
+                    scrollNow()
+                }
+            }
+        }
+    }
+
     private var thumbnailStrip: some View {
         ScrollViewReader { proxy in
             // Native indicator off: the custom hover scrollbar below sizes its
@@ -350,19 +385,20 @@ struct ViewerView: View {
                                       loadedUnits: model.scrollbarUnits.loaded,
                                       leadingUnits: model.scrollbarUnits.leading)
             .onChange(of: model.scrollTarget) { _, target in
-                guard let target else { return }
-                // Applied on the next runloop turn so freshly (pre)pended items
-                // are laid out before the scroll is restored.
-                DispatchQueue.main.async {
-                    if target.animated {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(target.id, anchor: target.anchor)
-                        }
-                    } else {
-                        proxy.scrollTo(target.id, anchor: target.anchor)
-                    }
-                    model.scrollTarget = nil
-                }
+                applyScrollTarget(target, proxy: proxy)
+            }
+            // `load()` resets `items` to [] synchronously (unmounting this
+            // whole ScrollViewReader — the strip is behind `if model.items
+            // .isEmpty`), then repopulates it once the fetch resolves and sets
+            // `scrollTarget` in the same synchronous step. That means this
+            // instance's `.onChange` baseline captures the new target as its
+            // STARTING value on (re)appear, so onChange never fires for it —
+            // the strip opens with the selection out of view, correct only
+            // once a later navigation actually changes scrollTarget. Applying
+            // whatever target is already pending as soon as the strip
+            // (re)mounts catches that first one too.
+            .onAppear {
+                applyScrollTarget(model.scrollTarget, proxy: proxy)
             }
         }
         .frame(height: 118)

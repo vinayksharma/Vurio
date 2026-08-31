@@ -3,9 +3,9 @@ import QuickLookThumbnailing
 
 struct ThumbnailView: View {
     let filePath: String
-    // THUMB-1: the tile's box. Fixed height, variable width — computed by the
-    // caller from server-supplied display geometry via ThumbnailGeometry, so
-    // it is known before the image arrives and never changes when it lands.
+    // THUMB-1: the tile's box. A fixed square (ThumbnailGeometry) — known
+    // before the image arrives and never changes when it lands; the bitmap
+    // letterboxes inside via `.fit`.
     let size: CGSize
     var cachedThumbnailPath: String? = nil
     // Stack layer for prioritized loading: 0 = top/visible (highest priority),
@@ -36,15 +36,12 @@ struct ThumbnailView: View {
         let displayed = thumbnail ?? ImageCache.shared.getImage(forKey: cacheKey)
         Group {
             if let displayed = displayed {
-                // THUMB-1: `.fit`, never `.fill`. `size` already IS the image's
-                // (clamped) aspect box, so this is a no-op for ordinary images
-                // and letterboxes only the extremes past the 3:1 clamp — the
-                // image is never cropped. The backing colour gives the letterbox
-                // bars a defined surface so they read as part of the tile, not
-                // a hole in the card. `.clipped()` stays as a guard: if a stale
-                // geometry ever disagrees with the bitmap (reachable once edits
-                // can change geometry under a loaded row) the overflow must not
-                // bleed into the neighbouring tile.
+                // THUMB-1: `.fit`, never `.fill`. The tile is a fixed square,
+                // so any non-square image letterboxes — the image is never
+                // cropped. The backing colour gives the letterbox bars a
+                // defined surface so they read as part of the tile, not a
+                // hole in the card. `.clipped()` stays as a guard against any
+                // overflow bleeding into the neighbouring tile.
                 Image(nsImage: displayed)
                     .resizable()
                     .aspectRatio(contentMode: .fit)

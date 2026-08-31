@@ -304,6 +304,9 @@ struct DuplicateMemberView: View {
     @State private var isHovered = false
     @State private var isButtonHovered = false
     @State private var isMaskHovered = false
+    // Timestamp of this tile's own last single-tap delivery, for identity-
+    // anchored double-click detection. See the tap gesture below.
+    @State private var lastTapTime: Date? = nil
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
 
     /// The file's source volume is disconnected and it is not in the ejected bin —
@@ -341,11 +344,28 @@ struct DuplicateMemberView: View {
                 .opacity(file.isEjected ? 0.3 : 1.0)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if !isMissing { onThumbnailTapped?() }
+                    guard !isMissing else { return }
+                    onThumbnailTapped?()
+                    // A native TapGesture(count: 2) recognizes off the raw
+                    // NSEvent.clickCount at the click's SCREEN position — tracked
+                    // by AppKit independent of which view ends up hit-testing
+                    // each click. If this tile's photo shifts under the cursor
+                    // between the two clicks (day/candidate strips reflow live
+                    // while files are still being imported/processed), the
+                    // second click's "double-click" fires on whatever DIFFERENT
+                    // tile now sits there instead. Comparing timestamps across
+                    // repeated single-tap delivery to THIS tile's own identity
+                    // means a double-click only fires when the same logical
+                    // file was tapped twice in a row — worst case on a reflow
+                    // is a missed double-click, never opening the wrong image.
+                    let now = Date()
+                    if let last = lastTapTime, now.timeIntervalSince(last) <= NSEvent.doubleClickInterval {
+                        lastTapTime = nil
+                        onThumbnailDoubleTapped?()
+                    } else {
+                        lastTapTime = now
+                    }
                 }
-                .simultaneousGesture(TapGesture(count: 2).onEnded {
-                    if !isMissing { onThumbnailDoubleTapped?() }
-                })
 
             if isMissing {
                 // Etched mask: covers the whole thumbnail, swallows every other

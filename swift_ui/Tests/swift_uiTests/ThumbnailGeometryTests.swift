@@ -8,24 +8,24 @@ import CoreGraphics
 
 @Suite("ThumbnailGeometry")
 struct ThumbnailGeometryTests {
-    @Test("landscape 3:2 at height 70 -> width 105")
+    // THUMB-1 (revised): every tile is a square of the strip's tile height,
+    // regardless of the image's display geometry — constant tile dimensions
+    // keep lazy-strip scroll offsets closed-form (see ThumbnailGeometry doc).
+
+    @Test("landscape input still gives a square tile")
     func landscape() {
-        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 3000, displayHeight: 2000) == 105)
+        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 3000, displayHeight: 2000) == 70)
     }
 
-    @Test("portrait 2:3 at height 70 -> width 47 (46.67 rounded)")
+    @Test("portrait input still gives a square tile")
     func portrait() {
-        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 2000, displayHeight: 3000) == 47)
+        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 2000, displayHeight: 3000) == 70)
     }
 
-    @Test("6:1 panorama clamps to 3:1 -> width 210, not 420")
-    func wideClamp() {
-        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 6000, displayHeight: 1000) == 210)
-    }
-
-    @Test("1:6 clamps to 1:3 -> width 23")
-    func tallClamp() {
-        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 1000, displayHeight: 6000) == 23)
+    @Test("extreme aspect ratios still give a square tile")
+    func extremes() {
+        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 6000, displayHeight: 1000) == 70)
+        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 1000, displayHeight: 6000) == 70)
     }
 
     @Test("unknown geometry gives a square tile")
@@ -37,18 +37,18 @@ struct ThumbnailGeometryTests {
         #expect(ThumbnailGeometry.tileWidth(height: 80, displayWidth: 0, displayHeight: 0) == 80)
     }
 
-    @Test("square input is exactly square (no rounding drift)")
-    func squareExact() {
-        #expect(ThumbnailGeometry.tileWidth(height: 70, displayWidth: 3000, displayHeight: 3000) == 70)
+    @Test("tile height carries through: rep tiles are 80-pt squares")
+    func heightCarries() {
+        #expect(ThumbnailGeometry.tileWidth(height: 80, displayWidth: 3000, displayHeight: 2000) == 80)
         #expect(ThumbnailGeometry.tileWidth(height: 80, displayWidth: 1, displayHeight: 1) == 80)
     }
 
     @Test("Int32 overload and tileSize agree with the Int form")
     func int32Overload() {
         let w = ThumbnailGeometry.tileWidth(height: 70, displayWidth: Int32(3000), displayHeight: Int32(2000))
-        #expect(w == 105)
+        #expect(w == 70)
         let s = ThumbnailGeometry.tileSize(height: 70, displayWidth: 3000, displayHeight: 2000)
-        #expect(s == CGSize(width: 105, height: 70))
+        #expect(s == CGSize(width: 70, height: 70))
     }
 
     @Test("width is always a whole number of points")
