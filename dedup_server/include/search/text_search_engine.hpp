@@ -43,22 +43,26 @@ namespace MediaDedup
         {
             int file_id = 0;
             double score = 0.0; // 1 - cosine distance, higher = more relevant
-            // Which half of the hybrid search admitted this file: CLIP ranked
-            // it for the semantic text / it satisfied the EXIF constraints.
-            // Results are a union of both halves, so any combination occurs.
+            // Which route of the hybrid search admitted this file: CLIP
+            // ranked it for the semantic text / it satisfied the EXIF
+            // constraints / it satisfied the face facts (person names, face
+            // counts). Results are a union of the routes, so any
+            // combination occurs.
             bool via_semantic = false;
             bool via_exif = false;
+            bool via_face = false;
         };
 
         struct Result
         {
             bool ok = false;
             std::string error;          // set when !ok
-            std::vector<Match> matches; // CLIP-ranked first, then EXIF extras
-            // Which halves of the hybrid pipeline RAN (successfully) for this
-            // query. Per-match attribution lives on Match::via_*.
+            std::vector<Match> matches; // CLIP-ranked first, then fact extras
+            // Which routes of the hybrid pipeline RAN (successfully) for
+            // this query. Per-match attribution lives on Match::via_*.
             bool used_semantic = false;
             bool used_exif = false;
+            bool used_face = false;
             // The LLM structurer was expected to parse this query but the
             // regex fallback answered instead — fact semantics may be
             // simplified (camera model names, free-form phrasing). Surfaced
@@ -71,28 +75,37 @@ namespace MediaDedup
                          DatabaseManager *db);
 
         /**
-         * @brief Which pipeline answers the query (the VU ai/xf toggles).
+         * @brief Which routes answer the query (the VU ai/xf/fc toggles).
          *
-         * Hybrid is the default algebra (bound facts filter, bare facts
-         * union, CLIP ranks). The exclusive modes RE-RUN the query through
-         * one pipeline — they are not post-filters of the hybrid result,
+         * All on is the default algebra (bound facts filter, bare facts
+         * union, CLIP ranks). Switching a route off RE-RUNS the query with
+         * that route removed — not a post-filter of the hybrid result,
          * which for a bound query ("babies taken with x-pro1") is an
          * intersection whose every match carries both flags:
-         * - SemanticOnly: CLIP over the parsed semantic segments (facts
-         *   stripped; the raw query when nothing semantic was parsed).
-         *   EXIF facts are ignored entirely.
-         * - ExifOnly: the fact algebra alone (bound ∩, bare ∪); a query
-         *   with no parseable facts returns an honest empty result.
+         * - ai off: CLIP is skipped; the fact algebra alone answers
+         *   (bound ∩, bare ∪). No parseable facts => honest empty result.
+         * - exif off: EXIF dimensions (camera, iso, dates, location, ...)
+         *   are stripped from the parse before the algebra runs.
+         * - face off: face dimensions (person names, face counts) are
+         *   stripped likewise.
          */
-        enum class Mode
+        struct Routes
         {
-            Hybrid,
-            SemanticOnly,
-            ExifOnly
+            bool ai = true;
+            bool exif = true;
+            bool face = true;
+            bool operator==(const Routes &o) const
+            {
+                return ai == o.ai && exif == o.exif && face == o.face;
+            }
         };
 
         /// Ranked matches for a query. Never throws; failures land in Result.
-        Result search(const std::string &query, Mode mode = Mode::Hybrid);
+        /// (Overload instead of a `= {}` default: a nested type's member
+        /// initializers aren't usable in a default argument while the
+        /// enclosing class is still incomplete.)
+        Result search(const std::string &query, Routes routes);
+        Result search(const std::string &query) { return search(query, Routes()); }
 
         /// QP-1d test seam: force the LLM structurer path with an injected
         /// completion function (no model file involved). Call before the
@@ -100,7 +113,7 @@ namespace MediaDedup
         void setLlmCompleteFnForTests(LlmQueryStructurer::CompleteFn fn);
 
     private:
-        Result searchUncached(const std::string &query, Mode mode);
+        Result searchUncached(const std::string &query, Routes routes);
         /// QP-1d: LLM structurer -> validator -> StructuredQuery. Returns
         /// false (regex fallback) on: structurer unavailable, completion
         /// error/timeout, or every claimed fact rejected by the validator.
@@ -164,10 +177,11 @@ namespace MediaDedup
         struct CacheEntry
         {
             std::string query;
-            Mode mode = Mode::Hybrid;
+            Routes routes;
             std::vector<Match> matches;
             bool used_semantic = false;
             bool used_exif = false;
+            bool used_face = false;
         };
         std::list<CacheEntry> cache_;
         static constexpr std::size_t kCacheCapacity = 8;

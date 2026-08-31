@@ -227,7 +227,7 @@ namespace MediaDedup
         return true;
     }
 
-    TextSearchEngine::Result TextSearchEngine::search(const std::string &query, Mode mode)
+    TextSearchEngine::Result TextSearchEngine::search(const std::string &query, Routes routes)
     {
         Result result;
         const std::string key = trimmed(query);
@@ -241,40 +241,42 @@ namespace MediaDedup
             std::lock_guard<std::mutex> lock(cache_mutex_);
             for (auto it = cache_.begin(); it != cache_.end(); ++it)
             {
-                if (it->query == key && it->mode == mode)
+                if (it->query == key && it->routes == routes)
                 {
                     cache_.splice(cache_.begin(), cache_, it); // MRU refresh
                     result.ok = true;
                     result.matches = cache_.front().matches;
                     result.used_semantic = cache_.front().used_semantic;
                     result.used_exif = cache_.front().used_exif;
+                    result.used_face = cache_.front().used_face;
                     return result;
                 }
             }
         }
 
-        result = searchUncached(key, mode);
+        result = searchUncached(key, routes);
         // A degraded parse is never cached: the moment the LLM recovers,
         // re-running the same query gets the full-quality parse instead of
         // a stale simplified one.
         if (result.ok && !result.parse_degraded)
         {
             std::lock_guard<std::mutex> lock(cache_mutex_);
-            cache_.push_front({key, mode, result.matches, result.used_semantic, result.used_exif});
+            cache_.push_front({key, routes, result.matches, result.used_semantic,
+                               result.used_exif, result.used_face});
             while (cache_.size() > kCacheCapacity)
                 cache_.pop_back();
         }
         return result;
     }
 
-    TextSearchEngine::Result TextSearchEngine::searchUncached(const std::string &query, Mode mode)
+    TextSearchEngine::Result TextSearchEngine::searchUncached(const std::string &query, Routes routes)
     {
         Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
 
         // The query is split by INTENT (EXIF-7 algebra) — bound facts AND
         // together into a hard filter, bare facts are union branches beside
         // the CLIP hits, clip_queries carry the semantic text. Per-match
-        // via_* flags feed the VU ai/xf badges. QP-1d: the LLM structurer
+        // via_* flags feed the VU ai/xf/fc badges. QP-1d: the LLM structurer
         // is the primary parser; the regex parser is the fallback ladder's
         // last rung (structurer off/unavailable/failed/fully rejected).
         ensureParserLoaded();
@@ -288,23 +290,53 @@ namespace MediaDedup
             sq = parser_->parseStructured(query);
             parse_degraded = static_cast<bool>(test_complete_fn_) || llm_ != nullptr;
         }
+        // Route toggles (VU ai/xf/fc) strip whole dimension families from
+        // the SAME parse before the algebra runs — never a post-filter of
+        // the hybrid result (a bound hybrid result is an intersection whose
+        // every match carries all its flags, so a post-filter was vacuous).
+        // exif off removes camera/iso/date/location/... dims; face off
+        // removes person/face_count dims; ai off skips CLIP entirely below.
+        if (!routes.exif || !routes.face)
+        {
+            auto strip = [&routes](ExifQueryConstraints &c) {
+                auto drop_numeric = [&c](bool face_dims) {
+                    c.numeric.erase(std::remove_if(c.numeric.begin(), c.numeric.end(),
+                                                   [face_dims](const ExifQueryConstraints::Numeric &n) {
+                                                       return (n.column == "face_count") == face_dims;
+                                                   }),
+                                    c.numeric.end());
+                };
+                if (!routes.face)
+                {
+                    c.person_ids.clear();
+                    drop_numeric(/*face_dims=*/true);
+                }
+                if (!routes.exif)
+                {
+                    drop_numeric(/*face_dims=*/false);
+                    c.camera_terms.clear();
+                    c.file_extensions.clear();
+                    c.flash_on = c.flash_off = false;
+                    c.location.reset();
+                    c.location_name.clear();
+                    c.date_range.reset();
+                    c.month_any_year.reset();
+                }
+            };
+            strip(sq.bound);
+            for (auto &b : sq.bare)
+                strip(b);
+            sq.bare.erase(std::remove_if(sq.bare.begin(), sq.bare.end(),
+                                         [](const ExifQueryConstraints &c) { return !c.hasAny(); }),
+                          sq.bare.end());
+        }
         const bool has_bound = sq.hasBound();
         const bool has_bare = sq.hasBare();
         const bool has_semantic = sq.hasSemantic();
 
-        // Exclusive pipelines (VU ai/xf toggles): the SAME parse, executed
-        // through one half only. Not post-filters — a bound hybrid query is
-        // an intersection whose every match carries both flags, so an
-        // "exclusively ai" filter of it would be vacuously empty.
-        if (mode == Mode::SemanticOnly)
-        {
-            Result r = clipSearchUnion(nullptr, has_semantic ? sq.clip_queries
-                                                             : std::vector<std::string>{query});
-            r.used_semantic = r.ok;
-            r.parse_degraded = parse_degraded;
-            return r;
-        }
-        if (mode == Mode::ExifOnly)
+        // ai off: the fact algebra alone answers (bound ∩, bare ∪) over
+        // whatever dimensions survived the stripping above.
+        if (!routes.ai)
         {
             Result r;
             if (!has_bound && !has_bare)
@@ -339,13 +371,25 @@ namespace MediaDedup
                     Result br = exifOnlySearch(b);
                     if (!br.ok)
                         continue;
-                    for (const auto &m : br.matches)
+                    for (auto m : br.matches)
                         if ((!has_bound || bound_ids.count(m.file_id)) &&
                             emitted_ids.insert(m.file_id).second)
+                        {
+                            // A bound set (if any) also admitted this match.
+                            m.via_exif = m.via_exif || (has_bound && sq.bound.hasExifDims());
+                            m.via_face = m.via_face || (has_bound && sq.bound.hasFaceDims());
                             r.matches.push_back(m);
+                        }
                 }
             }
-            r.used_exif = r.ok;
+            const bool any_exif_dims = sq.bound.hasExifDims() ||
+                                       std::any_of(sq.bare.begin(), sq.bare.end(),
+                                                   [](const ExifQueryConstraints &c) { return c.hasExifDims(); });
+            const bool any_face_dims = sq.bound.hasFaceDims() ||
+                                       std::any_of(sq.bare.begin(), sq.bare.end(),
+                                                   [](const ExifQueryConstraints &c) { return c.hasFaceDims(); });
+            r.used_exif = r.ok && any_exif_dims;
+            r.used_face = r.ok && any_face_dims;
             r.parse_degraded = parse_degraded;
             return r;
         }
@@ -371,7 +415,8 @@ namespace MediaDedup
         if (has_bound && !has_bare && !has_semantic)
         {
             Result r = exifOnlySearch(sq.bound);
-            r.used_exif = r.ok;
+            r.used_exif = r.ok && sq.bound.hasExifDims();
+            r.used_face = r.ok && sq.bound.hasFaceDims();
             r.parse_degraded = parse_degraded;
             return r;
         }
@@ -440,15 +485,29 @@ namespace MediaDedup
                 base_ids.insert(m.file_id);
 
             out.ok = true;
-            out.used_exif = true;
+            out.used_exif = sq.bound.hasExifDims();
+            out.used_face = sq.bound.hasFaceDims();
             out.used_semantic = clip_ok;
+            for (const auto &br : branches)
+            {
+                if (!br.ok)
+                    continue;
+                out.used_exif = out.used_exif ||
+                                std::any_of(br.matches.begin(), br.matches.end(),
+                                            [](const Match &m) { return m.via_exif; });
+                out.used_face = out.used_face ||
+                                std::any_of(br.matches.begin(), br.matches.end(),
+                                            [](const Match &m) { return m.via_face; });
+            }
             if (clip_ok)
             {
                 for (auto m : clip.matches)
                 {
                     if (base_ids.count(m.file_id) && emitted.insert(m.file_id).second)
                     {
-                        m.via_exif = true; // it satisfies the bound filter
+                        // It satisfies the bound filter's dimensions.
+                        m.via_exif = sq.bound.hasExifDims();
+                        m.via_face = sq.bound.hasFaceDims();
                         out.matches.push_back(m);
                     }
                 }
@@ -457,9 +516,13 @@ namespace MediaDedup
             {
                 if (!br.ok)
                     continue;
-                for (const auto &m : br.matches)
+                for (auto m : br.matches)
                     if (base_ids.count(m.file_id) && emitted.insert(m.file_id).second)
+                    {
+                        m.via_exif = m.via_exif || sq.bound.hasExifDims();
+                        m.via_face = m.via_face || sq.bound.hasFaceDims();
                         out.matches.push_back(m);
+                    }
             }
             // Semantic half down and no bare refinement: degrade to the
             // bound set itself rather than an artificial empty intersection.
@@ -475,13 +538,24 @@ namespace MediaDedup
 
             out.ok = true;
             out.used_semantic = clip_ok;
-            out.used_exif = any_bare_ok;
 
-            std::unordered_set<int> bare_ids;
-            for (const auto &br : branches)
-                if (br.ok)
-                    for (const auto &m : br.matches)
-                        bare_ids.insert(m.file_id);
+            std::unordered_set<int> bare_exif_ids, bare_face_ids;
+            for (std::size_t i = 0; i < branches.size(); ++i)
+            {
+                if (!branches[i].ok)
+                    continue;
+                const bool b_exif = sq.bare[i].hasExifDims();
+                const bool b_face = sq.bare[i].hasFaceDims();
+                out.used_exif = out.used_exif || b_exif;
+                out.used_face = out.used_face || b_face;
+                for (const auto &m : branches[i].matches)
+                {
+                    if (b_exif)
+                        bare_exif_ids.insert(m.file_id);
+                    if (b_face)
+                        bare_face_ids.insert(m.file_id);
+                }
+            }
 
             if (clip_ok)
             {
@@ -489,7 +563,8 @@ namespace MediaDedup
                 {
                     if (emitted.insert(m.file_id).second)
                     {
-                        m.via_exif = bare_ids.count(m.file_id) > 0;
+                        m.via_exif = bare_exif_ids.count(m.file_id) > 0;
+                        m.via_face = bare_face_ids.count(m.file_id) > 0;
                         out.matches.push_back(m);
                     }
                 }
@@ -765,8 +840,10 @@ namespace MediaDedup
             stmt.execute();
 
             result.matches.reserve(ids.size());
+            const bool via_exif = constraints.hasExifDims();
+            const bool via_face = constraints.hasFaceDims();
             for (int id : ids)
-                result.matches.push_back({id, 1.0, /*via_semantic=*/false, /*via_exif=*/true});
+                result.matches.push_back({id, 1.0, /*via_semantic=*/false, via_exif, via_face});
             result.ok = true;
             Poco::Logger::get("TextSearchEngine")
                 .debug("EXIF-only query matched %zu file(s)", result.matches.size());

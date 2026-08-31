@@ -443,7 +443,20 @@ TEST_F(ExifSearchE2ETest, PersonFilterThroughLlmSeam)
     auto r = engine_->search("photos of alice");
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
-    EXPECT_TRUE(r.used_exif);
+    // Person facts are the face route, not the EXIF route.
+    EXPECT_TRUE(r.used_face);
+    EXPECT_FALSE(r.used_exif);
+    ASSERT_FALSE(r.matches.empty());
+    EXPECT_TRUE(r.matches.front().via_face);
+    EXPECT_FALSE(r.matches.front().via_exif);
+
+    // face route off: the person fact is stripped; with nothing semantic
+    // parsed and CLIP absent the query has no route left to answer it.
+    auto r_off = engine_->search(
+        "photos of alice", TextSearchEngine::Routes{/*ai=*/false, /*exif=*/true, /*face=*/false});
+    ASSERT_TRUE(r_off.ok) << r_off.error;
+    EXPECT_TRUE(r_off.matches.empty());
+    EXPECT_FALSE(r_off.used_face);
 
     // Regex fallback handles the scaffolded form too (resolver-verified).
     engine_->setLlmCompleteFnForTests(
@@ -503,7 +516,7 @@ TEST_F(ExifSearchE2ETest, ExifOnlyModeRunsTheFactAlgebraAlone)
     // Bound camera fact + semantic subject: hybrid would intersect with
     // CLIP; ExifOnly ignores the semantic part and returns the bound set.
     auto r = engine_->search("sunset taken with a canon",
-                             TextSearchEngine::Mode::ExifOnly);
+                             TextSearchEngine::Routes{/*ai=*/false, /*exif=*/true, /*face=*/true});
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
     EXPECT_TRUE(r.used_exif);
@@ -513,7 +526,7 @@ TEST_F(ExifSearchE2ETest, ExifOnlyModeRunsTheFactAlgebraAlone)
 TEST_F(ExifSearchE2ETest, ExifOnlyModeWithNoFactsIsHonestlyEmpty)
 {
     auto r = engine_->search("sunset over the ocean",
-                             TextSearchEngine::Mode::ExifOnly);
+                             TextSearchEngine::Routes{/*ai=*/false, /*exif=*/true, /*face=*/true});
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_TRUE(r.matches.empty());
     EXPECT_FALSE(r.used_exif);
@@ -524,25 +537,27 @@ TEST_F(ExifSearchE2ETest, ExifOnlyModeIntersectsBareWithBound)
     // Bare aperture probe + bound camera: xf-only = bare ∪ intersected
     // with the bound set (the fact algebra sans CLIP).
     auto r = engine_->search("f/1.4 taken with a sony",
-                             TextSearchEngine::Mode::ExifOnly);
+                             TextSearchEngine::Routes{/*ai=*/false, /*exif=*/true, /*face=*/true});
     ASSERT_TRUE(r.ok) << r.error;
     EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_});
 }
 
-TEST_F(ExifSearchE2ETest, ModeIsPartOfTheCacheKey)
+TEST_F(ExifSearchE2ETest, RoutesArePartOfTheCacheKey)
 {
-    // Same query, different pipelines: the cache must not serve the
-    // hybrid result to an ExifOnly request.
+    // Same query, different routes: the cache must not serve the
+    // hybrid result to a facts-only request.
     auto hybrid = engine_->search("f/1.4");
     ASSERT_TRUE(hybrid.ok);
-    auto exif_only = engine_->search("f/1.4", TextSearchEngine::Mode::ExifOnly);
+    auto exif_only = engine_->search(
+        "f/1.4", TextSearchEngine::Routes{/*ai=*/false, /*exif=*/true, /*face=*/true});
     ASSERT_TRUE(exif_only.ok);
     EXPECT_EQ(idsOf(exif_only), std::vector<int>{sony_id_});
     EXPECT_TRUE(exif_only.used_exif);
     EXPECT_FALSE(exif_only.used_semantic);
-    // SemanticOnly with the CLIP model pinned absent: the semantic half
+    // ai-only with the CLIP model pinned absent: the semantic half
     // fails cleanly rather than answering from facts.
-    auto sem_only = engine_->search("f/1.4", TextSearchEngine::Mode::SemanticOnly);
+    auto sem_only = engine_->search(
+        "f/1.4", TextSearchEngine::Routes{/*ai=*/true, /*exif=*/false, /*face=*/false});
     EXPECT_FALSE(sem_only.ok);
 }
 

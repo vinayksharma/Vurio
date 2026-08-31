@@ -69,10 +69,29 @@ namespace MediaDedup
         // the query is a pure metadata filter and CLIP should be skipped.
         bool remaining_is_filler = false;
 
-        bool hasAny() const
+        bool hasAny() const { return hasExifDims() || hasFaceDims(); }
+
+        // The face route (person names, face counts) is attributed and
+        // toggled separately from the EXIF route in the VU search UI, so a
+        // constraint set knows which routes its dimensions belong to. A set
+        // can span both ("photos of alice taken with a canon").
+        bool hasFaceDims() const
         {
-            return !numeric.empty() || !camera_terms.empty() || !file_extensions.empty() ||
-                   !person_ids.empty() || flash_on || flash_off ||
+            if (!person_ids.empty())
+                return true;
+            for (const auto &n : numeric)
+                if (n.column == "face_count")
+                    return true;
+            return false;
+        }
+
+        bool hasExifDims() const
+        {
+            for (const auto &n : numeric)
+                if (n.column != "face_count")
+                    return true;
+            return !camera_terms.empty() || !file_extensions.empty() ||
+                   flash_on || flash_off ||
                    location.has_value() || date_range.has_value() || month_any_year.has_value();
         }
     };

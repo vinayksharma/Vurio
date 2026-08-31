@@ -245,8 +245,13 @@ public:
 
     // Map one DayFileRecord onto its proto, including the derived
     // is_ejected/is_available flags. Shared by GetDayGroups and GetDayFiles.
-    // file_id -> (matched_ai, matched_exif) for the active search's union.
-    using SearchMatchFlags = std::unordered_map<int, std::pair<bool, bool>>;
+    // file_id -> per-route match attribution for the active search's union.
+    struct MatchFlags {
+        bool ai = false;
+        bool exif = false;
+        bool face = false;
+    };
+    using SearchMatchFlags = std::unordered_map<int, MatchFlags>;
 
     void fillDayFileProto(vurio::dedup::DayFile* proto_file,
                           const MediaDedup::DayFileRecord& file,
@@ -256,8 +261,9 @@ public:
         if (match_flags) {
             auto it = match_flags->find(file.file_id);
             if (it != match_flags->end()) {
-                proto_file->set_matched_ai(it->second.first);
-                proto_file->set_matched_exif(it->second.second);
+                proto_file->set_matched_ai(it->second.ai);
+                proto_file->set_matched_exif(it->second.exif);
+                proto_file->set_matched_face(it->second.face);
             }
         }
         proto_file->set_id(std::to_string(file.file_id));
@@ -440,17 +446,17 @@ public:
         return grpc::Status::OK;
     }
 
-    // The ai/xf toggles select the PIPELINE the query runs through, not a
-    // post-filter: only-ai re-runs the query as pure CLIP over its parsed
-    // semantic part; only-xf as the fact algebra alone. (A bound hybrid
-    // result is an intersection whose every match carries both flags, so a
-    // post-filter was vacuous there.) Both selected — or both false, from
-    // an older client — is the default hybrid.
-    static MediaDedup::TextSearchEngine::Mode toggleMode(bool include_ai, bool include_exif) {
-        if (include_ai == include_exif)
-            return MediaDedup::TextSearchEngine::Mode::Hybrid;
-        return include_ai ? MediaDedup::TextSearchEngine::Mode::SemanticOnly
-                          : MediaDedup::TextSearchEngine::Mode::ExifOnly;
+    // The ai/xf/fc toggles select the ROUTES the query runs through, not a
+    // post-filter: switched-off routes are stripped from the parse and the
+    // query re-runs over what remains. (A bound hybrid result is an
+    // intersection whose every match carries all its flags, so a
+    // post-filter was vacuous there.) All selected — or all false, from an
+    // older client — is the default everything-on hybrid.
+    static MediaDedup::TextSearchEngine::Routes toggleRoutes(bool include_ai, bool include_exif,
+                                                             bool include_face) {
+        if (!include_ai && !include_exif && !include_face)
+            return {};
+        return {include_ai, include_exif, include_face};
     }
 
     // Resolve the request's semantic search filter (if any) into scanned_files
@@ -465,14 +471,17 @@ public:
                              SearchMatchFlags* match_flags = nullptr,
                              bool* parse_degraded = nullptr,
                              bool include_ai = true,
-                             bool include_exif = true) {
+                             bool include_exif = true,
+                             bool* used_face = nullptr,
+                             bool include_face = true) {
         match_ids = nullptr;
         if (query.empty()) return true;
         if (!search_engine_) {
             status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "Text search unavailable");
             return false;
         }
-        auto search = search_engine_->search(query, toggleMode(include_ai, include_exif));
+        auto search = search_engine_->search(
+            query, toggleRoutes(include_ai, include_exif, include_face));
         if (!search.ok) {
             status = grpc::Status(grpc::StatusCode::UNAVAILABLE,
                                   "Text search failed: " + search.error);
@@ -480,12 +489,13 @@ public:
         }
         if (used_ai) *used_ai = search.used_semantic;
         if (used_exif) *used_exif = search.used_exif;
+        if (used_face) *used_face = search.used_face;
         if (parse_degraded) *parse_degraded = search.parse_degraded;
         ids_storage.clear();
         ids_storage.reserve(search.matches.size());
         for (const auto& m : search.matches) {
             ids_storage.push_back(m.file_id);
-            if (match_flags) (*match_flags)[m.file_id] = {m.via_semantic, m.via_exif};
+            if (match_flags) (*match_flags)[m.file_id] = {m.via_semantic, m.via_exif, m.via_face};
         }
         match_ids = &ids_storage;
         return true;
@@ -502,15 +512,17 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        bool used_ai = false, used_exif = false, parse_degraded = false;
+        bool used_ai = false, used_exif = false, used_face = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
                                  &used_ai, &used_exif, &match_flags, &parse_degraded,
-                                 request->search_include_ai(), request->search_include_exif()))
+                                 request->search_include_ai(), request->search_include_exif(),
+                                 &used_face, request->search_include_face()))
             return search_status;
         applyClusterFilter(request->filter_cluster_id(), search_ids, match_ids);
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
+        reply->set_search_used_face(used_face);
         reply->set_search_parse_degraded(parse_degraded);
 
         auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day, match_ids);
@@ -554,15 +566,17 @@ public:
         std::vector<int> search_ids;
         const std::vector<int>* match_ids = nullptr;
         grpc::Status search_status = grpc::Status::OK;
-        bool used_ai = false, used_exif = false, parse_degraded = false;
+        bool used_ai = false, used_exif = false, used_face = false, parse_degraded = false;
         SearchMatchFlags match_flags;
         if (!resolveSearchFilter(request->search_query(), search_ids, match_ids, search_status,
                                  &used_ai, &used_exif, &match_flags, &parse_degraded,
-                                 request->search_include_ai(), request->search_include_exif()))
+                                 request->search_include_ai(), request->search_include_exif(),
+                                 &used_face, request->search_include_face()))
             return search_status;
         applyClusterFilter(request->filter_cluster_id(), search_ids, match_ids);
         reply->set_search_used_ai(used_ai);
         reply->set_search_used_exif(used_exif);
+        reply->set_search_used_face(used_face);
         reply->set_search_parse_degraded(parse_degraded);
 
         auto page = MediaDedup::DayGroupsOps::getDayFiles(*db_, request->day(), offset, limit, match_ids);
