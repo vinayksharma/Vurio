@@ -5,7 +5,7 @@ on `feature/search_type_badges` (per-file ai/xf badges, DayFile
 `matched_ai`/`matched_exif`).
 
 **2026-08-23 update:** the §4 regex-grammar expansion is SUPERSEDED by
-[QP-1](todo_llm_query_structurer.md) (local LLM query structurer) — §4 now
+QP-1 (local LLM query structurer) — §4 now
 defines the target *semantics* the structurer must produce, not a regex
 implementation plan. The §3 result algebra, badges, and all user decisions
 here remain authoritative and are implemented in QP-1a against a parser

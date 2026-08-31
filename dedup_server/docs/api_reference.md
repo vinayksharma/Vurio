@@ -337,7 +337,7 @@ curl -X DELETE "http://localhost:8080/api/v1/thumbnails/cleanup?check_source=tru
 - THUMB-1: the image's display geometry (auto-oriented base dimensions today,
   from `scanned_files.exif_resolution` via `computeDisplayDimensions`), so the
   client can reserve the correct tile width before the bitmap arrives. `0`
-  means unknown → square tile. See `docs/todo_aspect_ratio_thumbnails.md` §3, §5.
+  means unknown → square tile.
 
 ### Generation Flow
 
@@ -438,7 +438,7 @@ CREATE INDEX idx_thumbnail_source_modified ON thumbnail_cache(source_modified_at
 CREATE INDEX idx_thumbnail_last_accessed ON thumbnail_cache(last_accessed_at);
 ```
 
-`render_revision` (THUMB-1, `docs/todo_aspect_ratio_thumbnails.md` §4.2(b)) is
+`render_revision` (THUMB-1) is
 the seam for the future non-destructive edit pipeline: every keyed statement
 (`kUpsertThumbnailCache`'s `ON CONFLICT` target included), the on-disk filename
 (`<hash>_<size>_r<revision>.jpg`, `ThumbnailCacheOps::cacheFileName`) and the

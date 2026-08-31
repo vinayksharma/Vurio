@@ -20,11 +20,6 @@ All project documentation is consolidated in this directory for easy navigation 
 ## Technical Analysis
 
 - **[technical_analysis.md](technical_analysis.md)** - Technical analyses and ongoing research
-- **[todo_aspect_ratio_thumbnails.md](todo_aspect_ratio_thumbnails.md)** - THUMB-1 (implemented,
-  awaiting live verification): thumbnails rendered center-cropped to a square; full design for
-  fixed-height/variable-width tiles driven by
-  display geometry, the EXIF orientation bug it depends on, the 128→256 asset bump, and the seams
-  that keep the future non-destructive edit pipeline (rotate/crop as a stored op list) cheap to add
 - **[todo_discovery_watermark.md](todo_discovery_watermark.md)** - DISC-1 (done): the id-based
   discovery watermark dropped files that finished out of id order; measured impact, the shipped
   stopgap, and the per-file-flag replacement
