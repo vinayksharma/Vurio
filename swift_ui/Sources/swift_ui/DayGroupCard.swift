@@ -19,10 +19,10 @@ struct DayGroupCard: View {
     // Called when the trailing sentinel scrolls into view and the day has more
     // files than are loaded (horizontal-scroll pagination).
     var onLoadMore: (() -> Void)? = nil
-    // True while a search is active: render tiny ai/xf badges under each
+    // True while a search is active: render tiny ai/xf/fc badges under each
     // tile's bottom-left corner (advanced overlay only). Which badge lights
     // up is per-file — the server unions the CLIP and EXIF halves and tags
-    // every DayFile with matchedAi / matchedExif.
+    // every DayFile with matchedAi / matchedExif / matchedFace.
     var showSearchBadges: Bool = false
 
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
@@ -186,7 +186,7 @@ struct DayGroupCard: View {
         .overlay(alignment: .bottomLeading) { searchBadgeStrip(for: file) }
     }
 
-    /// Advanced-overlay "ai"/"xf" badges under a tile's bottom-left corner:
+    /// Advanced-overlay "ai"/"xf"/"fc" badges under a tile's bottom-left corner:
     /// which search half admitted THIS file (results are a union of CLIP
     /// semantic and EXIF constraint matches, so tiles differ). Lit = that
     /// half matched, dimmed = it didn't. Drawn in the strip's bottom padding
@@ -197,6 +197,7 @@ struct DayGroupCard: View {
             HStack(spacing: 3) {
                 searchBadge("ai", enabled: file.matchedAi)
                 searchBadge("xf", enabled: file.matchedExif)
+                searchBadge("fc", enabled: file.matchedFace)
             }
             .offset(y: 13)
             .allowsHitTesting(false)
@@ -217,8 +218,14 @@ struct DayGroupCard: View {
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(enabled ? Color.clear : Theme.border.opacity(0.6), lineWidth: 0.5)
             )
-            .help(label == "ai" ? "This image \(enabled ? "matched" : "did not match") the AI (semantic) search"
-                                : "This image \(enabled ? "matched" : "did not match") the EXIF metadata search")
+            .help({
+                let verb = enabled ? "matched" : "did not match"
+                switch label {
+                case "ai": return "This image \(verb) the AI (semantic) search"
+                case "fc": return "This image \(verb) the face search (person names, face counts)"
+                default: return "This image \(verb) the EXIF metadata search"
+                }
+            }())
     }
 
     /// Collapsed duplicate group: up to three fanned thumbnails plus a count

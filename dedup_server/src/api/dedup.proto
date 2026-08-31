@@ -369,6 +369,9 @@ message GetDayGroupsRequest {
   // tab drill-down). 0 = no filter. Combines with search_query by
   // intersection when both are set.
   int32 filter_cluster_id = 7;
+  // Third route beside ai/xf: face facts (person names, face counts).
+  // All three false, from an older client, is the everything-on default.
+  bool search_include_face = 8;
 }
 
 message DayFile {
@@ -384,12 +387,14 @@ message DayFile {
   double similarity_score = 10;
   int32 display_width = 11;  // THUMB-1, see DuplicateFile
   int32 display_height = 12;
-  // How the active search_query admitted THIS file (both false when no
+  // How the active search_query admitted THIS file (all false when no
   // search is active): matched_ai = CLIP ranked it for the semantic text;
-  // matched_exif = it satisfied the parsed EXIF constraints. Results are a
-  // union of both halves, so any combination can appear.
+  // matched_exif = it satisfied the parsed EXIF constraints; matched_face =
+  // it satisfied the parsed face facts (person names, face counts). Results
+  // are a union of the routes, so any combination can appear.
   bool matched_ai = 13;
   bool matched_exif = 14;
+  bool matched_face = 15;
 }
 
 message DayGroup {
@@ -402,12 +407,14 @@ message DayGroup {
 message GetDayGroupsResponse {
   repeated DayGroup days = 1;
   int32 total_days = 2;
-  // Which halves of the hybrid search RAN for the active query (both false
+  // Which routes of the hybrid search RAN for the active query (all false
   // when no query): search_used_ai = the CLIP semantic half succeeded;
-  // search_used_exif = EXIF constraints were parsed and evaluated. Per-file
-  // attribution lives on DayFile.matched_ai / matched_exif.
+  // search_used_exif = EXIF constraints were parsed and evaluated;
+  // search_used_face = face facts (person names, face counts) were parsed
+  // and evaluated. Per-file attribution lives on DayFile.matched_*.
   bool search_used_ai = 3;
   bool search_used_exif = 4;
+  bool search_used_face = 6;
   // True when the query was answered by the fallback pattern parser even
   // though the LLM structurer was expected to run (model failed, stalled,
   // or its output was fully rejected). Fact semantics may be simplified —
@@ -425,6 +432,7 @@ message GetDayFilesRequest {
   bool search_include_ai = 5;   // see GetDayGroupsRequest
   bool search_include_exif = 6;
   int32 filter_cluster_id = 7;
+  bool search_include_face = 8;
 }
 
 message GetDayFilesResponse {
@@ -433,6 +441,7 @@ message GetDayFilesResponse {
   bool search_used_ai = 3;   // see GetDayGroupsResponse
   bool search_used_exif = 4;
   bool search_parse_degraded = 5;
+  bool search_used_face = 6;
 }
 
 message EjectDuplicatesRequest {

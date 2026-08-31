@@ -46,12 +46,13 @@ class AllDaysViewModel: ObservableObject {
     /// x-pro1 timeout storm went unnoticed.
     @Published private(set) var searchParseDegraded = false
 
-    /// ai/xf result toggles (server-filtered post-filter of the active
-    /// search). Single-select is EXCLUSIVE — only-ai keeps files the
-    /// semantic half matched and the EXIF half did not — both = OR. At
+    /// ai/xf/fc route toggles: the server re-runs the query with the
+    /// switched-off routes stripped from the parse (ai = CLIP semantic,
+    /// xf = EXIF facts, fc = face facts — person names, face counts). At
     /// least one stays on; toggling the last one off is refused.
     @Published private(set) var searchIncludeAi = true
     @Published private(set) var searchIncludeExif = true
+    @Published private(set) var searchIncludeFace = true
 
     /// FACE-3: restrict the day list to one face cluster (People drill-down).
     /// Composes with an active search by intersection, server-side.
@@ -77,14 +78,23 @@ class AllDaysViewModel: ObservableObject {
         }
     }
 
-    func toggleSearchAi() { setSearchToggles(ai: !searchIncludeAi, exif: searchIncludeExif) }
-    func toggleSearchExif() { setSearchToggles(ai: searchIncludeAi, exif: !searchIncludeExif) }
+    func toggleSearchAi() {
+        setSearchToggles(ai: !searchIncludeAi, exif: searchIncludeExif, face: searchIncludeFace)
+    }
+    func toggleSearchExif() {
+        setSearchToggles(ai: searchIncludeAi, exif: !searchIncludeExif, face: searchIncludeFace)
+    }
+    func toggleSearchFace() {
+        setSearchToggles(ai: searchIncludeAi, exif: searchIncludeExif, face: !searchIncludeFace)
+    }
 
-    private func setSearchToggles(ai: Bool, exif: Bool) {
-        guard ai || exif else { return } // never both off
-        guard ai != searchIncludeAi || exif != searchIncludeExif else { return }
+    private func setSearchToggles(ai: Bool, exif: Bool, face: Bool) {
+        guard ai || exif || face else { return } // never all off
+        guard ai != searchIncludeAi || exif != searchIncludeExif
+            || face != searchIncludeFace else { return }
         searchIncludeAi = ai
         searchIncludeExif = exif
+        searchIncludeFace = face
         guard isSearchActive else { return }
         // The server filters its cached match list — no LLM/CLIP re-run.
         isSearching = true
@@ -107,6 +117,7 @@ class AllDaysViewModel: ObservableObject {
             self.activeSearchQuery = query
             self.searchIncludeAi = true // a fresh query starts unfiltered
             self.searchIncludeExif = true
+            self.searchIncludeFace = true
             self.isSearching = true
             await self.refresh()
             // A newer query may have superseded this one mid-flight; only
@@ -124,6 +135,7 @@ class AllDaysViewModel: ObservableObject {
         searchParseDegraded = false
         searchIncludeAi = true
         searchIncludeExif = true
+        searchIncludeFace = true
         isSearching = true
         Task {
             await refresh()
@@ -216,6 +228,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.searchQuery = query
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.searchIncludeFace = searchIncludeFace
                 $0.filterClusterID = personFilter?.id ?? 0
             }
 
@@ -295,6 +308,7 @@ class AllDaysViewModel: ObservableObject {
                 $0.searchQuery = activeSearchQuery
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.searchIncludeFace = searchIncludeFace
                 $0.filterClusterID = personFilter?.id ?? 0
             }
             let response = try await callWithBusyRetry { try await client.getDayFiles(request) }

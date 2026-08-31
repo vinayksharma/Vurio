@@ -20,6 +20,7 @@ enum ViewerContent {
     /// the anchor offset on a different day with unfiltered files.
     case timeline(anchorDayIndex: Int, file: Vurio_Dedup_DayFile, searchQuery: String,
                   searchIncludeAi: Bool, searchIncludeExif: Bool,
+                  searchIncludeFace: Bool = true,
                   filterClusterId: Int32 = 0)
     /// A duplicate group from BINNED, opened at the double-clicked member.
     case group(Vurio_Dedup_DuplicateGroup, selectedIndex: Int)
@@ -111,6 +112,7 @@ final class ViewerViewModel: ObservableObject {
     private var searchQuery = ""
     private var searchIncludeAi = true
     private var searchIncludeExif = true
+    private var searchIncludeFace = true
     private var filterClusterId: Int32 = 0
     private var windowStart = 0
     private var totalDays: Int32 = 0
@@ -162,6 +164,7 @@ final class ViewerViewModel: ObservableObject {
             searchQuery = ""
             searchIncludeAi = true
             searchIncludeExif = true
+            searchIncludeFace = true
             filterClusterId = 0
             items = group.files.map { .image(ViewerImage($0)) }
             let selected = group.files.indices.contains(selectedIndex) ? group.files[selectedIndex] : group.files.first
@@ -170,13 +173,15 @@ final class ViewerViewModel: ObservableObject {
                 scrollTarget = ScrollTarget(id: id, anchor: .center, animated: false)
             }
 
-        case .timeline(let anchorDayIndex, let file, let query, let includeAi, let includeExif, let clusterId):
+        case .timeline(let anchorDayIndex, let file, let query, let includeAi, let includeExif,
+                       let includeFace, let clusterId):
             isGroupMode = false
             items = []
             days = []
             searchQuery = query
             searchIncludeAi = includeAi
             searchIncludeExif = includeExif
+            searchIncludeFace = includeFace
             filterClusterId = clusterId
             selectedID = nil
             isLoading = true
@@ -315,6 +320,7 @@ final class ViewerViewModel: ObservableObject {
                 $0.searchQuery = searchQuery
                 $0.searchIncludeAi = searchIncludeAi
                 $0.searchIncludeExif = searchIncludeExif
+                $0.searchIncludeFace = searchIncludeFace
                 $0.filterClusterID = filterClusterId
             }
             let response = try await callWithBusyRetry { try await client.getDayGroups(request) }

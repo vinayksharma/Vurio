@@ -444,8 +444,11 @@ struct VurioDuplicatesView: View {
                                    help: "AI (semantic) pipeline. Alone, the query runs as a pure visual search of its subject — metadata facts are ignored.")
                     { allViewModel.toggleSearchAi() }
                 searchSourceToggle("xf", isOn: allViewModel.searchIncludeExif,
-                                   help: "EXIF (fact) pipeline. Alone, only the query's metadata facts apply — no visual ranking. Both on = the hybrid default.")
+                                   help: "EXIF (fact) pipeline. Alone, only the query's metadata facts apply — no visual ranking. All on = the hybrid default.")
                     { allViewModel.toggleSearchExif() }
+                searchSourceToggle("fc", isOn: allViewModel.searchIncludeFace,
+                                   help: "Face (people) pipeline — person names and face counts. Off, those facts are ignored; alone, only they apply. All on = the hybrid default.")
+                    { allViewModel.toggleSearchFace() }
             }
             if allViewModel.isSearchActive && allViewModel.searchParseDegraded {
                 // The server answered with the fallback pattern parser —
@@ -648,6 +651,7 @@ struct VurioDuplicatesView: View {
                                                  searchQuery: allViewModel.activeSearchQuery,
                                                  searchIncludeAi: allViewModel.searchIncludeAi,
                                                  searchIncludeExif: allViewModel.searchIncludeExif,
+                                                 searchIncludeFace: allViewModel.searchIncludeFace,
                                                  filterClusterId: allViewModel.personFilter?.id ?? 0))
                         },
                         onLocateSet: { memberPath in
