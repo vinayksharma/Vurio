@@ -289,7 +289,7 @@ start_web_server() {
 # Function to run the main server
 run_server() {
     print_header "Running Main Server"
-    
+
     # Check if server executable exists
     if [ ! -f "$BUILD_DIR/bin/media_dedup_server" ]; then
         print_error "Server executable not found. Building first..."
@@ -302,6 +302,12 @@ run_server() {
         print_status "Use '$0 stop' to stop the server first"
         return 1
     fi
+
+    # No server is running, so any surviving media subprocess is an orphan of
+    # a crashed/force-killed previous run that never went through stop; sweep
+    # them before launching. (After the is_server_running check so a healthy
+    # instance's in-flight transcodes are never touched.)
+    kill_orphaned_subprocesses
     
     # Create logs directory
     create_directories
@@ -413,6 +419,27 @@ stop_server() {
         print_status "Server stopped"
     else
         print_warning "Server is not running"
+    fi
+
+    kill_orphaned_subprocesses
+}
+
+# The server kills a transcode/thumbnail subprocess itself when it exceeds its
+# timeout — but only while the server is alive. A server that dies (or is
+# force-killed mid-processing) orphans any in-flight children to PID 1, and a
+# child wedged on a vanished input (an SMB read cut mid-transcode) then spins
+# at 100% CPU forever. Every child's argv carries one of our app-specific
+# temp-output names, so a targeted pkill is safe and precise.
+kill_orphaned_subprocesses() {
+    local patterns="magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_"
+    local killed=0
+    for p in $patterns; do
+        if pkill -9 -f "$p" 2>/dev/null; then
+            killed=1
+        fi
+    done
+    if [ "$killed" = "1" ]; then
+        print_status "Killed orphaned media subprocess(es) left over from a previous run"
     fi
 }
 

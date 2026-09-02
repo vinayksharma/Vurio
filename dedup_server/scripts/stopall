@@ -59,4 +59,16 @@ if [ -n "$REMAINING_PIDS" ]; then
     fi
 fi
 
+# Sweep orphaned media subprocesses. The server enforces per-subprocess
+# timeouts only while it is alive; a server killed mid-processing orphans its
+# in-flight transcode/thumbnail children to PID 1, and a child wedged on a
+# vanished input (e.g. an SMB read cut mid-transcode) spins at 100% CPU
+# forever. Their argv always carries one of our app-specific temp-output
+# names, so these patterns cannot match unrelated processes.
+for pattern in magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_; do
+    if pkill -9 -f "$pattern" 2>/dev/null; then
+        echo "Killed orphaned media subprocess(es) matching '$pattern'"
+    fi
+done
+
 echo "All Media Deduplication Server instances stopped successfully."
