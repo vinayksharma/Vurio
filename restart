@@ -20,43 +20,46 @@ TAIL_PID=""
 stream_server_log() {
   local log_file="${BACKEND_DIR}/logs/server_console.log"
   touch "$log_file"
-  echo "Streaming server log from ${log_file} (Ctrl+C stops everything)..."
+  echo "Streaming server log from ${log_file} (Ctrl+C stops this instance)..."
+  # The sanitizer is a process substitution rather than a pipeline so that $!
+  # is `tail` itself. In a pipeline $! is the LAST element (tr), and killing
+  # that leaves the `tail -F` at the head alive — which used to force a
+  # pattern-matching pkill on teardown. That pkill is not safe any more: with
+  # several instances running, a pattern can match a sibling's tail.
   tail -n 0 -F "$log_file" 2>/dev/null \
-    | LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
-    | LC_ALL=C tr -d '\000-\010\013\014\016-\037' &
+    > >(LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
+        | LC_ALL=C tr -d '\000-\010\013\014\016-\037') &
   TAIL_PID=$!
 }
 
 stop_server_log_stream() {
   if [ -n "$TAIL_PID" ]; then
+    # Killing tail closes the pipe, so the sanitizer exits on EOF by itself.
     kill "$TAIL_PID" 2>/dev/null || true
     TAIL_PID=""
   fi
-  # TAIL_PID is the LAST element of the pipeline (tr), so killing it leaves the
-  # `tail -F` at the head of the pipe alive. Startup already pkills strays for
-  # exactly this reason; do it on the way out too, so a teardown actually tears
-  # down instead of relying on the next ./restart to notice.
-  pkill -f "tail -n 0 -F ${BACKEND_DIR}/logs/server_console.log" 2>/dev/null || true
 }
 
 cleanup() {
-  echo -e "\n[restart] Caught shutdown signal. Running stopall to clean up..."
-  stop_server_log_stream
-  if [ -x "${BACKEND_DIR}/scripts/stopall" ]; then
-    "${BACKEND_DIR}/scripts/stopall"
-  fi
+  echo -e "\n[restart] Caught shutdown signal. Stopping this instance..."
+  teardown_all
   exit 1
 }
 
-# Tear down everything this script started: log stream, Swift UI / Electron,
-# and the backend. stopall covers both the server and the frontends.
+# Tear down what THIS script started, and nothing else: its log stream and its
+# backend. Several server+UI pairs (one per worktree/branch) are meant to run
+# side by side, so this must never reach for the machine-wide sweep — that is
+# what ./killall is for, and only when a human asks for it.
+#
+# run.sh stop works off ${BACKEND_DIR}/dedup_server.pid, which is per-worktree,
+# so it stops this instance's server alone. The UI needs no killing: it is a
+# child of this script in the same foreground process group, so it has already
+# received the same Ctrl+C, and on the non-signal paths it has already exited
+# (that is what returned control to us).
 teardown_all() {
   stop_server_log_stream
-  if [ -x "${BACKEND_DIR}/scripts/stopall" ]; then
-    "${BACKEND_DIR}/scripts/stopall" || true
-  else
+  if [ -d "$BACKEND_DIR" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
     (cd "$BACKEND_DIR" && ./scripts/run.sh stop 2>/dev/null || true)
-    pkill -f "VURIO" 2>/dev/null || true
   fi
 }
 
@@ -112,22 +115,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo "Stopping current instances..."
-# Stop backend gracefully if possible
-if [ -d "$BACKEND_DIR" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
-  (cd "$BACKEND_DIR" && ./scripts/run.sh stop 2>/dev/null || true)
-fi
-
-# Find and kill Electron/Swift UI processes for this app
-pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
-pkill -f "electron.*vurio" 2>/dev/null || true
-pkill -f "electron.*main.js" 2>/dev/null || true
-pkill -f "VURIO" 2>/dev/null || true
-# Stale log-stream tails from a previous hard-killed restart
-pkill -f "tail -n 0 -F ${BACKEND_DIR}/logs/server_console.log" 2>/dev/null || true
-
-# Give it a moment to fully stop
-sleep 1
+# Nothing is stopped on the way in. This script used to open by killing every
+# server and every UI on the machine, which made a second instance impossible:
+# starting one from another worktree tore down the one already running. Each
+# invocation now owns exactly the server and UI it launches, and several can
+# run at once — the pairing is safe because the UI's handshake rejects a server
+# built from a different commit (VER-1), so a UI can only ever talk to its own
+# server. Use ./killall for a machine-wide sweep after something has crashed.
+echo "Starting a new instance from ${APP_DIR}..."
 
 if [ "$DO_REBUILD" = true ]; then
   echo "Rebuilding backend (-b flag provided)..."
@@ -177,7 +172,9 @@ if [ "$START_WEB" = true ]; then
   if [ $UI_EXIT_CODE -ne 0 ]; then
     fail_and_teardown "electron" $UI_EXIT_CODE
   fi
-  stop_server_log_stream
+  # This instance's server goes down with its UI. Nothing kills it on the way
+  # into the next run any more, so leaving it up would orphan it for good.
+  teardown_all
 else
   echo "--- Launching Native Swift UI ---"
   echo "Starting Backend (gRPC only)..."
@@ -208,5 +205,6 @@ else
   if [ $UI_EXIT_CODE -ne 0 ]; then
     fail_and_teardown "swift run VURIO" $UI_EXIT_CODE
   fi
-  stop_server_log_stream
+  # See above: the server this invocation started is stopped with its UI.
+  teardown_all
 fi

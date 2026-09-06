@@ -191,7 +191,7 @@ show_help() {
     echo "  $0 --test             # Build and run tests"
     echo ""
 echo "Other scripts:"
-echo "  ./scripts/stopall        # Stop all running server instances"
+echo "  ../killall               # Stop ALL server and UI instances (cleanup)"
 echo "  ./scripts/show_endpoints # Show all available API endpoints"
 echo "  $0 --install             # Build and install"
     echo "  $0 --debug --test     # Build in debug mode and run tests"
