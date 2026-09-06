@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <set>
 
 namespace MediaDedup
 {
@@ -242,6 +243,138 @@ namespace MediaDedup
             stmt << "DELETE FROM faces WHERE file_id = ?", use(fid), now;
             return true;
         });
+    }
+
+    std::vector<int> FacesOps::deleteFacesForFiles(Poco::Data::Session &sess,
+                                                    const std::vector<int> &file_ids)
+    {
+        std::vector<int> clusters;
+        if (file_ids.empty())
+            return clusters;
+        // Deleting a file must not depend on face support existing. The
+        // tables arrive with FacesOps::ensureTable, which a database that has
+        // never run a face scan has not seen; without this guard the missing
+        // table throws and takes the caller's whole delete transaction — the
+        // file itself, its edges, its cache rows — down with it.
+        {
+            int n = 0;
+            sess << "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='faces'",
+                into(n), now;
+            if (n == 0)
+                return clusters;
+        }
+        // One statement per file rather than an IN list: removing a location
+        // hands us thousands of ids, and SQLite caps a statement's variables
+        // (SQLITE_MAX_VARIABLE_NUMBER). idx_faces_file_id makes each seek
+        // cheap, and we are already inside the caller's transaction, so this
+        // is one commit however many files there are.
+        std::set<int> affected;
+        for (int file_id : file_ids)
+        {
+            if (file_id <= 0)
+                continue;
+            int fid = file_id;
+            std::vector<int> cids;
+            Poco::Data::Statement sel(sess);
+            sel << "SELECT DISTINCT cluster_id FROM faces "
+                   "WHERE file_id = ? AND cluster_id IS NOT NULL",
+                use(fid), into(cids), now;
+            affected.insert(cids.begin(), cids.end());
+            // The user's "not this person" constraints are keyed by face id;
+            // once the face is gone they can never match again, so they go
+            // too rather than pinning ids a later face could be handed.
+            Poco::Data::Statement del_links(sess);
+            del_links << "DELETE FROM face_cannot_link WHERE face_id IN "
+                         "(SELECT id FROM faces WHERE file_id = ?)",
+                use(fid), now;
+            // Exemplars need no sweep here: an exemplar is a member of its
+            // cluster, so every cluster losing one is in `affected` and
+            // recomputeCluster re-selects its exemplars from what is left.
+            Poco::Data::Statement del(sess);
+            del << "DELETE FROM faces WHERE file_id = ?", use(fid), now;
+        }
+        clusters.assign(affected.begin(), affected.end());
+        return clusters;
+    }
+
+    void FacesOps::repairClustersAfterFaceDeletion(DatabaseManager &db,
+                                                    const std::vector<int> &cluster_ids)
+    {
+        if (cluster_ids.empty())
+            return;
+        int recomputed = 0;
+        for (int cid : cluster_ids)
+        {
+            if (cid <= 0)
+                continue;
+            // recomputeCluster rebuilds size, centroid, cover and exemplars
+            // from the faces that are left, and deletes a cluster whose last
+            // face has gone. Best-effort per cluster: one failure must not
+            // strand the rest, the photos are already deleted either way.
+            if (recomputeCluster(db, cid))
+                ++recomputed;
+            else
+                Poco::Logger::get("FacesOps").warning(
+                    "repairClustersAfterFaceDeletion: cluster %d not recomputed", cid);
+        }
+        Poco::Logger::get("FacesOps").information(
+            "Face cleanup: recomputed %d of %z cluster(s) after file deletion",
+            recomputed, cluster_ids.size());
+    }
+
+    int FacesOps::purgeOrphanedFaces(DatabaseManager &db)
+    {
+        // FACE-9 repair. Until the delete paths took faces with the row,
+        // every deleted photo left its faces behind: they inflated cluster
+        // sizes and the People grid's photo counts, skewed centroids, and
+        // won cover elections they could never be drawn for. The damage sits
+        // in databases already written, so it is swept once at startup.
+        // A clean install pays two indexed counts and stops.
+        std::vector<int> clusters;
+        int orphans = 0;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            sess << "SELECT COUNT(*) FROM faces f "
+                    "WHERE NOT EXISTS (SELECT 1 FROM scanned_files sf WHERE sf.id = f.file_id)",
+                into(orphans), now;
+            if (orphans == 0)
+                return 0;
+            sess << "SELECT DISTINCT cluster_id FROM faces f "
+                    "WHERE f.cluster_id IS NOT NULL AND NOT EXISTS "
+                    "(SELECT 1 FROM scanned_files sf WHERE sf.id = f.file_id)",
+                into(clusters), now;
+            try
+            {
+                sess.begin();
+                sess << "DELETE FROM face_cannot_link WHERE face_id IN "
+                        "(SELECT f.id FROM faces f WHERE NOT EXISTS "
+                        "(SELECT 1 FROM scanned_files sf WHERE sf.id = f.file_id))",
+                    now;
+                sess << "DELETE FROM faces WHERE id IN "
+                        "(SELECT f.id FROM faces f WHERE NOT EXISTS "
+                        "(SELECT 1 FROM scanned_files sf WHERE sf.id = f.file_id))",
+                    now;
+                sess.commit();
+            }
+            catch (...)
+            {
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("purgeOrphanedFaces: %s", std::string(e.what()));
+            return 0;
+        }
+        Poco::Logger::get("FacesOps").information(
+            "Face cleanup: purged %d face(s) whose photo was already deleted; "
+            "rebuilding %z cluster(s)",
+            orphans, clusters.size());
+        repairClustersAfterFaceDeletion(db, clusters);
+        return orphans;
     }
 
     std::vector<FacesOps::FaceRow> FacesOps::listFacesForFile(DatabaseManager &db, int file_id)
@@ -562,10 +695,52 @@ namespace MediaDedup
         {
             Poco::Logger::get("FacesOps").error("listClusterInfos: %s", std::string(e.what()));
         }
+        // A cluster whose elected cover has no scanned_files row behind it
+        // would reach the People grid with an empty path, and the client can
+        // only draw a placeholder. Deleting a file (or a whole location) does
+        // not take its faces with it, so a cover outlives its photo; the same
+        // gap opens whenever a cover's file leaves between the election and
+        // this read. Every grouped face is a face we can show, so fall back
+        // to the best-quality member that still HAS a photo, and only give up
+        // when the whole cluster has outlived its files. Election is left
+        // alone — a pin still means what the user said it means; this is the
+        // display standing in for a cover it can no longer draw.
+        for (auto &c : out)
+            if (c.cover_file_path.empty())
+                fillCoverFromLiveMember(db, c);
         for (auto &c : out)
             if (c.person_id > 0)
                 c.aliases = listPersonAliases(db, c.person_id);
         return out;
+    }
+
+    void FacesOps::fillCoverFromLiveMember(DatabaseManager &db, ClusterInfo &c)
+    {
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int cid = c.id;
+            Poco::Data::Statement stmt(sess);
+            stmt << "SELECT f.id, sf.file_path, f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h "
+                    "FROM faces f JOIN scanned_files sf ON sf.id = f.file_id "
+                    "WHERE f.cluster_id = ? ORDER BY f.quality DESC, f.id LIMIT 1",
+                use(cid);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            if (!rs.moveFirst())
+                return;
+            c.cover_face_id = rs[0].convert<int>();
+            c.cover_file_path = rs[1].convert<std::string>();
+            c.cover_x = rs[2].convert<double>();
+            c.cover_y = rs[3].convert<double>();
+            c.cover_w = rs[4].convert<double>();
+            c.cover_h = rs[5].convert<double>();
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("fillCoverFromLiveMember: %s", std::string(e.what()));
+        }
     }
 
     bool FacesOps::nameCluster(DatabaseManager &db, int cluster_id, const std::string &name)
@@ -1094,6 +1269,7 @@ namespace MediaDedup
             int id;
             double quality;
             std::vector<float> embedding;
+            bool has_file = false; // its photo still has a scanned_files row
         };
         std::vector<Member> members;
         try
@@ -1102,8 +1278,10 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             int cid = cluster_id;
             Poco::Data::Statement stmt(sess);
-            stmt << "SELECT id, quality, embedding FROM faces "
-                    "WHERE cluster_id = ? AND embedding IS NOT NULL",
+            stmt << "SELECT f.id, f.quality, f.embedding, "
+                    "  EXISTS(SELECT 1 FROM scanned_files sf WHERE sf.id = f.file_id) "
+                    "FROM faces f "
+                    "WHERE f.cluster_id = ? AND f.embedding IS NOT NULL",
                 use(cid);
             stmt.execute();
             Poco::Data::RecordSet rs(stmt);
@@ -1113,6 +1291,7 @@ namespace MediaDedup
                 m.id = rs[0].convert<int>();
                 m.quality = rs[1].convert<double>();
                 m.embedding = blobToFloats(rs[2].extract<Poco::Data::BLOB>());
+                m.has_file = rs[3].convert<int>() != 0;
                 members.push_back(std::move(m));
             }
         }
@@ -1149,7 +1328,13 @@ namespace MediaDedup
             if (m.embedding.size() == acc.size())
                 for (std::size_t i = 0; i < acc.size(); ++i)
                     acc[i] += m.embedding[i];
-            if (m.quality > cover->quality)
+            // A face whose photo is gone cannot be drawn, so it loses to any
+            // face that still has one however good it looks; among equals,
+            // quality decides as before. Size and centroid still count every
+            // member — this is about what the grid can show, not who is in
+            // the cluster.
+            if (std::make_pair(m.has_file, m.quality) >
+                std::make_pair(cover->has_file, cover->quality))
                 cover = &m;
             if (pinned != 0 && m.id == pinned_cover)
                 pinned_member = &m;
