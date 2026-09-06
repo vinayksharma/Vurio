@@ -97,6 +97,187 @@ fail_and_teardown() {
 
 trap cleanup INT TERM
 
+# --- Replacing this worktree's previous instance ---------------------------
+# A restart replaces the server+UI pair that THIS worktree (this branch)
+# launched last time, and nothing else: pairs running from other worktrees keep
+# going. A process is ours when its executable lives under APP_DIR (the VURIO
+# binary in swift_ui/.build, the server in dedup_server/build — this also
+# catches a UI or server someone started by hand from here), or when the
+# environment it was started with carries this worktree's
+# VURIO_INSTANCE_GROUP (`swift run`'s helper and anything else a previous
+# ./restart forked). The previous ./restart shell itself is /bin/zsh and had
+# not exported the group yet when it started, so it is recognised by its argv
+# plus working directory instead.
+
+# Executable path of a pid; empty if unreadable. lsof lists the program's
+# own text segment first.
+exe_of() {
+  lsof -a -p "$1" -d txt -Fn 2>/dev/null | awk '/^n/ { print substr($0, 2); exit }'
+}
+
+cwd_of() {
+  lsof -a -p "$1" -d cwd -Fn 2>/dev/null | awk '/^n/ { print substr($0, 2); exit }'
+}
+
+# The group is matched with a trailing delimiter so that a sibling worktree
+# whose path merely extends ours (vurio vs vurio1) is never mistaken for us.
+launched_by_this_worktree() {
+  ps -E -o command= -p "$1" 2>/dev/null | sed 's/$/ /' | grep -qF " VURIO_INSTANCE_GROUP=${APP_DIR} "
+}
+
+is_ours() {
+  local exe
+  exe="$(exe_of "$1")"
+  case "$exe" in
+    "${APP_DIR}"/*) return 0 ;;
+  esac
+  launched_by_this_worktree "$1"
+}
+
+# pids matching an argv pattern (pgrep -f, ERE) that belong to this worktree.
+ours_matching() {
+  local pid
+  for pid in $(pgrep -f "$1" 2>/dev/null || true); do
+    is_self_lineage "$pid" && continue
+    is_ours "$pid" && echo "$pid"
+  done
+  return 0
+}
+
+# True for this very script, anything it forked (zsh runs command
+# substitutions in a child that keeps the same argv), and anything it was
+# forked from (a `zsh -c './restart'` wrapper carries our name in its argv,
+# and killing it would take us down too).
+is_self_lineage() {
+  local p="$1"
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    [ "$p" = "$$" ] && return 0
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+  p="$$"
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    [ "$p" = "$1" ] && return 0
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+  return 1
+}
+
+# Earlier ./restart shells (and their subshells) for this worktree: argv is
+# exactly `/bin/zsh <…/>restart [flags]`, from the shebang, and the working
+# directory is this worktree.
+previous_restart_shells() {
+  local pid
+  for pid in $(pgrep -f '^/bin/zsh ([^ ]*/)?restart( |$)' 2>/dev/null || true); do
+    is_self_lineage "$pid" && continue
+    [ "$(cwd_of "$pid")" = "$APP_DIR" ] && echo "$pid"
+  done
+  return 0
+}
+
+alive() {
+  local pid
+  for pid in "$@"; do
+    kill -0 "$pid" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+# Waits up to $1 seconds for the remaining pids to exit; returns 1 if any
+# survived.
+wait_for_exit() {
+  local seconds="$1"; shift
+  local waited=0
+  while alive "$@" && [ "$waited" -lt "$seconds" ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  ! alive "$@"
+}
+
+# Signals $2.. with $1, waits, then SIGKILLs whatever is left.
+stop_pids() {
+  local signal="$1"; shift
+  [ $# -eq 0 ] && return 0
+  kill "-${signal}" "$@" 2>/dev/null || true
+  if ! wait_for_exit 10 "$@"; then
+    echo "[restart]   still running after ${signal}, forcing: $*"
+    kill -KILL "$@" 2>/dev/null || true
+    wait_for_exit 3 "$@" || true
+  fi
+}
+
+stop_previous_instance() {
+  echo "Stopping the previous instance from this worktree (if any)..."
+  # pid lists are newline-separated; ${=var} splits them into words (zsh
+  # does not split unquoted parameters by default).
+  local shells uis servers tails pid pgid stopped_any=false
+  shells=$(previous_restart_shells)
+  uis=$(ours_matching 'VURIO')
+  servers=$(ours_matching 'media_dedup_server')
+
+  # 1. A previous ./restart is still attached to its pair. Give it the
+  #    Ctrl+C it would have got from its own terminal — its cleanup trap then
+  #    stops its log stream and its server in the usual way — and wait for
+  #    it to finish, so its teardown cannot race the pair we are about to
+  #    start (both would read the same dedup_server.pid). Launched from a
+  #    terminal, the script leads its own process group, and interrupting
+  #    the group reaches the UI it is waiting on; launched some other way it
+  #    shares a group with a parent we must not touch, so the UI is
+  #    interrupted by pid instead.
+  if [ -n "$shells" ]; then
+    stopped_any=true
+    for pid in $shells; do
+      pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+      if [ -n "$pgid" ] && [ "$pgid" = "$pid" ]; then
+        echo "[restart]   interrupting previous ./restart (pid ${pid}, process group ${pgid})"
+        kill -INT -- "-${pgid}" 2>/dev/null || true
+      else
+        echo "[restart]   interrupting previous ./restart (pid ${pid})"
+        kill -INT "$pid" 2>/dev/null || true
+        [ -n "$uis" ] && kill -INT ${=uis} 2>/dev/null || true
+      fi
+    done
+    if ! wait_for_exit 30 ${=shells}; then
+      echo "[restart]   previous ./restart did not finish its teardown; forcing"
+      kill -KILL ${=shells} 2>/dev/null || true
+    fi
+  fi
+
+  # 2. Whatever is left of ours: a UI started by hand, a server whose restart
+  #    was hard-killed, a stale pid file. UIs first so nothing reconnects to
+  #    a server mid-shutdown; then the pid-file route (graceful, and it clears
+  #    the file), then any server of ours the pid file did not know about.
+  uis=$(ours_matching 'VURIO')
+  if [ -n "$uis" ]; then
+    stopped_any=true
+    echo "[restart]   stopping UI process(es): $(echo $uis | tr '\n' ' ')"
+    stop_pids TERM ${=uis}
+  fi
+  if [ -f "${BACKEND_DIR}/dedup_server.pid" ] && [ -x "${BACKEND_DIR}/scripts/run.sh" ]; then
+    (cd "$BACKEND_DIR" && ./scripts/run.sh stop >/dev/null 2>&1 || true)
+  fi
+  servers=$(ours_matching 'media_dedup_server')
+  if [ -n "$servers" ]; then
+    stopped_any=true
+    echo "[restart]   stopping server process(es): $(echo $servers | tr '\n' ' ')"
+    stop_pids TERM ${=servers}
+  fi
+  tails=$(pgrep -f "tail -n 0 -F ${BACKEND_DIR}/logs/server_console\.log" 2>/dev/null || true)
+  if [ -n "$tails" ]; then
+    kill ${=tails} 2>/dev/null || true
+  fi
+
+  local leftover
+  leftover="$(ours_matching 'VURIO|media_dedup_server')"
+  if [ -n "$leftover" ]; then
+    echo "[restart] WARNING: could not stop: $(echo $leftover | tr '\n' ' ')"
+  elif [ "$stopped_any" = true ]; then
+    echo "[restart]   previous instance stopped."
+  else
+    echo "[restart]   none running."
+  fi
+}
+
 # Parse arguments using a while loop for long arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -115,15 +296,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Nothing is stopped on the way in. This script used to open by killing every
-# server and every UI on the machine, which made a second instance impossible:
-# starting one from another worktree tore down the one already running. Each
-# invocation now owns exactly the server and UI it launches, and several can
-# run at once. The UI finds its server through the broker (BROKER-1): it pairs
-# only with a free server built from its own commit, and prefers the one
-# carrying the same VURIO_INSTANCE_GROUP — this worktree — over an equally
-# matching one started elsewhere. Use ./killall for a machine-wide sweep after
-# something has crashed.
+# Only THIS worktree's previous instance is stopped on the way in (see
+# stop_previous_instance, run right before the new pair launches). This script
+# used to open by killing every server and every UI on the machine, which made
+# a second instance impossible: starting one from another worktree tore down
+# the one already running. Each invocation now owns exactly the server and UI
+# it launches, and several can run at once. The UI finds its server through
+# the broker (BROKER-1): it pairs only with a free server built from its own
+# commit, and prefers the one carrying the same VURIO_INSTANCE_GROUP — this
+# worktree — over an equally matching one started elsewhere. Use ./killall for
+# a machine-wide sweep after something has crashed.
 export VURIO_INSTANCE_GROUP="${APP_DIR}"
 echo "Starting a new instance from ${APP_DIR}..."
 
@@ -155,6 +337,10 @@ if [ "$DO_REBUILD" = true ]; then
     # against the single backend launched below.
   fi
 fi
+
+# The previous pair keeps running through the build above, so a failed build
+# leaves it in place; it is replaced only once there is something to launch.
+stop_previous_instance
 
 if [ "$START_WEB" = true ]; then
   echo "--- Launching Legacy Web UI ---"
