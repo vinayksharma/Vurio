@@ -9,6 +9,8 @@ struct VurioApp: App {
     init() {
         // Run as a regular macOS app so it has a menu and dock icon, and can be brought to foreground
         NSApplication.shared.setActivationPolicy(.regular)
+        // Dock icon: the logo "V", animated in step with the sidebar wordmark.
+        DockIconAnimator.shared.start()
         // Bundled 7-segment fonts for the day-view date stamps ("DSEG7
         // Classic"). STAMP-1 renders with the true Italic — slanted segments
         // like a real quartz date-back; the Regular stays registered for
