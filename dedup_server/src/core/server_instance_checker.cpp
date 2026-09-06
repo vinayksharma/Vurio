@@ -42,7 +42,7 @@ namespace MediaDedup
                     logger.error("  - PID: %d", static_cast<int>(pid));
                 }
                 logger.error("Please stop existing instances before starting a new one.");
-                logger.error("Use './scripts/stopall' to stop all instances.");
+                logger.error("Use './killall' at the repo root to stop all instances.");
                 return false;
             }
 

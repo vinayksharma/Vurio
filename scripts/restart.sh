@@ -4,15 +4,10 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "Stopping current instance..."
-# Find and kill Electron processes for this app
-# Look for processes with the app directory or main.js
-pkill -f "electron.*${APP_DIR}" 2>/dev/null || true
-pkill -f "electron.*vurio" 2>/dev/null || true
-pkill -f "electron.*main.js" 2>/dev/null || true
-# Give it a moment to fully stop
-sleep 1
-
+# Nothing is killed on the way in: several UI instances (one per worktree) are
+# meant to run at once, and the pkill patterns this used to run matched every
+# one of them, not just this directory's. Use ../killall at the repo root to
+# sweep every server and UI when something has been left behind.
 echo "Building application..."
 cd "$APP_DIR"
 

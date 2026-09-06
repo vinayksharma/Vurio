@@ -303,10 +303,10 @@ run_server() {
         return 1
     fi
 
-    # No server is running, so any surviving media subprocess is an orphan of
-    # a crashed/force-killed previous run that never went through stop; sweep
-    # them before launching. (After the is_server_running check so a healthy
-    # instance's in-flight transcodes are never touched.)
+    # Sweep media subprocesses left behind by a crashed/force-killed run.
+    # Skipped when any other server is alive: instances from other worktrees
+    # run side by side now, and their in-flight transcodes match the same
+    # patterns as an orphan does.
     kill_orphaned_subprocesses
     
     # Create logs directory
@@ -431,6 +431,15 @@ stop_server() {
 # at 100% CPU forever. Every child's argv carries one of our app-specific
 # temp-output names, so a targeted pkill is safe and precise.
 kill_orphaned_subprocesses() {
+    # A live server owns its children and times them out itself, so a match
+    # here is only provably an orphan when NO server is running anywhere. With
+    # one instance per worktree that check has teeth: sweeping unconditionally
+    # would kill another instance's healthy in-flight transcodes.
+    if pgrep -f media_dedup_server >/dev/null 2>&1; then
+        print_status "Another server instance is running; skipping orphan sweep"
+        return 0
+    fi
+
     local patterns="magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_"
     local killed=0
     for p in $patterns; do
