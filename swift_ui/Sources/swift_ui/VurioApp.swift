@@ -320,7 +320,6 @@ struct ContentView: View {
         case binned
         case people
         case settings
-        case scroller
     }
 
     var body: some View {
@@ -337,12 +336,6 @@ struct ContentView: View {
                 NavigationLink(value: SidebarItem.people) {
                     SidebarLinkLabel(icon: "person.2", title: "PEOPLE", isCompact: isCompact)
                 }
-                NavigationLink(value: SidebarItem.settings) {
-                    SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
-                }
-                NavigationLink(value: SidebarItem.scroller) {
-                    SidebarLinkLabel(icon: "scroll", title: "SCROLLER", isCompact: isCompact)
-                }
             }
             .listStyle(SidebarListStyle())
             .safeAreaInset(edge: .top) {
@@ -353,10 +346,23 @@ struct ContentView: View {
                     .padding(.bottom, 8)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCompact)
             }
-            // The pipeline status bar docks at the bottom of the navigation
-            // pane (it was a full-width window inset before).
+            // SETTINGS is pinned to the bottom of the navigation pane, sitting
+            // just above the pipeline status bar. It lives in its own
+            // single-row List bound to the same selection so it keeps the
+            // native sidebar row look and highlight.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                StatusBarView()
+                VStack(spacing: 0) {
+                    List(selection: $selection) {
+                        NavigationLink(value: SidebarItem.settings) {
+                            SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
+                        }
+                    }
+                    .listStyle(SidebarListStyle())
+                    .scrollDisabled(true)
+                    .frame(height: 44)
+
+                    StatusBarView()
+                }
             }
             .background(
                 GeometryReader { geometry in
@@ -398,10 +404,6 @@ struct ContentView: View {
                         .opacity(selection == .settings ? 1 : 0)
                         .allowsHitTesting(selection == .settings)
 
-                    VurioScrollerTestView()
-                        .opacity(selection == .scroller ? 1 : 0)
-                        .allowsHitTesting(selection == .scroller)
-                    
                     if selection == .none {
                         Text("Select an item")
                     }
