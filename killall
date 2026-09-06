@@ -1,0 +1,102 @@
+#!/bin/bash
+
+# killall - emergency cleanup: stop EVERY VURIO server and UI on this machine.
+#
+# Normal operation no longer goes through here. ./restart starts one
+# server+UI pair and tears down only that pair, so several instances (one per
+# worktree/branch) can run side by side; they stay correctly paired because
+# the UI's handshake refuses a server built from a different commit (VER-1).
+# This script is the "just in case" sweep for when that leaves strays behind:
+# a hard-killed restart, a crashed UI whose server kept running, a server
+# whose orphaned transcode children are spinning at 100% CPU.
+#
+# It is deliberately indiscriminate — it kills instances from EVERY worktree,
+# not just the one it lives in. Do not call it from a script that is meant to
+# stop a single instance.
+
+set -uo pipefail
+
+echo "Stopping ALL VURIO instances (every worktree)..."
+
+# --- UIs first, so a UI does not reconnect to a server mid-shutdown ---------
+# Patterns are matched against full argv (pkill -f). "VURIO" is the Swift
+# product name (`swift run VURIO`, .build/*/VURIO); the electron patterns
+# cover the legacy web UI. None of them can match this script's own argv.
+echo "Stopping UIs..."
+for pattern in \
+    "VURIO" \
+    "electron.*[vV]urio" \
+    "electron.*main\.js"
+do
+    if pkill -f "$pattern" 2>/dev/null; then
+        echo "  Stopped UI process(es) matching '$pattern'"
+    fi
+done
+
+# Log-stream tails started by ./restart. Harmless on their own, but they keep
+# a terminal attached to a log nobody is writing any more.
+pkill -f "tail -n 0 -F .*/logs/server_console\.log" 2>/dev/null \
+    && echo "  Stopped stray server-log tail(s)"
+
+# --- servers ---------------------------------------------------------------
+PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+
+if [ -z "$PIDS" ]; then
+    echo "No Media Deduplication Server instances found running."
+else
+    echo "Found server instances with PIDs: $PIDS"
+
+    # SIGTERM first: the server closes its database and removes its socket on
+    # a graceful shutdown, and skipping that leaves work to redo on next boot.
+    echo "Sending SIGTERM for graceful shutdown..."
+    for pid in $PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "  Sending SIGTERM to PID $pid"
+            kill -TERM "$pid" 2>/dev/null || true
+        fi
+    done
+
+    sleep 2
+
+    REMAINING_PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+    if [ -n "$REMAINING_PIDS" ]; then
+        echo "Some processes still running, sending SIGKILL..."
+        for pid in $REMAINING_PIDS; do
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "  Sending SIGKILL to PID $pid"
+                kill -KILL "$pid" 2>/dev/null || true
+            fi
+        done
+        sleep 1
+    fi
+fi
+
+# --- orphaned media subprocesses -------------------------------------------
+# The server enforces per-subprocess timeouts only while it is alive; a server
+# killed mid-processing orphans its in-flight transcode/thumbnail children to
+# PID 1, and a child wedged on a vanished input (e.g. an SMB read cut
+# mid-transcode) spins at 100% CPU forever. Their argv always carries one of
+# our app-specific markers (temp-output names, or the exif probe's -define
+# token), so these patterns cannot match unrelated processes. Safe to run
+# unconditionally here: every server is down by now, so nothing that matches
+# can still have a live parent. Keep the pattern list in sync with
+# dedup_server/scripts/run.sh and src/utils/orphan_sweeper.cpp.
+for pattern in magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_ exif_probe_; do
+    if pkill -9 -f "$pattern" 2>/dev/null; then
+        echo "Killed orphaned media subprocess(es) matching '$pattern'"
+    fi
+done
+
+# A SIGKILLed server never runs its socket cleanup. The leftover file is not
+# connectable, so a freshly started UI would sit retrying against it.
+if [ -S /tmp/vurio_dedup.sock ] && ! pgrep -f media_dedup_server >/dev/null 2>&1; then
+    rm -f /tmp/vurio_dedup.sock && echo "Removed stale gRPC socket /tmp/vurio_dedup.sock"
+fi
+
+FINAL_PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
+if [ -n "$FINAL_PIDS" ]; then
+    echo "Warning: some server processes may still be running: $FINAL_PIDS"
+    exit 1
+fi
+
+echo "All VURIO servers and UIs stopped."

@@ -10,10 +10,12 @@ LOG_FILE="${LOG_FILE:-/tmp/dedup-server.log}"
 
 cd "$DEDUP_ROOT"
 
-# Stop any existing instance
+# This debug runner attaches to the terminal and expects to own the machine,
+# so it clears every instance first. ../../killall is the machine-wide sweep
+# (./restart no longer kills anything, so strays are not cleared for us).
 if pgrep -f media_dedup_server >/dev/null 2>&1; then
-  echo "Stopping existing dedup_server..."
-  "$SCRIPT_DIR/stopall" 2>/dev/null || true
+  echo "Stopping existing dedup_server instances..."
+  "$DEDUP_ROOT/../killall" 2>/dev/null || true
   sleep 2
 fi
 

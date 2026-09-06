@@ -177,7 +177,7 @@ namespace MediaDedup
                 "-ping",
                 // Sweep marker: unlike the transcode/thumbnail children, this
                 // argv carries no app temp-output name, so the orphan sweeps
-                // (run.sh / stopall / startup) could never match it. The
+                // (run.sh / killall / startup) could never match it. The
                 // -define is a no-op to ImageMagick; its value is the argv
                 // token the sweeps pkill on.
                 "-define",
