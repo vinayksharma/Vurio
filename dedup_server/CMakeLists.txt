@@ -69,6 +69,19 @@ add_custom_command(
          ${PROTO_SRC_DIR}/dedup.proto
     DEPENDS ${PROTO_SRC_DIR}/dedup.proto
 )
+# BROKER-1: instance-discovery contract, kept in its own file because it must
+# stay wire compatible between builds of different commits.
+add_custom_command(
+    OUTPUT ${PROTO_BUILD_DIR}/broker.pb.cc ${PROTO_BUILD_DIR}/broker.pb.h
+           ${PROTO_BUILD_DIR}/broker.grpc.pb.cc ${PROTO_BUILD_DIR}/broker.grpc.pb.h
+    COMMAND ${PROTOC_EXECUTABLE}
+    ARGS --cpp_out=${PROTO_BUILD_DIR}
+         --grpc_out=${PROTO_BUILD_DIR}
+         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
+         -I ${PROTO_SRC_DIR}
+         ${PROTO_SRC_DIR}/broker.proto
+    DEPENDS ${PROTO_SRC_DIR}/broker.proto
+)
 include_directories(${PROTO_BUILD_DIR})
 
 # VER-1: compute the build version from git and (re)write the generated
@@ -358,8 +371,11 @@ add_executable(media_dedup_server
     src/database/ejected_files_ops.cpp
     src/media_processors/similarity/similarity_calculator.cpp
     src/core/grpc_server/grpc_server_core.cpp
+    src/core/broker/instance_broker.cpp
     ${PROTO_BUILD_DIR}/dedup.pb.cc
     ${PROTO_BUILD_DIR}/dedup.grpc.pb.cc
+    ${PROTO_BUILD_DIR}/broker.pb.cc
+    ${PROTO_BUILD_DIR}/broker.grpc.pb.cc
 )
 
 # Add model download dependency if ONNX Runtime is available

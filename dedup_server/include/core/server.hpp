@@ -17,6 +17,7 @@
 #include "database/database_manager.hpp"
 #include "core/console_input_manager.hpp"
 #include "core/grpc_server/grpc_server_core.hpp"
+#include "core/broker/instance_broker.hpp"
 #include "filesmanager/files_service.hpp"
 // Files orchestration
 #include "orchestration/files_manager.hpp"
@@ -101,6 +102,8 @@ namespace MediaDedup
 
         // Server components
         std::unique_ptr<::MediaDedup::Core::GrpcServerCore> grpc_server_;
+        // BROKER-1: discovery registration for this instance.
+        std::unique_ptr<::MediaDedup::Core::InstanceBroker> instance_broker_;
         std::shared_ptr<ThreadPoolManager> tpm_;
         std::shared_ptr<Orchestration::SchedulerService> scheduler_service_;
         std::shared_ptr<Orchestration::FilesManager> files_manager_;

@@ -9,9 +9,28 @@ package vurio.dedup;
 // token in the "x-vurio-token" metadata header. A client obtains that token by
 // presenting the server's startup cookie (read from a 0600 file only the same
 // OS user can open) to Handshake. This binds a client to one server instance.
+//
+// BROKER-1: a UI then LOCKS the instance by holding the Session stream. While
+// one is held, Handshake refuses every other caller ("BUSY: ..."), and the
+// instance advertises itself as busy to the broker. When the stream ends —
+// the UI quit or died — the instance shuts down: a server is single-use.
 // ---------------------------------------------------------
 service SecurityService {
   rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+  // Requires the session token. The server writes a SessionEvent about once
+  // a second for as long as the pairing stands; a second concurrent caller is
+  // refused with ALREADY_EXISTS.
+  rpc Session(SessionRequest) returns (stream SessionEvent);
+}
+
+message SessionRequest {
+  // Free-form client identity for the server log (e.g. "VURIO pid 1234").
+  string client_description = 1;
+}
+
+message SessionEvent {
+  // Unix milliseconds at the server when the event was written.
+  int64 timestamp_ms = 1;
 }
 
 message HandshakeRequest {

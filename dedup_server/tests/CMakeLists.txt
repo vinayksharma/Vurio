@@ -71,6 +71,7 @@ set(UNIT_TEST_SOURCES
     unit/test_magick_args.cpp
     unit/test_magick_limits.cpp
     unit/test_subprocess_runner.cpp
+    unit/test_instance_broker.cpp
     unit/test_media_generation_failures.cpp
     unit/test_similarity_calculator.cpp
     unit/test_session_pragmas.cpp
@@ -183,6 +184,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_subprocess_runner")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SubprocessRunnerTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_instance_broker")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="InstanceBrokerTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -653,6 +661,8 @@ target_compile_options(all_unit_tests PRIVATE ${COMMON_TEST_FLAGS})
 set_source_files_properties(
     ${CMAKE_BINARY_DIR}/generated/dedup.pb.cc
     ${CMAKE_BINARY_DIR}/generated/dedup.grpc.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/broker.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/broker.grpc.pb.cc
     PROPERTIES GENERATED TRUE
 )
 
@@ -724,8 +734,11 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/heic_adapter.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/tiff_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/core/grpc_server/grpc_server_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/broker/instance_broker.cpp
     ${CMAKE_BINARY_DIR}/generated/dedup.pb.cc
     ${CMAKE_BINARY_DIR}/generated/dedup.grpc.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/broker.pb.cc
+    ${CMAKE_BINARY_DIR}/generated/broker.grpc.pb.cc
 )
 target_include_directories(all_unit_tests PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
@@ -848,6 +861,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_magick_args" AND
       NOT ${test_name} STREQUAL "test_magick_limits" AND
       NOT ${test_name} STREQUAL "test_subprocess_runner" AND
+      NOT ${test_name} STREQUAL "test_instance_broker" AND
       NOT ${test_name} STREQUAL "test_media_generation_failures" AND
       NOT ${test_name} STREQUAL "test_similarity_calculator" AND
       NOT ${test_name} STREQUAL "test_session_pragmas" AND

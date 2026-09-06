@@ -5,6 +5,7 @@
 // instance lives in the inline accessor's function-local static.
 
 #include <grpcpp/grpcpp.h>
+#include <atomic>
 #include <mutex>
 #include <random>
 #include <string>
@@ -21,6 +22,14 @@ namespace GrpcAuth {
         std::mutex mutex;
         std::string pairing_cookie;
         std::string session_token;
+        // BROKER-1: the pairing lock. Set for as long as one client holds the
+        // Session stream; Handshake refuses everyone else meanwhile, and the
+        // instance advertises itself as busy to the broker.
+        bool session_held = false;
+        std::string session_holder;
+        // Set by GrpcServerCore::stop() before Shutdown so the Session
+        // stream returns at once instead of waiting for the drain deadline.
+        std::atomic<bool> shutting_down{false};
     };
     inline AuthState& authState() { static AuthState s; return s; }
 

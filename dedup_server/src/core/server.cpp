@@ -12,7 +12,11 @@
 #include "core/server.hpp"
 #include "core/logging_setup.hpp"
 #include "core/instance_checker.hpp"
+#include "core/instance_paths.hpp"
 #include "core/config_manager.hpp"
+#include "generated/version_info.hpp"
+#include <Poco/UUIDGenerator.h>
+#include <unistd.h>
 #include "config/config_manager_factory.hpp"
 #include "core/server_initializer.hpp"
 #include "core/server_shutdown.hpp"
@@ -226,10 +230,52 @@ namespace MediaDedup
             files_manager_ = initializer.getFilesManager();
             media_processor_ = initializer.getMediaProcessor();
 
-            // Always start the gRPC server
-            logger_.information("Starting gRPC Server on /tmp/vurio_dedup.sock...");
+            // BROKER-1: the API lives on a per-instance socket, and the
+            // instance announces itself to the broker so a UI of the same
+            // build can find it. Once its UI leaves, the instance shuts down
+            // the same way the scheduler's failure path does.
+            ::MediaDedup::Core::InstancePaths::pruneStale();
+            const std::string instance_dir = ::MediaDedup::Core::InstancePaths::forPid(getpid()).string();
+            if (instance_dir.empty())
+            {
+                logger_.error("HOME not set; cannot create the instance directory for the gRPC socket");
+                return Application::EXIT_CONFIG;
+            }
+            logger_.information("Starting gRPC Server in " + instance_dir + "...");
             grpc_server_ = std::make_unique<::MediaDedup::Core::GrpcServerCore>();
-            grpc_server_->start("/tmp/vurio_dedup.sock", config_manager_, database_manager_, files_manager_, tpm_, initializer.getThumbnailCache(), initializer.getTranscodingCache(), initializer.getDuplicateFinder(), scheduler_service_);
+            grpc_server_->start(
+                instance_dir, config_manager_, database_manager_, files_manager_, tpm_,
+                initializer.getThumbnailCache(), initializer.getTranscodingCache(),
+                initializer.getDuplicateFinder(), scheduler_service_,
+                [this](bool paired)
+                {
+                    if (instance_broker_) instance_broker_->setBusy(paired);
+                },
+                [this]()
+                {
+                    logger_.information("Paired client is gone; shutting this instance down");
+                    console_input_manager_.stop();
+                });
+
+            {
+                ::MediaDedup::Core::InstanceDescriptor self;
+                self.instance_id = Poco::UUIDGenerator::defaultGenerator().createRandom().toString();
+                self.endpoint = grpc_server_->endpoint();
+                self.cookie_path = grpc_server_->cookiePath();
+                self.version = VersionInfo::kVersion;
+                self.commit = VersionInfo::kCommit;
+                self.branch = VersionInfo::kBranch;
+                self.dirty = VersionInfo::kDirty;
+                self.pid = static_cast<std::int64_t>(getpid());
+                if (const char *group = std::getenv("VURIO_INSTANCE_GROUP"))
+                {
+                    self.launch_group = group;
+                }
+                int broker_port = config_manager_->getPropertyValue<int>(
+                    "server.broker.port", ::MediaDedup::Core::InstanceBroker::kDefaultPort);
+                instance_broker_ = std::make_unique<::MediaDedup::Core::InstanceBroker>(self, broker_port);
+                instance_broker_->start();
+            }
 
             // Set shutdown callback for scheduler service
             if (scheduler_service_)
@@ -296,6 +342,12 @@ namespace MediaDedup
                 logger_.error("Unknown exception during graceful shutdown");
             }
 
+            // Leave the broker first so nobody is handed this endpoint while
+            // it is closing.
+            if (instance_broker_) {
+                instance_broker_->stop();
+                instance_broker_.reset();
+            }
             // Ensure services are destroyed before application uninitialization / static teardown
             if (grpc_server_) {
                 grpc_server_->stop();
@@ -423,7 +475,13 @@ namespace MediaDedup
         logger_.information("=== Media Deduplication Server Started ===");
         logger_.information("Configuration file: " + config_manager_->getConfigFilePath());
         logger_.information("Database path: " + database_path_);
-        logger_.information("API: gRPC over /tmp/vurio_dedup.sock");
+        logger_.information("API: gRPC over " + (grpc_server_ ? grpc_server_->endpoint() : std::string("<not started>")));
+        if (instance_broker_)
+        {
+            logger_.information(std::string("Discovery: ") +
+                                (instance_broker_->isBroker() ? "hosting the broker" : "registered with the broker") +
+                                " on 127.0.0.1:" + std::to_string(instance_broker_->port()));
+        }
         logger_.information("==========================================");
         logger_.information("Server running. Press Ctrl+C to stop or type 'exit' to quit...");
     }

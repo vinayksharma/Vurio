@@ -27,8 +27,13 @@ namespace MediaDedup
             ~InstanceChecker() = default;
 
             /**
-             * @brief Check for existing instances of the server
-             * @return true if no other instances are running, false if another instance exists
+             * @brief Check for existing instances of this server binary
+             *
+             * Only processes running the same executable path count as a
+             * conflicting instance; servers built in other worktrees are
+             * allowed to run concurrently (each UI pairs with its own build
+             * via the version handshake).
+             * @return true if no other instance of this binary is running
              */
             bool checkForExistingInstances();
 
@@ -55,5 +60,12 @@ namespace MediaDedup
              * @return Vector of PIDs found
              */
             std::vector<pid_t> parsePids(const std::string &output, pid_t current_pid) const;
+
+            /**
+             * @brief Resolve the canonical executable path of a process
+             * @param pid Process ID to look up
+             * @return Canonical path, or empty if it cannot be resolved
+             */
+            std::string getExecutablePath(pid_t pid) const;
     };
 }

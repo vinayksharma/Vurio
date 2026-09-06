@@ -272,7 +272,7 @@ start_web_server() {
     print_status "Configuration file: $CONFIG_FILE"
     print_status "Web server will be available at: http://localhost:8080"
     print_status "API endpoints:"
-    print_status "  API: gRPC over unix socket /tmp/vurio_dedup.sock"
+    print_status "  API: gRPC over a per-instance unix socket in ~/.vurio/instances/<pid>/ (discovered via the broker on 127.0.0.1:47911)"
     echo
     
     local EXTRA_ARGS=""

@@ -18,6 +18,11 @@ import SwiftProtobuf
 /// token in the "x-vurio-token" metadata header. A client obtains that token by
 /// presenting the server's startup cookie (read from a 0600 file only the same
 /// OS user can open) to Handshake. This binds a client to one server instance.
+///
+/// BROKER-1: a UI then LOCKS the instance by holding the Session stream. While
+/// one is held, Handshake refuses every other caller ("BUSY: ..."), and the
+/// instance advertises itself as busy to the broker. When the stream ends —
+/// the UI quit or died — the instance shuts down: a server is single-use.
 /// ---------------------------------------------------------
 ///
 /// Usage: instantiate `Vurio_Dedup_SecurityServiceClient`, then call methods of this protocol to make API calls.
@@ -29,6 +34,12 @@ internal protocol Vurio_Dedup_SecurityServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_HandshakeRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>
+
+  func session(
+    _ request: Vurio_Dedup_SessionRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Vurio_Dedup_SessionEvent) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent>
 }
 
 extension Vurio_Dedup_SecurityServiceClientProtocol {
@@ -51,6 +62,29 @@ extension Vurio_Dedup_SecurityServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
+    )
+  }
+
+  /// Requires the session token. The server writes a SessionEvent about once
+  /// a second for as long as the pairing stands; a second concurrent caller is
+  /// refused with ALREADY_EXISTS.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to Session.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  internal func session(
+    _ request: Vurio_Dedup_SessionRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Vurio_Dedup_SessionEvent) -> Void
+  ) -> ServerStreamingCall<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent> {
+    return self.makeServerStreamingCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.session.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSessionInterceptors() ?? [],
+      handler: handler
     )
   }
 }
@@ -119,6 +153,11 @@ internal struct Vurio_Dedup_SecurityServiceNIOClient: Vurio_Dedup_SecurityServic
 /// token in the "x-vurio-token" metadata header. A client obtains that token by
 /// presenting the server's startup cookie (read from a 0600 file only the same
 /// OS user can open) to Handshake. This binds a client to one server instance.
+///
+/// BROKER-1: a UI then LOCKS the instance by holding the Session stream. While
+/// one is held, Handshake refuses every other caller ("BUSY: ..."), and the
+/// instance advertises itself as busy to the broker. When the stream ends —
+/// the UI quit or died — the instance shuts down: a server is single-use.
 /// ---------------------------------------------------------
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 internal protocol Vurio_Dedup_SecurityServiceAsyncClientProtocol: GRPCClient {
@@ -129,6 +168,11 @@ internal protocol Vurio_Dedup_SecurityServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_HandshakeRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>
+
+  func makeSessionCall(
+    _ request: Vurio_Dedup_SessionRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -152,6 +196,18 @@ extension Vurio_Dedup_SecurityServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
     )
   }
+
+  internal func makeSessionCall(
+    _ request: Vurio_Dedup_SessionRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent> {
+    return self.makeAsyncServerStreamingCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.session.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSessionInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -165,6 +221,18 @@ extension Vurio_Dedup_SecurityServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeHandshakeInterceptors() ?? []
+    )
+  }
+
+  internal func session(
+    _ request: Vurio_Dedup_SessionRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Vurio_Dedup_SessionEvent> {
+    return self.performAsyncServerStreamingCall(
+      path: Vurio_Dedup_SecurityServiceClientMetadata.Methods.session.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSessionInterceptors() ?? []
     )
   }
 }
@@ -190,6 +258,9 @@ internal protocol Vurio_Dedup_SecurityServiceClientInterceptorFactoryProtocol: S
 
   /// - Returns: Interceptors to use when invoking 'handshake'.
   func makeHandshakeInterceptors() -> [ClientInterceptor<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'session'.
+  func makeSessionInterceptors() -> [ClientInterceptor<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent>]
 }
 
 internal enum Vurio_Dedup_SecurityServiceClientMetadata {
@@ -198,6 +269,7 @@ internal enum Vurio_Dedup_SecurityServiceClientMetadata {
     fullName: "vurio.dedup.SecurityService",
     methods: [
       Vurio_Dedup_SecurityServiceClientMetadata.Methods.handshake,
+      Vurio_Dedup_SecurityServiceClientMetadata.Methods.session,
     ]
   )
 
@@ -206,6 +278,12 @@ internal enum Vurio_Dedup_SecurityServiceClientMetadata {
       name: "Handshake",
       path: "/vurio.dedup.SecurityService/Handshake",
       type: GRPCCallType.unary
+    )
+
+    internal static let session = GRPCMethodDescriptor(
+      name: "Session",
+      path: "/vurio.dedup.SecurityService/Session",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
@@ -3600,6 +3678,11 @@ internal enum Vurio_Dedup_MediaServiceClientMetadata {
 /// token in the "x-vurio-token" metadata header. A client obtains that token by
 /// presenting the server's startup cookie (read from a 0600 file only the same
 /// OS user can open) to Handshake. This binds a client to one server instance.
+///
+/// BROKER-1: a UI then LOCKS the instance by holding the Session stream. While
+/// one is held, Handshake refuses every other caller ("BUSY: ..."), and the
+/// instance advertises itself as busy to the broker. When the stream ends —
+/// the UI quit or died — the instance shuts down: a server is single-use.
 /// ---------------------------------------------------------
 ///
 /// To build a server, implement a class that conforms to this protocol.
@@ -3607,6 +3690,11 @@ internal protocol Vurio_Dedup_SecurityServiceProvider: CallHandlerProvider {
   var interceptors: Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol? { get }
 
   func handshake(request: Vurio_Dedup_HandshakeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_HandshakeResponse>
+
+  /// Requires the session token. The server writes a SessionEvent about once
+  /// a second for as long as the pairing stands; a second concurrent caller is
+  /// refused with ALREADY_EXISTS.
+  func session(request: Vurio_Dedup_SessionRequest, context: StreamingResponseCallContext<Vurio_Dedup_SessionEvent>) -> EventLoopFuture<GRPCStatus>
 }
 
 extension Vurio_Dedup_SecurityServiceProvider {
@@ -3630,6 +3718,15 @@ extension Vurio_Dedup_SecurityServiceProvider {
         userFunction: self.handshake(request:context:)
       )
 
+    case "Session":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SessionRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SessionEvent>(),
+        interceptors: self.interceptors?.makeSessionInterceptors() ?? [],
+        userFunction: self.session(request:context:)
+      )
+
     default:
       return nil
     }
@@ -3643,6 +3740,11 @@ extension Vurio_Dedup_SecurityServiceProvider {
 /// token in the "x-vurio-token" metadata header. A client obtains that token by
 /// presenting the server's startup cookie (read from a 0600 file only the same
 /// OS user can open) to Handshake. This binds a client to one server instance.
+///
+/// BROKER-1: a UI then LOCKS the instance by holding the Session stream. While
+/// one is held, Handshake refuses every other caller ("BUSY: ..."), and the
+/// instance advertises itself as busy to the broker. When the stream ends —
+/// the UI quit or died — the instance shuts down: a server is single-use.
 /// ---------------------------------------------------------
 ///
 /// To implement a server, implement an object which conforms to this protocol.
@@ -3655,6 +3757,15 @@ internal protocol Vurio_Dedup_SecurityServiceAsyncProvider: CallHandlerProvider,
     request: Vurio_Dedup_HandshakeRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_HandshakeResponse
+
+  /// Requires the session token. The server writes a SessionEvent about once
+  /// a second for as long as the pairing stands; a second concurrent caller is
+  /// refused with ALREADY_EXISTS.
+  func session(
+    request: Vurio_Dedup_SessionRequest,
+    responseStream: GRPCAsyncResponseStreamWriter<Vurio_Dedup_SessionEvent>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -3685,6 +3796,15 @@ extension Vurio_Dedup_SecurityServiceAsyncProvider {
         wrapping: { try await self.handshake(request: $0, context: $1) }
       )
 
+    case "Session":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SessionRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SessionEvent>(),
+        interceptors: self.interceptors?.makeSessionInterceptors() ?? [],
+        wrapping: { try await self.session(request: $0, responseStream: $1, context: $2) }
+      )
+
     default:
       return nil
     }
@@ -3696,6 +3816,10 @@ internal protocol Vurio_Dedup_SecurityServiceServerInterceptorFactoryProtocol: S
   /// - Returns: Interceptors to use when handling 'handshake'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeHandshakeInterceptors() -> [ServerInterceptor<Vurio_Dedup_HandshakeRequest, Vurio_Dedup_HandshakeResponse>]
+
+  /// - Returns: Interceptors to use when handling 'session'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSessionInterceptors() -> [ServerInterceptor<Vurio_Dedup_SessionRequest, Vurio_Dedup_SessionEvent>]
 }
 
 internal enum Vurio_Dedup_SecurityServiceServerMetadata {
@@ -3704,6 +3828,7 @@ internal enum Vurio_Dedup_SecurityServiceServerMetadata {
     fullName: "vurio.dedup.SecurityService",
     methods: [
       Vurio_Dedup_SecurityServiceServerMetadata.Methods.handshake,
+      Vurio_Dedup_SecurityServiceServerMetadata.Methods.session,
     ]
   )
 
@@ -3712,6 +3837,12 @@ internal enum Vurio_Dedup_SecurityServiceServerMetadata {
       name: "Handshake",
       path: "/vurio.dedup.SecurityService/Handshake",
       type: GRPCCallType.unary
+    )
+
+    internal static let session = GRPCMethodDescriptor(
+      name: "Session",
+      path: "/vurio.dedup.SecurityService/Session",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
