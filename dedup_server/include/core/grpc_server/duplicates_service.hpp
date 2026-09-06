@@ -525,6 +525,23 @@ public:
         reply->set_search_used_face(used_face);
         reply->set_search_parse_degraded(parse_degraded);
 
+        // Per-route sizes of the result set the day list is about to show.
+        // Counted over match_ids (not match_flags) so an intersected cluster
+        // filter is reflected; routes overlap, so these do not sum to the total.
+        if (match_ids) {
+            int count_ai = 0, count_exif = 0, count_face = 0;
+            for (int file_id : *match_ids) {
+                auto it = match_flags.find(file_id);
+                if (it == match_flags.end()) continue;
+                if (it->second.ai) ++count_ai;
+                if (it->second.exif) ++count_exif;
+                if (it->second.face) ++count_face;
+            }
+            reply->set_search_match_count_ai(count_ai);
+            reply->set_search_match_count_exif(count_exif);
+            reply->set_search_match_count_face(count_face);
+        }
+
         auto page = MediaDedup::DayGroupsOps::getDayGroups(*db_, offset, limit, files_per_day, match_ids);
         if (!page.ok) {
             // Transient failure (e.g. DB session pool exhausted under load).

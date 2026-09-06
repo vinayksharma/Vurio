@@ -851,6 +851,18 @@ struct Vurio_Dedup_GetDayGroupsResponse: Sendable {
   /// client show "simplified query parsing" instead of degrading silently.
   var searchParseDegraded: Bool = false
 
+  /// How many files of the active query's result set each route admitted
+  /// (0 when no query, and after filter_cluster_id has been intersected in,
+  /// so they always describe the set the day list is actually showing). The
+  /// routes overlap — a file matched by both ai and xf counts in both — so
+  /// these do not sum to the total. Drives the per-route counts on the
+  /// ai/xf/fc chips.
+  var searchMatchCountAi: Int32 = 0
+
+  var searchMatchCountExif: Int32 = 0
+
+  var searchMatchCountFace: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -3003,7 +3015,7 @@ extension Vurio_Dedup_DayGroup: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
 
 extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDayGroupsResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}days\0\u{3}total_days\0\u{3}search_used_ai\0\u{3}search_used_exif\0\u{3}search_parse_degraded\0\u{3}search_used_face\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}days\0\u{3}total_days\0\u{3}search_used_ai\0\u{3}search_used_exif\0\u{3}search_parse_degraded\0\u{3}search_used_face\0\u{3}search_match_count_ai\0\u{3}search_match_count_exif\0\u{3}search_match_count_face\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3017,6 +3029,9 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
       case 4: try { try decoder.decodeSingularBoolField(value: &self.searchUsedExif) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.searchParseDegraded) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.searchUsedFace) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.searchMatchCountAi) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.searchMatchCountExif) }()
+      case 9: try { try decoder.decodeSingularInt32Field(value: &self.searchMatchCountFace) }()
       default: break
       }
     }
@@ -3041,6 +3056,15 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
     if self.searchUsedFace != false {
       try visitor.visitSingularBoolField(value: self.searchUsedFace, fieldNumber: 6)
     }
+    if self.searchMatchCountAi != 0 {
+      try visitor.visitSingularInt32Field(value: self.searchMatchCountAi, fieldNumber: 7)
+    }
+    if self.searchMatchCountExif != 0 {
+      try visitor.visitSingularInt32Field(value: self.searchMatchCountExif, fieldNumber: 8)
+    }
+    if self.searchMatchCountFace != 0 {
+      try visitor.visitSingularInt32Field(value: self.searchMatchCountFace, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3051,6 +3075,9 @@ extension Vurio_Dedup_GetDayGroupsResponse: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.searchUsedExif != rhs.searchUsedExif {return false}
     if lhs.searchUsedFace != rhs.searchUsedFace {return false}
     if lhs.searchParseDegraded != rhs.searchParseDegraded {return false}
+    if lhs.searchMatchCountAi != rhs.searchMatchCountAi {return false}
+    if lhs.searchMatchCountExif != rhs.searchMatchCountExif {return false}
+    if lhs.searchMatchCountFace != rhs.searchMatchCountFace {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -13,6 +13,7 @@
 #include "search/llm_query_structurer.hpp"
 #include "search/llm_runtime.hpp"
 #include "search/location_geocoder.hpp"
+#include "search/relative_date_resolver.hpp"
 
 namespace MediaDedup
 {
@@ -160,6 +161,9 @@ namespace MediaDedup
         // reused across searches (parse() is const and thread-safe).
         std::once_flag parser_once_;
         std::unique_ptr<ExifQueryParser> parser_;
+        // The same 12 month names the parsers were built with, kept so
+        // relative date phrases resolve into that exact vocabulary.
+        std::vector<std::string> months_;
 
         // QP-1d: the LLM structurer path. structurer_/llm_validator_ are
         // always built (cheap); the runtime only when search.llm.enabled.
