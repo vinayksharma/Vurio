@@ -172,6 +172,7 @@ namespace MediaDedup
             auto person_resolver = [this](const std::string &name) -> int {
                 return db_ ? FacesOps::personIdByName(*db_, name) : 0;
             };
+            months_ = keywords.months;
             parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords, person_resolver);
 
             // QP-1d: the LLM structurer path shares the same vocabulary.
@@ -280,14 +281,19 @@ namespace MediaDedup
         // is the primary parser; the regex parser is the fallback ladder's
         // last rung (structurer off/unavailable/failed/fully rejected).
         ensureParserLoaded();
+        // Neither parser has a clock, so "july of this year" would ground to
+        // July of every year. Resolve the calendar-relative phrases into
+        // explicit month/year text first and both rungs of the ladder below
+        // see the same, already-datable query.
+        const std::string dated_query = RelativeDateResolver::resolve(query, months_);
         StructuredQuery sq;
         // Degraded = the LLM path was configured (runtime or test seam)
         // but the regex fallback answered. "Not installed/disabled" is the
         // chosen baseline, not degradation.
         bool parse_degraded = false;
-        if (!tryLlmStructure(query, sq))
+        if (!tryLlmStructure(dated_query, sq))
         {
-            sq = parser_->parseStructured(query);
+            sq = parser_->parseStructured(dated_query);
             parse_degraded = static_cast<bool>(test_complete_fn_) || llm_ != nullptr;
         }
         // Route toggles (VU ai/xf/fc) strip whole dimension families from

@@ -88,6 +88,7 @@ set(UNIT_TEST_SOURCES
     unit/test_llm_runtime.cpp
     unit/test_llm_query_structurer.cpp
     unit/test_llm_fact_validator.cpp
+    unit/test_relative_date_resolver.cpp
     unit/test_display_geometry.cpp
     unit/test_duplicate_members_geometry.cpp
     unit/test_thumbnail_cache_ops.cpp
@@ -324,6 +325,13 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_llm_fact_validator")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="LlmFactValidatorTest*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_relative_date_resolver")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="RelativeDateResolverTest*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -723,6 +731,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/search/query_fact_schema.cpp
         ${CMAKE_SOURCE_DIR}/src/search/llm_query_structurer.cpp
         ${CMAKE_SOURCE_DIR}/src/search/llm_fact_validator.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/relative_date_resolver.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -877,6 +886,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_llm_runtime" AND
       NOT ${test_name} STREQUAL "test_llm_query_structurer" AND
       NOT ${test_name} STREQUAL "test_llm_fact_validator" AND
+      NOT ${test_name} STREQUAL "test_relative_date_resolver" AND
       NOT ${test_name} STREQUAL "test_exif_search_e2e" AND
       NOT ${test_name} STREQUAL "test_display_geometry" AND
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
