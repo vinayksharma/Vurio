@@ -56,9 +56,13 @@ TEST(MagickLimitsTest, EnvContainsAllResourceCaps)
         EXPECT_FALSE(env.at(key).empty()) << key << " has an empty value";
     }
 
-    // Deliberately absent: we enforce wall-clock timeouts ourselves
-    // (runProcessWithTimeout); a MAGICK_TIME_LIMIT would race it.
-    EXPECT_FALSE(env.count("MAGICK_TIME_LIMIT"));
+    // Orphan backstop: runProcessWithTimeout is still the primary timeout,
+    // but a child that outlives the server (crash, SIGKILL, Ctrl+C's _Exit)
+    // has no parent left to kill it. The value must sit far above every
+    // sanctioned subprocess timeout (60s default) so it can never race the
+    // parent-side kill.
+    ASSERT_TRUE(env.count("MAGICK_TIME_LIMIT"));
+    EXPECT_EQ(env.at("MAGICK_TIME_LIMIT"), "300");
 }
 
 // End-to-end: the real binary must report the capped limits when launched the
@@ -82,4 +86,6 @@ TEST(MagickLimitsTest, RealMagickHonorsLimits)
     EXPECT_EQ(resourceValue(listing, "Memory"), "256MiB") << listing;
     EXPECT_EQ(resourceValue(listing, "Map"), "512MiB") << listing;
     EXPECT_EQ(resourceValue(listing, "Disk"), "2GiB") << listing;
+    // 300s renders as "5 minutes" in -list resource output.
+    EXPECT_EQ(resourceValue(listing, "Time"), "5 minutes") << listing;
 }

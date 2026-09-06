@@ -17,6 +17,7 @@
 #include "core/server_initializer.hpp"
 #include "core/server_shutdown.hpp"
 #include "core/console_input_manager.hpp"
+#include "utils/orphan_sweeper.hpp"
 #include <Poco/Logger.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <iostream>
@@ -139,6 +140,12 @@ namespace MediaDedup
                 logger_.error("Another instance of Media Deduplication Server is already running. Exiting.");
                 return Application::EXIT_TEMPFAIL;
             }
+
+            // We are the only instance, so any surviving media subprocess is
+            // an orphan of a previous run that died mid-processing. run.sh
+            // sweeps these too, but launches that bypass the scripts (Swift
+            // UI, direct binary runs) need the binary to sweep for itself.
+            sweepOrphanedMediaSubprocesses();
 
             // Initialize database
             if (!initializer.initializeDatabase())

@@ -38,6 +38,13 @@ namespace MediaDedup
             {"MAGICK_DISK_LIMIT", "2GiB"},
             {"MAGICK_WIDTH_LIMIT", "65536"},
             {"MAGICK_HEIGHT_LIMIT", "65536"},
+            // Orphan backstop, NOT the primary timeout (runProcessWithTimeout
+            // is). A child that outlives the server — crash, SIGKILL, Ctrl+C's
+            // _Exit — has no parent left to enforce a timeout and would other-
+            // wise spin forever on a wedged input. 300s sits far above every
+            // sanctioned subprocess timeout (60s default), so it can never
+            // race the parent-side kill; it only bounds orphan lifetime.
+            {"MAGICK_TIME_LIMIT", "300"},
         };
         return env;
     }

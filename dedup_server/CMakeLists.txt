@@ -301,6 +301,7 @@ add_executable(media_dedup_server
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
     src/utils/thumbnail_generator.cpp
+    src/utils/orphan_sweeper.cpp
     src/utils/subprocess_runner.cpp
     src/utils/temp_paths.cpp
     src/utils/tool_paths.cpp

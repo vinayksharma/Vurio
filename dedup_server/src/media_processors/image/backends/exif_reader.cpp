@@ -1,11 +1,8 @@
 #include "media_processors/image/backends/exif_reader.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
+#include "utils/subprocess_runner.hpp"
 #include "utils/tool_paths.hpp"
 #include <Poco/Logger.h>
-#include <Poco/Pipe.h>
-#include <Poco/PipeStream.h>
-#include <Poco/Process.h>
-#include <Poco/StreamCopier.h>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -178,6 +175,13 @@ namespace MediaDedup
                 "identify",
                 "-quiet",
                 "-ping",
+                // Sweep marker: unlike the transcode/thumbnail children, this
+                // argv carries no app temp-output name, so the orphan sweeps
+                // (run.sh / stopall / startup) could never match it. The
+                // -define is a no-op to ImageMagick; its value is the argv
+                // token the sweeps pkill on.
+                "-define",
+                "vurio:sweep=exif_probe_",
                 "-format",
                 // Dimensions & Orientation
                 "%w\n%h\n"
@@ -205,17 +209,25 @@ namespace MediaDedup
                 "%[orientation]\n",
                 file_path};
 
-            Poco::Pipe out_pipe;
-            Poco::ProcessHandle handle = Poco::Process::launch(ToolPaths::magickPath(), args, nullptr,
-                                                               &out_pipe, nullptr,
-                                                               ToolPaths::magickResourceEnv());
-            Poco::PipeInputStream istr(out_pipe);
+            // -ping only reads headers, so this normally finishes in well
+            // under a second; the timeout exists for inputs on vanished
+            // network mounts, where an untimed identify would pin this pool
+            // thread forever (and stall every graceful shutdown).
+            constexpr int kIdentifyTimeoutMs = 30000;
             std::string output;
-            Poco::StreamCopier::copyToString(istr, output);
-            int rc = handle.wait();
-            if (rc != 0)
+            SubprocessResult run = runProcessWithTimeout(ToolPaths::magickPath(), args,
+                                                         kIdentifyTimeoutMs,
+                                                         ToolPaths::magickResourceEnv(),
+                                                         &output);
+            if (run.timed_out)
             {
-                logger.warning("magick identify -ping failed (exit %d) for: %s", rc, file_path);
+                logger.warning("magick identify -ping timed out after %d ms for: %s",
+                               kIdentifyTimeoutMs, file_path);
+                return std::nullopt;
+            }
+            if (run.exit_code != 0)
+            {
+                logger.warning("magick identify -ping failed (exit %d) for: %s", run.exit_code, file_path);
                 return std::nullopt;
             }
 

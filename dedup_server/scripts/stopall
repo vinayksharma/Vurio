@@ -63,9 +63,11 @@ fi
 # timeouts only while it is alive; a server killed mid-processing orphans its
 # in-flight transcode/thumbnail children to PID 1, and a child wedged on a
 # vanished input (e.g. an SMB read cut mid-transcode) spins at 100% CPU
-# forever. Their argv always carries one of our app-specific temp-output
-# names, so these patterns cannot match unrelated processes.
-for pattern in magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_; do
+# forever. Their argv always carries one of our app-specific markers
+# (temp-output names, or the exif probe's -define token), so these patterns
+# cannot match unrelated processes. Keep the list in sync with
+# scripts/run.sh and src/utils/orphan_sweeper.cpp.
+for pattern in magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_ exif_probe_; do
     if pkill -9 -f "$pattern" 2>/dev/null; then
         echo "Killed orphaned media subprocess(es) matching '$pattern'"
     fi

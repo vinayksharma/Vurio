@@ -429,9 +429,11 @@ stop_server() {
 # force-killed mid-processing) orphans any in-flight children to PID 1, and a
 # child wedged on a vanished input (an SMB read cut mid-transcode) then spins
 # at 100% CPU forever. Every child's argv carries one of our app-specific
-# temp-output names, so a targeted pkill is safe and precise.
+# markers (temp-output names, or the exif probe's -define token), so a
+# targeted pkill is safe and precise. Keep the pattern list in sync with
+# scripts/stopall and src/utils/orphan_sweeper.cpp.
 kill_orphaned_subprocesses() {
-    local patterns="magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_"
+    local patterns="magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_ exif_probe_"
     local killed=0
     for p in $patterns; do
         if pkill -9 -f "$p" 2>/dev/null; then
