@@ -5,6 +5,8 @@
 #include <fstream>
 
 #include "database/database_manager.hpp"
+#include <Poco/Data/Session.h>
+#include <Poco/Data/Statement.h>
 #include "database/faces_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/face/face_align.hpp"
@@ -110,6 +112,19 @@ namespace MediaDedup
                              .string();
                 std::ofstream(p) << "not really an image";
                 return p;
+            }
+
+            /// Delete a scanned_files row the way pre-FACE-9 builds did:
+            /// the row goes, its faces stay. Reproduces the orphaned state
+            /// that databases written before the fix still carry.
+            void orphanFacesByDroppingFileRow(const std::string &path)
+            {
+                auto lease = db_->acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                std::string p = path;
+                Poco::Data::Statement del(sess);
+                del << "DELETE FROM scanned_files WHERE file_path = ?",
+                    Poco::Data::Keywords::use(p), Poco::Data::Keywords::now;
             }
 
             std::unique_ptr<DatabaseManager> db_;
@@ -648,6 +663,271 @@ namespace MediaDedup
             ASSERT_EQ(infos.size(), 1u);
             EXPECT_EQ(infos[0].cover_face_id, f2);
             EXPECT_TRUE(infos[0].cover_pinned);
+        }
+
+        // A cover can still outlive the photo it was cropped from: databases
+        // written before FACE-9 are full of faces whose files were deleted,
+        // and a file can leave between the election and the read. The grid
+        // can only draw a placeholder for an empty path, so the read falls
+        // back to a member that still has its photo.
+        TEST_F(FaceScanTest, CoverFallsBackToAMemberThatStillHasItsPhoto)
+        {
+            const int dead_file = insertProcessed("/nowhere/deleted.jpg");
+            const int live_file = insertProcessed("/nowhere/kept.jpg");
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                r.bbox_x = 0.25;
+                r.bbox_y = 0.35;
+                r.bbox_w = 0.2;
+                r.bbox_h = 0.3;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int best = mkFace(dead_file, 0.9);
+            const int rest = mkFace(live_file, 0.5);
+            const int c1 = cl.assign(best, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(rest, unit4(1, 0.05f, 0, 0), 0.5), c1);
+
+            // The best face wins the election while its photo is still there.
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].cover_face_id, best);
+            EXPECT_EQ(infos[0].cover_file_path, "/nowhere/deleted.jpg");
+
+            // Its photo row goes but the faces stay (a database orphaned by
+            // a pre-FACE-9 build); election untouched.
+            orphanFacesByDroppingFileRow("/nowhere/deleted.jpg");
+            EXPECT_EQ(FacesOps::listClusters(*db_).at(0).cover_face_id, best);
+
+            // The grid still gets a face to draw — the surviving member,
+            // with ITS bbox, not the dead cover's.
+            infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].cover_face_id, rest);
+            EXPECT_EQ(infos[0].cover_file_path, "/nowhere/kept.jpg");
+            EXPECT_DOUBLE_EQ(infos[0].cover_w, 0.2);
+
+            // Nothing left to draw: the path stays empty rather than
+            // pointing at a photo that is gone.
+            orphanFacesByDroppingFileRow("/nowhere/kept.jpg");
+            infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_TRUE(infos[0].cover_file_path.empty());
+        }
+
+        // The stored election self-heals on the next recompute: a face with
+        // no photo left loses the cover however good it looked.
+        TEST_F(FaceScanTest, CoverElectionPrefersAMemberThatStillHasItsPhoto)
+        {
+            const int dead_file = insertProcessed("/nowhere/gone.jpg");
+            const int live_file = insertProcessed("/nowhere/here.jpg");
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int best = mkFace(dead_file, 0.9);
+            const int rest = mkFace(live_file, 0.5);
+            const int c1 = cl.assign(best, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(rest, unit4(1, 0.05f, 0, 0), 0.5), c1);
+            ASSERT_EQ(FacesOps::listClusters(*db_).at(0).cover_face_id, best);
+
+            orphanFacesByDroppingFileRow("/nowhere/gone.jpg");
+            ASSERT_TRUE(FacesOps::recomputeCluster(*db_, c1));
+
+            auto rows = FacesOps::listClusters(*db_);
+            ASSERT_EQ(rows.size(), 1u);
+            EXPECT_EQ(rows[0].cover_face_id, rest);
+            // Membership is unchanged — this is about what can be drawn.
+            EXPECT_EQ(rows[0].size, 2);
+        }
+
+        // FACE-9: deleting a photo takes its faces with it. Before this,
+        // faces outlived their files: cluster sizes and the People grid's
+        // photo counts kept counting photos that were gone, and covers were
+        // elected from them.
+        TEST_F(FaceScanTest, DeletingAFileTakesItsFacesAndRepairsTheCluster)
+        {
+            const int keep = insertProcessed("/nowhere/keep.jpg");
+            const int drop = insertProcessed("/nowhere/drop.jpg");
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f_drop = mkFace(drop, 0.9);
+            const int f_keep = mkFace(keep, 0.5);
+            const int c1 = cl.assign(f_drop, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f_keep, unit4(1, 0.05f, 0, 0), 0.5), c1);
+
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 2);
+            EXPECT_EQ(infos[0].file_count, 2);
+
+            ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_, "/nowhere/drop.jpg"));
+
+            // The face is gone, not merely orphaned.
+            EXPECT_TRUE(FacesOps::listFacesForFile(*db_, drop).empty());
+
+            // ...and the cluster was rebuilt around what is left: size, the
+            // grid's photo count, and the cover all reflect one photo.
+            infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 1);
+            EXPECT_EQ(infos[0].file_count, 1);
+            EXPECT_EQ(infos[0].cover_face_id, f_keep);
+            EXPECT_EQ(infos[0].cover_file_path, "/nowhere/keep.jpg");
+        }
+
+        // A cluster whose last photo goes has nothing left to be, so it is
+        // removed rather than left behind as an empty person.
+        TEST_F(FaceScanTest, DeletingEveryPhotoOfAClusterRemovesIt)
+        {
+            const int only = insertProcessed("/nowhere/only.jpg");
+            FacesOps::FaceRow r;
+            r.file_id = only;
+            r.quality = 0.9;
+            auto v = unit4(1, 0, 0, 0);
+            r.embedding.resize(v.size() * sizeof(float));
+            std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+            const int fid = FacesOps::insertFace(*db_, r);
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            ASSERT_GT(cl.assign(fid, unit4(1, 0, 0, 0), 0.9), 0);
+            ASSERT_EQ(FacesOps::listClusterInfos(*db_, true).size(), 1u);
+
+            ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_, "/nowhere/only.jpg"));
+            EXPECT_TRUE(FacesOps::listClusterInfos(*db_, true).empty());
+        }
+
+        // Removing a whole media location hands the batch of file ids to the
+        // same helper, one statement per file so a location with thousands of
+        // photos cannot overrun SQLite's variable limit. Exercised directly:
+        // removeByLocationKey itself sweeps a dozen tables this fixture does
+        // not create.
+        TEST_F(FaceScanTest, DeletingABatchOfFilesTakesEveryFaceInIt)
+        {
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            std::vector<int> file_ids;
+            std::vector<int> face_ids;
+            for (int i = 0; i < 5; ++i)
+            {
+                const int fid = insertProcessed("/nowhere/batch_" + std::to_string(i) + ".jpg");
+                file_ids.push_back(fid);
+                face_ids.push_back(mkFace(fid, 0.5 + 0.01 * i));
+            }
+            // One extra photo, in the same cluster, that survives the batch.
+            const int survivor_file = insertProcessed("/nowhere/batch_survivor.jpg");
+            const int survivor_face = mkFace(survivor_file, 0.4);
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            int cluster = 0;
+            for (std::size_t i = 0; i < face_ids.size(); ++i)
+            {
+                const int c = cl.assign(face_ids[i], unit4(1, 0.01f * i, 0, 0), 0.5 + 0.01 * i);
+                ASSERT_GT(c, 0);
+                if (i == 0) cluster = c;
+                ASSERT_EQ(c, cluster);
+            }
+            ASSERT_EQ(cl.assign(survivor_face, unit4(1, 0.02f, 0, 0), 0.4), cluster);
+            ASSERT_EQ(FacesOps::listClusterInfos(*db_, true).at(0).face_count, 6);
+
+            std::vector<int> touched;
+            {
+                auto lease = db_->acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                sess.begin();
+                touched = FacesOps::deleteFacesForFiles(sess, file_ids);
+                sess.commit();
+            }
+            ASSERT_EQ(touched.size(), 1u);
+            EXPECT_EQ(touched[0], cluster);
+            for (int fid : file_ids)
+                EXPECT_TRUE(FacesOps::listFacesForFile(*db_, fid).empty());
+
+            FacesOps::repairClustersAfterFaceDeletion(*db_, touched);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 1);
+            EXPECT_EQ(infos[0].cover_face_id, survivor_face);
+        }
+
+        // The one-time startup repair for databases written before FACE-9.
+        TEST_F(FaceScanTest, PurgeOrphanedFacesCleansWhatEarlierBuildsLeft)
+        {
+            const int keep = insertProcessed("/nowhere/p_keep.jpg");
+            const int gone = insertProcessed("/nowhere/p_gone.jpg");
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int f_gone = mkFace(gone, 0.9);
+            const int f_keep = mkFace(keep, 0.5);
+            const int c1 = cl.assign(f_gone, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_EQ(cl.assign(f_keep, unit4(1, 0.05f, 0, 0), 0.5), c1);
+
+            orphanFacesByDroppingFileRow("/nowhere/p_gone.jpg");
+            // The damage: the cluster still counts a photo that is gone.
+            ASSERT_EQ(FacesOps::listClusterInfos(*db_, true).at(0).file_count, 2);
+
+            EXPECT_EQ(FacesOps::purgeOrphanedFaces(*db_), 1);
+
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].face_count, 1);
+            EXPECT_EQ(infos[0].file_count, 1);
+            EXPECT_EQ(infos[0].cover_face_id, f_keep);
+            EXPECT_TRUE(FacesOps::listFacesForFile(*db_, gone).empty());
+
+            // Idempotent: a clean database has nothing to do.
+            EXPECT_EQ(FacesOps::purgeOrphanedFaces(*db_), 0);
         }
 
         TEST_F(FaceScanTest, SetClusterCoverRejectsNonMembers)

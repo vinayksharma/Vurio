@@ -428,6 +428,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/duplicate_groups_ops.cpp
@@ -462,6 +463,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
         )
@@ -474,6 +476,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
         )
@@ -497,6 +500,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
@@ -530,6 +534,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/vector_index.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp
@@ -573,6 +578,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/database_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/session/session_manager.cpp
             ${CMAKE_SOURCE_DIR}/src/database/scanned_files/scanned_files_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/processing_errors_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/user_settings/user_settings_ops.cpp

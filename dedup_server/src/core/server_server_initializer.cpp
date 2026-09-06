@@ -249,6 +249,12 @@ namespace MediaDedup
             }
             logger.information("Faces tables ensured");
 
+            // FACE-9 repair: faces used to outlive the photos they were found
+            // in, because deleting a scanned_files row left them behind. One
+            // sweep clears what earlier builds orphaned; a clean database
+            // pays a single indexed count.
+            FacesOps::purgeOrphanedFaces(*database_manager_);
+
             if (!EjectedFilesOps::ensureTable(*database_manager_))
             {
                 logger.error("Failed to ensure ejected_files_history table");

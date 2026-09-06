@@ -4,6 +4,14 @@
 #include <string>
 #include <vector>
 
+namespace Poco
+{
+    namespace Data
+    {
+        class Session;
+    }
+}
+
 namespace MediaDedup
 {
     class DatabaseManager;
@@ -62,6 +70,34 @@ namespace MediaDedup
 
         /// Remove a file's faces (re-scan after a version bump, file removal).
         static bool deleteFacesForFile(DatabaseManager &db, int file_id);
+
+        /// Delete the faces of `file_ids` on the caller's OPEN transaction
+        /// (`sess`), returning the clusters that lost members. Deleting a
+        /// scanned_files row must take its faces with it — nothing else does,
+        /// and a face that outlives its photo cannot be shown, counted or
+        /// clustered honestly. Runs on the caller's session so it commits or
+        /// rolls back with the row itself.
+        ///
+        /// The returned clusters are left stale on purpose: their size,
+        /// centroid and cover still count the departed faces. Hand them to
+        /// repairClustersAfterFaceDeletion() once the transaction has
+        /// committed.
+        static std::vector<int> deleteFacesForFiles(Poco::Data::Session &sess,
+                                                    const std::vector<int> &file_ids);
+
+        /// One-time FACE-9 repair, at startup: delete every face whose
+        /// scanned_files row is already gone and rebuild the clusters that
+        /// were counting them. Returns how many faces went. Databases written
+        /// before the delete paths took faces with the row are full of these;
+        /// a clean database pays one indexed count.
+        static int purgeOrphanedFaces(DatabaseManager &db);
+
+        /// Recompute the clusters deleteFacesForFiles() reported, AFTER the
+        /// caller's transaction commits (each recompute takes its own
+        /// session, so it must not run inside one). A cluster whose every
+        /// face has gone is deleted.
+        static void repairClustersAfterFaceDeletion(DatabaseManager &db,
+                                                    const std::vector<int> &cluster_ids);
 
         static std::vector<FaceRow> listFacesForFile(DatabaseManager &db, int file_id);
 
@@ -123,6 +159,12 @@ namespace MediaDedup
         /// Clusters for the People grid, size desc, with the cover face's
         /// file path + bbox so the client can crop the thumbnail itself.
         static std::vector<ClusterInfo> listClusterInfos(DatabaseManager &db, bool include_hidden);
+
+        /// Point `c`'s cover at its best-quality member face that still has a
+        /// scanned_files row, for a cluster whose elected cover no longer
+        /// does. Leaves `c` untouched when every member has outlived its
+        /// photo. Display-only: the stored election is not rewritten.
+        static void fillCoverFromLiveMember(DatabaseManager &db, ClusterInfo &c);
 
         /// Assign/clear a cluster's person name. Creates (or reuses, case-
         /// insensitively) the persons row; members' faces.person_id follow.

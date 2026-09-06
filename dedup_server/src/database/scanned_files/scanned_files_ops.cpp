@@ -2,6 +2,7 @@
 #include "config/config_enums.hpp"
 #include "database/database_manager.hpp"
 #include "database/db_retry.hpp"
+#include "database/faces_ops.hpp"
 #include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
@@ -350,6 +351,7 @@ namespace MediaDedup
 
             // DF-4: the file's similarity edges go in the same transaction as
             // the row (edges have no FK, so nothing cascades them).
+            std::vector<int> touched_clusters;
             try
             {
                 sess.begin();
@@ -359,6 +361,11 @@ namespace MediaDedup
                     if (purged > 0)
                         requestRegroupAfterEdgePurge(sess, purged, file_path);
                 }
+                // FACE-9: the row's faces go with it, in the same
+                // transaction. Nothing else deletes them, and a face that
+                // outlives its photo cannot be shown, counted or clustered.
+                if (file_id > 0)
+                    touched_clusters = FacesOps::deleteFacesForFiles(sess, {file_id});
                 Statement stmt(sess);
                 stmt << std::string(SQL::kDeleteScannedFile), Keywords::use(p), Keywords::now;
                 sess.commit();
@@ -368,6 +375,10 @@ namespace MediaDedup
                 try { sess.rollback(); } catch (...) {}
                 throw;
             }
+
+            // Rebuild what the departed faces were counted in, after commit
+            // (each recompute takes its own session).
+            FacesOps::repairClustersAfterFaceDeletion(db, touched_clusters);
 
             if (file_id > 0)
             {
@@ -396,6 +407,7 @@ namespace MediaDedup
             // single SQLite writer lock across syscalls.
             std::vector<std::string> cache_files;
             std::vector<int> removed_ids; // DF-2: for vector-index cleanup
+            std::vector<int> touched_clusters; // FACE-9: clusters to rebuild
             {
                 Statement sel_thumbs(sess);
                 sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)",
@@ -466,6 +478,10 @@ namespace MediaDedup
                     requestRegroupAfterEdgePurge(sess, purged_a + purged_b, "location " + key);
             }
 
+            // FACE-9: the location's faces go with its rows, same
+            // transaction (see removeByPath).
+            touched_clusters = FacesOps::deleteFacesForFiles(sess, removed_ids);
+
             Statement del_files(sess);
             del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
 
@@ -479,6 +495,11 @@ namespace MediaDedup
                 try { sess.rollback(); } catch (...) {}
                 throw;
             }
+
+            // Rebuild the clusters the departed faces were counted in,
+            // after commit (each recompute takes its own session). A cluster
+            // whose every photo lived here is deleted.
+            FacesOps::repairClustersAfterFaceDeletion(db, touched_clusters);
 
             // Unlink cached assets AFTER the commit, outside any transaction.
             int deleted_files = 0;
@@ -532,6 +553,7 @@ namespace MediaDedup
             }
 
             std::vector<std::string> cache_files;
+            std::vector<int> touched_clusters; // FACE-9: clusters to rebuild
             {
                 Statement sel_thumbs(sess);
                 sel_thumbs << "SELECT cached_path FROM thumbnail_cache WHERE source_path=?",
@@ -570,6 +592,10 @@ namespace MediaDedup
                         requestRegroupAfterEdgePurge(sess, purged, file_path);
                 }
 
+                // FACE-9: the file's faces go with the row, same
+                // transaction (see removeByPath).
+                touched_clusters = FacesOps::deleteFacesForFiles(sess, {file_id});
+
                 // Delete the scanned_file row itself. This will CASCADE DELETE
                 // to: duplicate_members, ejected_files_history.
                 Statement del_file(sess);
@@ -584,6 +610,10 @@ namespace MediaDedup
                 try { sess.rollback(); } catch (...) {}
                 throw;
             }
+
+            // Rebuild what the departed faces were counted in, after commit
+            // (each recompute takes its own session).
+            FacesOps::repairClustersAfterFaceDeletion(db, touched_clusters);
 
             for (const auto &cached_path : cache_files)
             {
