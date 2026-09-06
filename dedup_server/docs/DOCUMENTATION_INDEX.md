@@ -27,6 +27,7 @@ All project documentation is consolidated in this directory for easy navigation 
 
 ## Troubleshooting & Fixes
 
+- **[instance_broker.md](instance_broker.md)** - BROKER-1: concurrent server+UI pairs — port-elected broker, per-instance sockets, Session lock, UI discovery
 - **[troubleshooting_and_fixes.md](troubleshooting_and_fixes.md)** - Incident reports, specific bug fixes, and troubleshooting logs
 
 ---

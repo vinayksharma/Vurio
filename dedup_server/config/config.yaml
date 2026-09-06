@@ -154,6 +154,7 @@ media.filter.low_res.min_height: 600
 server.max_connections: 100
 media.images.pgm: true
 server.processName: media_dedup_server
+server.broker.port: 47911
 media.video.webm: false
 tpm.types.fileScan.share: 1
 media.images.raw.rw2: true

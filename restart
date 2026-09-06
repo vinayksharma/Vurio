@@ -119,9 +119,12 @@ done
 # server and every UI on the machine, which made a second instance impossible:
 # starting one from another worktree tore down the one already running. Each
 # invocation now owns exactly the server and UI it launches, and several can
-# run at once — the pairing is safe because the UI's handshake rejects a server
-# built from a different commit (VER-1), so a UI can only ever talk to its own
-# server. Use ./killall for a machine-wide sweep after something has crashed.
+# run at once. The UI finds its server through the broker (BROKER-1): it pairs
+# only with a free server built from its own commit, and prefers the one
+# carrying the same VURIO_INSTANCE_GROUP — this worktree — over an equally
+# matching one started elsewhere. Use ./killall for a machine-wide sweep after
+# something has crashed.
+export VURIO_INSTANCE_GROUP="${APP_DIR}"
 echo "Starting a new instance from ${APP_DIR}..."
 
 if [ "$DO_REBUILD" = true ]; then

@@ -2,9 +2,15 @@
 #include "config/unified_observable_config.hpp"
 #include <Poco/Logger.h>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <sstream>
 #include <stdexcept>
+
+#include <climits>
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
 
 namespace MediaDedup
 {
@@ -32,17 +38,39 @@ namespace MediaDedup
                 return true;
             }
 
-            std::vector<pid_t> existing_pids = parsePids(result, current_pid);
-            if (!existing_pids.empty())
+            // Only a process running this exact binary is a duplicate of this
+            // instance; servers from other worktrees may run concurrently.
+            std::string own_path = getExecutablePath(current_pid);
+            std::vector<pid_t> conflicting_pids;
+            std::vector<pid_t> sibling_pids;
+            for (pid_t pid : parsePids(result, current_pid))
             {
-                Poco::Logger &logger = Poco::Logger::get("InstanceChecker");
-                logger.error("Found %d existing instance(s) of Media Deduplication Server:", static_cast<int>(existing_pids.size()));
-                for (pid_t pid : existing_pids)
+                std::string other_path = getExecutablePath(pid);
+                if (!own_path.empty() && other_path == own_path)
+                {
+                    conflicting_pids.push_back(pid);
+                }
+                else
+                {
+                    sibling_pids.push_back(pid);
+                }
+            }
+
+            Poco::Logger &logger = Poco::Logger::get("InstanceChecker");
+            for (pid_t pid : sibling_pids)
+            {
+                logger.information("Ignoring server instance from another worktree (PID: %d)", static_cast<int>(pid));
+            }
+
+            if (!conflicting_pids.empty())
+            {
+                logger.error("Found %d existing instance(s) of this server binary:", static_cast<int>(conflicting_pids.size()));
+                for (pid_t pid : conflicting_pids)
                 {
                     logger.error("  - PID: %d", static_cast<int>(pid));
                 }
-                logger.error("Please stop existing instances before starting a new one.");
-                logger.error("Use './killall' at the repo root to stop all instances.");
+                logger.error("Please stop the existing instance before starting a new one.");
+                logger.error("Use './run.sh stop' in this worktree, or './killall' at the repo root to stop all instances.");
                 return false;
             }
 
@@ -104,5 +132,32 @@ namespace MediaDedup
             }
 
             return existing_pids;
-    }
+        }
+
+        std::string InstanceChecker::getExecutablePath(pid_t pid) const
+        {
+#ifdef __APPLE__
+            char path_buffer[PROC_PIDPATHINFO_MAXSIZE] = {0};
+            if (proc_pidpath(pid, path_buffer, sizeof(path_buffer)) <= 0)
+            {
+                return "";
+            }
+#else
+            char link_path[64];
+            snprintf(link_path, sizeof(link_path), "/proc/%d/exe", static_cast<int>(pid));
+            char path_buffer[PATH_MAX] = {0};
+            ssize_t len = readlink(link_path, path_buffer, sizeof(path_buffer) - 1);
+            if (len <= 0)
+            {
+                return "";
+            }
+            path_buffer[len] = '\0';
+#endif
+            char resolved[PATH_MAX] = {0};
+            if (realpath(path_buffer, resolved) != nullptr)
+            {
+                return std::string(resolved);
+            }
+            return std::string(path_buffer);
+        }
 }

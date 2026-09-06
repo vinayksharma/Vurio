@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package vurio.broker;
+
+// ---------------------------------------------------------
+// BROKER-1: instance discovery.
+//
+// Several server+UI pairs run side by side (one per worktree/branch). Every
+// server tries to bind the well-known broker endpoint (127.0.0.1:<port>) at
+// startup; the one that wins hosts this service, the others register with
+// it. A UI asks the broker for the live instances and pairs with a FREE one
+// built from ITS OWN commit; the pairing itself (cookie + Handshake +
+// Session stream) happens on the instance's own endpoint, never through the
+// broker.
+//
+// This contract is deliberately independent of dedup.proto: the broker and
+// its registrants are builds of DIFFERENT commits, so it must stay wire
+// compatible across them. Only ever add fields; never renumber or remove.
+// ---------------------------------------------------------
+service BrokerService {
+  // Server -> broker. Idempotent: re-registering an instance_id replaces the
+  // previous entry.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Server -> broker, periodic. Carries the current busy state. NOT_FOUND
+  // means the broker has no entry (it restarted): re-register.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // Server -> broker on clean shutdown.
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
+  // UI -> broker. Entries not heartbeated within the stale window are pruned
+  // before the reply is built.
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+}
+
+message Instance {
+  // Random per process start.
+  string instance_id = 1;
+  // gRPC channel target of the instance's own API, e.g. "unix:/path/grpc.sock"
+  // on macOS/Linux or "ipv4:127.0.0.1:port" on Windows. Opaque to the broker.
+  string endpoint = 2;
+  // 0600 file holding the pairing cookie the Handshake requires.
+  string cookie_path = 3;
+  // VER-1 build identity: a UI pairs only where version+commit equal its own.
+  string version = 4;
+  string commit = 5;
+  string branch = 6;
+  bool dirty = 7;
+  // A UI holds this instance's Session stream; Handshake will be refused.
+  bool busy = 8;
+  int64 pid = 9;
+  // Set from VURIO_INSTANCE_GROUP by the launcher (the restart script uses
+  // its worktree path) so the UI it started prefers this server over an
+  // equally matching one from elsewhere. Empty when launched by hand.
+  string launch_group = 10;
+}
+
+message RegisterRequest {
+  Instance instance = 1;
+}
+message RegisterResponse {
+  bool ok = 1;
+}
+
+message HeartbeatRequest {
+  string instance_id = 1;
+  bool busy = 2;
+}
+message HeartbeatResponse {
+  bool ok = 1;
+}
+
+message DeregisterRequest {
+  string instance_id = 1;
+}
+message DeregisterResponse {
+  bool ok = 1;
+}
+
+message ListInstancesRequest {}
+message ListInstancesResponse {
+  repeated Instance instances = 1;
+  // The broker's own instance_id, so a caller can tell who answered.
+  string broker_instance_id = 2;
+}

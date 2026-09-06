@@ -5,13 +5,19 @@ import NIO
 
 @Test func printServerStatus() async throws {
     let client = VurioGrpcClient.shared
-    client.connect(socketPath: "/tmp/vurio_dedup.sock")
+    // BROKER-1: no fixed socket — the client asks the broker for a free
+    // server of this build and pairs with it. Without the lock: a locked
+    // server is single-use and exits when its holder goes away, and the
+    // restart script launches the real UI against this same backend right
+    // after the tests.
+    client.connect(takeLock: false)
 
-    // Pairing (cookie read + Handshake RPC) is asynchronous by design: the
-    // service clients stay nil until it completes, and connect() returns
-    // immediately. Poll for the paired client instead of asserting right away.
+    // Pairing (discovery + cookie read + Handshake RPC) is asynchronous by
+    // design: the service clients stay nil until it completes, and connect()
+    // returns immediately. Poll for the paired client instead of asserting
+    // right away.
     var pairedClient: Vurio_Dedup_MediaLocationsServiceAsyncClient? = nil
-    for _ in 0..<100 { // up to 10s; pairing retries every 500ms internally
+    for _ in 0..<100 { // up to 10s; discovery retries every second internally
         if let media = client.media {
             pairedClient = media
             break

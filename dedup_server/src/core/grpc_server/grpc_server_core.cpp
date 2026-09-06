@@ -31,7 +31,7 @@ GrpcServerCore::~GrpcServerCore() {
     stop();
 }
 
-void GrpcServerCore::start(const std::string& socket_path,
+void GrpcServerCore::start(const std::string& instance_dir,
                            std::shared_ptr<UnifiedObservableConfigManager> config_manager,
                            std::shared_ptr<DatabaseManager> database_manager,
                            std::shared_ptr<Orchestration::FilesManager> files_manager,
@@ -39,20 +39,24 @@ void GrpcServerCore::start(const std::string& socket_path,
                            std::shared_ptr<DiskCache> thumbnail_cache,
                            std::shared_ptr<DiskCache> transcoding_cache,
                            std::shared_ptr<Orchestration::DuplicateFinder> duplicate_finder,
-                           std::shared_ptr<Orchestration::SchedulerService> scheduler_service) {
-    socket_path_ = socket_path;
-    
-    // Ensure socket directory exists
-    std::filesystem::path path(socket_path_);
-    if (path.has_parent_path()) {
-        std::filesystem::create_directories(path.parent_path());
-    }
+                           std::shared_ptr<Orchestration::SchedulerService> scheduler_service,
+                           std::function<void(bool)> on_pairing_changed,
+                           std::function<void()> on_client_gone) {
+    instance_dir_ = instance_dir;
+    socket_path_ = (std::filesystem::path(instance_dir_) / "grpc.sock").string();
+    cookie_path_ = (std::filesystem::path(instance_dir_) / "grpc.cookie").string();
+    endpoint_ = "unix:" + socket_path_;
+    stopping_ = std::make_shared<bool>(false);
 
-    if (std::filesystem::exists(socket_path_)) {
-        std::filesystem::remove(socket_path_);
+    // BROKER-1: the instance directory is ours alone (it is keyed by pid), so
+    // anything in it is a leftover of a previous process with the same pid.
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(instance_dir_, ec);
+        std::filesystem::permissions(instance_dir_, std::filesystem::perms::owner_all,
+                                     std::filesystem::perm_options::replace, ec);
+        std::filesystem::remove(socket_path_, ec);
     }
-
-    std::string server_address("unix:" + socket_path_);
 
     // Generate this instance's pairing secrets and publish the cookie to a 0600
     // file only the same OS user can read. Done before BuildAndStart so the
@@ -64,27 +68,33 @@ void GrpcServerCore::start(const std::string& socket_path,
             std::lock_guard<std::mutex> lk(GrpcAuth::authState().mutex);
             GrpcAuth::authState().pairing_cookie = cookie;
             GrpcAuth::authState().session_token = token;
+            GrpcAuth::authState().session_held = false;
+            GrpcAuth::authState().session_holder.clear();
+            GrpcAuth::authState().shutting_down.store(false);
         }
-        const char* home = std::getenv("HOME");
-        if (home && *home) {
-            std::error_code ec;
-            std::filesystem::path dir = std::filesystem::path(home) / ".vurio";
-            std::filesystem::create_directories(dir, ec);
-            std::filesystem::permissions(dir, std::filesystem::perms::owner_all,
-                                         std::filesystem::perm_options::replace, ec);
-            std::filesystem::path cookie_file = dir / "grpc.cookie";
-            { std::ofstream ofs(cookie_file, std::ios::trunc); ofs << cookie; }
-            std::filesystem::permissions(cookie_file,
-                std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-                std::filesystem::perm_options::replace, ec);
-            Poco::Logger::get("GrpcServerCore").information("Wrote gRPC pairing cookie to " + cookie_file.string());
-        } else {
-            Poco::Logger::get("GrpcServerCore").error("HOME not set; gRPC clients will not be able to pair");
-        }
+        std::error_code ec;
+        { std::ofstream ofs(cookie_path_, std::ios::trunc); ofs << cookie; }
+        std::filesystem::permissions(cookie_path_,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, ec);
+        Poco::Logger::get("GrpcServerCore").information("Wrote gRPC pairing cookie to " + cookie_path_);
     }
 
     database_manager_ = database_manager; // CC-5 keep-alive for raw db_ members
-    auto security_service = std::make_unique<SecurityServiceImpl>();
+    // The session hooks run on the gRPC handler thread of the Session stream.
+    // A stream cancelled by our own stop() must not look like a departed
+    // client, or shutdown would re-enter shutdown.
+    std::shared_ptr<bool> stopping = stopping_;
+    auto security_service = std::make_unique<SecurityServiceImpl>(
+        [] {},
+        [on_pairing_changed] {
+            if (on_pairing_changed) on_pairing_changed(true);
+        },
+        [on_pairing_changed, on_client_gone, stopping] {
+            if (*stopping) return;
+            if (on_pairing_changed) on_pairing_changed(false);
+            if (on_client_gone) on_client_gone();
+        });
     auto config_service = std::make_unique<ConfigServiceImpl>(config_manager);
     std::shared_ptr<MediaDedup::FilesService> files_service = nullptr;
     if (files_manager) {
@@ -120,7 +130,7 @@ void GrpcServerCore::start(const std::string& socket_path,
     // aborts with "Not Supported" (verified empirically on gRPC 1.80).
     auto server_creds = grpc::experimental::LocalServerCredentials(UDS);
     server_creds->SetAuthMetadataProcessor(std::make_shared<GrpcAuth::SessionAuthProcessor>());
-    builder.AddListeningPort(server_address, server_creds);
+    builder.AddListeningPort(endpoint_, server_creds);
     // AR-4: bound the sync server's worker threads — previously unbounded,
     // so a thumbnail-scroll burst could spawn threads without limit.
     grpc::ResourceQuota quota("vurio-grpc");
@@ -150,10 +160,12 @@ void GrpcServerCore::start(const std::string& socket_path,
             std::filesystem::perm_options::replace, ec);
     }
 
-    Poco::Logger::get("GrpcServerCore").information("gRPC Server listening on " + server_address);
+    Poco::Logger::get("GrpcServerCore").information("gRPC Server listening on " + endpoint_);
 }
 
 void GrpcServerCore::stop() {
+    if (stopping_) *stopping_ = true;
+    GrpcAuth::authState().shutting_down.store(true);
     // CC-6: detach the finder's callbacks BEFORE tearing down the service they
     // point at — a still-running dedup task could otherwise call into freed
     // memory during the shutdown drain window.
@@ -172,8 +184,10 @@ void GrpcServerCore::stop() {
         services_.clear();
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");
     }
-    if (!socket_path_.empty() && std::filesystem::exists(socket_path_)) {
-        std::filesystem::remove(socket_path_);
+    if (!instance_dir_.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(instance_dir_, ec);
+        instance_dir_.clear();
     }
 }
 } // namespace Core

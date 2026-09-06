@@ -87,10 +87,15 @@ for pattern in magick_out_ heic_out_ thumb_out_ raw_embedded_ fullres_ exif_prob
     fi
 done
 
-# A SIGKILLed server never runs its socket cleanup. The leftover file is not
-# connectable, so a freshly started UI would sit retrying against it.
-if [ -S /tmp/vurio_dedup.sock ] && ! pgrep -f media_dedup_server >/dev/null 2>&1; then
-    rm -f /tmp/vurio_dedup.sock && echo "Removed stale gRPC socket /tmp/vurio_dedup.sock"
+# A SIGKILLed server never runs its cleanup. Each instance keeps its socket
+# and cookie in ~/.vurio/instances/<pid>/ (BROKER-1); with every server down
+# by now, every one of those directories is a leftover. (The pre-BROKER-1
+# fixed socket and cookie are swept too, in case an old build left them.)
+if ! pgrep -f media_dedup_server >/dev/null 2>&1; then
+    if [ -d "$HOME/.vurio/instances" ] && [ -n "$(ls -A "$HOME/.vurio/instances" 2>/dev/null)" ]; then
+        rm -rf "$HOME/.vurio/instances"/* && echo "Removed stale instance directories under ~/.vurio/instances"
+    fi
+    rm -f /tmp/vurio_dedup.sock "$HOME/.vurio/grpc.cookie"
 fi
 
 FINAL_PIDS=$(pgrep -f media_dedup_server 2>/dev/null || true)
