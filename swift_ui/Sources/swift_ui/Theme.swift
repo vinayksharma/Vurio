@@ -24,6 +24,11 @@ struct Theme {
     // Amber of a film-camera quartz date-back; used by DateStampLabel.
     static let dateStampAmber = Color(hex: "#FFB000")
 
+    // Result-count disk on the ai/xf/fc search-route chips. Deliberately
+    // deeper than `error` so it reads as a tally against the chip's blue
+    // rather than as an alert.
+    static let searchCountBadge = Color(hex: "#8E1B1B")
+
     // Status-dot sweep rings. Trailing sweeps are routine background work,
     // so pastels — deliberately apart from the progress bar's blue/green/red
     // (the rings must not read as a restatement of the bar, nor as alerts).

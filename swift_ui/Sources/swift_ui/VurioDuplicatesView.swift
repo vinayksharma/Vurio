@@ -420,16 +420,21 @@ struct VurioDuplicatesView: View {
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Theme.textAccent.opacity(0.9)))
             }
-            if allViewModel.isSearching {
-                // In-flight feedback: the query round-trip includes the
-                // server's LLM parse (~1.5 s) — silence here reads as broken.
+            // In-flight feedback: the query round-trip includes the server's
+            // LLM parse (~1.5 s) — silence here reads as broken. Both states
+            // are always present, cross-faded in a fixed-size slot: an
+            // if/else here swapped one view for another of a different width
+            // on every search, which re-laid out (and shifted the text under
+            // the caret of) the field being typed into.
+            ZStack {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: 16, height: 16)
-            } else {
+                    .opacity(allViewModel.isSearching ? 1 : 0)
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(Theme.textSecondary)
+                    .opacity(allViewModel.isSearching ? 0 : 1)
             }
+            .frame(width: 16, height: 16)
             TextField(
                 "Search photos — e.g. \"dog on the beach\"",
                 text: Binding(
@@ -441,29 +446,36 @@ struct VurioDuplicatesView: View {
             .foregroundColor(Theme.textPrimary)
             if allViewModel.isSearchActive {
                 searchSourceToggle("ai", isOn: allViewModel.searchIncludeAi,
-                                   help: "AI (semantic) pipeline. Alone, the query runs as a pure visual search of its subject — metadata facts are ignored.")
+                                   count: allViewModel.searchMatchCountAi,
+                                   help: "AI (semantic) pipeline. Alone, the query runs as a pure visual search of its subject — metadata facts are ignored. The count is how many matches this route contributed.")
                     { allViewModel.toggleSearchAi() }
                 searchSourceToggle("xf", isOn: allViewModel.searchIncludeExif,
-                                   help: "EXIF (fact) pipeline. Alone, only the query's metadata facts apply — no visual ranking. All on = the hybrid default.")
+                                   count: allViewModel.searchMatchCountExif,
+                                   help: "EXIF (fact) pipeline. Alone, only the query's metadata facts apply — no visual ranking. All on = the hybrid default. The count is how many matches this route contributed.")
                     { allViewModel.toggleSearchExif() }
                 searchSourceToggle("fc", isOn: allViewModel.searchIncludeFace,
-                                   help: "Face (people) pipeline — person names and face counts. Off, those facts are ignored; alone, only they apply. All on = the hybrid default.")
+                                   count: allViewModel.searchMatchCountFace,
+                                   help: "Face (people) pipeline — person names and face counts. Off, those facts are ignored; alone, only they apply. All on = the hybrid default. The count is how many matches this route contributed.")
                     { allViewModel.toggleSearchFace() }
             }
-            if allViewModel.isSearchActive && allViewModel.searchParseDegraded {
-                // The server answered with the fallback pattern parser —
-                // model-name and free-form facts may not have been applied.
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                    .help("Simplified query parsing — the language model was unavailable for this search, so some filters (like camera model names) may not have been applied.")
+            // The server answered with the fallback pattern parser —
+            // model-name and free-form facts may not have been applied.
+            // Hidden rather than removed, so its arrival mid-query does not
+            // resize the text field.
+            let degraded = allViewModel.isSearchActive && allViewModel.searchParseDegraded
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .opacity(degraded ? 1 : 0)
+                .allowsHitTesting(degraded)
+                .help("Simplified query parsing — the language model was unavailable for this search, so some filters (like camera model names) may not have been applied.")
+            let hasText = !allViewModel.searchText.isEmpty
+            Button(action: { allViewModel.clearSearch() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(Theme.textSecondary)
             }
-            if !allViewModel.searchText.isEmpty {
-                Button(action: { allViewModel.clearSearch() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(Theme.textSecondary)
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
+            .buttonStyle(PlainButtonStyle())
+            .opacity(hasText ? 1 : 0)
+            .allowsHitTesting(hasText)
         }
         .padding(10)
         .background(Theme.surface.opacity(0.5))
@@ -475,23 +487,50 @@ struct VurioDuplicatesView: View {
         .padding([.horizontal, .bottom])
     }
 
-    // ai/xf result-source toggle (VU search row): mirrors the tile badges'
+    /// Height of the ai/xf/fc chips. The result-count disk is exactly this
+    /// tall, so its curve is the capsule's own end cap.
+    private static let searchChipHeight: CGFloat = 20
+
+    // ai/xf/fc result-source toggle (VU search row): mirrors the tile badges'
     // look. Server-filtered — the toggle state rides on the day-view
     // request and the server filters its cached match list instantly.
-    private func searchSourceToggle(_ label: String, isOn: Bool, help: String,
+    // `count` is how many files that route admitted; nil while no search is
+    // active (or against a server that does not report it) and the chip is
+    // then just the label.
+    private func searchSourceToggle(_ label: String, isOn: Bool, count: Int32?, help: String,
                                     action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.custom("Menlo", size: 10).weight(.bold))
-                .foregroundColor(isOn ? Color.black.opacity(0.85) : Theme.textSecondary.opacity(0.7))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule().fill(isOn ? Theme.textAccent.opacity(0.9) : Theme.surface.opacity(0.6))
-                )
-                .overlay(
-                    Capsule().stroke(isOn ? Color.clear : Theme.border, lineWidth: 1)
-                )
+        let height = Self.searchChipHeight
+        return Button(action: action) {
+            HStack(spacing: 0) {
+                Text(label)
+                    .font(.custom("Menlo", size: 10).weight(.bold))
+                    .foregroundColor(isOn ? Color.black.opacity(0.85) : Theme.textSecondary.opacity(0.7))
+                    .padding(.leading, 8)
+                    .padding(.trailing, count == nil ? 8 : 6)
+                if let count {
+                    // Flush against the trailing edge and as tall as the chip,
+                    // so a 1–2 digit count is a disk sitting in the capsule's
+                    // end cap; longer counts stretch it into a pill of the same
+                    // radius rather than clipping.
+                    Text("\(count)")
+                        .font(.custom("Menlo", size: 9).weight(.bold))
+                        .foregroundColor(.white.opacity(isOn ? 0.95 : 0.6))
+                        .monospacedDigit()
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: height, minHeight: height)
+                        .background(
+                            Capsule().fill(Theme.searchCountBadge.opacity(isOn ? 1 : 0.45))
+                        )
+                }
+            }
+            .frame(height: height)
+            .background(
+                Capsule().fill(isOn ? Theme.textAccent.opacity(0.9) : Theme.surface.opacity(0.6))
+            )
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(isOn ? Color.clear : Theme.border, lineWidth: 1)
+            )
         }
         .buttonStyle(PlainButtonStyle())
         .help(help)

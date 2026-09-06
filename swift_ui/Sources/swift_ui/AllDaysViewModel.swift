@@ -91,6 +91,21 @@ class AllDaysViewModel: ObservableObject {
     @Published private(set) var searchIncludeExif = true
     @Published private(set) var searchIncludeFace = true
 
+    /// How many files of the active query's result set each route admitted,
+    /// as of the last day-list page (the server counts the whole match set,
+    /// not the page, and intersects the person filter first). Routes overlap,
+    /// so these do not sum to the result total. nil = no active search, or a
+    /// server too old to report them — the chips then show no count.
+    @Published private(set) var searchMatchCountAi: Int32? = nil
+    @Published private(set) var searchMatchCountExif: Int32? = nil
+    @Published private(set) var searchMatchCountFace: Int32? = nil
+
+    private func clearSearchMatchCounts() {
+        if searchMatchCountAi != nil { searchMatchCountAi = nil }
+        if searchMatchCountExif != nil { searchMatchCountExif = nil }
+        if searchMatchCountFace != nil { searchMatchCountFace = nil }
+    }
+
     /// FACE-3: restrict the day list to one face cluster (People drill-down).
     /// Composes with an active search by intersection, server-side.
     @Published private(set) var personFilter: PeopleNavigator.ClusterFilter? = nil
@@ -170,6 +185,7 @@ class AllDaysViewModel: ObservableObject {
         guard !activeSearchQuery.isEmpty else { return }
         activeSearchQuery = ""
         searchParseDegraded = false
+        clearSearchMatchCounts()
         searchIncludeAi = true
         searchIncludeExif = true
         searchIncludeFace = true
@@ -273,7 +289,25 @@ class AllDaysViewModel: ObservableObject {
             // A stale response for a superseded query must not overwrite the
             // current filter's day list.
             guard query == activeSearchQuery else { return }
-            searchParseDegraded = !query.isEmpty && response.searchParseDegraded
+            // Assigning an unchanged @Published still fires objectWillChange,
+            // and loadPage runs for every page the user scrolls into. Left
+            // unguarded, that re-lays out the search row (and the text field
+            // being typed into) continuously.
+            let degraded = !query.isEmpty && response.searchParseDegraded
+            if searchParseDegraded != degraded { searchParseDegraded = degraded }
+            if query.isEmpty {
+                clearSearchMatchCounts()
+            } else {
+                if searchMatchCountAi != response.searchMatchCountAi {
+                    searchMatchCountAi = response.searchMatchCountAi
+                }
+                if searchMatchCountExif != response.searchMatchCountExif {
+                    searchMatchCountExif = response.searchMatchCountExif
+                }
+                if searchMatchCountFace != response.searchMatchCountFace {
+                    searchMatchCountFace = response.searchMatchCountFace
+                }
+            }
 
             if !Task.isCancelled {
                 // Resize the slot list when the server's day count moved (files

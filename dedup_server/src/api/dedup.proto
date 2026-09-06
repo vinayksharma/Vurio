@@ -440,6 +440,15 @@ message GetDayGroupsResponse {
   // e.g. camera MODEL names are only understood by the LLM path. Lets the
   // client show "simplified query parsing" instead of degrading silently.
   bool search_parse_degraded = 5;
+  // How many files of the active query's result set each route admitted
+  // (0 when no query, and after filter_cluster_id has been intersected in,
+  // so they always describe the set the day list is actually showing). The
+  // routes overlap — a file matched by both ai and xf counts in both — so
+  // these do not sum to the total. Drives the per-route counts on the
+  // ai/xf/fc chips.
+  int32 search_match_count_ai = 7;
+  int32 search_match_count_exif = 8;
+  int32 search_match_count_face = 9;
 }
 
 message GetDayFilesRequest {
