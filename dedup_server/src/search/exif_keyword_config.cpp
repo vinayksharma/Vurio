@@ -56,16 +56,27 @@ namespace MediaDedup
         c.camera_articles = {"a", "an", "my"};
         c.camera_suffixes = {"camera"};
 
-        c.greater_words = {"above", "over", "greater than", "more than"};
-        c.greater_equal_words = {"at least"};
-        c.less_words = {"below", "under", "less than"};
-        c.less_equal_words = {"at most"};
-        c.aperture_wider_words = {"wider", "faster", "brighter"};
-        c.aperture_narrower_words = {"narrower", "smaller"};
-        c.shutter_faster_words = {"faster", "quicker"};
-        c.shutter_slower_words = {"slower", "longer"};
-        c.focal_longer_words = {"above", "over", "longer than"};
-        c.focal_shorter_words = {"below", "under", "shorter than"};
+        c.greater_words = {"above", "over", "greater than", "more than",
+                           "higher than", "bigger than", "larger than",
+                           "greater", "higher", "bigger", "larger", ">"};
+        c.greater_equal_words = {"at least", "no less than", "not less than",
+                                 "minimum", "min", ">=", "=>"};
+        c.less_words = {"below", "under", "less than", "lower than",
+                        "smaller than", "fewer than", "less", "lower",
+                        "smaller", "<"};
+        c.less_equal_words = {"at most", "no more than", "not more than",
+                              "maximum", "max", "<=", "=<"};
+        c.aperture_wider_words = {"wider than", "wider", "faster", "brighter",
+                                  "more open"};
+        c.aperture_narrower_words = {"narrower than", "narrower", "smaller",
+                                     "stopped down"};
+        c.shutter_faster_words = {"faster than", "faster", "quicker",
+                                  "shorter than", "shorter"};
+        c.shutter_slower_words = {"slower than", "slower", "longer than",
+                                  "longer"};
+        c.focal_longer_words = {"above", "over", "longer than", "greater than",
+                                "more than", ">"};
+        c.focal_shorter_words = {"below", "under", "shorter than", "less than", "<"};
 
         c.flash_on_phrases = {"with flash", "flash on", "flash fired", "using flash"};
         c.flash_off_phrases = {"without flash", "no flash", "flash off"};

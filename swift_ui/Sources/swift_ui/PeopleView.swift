@@ -314,6 +314,14 @@ struct FaceCropView: View {
 }
 
 struct PeopleView: View {
+    /// The PEOPLE tab is never unmounted — ContentView keeps every tab alive
+    /// and switches with .opacity — so a plain .task would load the cluster
+    /// list once per launch and then show it forever. It went stale in the
+    /// worst way after a location was deregistered: the grid kept drawing the
+    /// departed people, their covers and their photo counts, none of which
+    /// existed in the database any more.
+    let isVisible: Bool
+
     @StateObject private var model = PeopleViewModel()
     @State private var renaming: Vurio_Dedup_FaceClusterInfo? = nil
     @State private var renameText = ""
@@ -388,7 +396,18 @@ struct PeopleView: View {
             }
         }
         .background(Theme.background)
-        .task { await model.load() }
+        // Reloads each time the tab is brought forward; the face scan runs in
+        // the background, so what it found while another tab was up is what
+        // the user came here to see.
+        .task(id: isVisible) {
+            guard isVisible else { return }
+            await model.load()
+        }
+        // Deregistering a location deletes its faces, clusters and people
+        // outright — the grid must not keep drawing them.
+        .onReceive(NotificationCenter.default.publisher(for: .mediaLocationDeregistered)) { _ in
+            Task { await model.load() }
+        }
         .sheet(isPresented: Binding(
             get: { model.reviewing != nil },
             set: { if !$0 { model.reviewing = nil } }

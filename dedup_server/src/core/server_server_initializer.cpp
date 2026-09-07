@@ -255,6 +255,11 @@ namespace MediaDedup
             // pays a single indexed count.
             FacesOps::purgeOrphanedFaces(*database_manager_);
 
+            // The same repair for names: deregistering a location deleted its
+            // faces and emptied clusters but left the persons behind, still
+            // resolvable by face search with nothing to match.
+            FacesOps::purgeOrphanedPersons(*database_manager_);
+
             if (!EjectedFilesOps::ensureTable(*database_manager_))
             {
                 logger.error("Failed to ensure ejected_files_history table");

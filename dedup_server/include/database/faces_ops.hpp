@@ -126,7 +126,22 @@ namespace MediaDedup
         static std::vector<ClusterRow> listClusters(DatabaseManager &db);
         static int insertCluster(DatabaseManager &db, const ClusterRow &row);
         static bool updateCluster(DatabaseManager &db, const ClusterRow &row);
-        static bool deleteCluster(DatabaseManager &db, int cluster_id);
+        /// Delete a cluster, its exemplars, and — unless the caller is about
+        /// to hand the name to another cluster (mergeClusters) — the person
+        /// it was the last cluster of.
+        static bool deleteCluster(DatabaseManager &db, int cluster_id,
+                                  bool reap_orphaned_person = true);
+
+        /// Delete `person_id` and its aliases IF no cluster still carries it.
+        /// Runs on the caller's session, so it commits with their work.
+        static void deleteOrphanedPerson(Poco::Data::Session &sess, int person_id);
+
+        /// Repair sweep, at startup: delete every person no cluster points at
+        /// any more. Cluster deletion used to leave these behind — invisible
+        /// in the People grid, which lists clusters, but still resolving in
+        /// face search, so "photos of <name>" matched nothing and read as a
+        /// broken search rather than an unknown name. Returns how many went.
+        static int purgeOrphanedPersons(DatabaseManager &db);
         static bool setFaceCluster(DatabaseManager &db, int face_id, int cluster_id);
         /// Re-point every face of `from` at `to` (consolidation merge).
         static bool moveClusterMembers(DatabaseManager &db, int from, int to);

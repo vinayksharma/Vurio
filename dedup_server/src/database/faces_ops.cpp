@@ -549,19 +549,97 @@ namespace MediaDedup
         });
     }
 
-    bool FacesOps::deleteCluster(DatabaseManager &db, int cluster_id)
+    bool FacesOps::deleteCluster(DatabaseManager &db, int cluster_id,
+                                 bool reap_orphaned_person)
     {
         return DbRetry::withBusyRetry("FacesOps", "deleteCluster", [&]() {
             auto lease = db.acquireSessionLease();
             Poco::Data::Session &sess = lease.get();
             int id = cluster_id;
+            // Whose name this cluster carried, read before the row goes.
+            int person = 0;
+            {
+                Poco::Data::Statement sel(sess);
+                sel << "SELECT COALESCE(person_id, 0) FROM face_clusters WHERE id = ?",
+                    use(id), into(person), now;
+            }
             Poco::Data::Statement stmt(sess);
             stmt << "DELETE FROM face_clusters WHERE id = ?", use(id), now;
             // FACE-7b: exemplar rows die with the cluster.
             Poco::Data::Statement dele(sess);
             dele << "DELETE FROM face_cluster_exemplars WHERE cluster_id = ?", use(id), now;
+            // A name with no cluster left behind it is not a person any more.
+            // Deregistering a location deletes its faces and then its emptied
+            // clusters through here, so without this the names outlived the
+            // photos: invisible in the People grid (which lists clusters), yet
+            // still resolving in face SEARCH, where "photos of <name>" then
+            // matched nothing and read as a broken search rather than an
+            // unknown person. nameCluster() does the same on a rename away.
+            if (reap_orphaned_person)
+                deleteOrphanedPerson(sess, person);
             return true;
         });
+    }
+
+    void FacesOps::deleteOrphanedPerson(Poco::Data::Session &sess, int person_id)
+    {
+        if (person_id <= 0)
+            return;
+        int pid = person_id;
+        Poco::Data::Statement del(sess);
+        del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
+               "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
+            use(pid), use(pid), now;
+        // FACE-5: a removed person takes its aliases with it.
+        Poco::Data::Statement dela(sess);
+        dela << "DELETE FROM person_aliases WHERE person_id = ? AND NOT EXISTS "
+                "(SELECT 1 FROM persons WHERE id = ?)",
+            use(pid), use(pid), now;
+    }
+
+    int FacesOps::purgeOrphanedPersons(DatabaseManager &db)
+    {
+        // The repair half of the same bug: databases written before cluster
+        // deletion swept its person are already carrying these. Cheap on a
+        // clean one — persons is a handful of rows.
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Poco::Data::Session &sess = lease.get();
+            int orphans = 0;
+            sess << "SELECT COUNT(*) FROM persons p WHERE NOT EXISTS "
+                    "(SELECT 1 FROM face_clusters c WHERE c.person_id = p.id)",
+                into(orphans), now;
+            if (orphans == 0)
+                return 0;
+            try
+            {
+                sess.begin();
+                sess << "DELETE FROM person_aliases WHERE person_id IN "
+                        "(SELECT p.id FROM persons p WHERE NOT EXISTS "
+                        "(SELECT 1 FROM face_clusters c WHERE c.person_id = p.id))",
+                    now;
+                sess << "DELETE FROM persons WHERE id IN "
+                        "(SELECT p.id FROM persons p WHERE NOT EXISTS "
+                        "(SELECT 1 FROM face_clusters c WHERE c.person_id = p.id))",
+                    now;
+                sess.commit();
+            }
+            catch (...)
+            {
+                try { sess.rollback(); } catch (...) {}
+                throw;
+            }
+            Poco::Logger::get("FacesOps").information(
+                "Face cleanup: removed %d person(s) left with no cluster", orphans);
+            return orphans;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("FacesOps").error("purgeOrphanedPersons: %s",
+                                                std::string(e.what()));
+            return 0;
+        }
     }
 
     bool FacesOps::setFaceCluster(DatabaseManager &db, int face_id, int cluster_id)
@@ -786,18 +864,7 @@ namespace MediaDedup
 
             // The old person may be orphaned now (a rename away from it).
             if (old_person > 0 && old_person != person_id)
-            {
-                Poco::Data::Statement del(sess);
-                int op = old_person;
-                del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
-                       "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
-                    use(op), use(op), now;
-                // FACE-5: a removed person takes its aliases with it.
-                Poco::Data::Statement dela(sess);
-                dela << "DELETE FROM person_aliases WHERE person_id = ? AND NOT EXISTS "
-                        "(SELECT 1 FROM persons WHERE id = ?)",
-                    use(op), use(op), now;
-            }
+                deleteOrphanedPerson(sess, old_person);
             return true;
         });
     }
@@ -871,7 +938,11 @@ namespace MediaDedup
             // of the target" once they are one identity — the constraint
             // follows the merge here exactly as it does in consolidation.
             repointCannotLinks(db, s->id, target_id);
-            deleteCluster(db, s->id);
+            // The target adopts a source's person (see merged.person_id
+            // above) but is not named until below, so reaping here would
+            // delete the person the merge is about to hand it. The sweep
+            // after the naming takes any source person that stayed unadopted.
+            deleteCluster(db, s->id, /*reap_orphaned_person=*/false);
         }
         if (!updateCluster(db, merged))
             return false;
@@ -894,6 +965,9 @@ namespace MediaDedup
         });
         if (!named)
             return false;
+        // Deferred from the source deletions above, now that the surviving
+        // cluster carries the adopted name.
+        purgeOrphanedPersons(db);
         // FACE-8: filter the combined membership — a merge is the moment
         // both looks' evidence is present, so misfits stand out sharpest.
         const int n = purgeMisfits(db, target_id, purge_cutoff);
@@ -1579,25 +1653,9 @@ namespace MediaDedup
         if (!detached || !deleteCluster(db, cluster_id)) // exemplars die too
             return false;
 
-        if (person_id > 0)
-        {
-            // Orphan-clean the person + aliases when this was their only
-            // cluster (the nameCluster rename-away pattern).
-            return DbRetry::withBusyRetry("FacesOps", "dissolveCluster.person", [&]() {
-                auto lease = db.acquireSessionLease();
-                Poco::Data::Session &sess = lease.get();
-                int pid = person_id;
-                Poco::Data::Statement del(sess);
-                del << "DELETE FROM persons WHERE id = ? AND NOT EXISTS "
-                       "(SELECT 1 FROM face_clusters WHERE person_id = ?)",
-                    use(pid), use(pid), now;
-                Poco::Data::Statement dela(sess);
-                dela << "DELETE FROM person_aliases WHERE person_id = ? AND NOT EXISTS "
-                        "(SELECT 1 FROM persons WHERE id = ?)",
-                    use(pid), use(pid), now;
-                return true;
-            });
-        }
+        // The person + aliases are orphan-cleaned by deleteCluster above,
+        // which reaps whoever this cluster was the last one for.
+        (void)person_id;
         return true;
     }
 

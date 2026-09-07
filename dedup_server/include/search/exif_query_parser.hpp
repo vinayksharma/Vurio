@@ -179,6 +179,13 @@ namespace MediaDedup
     private:
         int monthNumber(const std::string &name) const;
 
+        /// SQL operator for a matched comparator word. `lower_words` /
+        /// `higher_words` are the dimension's own direction words, which win
+        /// over the generic comparators and may invert the sense.
+        const char *comparatorOp(const std::string &word,
+                                 const std::unordered_set<std::string> &lower_words,
+                                 const std::unordered_set<std::string> &higher_words) const;
+
         const LocationGeocoder *geocoder_;
         PersonResolver person_resolver_;
 
@@ -186,16 +193,19 @@ namespace MediaDedup
         std::vector<std::string> months_;
         std::unordered_set<std::string> greater_set_, greater_equal_set_;
         std::unordered_set<std::string> less_set_, less_equal_set_;
-        std::unordered_set<std::string> aperture_wider_set_;
-        std::unordered_set<std::string> shutter_faster_set_;
-        std::unordered_set<std::string> focal_longer_set_;
+        std::unordered_set<std::string> aperture_wider_set_, aperture_narrower_set_;
+        std::unordered_set<std::string> shutter_faster_set_, shutter_slower_set_;
+        std::unordered_set<std::string> focal_longer_set_, focal_shorter_set_;
         std::unordered_set<std::string> imperative_set_, filler_set_;
 
         // Compiled patterns (keyword alternations baked in).
         std::regex iso_between_, iso_cmp_, iso_eq_;
-        std::regex f_cmp_, f_eq_;
-        std::regex shutter_cmp_, shutter_eq_;
-        std::regex focal_cmp_, focal_eq_;
+        // Each comparative dimension has a LABELED form (the dimension is
+        // spelled out, so a bare number is unambiguous) and an unlabeled one
+        // (the value itself must carry f/mm/seconds to identify it).
+        std::regex f_cmp_, f_cmp_labeled_, f_eq_;
+        std::regex shutter_cmp_, shutter_cmp_labeled_, shutter_eq_;
+        std::regex focal_cmp_, focal_cmp_labeled_, focal_eq_;
         std::regex flash_on_, flash_off_;
         std::regex camera_;
         std::regex month_year_, year_, month_;

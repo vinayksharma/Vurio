@@ -398,7 +398,7 @@ struct ContentView: View {
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)
 
-                    PeopleView()
+                    PeopleView(isVisible: selection == .people)
                         .opacity(selection == .people ? 1 : 0)
                         .allowsHitTesting(selection == .people)
 
