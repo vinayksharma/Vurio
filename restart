@@ -11,12 +11,31 @@ DO_REBUILD=false
 START_WEB=false
 TAIL_PID=""
 
-# Stream the server's console log into this terminal, stripping ANSI/escape
-# sequences. The server binary must never write to the terminal directly:
-# raw bytes in its output (color codes, EXIF garbage) can contain the
-# ESC[5i media-copy sequence, which iTerm2 interprets as "open the print
-# dialog". run.sh redirects the server to logs/server_console.log; this
-# tails that file through a sanitizer so the log stays visible AND safe.
+# NOTHING this script runs writes to the terminal unfiltered. Raw bytes from
+# the server, from the media pipeline, or from a test that prints either
+# (color codes, EXIF garbage, file paths) can contain the ESC[5i media-copy
+# sequence, which iTerm2 obeys by opening its print dialog — and printing.
+#
+# `sed` drops complete escape sequences; `tr` then drops every remaining
+# control byte INCLUDING a bare ESC (\033 falls in \016-\037), so a sequence
+# split across two writes cannot reassemble into a live one further down the
+# pipe. Tab, newline and carriage return survive. Colour goes with it: the
+# terminal staying under our control is worth more than green test output.
+sanitize_tty() {
+  LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
+    | LC_ALL=C tr -d '\000-\010\013\014\016-\037'
+}
+
+# Run a child with its output sanitized, preserving its exit status: `set -o
+# pipefail` is on, and the filters cannot fail, so the pipeline's status is
+# the child's.
+run_sanitized() {
+  "$@" 2>&1 | sanitize_tty
+}
+
+# Stream the server's console log into this terminal, sanitized. run.sh
+# redirects the server to logs/server_console.log; this tails that file so
+# the log stays visible AND safe.
 stream_server_log() {
   local log_file="${BACKEND_DIR}/logs/server_console.log"
   touch "$log_file"
@@ -26,9 +45,7 @@ stream_server_log() {
   # that leaves the `tail -F` at the head alive — which used to force a
   # pattern-matching pkill on teardown. That pkill is not safe any more: with
   # several instances running, a pattern can match a sibling's tail.
-  tail -n 0 -F "$log_file" 2>/dev/null \
-    > >(LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
-        | LC_ALL=C tr -d '\000-\010\013\014\016-\037') &
+  tail -n 0 -F "$log_file" 2>/dev/null > >(sanitize_tty) &
   TAIL_PID=$!
 }
 
@@ -84,9 +101,7 @@ fail_and_teardown() {
     echo "------------------ last 40 lines of server log -------------------"
     # Same sanitizing as stream_server_log: raw server bytes must never reach
     # the terminal unfiltered (ESC[5i opens iTerm2's print dialog).
-    tail -n 40 "$log_file" 2>/dev/null \
-      | LC_ALL=C sed -l $'s/\033\[[0-9;?]*[a-zA-Z]//g' \
-      | LC_ALL=C tr -d '\000-\010\013\014\016-\037' || true
+    tail -n 40 "$log_file" 2>/dev/null | sanitize_tty || true
   fi
   echo "=================================================================="
   echo ""
@@ -312,7 +327,12 @@ echo "Starting a new instance from ${APP_DIR}..."
 if [ "$DO_REBUILD" = true ]; then
   echo "Rebuilding backend (-b flag provided)..."
   if [ -x "${BACKEND_DIR}/scripts/rebuild" ]; then
-    (cd "${BACKEND_DIR}/scripts" && ./rebuild -c -t)
+    # Sanitized like the server log, and for the same reason: the suite runs
+    # the media pipeline, so its output carries file paths and EXIF strings
+    # straight from the test corpus. -b is the only flag that puts those
+    # bytes on the terminal, which is why the print dialog only ever appeared
+    # on a -b run.
+    run_sanitized zsh -c "cd '${BACKEND_DIR}/scripts' && ./rebuild -c -t"
   else
     echo "Warning: rebuild script not found or not executable at ${BACKEND_DIR}/scripts/rebuild"
   fi
@@ -377,7 +397,10 @@ else
   if [ "$DO_REBUILD" = true ]; then
     echo "Running Swift UI unit tests against the running backend..."
     set +e
-    (cd "$SWIFT_UI_DIR" && swift test)
+    # These tests pair with the running server and print what it sends back
+    # (registered and ejected directory paths), so their output is server
+    # bytes too — sanitized on the way out like everything else.
+    run_sanitized zsh -c "cd '$SWIFT_UI_DIR' && swift test"
     TEST_EXIT_CODE=$?
     set -e
     if [ $TEST_EXIT_CODE -ne 0 ]; then

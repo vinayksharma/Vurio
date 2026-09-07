@@ -201,6 +201,13 @@ struct ViewerView: View {
             .contentShape(Rectangle())
             .gesture(panGesture)
             .simultaneousGesture(magnifyGesture)
+            // Scroll to zoom. Hit-test-transparent, so drag-to-pan and the
+            // pinch gesture above are untouched.
+            .overlay(
+                ScrollWheelCatcher { deltaY, location, isPrecise in
+                    zoom(by: deltaY, at: location, in: geometry.size, isPrecise: isPrecise)
+                }
+            )
             // Unobtrusive badge while a better bitmap than the one on screen is
             // being pulled — the thumbnail placeholder waiting on its preview,
             // or the preview waiting on its full-resolution render. What is
@@ -493,6 +500,30 @@ struct ViewerView: View {
     private func setScale(_ value: CGFloat) {
         scale = clampScale(value)
         gestureScaleBase = scale
+    }
+
+    /// Scroll-wheel zoom about the pointer: the pixel under the cursor stays
+    /// under the cursor, which is what makes a wheel usable for framing a
+    /// detail — zooming about the centre walks the subject off screen and
+    /// leaves the user dragging it back. The geometry lives in ScrollZoom,
+    /// where it can be tested; this only commits the result, including the
+    /// gesture bases, so a drag or pinch started next carries on from here.
+    private func zoom(by deltaY: CGFloat, at location: CGPoint, in size: CGSize,
+                      isPrecise: Bool) {
+        guard currentImage != nil,
+              let step = ScrollZoom.step(scale: scale,
+                                         panOffset: panOffset,
+                                         deltaY: deltaY,
+                                         at: location,
+                                         in: size,
+                                         isPrecise: isPrecise,
+                                         minScale: minScale,
+                                         maxScale: maxScale)
+        else { return }
+        panOffset = step.panOffset
+        panBase = step.panOffset
+        scale = step.scale
+        gestureScaleBase = step.scale
     }
 
     private func resetTransform() {
