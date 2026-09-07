@@ -106,6 +106,112 @@ TEST(ExifQueryParserTest, ApertureApproxAndComparisons)
     EXPECT_EQ(findNumeric(narrower, "exif_f_number")->op, ">");
 }
 
+// Symbols are ordinary comparator keywords now, so ">f1.4" states a
+// comparison instead of collapsing into f_eq_'s +/-0.3 equality band — which
+// was the old failure: a narrower-than query silently answered a wider-than
+// one. The generic words work on every numeric dimension too.
+TEST(ExifQueryParserTest, SymbolicAndGenericComparatorsOnAperture)
+{
+    ExifQueryParser parser;
+    for (const char *q : {">f1.4", "> f/1.4", "greater than f/1.4",
+                          "larger than f1.4", "aperture above 1.4",
+                          "f-stop > 1.4", "f stop greater than 1.4"})
+    {
+        auto r = parser.parse(q);
+        auto *n = findNumeric(r, "exif_f_number");
+        ASSERT_NE(n, nullptr) << q;
+        EXPECT_EQ(n->op, ">") << q;
+        EXPECT_NEAR(n->value, 1.4, 1e-9) << q;
+    }
+    for (const char *q : {"<f1.4", "f-number at most 1.4", "aperture <= 1.4"})
+    {
+        auto r = parser.parse(q);
+        auto *n = findNumeric(r, "exif_f_number");
+        ASSERT_NE(n, nullptr) << q;
+        EXPECT_TRUE(n->op == "<" || n->op == "<=") << q << " got " << n->op;
+    }
+}
+
+// Unambiguous aperture jargon keeps the photographer's meaning and inverts:
+// a wider aperture is a LOWER f-number, whatever the arithmetic looks like.
+// The size words ("smaller than", "larger than") take the ARITHMETIC reading
+// instead, because with an explicit number beside them that is what they read
+// as — and because splitting them would make "smaller than f/2.8" and "larger
+// than f/2.8" both mean ">", which no user could predict.
+TEST(ExifQueryParserTest, ApertureJargonInvertsButSizeWordsAreArithmetic)
+{
+    ExifQueryParser parser;
+    const struct { const char *query; const char *op; } cases[] = {
+        {"wider than f/2.8", "<"},
+        {"narrower than f/2.8", ">"},
+        {"brighter than f/2.8", "<"},
+        {"smaller than f/2.8", "<"},
+        {"larger than f/2.8", ">"},
+    };
+    for (const auto &c : cases)
+    {
+        auto r = parser.parse(c.query);
+        auto *n = findNumeric(r, "exif_f_number");
+        ASSERT_NE(n, nullptr) << c.query;
+        EXPECT_EQ(n->op, c.op) << c.query;
+    }
+}
+
+TEST(ExifQueryParserTest, SymbolicComparatorsOnIsoAndFocal)
+{
+    ExifQueryParser parser;
+    for (const char *q : {"iso > 800", "iso>800", "iso greater than 800",
+                          "iso higher than 800"})
+    {
+        auto r = parser.parse(q);
+        auto *n = findNumeric(r, "exif_iso");
+        ASSERT_NE(n, nullptr) << q;
+        EXPECT_EQ(n->op, ">") << q;
+        EXPECT_NEAR(n->value, 800.0, 1e-9) << q;
+    }
+    auto at_least = parser.parse("iso at least 400");
+    ASSERT_NE(findNumeric(at_least, "exif_iso"), nullptr);
+    EXPECT_EQ(findNumeric(at_least, "exif_iso")->op, ">=");
+
+    for (const char *q : {"> 200mm", "focal length above 200", "focal > 200mm"})
+    {
+        auto r = parser.parse(q);
+        auto *n = findNumeric(r, "exif_focal_length");
+        ASSERT_NE(n, nullptr) << q;
+        EXPECT_EQ(n->op, ">") << q;
+        EXPECT_NEAR(n->value, 200.0, 1e-9) << q;
+    }
+}
+
+// "longer" is a shutter word AND a focal word, and shutter is parsed first.
+// Without a unit guard on the unlabeled shutter form, "longer than 200mm" was
+// eaten as a 200-SECOND exposure and the focal pattern never saw it.
+TEST(ExifQueryParserTest, UnlabeledShutterDoesNotSwallowAFocalLength)
+{
+    ExifQueryParser parser;
+    auto r = parser.parse("longer than 200mm");
+    EXPECT_EQ(findNumeric(r, "exif_exposure_time"), nullptr);
+    auto *n = findNumeric(r, "exif_focal_length");
+    ASSERT_NE(n, nullptr);
+    EXPECT_EQ(n->op, ">");
+    EXPECT_NEAR(n->value, 200.0, 1e-9);
+}
+
+TEST(ExifQueryParserTest, LabeledShutterAcceptsSymbolsAndBareNumbers)
+{
+    ExifQueryParser parser;
+    auto r = parser.parse("shutter speed > 1/250");
+    auto *n = findNumeric(r, "exif_exposure_time");
+    ASSERT_NE(n, nullptr);
+    EXPECT_EQ(n->op, ">");
+    EXPECT_NEAR(n->value, 1.0 / 250.0, 1e-9);
+
+    auto slow = parser.parse("shutter slower than 2");
+    ASSERT_NE(findNumeric(slow, "exif_exposure_time"), nullptr);
+    EXPECT_EQ(findNumeric(slow, "exif_exposure_time")->op, ">");
+    EXPECT_NEAR(findNumeric(slow, "exif_exposure_time")->value, 2.0, 1e-9);
+}
+
 TEST(ExifQueryParserTest, ShutterFasterAndSlower)
 {
     ExifQueryParser parser;
