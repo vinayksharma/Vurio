@@ -890,6 +890,149 @@ namespace MediaDedup
             EXPECT_EQ(infos[0].cover_face_id, survivor_face);
         }
 
+        // Deregistering a location deleted its faces and emptied clusters but
+        // left the persons behind. They were invisible in the People grid,
+        // which lists clusters, yet still resolved in face SEARCH — "photos of
+        // Alice" matched nothing and read as a broken search rather than an
+        // unknown name.
+        TEST_F(FaceScanTest, DeletingTheLastClusterOfAPersonRemovesThePerson)
+        {
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            const int fid = insertProcessed("/nowhere/person_only.jpg");
+            const int face = mkFace(fid, 0.9);
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int cluster = cl.assign(face, unit4(1, 0, 0, 0), 0.9);
+            ASSERT_GT(cluster, 0);
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, cluster, "Alice"));
+            ASSERT_GT(FacesOps::personIdByName(*db_, "Alice"), 0);
+
+            // The photo goes, so the cluster empties and is deleted.
+            ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_, "/nowhere/person_only.jpg"));
+            ASSERT_TRUE(FacesOps::listClusterInfos(*db_, true).empty());
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), 0);
+        }
+
+        // The person must survive while any cluster still carries the name.
+        TEST_F(FaceScanTest, DeletingOneOfTwoClustersKeepsTheSharedPerson)
+        {
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            const int fid1 = insertProcessed("/nowhere/two_a.jpg");
+            const int fid2 = insertProcessed("/nowhere/two_b.jpg");
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999; // keep them apart
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int c1 = cl.assign(mkFace(fid1, 0.9), unit4(1, 0, 0, 0), 0.9);
+            const int c2 = cl.assign(mkFace(fid2, 0.8), unit4(0, 1, 0, 0), 0.8);
+            ASSERT_TRUE(c1 > 0 && c2 > 0 && c1 != c2);
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c1, "Alice"));
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, c2, "Alice"));
+            const int person = FacesOps::personIdByName(*db_, "Alice");
+            ASSERT_GT(person, 0);
+
+            ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_, "/nowhere/two_a.jpg"));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), person);
+
+            // Only when the last one goes does the name go with it.
+            ASSERT_TRUE(ScannedFilesOps::removeByPath(*db_, "/nowhere/two_b.jpg"));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), 0);
+        }
+
+        // A merge deletes the source clusters BEFORE it names the survivor, so
+        // the reap must not take the very person the target is adopting.
+        TEST_F(FaceScanTest, MergingIntoAnUnnamedClusterKeepsTheAdoptedPerson)
+        {
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            const int fid1 = insertProcessed("/nowhere/merge_target.jpg");
+            const int fid2 = insertProcessed("/nowhere/merge_source.jpg");
+            FaceClusterer::Options opts;
+            opts.join_threshold = 0.999;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int target = cl.assign(mkFace(fid1, 0.9), unit4(1, 0, 0, 0), 0.9);
+            const int source = cl.assign(mkFace(fid2, 0.8), unit4(0, 1, 0, 0), 0.8);
+            ASSERT_TRUE(target > 0 && source > 0 && target != source);
+            // Only the SOURCE is named: the target adopts the name mid-merge.
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, source, "Alice"));
+            const int person = FacesOps::personIdByName(*db_, "Alice");
+            ASSERT_GT(person, 0);
+
+            ASSERT_TRUE(FacesOps::mergeClusters(*db_, target, {source}));
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), person);
+            auto infos = FacesOps::listClusterInfos(*db_, true);
+            ASSERT_EQ(infos.size(), 1u);
+            EXPECT_EQ(infos[0].id, target);
+            EXPECT_EQ(infos[0].name, "Alice");
+        }
+
+        // The repair half, for databases already carrying orphans.
+        TEST_F(FaceScanTest, PurgeOrphanedPersonsCleansWhatEarlierBuildsLeft)
+        {
+            auto mkFace = [&](int file_id, double q) {
+                FacesOps::FaceRow r;
+                r.file_id = file_id;
+                r.quality = q;
+                auto v = unit4(1, 0, 0, 0);
+                r.embedding.resize(v.size() * sizeof(float));
+                std::memcpy(r.embedding.data(), v.data(), r.embedding.size());
+                return FacesOps::insertFace(*db_, r);
+            };
+
+            const int fid = insertProcessed("/nowhere/orphan_person.jpg");
+            FaceClusterer::Options opts;
+            FaceClusterer cl(db_.get(), opts);
+            cl.load();
+            const int cluster = cl.assign(mkFace(fid, 0.9), unit4(1, 0, 0, 0), 0.9);
+            ASSERT_GT(cluster, 0);
+            ASSERT_TRUE(FacesOps::nameCluster(*db_, cluster, "Alice"));
+            ASSERT_GT(FacesOps::personIdByName(*db_, "Alice"), 0);
+
+            // What the old builds left: the cluster row gone, the person kept.
+            {
+                auto lease = db_->acquireSessionLease();
+                Poco::Data::Session &sess = lease.get();
+                int cid = cluster;
+                Poco::Data::Statement del(sess);
+                del << "DELETE FROM face_clusters WHERE id = ?", Poco::Data::Keywords::use(cid),
+                    Poco::Data::Keywords::now;
+            }
+            ASSERT_GT(FacesOps::personIdByName(*db_, "Alice"), 0);
+
+            EXPECT_EQ(FacesOps::purgeOrphanedPersons(*db_), 1);
+            EXPECT_EQ(FacesOps::personIdByName(*db_, "Alice"), 0);
+            // Idempotent: a clean database pays one indexed count and stops.
+            EXPECT_EQ(FacesOps::purgeOrphanedPersons(*db_), 0);
+        }
+
         // The one-time startup repair for databases written before FACE-9.
         TEST_F(FaceScanTest, PurgeOrphanedFacesCleansWhatEarlierBuildsLeft)
         {
