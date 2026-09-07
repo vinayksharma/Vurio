@@ -148,10 +148,29 @@ namespace MediaDedup
         less_set_ = toSet(kw.less_words);
         less_equal_set_ = toSet(kw.less_equal_words);
         aperture_wider_set_ = toSet(kw.aperture_wider_words);
+        aperture_narrower_set_ = toSet(kw.aperture_narrower_words);
         shutter_faster_set_ = toSet(kw.shutter_faster_words);
+        shutter_slower_set_ = toSet(kw.shutter_slower_words);
         focal_longer_set_ = toSet(kw.focal_longer_words);
+        focal_shorter_set_ = toSet(kw.focal_shorter_words);
         imperative_set_ = toSet(kw.imperative_words);
         filler_set_ = toSet(kw.filler_words);
+
+        // Every numeric dimension accepts the generic comparators (which
+        // compare the NUMBER as written, so ">" and "at least" work on all of
+        // them) on top of its own direction words (which compare the physical
+        // quantity and may invert). Symbols ride in as ordinary keywords —
+        // escapeKeyword leaves > and < alone — so ">f1.4" parses like
+        // "wider than f/1.4" instead of collapsing to an equality band.
+        const auto withGeneric = [&kw](std::vector<std::string> words) {
+            for (const auto *list : {&kw.greater_words, &kw.greater_equal_words,
+                                     &kw.less_words, &kw.less_equal_words})
+                words.insert(words.end(), list->begin(), list->end());
+            return words;
+        };
+        // "greater than" and "greater" are both keywords, so the comparator
+        // may already carry its own "than"; a second one is optional.
+        const std::string kThan = R"((?:\s*than)?\s*)";
 
         // --- ISO --------------------------------------------------------
         iso_between_ = std::regex(R"(\biso\s+between\s+(\d{2,6})\s+and\s+(\d{2,6})\b)");
@@ -159,24 +178,42 @@ namespace MediaDedup
         iso_dirs.insert(iso_dirs.end(), kw.greater_equal_words.begin(), kw.greater_equal_words.end());
         iso_dirs.insert(iso_dirs.end(), kw.less_words.begin(), kw.less_words.end());
         iso_dirs.insert(iso_dirs.end(), kw.less_equal_words.begin(), kw.less_equal_words.end());
-        iso_cmp_ = std::regex(R"(\biso\s+()" + alternation(iso_dirs) + R"()\s+(\d{2,6})\b)");
+        iso_cmp_ = std::regex(R"(\biso\s*()" + alternation(iso_dirs) + ")" + kThan +
+                              R"((\d{2,6})\b)");
         iso_eq_ = std::regex(R"(\biso\s*[:=]?\s*(\d{2,6})\b)");
 
         // --- Aperture ---------------------------------------------------
         std::vector<std::string> f_dirs = kw.aperture_wider_words;
         f_dirs.insert(f_dirs.end(), kw.aperture_narrower_words.begin(),
                       kw.aperture_narrower_words.end());
-        f_cmp_ = std::regex(R"((?:aperture\s+)?()" + alternation(f_dirs) +
-                            R"()\s+than\s+f\s*/?\s*(\d+(?:\.\d+)?))");
+        f_dirs = withGeneric(std::move(f_dirs));
+        // Unlabeled: the VALUE must carry the f ("wider than f/2.8", ">f2.8"),
+        // otherwise a bare "above 200" would be read as an aperture.
+        f_cmp_ = std::regex(R"(()" + alternation(f_dirs) + ")" + kThan +
+                            R"(f\s*/?\s*(\d+(?:\.\d+)?))");
+        // Labeled: the dimension is named, so a bare number is unambiguous
+        // ("aperture above 2.8", "f-stop >= 1.4", "f number at most 4").
+        f_cmp_labeled_ = std::regex(R"(\b(?:apertures?|f\s*-?\s*stops?|f\s*-?\s*numbers?)\s*()" +
+                                    alternation(f_dirs) + ")" + kThan +
+                                    R"((?:f\s*/?\s*)?(\d+(?:\.\d+)?))");
         f_eq_ = std::regex(R"(\bf\s*/\s*(\d+(?:\.\d+)?)|\bf(\d+(?:\.\d+)?)\b)");
 
         // --- Shutter speed ---------------------------------------------
         std::vector<std::string> sh_dirs = kw.shutter_faster_words;
         sh_dirs.insert(sh_dirs.end(), kw.shutter_slower_words.begin(),
                        kw.shutter_slower_words.end());
+        sh_dirs = withGeneric(std::move(sh_dirs));
+        // Unlabeled: the value must LOOK like an exposure — a fraction, or a
+        // number carrying a seconds unit. Without that guard "longer than
+        // 200mm" was eaten here as a 200-second exposure before the focal
+        // pattern (which runs later) ever saw it.
         shutter_cmp_ = std::regex(
-            R"((?:shutter\s+(?:speed\s+)?)?()" + alternation(sh_dirs) +
-            R"()\s+than\s+(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)(?:\s*s(?:ec(?:onds?)?)?)?\b)");
+            R"(()" + alternation(sh_dirs) + ")" + kThan +
+            R"((?:(\d+(?:\.\d+)?\s*/\s*\d+)|(\d+(?:\.\d+)?)\s*s(?:ec(?:onds?)?)?\b))");
+        // Labeled: "shutter slower than 2", "shutter speed >= 1/250".
+        shutter_cmp_labeled_ = std::regex(
+            R"(\bshutter\s*(?:speed\s*)?()" + alternation(sh_dirs) + ")" + kThan +
+            R"((\d+(?:\.\d+)?(?:\s*/\s*\d+)?)(?:\s*s(?:ec(?:onds?)?)?)?\b)");
         shutter_eq_ = std::regex(
             R"(\bshutter\s+(?:speed\s+)?(?:of\s+)?(\d+(?:\.\d+)?(?:\s*/\s*\d+)?)\b)");
 
@@ -186,8 +223,14 @@ namespace MediaDedup
         std::vector<std::string> focal_dirs = kw.focal_longer_words;
         focal_dirs.insert(focal_dirs.end(), kw.focal_shorter_words.begin(),
                           kw.focal_shorter_words.end());
-        focal_cmp_ = std::regex(R"((?:focal\s+length\s+)?()" + alternation(focal_dirs) +
-                                R"()\s+(\d{1,4})\s*mm\b)");
+        focal_dirs = withGeneric(std::move(focal_dirs));
+        // Unlabeled: the value must carry mm ("longer than 200mm", "> 85 mm").
+        focal_cmp_ = std::regex(R"(()" + alternation(focal_dirs) + ")" + kThan +
+                                R"((\d{1,4})\s*mm\b)");
+        // Labeled: "focal length above 200", "focal length <= 35mm".
+        focal_cmp_labeled_ = std::regex(R"(\bfocal(?:\s*length)?\s*()" +
+                                        alternation(focal_dirs) + ")" + kThan +
+                                        R"((\d{1,4})(?:\s*mm)?\b)");
         focal_eq_ = std::regex(R"(\b(\d{1,4})\s*mm\b)");
 
         // --- Flash ------------------------------------------------------
@@ -224,6 +267,33 @@ namespace MediaDedup
         // --- Location (preposition-triggered) ---------------------------
         location_ = std::regex(R"(\b(?:)" + alternation(kw.location_prepositions) +
                                R"()\s+((?:[a-z][a-z'\-]*)(?:\s+[a-z][a-z'\-]*){0,2}))");
+    }
+
+    // A matched comparator's SQL operator. The dimension's own direction
+    // words are consulted FIRST and may invert (a wider aperture is a LOWER
+    // f-number, a faster shutter a SHORTER time); the generic comparators
+    // fall through and compare the number exactly as written. That ordering
+    // is why "smaller than f/2" keeps its photographer reading — a narrower
+    // aperture, so a HIGHER f-number — while "less than f/2" reads as the
+    // arithmetic it looks like.
+    const char *ExifQueryParser::comparatorOp(
+        const std::string &word,
+        const std::unordered_set<std::string> &lower_words,
+        const std::unordered_set<std::string> &higher_words) const
+    {
+        if (lower_words.count(word))
+            return "<";
+        if (higher_words.count(word))
+            return ">";
+        if (greater_equal_set_.count(word))
+            return ">=";
+        if (less_equal_set_.count(word))
+            return "<=";
+        if (greater_set_.count(word))
+            return ">";
+        if (less_set_.count(word))
+            return "<";
+        return nullptr; // unreachable: the alternation is built from these sets
     }
 
     int ExifQueryParser::monthNumber(const std::string &name) const
@@ -279,37 +349,46 @@ namespace MediaDedup
             bound.numeric.push_back({"exif_iso", "between", lo, hi});
         });
         consumeMatches(text, iso_cmp_, [&](const std::smatch &m) {
-            const std::string dir = normalizeSpaces(m[1]);
-            const char *op = greater_equal_set_.count(dir) ? ">="
-                             : less_equal_set_.count(dir)  ? "<="
-                             : greater_set_.count(dir)     ? ">"
-                                                           : "<";
-            bound.numeric.push_back({"exif_iso", op, std::stod(m[2]), 0.0});
+            // ISO has no direction words of its own — bigger is just bigger.
+            if (const char *op = comparatorOp(normalizeSpaces(m[1]), {}, {}))
+                bound.numeric.push_back({"exif_iso", op, std::stod(m[2]), 0.0});
         });
         consumeMatches(text, iso_eq_, [&](const std::smatch &m) {
             bareNumeric("exif_iso", "=", std::stod(m[1]), 0.0);
         });
 
         // --- Aperture ---------------------------------------------------
-        consumeMatches(text, f_cmp_, [&](const std::smatch &m) {
-            // Wider aperture = LOWER f-number.
-            const bool wider = aperture_wider_set_.count(normalizeSpaces(m[1])) > 0;
-            bound.numeric.push_back({"exif_f_number", wider ? "<" : ">",
-                                     std::stod(m[2]), 0.0});
-        });
+        auto apertureCompare = [&](const std::smatch &m) {
+            if (const char *op = comparatorOp(normalizeSpaces(m[1]),
+                                              aperture_wider_set_,
+                                              aperture_narrower_set_))
+                bound.numeric.push_back({"exif_f_number", op, std::stod(m[2]), 0.0});
+        };
+        // Labeled first: "f-stop above 2.8" must not have its bare "2.8"
+        // stolen by the f_eq_ probe below.
+        consumeMatches(text, f_cmp_labeled_, apertureCompare);
+        consumeMatches(text, f_cmp_, apertureCompare);
         consumeMatches(text, f_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1].matched ? m[1] : m[2]);
             bareNumeric("exif_f_number", "between", v - 0.3, v + 0.3);
         });
 
         // --- Shutter speed ---------------------------------------------
-        consumeMatches(text, shutter_cmp_, [&](const std::smatch &m) {
-            std::string frac = m[2];
+        auto shutterCompare = [&](const std::smatch &m, int value_group) {
+            std::string frac = m[value_group];
             frac.erase(std::remove(frac.begin(), frac.end(), ' '), frac.end());
-            // Faster shutter = SHORTER exposure time.
-            const bool faster = shutter_faster_set_.count(normalizeSpaces(m[1])) > 0;
-            bound.numeric.push_back({"exif_exposure_time", faster ? "<" : ">",
-                                     shutterToSeconds(frac), 0.0});
+            if (const char *op = comparatorOp(normalizeSpaces(m[1]),
+                                              shutter_faster_set_,
+                                              shutter_slower_set_))
+                bound.numeric.push_back({"exif_exposure_time", op,
+                                         shutterToSeconds(frac), 0.0});
+        };
+        consumeMatches(text, shutter_cmp_labeled_,
+                       [&](const std::smatch &m) { shutterCompare(m, 2); });
+        consumeMatches(text, shutter_cmp_, [&](const std::smatch &m) {
+            // The unlabeled form captures the fraction and the seconds value
+            // in separate alternatives; exactly one of them participated.
+            shutterCompare(m, m[2].matched ? 2 : 3);
         });
         consumeMatches(text, shutter_eq_, [&](const std::smatch &m) {
             std::string frac = m[1];
@@ -319,11 +398,15 @@ namespace MediaDedup
         });
 
         // --- Focal length ----------------------------------------------
-        consumeMatches(text, focal_cmp_, [&](const std::smatch &m) {
-            const bool above = focal_longer_set_.count(normalizeSpaces(m[1])) > 0;
-            bound.numeric.push_back({"exif_focal_length", above ? ">" : "<",
-                                     std::stod(m[2]), 0.0});
-        });
+        auto focalCompare = [&](const std::smatch &m) {
+            if (const char *op = comparatorOp(normalizeSpaces(m[1]),
+                                              focal_shorter_set_,
+                                              focal_longer_set_))
+                bound.numeric.push_back({"exif_focal_length", op,
+                                         std::stod(m[2]), 0.0});
+        };
+        consumeMatches(text, focal_cmp_labeled_, focalCompare);
+        consumeMatches(text, focal_cmp_, focalCompare);
         consumeMatches(text, focal_eq_, [&](const std::smatch &m) {
             double v = std::stod(m[1]);
             bareNumeric("exif_focal_length", "between", v - 1.0, v + 1.0);

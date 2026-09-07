@@ -8,7 +8,11 @@
     "a list you delete falls back to the built-in defaults.",
     "The query GRAMMAR (shapes like 'iso above N', 'f/2.8', '1/500',",
     "4-digit years) is fixed in code — this file only supplies the words",
-    "those patterns alternate over. Path is configurable via the",
+    "those patterns alternate over. Symbols are ordinary words here:",
+    "'>' and '<=' sit in the comparison lists like 'above' and 'at most'.",
+    "A comparator may be followed by an optional 'than', and the numeric",
+    "dimensions accept a spelled-out name ('aperture', 'f-stop', 'focal",
+    "length') in front of it. Path is configurable via the",
     "'search.keywordsPath' setting (default: config/exif_search_keywords.json)."
   ],
 
@@ -25,16 +29,27 @@
   },
 
   "comparisons": {
-    "greater": ["above", "over", "greater than", "more than"],
-    "greater_or_equal": ["at least"],
-    "less": ["below", "under", "less than"],
-    "less_or_equal": ["at most"],
-    "aperture_wider": ["wider", "faster", "brighter"],
-    "aperture_narrower": ["narrower", "smaller"],
-    "shutter_faster": ["faster", "quicker"],
-    "shutter_slower": ["slower", "longer"],
-    "focal_longer": ["above", "over", "longer than"],
-    "focal_shorter": ["below", "under", "shorter than"]
+    "greater": [
+      "above", "over", "greater than", "more than", "higher than",
+      "bigger than", "larger than", "greater", "higher", "bigger", "larger",
+      ">"
+    ],
+    "greater_or_equal": [
+      "at least", "no less than", "not less than", "minimum", "min", ">=", "=>"
+    ],
+    "less": [
+      "below", "under", "less than", "lower than", "smaller than",
+      "fewer than", "less", "lower", "smaller", "<"
+    ],
+    "less_or_equal": [
+      "at most", "no more than", "not more than", "maximum", "max", "<=", "=<"
+    ],
+    "aperture_wider": ["wider than", "wider", "faster", "brighter", "more open"],
+    "aperture_narrower": ["narrower than", "narrower", "smaller", "stopped down"],
+    "shutter_faster": ["faster than", "faster", "quicker", "shorter than", "shorter"],
+    "shutter_slower": ["slower than", "slower", "longer than", "longer"],
+    "focal_longer": ["above", "over", "longer than", "greater than", "more than", ">"],
+    "focal_shorter": ["below", "under", "shorter than", "less than", "<"]
   },
 
   "flash": {
