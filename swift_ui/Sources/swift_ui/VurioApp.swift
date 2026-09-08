@@ -333,18 +333,9 @@ struct ContentView: View {
         
         NavigationSplitView {
             List(selection: $selection) {
-                NavigationLink(value: SidebarItem.vu) {
-                    SidebarLinkLabel(icon: "square.grid.2x2", title: "VU", isCompact: isCompact)
-                }
-                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
-                NavigationLink(value: SidebarItem.binned) {
-                    SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
-                }
-                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
-                NavigationLink(value: SidebarItem.people) {
-                    SidebarLinkLabel(icon: "person.2", title: "PEOPLE", isCompact: isCompact)
-                }
-                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
+                sidebarRow(.vu, icon: "square.grid.2x2", title: "VU", isCompact: isCompact)
+                sidebarRow(.binned, icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
+                sidebarRow(.people, icon: "person.2", title: "PEOPLE", isCompact: isCompact)
             }
             .listStyle(SidebarListStyle())
             .safeAreaInset(edge: .top) {
@@ -362,10 +353,7 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) {
                     List(selection: $selection) {
-                        NavigationLink(value: SidebarItem.settings) {
-                            SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
-                        }
-                        .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
+                        sidebarRow(.settings, icon: "gear", title: "SETTINGS", isCompact: isCompact)
                     }
                     .listStyle(SidebarListStyle())
                     .scrollDisabled(true)
@@ -453,6 +441,26 @@ struct ContentView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
+    }
+}
+
+extension ContentView {
+    /// One selectable sidebar row. A Button rather than a NavigationLink so a
+    /// click is reported even when the row is already selected — the List's
+    /// selection binding only changes on a switch, but every click, same tab
+    /// included, must take the tab out of its viewer. The tag keeps the
+    /// native row highlight (and keyboard selection) bound to `selection`.
+    fileprivate func sidebarRow(_ item: SidebarItem, icon: String, title: String,
+                                isCompact: Bool) -> some View {
+        Button {
+            selection = item
+            viewerDismissals += 1
+        } label: {
+            SidebarLinkLabel(icon: icon, title: title, isCompact: isCompact)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .tag(item)
     }
 }
 
