@@ -235,6 +235,63 @@ final class PeopleViewModel: ObservableObject {
     }
 }
 
+/// One face in the review popup. Click stages it as the cover; the ✕ that
+/// appears on hover (and the right-click menu — same action, two doors) is
+/// "not this person": the face leaves the cluster with a cannot-link, and
+/// the sweep re-homes it. The ✕ is hover-only so a grid of 80px tiles
+/// doesn't wear a hundred permanent close buttons, and it sits on top of
+/// the tap gesture so pressing it never also re-stages the cover.
+struct ReviewFaceTile: View {
+    let face: Vurio_Dedup_ClusterFaceInfo
+    let isCover: Bool
+    let personName: String
+    let onPick: () -> Void
+    let onReject: () -> Void
+
+    @State private var hovering = false
+
+    private var rejectLabel: String {
+        personName.isEmpty ? "Not the same person" : "Not \(personName)"
+    }
+
+    var body: some View {
+        // FACE-7d: cover ring wins; a suspect face (low fit against its
+        // own cluster) wears the warning ring — surfaced for review, never
+        // auto-removed.
+        FaceCropView(filePath: face.filePath,
+                     x: face.x, y: face.y, w: face.w, h: face.h,
+                     displayPoints: 80)
+            .frame(width: 80, height: 80)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .stroke(isCover ? Theme.accent
+                        : face.suspect ? Theme.warning : Theme.border,
+                        lineWidth: isCover || face.suspect ? 2 : 1))
+            .help(face.suspect
+                  ? "may not be \(personName.isEmpty ? "the same person" : personName) — ✕ to remove"
+                  : "")
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onPick)
+            .contextMenu {
+                Button(rejectLabel, role: .destructive, action: onReject)
+            }
+            .overlay(alignment: .topTrailing) {
+                if hovering {
+                    Button(action: onReject) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Color.white, Theme.error)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(3)
+                    .help(rejectLabel)
+                }
+            }
+            .onHover { hovering = $0 }
+    }
+}
+
 /// The cover face: the file's thumbnail cropped to the face bbox (expanded
 /// for context), no extra image RPC — the crop happens client-side.
 ///
@@ -540,7 +597,7 @@ struct PeopleView: View {
                         Spacer()
                         Button("Done") { commitAndClose(cluster) }
                     }
-                    Text("click a face to choose the cover — right-click one that isn't them. Done applies your changes; Esc discards them.")
+                    Text("click a face to choose the cover — ✕ (or right-click) one that isn't them. Done applies your changes; Esc discards them.")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }
@@ -549,36 +606,14 @@ struct PeopleView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 100), spacing: 10)],
                               spacing: 10) {
                         ForEach(model.reviewFaces, id: \.faceID) { face in
-                            let isCover = face.faceID == (selectedCoverID ?? cluster.coverFaceID)
-                            // FACE-7d: cover ring wins; a suspect face (low
-                            // fit against its own cluster) wears the warning
-                            // ring — surfaced for review, never auto-removed.
-                            FaceCropView(filePath: face.filePath,
-                                         x: face.x, y: face.y, w: face.w, h: face.h,
-                                         displayPoints: 80)
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isCover ? Theme.accent
-                                            : face.suspect ? Theme.warning : Theme.border,
-                                            lineWidth: isCover || face.suspect ? 2 : 1))
-                                .help(face.suspect
-                                      ? "may not be \(cluster.name.isEmpty ? "the same person" : cluster.name) — right-click to remove"
-                                      : "")
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // Stage the pick; the header preview
-                                    // updates, nothing commits until Done.
-                                    selectedCoverID = face.faceID
-                                }
-                                .contextMenu {
-                                    Button(cluster.name.isEmpty
-                                               ? "Not the same person"
-                                               : "Not \(cluster.name)",
-                                           role: .destructive) {
-                                        Task { await model.removeFace(face.faceID) }
-                                    }
-                                }
+                            ReviewFaceTile(
+                                face: face,
+                                isCover: face.faceID == (selectedCoverID ?? cluster.coverFaceID),
+                                personName: cluster.name,
+                                // Stage the pick; the header preview
+                                // updates, nothing commits until Done.
+                                onPick: { selectedCoverID = face.faceID },
+                                onReject: { Task { await model.removeFace(face.faceID) } })
                         }
                     }
                     .padding()
