@@ -30,10 +30,14 @@ struct VurioDuplicatesView: View {
     // mounted behind SETTINGS/SCROLLER). Gates the embedded viewers' keyboard
     // shortcuts.
     let isFrontmost: Bool
+    // Changes on every sidebar click; each one closes any open embedded
+    // viewer, so a tab is always entered at its grid.
+    let viewerDismissals: Int
 
     // Per-tab embedded viewer: a double-click sets the tab's request and the
-    // viewer slides in over the grid; X/Esc clears it and slides the grid back.
-    // Each tab keeps its own request so an open viewer survives tab switches.
+    // viewer slides in over the grid; X/Esc or a sidebar click clears it and
+    // slides the grid back. Each tab keeps its own request so the two viewers
+    // can be mounted side by side and swapped by opacity with their grids.
     @State private var vuViewerRequest: ViewerRequest? = nil
     @State private var binnedViewerRequest: ViewerRequest? = nil
 
@@ -69,15 +73,18 @@ struct VurioDuplicatesView: View {
         .onReceive(PeopleNavigator.shared.$pending) { pending in
             applyPendingPersonFilter(pending)
         }
+        .onChange(of: viewerDismissals) { _, _ in
+            closeViewer(inAllMode: true)
+            closeViewer(inAllMode: false)
+        }
     }
 
     private var activeViewerOpen: Bool {
         showAllMode ? vuViewerRequest != nil : binnedViewerRequest != nil
     }
 
-    // Both viewers stay mounted so an open viewer's state (strip position,
-    // selection) survives tab switches. A closed viewer parks offscreen to the
-    // right; opening/closing slides it over the grid (animated at the mutation
+    // Both viewers stay mounted. A closed viewer parks offscreen to the right;
+    // opening/closing slides it over the grid (animated at the mutation
     // sites), while tab switches swap the two instantly via opacity, matching
     // the lists below.
     @ViewBuilder

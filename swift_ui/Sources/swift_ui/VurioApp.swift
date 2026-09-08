@@ -316,7 +316,11 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var selection: SidebarItem? = .vu
     @State private var sidebarWidth: CGFloat = 200
-    
+    // Bumped by every click on a sidebar row (and every selection change, so
+    // keyboard and programmatic switches count too): any of them takes the
+    // VU/BINNED tab out of its embedded viewer, exactly like X or Esc.
+    @State private var viewerDismissals = 0
+
     enum SidebarItem: Hashable {
         case vu
         case binned
@@ -332,12 +336,15 @@ struct ContentView: View {
                 NavigationLink(value: SidebarItem.vu) {
                     SidebarLinkLabel(icon: "square.grid.2x2", title: "VU", isCompact: isCompact)
                 }
+                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
                 NavigationLink(value: SidebarItem.binned) {
                     SidebarLinkLabel(icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
                 }
+                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
                 NavigationLink(value: SidebarItem.people) {
                     SidebarLinkLabel(icon: "person.2", title: "PEOPLE", isCompact: isCompact)
                 }
+                .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
             }
             .listStyle(SidebarListStyle())
             .safeAreaInset(edge: .top) {
@@ -358,6 +365,7 @@ struct ContentView: View {
                         NavigationLink(value: SidebarItem.settings) {
                             SidebarLinkLabel(icon: "gear", title: "SETTINGS", isCompact: isCompact)
                         }
+                        .simultaneousGesture(TapGesture().onEnded { viewerDismissals += 1 })
                     }
                     .listStyle(SidebarListStyle())
                     .scrollDisabled(true)
@@ -384,6 +392,7 @@ struct ContentView: View {
                 // consumes the payload itself.
                 if pending != nil { selection = .vu }
             }
+            .onChange(of: selection) { _, _ in viewerDismissals += 1 }
             } detail: {
                 ZStack {
                     // One panel drives both tabs: VU shows the day-based ALL view,
@@ -393,7 +402,8 @@ struct ContentView: View {
                     // viewer's keyboard shortcuts to these two tabs.
                     VurioDuplicatesView(
                         showAllMode: selection == .vu,
-                        isFrontmost: selection == .vu || selection == .binned
+                        isFrontmost: selection == .vu || selection == .binned,
+                        viewerDismissals: viewerDismissals
                     )
                         .opacity((selection == .vu || selection == .binned) ? 1 : 0)
                         .allowsHitTesting(selection == .vu || selection == .binned)

@@ -27,6 +27,9 @@ struct ViewerView: View {
     @State private var rotation: Double = 0
     @State private var panOffset: CGSize = .zero
     @State private var panBase: CGSize = .zero
+    /// True while the drag-to-pan gesture is live, so the pointer can close
+    /// from an open hand to a grab for the duration.
+    @State private var isPanning = false
     @State private var mainAreaSize: CGSize = .zero
 
     @State private var currentImage: NSImage? = nil
@@ -208,6 +211,9 @@ struct ViewerView: View {
                     zoom(by: deltaY, at: location, in: geometry.size, isPrecise: isPrecise)
                 }
             )
+            // Open hand over the image, grab while panning. Hit-test-transparent
+            // like the scroll catcher; the arrow stays when there is no image.
+            .overlay(PanCursorOverlay(isEnabled: currentImage != nil, isDragging: isPanning))
             // Unobtrusive badge while a better bitmap than the one on screen is
             // being pulled — the thumbnail placeholder waiting on its preview,
             // or the preview waiting on its full-resolution render. What is
@@ -248,14 +254,19 @@ struct ViewerView: View {
     }
 
     private var panGesture: some Gesture {
-        DragGesture()
+        // Zero minimum distance so the grab cursor lands on mouse-down rather
+        // than after the first few points of travel; a plain click then
+        // starts and ends a pan of zero translation, which moves nothing.
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
+                isPanning = true
                 panOffset = CGSize(
                     width: panBase.width + value.translation.width,
                     height: panBase.height + value.translation.height
                 )
             }
             .onEnded { _ in
+                isPanning = false
                 panBase = panOffset
             }
     }
