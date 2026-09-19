@@ -150,6 +150,21 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
                 documentView?.boundsDidChange()
             }
         }
+        // A window resize changes the clip view's FRAME, and AppKit posts no
+        // bounds-changed notification for that (bounds notifications fire only
+        // for scrolls, i.e. bounds changes made independently of the frame).
+        // Without this the document and its pooled row hosting views keep the
+        // width they had when the list was first laid out, so the day/film
+        // strips neither grow nor shrink with the window. Synchronous: this is
+        // not on the scroll hot path, and a deferred pass would paint one frame
+        // at the stale width.
+        NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: scrollView.contentView,
+            queue: nil
+        ) { [weak documentView] _ in
+            documentView?.boundsDidChange()
+        }
 
         return scrollView
     }
@@ -289,12 +304,12 @@ class VurioDocumentView<RowContent: View>: NSView {
         super.mouseDown(with: event)
     }
 
+    /// Called on scroll (clip bounds change) and on resize (clip frame change,
+    /// see makeNSView). On a resize the document must follow the new clip width
+    /// (a programmatic document view has no autoresizing mask, so nothing else
+    /// updates it) or the pooled row hosting views — and the strips inside them
+    /// — stay at a stale width until the item count happens to change.
     func boundsDidChange() {
-        // The clip view's bounds change on scroll AND on window resize. On a
-        // resize the document must follow the new clip width (a programmatic
-        // document view has no autoresizing mask, so nothing else updates it)
-        // or the pooled row hosting views — and the strips inside them — stay
-        // at a stale width until the item count happens to change.
         updateDocumentSize()
         layoutVisibleRows()
     }
