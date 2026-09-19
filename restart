@@ -241,8 +241,8 @@ stop_previous_instance() {
   #    interrupted by pid instead.
   if [ -n "$shells" ]; then
     stopped_any=true
-    for pid in $shells; do
-      pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+    for pid in ${=shells}; do
+      pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
       if [ -n "$pgid" ] && [ "$pgid" = "$pid" ]; then
         echo "[restart]   interrupting previous ./restart (pid ${pid}, process group ${pgid})"
         kill -INT -- "-${pgid}" 2>/dev/null || true
