@@ -127,7 +127,7 @@ struct VurioDuplicatesView: View {
             let index = (y0 / h0).rounded(.down)
             y1 = index * h1 + (y0 - index * h0)
         }
-        handle.requestRestore(toOffset: y1)
+        handle.requestRestore(toOffset: y1, forRowHeight: h1)
     }
 
     // Both viewers stay mounted. A closed viewer parks offscreen to the right;

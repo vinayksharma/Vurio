@@ -56,11 +56,17 @@ final class ScrollAnchorHandle {
         return max(0, scrollView.contentView.bounds.origin.y)
     }
 
-    /// Scroll to `offset` on the next update pass — after the document has
-    /// been resized for a new row height — rather than now against the old
-    /// geometry.
-    func requestRestore(toOffset offset: CGFloat) {
+    /// Scroll to `offset` once the document has been resized for
+    /// `rowHeight`. SwiftUI gives no guarantee whether the caller's onChange
+    /// runs before or after the scroller's updateNSView in the same pass, so
+    /// this applies immediately when the scroller already carries the new
+    /// row height (its document was resized in that same update) and
+    /// otherwise waits for that update to apply it.
+    func requestRestore(toOffset offset: CGFloat, forRowHeight newRowHeight: CGFloat) {
         pendingOffsetRestore = max(0, offset)
+        if abs(rowHeight - newRowHeight) < 0.5 {
+            applyPendingRestore(clearPending: true)
+        }
     }
 
     /// The row currently at the top of the viewport, or nil when not mounted.
@@ -435,9 +441,15 @@ class VurioDocumentView<RowContent: View>: NSView {
 
                 activeViews[index] = view
             } else {
+                // STRIP-1: the row height can change (strip resize), so an
+                // already-active row must be re-placed too — its y and
+                // height follow rowHeight, not just its width. Left alone,
+                // rows kept their old frames while their content grew and
+                // drew over each other.
                 let view = activeViews[index]!
-                if view.frame.width != self.bounds.width {
-                    view.frame.size.width = self.bounds.width
+                let expected = CGRect(x: 0, y: CGFloat(index) * rowHeight, width: self.bounds.width, height: rowHeight)
+                if view.frame != expected {
+                    view.frame = expected
                 }
             }
         }
