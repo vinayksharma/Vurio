@@ -38,9 +38,10 @@ struct StripResizeGrip: NSViewRepresentable {
         var rowIndex: Int = 0
 
         // Where within the band the pointer grabbed it, in window points
-        // (pointer y minus band centre y). The drag keeps that same spot of
-        // the band under the pointer.
+        // (pointer y minus band centre y), and the pointer's y at the last
+        // event: the resize follows pointer TRAVEL, gated by where the edge is.
         private var grabOffsetY: CGFloat = 0
+        private var lastPointerY: CGFloat = 0
         private var tracking: NSTrackingArea?
         private var isHovering = false
         private var isDragging = false
@@ -96,6 +97,7 @@ struct StripResizeGrip: NSViewRepresentable {
                 return
             }
             grabOffsetY = event.locationInWindow.y - bandCenterYInWindow()
+            lastPointerY = event.locationInWindow.y
             isDragging = true
             refreshCursor()
             StripLayout.shared.beginDrag(.init(list: list, rowIndex: rowIndex, edge: edge))
@@ -108,20 +110,32 @@ struct StripResizeGrip: NSViewRepresentable {
         }
 
         override func mouseDragged(with event: NSEvent) {
-            // Resize only by how far the edge is from the pointer right now.
-            // If the edge is already under the pointer this is zero and
-            // nothing moves; if the row layout or the viewport anchoring left
-            // the edge elsewhere, this pulls it back under the pointer.
-            // Window coordinates grow upward: for the bottom edge, growing
-            // the strip moves the band DOWN (smaller y); for the top edge,
-            // UP (larger y).
-            let wanted = event.locationInWindow.y - grabOffsetY
+            // Two measurements, in the strip's "grow" direction (window
+            // coordinates grow upward; for the bottom edge growing moves the
+            // band DOWN, for the top edge UP):
+            //  - travel: how far the pointer moved since the last event;
+            //  - gap: how far the edge would have to move to sit under the
+            //    pointer again.
+            // The strip resizes by the pointer's travel, but only while the
+            // pointer is at the edge or moving AWAY from it. When it is
+            // moving back toward an edge it left behind — after overshooting
+            // a height limit, or because the list is at its end and the
+            // viewport could not scroll to keep the edge under the pointer —
+            // nothing happens until it gets there. Resizing by the gap itself
+            // (the previous model) ran away in that second case: with the
+            // viewport pinned, a height change moves the edge by many times
+            // the change, so the loop overshot and oscillated to a limit.
+            let pointerY = event.locationInWindow.y
+            let rawTravel = pointerY - lastPointerY
+            lastPointerY = pointerY
+            let wanted = pointerY - grabOffsetY
             let current = bandCenterYInWindow()
-            let growth = edge == .bottom ? (current - wanted) : (wanted - current)
-            if abs(growth) >= 0.5 {
-                StripLayout.shared.drag(growth: growth)
-            }
+            let travel = edge == .bottom ? -rawTravel : rawTravel
+            let gap = edge == .bottom ? (current - wanted) : (wanted - current)
             NSCursor.resizeUpDown.set()
+            guard travel != 0 else { return }
+            if abs(gap) > 1, (gap > 0) != (travel > 0) { return }
+            StripLayout.shared.drag(growth: travel)
         }
 
         override func mouseUp(with event: NSEvent) {
