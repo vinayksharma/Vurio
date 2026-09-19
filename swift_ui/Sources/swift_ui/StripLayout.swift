@@ -68,7 +68,17 @@ final class StripLayout: ObservableObject {
     func drag(deltaY: CGFloat) {
         guard let drag = activeDrag else { return }
         let signed = drag.edge == .bottom ? deltaY : -deltaY
-        let next = Self.clamp(dragStartHeight + signed)
+        let unclamped = dragStartHeight + signed
+        let next = Self.clamp(unclamped)
+        // Overshoot re-bases the drag origin on the limit: while the pointer
+        // is past the edge the strip cannot follow, so the origin moves with
+        // it, and the edge only starts tracking again once the pointer has
+        // come back to where the edge actually is. Without this the height
+        // followed the pointer's RETURN travel immediately, shrinking or
+        // growing the strip while the pointer was still well past its edge.
+        if next != unclamped {
+            dragStartHeight = next - signed
+        }
         if next != tileHeight { tileHeight = next }
     }
 
