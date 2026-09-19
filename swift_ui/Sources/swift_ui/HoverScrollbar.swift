@@ -162,10 +162,17 @@ private struct ScrollbarBand: NSViewRepresentable {
     }
 
     final class BandView: NSView {
-        var isEnabled = false
+        // The bar appears under a pointer that is already inside the band
+        // (hovering the strip reveals it), so an enable flip must refresh
+        // the cursor itself rather than wait for the next move.
+        var isEnabled = false {
+            didSet { if oldValue != isEnabled { refreshCursor() } }
+        }
         var onDrag: ((CGFloat) -> Void)?
         var onDragEnded: (() -> Void)?
         var onHoverChange: ((Bool) -> Void)?
+        private var isHovering = false
+        private var isDragging = false
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             isEnabled ? super.hitTest(point) : nil
@@ -182,29 +189,62 @@ private struct ScrollbarBand: NSViewRepresentable {
             for area in trackingAreas {
                 removeTrackingArea(area)
             }
+            // mouseMoved + activeAlways: the cursor below is re-set on every
+            // move (the SwiftUI hosting view keeps putting the arrow back)
+            // and must work before the window has ever been clicked.
             addTrackingArea(NSTrackingArea(rect: .zero,
-                                           options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                           options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
                                            owner: self))
         }
 
         override func mouseEntered(with event: NSEvent) {
+            isHovering = true
             onHoverChange?(true)
+            refreshCursor()
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            isHovering = true
+            refreshCursor()
         }
 
         override func mouseExited(with event: NSEvent) {
+            isHovering = false
             onHoverChange?(false)
+            refreshCursor()
         }
 
         override func mouseDown(with event: NSEvent) {
+            isDragging = true
+            refreshCursor()
             report(event)
         }
 
         override func mouseDragged(with event: NSEvent) {
             report(event)
+            NSCursor.closedHand.set()
         }
 
         override func mouseUp(with event: NSEvent) {
+            isDragging = false
             onDragEnded?()
+            isHovering = bounds.contains(convert(event.locationInWindow, from: nil))
+            refreshCursor()
+        }
+
+        /// The band scrolls the strip by grabbing: open hand over the visible
+        /// bar (same vocabulary as the viewer's pannable image), closed hand
+        /// while dragging, arrow otherwise. Only while enabled — when the
+        /// bar is hidden the band is not hit-testable and must not claim
+        /// the pointer.
+        private func refreshCursor() {
+            if isDragging {
+                NSCursor.closedHand.set()
+            } else if isHovering && isEnabled {
+                NSCursor.openHand.set()
+            } else if isHovering {
+                NSCursor.arrow.set()
+            }
         }
 
         private func report(_ event: NSEvent) {

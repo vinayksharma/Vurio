@@ -39,10 +39,8 @@ struct StripResizeGrip: NSViewRepresentable {
 
         private var dragStartY: CGFloat = 0
         private var tracking: NSTrackingArea?
-        // The resize cursor is pushed on enter and popped on exit (or when
-        // the view leaves its window mid-hover); the flag keeps push/pop
-        // balanced, since AppKit's cursor stack has no idea who owns what.
-        private var cursorPushed = false
+        private var isHovering = false
+        private var isDragging = false
 
         override var acceptsFirstResponder: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -50,48 +48,43 @@ struct StripResizeGrip: NSViewRepresentable {
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             if let tracking { removeTrackingArea(tracking) }
-            // Enter/exit rather than cursorUpdate: SwiftUI's own cursor
-            // handling in the hosting view swallows cursorUpdate, so the
-            // resize cursor only ever appeared once a drag had begun. Not
-            // enabledDuringMouseDrag — a drag that wanders off the band
-            // must keep the cursor until the button is released.
+            // Enter/exit/move rather than cursorUpdate: SwiftUI's hosting view
+            // swallows cursorUpdate. activeAlways, not activeInKeyWindow: an
+            // app launched from a terminal shows its window before the window
+            // is key, and a resize affordance that only appears after a click
+            // somewhere in the panel reads as broken.
             let area = NSTrackingArea(rect: .zero,
-                                      options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                      options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
                                       owner: self, userInfo: nil)
             addTrackingArea(area)
             tracking = area
         }
 
         override func mouseEntered(with event: NSEvent) {
-            showResizeCursor()
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            restoreCursor()
+            isHovering = true
+            refreshCursor()
         }
 
         override func mouseMoved(with event: NSEvent) {
-            // The SwiftUI hosting view re-asserts the arrow on its own
-            // mouse-moved handling; put the resize cursor back on every
-            // move inside the band so it cannot flicker away.
-            if cursorPushed { NSCursor.resizeUpDown.set() }
+            // The hosting view re-asserts the arrow on its own mouse-moved
+            // handling; set ours again on every move inside the band.
+            isHovering = true
+            refreshCursor()
         }
 
-        override func viewWillMove(toWindow newWindow: NSWindow?) {
-            if newWindow == nil { restoreCursor() }
-            super.viewWillMove(toWindow: newWindow)
+        override func mouseExited(with event: NSEvent) {
+            isHovering = false
+            refreshCursor()
         }
 
-        private func showResizeCursor() {
-            guard !cursorPushed else { return }
-            cursorPushed = true
-            NSCursor.resizeUpDown.push()
-        }
-
-        private func restoreCursor() {
-            guard cursorPushed else { return }
-            cursorPushed = false
-            NSCursor.pop()
+        /// The drag can end with the pointer outside the band (no exit event
+        /// is delivered during a drag), so mouseUp re-checks by hand.
+        private func refreshCursor() {
+            if isDragging || isHovering {
+                NSCursor.resizeUpDown.set()
+            } else {
+                NSCursor.arrow.set()
+            }
         }
 
         override func mouseDown(with event: NSEvent) {
@@ -100,7 +93,8 @@ struct StripResizeGrip: NSViewRepresentable {
                 return
             }
             dragStartY = event.locationInWindow.y
-            showResizeCursor() // a click without a prior enter (fast pointer)
+            isDragging = true
+            refreshCursor()
             StripLayout.shared.beginDrag(.init(list: list, rowIndex: rowIndex, edge: edge))
         }
 
@@ -110,15 +104,15 @@ struct StripResizeGrip: NSViewRepresentable {
             // the strip.
             let deltaY = dragStartY - event.locationInWindow.y
             StripLayout.shared.drag(deltaY: deltaY)
+            NSCursor.resizeUpDown.set()
         }
 
         override func mouseUp(with event: NSEvent) {
             if event.clickCount == 2 { return } // the reset already ran in mouseDown
+            isDragging = false
             StripLayout.shared.endDrag()
-            // No exit event arrives for a release outside the band (the
-            // tracking area was quiet during the drag), so check by hand.
-            let local = convert(event.locationInWindow, from: nil)
-            if !bounds.contains(local) { restoreCursor() }
+            isHovering = bounds.contains(convert(event.locationInWindow, from: nil))
+            refreshCursor()
         }
     }
 }
