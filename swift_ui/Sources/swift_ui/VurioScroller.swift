@@ -126,6 +126,12 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
     /// Optional position handle, for owners that need to pin the viewport to a
     /// row across a data change (see ScrollAnchorHandle).
     var anchorHandle: ScrollAnchorHandle? = nil
+    /// STRIP-1: a row that must stay materialized even while outside the
+    /// visible rect — the row whose edge is being dragged. A height change
+    /// re-lays rows out against the not-yet-restored scroll offset, which
+    /// could pool that row mid-drag; its grip then belonged to a hidden or
+    /// reassigned view and the drag stalled until the next press.
+    var pinnedRow: Int? = nil
     @Binding var selection: Int?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)? = nil
     var rowContent: (Int) -> RowContent
@@ -218,6 +224,7 @@ struct VurioScroller<RowContent: View>: NSViewRepresentable {
         // Always freshen the closure (it captures current view-model state);
         // rows only re-run their bodies when one of the checks below fires.
         docView.contentBox.content = rowContent
+        docView.pinnedRow = pinnedRow
 
         if docView.itemCount != itemCount || docView.rowHeight != rowHeight {
             docView.itemCount = itemCount
@@ -252,6 +259,7 @@ class VurioDocumentView<RowContent: View>: NSView {
     let contentBox: RowContentBox<RowContent>
     var onSelectionChanged: ((Int?) -> Void)?
     var onVisibleRowsChanged: ((ClosedRange<Int>) -> Void)?
+    var pinnedRow: Int? = nil // see VurioScroller.pinnedRow
 
     // Diff stamps consumed by VurioScroller.updateNSView so rows are only
     // refreshed when the selection or the declared data version actually moved.
@@ -415,7 +423,10 @@ class VurioDocumentView<RowContent: View>: NSView {
             onVisibleRowsChanged?(startRow...endRow)
         }
 
-        let visibleIndices = Set(startRow...endRow)
+        var visibleIndices = Set(startRow...endRow)
+        if let pinned = pinnedRow, pinned >= 0, pinned < itemCount {
+            visibleIndices.insert(pinned)
+        }
 
         for (index, view) in activeViews {
             if !visibleIndices.contains(index) {
@@ -425,7 +436,7 @@ class VurioDocumentView<RowContent: View>: NSView {
             }
         }
 
-        for index in startRow...endRow {
+        for index in visibleIndices.sorted() {
             if activeViews[index] == nil {
                 let view = getReusableView(for: index)
 

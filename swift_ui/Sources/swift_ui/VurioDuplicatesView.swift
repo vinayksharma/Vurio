@@ -109,6 +109,13 @@ struct VurioDuplicatesView: View {
         showAllMode ? vuViewerRequest != nil : binnedViewerRequest != nil
     }
 
+    /// STRIP-1: the row being edge-dragged in `list`, kept materialized by
+    /// the scroller for the whole drag (VurioScroller.pinnedRow).
+    private func pinnedRow(for list: StripLayout.ActiveDrag.List) -> Int? {
+        guard let drag = strip.activeDrag, drag.list == list else { return nil }
+        return drag.rowIndex
+    }
+
     /// STRIP-1: where the viewport must be after rows change from
     /// `oldRowHeight` to `newRowHeight`. For the list being dragged, the
     /// grabbed edge of the grabbed row stays put (its top for a bottom-edge
@@ -400,6 +407,7 @@ struct VurioDuplicatesView: View {
                     isActive: isFrontmost && showAllMode,
                     scrollbarInsets: customInsets,
                     anchorHandle: vuAnchorHandle,
+                    pinnedRow: pinnedRow(for: .vu),
                     selection: $vuSelection,
                     onVisibleRowsChanged: { range in
                         allViewModel.updateVisibleRows(range)
@@ -435,6 +443,7 @@ struct VurioDuplicatesView: View {
                     isActive: isFrontmost && !showAllMode,
                     scrollbarInsets: customInsets,
                     anchorHandle: viewModel.anchorHandle,
+                    pinnedRow: pinnedRow(for: .binned),
                     selection: $binnedSelection,
                     onVisibleRowsChanged: { range in
                         viewModel.updateVisibleRows(range)
