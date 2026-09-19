@@ -56,7 +56,12 @@ struct VurioDuplicatesView: View {
     // advanced overlay on does not grow the row or change the spacing around images.
     // STRIP-1: both rows grow by exactly the tile-height delta — every other
     // margin inside the cards is unchanged.
-    private static let baseRowHeight: CGFloat = 158
+    // The BINNED card is 154 pt tall (130 pt tile band + 12 pt padding top and
+    // bottom) and the VU card 146 pt (8 pt date stamp + 118 pt band + 10 + 10);
+    // each row is its card plus the same 24 pt of slack, so the vertical gap
+    // between cards is identical on both tabs (a row of exactly the card's
+    // height left BINNED with only the card's 4 pt bottom padding between rows).
+    private static let baseRowHeight: CGFloat = 178
     private var rowHeight: CGFloat { Self.baseRowHeight + strip.extraHeight }
     // ALL-view day rows: same image strip plus the date-stamp header line.
     private static let baseDayRowHeight: CGFloat = 170
