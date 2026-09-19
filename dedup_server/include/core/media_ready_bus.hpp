@@ -28,6 +28,9 @@ namespace MediaDedup
             std::string media_type; // "thumbnail" | "preview"
             bool success = true;
             std::string error_message;
+            // STRIP-2: pixel bucket of a finished thumbnail (0 for previews).
+            // A waiter for the 512 asset must not wake on the 256 one.
+            int size = 0;
         };
 
         struct Subscription

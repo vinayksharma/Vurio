@@ -681,6 +681,28 @@ struct Vurio_Dedup_DuplicateFile: Sendable {
 
   var displayHeight: Int32 = 0
 
+  /// STRIP-2: every cached thumbnail bucket that exists for this file, so the
+  /// client can pick the smallest one that covers its current tile size and
+  /// decode it straight from disk. cached_thumbnail_path stays as the
+  /// best fit for the 256 bucket (older clients).
+  var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// STRIP-2: one on-disk thumbnail asset of a file: its pixel bucket (128,
+/// 256, 512, 1024) and server-local path.
+struct Vurio_Dedup_CachedThumbnail: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var path: String = String()
+
+  var size: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -799,6 +821,9 @@ struct Vurio_Dedup_DayFile: Sendable {
   var matchedExif: Bool = false
 
   var matchedFace: Bool = false
+
+  /// STRIP-2, see DuplicateFile
+  var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1184,6 +1209,10 @@ struct Vurio_Dedup_GetMediaRequest: Sendable {
 
   var size: String = String()
 
+  /// STRIP-2: drop the cached asset that would have been served (the client
+  /// could not decode it) and generate it again.
+  var regenerate: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1197,6 +1226,10 @@ struct Vurio_Dedup_CancelMediaRequest: Sendable {
   var filePath: String = String()
 
   var type: String = String()
+
+  /// STRIP-2: thumbnail generations are queued per (path, size bucket); 0
+  /// targets the legacy path-only key.
+  var size: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1227,13 +1260,17 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
 
   var filePath: String = String()
 
-  /// "thumbnail" | "preview"
+  /// "thumbnail" | "preview" | "preview_full"
   var mediaType: String = String()
 
   var success: Bool = false
 
   /// set when success == false
   var errorMessage: String = String()
+
+  /// STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
+  /// events from paths that do not know the size.
+  var size: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2660,7 +2697,7 @@ extension Vurio_Dedup_GetGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DuplicateFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0\u{3}is_available\0\u{3}display_width\0\u{3}display_height\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}size_bytes\0\u{1}resolution\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}is_ejected\0\u{3}cached_thumbnail_path\0\u{3}is_available\0\u{3}display_width\0\u{3}display_height\0\u{3}cached_thumbnails\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2679,6 +2716,7 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 9: try { try decoder.decodeSingularBoolField(value: &self.isAvailable) }()
       case 10: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
       case 11: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
+      case 12: try { try decoder.decodeRepeatedMessageField(value: &self.cachedThumbnails) }()
       default: break
       }
     }
@@ -2718,6 +2756,9 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if self.displayHeight != 0 {
       try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 11)
     }
+    if !self.cachedThumbnails.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.cachedThumbnails, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2733,6 +2774,42 @@ extension Vurio_Dedup_DuplicateFile: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.isAvailable != rhs.isAvailable {return false}
     if lhs.displayWidth != rhs.displayWidth {return false}
     if lhs.displayHeight != rhs.displayHeight {return false}
+    if lhs.cachedThumbnails != rhs.cachedThumbnails {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_CachedThumbnail: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".CachedThumbnail"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}size\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.size) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
+    }
+    if self.size != 0 {
+      try visitor.visitSingularInt32Field(value: self.size, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_CachedThumbnail, rhs: Vurio_Dedup_CachedThumbnail) -> Bool {
+    if lhs.path != rhs.path {return false}
+    if lhs.size != rhs.size {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2875,7 +2952,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DayFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0\u{3}cached_thumbnails\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2898,6 +2975,7 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
       case 13: try { try decoder.decodeSingularBoolField(value: &self.matchedAi) }()
       case 14: try { try decoder.decodeSingularBoolField(value: &self.matchedExif) }()
       case 15: try { try decoder.decodeSingularBoolField(value: &self.matchedFace) }()
+      case 16: try { try decoder.decodeRepeatedMessageField(value: &self.cachedThumbnails) }()
       default: break
       }
     }
@@ -2949,6 +3027,9 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if self.matchedFace != false {
       try visitor.visitSingularBoolField(value: self.matchedFace, fieldNumber: 15)
     }
+    if !self.cachedThumbnails.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.cachedThumbnails, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2968,6 +3049,7 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if lhs.matchedAi != rhs.matchedAi {return false}
     if lhs.matchedExif != rhs.matchedExif {return false}
     if lhs.matchedFace != rhs.matchedFace {return false}
+    if lhs.cachedThumbnails != rhs.cachedThumbnails {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3692,7 +3774,7 @@ extension Vurio_Dedup_SetUserThemeRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetMediaRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}size\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}size\0\u{1}regenerate\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3702,6 +3784,7 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.size) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.regenerate) }()
       default: break
       }
     }
@@ -3714,12 +3797,16 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.size.isEmpty {
       try visitor.visitSingularStringField(value: self.size, fieldNumber: 2)
     }
+    if self.regenerate != false {
+      try visitor.visitSingularBoolField(value: self.regenerate, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_GetMediaRequest, rhs: Vurio_Dedup_GetMediaRequest) -> Bool {
     if lhs.filePath != rhs.filePath {return false}
     if lhs.size != rhs.size {return false}
+    if lhs.regenerate != rhs.regenerate {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3727,7 +3814,7 @@ extension Vurio_Dedup_GetMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 extension Vurio_Dedup_CancelMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".CancelMediaRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}type\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}type\0\u{1}size\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3737,6 +3824,7 @@ extension Vurio_Dedup_CancelMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.type) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.size) }()
       default: break
       }
     }
@@ -3749,12 +3837,16 @@ extension Vurio_Dedup_CancelMediaRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if !self.type.isEmpty {
       try visitor.visitSingularStringField(value: self.type, fieldNumber: 2)
     }
+    if self.size != 0 {
+      try visitor.visitSingularInt32Field(value: self.size, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_CancelMediaRequest, rhs: Vurio_Dedup_CancelMediaRequest) -> Bool {
     if lhs.filePath != rhs.filePath {return false}
     if lhs.type != rhs.type {return false}
+    if lhs.size != rhs.size {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3797,7 +3889,7 @@ extension Vurio_Dedup_MediaPathResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".MediaReadyEvent"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}media_type\0\u{1}success\0\u{3}error_message\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}media_type\0\u{1}success\0\u{3}error_message\0\u{1}size\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3809,6 +3901,7 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 2: try { try decoder.decodeSingularStringField(value: &self.mediaType) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.success) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.size) }()
       default: break
       }
     }
@@ -3827,6 +3920,9 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.errorMessage.isEmpty {
       try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 4)
     }
+    if self.size != 0 {
+      try visitor.visitSingularInt32Field(value: self.size, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3835,6 +3931,7 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.mediaType != rhs.mediaType {return false}
     if lhs.success != rhs.success {return false}
     if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.size != rhs.size {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

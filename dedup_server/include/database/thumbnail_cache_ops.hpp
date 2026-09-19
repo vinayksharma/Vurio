@@ -33,11 +33,35 @@ namespace MediaDedup
     };
 
     /**
+     * @brief STRIP-2: one cached bucket of a source file, as carried on the
+     * day/duplicate list records (see VURIO_BEST_THUMB_SUBQUERY).
+     */
+    struct CachedThumbnailRef
+    {
+        std::string path;
+        int size = 0;
+    };
+
+    /**
      * @brief Operations for thumbnail cache database table
      */
     class ThumbnailCacheOps
     {
     public:
+        /**
+         * @brief STRIP-2: decode the VURIO_BEST_THUMB_SUBQUERY column
+         * ("<size>:<path>" entries joined by char(31)) into refs sorted by
+         * size ascending. Malformed entries are skipped; empty input -> {}.
+         */
+        static std::vector<CachedThumbnailRef> parseCachedThumbnailList(const std::string &encoded);
+
+        /**
+         * @brief The path a client wanting `target` pixels should decode:
+         * the smallest bucket >= target, else the largest smaller one, else
+         * empty. (The rule the pre-STRIP-2 single-row subquery applied.)
+         */
+        static std::string bestFitPath(const std::vector<CachedThumbnailRef> &refs, int target);
+
         /**
          * @brief Ensure thumbnail_cache table and indices exist
          * @param db Database manager

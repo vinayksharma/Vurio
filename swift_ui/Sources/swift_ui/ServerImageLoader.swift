@@ -26,13 +26,23 @@ actor ServerImageLoader {
 
     /// THUMB-1: the one pixel size every thumbnail surface requests and keys
     /// its cache by — VU day strips, BINNED group cards, the viewer filmstrip
-    /// and both prefetchers. A 70 pt-tall tile at the 3:1 aspect clamp is
-    /// 210 pt = 420 px on a 2x display, so the old 128 px asset (what a
-    /// `size: 70` request snapped to) would be visibly soft on landscape
-    /// tiles. All sites MUST use this constant: two sites disagreeing means two
-    /// cold fetches and two decoded copies of every image
-    /// (dedup_server/docs/todo_aspect_ratio_thumbnails.md §7).
-    static let tileAssetSize = 256
+    /// and both prefetchers. All sites MUST use this value: two sites
+    /// disagreeing means two cold fetches and two decoded copies of every
+    /// image (dedup_server/docs/todo_aspect_ratio_thumbnails.md §7).
+    ///
+    /// STRIP-1: no longer a constant — it follows the shared strip tile
+    /// height (StripLayout): 256 up to 128 pt on a 2x display, 512 above.
+    /// Written by StripLayout when a resize drag ends; read from any
+    /// context, hence the lock rather than actor isolation.
+    static var tileAssetSize: Int {
+        get { tileAssetSizeLock.withLock { _tileAssetSize } }
+        set { tileAssetSizeLock.withLock { _tileAssetSize = newValue } }
+    }
+    private static let tileAssetSizeLock = NSLock()
+    private static var _tileAssetSize: Int = StripLayout.initialAssetSize()
+    /// The strips' two buckets, for the "show the other one while the
+    /// sharper one loads" fallback in ThumbnailView.
+    static let stripAssetSizes: [Int] = [256, 512]
 
     /// Long-edge cap for a locally decoded preview. Matches the server's
     /// MAX_PREVIEW_DIMENSION so both paths hand the viewer the same size;
@@ -76,7 +86,14 @@ actor ServerImageLoader {
     // The server answers UNAVAILABLE ("generating") on a cache miss and pushes
     // a MediaReadyEvent when the background generation finishes. Waiters block
     // on that push (with a short poll fallback) instead of guessing a backoff.
-    private var readyWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    // STRIP-2: each waiter records the bucket it needs (0 = any); a thumbnail
+    // event names its bucket, so the waiter for a 512 asset sleeps through
+    // the 256 one finishing.
+    private struct ReadyWaiter {
+        let size: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+    private var readyWaiters: [String: [UUID: ReadyWaiter]] = [:]
     private var mediaReadySubscription: Task<Void, Never>? = nil
     // Client mirror of the server's negative cache, keyed "type|path": known
     // unreadable files fail immediately instead of hitting the server again.
@@ -187,26 +204,38 @@ actor ServerImageLoader {
 
     private func handleMediaReady(_ event: Vurio_Dedup_MediaReadyEvent) {
         let key = "\(event.mediaType)|\(event.filePath)"
-        guard let waiters = readyWaiters.removeValue(forKey: key) else { return }
-        for (_, continuation) in waiters {
-            continuation.resume()
+        guard let waiters = readyWaiters[key] else { return }
+        let eventSize = Int(event.size)
+        var remaining = waiters
+        for (id, waiter) in waiters {
+            // Size-less events (previews, older servers) wake everyone.
+            if eventSize == 0 || waiter.size == 0 || waiter.size == eventSize {
+                remaining.removeValue(forKey: id)
+                waiter.continuation.resume()
+            }
+        }
+        if remaining.isEmpty {
+            readyWaiters.removeValue(forKey: key)
+        } else {
+            readyWaiters[key] = remaining
         }
     }
 
-    private func addReadyWaiter(key: String, id: UUID, continuation: CheckedContinuation<Void, Never>) {
-        readyWaiters[key, default: [:]][id] = continuation
+    private func addReadyWaiter(key: String, id: UUID, size: Int, continuation: CheckedContinuation<Void, Never>) {
+        readyWaiters[key, default: [:]][id] = ReadyWaiter(size: size, continuation: continuation)
     }
 
     private func resumeReadyWaiter(key: String, id: UUID) {
-        if let continuation = readyWaiters[key]?.removeValue(forKey: id) {
+        if let waiter = readyWaiters[key]?.removeValue(forKey: id) {
             if readyWaiters[key]?.isEmpty == true { readyWaiters.removeValue(forKey: key) }
-            continuation.resume()
+            waiter.continuation.resume()
         }
     }
 
     /// Blocks until the server pushes a media-ready event for this file (either
     /// outcome) or the fallback timeout elapses — whichever comes first.
-    private func waitForReadySignal(type: String, filePath: String, timeoutNs: UInt64) async {
+    /// `size` narrows a thumbnail wait to one bucket (0 = any event).
+    private func waitForReadySignal(type: String, filePath: String, size: Int = 0, timeoutNs: UInt64) async {
         let key = "\(type)|\(filePath)"
         let id = UUID()
         // Cancellation-aware: a load whose last waiter scrolled off returns
@@ -214,7 +243,7 @@ actor ServerImageLoader {
         // its download token back) instead of after the poll fallback.
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                addReadyWaiter(key: key, id: id, continuation: continuation)
+                addReadyWaiter(key: key, id: id, size: size, continuation: continuation)
                 Task {
                     try? await Task.sleep(nanoseconds: timeoutNs)
                     await self.resumeReadyWaiter(key: key, id: id)
@@ -281,6 +310,7 @@ actor ServerImageLoader {
                         var cancelReq = Vurio_Dedup_CancelMediaRequest()
                         cancelReq.filePath = filePath
                         cancelReq.type = "thumbnail_generator"
+                        cancelReq.size = Int32(size) // STRIP-2: per-bucket task key
                         if let client = VurioGrpcClient.shared.mediaStreaming {
                             _ = try await client.cancelMediaGeneration(cancelReq)
                             logDebug("Sent server cancellation for thumbnail: \(filePath)")
@@ -317,6 +347,10 @@ actor ServerImageLoader {
                 var request = Vurio_Dedup_GetMediaRequest()
                 request.filePath = filePath
                 request.size = String(size)
+                // STRIP-2: the file the server handed us would not decode
+                // (truncated write on a network cache, say) — ask it to drop
+                // and regenerate rather than serve the same bytes again.
+                request.regenerate = decodeFailures > 0
 
                 let response = try await client.getThumbnail(request)
                 let responsePath = response.filePath
@@ -343,7 +377,7 @@ actor ServerImageLoader {
                 if let grpcError = error as? GRPCStatus {
                     if grpcError.code == .unavailable {
                         if Date() >= deadline { break }
-                        await waitForReadySignal(type: "thumbnail", filePath: filePath, timeoutNs: 2_000_000_000)
+                        await waitForReadySignal(type: "thumbnail", filePath: filePath, size: size, timeoutNs: 2_000_000_000)
                         continue
                     }
                     if grpcError.code == .failedPrecondition {

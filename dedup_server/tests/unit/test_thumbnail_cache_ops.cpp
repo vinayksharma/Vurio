@@ -99,7 +99,13 @@ TEST_F(ThumbnailCacheOpsTest, RevisionsCoexistAndLookupsReturnRevisionZero)
         auto lease = db_->acquireSessionLease();
         std::string path;
         lease.get() << "SELECT " VURIO_BEST_THUMB_SUBQUERY("'/media/a.jpg'"), into(path), now;
-        EXPECT_EQ(path, "/cache/a_256_r0.jpg");
+        // STRIP-2: the column is now the encoded list of every revision-0
+        // bucket; the revision-1 row must not appear in it.
+        auto refs = ThumbnailCacheOps::parseCachedThumbnailList(path);
+        ASSERT_EQ(refs.size(), 1u);
+        EXPECT_EQ(refs[0].size, 256);
+        EXPECT_EQ(refs[0].path, "/cache/a_256_r0.jpg");
+        EXPECT_EQ(ThumbnailCacheOps::bestFitPath(refs, 256), "/cache/a_256_r0.jpg");
     }
 
     // A file that only has a revision-1 row is a miss at revision 0.
@@ -182,4 +188,28 @@ TEST_F(ThumbnailCacheOpsTest, CacheFileNameIsRevisionQualified)
     EXPECT_EQ(ThumbnailCacheOps::cacheFileName("/media/a.jpg", 256), a0) << "default revision is 0";
     EXPECT_NE(a0.find("_256_r0.jpg"), std::string::npos);
     EXPECT_NE(a1.find("_256_r1.jpg"), std::string::npos);
+}
+
+// STRIP-2: the list queries ship every cached bucket of a file as one
+// encoded column; the decoder must sort by size and the best-fit rule must
+// match what the old single-row subquery returned.
+TEST(ThumbnailCacheListEncoding, ParsesSortsAndPicksBestFit)
+{
+    std::string encoded = std::string("512:/c/a_512.jpg") + '\x1f' + "256:/c/a_256.jpg" + '\x1f' + "bogus" + '\x1f' + "128:/c/a_128.jpg";
+    auto refs = ThumbnailCacheOps::parseCachedThumbnailList(encoded);
+    ASSERT_EQ(refs.size(), 3u);
+    EXPECT_EQ(refs[0].size, 128);
+    EXPECT_EQ(refs[1].size, 256);
+    EXPECT_EQ(refs[2].size, 512);
+    EXPECT_EQ(refs[2].path, "/c/a_512.jpg");
+
+    EXPECT_EQ(ThumbnailCacheOps::bestFitPath(refs, 256), "/c/a_256.jpg");
+    EXPECT_EQ(ThumbnailCacheOps::bestFitPath(refs, 300), "/c/a_512.jpg") << "smallest bucket that covers";
+    EXPECT_EQ(ThumbnailCacheOps::bestFitPath(refs, 1024), "/c/a_512.jpg") << "largest smaller bucket";
+    EXPECT_EQ(ThumbnailCacheOps::bestFitPath({}, 256), "");
+    EXPECT_TRUE(ThumbnailCacheOps::parseCachedThumbnailList("").empty());
+    // A path containing ':' keeps everything after the first separator.
+    auto odd = ThumbnailCacheOps::parseCachedThumbnailList("256:/c/x:y.jpg");
+    ASSERT_EQ(odd.size(), 1u);
+    EXPECT_EQ(odd[0].path, "/c/x:y.jpg");
 }

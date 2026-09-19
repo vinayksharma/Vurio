@@ -131,7 +131,7 @@ namespace MediaDedup
 
             // AR-1: the dead WebSocket broadcast is gone (active_sockets_ is
             // always empty in production) — MediaReadyBus serves the live client.
-            MediaReadyBus::instance().publish({file_path, "thumbnail", true, ""});
+            MediaReadyBus::instance().publish({file_path, "thumbnail", true, "", size});
 
             return true;
         }

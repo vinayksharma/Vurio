@@ -28,7 +28,8 @@ namespace MediaDedup
             file.size_bytes = file_row[3].convert<int64_t>();
             if (!file_row[4].isEmpty())
             {
-                file.cached_thumbnail_path = file_row[4].convert<std::string>();
+                file.cached_thumbnails = ThumbnailCacheOps::parseCachedThumbnailList(file_row[4].convert<std::string>());
+                file.cached_thumbnail_path = ThumbnailCacheOps::bestFitPath(file.cached_thumbnails, 256);
             }
             if (!file_row[5].isEmpty())
             {

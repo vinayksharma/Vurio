@@ -97,6 +97,11 @@ public:
             if (!member.cached_thumbnail_path.empty()) {
                 proto_file->set_cached_thumbnail_path(member.cached_thumbnail_path);
             }
+            for (const auto& ref : member.cached_thumbnails) { // STRIP-2
+                auto* ct = proto_file->add_cached_thumbnails();
+                ct->set_path(ref.path);
+                ct->set_size(ref.size);
+            }
             // THUMB-1: display geometry; 0 is the meaningful "unknown".
             proto_file->set_display_width(member.display_width);
             proto_file->set_display_height(member.display_height);
@@ -185,6 +190,11 @@ public:
                 if (!member.cached_thumbnail_path.empty()) {
                     proto_file->set_cached_thumbnail_path(member.cached_thumbnail_path);
                 }
+                for (const auto& ref : member.cached_thumbnails) { // STRIP-2
+                    auto* ct = proto_file->add_cached_thumbnails();
+                    ct->set_path(ref.path);
+                    ct->set_size(ref.size);
+                }
                 // THUMB-1: display geometry; 0 is the meaningful "unknown".
                 proto_file->set_display_width(member.display_width);
                 proto_file->set_display_height(member.display_height);
@@ -272,6 +282,11 @@ public:
         proto_file->set_size_bytes(file.size_bytes);
         if (!file.cached_thumbnail_path.empty()) {
             proto_file->set_cached_thumbnail_path(file.cached_thumbnail_path);
+        }
+        for (const auto& ref : file.cached_thumbnails) { // STRIP-2
+            auto* ct = proto_file->add_cached_thumbnails();
+            ct->set_path(ref.path);
+            ct->set_size(ref.size);
         }
         if (file.group_id > 0) {
             proto_file->set_group_id(std::to_string(file.group_id));

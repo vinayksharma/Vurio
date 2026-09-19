@@ -6,6 +6,7 @@
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <functional>
+#include <algorithm>
 
 using Poco::Data::Session;
 using Poco::Data::Statement;
@@ -442,6 +443,51 @@ namespace MediaDedup
             Poco::Logger::get("ThumbnailCacheOps").error("deleteByCachedPaths failed: %s", std::string(e.what()));
             return false;
         }
+    }
+
+    std::vector<CachedThumbnailRef> ThumbnailCacheOps::parseCachedThumbnailList(const std::string &encoded)
+    {
+        std::vector<CachedThumbnailRef> refs;
+        if (encoded.empty())
+            return refs;
+        std::size_t start = 0;
+        while (start <= encoded.size())
+        {
+            std::size_t end = encoded.find('\x1f', start);
+            if (end == std::string::npos)
+                end = encoded.size();
+            std::string entry = encoded.substr(start, end - start);
+            std::size_t colon = entry.find(':');
+            if (colon != std::string::npos && colon > 0 && colon + 1 < entry.size())
+            {
+                try
+                {
+                    int size = std::stoi(entry.substr(0, colon));
+                    if (size > 0)
+                        refs.push_back({entry.substr(colon + 1), size});
+                }
+                catch (...)
+                {
+                    // Not an int prefix — skip the entry.
+                }
+            }
+            if (end == encoded.size())
+                break;
+            start = end + 1;
+        }
+        std::sort(refs.begin(), refs.end(),
+                  [](const CachedThumbnailRef &a, const CachedThumbnailRef &b) { return a.size < b.size; });
+        return refs;
+    }
+
+    std::string ThumbnailCacheOps::bestFitPath(const std::vector<CachedThumbnailRef> &refs, int target)
+    {
+        // refs are size-ascending: the first >= target is the smallest cover;
+        // otherwise the last (largest) one is the best smaller fallback.
+        for (const auto &ref : refs)
+            if (ref.size >= target)
+                return ref.path;
+        return refs.empty() ? std::string() : refs.back().path;
     }
 
 } // namespace MediaDedup

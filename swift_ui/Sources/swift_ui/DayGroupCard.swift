@@ -24,15 +24,20 @@ struct DayGroupCard: View {
     // up is per-file — the server unions the CLIP and EXIF halves and tags
     // every DayFile with matchedAi / matchedExif / matchedFace.
     var showSearchBadges: Bool = false
+    // STRIP-1: this card's row in the VU list, so a drag on its grip can keep
+    // the grabbed edge under the pointer while every row above it grows.
+    var rowIndex: Int = 0
 
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
+    @ObservedObject private var strip = StripLayout.shared
 
     @State private var expandedGroupIDs: Set<String> = []
     @State private var isCardHovered = false
 
-    /// THUMB-1: every VU tile is this tall; widths follow each image's display
-    /// geometry (ThumbnailGeometry). Row height stays fixed.
-    static let tileHeight: CGFloat = 70
+    /// THUMB-1: every VU tile is this tall (square, ThumbnailGeometry).
+    /// STRIP-1: the height is the shared, user-dragged strip height; the row
+    /// grows by exactly the same delta (VurioDuplicatesView.dayRowHeight).
+    private var tileHeight: CGFloat { strip.tileHeight }
 
     /// Display items: unique files stay singles; a duplicate group's members
     /// (this day's only) coalesce into one stack at the earliest member's slot.
@@ -116,7 +121,7 @@ struct DayGroupCard: View {
                         // loaded count so each appended page re-arms onAppear.
                         if day.files.count < Int(day.totalFiles) {
                             ProgressView()
-                                .frame(width: 70, height: 70)
+                                .frame(width: tileHeight, height: tileHeight)
                                 .background(Theme.surface.opacity(0.5))
                                 .cornerRadius(8)
                                 .id("load-more-\(day.files.count)")
@@ -131,7 +136,9 @@ struct DayGroupCard: View {
                 .hoverHorizontalScrollbar(totalUnits: Int(day.totalFiles),
                                           loadedUnits: day.files.count)
             }
-            .frame(height: 118)
+            // STRIP-1: only the tile band grows; the paddings above and
+            // below it (which also hold the hover scrollbar) are unchanged.
+            .frame(height: 118 + strip.extraHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 20)
@@ -145,6 +152,8 @@ struct DayGroupCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Theme.textAccent : Theme.border, lineWidth: isSelected ? 2 : 1)
         )
+        // STRIP-1: drag either border to resize every strip; double-click resets.
+        .stripResizeGrips(list: .vu, rowIndex: rowIndex)
         .onHover { isCardHovered = $0 }
         .padding(.bottom, 4)
     }
@@ -164,6 +173,7 @@ struct DayGroupCard: View {
             // THUMB-1: without these the VU tiles silently fall back to square.
             $0.displayWidth = file.displayWidth
             $0.displayHeight = file.displayHeight
+            $0.cachedThumbnails = file.cachedThumbnails // STRIP-2
         }
     }
 
@@ -182,7 +192,7 @@ struct DayGroupCard: View {
             if !isEjecting { onThumbnailDoubleTapped(file) }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: Self.tileHeight, showMatchScore: false)
+        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: tileHeight, showMatchScore: false)
         .overlay(alignment: .bottomLeading) { searchBadgeStrip(for: file) }
     }
 
@@ -238,7 +248,7 @@ struct DayGroupCard: View {
         // .frame(width:) so a wider occluded layer cannot silently widen the
         // slot. (Members of one group are the same photo, so in practice the
         // layers share a shape; this only matters for rotated/cropped variants.)
-        let topSize = ThumbnailGeometry.tileSize(height: Self.tileHeight,
+        let topSize = ThumbnailGeometry.tileSize(height: tileHeight,
                                                  displayWidth: top.displayWidth,
                                                  displayHeight: top.displayHeight)
         Button(action: {
@@ -251,10 +261,10 @@ struct DayGroupCard: View {
                     // Layer priority = stack depth: the visible top (index 0) loads
                     // first; the occluded layers behind it wait until every stack's
                     // top has been delivered, then load one layer at a time.
-                    let layerSize = ThumbnailGeometry.tileSize(height: Self.tileHeight,
+                    let layerSize = ThumbnailGeometry.tileSize(height: tileHeight,
                                                                displayWidth: file.displayWidth,
                                                                displayHeight: file.displayHeight)
-                    ThumbnailView(filePath: file.filePath, size: layerSize, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: index, requestSize: ServerImageLoader.tileAssetSize)
+                    ThumbnailView(filePath: file.filePath, size: layerSize, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, layerPriority: index, requestSize: ServerImageLoader.tileAssetSize)
                         .frame(width: layerSize.width, height: layerSize.height)
                         .cornerRadius(8)
                         .overlay(

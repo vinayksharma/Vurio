@@ -267,6 +267,10 @@ TEST_F(DayGroupsOpsTest, CarriesDuplicateGroupMembershipAndThumbnail)
     thumb.cached_path = "/cache/rep_256.jpg";
     thumb.thumbnail_size = 256;
     ASSERT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_manager_, thumb));
+    // STRIP-2: a second bucket rides along in cached_thumbnails.
+    thumb.cached_path = "/cache/rep_512.jpg";
+    thumb.thumbnail_size = 512;
+    ASSERT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_manager_, thumb));
 
     auto page = DayGroupsOps::getDayGroups(*db_manager_, 0, 10);
 
@@ -279,6 +283,11 @@ TEST_F(DayGroupsOpsTest, CarriesDuplicateGroupMembershipAndThumbnail)
     EXPECT_TRUE(rep.is_representative);
     EXPECT_DOUBLE_EQ(rep.similarity_score, 1.0);
     EXPECT_EQ(rep.cached_thumbnail_path, "/cache/rep_256.jpg");
+    ASSERT_EQ(rep.cached_thumbnails.size(), 2u);
+    EXPECT_EQ(rep.cached_thumbnails[0].size, 256);
+    EXPECT_EQ(rep.cached_thumbnails[0].path, "/cache/rep_256.jpg");
+    EXPECT_EQ(rep.cached_thumbnails[1].size, 512);
+    EXPECT_EQ(rep.cached_thumbnails[1].path, "/cache/rep_512.jpg");
 
     const auto &dup = page.days[0].files[1];
     EXPECT_EQ(dup.file_path, "/media/dup.jpg");
@@ -290,6 +299,7 @@ TEST_F(DayGroupsOpsTest, CarriesDuplicateGroupMembershipAndThumbnail)
     EXPECT_EQ(unique.file_path, "/media/unique.jpg");
     EXPECT_EQ(unique.group_id, 0);
     EXPECT_TRUE(unique.cached_thumbnail_path.empty());
+    EXPECT_TRUE(unique.cached_thumbnails.empty());
 }
 
 TEST_F(DayGroupsOpsTest, ExcludesIgnoredAndErroredFiles)

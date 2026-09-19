@@ -357,6 +357,18 @@ message DuplicateFile {
   // 0 when unknown — the client falls back to a square tile.
   int32 display_width = 10;
   int32 display_height = 11;
+  // STRIP-2: every cached thumbnail bucket that exists for this file, so the
+  // client can pick the smallest one that covers its current tile size and
+  // decode it straight from disk. cached_thumbnail_path stays as the
+  // best fit for the 256 bucket (older clients).
+  repeated CachedThumbnail cached_thumbnails = 12;
+}
+
+// STRIP-2: one on-disk thumbnail asset of a file: its pixel bucket (128,
+// 256, 512, 1024) and server-local path.
+message CachedThumbnail {
+  string path = 1;
+  int32 size = 2;
 }
 
 message DuplicateGroup {
@@ -414,6 +426,7 @@ message DayFile {
   bool matched_ai = 13;
   bool matched_exif = 14;
   bool matched_face = 15;
+  repeated CachedThumbnail cached_thumbnails = 16; // STRIP-2, see DuplicateFile
 }
 
 message DayGroup {
@@ -604,11 +617,17 @@ service MediaService {
 message GetMediaRequest {
   string file_path = 1;
   string size = 2;
+  // STRIP-2: drop the cached asset that would have been served (the client
+  // could not decode it) and generate it again.
+  bool regenerate = 3;
 }
 
 message CancelMediaRequest {
   string file_path = 1;
   string type = 2;
+  // STRIP-2: thumbnail generations are queued per (path, size bucket); 0
+  // targets the legacy path-only key.
+  int32 size = 3;
 }
 
 message MediaPathResponse {
@@ -621,7 +640,10 @@ message MediaPathResponse {
 
 message MediaReadyEvent {
   string file_path = 1;
-  string media_type = 2; // "thumbnail" | "preview"
+  string media_type = 2; // "thumbnail" | "preview" | "preview_full"
   bool success = 3;
   string error_message = 4; // set when success == false
+  // STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
+  // events from paths that do not know the size.
+  int32 size = 5;
 }

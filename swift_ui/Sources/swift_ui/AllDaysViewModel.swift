@@ -241,10 +241,13 @@ class AllDaysViewModel: ObservableObject {
         return Task.detached(priority: .background) {
             for file in day.files {
                 try? Task.checkCancellation()
-                if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: ServerImageLoader.tileAssetSize)) == nil {
+                // Read once per file: a resize mid-prefetch must not split a
+                // load between two buckets.
+                let assetSize = ServerImageLoader.tileAssetSize
+                if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: assetSize)) == nil {
                     // Off-screen prefetch runs below every visible layer so it
                     // never delays thumbnails on screen.
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: ServerImageLoader.tileAssetSize, cachedThumbnailPath: file.cachedThumbnailPath, layerPriority: ServerImageLoader.prefetchPriority)
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: assetSize, cachedThumbnailPath: file.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority)
                 }
             }
         }

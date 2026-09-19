@@ -12,8 +12,11 @@ struct DuplicateGroupCard: View {
     var onEjectSet: ([String]) -> Void
     var onRestoreSet: ([String]) -> Void
     var onLocateSet: (String) -> Void
+    // STRIP-1: this card's row in the BINNED list (drag anchoring).
+    var rowIndex: Int = 0
 
     @AppStorage("advancedOverlayEnabled") private var advancedOverlayEnabled = false
+    @ObservedObject private var strip = StripLayout.shared
     @State private var isRepEjectHovered = false
     @State private var isCardHovered = false
     // Path of the most recently hovered thumbnail in this group. Persists after
@@ -43,7 +46,7 @@ struct DuplicateGroupCard: View {
     /// every tile was 70 pt and would point the bracket (whose action ejects the
     /// files it spans) at the wrong photos.
     private var candidateWidths: [CGFloat] {
-        candidates.map { DuplicateMemberView.tileSize(for: $0, isRep: false, fixedSize: nil).width }
+        candidates.map { DuplicateMemberView.tileSize(for: $0, isRep: false, fixedSize: nil, stripTileHeight: strip.tileHeight).width }
     }
 
     /// prefix[i] = sum(widths[0..<i]) + i * spacing (leading x of tile i).
@@ -60,7 +63,7 @@ struct DuplicateGroupCard: View {
                 
                 if !candidates.isEmpty {
                     Divider()
-                        .frame(height: 70)
+                        .frame(height: strip.tileHeight)
                         .background(Theme.borderActive)
                         .padding(.top, 30)
                         .padding(.bottom, 30)
@@ -144,7 +147,9 @@ struct DuplicateGroupCard: View {
                         }
                     }
                 }
-                .frame(height: 130)
+                // STRIP-1: the candidate band grows with the tile height;
+                // paddings (and the hover scrollbar inside them) do not.
+                .frame(height: 130 + strip.extraHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -170,6 +175,8 @@ struct DuplicateGroupCard: View {
                     .padding(.bottom, 6)
             }
         }
+        // STRIP-1: drag either border to resize every strip; double-click resets.
+        .stripResizeGrips(list: .binned, rowIndex: rowIndex)
         .onHover { hovering in
             isCardHovered = hovering
             // Clear the displayed path once the pointer leaves the whole group.
@@ -316,20 +323,24 @@ struct DuplicateMemberView: View {
         !file.isAvailable && !file.isEjected
     }
 
+    @ObservedObject private var strip = StripLayout.shared
+
     /// THUMB-1: fixed tile height; the width follows the image's display
     /// geometry (clamped 1:3…3:1, never cropped) — see ThumbnailGeometry.
-    static func tileHeight(isRep: Bool, fixedSize: CGFloat?) -> CGFloat {
-        fixedSize ?? (isRep ? 80 : 70)
+    /// STRIP-1: `stripTileHeight` is the shared dragged height (default 70);
+    /// the representative keeps its +10 pt prominence over candidates.
+    static func tileHeight(isRep: Bool, fixedSize: CGFloat?, stripTileHeight: CGFloat) -> CGFloat {
+        fixedSize ?? (isRep ? stripTileHeight + 10 : stripTileHeight)
     }
 
-    static func tileSize(for file: Vurio_Dedup_DuplicateFile, isRep: Bool, fixedSize: CGFloat?) -> CGSize {
-        ThumbnailGeometry.tileSize(height: tileHeight(isRep: isRep, fixedSize: fixedSize),
+    static func tileSize(for file: Vurio_Dedup_DuplicateFile, isRep: Bool, fixedSize: CGFloat?, stripTileHeight: CGFloat) -> CGSize {
+        ThumbnailGeometry.tileSize(height: tileHeight(isRep: isRep, fixedSize: fixedSize, stripTileHeight: stripTileHeight),
                                    displayWidth: file.displayWidth,
                                    displayHeight: file.displayHeight)
     }
 
     var body: some View {
-        let tile = Self.tileSize(for: file, isRep: isRep, fixedSize: fixedSize)
+        let tile = Self.tileSize(for: file, isRep: isRep, fixedSize: fixedSize, stripTileHeight: strip.tileHeight)
         let width = tile.width
         let height = tile.height
         let cornerRadius: CGFloat = 8
@@ -338,7 +349,7 @@ struct DuplicateMemberView: View {
             // One shared asset (tileAssetSize) for every surface — the
             // representative displays at 80 pt tall, candidates and VU tiles at
             // 70, all off the same cache entry.
-            ThumbnailView(filePath: file.filePath, size: tile, cachedThumbnailPath: file.cachedThumbnailPath, requestSize: ServerImageLoader.tileAssetSize)
+            ThumbnailView(filePath: file.filePath, size: tile, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, requestSize: ServerImageLoader.tileAssetSize)
                 .frame(width: width, height: height)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)

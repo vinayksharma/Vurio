@@ -188,6 +188,101 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailCachedReturnsPath) {
     server.stop();
 }
 
+// STRIP-2: a cache row whose file no longer has the byte size recorded at
+// write time (a truncated write on a network volume, say) must not be served
+// — the row and file are dropped and generation is queued instead.
+TEST_F(MediaServiceGrpcTest, GetThumbnailDropsTruncatedCachedAsset) {
+    std::string instance_dir = "/tmp/test_grpc_media_service_truncated.instance";
+
+    std::string fake_src = "/tmp/source_truncated.jpg";
+    std::string fake_thumb = test_thumb_cache_dir_ + "/thumb_truncated.jpg";
+    {
+        std::ofstream ofs(fake_thumb);
+        ofs << "fake"; // 4 bytes on disk ...
+    }
+    ThumbnailCacheRecord rec;
+    rec.source_path = fake_src;
+    rec.cached_path = fake_thumb;
+    rec.thumbnail_size = 256;
+    rec.file_size_bytes = 9; // ... but 9 were recorded
+    EXPECT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, rec));
+
+    GrpcServerCore server;
+    server.start(instance_dir, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(server.endpoint(), grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel, server);
+    ASSERT_FALSE(token.empty());
+
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path(fake_src);
+    req.set_size("256");
+    grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+    EXPECT_FALSE(ThumbnailCacheOps::getThumbnail(*db_, fake_src, 256).has_value()) << "damaged row dropped";
+    EXPECT_FALSE(std::filesystem::exists(fake_thumb)) << "damaged file dropped";
+
+    server.stop();
+}
+
+// STRIP-2: regenerate=true drops an intact cached asset (the client could not
+// decode it) so the next answer is a fresh generation, not the same file.
+TEST_F(MediaServiceGrpcTest, GetThumbnailRegenerateDropsCachedAsset) {
+    std::string instance_dir = "/tmp/test_grpc_media_service_regen.instance";
+
+    std::string fake_src = "/tmp/source_regen.jpg";
+    std::string fake_thumb = test_thumb_cache_dir_ + "/thumb_regen.jpg";
+    {
+        std::ofstream ofs(fake_thumb);
+        ofs << "fake data";
+    }
+    ThumbnailCacheRecord rec;
+    rec.source_path = fake_src;
+    rec.cached_path = fake_thumb;
+    rec.thumbnail_size = 256;
+    rec.file_size_bytes = 9;
+    EXPECT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, rec));
+
+    GrpcServerCore server;
+    server.start(instance_dir, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(server.endpoint(), grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel, server);
+    ASSERT_FALSE(token.empty());
+
+    // Intact and not flagged: served as-is.
+    {
+        vurio::dedup::GetMediaRequest req;
+        req.set_file_path(fake_src);
+        req.set_size("256");
+        grpc::ClientContext context;
+        context.AddMetadata("x-vurio-token", token);
+        vurio::dedup::MediaPathResponse resp;
+        ASSERT_TRUE(stub->GetThumbnail(&context, req, &resp).ok());
+        EXPECT_EQ(resp.file_path(), fake_thumb);
+    }
+    // Flagged: dropped, generation queued.
+    {
+        vurio::dedup::GetMediaRequest req;
+        req.set_file_path(fake_src);
+        req.set_size("256");
+        req.set_regenerate(true);
+        grpc::ClientContext context;
+        context.AddMetadata("x-vurio-token", token);
+        vurio::dedup::MediaPathResponse resp;
+        grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+        EXPECT_FALSE(ThumbnailCacheOps::getThumbnail(*db_, fake_src, 256).has_value());
+        EXPECT_FALSE(std::filesystem::exists(fake_thumb));
+    }
+
+    server.stop();
+}
+
 // THUMB-1 (docs/todo_aspect_ratio_thumbnails.md §7, §10): the client now asks
 // for 256. With both a 128 and a 256 asset cached, a size:"256" request must
 // resolve to the 256 entry — not the 128 one that a stale best-fit target

@@ -647,7 +647,10 @@ namespace MediaDedup
                 rec.is_representative = row[6].convert<bool>();
                 rec.added_at = row[7].convert<std::string>();
                 if (!row[8].isEmpty())
-                    rec.cached_thumbnail_path = row[8].convert<std::string>();
+                {
+                    rec.cached_thumbnails = ThumbnailCacheOps::parseCachedThumbnailList(row[8].convert<std::string>());
+                    rec.cached_thumbnail_path = ThumbnailCacheOps::bestFitPath(rec.cached_thumbnails, 256);
+                }
                 if (!row[9].isEmpty())
                 {
                     DisplayDims dims = displayDimensionsFromExifResolution(row[9].convert<std::string>());
@@ -1124,7 +1127,8 @@ namespace MediaDedup
                     member.added_at = member_row[7].convert<std::string>();
 
                     if (!member_row[8].isEmpty()) {
-                        member.cached_thumbnail_path = member_row[8].convert<std::string>();
+                        member.cached_thumbnails = ThumbnailCacheOps::parseCachedThumbnailList(member_row[8].convert<std::string>());
+                        member.cached_thumbnail_path = ThumbnailCacheOps::bestFitPath(member.cached_thumbnails, 256);
                     }
                     if (!member_row[9].isEmpty()) {
                         DisplayDims dims = displayDimensionsFromExifResolution(member_row[9].convert<std::string>());

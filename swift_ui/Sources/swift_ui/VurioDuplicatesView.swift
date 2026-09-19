@@ -19,6 +19,12 @@ struct VurioDuplicatesView: View {
     private var viewModel: DuplicatesViewModel { coordinator.binned }
     private var allViewModel: AllDaysViewModel { coordinator.days }
 
+    // STRIP-1: the shared strip tile height drives both lists' row heights.
+    @ObservedObject private var strip = StripLayout.shared
+    // VU's scroller anchor (BINNED's lives on its view model, which also uses
+    // it for page-insert anchoring); a resize pins the grabbed edge with it.
+    @State private var vuAnchorHandle = ScrollAnchorHandle()
+
     @State private var showingBulkEjectConfirmation = false
     @State private var isEjectButtonHovered = false
     @State private var isRestoreButtonHovered = false
@@ -48,9 +54,13 @@ struct VurioDuplicatesView: View {
     // Fixed row height regardless of the advanced overlay. The overlay's path bar is
     // drawn inside this height (as a bottom overlay on the card), so turning the
     // advanced overlay on does not grow the row or change the spacing around images.
-    private let rowHeight: CGFloat = 158
+    // STRIP-1: both rows grow by exactly the tile-height delta — every other
+    // margin inside the cards is unchanged.
+    private static let baseRowHeight: CGFloat = 158
+    private var rowHeight: CGFloat { Self.baseRowHeight + strip.extraHeight }
     // ALL-view day rows: same image strip plus the date-stamp header line.
-    private let dayRowHeight: CGFloat = 170
+    private static let baseDayRowHeight: CGFloat = 170
+    private var dayRowHeight: CGFloat { Self.baseDayRowHeight + strip.extraHeight }
 
     let pageSize: Int32 = 30
     
@@ -73,6 +83,17 @@ struct VurioDuplicatesView: View {
         .onReceive(PeopleNavigator.shared.$pending) { pending in
             applyPendingPersonFilter(pending)
         }
+        // STRIP-1: every row changes height at once, so the list would jump
+        // under the pointer; re-pin the viewport before the scrollers resize.
+        .onChange(of: strip.tileHeight) { old, new in
+            let delta = new - old
+            anchorListForResize(handle: vuAnchorHandle, list: .vu,
+                                oldRowHeight: Self.baseDayRowHeight + (old - StripLayout.defaultTileHeight),
+                                newRowHeight: Self.baseDayRowHeight + (old - StripLayout.defaultTileHeight) + delta)
+            anchorListForResize(handle: viewModel.anchorHandle, list: .binned,
+                                oldRowHeight: Self.baseRowHeight + (old - StripLayout.defaultTileHeight),
+                                newRowHeight: Self.baseRowHeight + (old - StripLayout.defaultTileHeight) + delta)
+        }
         .onChange(of: viewerDismissals) { _, _ in
             closeViewer(inAllMode: true)
             closeViewer(inAllMode: false)
@@ -81,6 +102,32 @@ struct VurioDuplicatesView: View {
 
     private var activeViewerOpen: Bool {
         showAllMode ? vuViewerRequest != nil : binnedViewerRequest != nil
+    }
+
+    /// STRIP-1: where the viewport must be after rows change from
+    /// `oldRowHeight` to `newRowHeight`. For the list being dragged, the
+    /// grabbed edge of the grabbed row stays put (its top for a bottom-edge
+    /// drag, its bottom for a top-edge drag) so the edge follows the pointer
+    /// exactly even though every row above it grew too. Any other list keeps
+    /// its top visible row's top where it was. The restore is applied by the
+    /// scroller once its document has been resized (VurioScroller.updateNSView).
+    private func anchorListForResize(handle: ScrollAnchorHandle,
+                                     list: StripLayout.ActiveDrag.List,
+                                     oldRowHeight h0: CGFloat,
+                                     newRowHeight h1: CGFloat) {
+        guard h0 > 0, h1 > 0, let y0 = handle.currentOffset() else { return }
+        let y1: CGFloat
+        if let drag = strip.activeDrag, drag.list == list {
+            let r = CGFloat(drag.rowIndex)
+            switch drag.edge {
+            case .bottom: y1 = r * h1 - (r * h0 - y0)
+            case .top:    y1 = (r * h1 + h1) - (r * h0 + h0 - y0)
+            }
+        } else {
+            let index = (y0 / h0).rounded(.down)
+            y1 = index * h1 + (y0 - index * h0)
+        }
+        handle.requestRestore(toOffset: y1)
     }
 
     // Both viewers stay mounted. A closed viewer parks offscreen to the right;
@@ -347,6 +394,7 @@ struct VurioDuplicatesView: View {
                     dataVersion: vuRowVersion,
                     isActive: isFrontmost && showAllMode,
                     scrollbarInsets: customInsets,
+                    anchorHandle: vuAnchorHandle,
                     selection: $vuSelection,
                     onVisibleRowsChanged: { range in
                         allViewModel.updateVisibleRows(range)
@@ -628,6 +676,7 @@ struct VurioDuplicatesView: View {
     private func renderRow(at index: Int, rowHeight: CGFloat) -> some View {
         if index < viewModel.groups.count {
             VurioGroupRowWrapper(
+                rowIndex: index,
                 slot: viewModel.groups[index],
                 duplicateTightness: viewModel.duplicateTightness,
                 isProcessing: viewModel.isProcessing,
@@ -706,7 +755,8 @@ struct VurioDuplicatesView: View {
                         onLoadMore: {
                             Task { await allViewModel.loadMoreFiles(day: dayGroup.day) }
                         },
-                        showSearchBadges: allViewModel.isSearchActive
+                        showSearchBadges: allViewModel.isSearchActive,
+                        rowIndex: index
                     )
                     .padding(.horizontal, 30)
                 } else {
@@ -739,6 +789,7 @@ struct VurioDuplicatesView: View {
 }
 
 struct VurioGroupRowWrapper: View {
+    let rowIndex: Int // STRIP-1
     let slot: GroupSlot
     let duplicateTightness: Double
     let isProcessing: Bool
@@ -765,7 +816,8 @@ struct VurioGroupRowWrapper: View {
                     onThumbnailDoubleTapped: onThumbnailDoubleTapped,
                     onEjectSet: onEjectSet,
                     onRestoreSet: onRestoreSet,
-                    onLocateSet: onLocateSet
+                    onLocateSet: onLocateSet,
+                    rowIndex: rowIndex
                 )
                 .padding(.horizontal, 30)
             } else {

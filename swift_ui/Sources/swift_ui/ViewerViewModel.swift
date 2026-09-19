@@ -38,6 +38,7 @@ struct ViewerImage: Identifiable, Equatable {
     let id: String
     let filePath: String
     let cachedThumbnailPath: String
+    let cachedThumbnails: [Vurio_Dedup_CachedThumbnail] // STRIP-2
     var isEjected: Bool
     let isAvailable: Bool
     let isRepresentative: Bool
@@ -49,6 +50,7 @@ struct ViewerImage: Identifiable, Equatable {
         id = file.id
         filePath = file.filePath
         cachedThumbnailPath = file.cachedThumbnailPath
+        cachedThumbnails = file.cachedThumbnails
         isEjected = file.isEjected
         isAvailable = file.isAvailable
         isRepresentative = file.isRepresentative
@@ -60,6 +62,7 @@ struct ViewerImage: Identifiable, Equatable {
         id = file.id
         filePath = file.filePath
         cachedThumbnailPath = file.cachedThumbnailPath
+        cachedThumbnails = file.cachedThumbnails
         isEjected = file.isEjected
         isAvailable = file.isAvailable
         isRepresentative = file.isRepresentative

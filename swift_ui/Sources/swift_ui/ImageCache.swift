@@ -27,6 +27,17 @@ final class ImageCache {
         previews.totalCostLimit = 1024 * 1024 * 1024
     }
 
+    /// STRIP-1: the thumbnail budget follows the asset bucket the strips are
+    /// requesting. A 512 px tile decodes to ~1 MB, four times a 256 one, so
+    /// the byte budget scales with the pixel count to keep the same ~1,000
+    /// resident tiles (256 MB at 256 px, 1 GB at 512 px). Entries of the
+    /// other bucket stay resident under their own keys until evicted, which
+    /// is what makes shrinking back instant.
+    func setThumbnailBudget(forAssetSize assetSize: Int) {
+        let scale = max(1, (assetSize * assetSize) / (256 * 256))
+        thumbs.totalCostLimit = 256 * 1024 * 1024 * scale
+    }
+
     // Keys are ThumbnailAssetKey.make(...) ("path#r<rev>_<pixelSize>") for
     // thumbnails and "path_preview" for viewer images (full-res results are
     // stored under the _preview slot as the best-available bitmap). Routing by

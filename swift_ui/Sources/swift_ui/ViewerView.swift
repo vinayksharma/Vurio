@@ -61,11 +61,12 @@ struct ViewerView: View {
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
 
-    /// Point height of the strip tiles (THUMB-1: width varies with each
-    /// image's display geometry). The asset they request is
-    /// ServerImageLoader.tileAssetSize; the main image area reuses that cached
-    /// bitmap as its placeholder, so the two must key the same asset.
-    private static let stripTileHeight: CGFloat = 70
+    /// Point height of the strip tiles (THUMB-1: square tiles). The asset
+    /// they request is ServerImageLoader.tileAssetSize; the main image area
+    /// reuses that cached bitmap as its placeholder, so the two must key the
+    /// same asset. STRIP-1: the shared, user-dragged strip height.
+    @ObservedObject private var strip = StripLayout.shared
+    private var stripTileHeight: CGFloat { strip.tileHeight }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -371,7 +372,7 @@ struct ViewerView: View {
                 LazyHStack(alignment: .center, spacing: 12) {
                     if model.canLoadNewer {
                         ProgressView()
-                            .frame(width: 70, height: 70)
+                            .frame(width: stripTileHeight, height: stripTileHeight)
                             .background(Theme.surface.opacity(0.5))
                             .cornerRadius(8)
                             .id(model.newerSentinelID)
@@ -389,7 +390,7 @@ struct ViewerView: View {
 
                     if model.canLoadOlder {
                         ProgressView()
-                            .frame(width: 70, height: 70)
+                            .frame(width: stripTileHeight, height: stripTileHeight)
                             .background(Theme.surface.opacity(0.5))
                             .cornerRadius(8)
                             .id(model.olderSentinelID)
@@ -419,7 +420,7 @@ struct ViewerView: View {
                 applyScrollTarget(model.scrollTarget, proxy: proxy)
             }
         }
-        .frame(height: 118)
+        .frame(height: 118 + strip.extraHeight) // STRIP-1: only the tile band grows
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -429,6 +430,9 @@ struct ViewerView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Theme.border, lineWidth: 1)
         )
+        // STRIP-1: grips just outside the border — the 12 pt inside the
+        // bottom edge belong to the hover scrollbar band.
+        .stripResizeGrips(list: .viewer, rowIndex: 0, outset: true)
         .padding(.horizontal, 30)
         // Clears the bottom status bar the viewer underlaps (~30pt): with the
         // old 12pt the strip's bottom edge — where the hover scrollbar lives —
@@ -446,13 +450,14 @@ struct ViewerView: View {
 
     private func stripTile(_ image: ViewerImage) -> some View {
         let isSelected = image.id == model.selectedID
-        let tile = ThumbnailGeometry.tileSize(height: Self.stripTileHeight,
+        let tile = ThumbnailGeometry.tileSize(height: stripTileHeight,
                                               displayWidth: image.displayWidth,
                                               displayHeight: image.displayHeight)
         return ThumbnailView(
             filePath: image.filePath,
             size: tile,
             cachedThumbnailPath: image.cachedThumbnailPath,
+            cachedThumbnails: image.cachedThumbnails,
             requestSize: ServerImageLoader.tileAssetSize
         )
         .frame(width: tile.width, height: tile.height)

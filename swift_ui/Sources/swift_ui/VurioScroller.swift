@@ -44,6 +44,24 @@ final class ScrollAnchorHandle {
     fileprivate weak var scrollView: NSScrollView?
     fileprivate var rowHeight: CGFloat = 0
     fileprivate var pendingRestore: Anchor?
+    // STRIP-1: a restore expressed as a raw document offset, for the strip
+    // resize — the caller has already done the row arithmetic with the OLD
+    // and NEW row heights, which the index form cannot express.
+    fileprivate var pendingOffsetRestore: CGFloat?
+
+    /// The document offset currently at the top of the viewport, or nil when
+    /// not mounted.
+    func currentOffset() -> CGFloat? {
+        guard let scrollView else { return nil }
+        return max(0, scrollView.contentView.bounds.origin.y)
+    }
+
+    /// Scroll to `offset` on the next update pass — after the document has
+    /// been resized for a new row height — rather than now against the old
+    /// geometry.
+    func requestRestore(toOffset offset: CGFloat) {
+        pendingOffsetRestore = max(0, offset)
+    }
 
     /// The row currently at the top of the viewport, or nil when not mounted.
     func anchor() -> Anchor? {
@@ -61,12 +79,20 @@ final class ScrollAnchorHandle {
     }
 
     fileprivate func applyPendingRestore(clearPending: Bool) {
-        guard let target = pendingRestore, let scrollView, rowHeight > 0 else { return }
-        if clearPending { pendingRestore = nil }
-
+        guard let scrollView, rowHeight > 0 else { return }
         let documentHeight = scrollView.documentView?.frame.height ?? 0
         let maxY = max(0, documentHeight - scrollView.contentView.bounds.height)
-        let y = min(max(0, CGFloat(target.index) * rowHeight + target.offsetIntoRow), maxY)
+
+        let y: CGFloat
+        if let offset = pendingOffsetRestore {
+            if clearPending { pendingOffsetRestore = nil }
+            y = min(max(0, offset), maxY)
+        } else if let target = pendingRestore {
+            if clearPending { pendingRestore = nil }
+            y = min(max(0, CGFloat(target.index) * rowHeight + target.offsetIntoRow), maxY)
+        } else {
+            return
+        }
 
         guard abs(scrollView.contentView.bounds.origin.y - y) > 0.5 else { return }
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))

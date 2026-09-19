@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "database/thumbnail_cache_ops.hpp"
 
 namespace MediaDedup
 {
@@ -13,7 +14,8 @@ namespace MediaDedup
         std::string file_path;
         std::string taken_time; // normalized "YYYY-MM-DD HH:MM:SS"
         int64_t size_bytes = 0;
-        std::string cached_thumbnail_path;
+        std::string cached_thumbnail_path;                  // best fit for 256 (older clients)
+        std::vector<CachedThumbnailRef> cached_thumbnails;  // STRIP-2: every bucket, size ascending
         int group_id = 0; // 0 = not part of any duplicate group
         bool is_representative = false;
         double similarity_score = 0.0;

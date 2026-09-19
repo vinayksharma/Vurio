@@ -4,6 +4,7 @@
 #include <vector>
 #include <optional>
 #include "config/config_enums.hpp"
+#include "database/thumbnail_cache_ops.hpp"
 
 namespace MediaDedup
 {
@@ -33,7 +34,8 @@ namespace MediaDedup
         std::string created_date;
         bool is_representative = false;
         std::string added_at;
-        std::string cached_thumbnail_path;
+        std::string cached_thumbnail_path;                  // best fit for 256 (older clients)
+        std::vector<CachedThumbnailRef> cached_thumbnails;  // STRIP-2: every bucket, size ascending
         // THUMB-1: display geometry (docs/todo_aspect_ratio_thumbnails.md §3.1);
         // 0/0 when unknown.
         int display_width = 0;

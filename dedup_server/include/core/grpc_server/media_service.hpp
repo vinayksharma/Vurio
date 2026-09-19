@@ -47,13 +47,50 @@ public:
     // generation lambdas: count the failure, persist one processing_errors row
     // the moment the file becomes negative-cached, and push the failure event.
     static void recordGenerationFailure(DatabaseManager* db, const std::string& path,
-                                        const std::string& media_type, const std::string& message) {
+                                        const std::string& media_type, const std::string& message,
+                                        int size = 0) {
         int count = MediaDedup::MediaGenerationFailures::instance().recordFailure(path, media_type, message);
         if (count == MediaDedup::MediaGenerationFailures::FAILURE_THRESHOLD && db) {
             MediaDedup::ProcessingErrorsOps::insertError(*db, path, MediaDedup::ServerMode::EMBEDDING, -6,
                                                          message, "MediaGeneration");
         }
-        MediaDedup::MediaReadyBus::instance().publish({path, media_type, false, message});
+        MediaDedup::MediaReadyBus::instance().publish({path, media_type, false, message, size});
+    }
+
+    // STRIP-2: thumbnail generations are queued per (path, bucket). The pool
+    // dedupes submits by key, so with a path-only key a 512 request arriving
+    // while the 256 pre-warm of the same file was queued was silently dropped
+    // and the client only recovered after the 256 finished and it re-asked.
+    // The size suffix keeps the buckets independent; CancelMediaGeneration
+    // builds the same key from its size field.
+    static std::string thumbnailTaskKey(const std::string& path, int size) {
+        return size > 0 ? path + "#" + std::to_string(size) : path;
+    }
+
+    // STRIP-2: a cache row whose file is missing or whose byte size no longer
+    // matches what was recorded at write time. The cache may live on a
+    // network volume and writes are not fsynced, so a truncated asset after a
+    // crash or a dropped mount would otherwise be served (and fail to decode)
+    // forever — the freshness check only looks at the SOURCE mtime.
+    static bool cachedAssetIntact(const MediaDedup::ThumbnailCacheRecord& rec) {
+        std::error_code ec;
+        auto bytes = std::filesystem::file_size(rec.cached_path, ec);
+        if (ec) return false;
+        if (bytes == 0) return false;
+        if (rec.file_size_bytes > 0 && static_cast<int64_t>(bytes) != rec.file_size_bytes) return false;
+        return true;
+    }
+
+    void dropCachedThumbnail(const MediaDedup::ThumbnailCacheRecord& rec) {
+        MediaDedup::ThumbnailCacheOps::deleteThumbnail(*db_, rec.source_path, rec.thumbnail_size);
+        // Through the cache so its byte accounting and index stay right; it
+        // declines files it does not track (or when not initialised), and a
+        // damaged file must go either way.
+        bool removed = thumbnail_cache_ && thumbnail_cache_->deleteFromCache(rec.cached_path);
+        if (!removed) {
+            std::error_code ec;
+            std::filesystem::remove(rec.cached_path, ec);
+        }
     }
 
     grpc::Status GetThumbnail(grpc::ServerContext* context, const vurio::dedup::GetMediaRequest* request,
@@ -78,10 +115,19 @@ public:
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail cache lookup busy");
         }
 
+        // STRIP-2: a damaged asset, or one the client asked us to redo
+        // because it could not decode it, is dropped before the freshness
+        // check so the generation below replaces it instead of the same bad
+        // file being served on every retry.
+        if (cached && (request->regenerate() || !cachedAssetIntact(*cached))) {
+            dropCachedThumbnail(*cached);
+            cached.reset();
+        }
+
         // Serve the cache when it is fresh. mtime 0 (source unreadable, e.g.
         // disconnected volume) still serves the cached asset.
         int64_t source_mtime = sourceModifiedTime(file_path);
-        if (cached && std::filesystem::exists(cached->cached_path) &&
+        if (cached &&
             (source_mtime == 0 || cached->source_modified_at == 0 || cached->source_modified_at == source_mtime)) {
             response->set_file_path(cached->cached_path);
             return grpc::Status::OK;
@@ -101,18 +147,18 @@ public:
                     MediaDedup::ThumbnailService::GenerationFailure kind;
                     if (service.generateAndCacheThumbnail(path_copy, size_copy, cached_path, &kind)) {
                         MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "thumbnail");
-                        MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, ""});
+                        MediaDedup::MediaReadyBus::instance().publish({path_copy, "thumbnail", true, "", size_copy});
                     } else if (kind == MediaDedup::ThumbnailService::GenerationFailure::Decode) {
                         recordGenerationFailure(db_copy.get(), path_copy, "thumbnail",
-                                                "Thumbnail generation failed (unsupported or corrupted file)");
+                                                "Thumbnail generation failed (unsupported or corrupted file)", size_copy);
                     } else {
                         // Infrastructure trouble (offline volume, cache write
                         // error): wake waiters so the client can retry later,
                         // but never count it toward the negative cache.
                         MediaDedup::MediaReadyBus::instance().publish(
-                            {path_copy, "thumbnail", false, "Thumbnail generation failed (transient server error)"});
+                            {path_copy, "thumbnail", false, "Thumbnail generation failed (transient server error)", size_copy});
                     }
-                }, file_path, /*urgent=*/true);
+                }, thumbnailTaskKey(file_path, normalized_size), /*urgent=*/true);
             }
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Thumbnail generating");
         }
@@ -250,7 +296,13 @@ public:
     grpc::Status CancelMediaGeneration(grpc::ServerContext* context, const vurio::dedup::CancelMediaRequest* request,
                                        vurio::dedup::Empty* response) override {
         if (tpm_) {
-            tpm_->cancelTask(request->type(), request->file_path());
+            // STRIP-2: thumbnail tasks are keyed per bucket; a size-less
+            // cancel (older client) targets the legacy path-only key.
+            int size = request->size() > 0 ? ThumbnailGenerator::getClosestValidSize(request->size()) : 0;
+            std::string key = request->type() == "thumbnail_generator"
+                ? thumbnailTaskKey(request->file_path(), size)
+                : request->file_path();
+            tpm_->cancelTask(request->type(), key);
         }
         return grpc::Status::OK;
     }
@@ -283,6 +335,7 @@ public:
             proto_event.set_media_type(event.media_type);
             proto_event.set_success(event.success);
             proto_event.set_error_message(event.error_message);
+            proto_event.set_size(event.size);
 
             if (!writer->Write(proto_event)) {
                 break; // Connection closed

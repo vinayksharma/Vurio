@@ -7,7 +7,12 @@ struct ThumbnailView: View {
     // before the image arrives and never changes when it lands; the bitmap
     // letterboxes inside via `.fit`.
     let size: CGSize
+    // Pre-STRIP-2 single best-fit path (older servers); see cachedThumbnails.
     var cachedThumbnailPath: String? = nil
+    // STRIP-2: every cached bucket the server listed for this file. The tile
+    // decodes the smallest one that covers `requestSize` straight from disk
+    // and only goes through gRPC when none does.
+    var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] = []
     // Stack layer for prioritized loading: 0 = top/visible (highest priority),
     // deeper layers load only after all shallower ones are delivered. Defaults to
     // 0 so non-stacked thumbnails always load at top priority.
@@ -28,12 +33,30 @@ struct ThumbnailView: View {
     private var assetSize: Int { requestSize }
     private var cacheKey: String { ThumbnailAssetKey.make(filePath: filePath, size: assetSize) }
 
+    /// STRIP-1: the bitmap of the strips' OTHER bucket, if resident. After a
+    /// resize the sharper (or smaller) asset is still loading; showing the
+    /// bucket already decoded — scaled — is the "live zoom, then sharpen"
+    /// behaviour, and it never flashes the spinner over a strip that had
+    /// pictures a moment ago.
+    private var otherBucketImage: NSImage? {
+        for other in ServerImageLoader.stripAssetSizes where other != assetSize {
+            if let image = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: other)) {
+                return image
+            }
+        }
+        return nil
+    }
+
+    private var directPath: String? {
+        CachedThumbnails.directPath(in: cachedThumbnails, legacyPath: cachedThumbnailPath ?? "", assetSize: assetSize)
+    }
+
     var body: some View {
         // The cache re-check happens synchronously at render (NSCache is cheap
         // and thread-safe): a row recycled back on screen repaints its image on
         // the first frame instead of flashing the spinner through the 75 ms
         // debounce even though the bitmap was already decoded.
-        let displayed = thumbnail ?? ImageCache.shared.getImage(forKey: cacheKey)
+        let displayed = thumbnail ?? ImageCache.shared.getImage(forKey: cacheKey) ?? otherBucketImage
         Group {
             if let displayed = displayed {
                 // THUMB-1: `.fit`, never `.fill`. The tile is a fixed square,
@@ -72,16 +95,18 @@ struct ThumbnailView: View {
                 .background(Color.gray.opacity(0.2))
             }
         }
-        .task(id: filePath) {
-            if thumbnail == nil {
-                if let cached = ImageCache.shared.getImage(forKey: cacheKey) {
-                    // Promote the cache hit into local state so later body
-                    // passes skip the lookup.
-                    thumbnail = cached
-                    isLoading = false
-                } else {
-                    await generateThumbnail()
-                }
+        // Re-armed by a bucket change too (a strip resize crossing 128 pt):
+        // the old bitmap stays up via `displayed` while the new one loads.
+        .task(id: "\(filePath)|\(assetSize)") {
+            if let cached = ImageCache.shared.getImage(forKey: cacheKey) {
+                // Promote the cache hit into local state so later body
+                // passes skip the lookup.
+                thumbnail = cached
+                isLoading = false
+            } else {
+                thumbnail = nil
+                isLoading = true
+                await generateThumbnail()
             }
         }
         .onDisappear {
@@ -107,7 +132,7 @@ struct ThumbnailView: View {
             try await Task.sleep(nanoseconds: 75_000_000)
 
             logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: assetSize, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: assetSize, cachedThumbnailPath: directPath, layerPriority: layerPriority)
             await MainActor.run {
                 self.thumbnail = image
                 self.isLoading = false

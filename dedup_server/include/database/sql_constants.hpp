@@ -778,19 +778,22 @@ namespace MediaDedup
             "WHERE dg.member_count >= 2 "
             "ORDER BY dg.representative_created_date DESC, dm.similarity_score DESC";
 
-// Best cached thumbnail path for a source file, independent of which size bucket
-// the pipeline produced. Prefers the smallest bucket >= 256 (THUMB-1: the tile
-// asset size — a 70pt-tall 3:1 tile is 420px on a 2x display), otherwise the
-// largest smaller bucket. Populating this lets the Swift client decode the local
-// file directly and skip the gRPC thumbnail round-trip whenever ANY cached
-// thumbnail exists. Uses idx_thumbnail_source_path; at most 5 size rows per
-// path to sort.
+// STRIP-2: EVERY cached thumbnail bucket of a source file, encoded as
+// "<size>:<cached_path>" entries joined by the unit separator (char(31)) —
+// decode with ThumbnailCacheOps::parseCachedThumbnailList. The strips resize
+// at runtime between the 256 and 512 buckets, so the list query cannot know
+// which one the client will want; shipping all of them (at most four rows
+// per path, via idx_thumbnail_source_path) lets the Swift client pick the
+// smallest bucket that covers its current tile and decode the local file
+// directly, skipping the gRPC thumbnail round-trip. cached_thumbnail_path on
+// the records is derived from this list as the best fit for 256 (the rule the
+// old single-row subquery applied) for older clients.
 // THUMB-1: the render_revision = 0 literal becomes a correlated lookup of the
 // file's current revision once the non-destructive edit pipeline lands.
 #define VURIO_BEST_THUMB_SUBQUERY(src_col) \
-    "(SELECT tc.cached_path FROM thumbnail_cache tc " \
-    "WHERE tc.source_path = " src_col " AND tc.render_revision = 0 " \
-    "ORDER BY (tc.thumbnail_size < 256), ABS(tc.thumbnail_size - 256) LIMIT 1)"
+    "(SELECT group_concat(tc.thumbnail_size || ':' || tc.cached_path, char(31)) " \
+    "FROM thumbnail_cache tc " \
+    "WHERE tc.source_path = " src_col " AND tc.render_revision = 0)"
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
             "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, "
