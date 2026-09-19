@@ -37,7 +37,10 @@ struct StripResizeGrip: NSViewRepresentable {
         var list: StripLayout.ActiveDrag.List = .vu
         var rowIndex: Int = 0
 
-        private var dragStartY: CGFloat = 0
+        // Where within the band the pointer grabbed it, in window points
+        // (pointer y minus band centre y). The drag keeps that same spot of
+        // the band under the pointer.
+        private var grabOffsetY: CGFloat = 0
         private var tracking: NSTrackingArea?
         private var isHovering = false
         private var isDragging = false
@@ -92,18 +95,32 @@ struct StripResizeGrip: NSViewRepresentable {
                 StripLayout.shared.resetToDefault()
                 return
             }
-            dragStartY = event.locationInWindow.y
+            grabOffsetY = event.locationInWindow.y - bandCenterYInWindow()
             isDragging = true
             refreshCursor()
             StripLayout.shared.beginDrag(.init(list: list, rowIndex: rowIndex, edge: edge))
         }
 
+        /// The band sits ON the edge it resizes (its frame follows the card
+        /// border through every layout), so its live position IS the edge's.
+        private func bandCenterYInWindow() -> CGFloat {
+            convert(bounds, to: nil).midY
+        }
+
         override func mouseDragged(with event: NSEvent) {
-            // Window coordinates grow upward; the model wants "downward is
-            // positive" so a bottom-edge pull toward the user's lap grows
-            // the strip.
-            let deltaY = dragStartY - event.locationInWindow.y
-            StripLayout.shared.drag(deltaY: deltaY)
+            // Resize only by how far the edge is from the pointer right now.
+            // If the edge is already under the pointer this is zero and
+            // nothing moves; if the row layout or the viewport anchoring left
+            // the edge elsewhere, this pulls it back under the pointer.
+            // Window coordinates grow upward: for the bottom edge, growing
+            // the strip moves the band DOWN (smaller y); for the top edge,
+            // UP (larger y).
+            let wanted = event.locationInWindow.y - grabOffsetY
+            let current = bandCenterYInWindow()
+            let growth = edge == .bottom ? (current - wanted) : (wanted - current)
+            if abs(growth) >= 0.5 {
+                StripLayout.shared.drag(growth: growth)
+            }
             NSCursor.resizeUpDown.set()
         }
 

@@ -45,7 +45,6 @@ final class StripLayout: ObservableObject {
         let edge: Edge
     }
     @Published private(set) var activeDrag: ActiveDrag? = nil
-    private var dragStartHeight: CGFloat = 0
 
     private init() {
         let stored = Self.storedTileHeight()
@@ -57,28 +56,19 @@ final class StripLayout: ObservableObject {
     // MARK: - Drag lifecycle (called by StripResizeGrip)
 
     func beginDrag(_ drag: ActiveDrag) {
-        dragStartHeight = tileHeight
         activeDrag = drag
     }
 
-    /// `deltaY` is the pointer's travel since the drag began, in points,
-    /// positive downward (AppKit window coordinates are flipped here by the
-    /// grip). Dragging the bottom edge down grows the strip; dragging the
-    /// top edge up grows it.
-    func drag(deltaY: CGFloat) {
-        guard let drag = activeDrag else { return }
-        let signed = drag.edge == .bottom ? deltaY : -deltaY
-        let unclamped = dragStartHeight + signed
-        let next = Self.clamp(unclamped)
-        // Overshoot re-bases the drag origin on the limit: while the pointer
-        // is past the edge the strip cannot follow, so the origin moves with
-        // it, and the edge only starts tracking again once the pointer has
-        // come back to where the edge actually is. Without this the height
-        // followed the pointer's RETURN travel immediately, shrinking or
-        // growing the strip while the pointer was still well past its edge.
-        if next != unclamped {
-            dragStartHeight = next - signed
-        }
+    /// Grow (or, negative, shrink) the tile height by `growth` points. The
+    /// grip computes `growth` from where its edge actually is versus the
+    /// pointer on every drag event — not from accumulated pointer travel —
+    /// so the strip only resizes when the pointer is off the edge, and by
+    /// exactly enough to put the edge back under it. Overshoot past a limit
+    /// therefore needs no special case: the edge simply cannot reach the
+    /// pointer, and starts tracking again the moment the pointer returns.
+    func drag(growth: CGFloat) {
+        guard activeDrag != nil else { return }
+        let next = Self.clamp(tileHeight + growth)
         if next != tileHeight { tileHeight = next }
     }
 
