@@ -100,6 +100,24 @@ namespace MediaDedup
             {"video", {"mp4", "mov", "m4v", "avi", "mkv", "webm"}},
         };
 
+        // PLACE-4: alphabetical by name (same contract as file_types).
+        c.settings = {
+            {"beach", {"T.BCH", "H.BCH"}, false},
+            {"canyon", {"T.CNYN", "T.GRGE", "T.VAL"}, false},
+            {"forest", {"L.RESF", "L.RESW", "L.RESN"}, false},
+            {"glacier", {"H.GLCR"}, false},
+            {"island", {"T.ISL", "T.ISLS", "T.ISLET"}, false},
+            {"lake", {"H.LK", "H.LKS", "H.RSV", "H.PND", "H.LGN", "H.LKN", "H.LKI"}, false},
+            {"mountain", {"T.MT", "T.MTS", "T.PK", "T.HLL", "T.HLLS", "T.RDGE", "T.PASS", "T.VLC"}, false},
+            {"park", {"L.PRK", "L.RES", "L.RESN", "L.RESW", "L.RESF", "L.RESH", "L.RESA"}, false},
+            {"spring", {"H.SPNG", "H.HTSP", "H.GYSR"}, false},
+            {"trail", {"R.TRL"}, false},
+            {"waterfall", {"H.FLLS", "H.OVF"}, false},
+            {"waterfront", {"H.BAY", "H.COVE", "H.HBR", "H.INLT", "H.LGN", "H.SD", "H.STRT", "H.CHN",
+                            "H.SEA", "H.OCN", "H.GULF", "H.FJD", "H.ESTY", "H.ANCH", "H.LK", "H.LKS",
+                            "H.RSV", "H.PND", "T.BCH", "H.BCH", "S.PIER", "S.MAR", "L.PRT", "H.STR"}, true},
+        };
+
         c.imperative_words = {"find", "show", "me", "all"};
         c.filler_words = {"find", "show", "me", "all", "the", "a", "an", "my", "of",
                           "photo", "photos", "picture", "pictures", "pic", "pics",
@@ -212,6 +230,38 @@ namespace MediaDedup
             }
         }
 
+        // PLACE-4 settings: {category -> {"codes": [...], "shoreline": bool}}.
+        if (root->has("settings"))
+        {
+            Poco::JSON::Object::Ptr st = root->getObject("settings");
+            if (!st.isNull())
+            {
+                std::vector<SettingCategory> cats;
+                for (const auto &name : *st)
+                {
+                    Poco::JSON::Object::Ptr entry = st->getObject(name.first);
+                    if (entry.isNull())
+                        continue;
+                    SettingCategory cat;
+                    cat.name = toLower(name.first);
+                    Poco::JSON::Array::Ptr codes = entry->getArray("codes");
+                    if (!codes.isNull())
+                        for (std::size_t i = 0; i < codes->size(); ++i)
+                        {
+                            std::string v = codes->get(i).toString();
+                            if (!v.empty())
+                                cat.codes.push_back(v);
+                        }
+                    cat.shoreline = entry->optValue<bool>("shoreline", false);
+                    if (!cat.name.empty() && !cat.codes.empty())
+                        cats.push_back(std::move(cat));
+                }
+                std::sort(cats.begin(), cats.end(),
+                          [](const auto &a, const auto &b) { return a.name < b.name; });
+                settings = std::move(cats);
+            }
+        }
+
         Poco::JSON::Object::Ptr text = section("text");
         overlayList(text, "imperative_words", imperative_words);
         overlayList(text, "filler_words", filler_words);
@@ -219,5 +269,21 @@ namespace MediaDedup
         logger.information("Loaded EXIF search keywords from %s (%z camera brands)",
                            json_path, camera_brands.size());
         return true;
+    }
+
+    const ExifKeywordConfig::SettingCategory *
+    ExifKeywordConfig::findSetting(const std::string &name) const
+    {
+        auto lookup = [&](const std::string &n) -> const SettingCategory * {
+            for (const auto &c : settings)
+                if (c.name == n)
+                    return &c;
+            return nullptr;
+        };
+        if (const auto *c = lookup(name))
+            return c;
+        if (name.size() > 2 && name.back() == 's')
+            return lookup(name.substr(0, name.size() - 1));
+        return nullptr;
     }
 }

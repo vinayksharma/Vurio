@@ -5,6 +5,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/faces_ops.hpp"
+#include "database/places_ops.hpp"
 #include "database/vector_index.hpp"
 #include "media_processors/image/backends/onnx_adapter.hpp"
 
@@ -172,14 +173,31 @@ namespace MediaDedup
             auto person_resolver = [this](const std::string &name) -> int {
                 return db_ ? FacesOps::personIdByName(*db_, name) : 0;
             };
+            // PLACE-2: place names resolve against the places the library
+            // has photos in (file_places), live per query like persons.
+            auto place_resolver = [this](const std::string &name) -> std::vector<int> {
+                return db_ ? PlacesOps::placeIdsByName(*db_, name) : std::vector<int>{};
+            };
             months_ = keywords.months;
-            parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords, person_resolver);
+            parser_ = std::make_unique<ExifQueryParser>(&geocoder_, keywords, person_resolver,
+                                                        place_resolver);
 
             // QP-1d: the LLM structurer path shares the same vocabulary.
             structurer_ = std::make_unique<LlmQueryStructurer>(
                 QueryFactSchema::fromKeywords(keywords));
+            // PLACE-4: "at the waterfront" radius; "near" = landmark radius.
+            LlmFactValidator::Options vopts;
+            if (config_)
+            {
+                vopts.setting_at_m = config_->getPropertyValue<int>(
+                    "search.places.settingAtM", static_cast<int>(vopts.setting_at_m));
+                vopts.setting_near_m = config_->getPropertyValue<int>(
+                    "search.places.landmarkRadiusM", static_cast<int>(vopts.setting_near_m));
+            }
             llm_validator_ = std::make_unique<LlmFactValidator>(keywords, &geocoder_,
-                                                                person_resolver);
+                                                                person_resolver, place_resolver,
+                                                                vopts);
+            parser_->setSettingRadii(vopts.setting_at_m, vopts.setting_near_m);
             if (LlmRuntime::enabledInConfig(config_))
                 llm_ = std::make_unique<LlmRuntime>(LlmRuntime::optionsFromConfig(config_));
         });
@@ -325,6 +343,9 @@ namespace MediaDedup
                     c.flash_on = c.flash_off = false;
                     c.location.reset();
                     c.location_name.clear();
+                    c.place_ids.clear();
+                    c.location_inferred = false;
+                    c.settings.clear();
                     c.date_range.reset();
                     c.month_any_year.reset();
                 }
@@ -336,6 +357,26 @@ namespace MediaDedup
                                          [](const ExifQueryConstraints &c) { return !c.hasAny(); }),
                           sq.bare.end());
         }
+        Result out = runAlgebra(query, sq, routes, parse_degraded);
+        // PLACE-2 §6.1: an INFERRED place (bare name, no preposition) is
+        // the model's judgment, not the user's grammar. When honoring it
+        // yields nothing, retry once without it rather than answer empty —
+        // an explicit "in <place>" never falls back.
+        if (out.ok && out.matches.empty() && sq.bound.hasInferred())
+        {
+            logger.information("Inferred place/setting facts matched nothing for '%s'; "
+                               "retrying without them", query);
+            sq.bound.clearInferred();
+            out = runAlgebra(query, sq, routes, parse_degraded);
+        }
+        return out;
+    }
+
+    TextSearchEngine::Result TextSearchEngine::runAlgebra(const std::string &query,
+                                                          StructuredQuery sq, Routes routes,
+                                                          bool parse_degraded)
+    {
+        Poco::Logger &logger = Poco::Logger::get("TextSearchEngine");
         const bool has_bound = sq.hasBound();
         const bool has_bare = sq.hasBare();
         const bool has_semantic = sq.hasSemantic();
@@ -802,12 +843,50 @@ namespace MediaDedup
                 w << " AND (CAST(exif_flash_fired AS INTEGER) & 1) = 1";
             if (c.flash_off)
                 w << " AND (CAST(exif_flash_fired AS INTEGER) & 1) = 0";
-            if (c.location)
+            if (c.location || !c.place_ids.empty())
             {
-                w << " AND exif_gps_lat BETWEEN " << num(c.location->lat_min)
-                  << " AND " << num(c.location->lat_max)
-                  << " AND exif_gps_lon BETWEEN " << num(c.location->lon_min)
-                  << " AND " << num(c.location->lon_max);
+                // A place is EITHER inside the gazetteer's bbox OR one the
+                // file was resolved to by name (PLACE-2): "in wyoming" is a
+                // box, "in bozeman" is file_places, "in yellowstone" both.
+                w << " AND (";
+                if (c.location)
+                {
+                    w << "(exif_gps_lat BETWEEN " << num(c.location->lat_min)
+                      << " AND " << num(c.location->lat_max)
+                      << " AND exif_gps_lon BETWEEN " << num(c.location->lon_min)
+                      << " AND " << num(c.location->lon_max) << ")";
+                }
+                if (!c.place_ids.empty())
+                {
+                    if (c.location)
+                        w << " OR ";
+                    // Internal integer ids — safe to inline.
+                    w << "scanned_files.id IN (SELECT file_id FROM file_places WHERE place_id IN (";
+                    for (std::size_t i = 0; i < c.place_ids.size(); ++i)
+                        w << (i ? "," : "") << c.place_ids[i];
+                    w << "))";
+                }
+                w << ")";
+            }
+            // PLACE-4: setting facts AND together; each is "a landmark of
+            // this kind within X m" OR (shoreline kinds) "the shoreline
+            // within X m". Codes come from the keyword JSON -> bound.
+            for (const auto &st : c.settings)
+            {
+                if (st.fcodes.empty())
+                    continue;
+                w << " AND (scanned_files.id IN (SELECT fp.file_id FROM file_places fp "
+                     "JOIN places p ON p.id = fp.place_id WHERE fp.distance_m <= " << num(st.max_m)
+                  << " AND p.fcode IN (";
+                for (std::size_t i = 0; i < st.fcodes.size(); ++i)
+                {
+                    w << (i ? "," : "") << "?";
+                    camera_binds.push_back(st.fcodes[i]);
+                }
+                w << "))";
+                if (st.shoreline)
+                    w << " OR shore_distance_m <= " << num(st.max_m);
+                w << ")";
             }
             if (c.date_range)
                 w << " AND exif_datetime >= '" << c.date_range->first

@@ -67,6 +67,27 @@ namespace MediaDedup
         // extensions match scanned_files.file_name suffixes.
         std::vector<std::pair<std::string, std::vector<std::string>>> file_types;
 
+        // --- Settings (PLACE-4: "waterfront", "beach", "lake" facts) -----
+        // A category is a curated set of GeoNames feature codes ("H.BAY",
+        // "T.BCH", ...) a photo can be at/near; `shoreline` categories
+        // also accept the Natural Earth shoreline distance. Sorted by name
+        // (JSON object iteration is alphabetical, like file_types).
+        struct SettingCategory
+        {
+            std::string name;
+            std::vector<std::string> codes;
+            bool shoreline = false;
+            bool operator==(const SettingCategory &o) const
+            {
+                return name == o.name && codes == o.codes && shoreline == o.shoreline;
+            }
+        };
+        std::vector<SettingCategory> settings;
+
+        /// PLACE-4: category by name, folding a trailing plural "s"
+        /// ("waterfronts" -> waterfront). nullptr when unknown.
+        const SettingCategory *findSetting(const std::string &name) const;
+
         /// Built-in vocabulary; behavior without any JSON file.
         static ExifKeywordConfig defaults();
 

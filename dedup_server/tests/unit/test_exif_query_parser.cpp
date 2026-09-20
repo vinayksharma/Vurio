@@ -504,3 +504,135 @@ TEST(ExifQueryParserIntentTest, ReversedIsoRangeIsNormalized)
     EXPECT_DOUBLE_EQ(sq.bound.numeric[0].value, 400.0);
     EXPECT_DOUBLE_EQ(sq.bound.numeric[0].value2, 1600.0);
 }
+
+// PLACE-2: place names resolve through the library's own places (file_places)
+// as well as the bbox gazetteer.
+TEST(ExifQueryParserPlaceTest, PrepositionedNameResolvesThroughPlaceResolver)
+{
+    auto resolver = [](const std::string &name) -> std::vector<int> {
+        if (name == "bozeman")
+            return {7};
+        if (name == "west yellowstone")
+            return {8, 9};
+        return {};
+    };
+    ExifQueryParser parser(nullptr, ExifKeywordConfig::defaults(), nullptr, resolver);
+
+    auto sq = parser.parseStructured("sunset in bozeman");
+    ASSERT_TRUE(sq.bound.hasExifDims());
+    EXPECT_FALSE(sq.bound.location.has_value()) << "no bbox gazetteer";
+    EXPECT_EQ(sq.bound.place_ids, std::vector<int>{7});
+    EXPECT_EQ(sq.bound.location_name, "bozeman");
+    EXPECT_FALSE(sq.bound.location_inferred);
+    EXPECT_EQ(sq.remaining, "sunset");
+
+    // Longest known prefix wins (two-word place).
+    sq = parser.parseStructured("photos from west yellowstone");
+    EXPECT_EQ(sq.bound.place_ids, (std::vector<int>{8, 9}));
+
+    // Unknown everywhere: no location, text stays semantic.
+    sq = parser.parseStructured("photos in narnia");
+    EXPECT_TRUE(sq.bound.place_ids.empty());
+    EXPECT_FALSE(sq.bound.location.has_value());
+
+    // The regex path never infers: bare names stay semantic.
+    sq = parser.parseStructured("bozeman farmers market");
+    EXPECT_TRUE(sq.bound.place_ids.empty());
+    EXPECT_FALSE(sq.bound.hasAny());
+}
+
+TEST(ExifQueryParserPlaceTest, BboxAndPlaceIdsCombineWhenBothResolve)
+{
+    LocationGeocoder geocoder;
+    auto path = (std::filesystem::temp_directory_path() / "parser_place_geo.geojson").string();
+    std::ofstream(path) << R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Yellowstone NP", "kind": "park"},
+         "bbox": [-111.15, 44.13, -109.82, 45.10], "geometry": null}]})";
+    ASSERT_TRUE(geocoder.loadFromFile(path));
+    auto resolver = [](const std::string &name) -> std::vector<int> {
+        return name == "yellowstone" ? std::vector<int>{3} : std::vector<int>{};
+    };
+    ExifQueryParser parser(&geocoder, ExifKeywordConfig::defaults(), nullptr, resolver);
+    auto sq = parser.parseStructured("waterfalls in yellowstone");
+    ASSERT_TRUE(sq.bound.location.has_value());
+    EXPECT_EQ(sq.bound.place_ids, std::vector<int>{3});
+    EXPECT_EQ(sq.remaining, "waterfalls");
+    std::remove(path.c_str());
+}
+
+// PLACE-4: settings are detected deterministically on the regex path too.
+TEST(ExifQueryParserSettingTest, DetectsSettingsWithScaffoldSemantics)
+{
+    ExifQueryParser parser;
+    auto sq = parser.parseStructured("waterfront photos");
+    ASSERT_EQ(sq.bound.settings.size(), 1u);
+    EXPECT_EQ(sq.bound.settings[0].category, "waterfront");
+    EXPECT_DOUBLE_EQ(sq.bound.settings[0].max_m, 150.0);
+    EXPECT_TRUE(sq.bound.settings[0].inferred);
+    EXPECT_TRUE(sq.bound.hasExifDims());
+    EXPECT_NE(sq.remaining.find("waterfront"), std::string::npos) << "the word stays for CLIP";
+
+    sq = parser.parseStructured("sunsets near the lake");
+    ASSERT_EQ(sq.bound.settings.size(), 1u);
+    EXPECT_EQ(sq.bound.settings[0].category, "lake");
+    EXPECT_DOUBLE_EQ(sq.bound.settings[0].max_m, 1500.0);
+    EXPECT_FALSE(sq.bound.settings[0].inferred);
+
+    sq = parser.parseStructured("hiking in the mountains");
+    ASSERT_EQ(sq.bound.settings.size(), 1u);
+    EXPECT_EQ(sq.bound.settings[0].category, "mountain");
+    EXPECT_DOUBLE_EQ(sq.bound.settings[0].max_m, 1500.0) << "'in the' is near";
+
+    parser.setSettingRadii(90.0, 900.0);
+    sq = parser.parseStructured("on the beach");
+    ASSERT_EQ(sq.bound.settings.size(), 1u);
+    EXPECT_DOUBLE_EQ(sq.bound.settings[0].max_m, 90.0);
+    EXPECT_FALSE(sq.bound.settings[0].inferred);
+}
+
+TEST(ExifQueryParserSettingTest, PlaceNamesNeverLeakSettingWords)
+{
+    LocationGeocoder geocoder;
+    auto path = (std::filesystem::temp_directory_path() / "parser_slc.geojson").string();
+    std::ofstream(path) << R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Salt Lake City", "kind": "city"},
+         "bbox": [-112.1, 40.6, -111.7, 40.9], "geometry": null}]})";
+    ASSERT_TRUE(geocoder.loadFromFile(path));
+    ExifQueryParser parser(&geocoder);
+    auto sq = parser.parseStructured("temples in salt lake city");
+    EXPECT_TRUE(sq.bound.location.has_value());
+    EXPECT_TRUE(sq.bound.settings.empty()) << "'lake' inside the consumed place name is not a setting";
+    std::remove(path.c_str());
+}
+
+// Review fixes.
+TEST(ExifQueryParserPlaceTest, PlaceIdsOnlyHitIsNotOverwrittenByALaterBboxHit)
+{
+    LocationGeocoder geocoder;
+    auto path = (std::filesystem::temp_directory_path() / "parser_two_hits.geojson").string();
+    std::ofstream(path) << R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Yellowstone NP", "kind": "park"},
+         "bbox": [-111.15, 44.13, -109.82, 45.10], "geometry": null}]})";
+    ASSERT_TRUE(geocoder.loadFromFile(path));
+    auto resolver = [](const std::string &name) -> std::vector<int> {
+        return name == "bozeman" ? std::vector<int>{7} : std::vector<int>{};
+    };
+    ExifQueryParser parser(&geocoder, ExifKeywordConfig::defaults(), nullptr, resolver);
+    auto sq = parser.parseStructured("sunsets in bozeman near yellowstone");
+    EXPECT_EQ(sq.bound.place_ids, std::vector<int>{7});
+    EXPECT_FALSE(sq.bound.location.has_value()) << "the first resolved place wins, as before";
+    std::remove(path.c_str());
+}
+
+TEST(ExifQueryParserSettingTest, AnUnresolvedPlaceAttemptNeverBecomesASetting)
+{
+    auto resolver = [](const std::string &) -> std::vector<int> { return {}; };
+    ExifQueryParser parser(nullptr, ExifKeywordConfig::defaults(), nullptr, resolver);
+    auto sq = parser.parseStructured("photos in mountain view");
+    EXPECT_TRUE(sq.bound.settings.empty()) << "'mountain' belongs to a place name the user tried";
+    EXPECT_FALSE(sq.bound.hasAny());
+    // ...while a setting phrase behind the same preposition still counts.
+    sq = parser.parseStructured("hiking in the mountains");
+    ASSERT_EQ(sq.bound.settings.size(), 1u);
+    EXPECT_EQ(sq.bound.settings[0].category, "mountain");
+}

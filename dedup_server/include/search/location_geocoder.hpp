@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace MediaDedup
 {
@@ -35,6 +36,15 @@ namespace MediaDedup
             double lon_max = 0.0;
         };
 
+        /// One gazetteer feature. `kind` is the feature's "kind" property
+        /// (country|state|park|city in the bundled file; empty if absent).
+        struct Entry
+        {
+            std::string name;
+            std::string kind;
+            Bounds bounds;
+        };
+
         /// Parse a GeoJSON FeatureCollection. Returns false on unreadable
         /// file or malformed JSON; a readable file with zero named features
         /// loads "successfully" but leaves the geocoder empty.
@@ -51,10 +61,18 @@ namespace MediaDedup
          */
         std::optional<Bounds> lookup(const std::string &location_name) const;
 
+        /**
+         * @brief PLACE-1: every feature whose bbox contains the point,
+         * optionally restricted to one kind ("park"). Linear over the
+         * gazetteer (hundreds of rows) — used per GPS-tagged photo at
+         * scan time, not per search.
+         */
+        std::vector<Entry> containing(double lat, double lon, const std::string &kind = "") const;
+
         std::size_t size() const { return by_name_.size(); }
 
     private:
-        // lowercase name -> bounds
-        std::unordered_map<std::string, Bounds> by_name_;
+        // lowercase name -> entry
+        std::unordered_map<std::string, Entry> by_name_;
     };
 }

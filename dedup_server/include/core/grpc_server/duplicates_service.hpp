@@ -270,6 +270,8 @@ public:
         proto_file->set_file_path(file.file_path);
         proto_file->set_taken_time(file.taken_time);
         proto_file->set_size_bytes(file.size_bytes);
+        if (!file.place_label.empty())
+            proto_file->set_place_label(file.place_label);
         if (!file.cached_thumbnail_path.empty()) {
             proto_file->set_cached_thumbnail_path(file.cached_thumbnail_path);
         }

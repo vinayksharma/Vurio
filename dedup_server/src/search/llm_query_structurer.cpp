@@ -56,6 +56,21 @@ Output: {"facts": [{"dim": "person", "op": "in", "values": ["alice"], "intent": 
 
 Query: group photos with 3 people from 2020
 Output: {"facts": [{"dim": "face_count", "op": "eq", "values": ["3"], "intent": "filter", "span": "with 3 people"}, {"dim": "date", "op": "eq", "values": ["2020"], "intent": "filter", "span": "from 2020"}], "clip_queries": ["group photos"]}
+
+Query: yellowstone waterfalls
+Output: {"facts": [{"dim": "location", "op": "eq", "values": ["yellowstone"], "intent": "filter", "span": "yellowstone"}], "clip_queries": ["waterfalls"]}
+
+Query: nice sunset
+Output: {"facts": [], "clip_queries": ["nice sunset"]}
+
+Query: turkey dinner
+Output: {"facts": [], "clip_queries": ["turkey dinner"]}
+
+Query: new jersey waterfronts
+Output: {"facts": [{"dim": "location", "op": "eq", "values": ["new jersey"], "intent": "filter", "span": "new jersey"}, {"dim": "setting", "op": "at", "values": ["waterfront"], "intent": "filter", "span": "waterfronts"}], "clip_queries": ["waterfronts"]}
+
+Query: sunsets near the lake in 2023
+Output: {"facts": [{"dim": "setting", "op": "near", "values": ["lake"], "intent": "filter", "span": "near the lake"}, {"dim": "date", "op": "eq", "values": ["2023"], "intent": "filter", "span": "in 2023"}], "clip_queries": ["sunsets"]}
 )EX";
     }
 
@@ -87,6 +102,15 @@ Output: {"facts": [{"dim": "face_count", "op": "eq", "values": ["3"], "intent": 
              "2024\").\n"
           << "- \"in <place>\" is a location fact, never a date; \"in "
              "<month/year>\" is a date.\n"
+          << "- A bare place name (a park, city, region or country with no "
+             "preposition) is a location fact with the name as its span, "
+             "but ONLY when the rest of the query is a scene or subject. "
+             "Food, animals, adjectives and common words are never places "
+             "(\"turkey dinner\", \"nice sunset\").\n"
+          << "- setting: the KIND of place from the setting list (waterfront, "
+             "beach, lake, mountain...). op \"at\" for on/at the X or a bare "
+             "\"X photos\"; op \"near\" for near/close to/by the X. Keep the "
+             "word in clip_queries too.\n"
           << "- clip_queries: the semantic segments left over (scenes, "
              "subjects, moods), with command words (find, show me) dropped "
              "and filter-fact text EXCLUDED. A query that is only facts and "

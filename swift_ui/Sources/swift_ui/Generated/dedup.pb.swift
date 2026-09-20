@@ -800,6 +800,11 @@ struct Vurio_Dedup_DayFile: Sendable {
 
   var matchedFace: Bool = false
 
+  /// PLACE-1: where the photo was taken, most specific first
+  /// ("Fairy Falls · Yellowstone National Park · Wyoming"); empty when the
+  /// file has no GPS fix or it has not been resolved yet.
+  var placeLabel: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -2875,7 +2880,7 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DayFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0\u{3}place_label\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2898,6 +2903,7 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
       case 13: try { try decoder.decodeSingularBoolField(value: &self.matchedAi) }()
       case 14: try { try decoder.decodeSingularBoolField(value: &self.matchedExif) }()
       case 15: try { try decoder.decodeSingularBoolField(value: &self.matchedFace) }()
+      case 16: try { try decoder.decodeSingularStringField(value: &self.placeLabel) }()
       default: break
       }
     }
@@ -2949,6 +2955,9 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if self.matchedFace != false {
       try visitor.visitSingularBoolField(value: self.matchedFace, fieldNumber: 15)
     }
+    if !self.placeLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.placeLabel, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2968,6 +2977,7 @@ extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     if lhs.matchedAi != rhs.matchedAi {return false}
     if lhs.matchedExif != rhs.matchedExif {return false}
     if lhs.matchedFace != rhs.matchedFace {return false}
+    if lhs.placeLabel != rhs.placeLabel {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -115,6 +115,11 @@ namespace MediaDedup
 
     private:
         Result searchUncached(const std::string &query, Routes routes);
+        /// The EXIF-7 result algebra over an already-parsed query (cases
+        /// 1-4 + the ai-off path). Separate from searchUncached so the
+        /// PLACE-2 §6.1 inferred-location retry can run it twice.
+        Result runAlgebra(const std::string &query, StructuredQuery sq, Routes routes,
+                          bool parse_degraded);
         /// QP-1d: LLM structurer -> validator -> StructuredQuery. Returns
         /// false (regex fallback) on: structurer unavailable, completion
         /// error/timeout, or every claimed fact rejected by the validator.

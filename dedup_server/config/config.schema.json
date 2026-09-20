@@ -547,6 +547,22 @@
     "type": "int",
     "default": 300
   },
+  "search.placesDbPath": {
+    "type": "string",
+    "default": "geodata/places.sqlite"
+  },
+  "search.places.landmarkRadiusM": {
+    "type": "int",
+    "default": 1500
+  },
+  "search.places.localityMaxKm": {
+    "type": "int",
+    "default": 30
+  },
+  "search.places.settingAtM": {
+    "type": "int",
+    "default": 150
+  },
   "search.minScore": {
     "type": "double",
     "default": 0.2

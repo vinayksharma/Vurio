@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 
 #include <optional>
@@ -48,6 +49,53 @@ namespace MediaDedup
 
         std::optional<LocationGeocoder::Bounds> location;
         std::string location_name; // for logging only
+        // PLACE-2: ids of `places` rows (places WITH photos) the name
+        // resolved to; a file matches when it has a file_places row for
+        // any of them. OR-ed with the bbox above when both exist.
+        std::vector<int> place_ids;
+        // PLACE-2 §6.1: the location was INFERRED by the LLM from a bare
+        // place name (no preposition). Still bound, but the engine may
+        // retry without it when the intersection comes back empty.
+        bool location_inferred = false;
+
+        // PLACE-4: "waterfront"/"beach"/... — the file must have a landmark
+        // row with one of these GeoNames codes within max_m metres (or,
+        // for shoreline categories, shore_distance_m <= max_m). Facts AND
+        // together. `inferred` mirrors location_inferred: a bare "beach
+        // photos" retries without it when the intersection is empty.
+        struct Setting
+        {
+            std::string category;
+            std::vector<std::string> fcodes;
+            double max_m = 0.0;
+            bool shoreline = false;
+            bool inferred = false;
+        };
+        std::vector<Setting> settings;
+
+        bool hasInferred() const
+        {
+            if (location_inferred)
+                return true;
+            for (const auto &s : settings)
+                if (s.inferred)
+                    return true;
+            return false;
+        }
+        /// Drop every inferred fact (the §6.1 empty-result retry).
+        void clearInferred()
+        {
+            if (location_inferred)
+            {
+                location.reset();
+                place_ids.clear();
+                location_name.clear();
+                location_inferred = false;
+            }
+            settings.erase(std::remove_if(settings.begin(), settings.end(),
+                                          [](const Setting &s) { return s.inferred; }),
+                           settings.end());
+        }
 
         // Inclusive range on exif_datetime ("YYYY:MM:DD HH:MM:SS" strings —
         // lexicographic comparison works in that format).
@@ -92,7 +140,8 @@ namespace MediaDedup
                     return true;
             return !camera_terms.empty() || !file_extensions.empty() ||
                    flash_on || flash_off ||
-                   location.has_value() || date_range.has_value() || month_any_year.has_value();
+                   location.has_value() || !place_ids.empty() || !settings.empty() ||
+                   date_range.has_value() || month_any_year.has_value();
         }
     };
 
@@ -162,10 +211,13 @@ namespace MediaDedup
         /// QP-2: name -> persons.id (0 = unknown), evaluated at parse time
         /// because person names are runtime user data.
         using PersonResolver = std::function<int(const std::string &)>;
+        /// PLACE-2: name -> ids of places that have photos (empty = none).
+        using PlaceResolver = std::function<std::vector<int>(const std::string &)>;
 
         explicit ExifQueryParser(const LocationGeocoder *geocoder = nullptr,
                                  const ExifKeywordConfig &keywords = ExifKeywordConfig::defaults(),
-                                 PersonResolver person_resolver = nullptr);
+                                 PersonResolver person_resolver = nullptr,
+                                 PlaceResolver place_resolver = nullptr);
 
         ExifQueryConstraints parse(const std::string &query) const;
 
@@ -175,6 +227,13 @@ namespace MediaDedup
         /// ("iso 800", "f2.5", "50mm", "shutter 1/500") and bare brand
         /// tokens are bare. parse() is the flattened (binding-blind) view.
         StructuredQuery parseStructured(const std::string &query) const;
+
+        /// PLACE-4: radii for detected setting facts ("at" / "near").
+        void setSettingRadii(double at_m, double near_m)
+        {
+            setting_at_m_ = at_m;
+            setting_near_m_ = near_m;
+        }
 
     private:
         int monthNumber(const std::string &name) const;
@@ -188,6 +247,11 @@ namespace MediaDedup
 
         const LocationGeocoder *geocoder_;
         PersonResolver person_resolver_;
+        PlaceResolver place_resolver_;
+        // PLACE-4: the whole vocabulary is kept for the setting detector.
+        ExifKeywordConfig keywords_;
+        double setting_at_m_ = 150.0;
+        double setting_near_m_ = 1500.0;
 
         // Keyword-driven state, built once from the ExifKeywordConfig.
         std::vector<std::string> months_;

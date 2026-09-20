@@ -152,6 +152,15 @@ namespace MediaDedup
             Poco::JSON::Object::Ptr props = feature->getObject("properties");
             if (props.isNull())
                 continue;
+            std::string kind;
+            if (props->has("kind") && !props->isNull("kind"))
+            {
+                try
+                {
+                    kind = props->get("kind").convert<std::string>();
+                }
+                catch (...) {}
+            }
             for (const char *key : kNameKeys)
             {
                 if (!props->has(key) || props->isNull(key))
@@ -164,7 +173,7 @@ namespace MediaDedup
                 catch (...) { continue; }
                 std::string lowered = toLower(name);
                 if (!lowered.empty())
-                    by_name_.emplace(lowered, bounds); // first writer wins
+                    by_name_.emplace(lowered, Entry{name, kind, bounds}); // first writer wins
             }
         }
 
@@ -186,7 +195,7 @@ namespace MediaDedup
 
         auto exact = by_name_.find(query);
         if (exact != by_name_.end())
-            return exact->second;
+            return exact->second.bounds;
 
         // Substring pass: stored name contains the query. Too-short queries
         // would match half the gazetteer ("in" is in "China"), so gate it.
@@ -195,19 +204,34 @@ namespace MediaDedup
 
         const Bounds *best = nullptr;
         double best_area = std::numeric_limits<double>::max();
-        for (const auto &[name, bounds] : by_name_)
+        for (const auto &[name, entry] : by_name_)
         {
             if (name.find(query) == std::string::npos)
                 continue;
-            double a = area(bounds);
+            double a = area(entry.bounds);
             if (a < best_area)
             {
                 best_area = a;
-                best = &bounds;
+                best = &entry.bounds;
             }
         }
         if (best)
             return *best;
         return std::nullopt;
+    }
+
+    std::vector<LocationGeocoder::Entry>
+    LocationGeocoder::containing(double lat, double lon, const std::string &kind) const
+    {
+        std::vector<Entry> out;
+        for (const auto &[name, entry] : by_name_)
+        {
+            if (!kind.empty() && entry.kind != kind)
+                continue;
+            const Bounds &b = entry.bounds;
+            if (lat >= b.lat_min && lat <= b.lat_max && lon >= b.lon_min && lon <= b.lon_max)
+                out.push_back(entry);
+        }
+        return out;
     }
 }

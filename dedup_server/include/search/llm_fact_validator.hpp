@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "search/exif_keyword_config.hpp"
 #include "search/exif_query_parser.hpp"
@@ -11,6 +12,14 @@
 
 namespace MediaDedup
 {
+    /// PLACE-4 distance semantics for setting facts (namespace-level so the
+    /// constructor's default argument can name it inside the class).
+    struct LlmFactValidatorOptions
+    {
+        double setting_at_m = 150.0;    // "on the waterfront", "beach photos"
+        double setting_near_m = 1500.0; // "near the lake"
+    };
+
     /**
      * @brief QP-1d: the trust boundary between the LLM and SQL.
      *
@@ -42,9 +51,16 @@ namespace MediaDedup
         /// names are user data that changes at runtime, which is exactly why
         /// they are NOT prompt hints (the location-gazetteer playbook).
         using PersonResolver = std::function<int(const std::string &)>;
+        /// PLACE-2: name -> ids of places with photos (see PlacesOps).
+        using PlaceResolver = std::function<std::vector<int>(const std::string &)>;
+
+        /// PLACE-4 distance semantics for setting facts.
+        using Options = LlmFactValidatorOptions;
 
         LlmFactValidator(ExifKeywordConfig keywords, const LocationGeocoder *geocoder,
-                         PersonResolver person_resolver = nullptr);
+                         PersonResolver person_resolver = nullptr,
+                         PlaceResolver place_resolver = nullptr,
+                         Options options = Options());
 
         struct Result
         {
@@ -60,5 +76,7 @@ namespace MediaDedup
         ExifKeywordConfig keywords_;
         const LocationGeocoder *geocoder_;
         PersonResolver person_resolver_;
+        PlaceResolver place_resolver_;
+        Options options_;
     };
 }

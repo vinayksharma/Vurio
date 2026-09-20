@@ -1,5 +1,6 @@
 #include "core/media_backfill.hpp"
 
+#include "core/place_resolver.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
@@ -18,10 +19,18 @@ namespace MediaDedup
     void MediaBackfill::installHook()
     {
         MediaBackfillHook::install([](std::shared_ptr<DatabaseManager> db,
-                                      MediaBackfillHook::ProgressFn progress) {
-            if (db)
-                MediaBackfill::backfillRawExif(*db, Poco::Logger::get("MediaBackfill"),
-                                               std::move(progress));
+                                      MediaBackfillHook::ProgressFn progress,
+                                      MediaBackfillHook::PhaseFn phase) {
+            if (!db)
+                return;
+            if (phase)
+                phase("Refreshing RAW photo metadata...");
+            MediaBackfill::backfillRawExif(*db, Poco::Logger::get("MediaBackfill"), progress);
+            // PLACE-1: GPS-tagged rows that never got a place name (older
+            // rows, or rows scanned while the gazetteer was absent).
+            if (phase)
+                phase("Resolving place names...");
+            PlaceResolver::instance().backfill(*db, Poco::Logger::get("MediaBackfill"), progress);
         });
     }
 

@@ -129,6 +129,10 @@ namespace MediaDedup
             "    exif_gps_alt REAL,\n"
             "    exif_orientation INTEGER,\n"
             "    ignore_reason TEXT,\n"
+            // PLACE-1: resolved place label + resolution level (0 = none).
+            "    place_label TEXT,\n"
+            "    place_level INTEGER NOT NULL DEFAULT 0,\n"
+            "    shore_distance_m REAL,\n"
             "    taken_day TEXT GENERATED ALWAYS AS (substr(" VURIO_TAKEN_TIME_EXPR_P("") ",1,10)) VIRTUAL,\n"
             "    is_video INTEGER GENERATED ALWAYS AS " VURIO_IS_VIDEO_EXPR " VIRTUAL,\n"
             "    discovery_done INTEGER NOT NULL DEFAULT 0\n"
@@ -883,6 +887,15 @@ namespace MediaDedup
             "ALTER TABLE scanned_files ADD COLUMN exif_gps_lon REAL";
         inline constexpr std::string_view kAlterScannedFilesAddExifGPSAlt =
             "ALTER TABLE scanned_files ADD COLUMN exif_gps_alt REAL";
+        // PLACE-1 (the day-view SELECT reads place_label, so the columns
+        // ride the same migration list as the EXIF ones — never a separate
+        // ensureTable order).
+        inline constexpr std::string_view kAlterScannedFilesAddPlaceLabel =
+            "ALTER TABLE scanned_files ADD COLUMN place_label TEXT";
+        inline constexpr std::string_view kAlterScannedFilesAddPlaceLevel =
+            "ALTER TABLE scanned_files ADD COLUMN place_level INTEGER NOT NULL DEFAULT 0";
+        inline constexpr std::string_view kAlterScannedFilesAddShoreDistance =
+            "ALTER TABLE scanned_files ADD COLUMN shore_distance_m REAL";
         inline constexpr std::string_view kAlterScannedFilesAddExifOrientation =
             "ALTER TABLE scanned_files ADD COLUMN exif_orientation INTEGER";
 
@@ -957,13 +970,15 @@ namespace MediaDedup
 // 2 taken_time, 3 size_bytes, 4 cached_path, 5 group_id, 6 is_representative,
 // 7 similarity_score, 8 slot_time, 9 slot_id, 10 exif_resolution (THUMB-1:
 // appended LAST so the slot_* ordinals VURIO_DAY_FILE_ORDER relies on are
-// unchanged; the search-mode SQL in day_groups_ops.cpp emits the same shape).
+// unchanged; the search-mode SQL in day_groups_ops.cpp emits the same shape),
+// 11 place_label (PLACE-1). Both UNION branches must emit every column.
 #define VURIO_SELECT_DAY_FILE_BRANCHES \
     "SELECT sf.id AS id, sf.file_path AS file_path, " VURIO_TAKEN_TIME_EXPR " AS taken_time, " \
     "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0) AS size_bytes, " \
     VURIO_BEST_THUMB_SUBQUERY("sf.file_path") " AS cached_path, dm.group_id AS group_id, " \
     "COALESCE(dm.is_representative, 0) AS is_representative, COALESCE(dm.similarity_score, 0) AS similarity_score, " \
-    VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id, sf.exif_resolution AS exif_resolution " \
+    VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id, sf.exif_resolution AS exif_resolution, " \
+    "sf.place_label AS place_label " \
     "FROM scanned_files sf " \
     "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id AND dm.is_representative = 1 " \
     "WHERE " VURIO_DAY_VIEW_FILTER " AND sf.taken_day = ? " \
@@ -972,7 +987,7 @@ namespace MediaDedup
     "SELECT sf.id, sf.file_path, " VURIO_TAKEN_TIME_EXPR ", " \
     "COALESCE(CASE WHEN json_valid(sf.file_metadata) THEN json_extract(sf.file_metadata,'$.sizeBytes') END, 0), " \
     VURIO_BEST_THUMB_SUBQUERY("sf.file_path") ", dm.group_id, 0, dm.similarity_score, " \
-    VURIO_TAKEN_TIME_EXPR_P("sfr.") ", sfr.id, sf.exif_resolution " \
+    VURIO_TAKEN_TIME_EXPR_P("sfr.") ", sfr.id, sf.exif_resolution, sf.place_label " \
     "FROM scanned_files sfr " \
     "JOIN duplicate_groups g ON g.representative_file_id = sfr.id " \
     "JOIN duplicate_members dm ON dm.group_id = g.id AND dm.is_representative = 0 " \

@@ -11,6 +11,11 @@
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
 #include "test_utils.hpp"
+#include "core/place_resolver.hpp"
+#include "database/places_ops.hpp"
+#include "places_test_fixture.hpp"
+#include "search/location_geocoder.hpp"
+#include "search/offline_reverse_geocoder.hpp"
 
 namespace MediaDedup
 {
@@ -152,5 +157,78 @@ namespace MediaDedup
             EXPECT_EQ(ticks.front(), (std::pair<std::size_t, std::size_t>{0u, 2u}));
             EXPECT_EQ(ticks.back(), (std::pair<std::size_t, std::size_t>{2u, 2u}));
         }
-    }
+    
+        // PLACE-1: the integrity-check hook now chains the RAW EXIF sweep
+        // and the place sweep, announcing each phase by name.
+        class MediaBackfillPlacesTest : public ::testing::Test
+        {
+        protected:
+            void SetUp() override
+            {
+                db_path_ = (std::filesystem::path(TestUtils::getTestDataPath()) /
+                            "databases" / "test_media_backfill_places.sqlite")
+                               .string();
+                std::filesystem::create_directories(
+                    std::filesystem::path(db_path_).parent_path());
+                std::remove(db_path_.c_str());
+                db_ = std::make_shared<DatabaseManager>(db_path_);
+                ASSERT_TRUE(db_->initialize());
+                ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_));
+                ASSERT_TRUE(PlacesOps::ensureTable(*db_));
+                gaz_path_ = writeMiniGazetteer("backfill_places.sqlite");
+                ASSERT_FALSE(gaz_path_.empty());
+                auto geo = std::make_shared<OfflineReverseGeocoder>();
+                ASSERT_TRUE(geo->open(gaz_path_));
+                PlaceResolver::instance().setGeocodersForTests(geo, nullptr);
+            }
+
+            void TearDown() override
+            {
+                PlaceResolver::instance().setGeocodersForTests(nullptr, nullptr);
+                MediaBackfillHook::install(nullptr);
+                db_.reset();
+                std::remove(db_path_.c_str());
+                std::remove(gaz_path_.c_str());
+            }
+
+            std::string db_path_, gaz_path_;
+            std::shared_ptr<DatabaseManager> db_;
+        };
+
+        TEST_F(MediaBackfillPlacesTest, HookRunsBothSweepsAndNamesEachPhase)
+        {
+            ScannedFileRow row;
+            row.file_path = "/nowhere/bozeman.jpg";
+            row.file_name = "bozeman.jpg";
+            row.location_key = "mediaLocation:test";
+            row.processed = 2;
+            ASSERT_TRUE(ScannedFilesOps::upsert(*db_, row));
+            ExifInfo exif;
+            exif.width = 100;
+            exif.height = 100;
+            exif.gps_lat = 45.6840f;
+            exif.gps_lon = -111.0380f;
+            ASSERT_TRUE(ScannedFilesOps::updateExifMetadata(*db_, row.file_path, exif));
+            ASSERT_EQ(PlacesOps::countUnresolved(*db_, PlacesOps::kLevelOffline), 1);
+
+            MediaBackfill::installHook();
+            std::vector<std::string> phases;
+            MediaBackfillHook::run(
+                db_, [](std::size_t, std::size_t) {},
+                [&](const std::string &phase) { phases.push_back(phase); });
+
+            ASSERT_EQ(phases.size(), 2u);
+            EXPECT_EQ(phases[0], "Refreshing RAW photo metadata...");
+            EXPECT_EQ(phases[1], "Resolving place names...");
+            EXPECT_EQ(PlacesOps::countUnresolved(*db_, PlacesOps::kLevelOffline), 0);
+            EXPECT_EQ(PlacesOps::placeIdsByName(*db_, "bozeman").size(), 1u);
+        }
+
+        TEST_F(MediaBackfillPlacesTest, RunWithoutPhaseCallbackStillWorks)
+        {
+            MediaBackfill::installHook();
+            MediaBackfillHook::run(db_, [](std::size_t, std::size_t) {});
+            SUCCEED();
+        }
+}
 }

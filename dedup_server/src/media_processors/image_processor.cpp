@@ -6,6 +6,8 @@
 #include <Poco/Logger.h>
 #include <algorithm>
 #include "database/scanned_files_ops.hpp"
+#include "core/place_resolver.hpp"
+#include <cmath>
 
 namespace MediaDedup
 {
@@ -40,6 +42,12 @@ namespace MediaDedup
 
                 // Store comprehensive EXIF metadata
                 ScannedFilesOps::updateExifMetadata(db, original_file_path, *exif);
+                // PLACE-1: a GPS fix gets its place names right here, in the
+                // same worker — a sub-millisecond gazetteer lookup next to
+                // the metadata read. No gazetteer => no-op, sweep later.
+                if (!std::isnan(exif->gps_lat) && !std::isnan(exif->gps_lon))
+                    PlaceResolver::instance().resolvePath(db, original_file_path,
+                                                          exif->gps_lat, exif->gps_lon);
                 Poco::Logger::get("ImageProcessor").debug("Saved EXIF info for %s: Camera=%s, ISO=%u, F/%.1f, Res=%s",
                     original_file_path, exif->camera, exif->iso, exif->f_number, exif_res);
 

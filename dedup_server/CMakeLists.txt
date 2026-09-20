@@ -322,7 +322,9 @@ add_executable(media_dedup_server
     src/core/media_generation_failures.cpp
     src/core/media_backfill.cpp
     src/core/media_backfill_hook.cpp
+    src/core/place_resolver.cpp
     src/database/faces_ops.cpp
+    src/database/places_ops.cpp
     src/media_processors/face/face_align.cpp
     src/media_processors/face/face_clusterer.cpp
     src/media_processors/face/face_scan_service.cpp
@@ -356,6 +358,7 @@ add_executable(media_dedup_server
     src/media_processors/text/clip_tokenizer.cpp
     src/search/text_search_engine.cpp
     src/search/location_geocoder.cpp
+    src/search/offline_reverse_geocoder.cpp
     src/search/exif_query_parser.cpp
     src/search/exif_keyword_config.cpp
     src/search/llm_runtime.cpp
@@ -363,6 +366,7 @@ add_executable(media_dedup_server
     src/search/llm_query_structurer.cpp
     src/search/llm_fact_validator.cpp
     src/search/relative_date_resolver.cpp
+    src/search/setting_detector.cpp
     src/database/image_artifacts_ops.cpp
     src/database/vector_index.cpp
     src/database/duplicate_groups_ops.cpp

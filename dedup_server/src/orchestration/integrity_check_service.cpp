@@ -1,4 +1,5 @@
 #include "orchestration/integrity_check_service.hpp"
+#include "database/places_ops.hpp"
 
 #include "core/media_backfill.hpp"
 #include "database/database_manager.hpp"
@@ -263,6 +264,19 @@ namespace MediaDedup
                         state_.errors_removed += errors_removed;
                     }
                     
+                    // PLACE-1: places nothing references any more (their
+                    // photos were removed or re-resolved elsewhere).
+                    try
+                    {
+                        const int places_removed = PlacesOps::deleteOrphanPlaces(*db);
+                        if (places_removed > 0)
+                            logger.information("Removed %d orphaned places.", places_removed);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        logger.warning("Orphaned place cleanup failed: %s", std::string(e.what()));
+                    }
+
                     if (thumbs_removed > 0) logger.information("Removed %d orphaned thumbnails.", thumbs_removed);
                     if (artifacts_removed > 0) logger.information("Removed %d orphaned artifacts.", artifacts_removed);
                     if (errors_removed > 0) logger.information("Removed %d orphaned errors.", errors_removed);
@@ -317,12 +331,20 @@ namespace MediaDedup
                         state_.total_files = 0;
                         state_.processed_files = 0;
                     }
-                    MediaBackfillHook::run(db, [](std::size_t done, std::size_t total) {
-                        std::lock_guard<std::mutex> lock(state_mutex_);
-                        state_.total_files = total;
-                        state_.processed_files = done;
-                        state_.progress = total ? static_cast<int>((done * 100) / total) : 100;
-                    });
+                    MediaBackfillHook::run(
+                        db,
+                        [](std::size_t done, std::size_t total) {
+                            std::lock_guard<std::mutex> lock(state_mutex_);
+                            state_.total_files = total;
+                            state_.processed_files = done;
+                            state_.progress = total ? static_cast<int>((done * 100) / total) : 100;
+                        },
+                        [](const std::string &phase) {
+                            std::lock_guard<std::mutex> lock(state_mutex_);
+                            state_.current_phase = phase;
+                            state_.total_files = 0;
+                            state_.processed_files = 0;
+                        });
                 }
 
                 {

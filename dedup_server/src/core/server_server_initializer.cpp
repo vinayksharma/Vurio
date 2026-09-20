@@ -11,6 +11,8 @@
 #include "database/preview_cache_ops.hpp"
 #include "database/ejected_files_ops.hpp"
 #include "database/faces_ops.hpp"
+#include "database/places_ops.hpp"
+#include "core/place_resolver.hpp"
 #include "media_processors/face/face_clusterer.hpp"
 #include "media_processors/face/face_scan_service.hpp"
 #include "media_processors/face/vision_face_detector.hpp"
@@ -240,6 +242,20 @@ namespace MediaDedup
 
             // RAW-EXIF: register the integrity check's metadata sweep.
             MediaBackfill::installHook();
+
+            // PLACE-1: place tables + the offline gazetteer (optional file;
+            // absent => place names simply stay unresolved).
+            if (!PlacesOps::ensureTable(*database_manager_))
+            {
+                logger.error("Failed to ensure places tables");
+                return false;
+            }
+            if (PlaceResolver::instance().configure(config_manager_))
+                logger.information("Offline place gazetteer ready");
+            // The boot sweep for rows an older build left unresolved starts
+            // at the END of this stage (see below): it writes scanned_files
+            // continuously and every schema migration (FacesOps,
+            // ScannedFilesOps via FilesManager) must have run first.
 
             // Ensure ejected_files_history database table exists
             if (!FacesOps::ensureTable(*database_manager_))
@@ -498,6 +514,12 @@ namespace MediaDedup
                 } });
 
             logger.information("Scheduler and Files Manager initialized successfully");
+            // PLACE-1: name whatever the previous build (or a missing
+            // gazetteer) left unresolved, without waiting for a manual
+            // integrity check. Owned thread, stopped at shutdown; skipped
+            // when the integrity check's own sweep is already running.
+            PlaceResolver::instance().startBackgroundBackfill(database_manager_);
+
             return true;
         }
         catch (const std::exception &e)

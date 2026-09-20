@@ -5,6 +5,7 @@
 #include "orchestration/scheduler_service.hpp"
 #include "orchestration/files_manager.hpp"
 #include "core/console_input_manager.hpp"
+#include "core/place_resolver.hpp"
 #include <Poco/Logger.h>
 #include <chrono>
 
@@ -27,6 +28,17 @@ namespace MediaDedup
         Poco::Logger &logger = Poco::Logger::get("ServerShutdown");
 
         logger.information("Shutting down server...");
+
+        // PLACE-1: the boot place sweep writes scanned_files; stop it before
+        // anything it depends on goes away.
+        try
+        {
+            PlaceResolver::instance().stopBackgroundBackfill();
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("Exception stopping the place sweep: %s", e.what());
+        }
 
         // Stop config file monitoring FIRST to prevent config reload during shutdown
         // This prevents deadlock where ConfigFileMonitor holds config mutex while waiting for TPM to drain

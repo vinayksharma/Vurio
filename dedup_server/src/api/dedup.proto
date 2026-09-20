@@ -414,6 +414,10 @@ message DayFile {
   bool matched_ai = 13;
   bool matched_exif = 14;
   bool matched_face = 15;
+  // PLACE-1: where the photo was taken, most specific first
+  // ("Fairy Falls · Yellowstone National Park · Wyoming"); empty when the
+  // file has no GPS fix or it has not been resolved yet.
+  string place_label = 16;
 }
 
 message DayGroup {
