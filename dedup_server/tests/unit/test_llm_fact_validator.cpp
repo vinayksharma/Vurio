@@ -307,3 +307,213 @@ TEST(LlmFactValidatorTest, FaceCountConvertsAndClamps)
     EXPECT_DOUBLE_EQ(r.query.bound.numeric[1].value, 2.0); // reversed range fixed
     EXPECT_DOUBLE_EQ(r.query.bound.numeric[1].value2, 5.0);
 }
+
+// PLACE-2 §6.1: bare place names inferred by the model.
+namespace
+{
+    LlmFactValidator::PlaceResolver photosIn(std::vector<std::string> names)
+    {
+        return [names](const std::string &n) -> std::vector<int> {
+            for (std::size_t i = 0; i < names.size(); ++i)
+                if (names[i] == n)
+                    return {static_cast<int>(i) + 100};
+            return {};
+        };
+    }
+}
+
+TEST(LlmFactValidatorPlaceTest, UngroundedSpanWithGroundedValueIsAnInferredBoundLocation)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"yellowstone"}));
+    // The real model's output for "yellowstone waterfalls": span invented.
+    auto r = v.validate("yellowstone waterfalls",
+                        output({{"location", "eq", {"yellowstone"}, "filter", "in yellowstone"}},
+                               {"yellowstone waterfalls"}));
+    EXPECT_EQ(r.accepted, 1u);
+    EXPECT_EQ(r.dropped, 0u);
+    EXPECT_EQ(r.query.bound.place_ids, std::vector<int>{100});
+    EXPECT_TRUE(r.query.bound.location_inferred);
+    EXPECT_TRUE(r.query.bare.empty());
+    ASSERT_EQ(r.query.clip_queries.size(), 1u);
+}
+
+TEST(LlmFactValidatorPlaceTest, GroundedSpanWithoutPrepositionIsAlsoInferred)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"rome"}));
+    auto r = v.validate("rome ruins",
+                        output({{"location", "eq", {"rome"}, "filter", "rome"}}, {"rome ruins"}));
+    EXPECT_EQ(r.accepted, 1u);
+    EXPECT_TRUE(r.query.bound.location_inferred);
+
+    // "explore" intent on an inferred place is still a bound filter.
+    auto r2 = v.validate("rome ruins",
+                         output({{"location", "eq", {"rome"}, "explore", "rome"}}, {"rome ruins"}));
+    EXPECT_EQ(r2.accepted, 1u);
+    EXPECT_TRUE(r2.query.bare.empty());
+    EXPECT_EQ(r2.query.bound.place_ids, std::vector<int>{100});
+}
+
+TEST(LlmFactValidatorPlaceTest, PrepositionedSpanIsNotInferred)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"bozeman"}));
+    auto r = v.validate("photos in bozeman",
+                        output({{"location", "eq", {"bozeman"}, "filter", "in bozeman"}}, {"photos"}));
+    EXPECT_EQ(r.accepted, 1u);
+    EXPECT_FALSE(r.query.bound.location_inferred);
+    EXPECT_EQ(r.query.bound.place_ids, std::vector<int>{100});
+}
+
+TEST(LlmFactValidatorPlaceTest, InferredPlaceWithNoPhotosIsSkippedNotDropped)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"bozeman"}));
+    // "turkey dinner": the model calls turkey a place; the library has no
+    // photos there. Skipped silently — no drop (which would trigger the
+    // regex fallback), no clip demotion (the clip text already has it).
+    auto r = v.validate("turkey dinner",
+                        output({{"location", "eq", {"turkey"}, "filter", "turkey dinner"}},
+                               {"turkey dinner"}));
+    EXPECT_EQ(r.accepted, 0u);
+    EXPECT_EQ(r.dropped, 0u);
+    EXPECT_FALSE(r.query.bound.hasAny());
+    ASSERT_EQ(r.query.clip_queries.size(), 1u);
+    EXPECT_EQ(r.query.clip_queries[0], "turkey dinner");
+
+    // Whereas an EXPLICIT unknown place still demotes to clip and counts.
+    auto r2 = v.validate("hiking in narnia",
+                         output({{"location", "eq", {"narnia"}, "filter", "in narnia"}}, {"hiking"}));
+    EXPECT_EQ(r2.dropped, 1u);
+    EXPECT_EQ(r2.query.clip_queries.size(), 2u);
+}
+
+TEST(LlmFactValidatorPlaceTest, InferredValueMustStillBeInTheQuery)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"paris"}));
+    auto r = v.validate("eiffel tower at night",
+                        output({{"location", "eq", {"paris"}, "filter", "in paris"}}, {"eiffel tower"}));
+    EXPECT_EQ(r.accepted, 0u);
+    EXPECT_EQ(r.dropped, 1u) << "value not in the text: a hallucination, dropped as before";
+}
+
+// PLACE-4: setting facts ("waterfront", "near the lake").
+TEST(LlmFactValidatorSettingTest, AtAndNearPickTheRadiusAndFoldPlurals)
+{
+    LlmFactValidatorOptions o;
+    o.setting_at_m = 100;
+    o.setting_near_m = 2000;
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, nullptr, o);
+    auto r = v.validate("new jersey waterfronts",
+                        output({{"setting", "at", {"waterfronts"}, "filter", "waterfronts"}},
+                               {"waterfronts"}));
+    ASSERT_EQ(r.accepted, 1u);
+    ASSERT_EQ(r.query.bound.settings.size(), 1u);
+    const auto &st = r.query.bound.settings[0];
+    EXPECT_EQ(st.category, "waterfront");
+    EXPECT_DOUBLE_EQ(st.max_m, 100.0);
+    EXPECT_TRUE(st.shoreline);
+    EXPECT_TRUE(st.inferred) << "bare 'waterfronts' carries no scaffolding";
+    EXPECT_NE(std::find(st.fcodes.begin(), st.fcodes.end(), "H.BAY"), st.fcodes.end());
+    EXPECT_TRUE(r.query.bound.hasExifDims());
+    // The setting word stays semantic (the prompt says so, and the regex
+    // parser keeps it): an inferred setting that matches nothing retries
+    // without the filter and must still rank by "waterfronts".
+    EXPECT_EQ(r.query.clip_queries, std::vector<std::string>{"waterfronts"});
+
+    auto r2 = v.validate("sunsets near the lake",
+                         output({{"setting", "near", {"lake"}, "filter", "near the lake"}}, {"sunsets"}));
+    ASSERT_EQ(r2.query.bound.settings.size(), 1u);
+    EXPECT_DOUBLE_EQ(r2.query.bound.settings[0].max_m, 2000.0);
+    EXPECT_FALSE(r2.query.bound.settings[0].inferred);
+    EXPECT_FALSE(r2.query.bound.settings[0].shoreline);
+}
+
+TEST(LlmFactValidatorSettingTest, UnknownCategoryDropsAndExploreStillBinds)
+{
+    auto v = makeValidator();
+    auto r = v.validate("moonbase photos",
+                        output({{"setting", "at", {"moonbase"}, "filter", "moonbase"}}, {"moonbase photos"}));
+    EXPECT_EQ(r.accepted, 0u);
+    EXPECT_EQ(r.dropped, 1u);
+    EXPECT_TRUE(r.query.bound.settings.empty());
+
+    // "explore" on a setting is still a bound filter — a union of every
+    // beach photo makes no sense as exploration.
+    auto r2 = v.validate("beach", output({{"setting", "at", {"beach"}, "explore", "beach"}}, {"beach"}));
+    EXPECT_EQ(r2.accepted, 1u);
+    EXPECT_TRUE(r2.query.bare.empty());
+    ASSERT_EQ(r2.query.bound.settings.size(), 1u);
+    EXPECT_TRUE(r2.query.bound.settings[0].inferred);
+}
+
+TEST(LlmFactValidatorSettingTest, ClearInferredKeepsScaffoldedFacts)
+{
+    auto v = makeValidator();
+    auto r = v.validate("beach photos near the lake",
+                        output({{"setting", "at", {"beach"}, "filter", "beach"},
+                                {"setting", "near", {"lake"}, "filter", "near the lake"}},
+                               {"beach photos"}));
+    ASSERT_EQ(r.query.bound.settings.size(), 2u);
+    EXPECT_TRUE(r.query.bound.hasInferred());
+    r.query.bound.clearInferred();
+    ASSERT_EQ(r.query.bound.settings.size(), 1u);
+    EXPECT_EQ(r.query.bound.settings[0].category, "lake");
+    EXPECT_FALSE(r.query.bound.hasInferred());
+}
+
+TEST(LlmFactValidatorSettingTest, SettingWordsFiledAsLocationsAreConverted)
+{
+    // The shipped model's real shape: "in the mountains" -> location=mountains.
+    auto v = makeValidator();
+    auto r = v.validate("hiking in the mountains",
+                        output({{"location", "eq", {"mountains"}, "filter", "in the mountains"}}, {"hiking"}));
+    EXPECT_EQ(r.accepted, 1u);
+    EXPECT_EQ(r.dropped, 0u);
+    EXPECT_FALSE(r.query.bound.location.has_value());
+    ASSERT_EQ(r.query.bound.settings.size(), 1u);
+    EXPECT_EQ(r.query.bound.settings[0].category, "mountain");
+    EXPECT_DOUBLE_EQ(r.query.bound.settings[0].max_m, 1500.0);
+    EXPECT_FALSE(r.query.bound.settings[0].inferred);
+}
+
+TEST(LlmFactValidatorSettingTest, SettingsTheModelMissedAreDetectedFromTheQuery)
+{
+    // "new jersey waterfronts" with only the location fact emitted.
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"new jersey"}));
+    auto r = v.validate("new jersey waterfronts",
+                        output({{"location", "eq", {"new jersey"}, "filter", "new jersey"}}, {"waterfronts"}));
+    EXPECT_EQ(r.query.bound.place_ids, std::vector<int>{100});
+    ASSERT_EQ(r.query.bound.settings.size(), 1u);
+    EXPECT_EQ(r.query.bound.settings[0].category, "waterfront");
+    EXPECT_TRUE(r.query.bound.settings[0].inferred);
+
+    // No duplicate when the model DID emit it.
+    auto r2 = v.validate("new jersey waterfronts",
+                         output({{"location", "eq", {"new jersey"}, "filter", "new jersey"},
+                                 {"setting", "near", {"waterfront"}, "filter", "waterfronts"}},
+                                {"waterfronts"}));
+    ASSERT_EQ(r2.query.bound.settings.size(), 1u);
+    EXPECT_DOUBLE_EQ(r2.query.bound.settings[0].max_m, 1500.0) << "the model's op wins";
+}
+
+TEST(LlmFactValidatorPlaceTest, ExplicitPlaceAfterInferredOneIsNotInferred)
+{
+    LlmFactValidator v(ExifKeywordConfig::defaults(), nullptr, nullptr, photosIn({"yellowstone", "bozeman"}));
+    auto r = v.validate("yellowstone sunsets in bozeman",
+                        output({{"location", "eq", {"yellowstone"}, "filter", "yellowstone"},
+                                {"location", "eq", {"bozeman"}, "filter", "in bozeman"}},
+                               {"sunsets"}));
+    EXPECT_EQ(r.query.bound.location_name, "bozeman");
+    EXPECT_FALSE(r.query.bound.location_inferred) << "the explicit 'in bozeman' must never be retried away";
+}
+
+TEST(LlmFactValidatorSettingTest, ADemotedPlaceAttemptNeverBecomesASetting)
+{
+    auto v = makeValidator();
+    auto r = v.validate("photos in mountain view",
+                        output({{"location", "eq", {"mountain view"}, "filter", "in mountain view"}}, {"photos"}));
+    EXPECT_EQ(r.dropped, 1u);
+    EXPECT_TRUE(r.query.bound.settings.empty());
+    // Same for an inferred (bare) attempt that names no photos.
+    auto r2 = v.validate("lake placid winter",
+                         output({{"location", "eq", {"lake placid"}, "filter", "lake placid"}}, {"winter"}));
+    EXPECT_TRUE(r2.query.bound.settings.empty());
+}

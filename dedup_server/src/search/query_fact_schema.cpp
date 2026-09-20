@@ -17,6 +17,9 @@ namespace MediaDedup
             (void)exts;
             type_names.push_back(name);
         }
+        std::vector<std::string> setting_names;
+        for (const auto &cat : kw.settings)
+            setting_names.push_back(cat.name);
 
         s.dims_ = {
             {"camera",
@@ -51,10 +54,19 @@ namespace MediaDedup
              {"eq", "range"},
              {}},
             {"location",
-             "place name, ONLY when anchored by a preposition (in/at/near/"
-             "around/from); bare place names stay in clip_queries",
+             "a named place (park, city, region, country): anchored by a "
+             "preposition (in/at/near/around/from) or bare when the rest of "
+             "the query is a scene or subject",
              {"eq"},
              {}},
+            // PLACE-4: the KIND of place, not its name. `at` = right there
+            // (on the waterfront, beach photos), `near` = close by (near the
+            // lake). The validator maps the category to feature codes.
+            {"setting",
+             "kind of place the photo was taken at, from the list; op at = "
+             "right there (on/at the X, bare 'X photos'), near = close to it",
+             {"at", "near"},
+             setting_names},
             {"file_type",
              "file format by name",
              {"in"},

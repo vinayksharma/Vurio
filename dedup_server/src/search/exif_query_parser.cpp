@@ -1,4 +1,5 @@
 #include "search/exif_query_parser.hpp"
+#include "search/setting_detector.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -139,10 +140,13 @@ namespace MediaDedup
     // ExifKeywordConfig; only the surrounding grammar is fixed here.
     ExifQueryParser::ExifQueryParser(const LocationGeocoder *geocoder,
                                      const ExifKeywordConfig &kw,
-                                     PersonResolver person_resolver)
-        : geocoder_(geocoder), person_resolver_(std::move(person_resolver))
+                                     PersonResolver person_resolver,
+                                     PlaceResolver place_resolver)
+        : geocoder_(geocoder), person_resolver_(std::move(person_resolver)),
+          place_resolver_(std::move(place_resolver))
     {
         months_ = kw.months;
+        keywords_ = kw;
         greater_set_ = toSet(kw.greater_words);
         greater_equal_set_ = toSet(kw.greater_equal_words);
         less_set_ = toSet(kw.less_words);
@@ -481,7 +485,8 @@ namespace MediaDedup
         // --- Location (preposition-triggered => bound) ------------------
         // "in yellowstone", "at grand canyon", "near paris". Tries the
         // longest span (up to 3 words) after the preposition first.
-        if (geocoder_ && geocoder_->size() > 0)
+        std::vector<std::string> place_attempts_out;
+        if ((geocoder_ && geocoder_->size() > 0) || place_resolver_)
         {
             struct Hit { std::size_t pos, len; std::string span; };
             std::vector<Hit> hits;
@@ -489,10 +494,19 @@ namespace MediaDedup
             for (auto it = begin; it != std::sregex_iterator(); ++it)
                 hits.push_back({static_cast<std::size_t>(it->position(0)),
                                 static_cast<std::size_t>(it->length(0)), (*it)[1]});
+            // PLACE-4: a preposition-triggered span that resolves to no
+            // place ("in mountain view") is still a place ATTEMPT — its
+            // words must not be re-read as settings ("mountain"). A span
+            // that is itself a setting ("in the mountains") stays visible.
+            std::vector<std::string> place_attempts;
             for (const auto &h : hits)
             {
-                if (bound.location)
+                // One location per query (pre-existing); a place_ids-only
+                // hit counts as resolved too (review finding: it used to be
+                // overwritten by a later bbox hit).
+                if (bound.location || !bound.place_ids.empty())
                     break;
+                bool resolved = false, setting_candidate = false;
                 // Longest word-prefix of the span that the gazetteer knows.
                 std::istringstream words(h.span);
                 std::vector<std::string> tokens;
@@ -503,19 +517,61 @@ namespace MediaDedup
                     std::string candidate;
                     for (std::size_t i = 0; i < take; ++i)
                         candidate += (i ? " " : "") + tokens[i];
-                    auto bounds = geocoder_->lookup(candidate);
-                    if (bounds)
+                    // PLACE-4: "near the lake" is a setting, not a place —
+                    // the gazetteer's substring match would otherwise turn
+                    // "lake" into Salt Lake City's bbox. And a bare article
+                    // ("the", left over from that skip) must never reach the
+                    // substring pass either: "the" is in "Netherlands".
+                    const std::string core = stripLeadingArticles(candidate + " ");
+                    if (core.find_first_not_of(' ') == std::string::npos)
+                        continue;
+                    if (keywords_.findSetting(core.substr(0, core.find_last_not_of(' ') + 1)))
+                    {
+                        setting_candidate = true;
+                        continue;
+                    }
+                    std::optional<LocationGeocoder::Bounds> bounds;
+                    if (geocoder_ && geocoder_->size() > 0)
+                        bounds = geocoder_->lookup(candidate);
+                    // PLACE-2: places the library has photos in, by name.
+                    std::vector<int> place_ids;
+                    if (place_resolver_)
+                        place_ids = place_resolver_(candidate);
+                    if (bounds || !place_ids.empty())
                     {
                         bound.location = bounds;
+                        bound.place_ids = std::move(place_ids);
                         bound.location_name = candidate;
                         // Consume the preposition plus the words that matched.
                         std::size_t span_start = h.pos + h.len - h.span.size();
                         std::size_t matched_len = candidate.size();
                         consume(text, h.pos, (span_start - h.pos) + matched_len);
+                        resolved = true;
                         break;
                     }
                 }
+                if (!resolved && !setting_candidate)
+                    place_attempts.push_back(toLower(h.span));
             }
+            place_attempts_out = place_attempts;
+        }
+
+        // --- Settings (PLACE-4, deterministic) -------------------------
+        // Runs on the text AFTER other facts were consumed, so "salt lake
+        // city" (a place) can never leave a stray "lake" behind. The word
+        // stays in the text for CLIP.
+        for (const auto &d : detectSettings(text, keywords_, place_attempts_out))
+        {
+            const auto *cat = keywords_.findSetting(d.category);
+            if (!cat)
+                continue;
+            ExifQueryConstraints::Setting st;
+            st.category = cat->name;
+            st.fcodes = cat->codes;
+            st.shoreline = cat->shoreline;
+            st.max_m = d.op == "near" ? setting_near_m_ : setting_at_m_;
+            st.inferred = d.inferred;
+            bound.settings.push_back(std::move(st));
         }
 
         // --- Remaining text --------------------------------------------

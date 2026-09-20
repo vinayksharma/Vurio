@@ -107,6 +107,33 @@ TEST(ExifKeywordConfigTest, ShippedKeywordFileMatchesBuiltInDefaults)
     EXPECT_EQ(loaded.imperative_words, defaults.imperative_words);
     EXPECT_EQ(loaded.filler_words, defaults.filler_words);
     EXPECT_EQ(loaded.file_types, defaults.file_types);
+    EXPECT_EQ(loaded.settings, defaults.settings); // PLACE-4
+}
+
+TEST(ExifKeywordConfigTest, SettingsFoldPluralsAndOverlayWholesale)
+{
+    auto c = ExifKeywordConfig::defaults();
+    ASSERT_NE(c.findSetting("waterfront"), nullptr);
+    EXPECT_EQ(c.findSetting("waterfronts")->name, "waterfront");
+    EXPECT_TRUE(c.findSetting("waterfront")->shoreline);
+    EXPECT_FALSE(c.findSetting("lakes")->shoreline);
+    EXPECT_EQ(c.findSetting("narnia"), nullptr);
+    EXPECT_EQ(c.findSetting("s"), nullptr);
+    // Sorted by name (Poco iteration order contract).
+    for (std::size_t i = 1; i < c.settings.size(); ++i)
+        EXPECT_LT(c.settings[i - 1].name, c.settings[i].name);
+
+    auto path = (std::filesystem::temp_directory_path() / "kw_settings.json").string();
+    std::ofstream(path) << R"({"settings": {"Pier": {"codes": ["S.PIER"], "shoreline": true},
+                                            "beach": {"codes": ["T.BCH"]}}})";
+    ASSERT_TRUE(c.loadFromFile(path));
+    ASSERT_EQ(c.settings.size(), 2u);
+    EXPECT_EQ(c.settings[0].name, "beach");
+    EXPECT_FALSE(c.settings[0].shoreline);
+    EXPECT_EQ(c.settings[1].name, "pier");
+    EXPECT_TRUE(c.settings[1].shoreline);
+    EXPECT_EQ(c.findSetting("piers")->codes, std::vector<std::string>{"S.PIER"});
+    std::remove(path.c_str());
 }
 
 TEST(ExifKeywordConfigTest, FileTypesOverlayReplacesWholesale)

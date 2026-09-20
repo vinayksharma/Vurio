@@ -45,6 +45,9 @@ struct ViewerImage: Identifiable, Equatable {
     // THUMB-1: server-supplied display geometry (0 = unknown -> square tile).
     let displayWidth: Int32
     let displayHeight: Int32
+    // PLACE-1: "Fairy Falls · Yellowstone National Park · Wyoming"; empty
+    // when the file has no GPS fix or no name resolved yet.
+    let placeLabel: String
 
     init(_ file: Vurio_Dedup_DayFile) {
         id = file.id
@@ -56,6 +59,7 @@ struct ViewerImage: Identifiable, Equatable {
         isRepresentative = file.isRepresentative
         displayWidth = file.displayWidth
         displayHeight = file.displayHeight
+        placeLabel = file.placeLabel
     }
 
     init(_ file: Vurio_Dedup_DuplicateFile) {
@@ -68,6 +72,7 @@ struct ViewerImage: Identifiable, Equatable {
         isRepresentative = file.isRepresentative
         displayWidth = file.displayWidth
         displayHeight = file.displayHeight
+        placeLabel = "" // DuplicateFile does not carry a place (BINNED view)
     }
 }
 

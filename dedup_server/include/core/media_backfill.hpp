@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace Poco
 {
@@ -35,13 +36,16 @@ namespace MediaDedup
     public:
         /// Called by the sweep as it progresses: (files done, files total).
         using ProgressFn = std::function<void(std::size_t, std::size_t)>;
+        /// PLACE-1: the hook now runs several sweeps in turn; each announces
+        /// itself through this so the integrity dialog names the phase.
+        using PhaseFn = std::function<void(const std::string &)>;
 
-        using Fn = std::function<void(std::shared_ptr<DatabaseManager>, ProgressFn)>;
+        using Fn = std::function<void(std::shared_ptr<DatabaseManager>, ProgressFn, PhaseFn)>;
 
         static void install(Fn fn);
 
         /// Runs the installed backfill; silently does nothing when none is installed.
-        static void run(std::shared_ptr<DatabaseManager> db, ProgressFn progress);
+        static void run(std::shared_ptr<DatabaseManager> db, ProgressFn progress, PhaseFn phase = {});
     };
 
     /**

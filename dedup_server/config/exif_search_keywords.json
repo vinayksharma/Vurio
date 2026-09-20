@@ -13,78 +13,382 @@
     "A comparator may be followed by an optional 'than', and the numeric",
     "dimensions accept a spelled-out name ('aperture', 'f-stop', 'focal",
     "length') in front of it. Path is configurable via the",
-    "'search.keywordsPath' setting (default: config/exif_search_keywords.json)."
+    "'search.keywordsPath' setting (default: config/exif_search_keywords.json).",
+    "'settings' (PLACE-4): a category name users say ('waterfront', 'beach') -> the GeoNames feature codes a photo must be at/near; 'shoreline': true also accepts the Natural Earth distance-to-water."
   ],
-
   "camera": {
     "brands": [
-      "canon", "nikon", "sony", "fuji", "fujifilm", "panasonic", "lumix",
-      "olympus", "leica", "pentax", "hasselblad", "iphone", "apple",
-      "samsung", "google", "pixel", "dji", "gopro", "ricoh", "sigma", "kodak"
+      "canon",
+      "nikon",
+      "sony",
+      "fuji",
+      "fujifilm",
+      "panasonic",
+      "lumix",
+      "olympus",
+      "leica",
+      "pentax",
+      "hasselblad",
+      "iphone",
+      "apple",
+      "samsung",
+      "google",
+      "pixel",
+      "dji",
+      "gopro",
+      "ricoh",
+      "sigma",
+      "kodak"
     ],
-    "context_verbs": ["taken", "shot", "captured", "photographed"],
-    "context_prepositions": ["with", "on", "using", "by"],
-    "articles": ["a", "an", "my"],
-    "suffixes": ["camera"]
+    "context_verbs": [
+      "taken",
+      "shot",
+      "captured",
+      "photographed"
+    ],
+    "context_prepositions": [
+      "with",
+      "on",
+      "using",
+      "by"
+    ],
+    "articles": [
+      "a",
+      "an",
+      "my"
+    ],
+    "suffixes": [
+      "camera"
+    ]
   },
-
   "comparisons": {
     "greater": [
-      "above", "over", "greater than", "more than", "higher than",
-      "bigger than", "larger than", "greater", "higher", "bigger", "larger",
+      "above",
+      "over",
+      "greater than",
+      "more than",
+      "higher than",
+      "bigger than",
+      "larger than",
+      "greater",
+      "higher",
+      "bigger",
+      "larger",
       ">"
     ],
     "greater_or_equal": [
-      "at least", "no less than", "not less than", "minimum", "min", ">=", "=>"
+      "at least",
+      "no less than",
+      "not less than",
+      "minimum",
+      "min",
+      ">=",
+      "=>"
     ],
     "less": [
-      "below", "under", "less than", "lower than", "smaller than",
-      "fewer than", "less", "lower", "smaller", "<"
+      "below",
+      "under",
+      "less than",
+      "lower than",
+      "smaller than",
+      "fewer than",
+      "less",
+      "lower",
+      "smaller",
+      "<"
     ],
     "less_or_equal": [
-      "at most", "no more than", "not more than", "maximum", "max", "<=", "=<"
+      "at most",
+      "no more than",
+      "not more than",
+      "maximum",
+      "max",
+      "<=",
+      "=<"
     ],
-    "aperture_wider": ["wider than", "wider", "faster", "brighter", "more open"],
-    "aperture_narrower": ["narrower than", "narrower", "smaller", "stopped down"],
-    "shutter_faster": ["faster than", "faster", "quicker", "shorter than", "shorter"],
-    "shutter_slower": ["slower than", "slower", "longer than", "longer"],
-    "focal_longer": ["above", "over", "longer than", "greater than", "more than", ">"],
-    "focal_shorter": ["below", "under", "shorter than", "less than", "<"]
+    "aperture_wider": [
+      "wider than",
+      "wider",
+      "faster",
+      "brighter",
+      "more open"
+    ],
+    "aperture_narrower": [
+      "narrower than",
+      "narrower",
+      "smaller",
+      "stopped down"
+    ],
+    "shutter_faster": [
+      "faster than",
+      "faster",
+      "quicker",
+      "shorter than",
+      "shorter"
+    ],
+    "shutter_slower": [
+      "slower than",
+      "slower",
+      "longer than",
+      "longer"
+    ],
+    "focal_longer": [
+      "above",
+      "over",
+      "longer than",
+      "greater than",
+      "more than",
+      ">"
+    ],
+    "focal_shorter": [
+      "below",
+      "under",
+      "shorter than",
+      "less than",
+      "<"
+    ]
   },
-
   "flash": {
-    "on_phrases": ["with flash", "flash on", "flash fired", "using flash"],
-    "off_phrases": ["without flash", "no flash", "flash off"]
+    "on_phrases": [
+      "with flash",
+      "flash on",
+      "flash fired",
+      "using flash"
+    ],
+    "off_phrases": [
+      "without flash",
+      "no flash",
+      "flash off"
+    ]
   },
-
   "dates": {
     "months": [
-      "january", "february", "march", "april", "may", "june",
-      "july", "august", "september", "october", "november", "december"
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december"
     ],
-    "ambiguous_months": ["may"],
-    "prepositions": ["in", "from", "during"]
+    "ambiguous_months": [
+      "may"
+    ],
+    "prepositions": [
+      "in",
+      "from",
+      "during"
+    ]
   },
-
   "location": {
-    "prepositions": ["in", "at", "near", "around", "from"]
+    "prepositions": [
+      "in",
+      "at",
+      "near",
+      "around",
+      "from"
+    ]
   },
-
   "file_types": {
-    "raw": ["cr2", "cr3", "nef", "nrw", "arw", "raf", "orf", "rw2", "dng", "pef", "srw", "x3f"],
-    "jpeg": ["jpg", "jpeg"],
-    "png": ["png"],
-    "heic": ["heic", "heif"],
-    "tiff": ["tif", "tiff"],
-    "video": ["mp4", "mov", "m4v", "avi", "mkv", "webm"]
+    "raw": [
+      "cr2",
+      "cr3",
+      "nef",
+      "nrw",
+      "arw",
+      "raf",
+      "orf",
+      "rw2",
+      "dng",
+      "pef",
+      "srw",
+      "x3f"
+    ],
+    "jpeg": [
+      "jpg",
+      "jpeg"
+    ],
+    "png": [
+      "png"
+    ],
+    "heic": [
+      "heic",
+      "heif"
+    ],
+    "tiff": [
+      "tif",
+      "tiff"
+    ],
+    "video": [
+      "mp4",
+      "mov",
+      "m4v",
+      "avi",
+      "mkv",
+      "webm"
+    ]
   },
-
+  "settings": {
+    "beach": {
+      "codes": [
+        "T.BCH",
+        "H.BCH"
+      ],
+      "shoreline": false
+    },
+    "canyon": {
+      "codes": [
+        "T.CNYN",
+        "T.GRGE",
+        "T.VAL"
+      ],
+      "shoreline": false
+    },
+    "forest": {
+      "codes": [
+        "L.RESF",
+        "L.RESW",
+        "L.RESN"
+      ],
+      "shoreline": false
+    },
+    "glacier": {
+      "codes": [
+        "H.GLCR"
+      ],
+      "shoreline": false
+    },
+    "island": {
+      "codes": [
+        "T.ISL",
+        "T.ISLS",
+        "T.ISLET"
+      ],
+      "shoreline": false
+    },
+    "lake": {
+      "codes": [
+        "H.LK",
+        "H.LKS",
+        "H.RSV",
+        "H.PND",
+        "H.LGN",
+        "H.LKN",
+        "H.LKI"
+      ],
+      "shoreline": false
+    },
+    "mountain": {
+      "codes": [
+        "T.MT",
+        "T.MTS",
+        "T.PK",
+        "T.HLL",
+        "T.HLLS",
+        "T.RDGE",
+        "T.PASS",
+        "T.VLC"
+      ],
+      "shoreline": false
+    },
+    "park": {
+      "codes": [
+        "L.PRK",
+        "L.RES",
+        "L.RESN",
+        "L.RESW",
+        "L.RESF",
+        "L.RESH",
+        "L.RESA"
+      ],
+      "shoreline": false
+    },
+    "spring": {
+      "codes": [
+        "H.SPNG",
+        "H.HTSP",
+        "H.GYSR"
+      ],
+      "shoreline": false
+    },
+    "trail": {
+      "codes": [
+        "R.TRL"
+      ],
+      "shoreline": false
+    },
+    "waterfall": {
+      "codes": [
+        "H.FLLS",
+        "H.OVF"
+      ],
+      "shoreline": false
+    },
+    "waterfront": {
+      "codes": [
+        "H.BAY",
+        "H.COVE",
+        "H.HBR",
+        "H.INLT",
+        "H.LGN",
+        "H.SD",
+        "H.STRT",
+        "H.CHN",
+        "H.SEA",
+        "H.OCN",
+        "H.GULF",
+        "H.FJD",
+        "H.ESTY",
+        "H.ANCH",
+        "H.LK",
+        "H.LKS",
+        "H.RSV",
+        "H.PND",
+        "T.BCH",
+        "H.BCH",
+        "S.PIER",
+        "S.MAR",
+        "L.PRT",
+        "H.STR"
+      ],
+      "shoreline": true
+    }
+  },
   "text": {
-    "imperative_words": ["find", "show", "me", "all"],
+    "imperative_words": [
+      "find",
+      "show",
+      "me",
+      "all"
+    ],
     "filler_words": [
-      "find", "show", "me", "all", "the", "a", "an", "my", "of",
-      "photo", "photos", "picture", "pictures", "pic", "pics",
-      "image", "images", "shot", "shots", "taken", "with", "and"
+      "find",
+      "show",
+      "me",
+      "all",
+      "the",
+      "a",
+      "an",
+      "my",
+      "of",
+      "photo",
+      "photos",
+      "picture",
+      "pictures",
+      "pic",
+      "pics",
+      "image",
+      "images",
+      "shot",
+      "shots",
+      "taken",
+      "with",
+      "and"
     ]
   }
 }

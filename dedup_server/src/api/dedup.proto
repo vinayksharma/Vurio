@@ -427,6 +427,10 @@ message DayFile {
   bool matched_exif = 14;
   bool matched_face = 15;
   repeated CachedThumbnail cached_thumbnails = 16; // STRIP-2, see DuplicateFile
+  // PLACE-1: where the photo was taken, most specific first
+  // ("Fairy Falls · Yellowstone National Park · Wyoming"); empty when the
+  // file has no GPS fix or it has not been resolved yet.
+  string place_label = 17;
 }
 
 message DayGroup {

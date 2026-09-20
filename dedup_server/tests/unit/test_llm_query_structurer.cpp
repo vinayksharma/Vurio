@@ -36,10 +36,10 @@ TEST(QueryFactSchemaTest, RegistryCoversAllDimensions)
     auto s = QueryFactSchema::fromKeywords(ExifKeywordConfig::defaults());
     const char *expected[] = {"camera", "iso",  "aperture", "shutter",  "focal",
                               "flash",  "date", "location", "file_type",
-                              "person", "face_count"}; // QP-2 (FACE-4)
+                              "person", "face_count", "setting"}; // QP-2 (FACE-4), PLACE-4
     for (const char *name : expected)
         EXPECT_NE(s.find(name), nullptr) << name;
-    EXPECT_EQ(s.dimensions().size(), 11u);
+    EXPECT_EQ(s.dimensions().size(), 12u);
 }
 
 TEST(QueryFactSchemaTest, HintsComeFromTheKeywordConfig)
@@ -331,6 +331,14 @@ namespace
                 // QP-2: the golden library knows one named person.
                 [](const std::string &name) -> int {
                     return name == "alice" ? 7 : 0;
+                },
+                // PLACE-2: the golden library has photos in two places.
+                [](const std::string &name) -> std::vector<int> {
+                    if (name == "yellowstone")
+                        return {1};
+                    if (name == "bozeman")
+                        return {2};
+                    return {};
                 });
         }
 
@@ -473,4 +481,91 @@ TEST_F(GoldenMatrixTest, FaceCountBindsWithDate)
     EXPECT_EQ(q.bound.date_range->first, "2020:01:01 00:00:00");
     ASSERT_GE(q.clip_queries.size(), 1u);
     EXPECT_EQ(q.clip_queries[0], "group photos");
+}
+
+// PLACE-2 §6.1: bare place names — the model decides, the validator gates.
+TEST_F(GoldenMatrixTest, BarePlaceNameBecomesAnInferredBoundLocation)
+{
+    auto q = run("yellowstone waterfalls");
+    EXPECT_EQ(q.bound.place_ids, std::vector<int>{1});
+    EXPECT_TRUE(q.bound.location_inferred);
+    EXPECT_TRUE(q.bare.empty());
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_NE(q.clip_queries[0].find("waterfalls"), std::string::npos) << q.clip_queries[0];
+}
+
+TEST_F(GoldenMatrixTest, AdjectiveAndFoodAreNeverPlaces)
+{
+    // These two are the model's known weak spots (it has volunteered an
+    // aperture fact for "nice" and a location for "turkey"); what matters
+    // is the VALIDATED query, so drops are allowed here — the assertion is
+    // that nothing survives as a filter.
+    auto loose = [&](const std::string &query) {
+        auto raw = structurer_->structure(query, *llm_);
+        EXPECT_TRUE(raw.ok) << query << ": " << raw.error;
+        return validator_->validate(query, raw).query;
+    };
+    auto q = loose("nice sunset");
+    EXPECT_FALSE(q.bound.hasAny());
+    EXPECT_TRUE(q.bound.place_ids.empty());
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_NE(q.clip_queries[0].find("sunset"), std::string::npos) << q.clip_queries[0];
+
+    // Whatever the model claims about "turkey", no photos there -> no filter.
+    auto q2 = loose("turkey dinner");
+    EXPECT_FALSE(q2.bound.hasAny());
+    ASSERT_FALSE(q2.clip_queries.empty());
+    EXPECT_NE(q2.clip_queries[0].find("turkey"), std::string::npos) << q2.clip_queries[0];
+}
+
+TEST_F(GoldenMatrixTest, PrepositionedPlaceIsBoundNotInferred)
+{
+    auto q = run("waterfalls in yellowstone");
+    EXPECT_EQ(q.bound.place_ids, std::vector<int>{1});
+    EXPECT_FALSE(q.bound.location_inferred);
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_EQ(q.clip_queries[0], "waterfalls");
+}
+
+// PLACE-4
+TEST(QueryFactSchemaSettingTest, SettingDimensionListsCategoriesAsHints)
+{
+    auto s = QueryFactSchema::fromKeywords(ExifKeywordConfig::defaults());
+    const auto *d = s.find("setting");
+    ASSERT_NE(d, nullptr);
+    EXPECT_EQ(d->ops, (std::vector<std::string>{"at", "near"}));
+    EXPECT_NE(std::find(d->hints.begin(), d->hints.end(), "waterfront"), d->hints.end());
+    EXPECT_NE(s.promptSchemaSection().find("waterfront"), std::string::npos);
+    EXPECT_NE(s.gbnf().find("setting"), std::string::npos);
+}
+
+TEST_F(GoldenMatrixTest, RegionPlusSettingSplitsIntoTwoGeoFacts)
+{
+    // Whatever the model emits, the validated query must carry the
+    // waterfront setting (deterministic detection) and must have seen
+    // "new jersey" as a place.
+    auto raw = structurer_->structure("new jersey waterfronts", *llm_);
+    ASSERT_TRUE(raw.ok) << raw.error;
+    auto q = validator_->validate("new jersey waterfronts", raw).query;
+    ASSERT_EQ(q.bound.settings.size(), 1u);
+    EXPECT_EQ(q.bound.settings[0].category, "waterfront");
+    EXPECT_DOUBLE_EQ(q.bound.settings[0].max_m, 150.0);
+    bool saw_location = false;
+    for (const auto &f : raw.facts)
+        saw_location = saw_location || (f.dim == "location");
+    EXPECT_TRUE(saw_location);
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_NE(q.clip_queries[0].find("waterfront"), std::string::npos) << q.clip_queries[0];
+}
+
+TEST_F(GoldenMatrixTest, NearTheLakeIsANearSetting)
+{
+    auto q = run("sunsets near the lake");
+    ASSERT_EQ(q.bound.settings.size(), 1u);
+    EXPECT_EQ(q.bound.settings[0].category, "lake");
+    EXPECT_DOUBLE_EQ(q.bound.settings[0].max_m, 1500.0);
+    EXPECT_FALSE(q.bound.settings[0].inferred);
+    EXPECT_FALSE(q.bound.location.has_value()) << "'the lake' is never Salt Lake City";
+    ASSERT_FALSE(q.clip_queries.empty());
+    EXPECT_NE(q.clip_queries[0].find("sunset"), std::string::npos) << q.clip_queries[0];
 }

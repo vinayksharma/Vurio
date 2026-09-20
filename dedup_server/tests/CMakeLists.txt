@@ -92,6 +92,8 @@ set(UNIT_TEST_SOURCES
     unit/test_display_geometry.cpp
     unit/test_duplicate_members_geometry.cpp
     unit/test_thumbnail_cache_ops.cpp
+    unit/test_offline_reverse_geocoder.cpp
+    unit/test_places_ops.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -371,9 +373,23 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_offline_reverse_geocoder")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="OfflineReverseGeocoderTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_places_ops")
+        # Skip creating standalone executable for this test - it's only part of all_unit_tests
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PlacesOpsTest.*:PlaceResolverTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     elseif(${test_name} STREQUAL "test_media_backfill")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
-        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MediaBackfillRawExifTest.*")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MediaBackfillRawExifTest.*:MediaBackfillPlacesTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -560,6 +576,10 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/place_resolver.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/places_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/search/offline_reverse_geocoder.cpp
+            ${CMAKE_SOURCE_DIR}/src/search/location_geocoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
@@ -600,6 +620,10 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         target_sources(${test_name} PRIVATE 
             ${CMAKE_SOURCE_DIR}/src/media_processors/media_processor.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image_processor.cpp
+            ${CMAKE_SOURCE_DIR}/src/core/place_resolver.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/places_ops.cpp
+            ${CMAKE_SOURCE_DIR}/src/search/offline_reverse_geocoder.cpp
+            ${CMAKE_SOURCE_DIR}/src/search/location_geocoder.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_adapter.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/onnx_session_manager.cpp
@@ -687,7 +711,10 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/integrity_check_service.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_backfill_hook.cpp
     ${CMAKE_SOURCE_DIR}/src/core/media_backfill.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/place_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/database/faces_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/places_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/search/offline_reverse_geocoder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_align.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_clusterer.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/face/face_scan_service.cpp
@@ -738,6 +765,7 @@ target_sources(all_unit_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/search/llm_query_structurer.cpp
         ${CMAKE_SOURCE_DIR}/src/search/llm_fact_validator.cpp
         ${CMAKE_SOURCE_DIR}/src/search/relative_date_resolver.cpp
+        ${CMAKE_SOURCE_DIR}/src/search/setting_detector.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipeline_thumbnail_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/image_magick_adapter.cpp
@@ -896,7 +924,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_exif_search_e2e" AND
       NOT ${test_name} STREQUAL "test_display_geometry" AND
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
-      NOT ${test_name} STREQUAL "test_thumbnail_cache_ops")
+      NOT ${test_name} STREQUAL "test_thumbnail_cache_ops" AND
+      NOT ${test_name} STREQUAL "test_offline_reverse_geocoder" AND
+      NOT ${test_name} STREQUAL "test_places_ops")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

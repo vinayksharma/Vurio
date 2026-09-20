@@ -13,6 +13,17 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Open
 
+- **PLACE-4 — setting facts: "waterfront", "beach", "lake", "mountain" as
+  geo filters with at/near distance semantics, backed by GeoNames feature
+  codes plus Natural Earth shoreline distance.**
+  *Designed and implemented 2026-09-19 (with PLACE-1/2, uncommitted).*
+  Spec: [todo_place_search.md](todo_place_search.md) §9.2.
+- **PLACE-3 — opt-in online place lookup (Apple MapKit / Nominatim) in the
+  client only, gated by explicit consent; Settings › Places; inline prompt.**
+  *Designed 2026-09-19; provider order, coordinate precision, consent surface
+  and consent-flag ownership deliberately deferred by the user.*
+  Spec: [todo_place_search.md](todo_place_search.md) §7.
+
 - **STRIP-1 — film strips resize to fill the available width on window resize.**
   *Reported 2026-08-24; not yet designed.*
   The horizontal film strips (VU day strips and BINNED group cards) keep the
@@ -23,6 +34,16 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Done
 
+- **PLACE-1/2 — offline place names + place-name search.** Completed
+  2026-09-19. `scripts/build_places_db.py` builds a 731 MB GeoNames gazetteer
+  (9.08 M places, gitignored); `OfflineReverseGeocoder` names every GPS photo
+  at scan time and in an integrity-check sweep (locality by population-
+  discounted distance, park bbox containment, landmarks within 1.5 km, region
+  and country from the nearest feature); `places`/`file_places` tables;
+  search resolves "in bozeman" through places-with-photos ∪ gazetteer bbox;
+  bare place names ("yellowstone waterfalls") are LLM-inferred bound filters
+  with an empty-result retry; viewer shows the place label.
+  Spec: [todo_place_search.md](todo_place_search.md).
 - **VER-1 — git-derived versioning, sidebar build display, build-pair handshake
   check.** Completed 2026-08-28 (PR #89). Version computed from git at build
   time via one generator script embedding identical constants into the C++

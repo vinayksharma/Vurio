@@ -125,6 +125,20 @@ struct ViewerView: View {
     private var pathBar: some View {
         HStack(spacing: 12) {
             if let selected = model.selectedImage {
+                // PLACE-1: where it was taken, ahead of where it lives.
+                if !selected.placeLabel.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.system(size: 9))
+                        Text(selected.placeLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .foregroundColor(Theme.textPrimary)
+                    .help(selected.placeLabel)
+                    .layoutPriority(1)
+                }
                 Text(selected.filePath)
                     .font(.custom("Menlo", size: 9))
                     .foregroundColor(Theme.textSecondary)

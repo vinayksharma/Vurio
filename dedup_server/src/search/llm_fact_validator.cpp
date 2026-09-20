@@ -1,4 +1,5 @@
 #include "search/llm_fact_validator.hpp"
+#include "search/setting_detector.hpp"
 
 #include <Poco/Logger.h>
 
@@ -121,9 +122,12 @@ namespace MediaDedup
 
     LlmFactValidator::LlmFactValidator(ExifKeywordConfig keywords,
                                        const LocationGeocoder *geocoder,
-                                       PersonResolver person_resolver)
+                                       PersonResolver person_resolver,
+                                       PlaceResolver place_resolver,
+                                       Options options)
         : keywords_(std::move(keywords)), geocoder_(geocoder),
-          person_resolver_(std::move(person_resolver))
+          person_resolver_(std::move(person_resolver)),
+          place_resolver_(std::move(place_resolver)), options_(options)
     {
     }
 
@@ -150,14 +154,81 @@ namespace MediaDedup
         };
 
         std::vector<std::string> accepted_spans;
+        // Review fix: place ATTEMPTS the model made that resolved to nothing
+        // ("in mountain view") — the detector must not re-read their words
+        // as settings ("mountain").
+        std::vector<std::string> place_attempts;
+        // PLACE-4: a setting fact's span IS the setting word ("waterfronts").
+        // It must stay in the clip queries (the prompt says so, and the regex
+        // parser leaves it in the CLIP text), so setting spans are kept apart
+        // from `accepted_spans` (which are stripped from clip queries below)
+        // and only join them for the detector's covered-spans check.
+        std::vector<std::string> setting_spans;
+        // PLACE-4: settings are added through one gate so the model's own
+        // facts, converted location facts and the deterministic detector
+        // never duplicate a category.
+        auto addSetting = [&](const ExifKeywordConfig::SettingCategory &cat, const std::string &op,
+                              bool inferred_setting) {
+            for (const auto &existing : sq.bound.settings)
+                if (existing.category == cat.name)
+                    return;
+            ExifQueryConstraints::Setting st;
+            st.category = cat.name;
+            st.fcodes = cat.codes;
+            st.shoreline = cat.shoreline;
+            st.max_m = op == "near" ? options_.setting_near_m : options_.setting_at_m;
+            st.inferred = inferred_setting;
+            sq.bound.settings.push_back(std::move(st));
+        };
         for (const auto &f : raw.facts)
         {
             // --- Grounding: span in query, every value in span -----------
-            const std::string span_n = normalize(f.span);
+            std::string span_n = normalize(f.span);
+            // PLACE-2 §6.1: a bare place name ("yellowstone waterfalls").
+            // The model reliably labels it a location but invents the
+            // span it "should" have had ("in yellowstone"), so the span
+            // fails grounding. When the VALUE itself is in the query the
+            // claim is checkable — accept it as an inferred location and
+            // let the resolution gate below decide (it must name a place
+            // the library has photos in).
+            bool inferred = false;
             if (span_n.empty() || query_n.find(span_n) == std::string::npos)
             {
-                drop(f, "span not grounded in query");
-                continue;
+                std::string value_n = f.values.size() == 1 ? normalize(f.values[0]) : std::string();
+                if (f.dim == "location" && !value_n.empty() &&
+                    query_n.find(value_n) != std::string::npos)
+                {
+                    inferred = true;
+                    span_n = value_n;
+                }
+                else
+                {
+                    drop(f, "span not grounded in query");
+                    continue;
+                }
+            }
+            // A grounded location whose span carries no location
+            // preposition ("turkey dinner", "yellowstone waterfalls") is
+            // equally the model's inference — the user never said "in".
+            // PLACE-4: the same for a setting with no scaffolding ("beach
+            // photos" vs "on the beach" / "near the lake").
+            if ((f.dim == "location" || f.dim == "setting") && !inferred)
+            {
+                static const char *kSettingScaffold[] = {"on", "at", "by", "near", "along",
+                                                         "beside", "close", "next", "around"};
+                bool scaffolded = false;
+                std::istringstream words(span_n);
+                for (std::string w; words >> w && !scaffolded;)
+                {
+                    for (const auto &prep : keywords_.location_prepositions)
+                        if (w == prep)
+                            scaffolded = true;
+                    if (f.dim == "setting")
+                        for (const char *sc : kSettingScaffold)
+                            if (w == sc)
+                                scaffolded = true;
+                }
+                inferred = !scaffolded;
             }
             bool values_grounded = true;
             for (const auto &v : f.values)
@@ -185,7 +256,10 @@ namespace MediaDedup
                 continue;
             }
 
-            const bool filter = (f.intent == "filter");
+            // An inferred place/setting is always a bound filter (§6.1):
+            // "explore" would union every photo there.
+            const bool filter = (f.intent == "filter") || inferred ||
+                                f.dim == "setting";
             if (!filter && f.intent != "explore")
             {
                 drop(f, "unknown intent");
@@ -474,24 +548,91 @@ namespace MediaDedup
                     }
                 }
             }
+            else if (f.dim == "setting" && (f.op == "at" || f.op == "near") && !f.values.empty())
+            {
+                // PLACE-4: every value must be a known category; the op
+                // picks the radius. Unknown categories drop the fact (the
+                // word stays in the model's clip text anyway).
+                bool all_known = true;
+                std::vector<ExifQueryConstraints::Setting> parsed;
+                for (const auto &v : f.values)
+                {
+                    const auto *cat = keywords_.findSetting(normalize(v));
+                    if (!cat)
+                    {
+                        all_known = false;
+                        break;
+                    }
+                    ExifQueryConstraints::Setting st;
+                    st.category = cat->name;
+                    st.fcodes = cat->codes;
+                    st.shoreline = cat->shoreline;
+                    st.max_m = f.op == "at" ? options_.setting_at_m : options_.setting_near_m;
+                    st.inferred = inferred;
+                    parsed.push_back(std::move(st));
+                }
+                if (all_known)
+                {
+                    for (auto &st : parsed)
+                    {
+                        const auto *cat = keywords_.findSetting(st.category);
+                        addSetting(*cat, f.op, st.inferred);
+                    }
+                    ok = true;
+                }
+            }
+            else if (f.dim == "location" && f.op == "eq" && f.values.size() == 1 &&
+                     keywords_.findSetting(stripLeadingArticles(normalize(f.values[0]))))
+            {
+                // PLACE-4: the model filed a setting word as a place ("in
+                // the mountains" -> location=mountains). It is a setting;
+                // the span's scaffold decides at/near.
+                const auto *cat = keywords_.findSetting(stripLeadingArticles(normalize(f.values[0])));
+                const std::string op = settingOpForSpan(span_n);
+                addSetting(*cat, op.empty() ? "at" : op, op.empty());
+                ++result.accepted;
+                setting_spans.push_back(span_n);
+                continue;
+            }
             else if (f.dim == "location" && f.op == "eq" && f.values.size() == 1)
             {
                 const std::string name = normalize(f.values[0]);
+                std::optional<LocationGeocoder::Bounds> bounds;
                 if (geocoder_ && geocoder_->size() > 0)
+                    bounds = geocoder_->lookup(name);
+                // PLACE-2: places the library has photos in (file_places).
+                std::vector<int> place_ids;
+                if (place_resolver_)
+                    place_ids = place_resolver_(name);
+                if (bounds || !place_ids.empty())
                 {
-                    if (auto bounds = geocoder_->lookup(name))
-                    {
-                        target.location = bounds;
-                        target.location_name = name;
-                        ok = true;
-                    }
+                    target.location = bounds;
+                    target.place_ids = std::move(place_ids);
+                    target.location_name = name;
+                    // Assigned, not OR-ed: an explicit "in <place>" after an
+                    // inferred one must not inherit the inferred retry.
+                    target.location_inferred = inferred;
+                    ok = true;
                 }
                 if (!ok)
                 {
+                    if (inferred)
+                    {
+                        // The model's guess named nothing the library has
+                        // photos in ("turkey dinner"): not a lie about the
+                        // text, just not a place here. Skip without a drop
+                        // (a drop feeds the distrust-the-parse heuristic)
+                        // and without a clip demotion — the model's own
+                        // clip_queries already carry the full text.
+                        logger.information("Skipped inferred location '%s' (no photos there)", name);
+                        place_attempts.push_back(span_n);
+                        continue;
+                    }
                     // Unresolvable place: the semantic content must survive —
                     // demote to a CLIP query instead of silently filtering
                     // to zero results.
                     sq.clip_queries.push_back(name);
+                    place_attempts.push_back(span_n);
                     drop(f, "location not in gazetteer; demoted to clip query");
                     continue;
                 }
@@ -503,9 +644,22 @@ namespace MediaDedup
                 continue;
             }
             ++result.accepted;
-            accepted_spans.push_back(span_n);
+            (f.dim == "setting" ? setting_spans : accepted_spans).push_back(span_n);
             if (!filter && branch.hasAny())
                 sq.bare.push_back(std::move(branch));
+        }
+
+        // --- PLACE-4: settings the model missed ---------------------------
+        // The closed setting vocabulary is detected in code regardless of
+        // what the model emitted; spans already claimed by accepted facts
+        // (place names such as "salt lake city") are skipped.
+        {
+            std::vector<std::string> covered = accepted_spans;
+            covered.insert(covered.end(), setting_spans.begin(), setting_spans.end());
+            covered.insert(covered.end(), place_attempts.begin(), place_attempts.end());
+            for (const auto &d : detectSettings(query_n, keywords_, covered))
+                if (const auto *cat = keywords_.findSetting(d.category))
+                    addSetting(*cat, d.op, d.inferred);
         }
 
         // --- clip_queries: grounded, capped ------------------------------

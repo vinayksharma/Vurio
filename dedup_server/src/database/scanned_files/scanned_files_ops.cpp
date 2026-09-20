@@ -3,6 +3,7 @@
 #include "database/database_manager.hpp"
 #include "database/db_retry.hpp"
 #include "database/faces_ops.hpp"
+#include "database/places_ops.hpp"
 #include "database/vector_index.hpp"
 #include "database/sql_constants.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
@@ -144,6 +145,9 @@ namespace MediaDedup
                 SQL::kAlterScannedFilesAddExifGPSLon,
                 SQL::kAlterScannedFilesAddExifGPSAlt,
                 SQL::kAlterScannedFilesAddExifOrientation,
+                SQL::kAlterScannedFilesAddPlaceLabel,
+                SQL::kAlterScannedFilesAddPlaceLevel,
+                SQL::kAlterScannedFilesAddShoreDistance,
             };
             int added = 0;
             auto lease = db.acquireSessionLease();
@@ -365,7 +369,12 @@ namespace MediaDedup
                 // transaction. Nothing else deletes them, and a face that
                 // outlives its photo cannot be shown, counted or clustered.
                 if (file_id > 0)
+                {
                     touched_clusters = FacesOps::deleteFacesForFiles(sess, {file_id});
+                    // PLACE-1: same for its place rows — an orphan would keep
+                    // its place "with photos" for name search.
+                    PlacesOps::deleteFilePlacesForFiles(sess, {file_id});
+                }
                 Statement stmt(sess);
                 stmt << std::string(SQL::kDeleteScannedFile), Keywords::use(p), Keywords::now;
                 sess.commit();
@@ -481,6 +490,8 @@ namespace MediaDedup
             // FACE-9: the location's faces go with its rows, same
             // transaction (see removeByPath).
             touched_clusters = FacesOps::deleteFacesForFiles(sess, removed_ids);
+            // PLACE-1: and their place rows (see removeByPath).
+            PlacesOps::deleteFilePlacesForFiles(sess, removed_ids);
 
             Statement del_files(sess);
             del_files << "DELETE FROM scanned_files WHERE location_key=?", Keywords::use(key), Keywords::now;
@@ -595,6 +606,8 @@ namespace MediaDedup
                 // FACE-9: the file's faces go with the row, same
                 // transaction (see removeByPath).
                 touched_clusters = FacesOps::deleteFacesForFiles(sess, {file_id});
+                // PLACE-1: and its place rows (see removeByPath).
+                PlacesOps::deleteFilePlacesForFiles(sess, {file_id});
 
                 // Delete the scanned_file row itself. This will CASCADE DELETE
                 // to: duplicate_members, ejected_files_history.

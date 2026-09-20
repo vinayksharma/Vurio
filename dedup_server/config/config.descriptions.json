@@ -418,6 +418,34 @@
       "text": "Without this check, a whole afternoon of similar frames collapses into one group: every frame clears the similarity threshold against the same lead image even though each has a near-identical twin elsewhere. Lower values split groups more aggressively; 0 turns the check off."
     }
   ],
+  "search.placesDbPath": "Offline Place Gazetteer",
+  "search.placesDbPath.long": [
+    {
+      "type": "paragraph",
+      "text": "Path to the offline place database (GeoNames-derived SQLite built by scripts/build_places_db.py). When present, every photo with a GPS fix gets place names (town, region, country, park, nearby landmarks) resolved entirely on this machine — nothing is sent to the internet. When absent, place names stay unresolved. Place data © GeoNames, CC BY 4.0."
+    }
+  ],
+  "search.places.landmarkRadiusM": "Landmark Radius (m)",
+  "search.places.landmarkRadiusM.long": [
+    {
+      "type": "paragraph",
+      "text": "Named features (waterfalls, peaks, lakes, monuments, campgrounds, trails) within this many metres of a photo's GPS fix are attached to it as landmarks and become searchable by name."
+    }
+  ],
+  "search.places.settingAtM": "\"At the\" Setting Radius (m)",
+  "search.places.settingAtM.long": [
+    {
+      "type": "paragraph",
+      "text": "How close a photo must be to a feature of the named kind for searches like \"waterfront photos\" or \"on the beach\" to match it. \"Near the lake\" uses the landmark radius instead."
+    }
+  ],
+  "search.places.localityMaxKm": "Nearest Town Search Radius (km)",
+  "search.places.localityMaxKm.long": [
+    {
+      "type": "paragraph",
+      "text": "How far to look for the nearest populated place when naming a photo's location. Photos further than this from any town get no locality (and therefore no region/country) but still get landmarks and park containment."
+    }
+  ],
   "duplicates.finder.knnK": "Vector Search Candidate Count (K)",
   "duplicates.finder.knnK.long": [
     {

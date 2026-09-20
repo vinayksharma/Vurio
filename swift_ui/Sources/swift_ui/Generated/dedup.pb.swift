@@ -778,56 +778,114 @@ struct Vurio_Dedup_GetDayGroupsRequest: Sendable {
   init() {}
 }
 
-struct Vurio_Dedup_DayFile: Sendable {
+struct Vurio_Dedup_DayFile: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var id: String = String()
+  var id: String {
+    get {_storage._id}
+    set {_uniqueStorage()._id = newValue}
+  }
 
-  var filePath: String = String()
+  var filePath: String {
+    get {_storage._filePath}
+    set {_uniqueStorage()._filePath = newValue}
+  }
 
   /// normalized "YYYY-MM-DD HH:MM:SS"
-  var takenTime: String = String()
+  var takenTime: String {
+    get {_storage._takenTime}
+    set {_uniqueStorage()._takenTime = newValue}
+  }
 
-  var sizeBytes: Int64 = 0
+  var sizeBytes: Int64 {
+    get {_storage._sizeBytes}
+    set {_uniqueStorage()._sizeBytes = newValue}
+  }
 
-  var cachedThumbnailPath: String = String()
+  var cachedThumbnailPath: String {
+    get {_storage._cachedThumbnailPath}
+    set {_uniqueStorage()._cachedThumbnailPath = newValue}
+  }
 
-  var isEjected: Bool = false
+  var isEjected: Bool {
+    get {_storage._isEjected}
+    set {_uniqueStorage()._isEjected = newValue}
+  }
 
   /// false when the volume this file lives on is disconnected
-  var isAvailable: Bool = false
+  var isAvailable: Bool {
+    get {_storage._isAvailable}
+    set {_uniqueStorage()._isAvailable = newValue}
+  }
 
   /// duplicate group id; empty when the file is unique
-  var groupID: String = String()
+  var groupID: String {
+    get {_storage._groupID}
+    set {_uniqueStorage()._groupID = newValue}
+  }
 
-  var isRepresentative: Bool = false
+  var isRepresentative: Bool {
+    get {_storage._isRepresentative}
+    set {_uniqueStorage()._isRepresentative = newValue}
+  }
 
-  var similarityScore: Double = 0
+  var similarityScore: Double {
+    get {_storage._similarityScore}
+    set {_uniqueStorage()._similarityScore = newValue}
+  }
 
   /// THUMB-1, see DuplicateFile
-  var displayWidth: Int32 = 0
+  var displayWidth: Int32 {
+    get {_storage._displayWidth}
+    set {_uniqueStorage()._displayWidth = newValue}
+  }
 
-  var displayHeight: Int32 = 0
+  var displayHeight: Int32 {
+    get {_storage._displayHeight}
+    set {_uniqueStorage()._displayHeight = newValue}
+  }
 
   /// How the active search_query admitted THIS file (all false when no
   /// search is active): matched_ai = CLIP ranked it for the semantic text;
   /// matched_exif = it satisfied the parsed EXIF constraints; matched_face =
   /// it satisfied the parsed face facts (person names, face counts). Results
   /// are a union of the routes, so any combination can appear.
-  var matchedAi: Bool = false
+  var matchedAi: Bool {
+    get {_storage._matchedAi}
+    set {_uniqueStorage()._matchedAi = newValue}
+  }
 
-  var matchedExif: Bool = false
+  var matchedExif: Bool {
+    get {_storage._matchedExif}
+    set {_uniqueStorage()._matchedExif = newValue}
+  }
 
-  var matchedFace: Bool = false
+  var matchedFace: Bool {
+    get {_storage._matchedFace}
+    set {_uniqueStorage()._matchedFace = newValue}
+  }
 
   /// STRIP-2, see DuplicateFile
-  var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] = []
+  var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] {
+    get {_storage._cachedThumbnails}
+    set {_uniqueStorage()._cachedThumbnails = newValue}
+  }
+
+  /// PLACE-1: where the photo was taken, most specific first
+  /// ("Fairy Falls · Yellowstone National Park · Wyoming"); empty when the
+  /// file has no GPS fix or it has not been resolved yet.
+  var placeLabel: String {
+    get {_storage._placeLabel}
+    set {_uniqueStorage()._placeLabel = newValue}
+  }
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 struct Vurio_Dedup_DayGroup: Sendable {
@@ -2952,104 +3010,177 @@ extension Vurio_Dedup_GetDayGroupsRequest: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_DayFile: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DayFile"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0\u{3}cached_thumbnails\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}file_path\0\u{3}taken_time\0\u{3}size_bytes\0\u{3}cached_thumbnail_path\0\u{3}is_ejected\0\u{3}is_available\0\u{3}group_id\0\u{3}is_representative\0\u{3}similarity_score\0\u{3}display_width\0\u{3}display_height\0\u{3}matched_ai\0\u{3}matched_exif\0\u{3}matched_face\0\u{3}cached_thumbnails\0\u{3}place_label\0")
+
+  fileprivate class _StorageClass {
+    var _id: String = String()
+    var _filePath: String = String()
+    var _takenTime: String = String()
+    var _sizeBytes: Int64 = 0
+    var _cachedThumbnailPath: String = String()
+    var _isEjected: Bool = false
+    var _isAvailable: Bool = false
+    var _groupID: String = String()
+    var _isRepresentative: Bool = false
+    var _similarityScore: Double = 0
+    var _displayWidth: Int32 = 0
+    var _displayHeight: Int32 = 0
+    var _matchedAi: Bool = false
+    var _matchedExif: Bool = false
+    var _matchedFace: Bool = false
+    var _cachedThumbnails: [Vurio_Dedup_CachedThumbnail] = []
+    var _placeLabel: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _id = source._id
+      _filePath = source._filePath
+      _takenTime = source._takenTime
+      _sizeBytes = source._sizeBytes
+      _cachedThumbnailPath = source._cachedThumbnailPath
+      _isEjected = source._isEjected
+      _isAvailable = source._isAvailable
+      _groupID = source._groupID
+      _isRepresentative = source._isRepresentative
+      _similarityScore = source._similarityScore
+      _displayWidth = source._displayWidth
+      _displayHeight = source._displayHeight
+      _matchedAi = source._matchedAi
+      _matchedExif = source._matchedExif
+      _matchedFace = source._matchedFace
+      _cachedThumbnails = source._cachedThumbnails
+      _placeLabel = source._placeLabel
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.takenTime) }()
-      case 4: try { try decoder.decodeSingularInt64Field(value: &self.sizeBytes) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.cachedThumbnailPath) }()
-      case 6: try { try decoder.decodeSingularBoolField(value: &self.isEjected) }()
-      case 7: try { try decoder.decodeSingularBoolField(value: &self.isAvailable) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.groupID) }()
-      case 9: try { try decoder.decodeSingularBoolField(value: &self.isRepresentative) }()
-      case 10: try { try decoder.decodeSingularDoubleField(value: &self.similarityScore) }()
-      case 11: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
-      case 12: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
-      case 13: try { try decoder.decodeSingularBoolField(value: &self.matchedAi) }()
-      case 14: try { try decoder.decodeSingularBoolField(value: &self.matchedExif) }()
-      case 15: try { try decoder.decodeSingularBoolField(value: &self.matchedFace) }()
-      case 16: try { try decoder.decodeRepeatedMessageField(value: &self.cachedThumbnails) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._id) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._filePath) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._takenTime) }()
+        case 4: try { try decoder.decodeSingularInt64Field(value: &_storage._sizeBytes) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._cachedThumbnailPath) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._isEjected) }()
+        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._isAvailable) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._groupID) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._isRepresentative) }()
+        case 10: try { try decoder.decodeSingularDoubleField(value: &_storage._similarityScore) }()
+        case 11: try { try decoder.decodeSingularInt32Field(value: &_storage._displayWidth) }()
+        case 12: try { try decoder.decodeSingularInt32Field(value: &_storage._displayHeight) }()
+        case 13: try { try decoder.decodeSingularBoolField(value: &_storage._matchedAi) }()
+        case 14: try { try decoder.decodeSingularBoolField(value: &_storage._matchedExif) }()
+        case 15: try { try decoder.decodeSingularBoolField(value: &_storage._matchedFace) }()
+        case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._cachedThumbnails) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._placeLabel) }()
+        default: break
+        }
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
-    }
-    if !self.filePath.isEmpty {
-      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 2)
-    }
-    if !self.takenTime.isEmpty {
-      try visitor.visitSingularStringField(value: self.takenTime, fieldNumber: 3)
-    }
-    if self.sizeBytes != 0 {
-      try visitor.visitSingularInt64Field(value: self.sizeBytes, fieldNumber: 4)
-    }
-    if !self.cachedThumbnailPath.isEmpty {
-      try visitor.visitSingularStringField(value: self.cachedThumbnailPath, fieldNumber: 5)
-    }
-    if self.isEjected != false {
-      try visitor.visitSingularBoolField(value: self.isEjected, fieldNumber: 6)
-    }
-    if self.isAvailable != false {
-      try visitor.visitSingularBoolField(value: self.isAvailable, fieldNumber: 7)
-    }
-    if !self.groupID.isEmpty {
-      try visitor.visitSingularStringField(value: self.groupID, fieldNumber: 8)
-    }
-    if self.isRepresentative != false {
-      try visitor.visitSingularBoolField(value: self.isRepresentative, fieldNumber: 9)
-    }
-    if self.similarityScore.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.similarityScore, fieldNumber: 10)
-    }
-    if self.displayWidth != 0 {
-      try visitor.visitSingularInt32Field(value: self.displayWidth, fieldNumber: 11)
-    }
-    if self.displayHeight != 0 {
-      try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 12)
-    }
-    if self.matchedAi != false {
-      try visitor.visitSingularBoolField(value: self.matchedAi, fieldNumber: 13)
-    }
-    if self.matchedExif != false {
-      try visitor.visitSingularBoolField(value: self.matchedExif, fieldNumber: 14)
-    }
-    if self.matchedFace != false {
-      try visitor.visitSingularBoolField(value: self.matchedFace, fieldNumber: 15)
-    }
-    if !self.cachedThumbnails.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.cachedThumbnails, fieldNumber: 16)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      if !_storage._id.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._id, fieldNumber: 1)
+      }
+      if !_storage._filePath.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._filePath, fieldNumber: 2)
+      }
+      if !_storage._takenTime.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._takenTime, fieldNumber: 3)
+      }
+      if _storage._sizeBytes != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._sizeBytes, fieldNumber: 4)
+      }
+      if !_storage._cachedThumbnailPath.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._cachedThumbnailPath, fieldNumber: 5)
+      }
+      if _storage._isEjected != false {
+        try visitor.visitSingularBoolField(value: _storage._isEjected, fieldNumber: 6)
+      }
+      if _storage._isAvailable != false {
+        try visitor.visitSingularBoolField(value: _storage._isAvailable, fieldNumber: 7)
+      }
+      if !_storage._groupID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._groupID, fieldNumber: 8)
+      }
+      if _storage._isRepresentative != false {
+        try visitor.visitSingularBoolField(value: _storage._isRepresentative, fieldNumber: 9)
+      }
+      if _storage._similarityScore.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._similarityScore, fieldNumber: 10)
+      }
+      if _storage._displayWidth != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._displayWidth, fieldNumber: 11)
+      }
+      if _storage._displayHeight != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._displayHeight, fieldNumber: 12)
+      }
+      if _storage._matchedAi != false {
+        try visitor.visitSingularBoolField(value: _storage._matchedAi, fieldNumber: 13)
+      }
+      if _storage._matchedExif != false {
+        try visitor.visitSingularBoolField(value: _storage._matchedExif, fieldNumber: 14)
+      }
+      if _storage._matchedFace != false {
+        try visitor.visitSingularBoolField(value: _storage._matchedFace, fieldNumber: 15)
+      }
+      if !_storage._cachedThumbnails.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._cachedThumbnails, fieldNumber: 16)
+      }
+      if !_storage._placeLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._placeLabel, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_DayFile, rhs: Vurio_Dedup_DayFile) -> Bool {
-    if lhs.id != rhs.id {return false}
-    if lhs.filePath != rhs.filePath {return false}
-    if lhs.takenTime != rhs.takenTime {return false}
-    if lhs.sizeBytes != rhs.sizeBytes {return false}
-    if lhs.cachedThumbnailPath != rhs.cachedThumbnailPath {return false}
-    if lhs.isEjected != rhs.isEjected {return false}
-    if lhs.isAvailable != rhs.isAvailable {return false}
-    if lhs.groupID != rhs.groupID {return false}
-    if lhs.isRepresentative != rhs.isRepresentative {return false}
-    if lhs.similarityScore != rhs.similarityScore {return false}
-    if lhs.displayWidth != rhs.displayWidth {return false}
-    if lhs.displayHeight != rhs.displayHeight {return false}
-    if lhs.matchedAi != rhs.matchedAi {return false}
-    if lhs.matchedExif != rhs.matchedExif {return false}
-    if lhs.matchedFace != rhs.matchedFace {return false}
-    if lhs.cachedThumbnails != rhs.cachedThumbnails {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._id != rhs_storage._id {return false}
+        if _storage._filePath != rhs_storage._filePath {return false}
+        if _storage._takenTime != rhs_storage._takenTime {return false}
+        if _storage._sizeBytes != rhs_storage._sizeBytes {return false}
+        if _storage._cachedThumbnailPath != rhs_storage._cachedThumbnailPath {return false}
+        if _storage._isEjected != rhs_storage._isEjected {return false}
+        if _storage._isAvailable != rhs_storage._isAvailable {return false}
+        if _storage._groupID != rhs_storage._groupID {return false}
+        if _storage._isRepresentative != rhs_storage._isRepresentative {return false}
+        if _storage._similarityScore != rhs_storage._similarityScore {return false}
+        if _storage._displayWidth != rhs_storage._displayWidth {return false}
+        if _storage._displayHeight != rhs_storage._displayHeight {return false}
+        if _storage._matchedAi != rhs_storage._matchedAi {return false}
+        if _storage._matchedExif != rhs_storage._matchedExif {return false}
+        if _storage._matchedFace != rhs_storage._matchedFace {return false}
+        if _storage._cachedThumbnails != rhs_storage._cachedThumbnails {return false}
+        if _storage._placeLabel != rhs_storage._placeLabel {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

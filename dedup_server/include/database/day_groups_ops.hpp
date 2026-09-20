@@ -23,6 +23,8 @@ namespace MediaDedup
         // 0/0 when unknown.
         int display_width = 0;
         int display_height = 0;
+        // PLACE-1: resolved place label (empty when none).
+        std::string place_label;
     };
 
     struct DayGroupRecord

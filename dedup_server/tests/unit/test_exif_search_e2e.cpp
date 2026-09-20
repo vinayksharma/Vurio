@@ -4,6 +4,7 @@
 #include "config/unified_observable_config.hpp"
 #include "database/database_manager.hpp"
 #include "database/faces_ops.hpp"
+#include "database/places_ops.hpp"
 #include "media_processors/face/face_clusterer.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "media_processors/image/backends/exif_reader.hpp"
@@ -26,6 +27,7 @@ protected:
         ASSERT_TRUE(db_->initialize());
         ASSERT_TRUE(ScannedFilesOps::ensureTable(*db_));
         ASSERT_TRUE(FacesOps::ensureTable(*db_));
+        ASSERT_TRUE(PlacesOps::ensureTable(*db_));
 
         config_ = std::make_shared<UnifiedObservableConfigManager>("", false);
         // Absolute path -> the engine skips project-root rewriting.
@@ -80,6 +82,45 @@ protected:
             e.model = "X1D";
             e.camera = "Hasselblad X1D";
         });
+        // PLACE-2: a GPS photo OUTSIDE every gazetteer bbox but resolved
+        // (offline, at scan time) to named places — searchable by name only
+        // through file_places. Nothing else shares its brand/year.
+        bozeman_id_ = insert("/lib/pentax_bozeman.jpg", [](ExifInfo &e) {
+            e.datetime = "2021:06:20 18:00:00";
+            e.make = "Pentax";
+            e.model = "K-3";
+            e.camera = "Pentax K-3";
+            e.gps_lat = 45.68f;
+            e.gps_lon = -111.04f;
+        });
+        {
+            auto place = [](const char *name, const char *kind, const char *role, const char *ext,
+                            const char *fcode = "", double dist = 0.0) {
+                PlacesOps::FilePlace fp;
+                fp.place.source = "geonames";
+                fp.place.external_id = ext;
+                fp.place.name = name;
+                fp.place.kind = kind;
+                fp.place.fcode = fcode;
+                fp.role = role;
+                fp.distance_m = dist;
+                return fp;
+            };
+            // PLACE-4: a cove 80 m away and the shoreline 60 m away.
+            EXPECT_TRUE(PlacesOps::setFilePlaces(
+                *db_, bozeman_id_,
+                {place("Bozeman", "locality", "locality", "5641727", "P.PPLA2", 400),
+                 place("Montana", "region", "region", "5667009"),
+                 place("United States", "country", "country", "6252001"),
+                 place("Harsimus Cove", "water", "landmark", "5098001", "H.COVE", 80)},
+                "Harsimus Cove · Bozeman · Montana", PlacesOps::kLevelOffline, 60.0));
+            // The Yellowstone canon photo: a lake 1.2 km off, no shoreline.
+            EXPECT_TRUE(PlacesOps::setFilePlaces(
+                *db_, canon_id_,
+                {place("Yellowstone Lake", "water", "landmark", "5844090", "H.LK", 1200),
+                 place("Wyoming", "region", "region", "5843591")},
+                "near Yellowstone Lake · Wyoming", PlacesOps::kLevelOffline));
+        }
         nikon_id_ = insert("/lib/nikon_nogps.jpg", [](ExifInfo &e) {
             e.datetime = "2024:01:02 12:00:00";
             e.make = "Nikon";
@@ -134,7 +175,7 @@ protected:
     std::unique_ptr<DatabaseManager> db_;
     std::shared_ptr<UnifiedObservableConfigManager> config_;
     std::unique_ptr<TextSearchEngine> engine_;
-    int canon_id_ = 0, sony_id_ = 0, nikon_id_ = 0, raw_id_ = 0;
+    int canon_id_ = 0, sony_id_ = 0, nikon_id_ = 0, raw_id_ = 0, bozeman_id_ = 0;
 };
 
 TEST_F(ExifSearchE2ETest, CameraMakeQuery)
@@ -602,4 +643,194 @@ TEST_F(ExifSearchE2ETest, GoldenFullPipelineWithRealModel)
     EXPECT_EQ(idsOf(r), std::vector<int>{raw_id_})
         << "only the LLM path can produce a file_type filter";
     EXPECT_TRUE(r.used_exif);
+}
+
+// ---------------------------------------------------------------------------
+// PLACE-2: place-name search over file_places, and §6.1 inferred places.
+
+TEST_F(ExifSearchE2ETest, PlaceNameResolvesThroughFilePlacesWithoutABbox)
+{
+    // Bozeman is in no bbox gazetteer; only file_places knows it.
+    auto r = engine_->search("photos in bozeman");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+    EXPECT_TRUE(r.used_exif);
+
+    // The region row resolves the same way — and Montana is ALSO a state
+    // bbox in the gazetteer, whose coarse box reaches into Yellowstone
+    // (the canon photo). bbox ∪ file_places, so both come back.
+    r = engine_->search("photos in montana");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), (std::vector<int>{canon_id_, bozeman_id_}));
+}
+
+TEST_F(ExifSearchE2ETest, BboxAndFilePlacesUnionForTheSameName)
+{
+    // "united states": the bbox admits every US GPS fix (canon in
+    // Yellowstone, sony in Utah, pentax in Bozeman); the file_places row
+    // admits Bozeman again. Union, not intersection, and no duplicates.
+    auto r = engine_->search("photos in united states");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), (std::vector<int>{canon_id_, sony_id_, bozeman_id_}));
+}
+
+TEST_F(ExifSearchE2ETest, ExplicitPlaceAndCameraIntersectWithNoFallback)
+{
+    // "in bozeman" is the user's grammar: an empty intersection stays empty.
+    auto r = engine_->search("photos in bozeman taken with a canon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.matches.empty());
+}
+
+TEST_F(ExifSearchE2ETest, LlmInferredPlaceFiltersLikeAPrepositionedOne)
+{
+    // The real model's shape for a bare place: span invented, value grounded.
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = R"({"facts": [{"dim": "location", "op": "eq", "values": ["bozeman"], )"
+                     R"("intent": "filter", "span": "in bozeman"}], )"
+                     R"("clip_queries": ["bozeman farmers market"]})";
+            return c;
+        });
+    // CLIP is unavailable in this fixture, so the bound set answers alone.
+    auto r = engine_->search("bozeman farmers market");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+    EXPECT_TRUE(r.used_exif);
+}
+
+TEST_F(ExifSearchE2ETest, LlmInferredPlaceRetriesWithoutItWhenTheIntersectionIsEmpty)
+{
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            // Bare "bozeman" (inferred) + an explicit canon filter: no photo
+            // satisfies both. The inferred place yields; the canon stays.
+            c.text = R"({"facts": [{"dim": "location", "op": "eq", "values": ["bozeman"], )"
+                     R"("intent": "filter", "span": "bozeman"}, )"
+                     R"({"dim": "camera", "op": "in", "values": ["canon"], )"
+                     R"("intent": "filter", "span": "taken with a canon"}], )"
+                     R"("clip_queries": []})";
+            return c;
+        });
+    auto r = engine_->search("bozeman taken with a canon");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
+}
+
+TEST_F(ExifSearchE2ETest, LlmInferredPlaceWithNoPhotosLeavesTheQueryAlone)
+{
+    engine_->setLlmCompleteFnForTests(
+        [](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            // "narnia" is in no gazetteer and has no photos: the inferred
+            // fact is skipped (no drop -> no regex fallback), the explicit
+            // year filter still runs.
+            c.text = R"({"facts": [{"dim": "location", "op": "eq", "values": ["narnia"], )"
+                     R"("intent": "filter", "span": "narnia"}, )"
+                     R"({"dim": "date", "op": "eq", "values": ["2021"], )"
+                     R"("intent": "filter", "span": "from 2021"}], )"
+                     R"("clip_queries": ["narnia castles"]})";
+            return c;
+        });
+    auto r = engine_->search("narnia castles from 2021");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+    EXPECT_FALSE(r.parse_degraded) << "a skipped inference must not trigger the regex fallback";
+}
+
+TEST_F(ExifSearchE2ETest, ExifRouteOffDropsPlaceFilters)
+{
+    TextSearchEngine::Routes routes;
+    routes.exif = false;
+    routes.ai = false;
+    auto r = engine_->search("photos in bozeman", routes);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.matches.empty()) << "no route left to answer with";
+}
+
+// ---------------------------------------------------------------------------
+// PLACE-4: setting facts through the LLM seam.
+
+namespace
+{
+    LlmQueryStructurer::CompleteFn canned(std::string json)
+    {
+        return [json](const std::string &, const std::string &, const std::string &) {
+            LlmQueryStructurer::Completion c;
+            c.ok = true;
+            c.text = json;
+            return c;
+        };
+    }
+}
+
+TEST_F(ExifSearchE2ETest, WaterfrontAtMatchesTheShorelineAndCoveOnly)
+{
+    engine_->setLlmCompleteFnForTests(canned(
+        R"({"facts": [{"dim": "setting", "op": "at", "values": ["waterfront"], "intent": "filter", "span": "waterfront"}], )"
+        R"("clip_queries": ["waterfront photos"]})"));
+    auto r = engine_->search("waterfront photos");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+    EXPECT_TRUE(r.used_exif);
+}
+
+TEST_F(ExifSearchE2ETest, NearTheLakeUsesTheWiderRadiusAndFeatureCodes)
+{
+    engine_->setLlmCompleteFnForTests(canned(
+        R"({"facts": [{"dim": "setting", "op": "near", "values": ["lake"], "intent": "filter", "span": "near the lake"}], )"
+        R"("clip_queries": ["sunsets"]})"));
+    auto r = engine_->search("sunsets near the lake");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_}) << "1.2 km lake is 'near'; the cove is not a lake code";
+
+    // "at the lake" (150 m): the lake is too far, and it is scaffolded, so
+    // no retry — an honest empty result.
+    engine_->setLlmCompleteFnForTests(canned(
+        R"({"facts": [{"dim": "setting", "op": "at", "values": ["lake"], "intent": "filter", "span": "at the lake"}], )"
+        R"("clip_queries": ["sunsets"]})"));
+    r = engine_->search("sunsets at the lake");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_TRUE(r.matches.empty());
+}
+
+TEST_F(ExifSearchE2ETest, RegionAndSettingIntersect)
+{
+    // "montana waterfronts": Montana ∩ at the water. Bozeman qualifies on
+    // both; Yellowstone (inside Montana's coarse bbox) has no shoreline.
+    engine_->setLlmCompleteFnForTests(canned(
+        R"({"facts": [{"dim": "location", "op": "eq", "values": ["montana"], "intent": "filter", "span": "montana"}, )"
+        R"({"dim": "setting", "op": "at", "values": ["waterfronts"], "intent": "filter", "span": "waterfronts"}], )"
+        R"("clip_queries": ["waterfronts"]})"));
+    auto r = engine_->search("montana waterfronts");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+}
+
+TEST_F(ExifSearchE2ETest, InferredSettingRetriesWithoutItButKeepsExplicitFacts)
+{
+    engine_->setLlmCompleteFnForTests(canned(
+        R"({"facts": [{"dim": "setting", "op": "at", "values": ["waterfront"], "intent": "filter", "span": "waterfront"}, )"
+        R"({"dim": "camera", "op": "in", "values": ["sony"], "intent": "filter", "span": "taken with a sony"}], )"
+        R"("clip_queries": ["waterfront"]})"));
+    auto r = engine_->search("waterfront taken with a sony");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{sony_id_}) << "no sony waterfront -> retry without the inferred setting";
+}
+
+TEST_F(ExifSearchE2ETest, RegexPathDetectsSettingsToo)
+{
+    // No LLM seam: the regex parser's deterministic detector.
+    auto r = engine_->search("waterfront photos");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{bozeman_id_});
+
+    r = engine_->search("sunsets near the lake");
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(idsOf(r), std::vector<int>{canon_id_});
 }

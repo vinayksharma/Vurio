@@ -45,6 +45,9 @@ namespace MediaDedup
                 file.display_width = dims.width;
                 file.display_height = dims.height;
             }
+            // PLACE-1: index 11 = place_label (appended after exif_resolution).
+            if (file_row.fieldCount() > 11 && !file_row[11].isEmpty())
+                file.place_label = file_row[11].convert<std::string>();
             return file;
         }
 
@@ -113,7 +116,7 @@ namespace MediaDedup
                 "COALESCE(dm.is_representative, 0) AS is_representative, "
                 "COALESCE(dm.similarity_score, 0) AS similarity_score, "
                 VURIO_TAKEN_TIME_EXPR " AS slot_time, sf.id AS slot_id, "
-                "sf.exif_resolution AS exif_resolution "
+                "sf.exif_resolution AS exif_resolution, sf.place_label AS place_label "
                 "FROM scanned_files sf "
                 "LEFT JOIN duplicate_members dm ON dm.file_id = sf.id "
                 "WHERE " VURIO_DAY_VIEW_FILTER " AND sf.taken_day = ? "
