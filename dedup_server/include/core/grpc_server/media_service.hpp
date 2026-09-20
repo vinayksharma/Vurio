@@ -67,18 +67,26 @@ public:
         return size > 0 ? path + "#" + std::to_string(size) : path;
     }
 
-    // STRIP-2: a cache row whose file is missing or whose byte size no longer
-    // matches what was recorded at write time. The cache may live on a
-    // network volume and writes are not fsynced, so a truncated asset after a
-    // crash or a dropped mount would otherwise be served (and fail to decode)
-    // forever — the freshness check only looks at the SOURCE mtime.
-    static bool cachedAssetIntact(const MediaDedup::ThumbnailCacheRecord& rec) {
+    // STRIP-2: the state of a cache row's on-disk asset.
+    //  - Intact: present with the byte size recorded at write time.
+    //  - Damaged: present but empty or a different size. The cache may live
+    //    on a network volume and writes are not fsynced, so a truncated
+    //    asset after a crash would otherwise be served (and fail to decode)
+    //    forever — the freshness check only looks at the SOURCE mtime.
+    //  - Unreadable: the stat itself failed (file gone, or the whole cache
+    //    volume unmounted). NOT a reason to drop the row: on a dropped mount
+    //    every request would delete its row while the file delete fails,
+    //    orphaning the assets and desyncing the DiskCache index for what is
+    //    a transient condition. Generation runs and its upsert repairs the
+    //    row if the file really is gone — the pre-STRIP-2 behaviour.
+    enum class AssetState { Intact, Damaged, Unreadable };
+    static AssetState cachedAssetState(const MediaDedup::ThumbnailCacheRecord& rec) {
         std::error_code ec;
         auto bytes = std::filesystem::file_size(rec.cached_path, ec);
-        if (ec) return false;
-        if (bytes == 0) return false;
-        if (rec.file_size_bytes > 0 && static_cast<int64_t>(bytes) != rec.file_size_bytes) return false;
-        return true;
+        if (ec) return AssetState::Unreadable;
+        if (bytes == 0) return AssetState::Damaged;
+        if (rec.file_size_bytes > 0 && static_cast<int64_t>(bytes) != rec.file_size_bytes) return AssetState::Damaged;
+        return AssetState::Intact;
     }
 
     void dropCachedThumbnail(const MediaDedup::ThumbnailCacheRecord& rec) {
@@ -118,10 +126,16 @@ public:
         // STRIP-2: a damaged asset, or one the client asked us to redo
         // because it could not decode it, is dropped before the freshness
         // check so the generation below replaces it instead of the same bad
-        // file being served on every retry.
-        if (cached && (request->regenerate() || !cachedAssetIntact(*cached))) {
-            dropCachedThumbnail(*cached);
-            cached.reset();
+        // file being served on every retry. An unreadable one is only
+        // skipped (see cachedAssetState).
+        if (cached) {
+            AssetState state = cachedAssetState(*cached);
+            if (request->regenerate() || state == AssetState::Damaged) {
+                dropCachedThumbnail(*cached);
+                cached.reset();
+            } else if (state == AssetState::Unreadable) {
+                cached.reset();
+            }
         }
 
         // Serve the cache when it is fresh. mtime 0 (source unreadable, e.g.

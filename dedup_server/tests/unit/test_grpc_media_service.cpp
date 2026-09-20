@@ -229,6 +229,44 @@ TEST_F(MediaServiceGrpcTest, GetThumbnailDropsTruncatedCachedAsset) {
     server.stop();
 }
 
+// STRIP-2: a cache row whose file cannot be stat'ed at all (gone, or the
+// cache volume unmounted) is NOT dropped — that is a transient condition
+// on a network cache, and the generation's upsert repairs the row if the
+// file really is missing. Only a present-but-wrong-size asset is damaged.
+TEST_F(MediaServiceGrpcTest, GetThumbnailKeepsRowWhenCachedAssetUnreadable) {
+    std::string instance_dir = "/tmp/test_grpc_media_service_unreadable.instance";
+
+    std::string fake_src = "/tmp/source_unreadable.jpg";
+    std::string missing_thumb = test_thumb_cache_dir_ + "/thumb_missing.jpg";
+    std::filesystem::remove(missing_thumb);
+    ThumbnailCacheRecord rec;
+    rec.source_path = fake_src;
+    rec.cached_path = missing_thumb;
+    rec.thumbnail_size = 256;
+    rec.file_size_bytes = 9;
+    EXPECT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, rec));
+
+    GrpcServerCore server;
+    server.start(instance_dir, config_, db_, files_manager_, tpm_, thumb_cache_, transcode_cache_, nullptr, nullptr);
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(server.endpoint(), grpc::InsecureChannelCredentials());
+    auto stub = vurio::dedup::MediaService::NewStub(channel);
+    std::string token = pairWithServer(channel, server);
+    ASSERT_FALSE(token.empty());
+
+    vurio::dedup::GetMediaRequest req;
+    req.set_file_path(fake_src);
+    req.set_size("256");
+    grpc::ClientContext context;
+    context.AddMetadata("x-vurio-token", token);
+    vurio::dedup::MediaPathResponse resp;
+    grpc::Status status = stub->GetThumbnail(&context, req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE) << "not served; generation queued";
+    EXPECT_TRUE(ThumbnailCacheOps::getThumbnail(*db_, fake_src, 256).has_value()) << "row kept for the upsert to repair";
+
+    server.stop();
+}
+
 // STRIP-2: regenerate=true drops an intact cached asset (the client could not
 // decode it) so the next answer is a fresh generation, not the same file.
 TEST_F(MediaServiceGrpcTest, GetThumbnailRegenerateDropsCachedAsset) {

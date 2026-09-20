@@ -335,6 +335,12 @@ actor ServerImageLoader {
         // cancels immediately.
         let deadline = Date().addingTimeInterval(60)
         var decodeFailures = 0
+        // STRIP-2: one-shot. Set by a failed decode, consumed by the very next
+        // request. It must NOT stay true across the UNAVAILABLE/wait/retry
+        // cycle that follows: the server answers a regenerate with "generating",
+        // and a retry that still carried the flag would drop the freshly
+        // generated file and start over, until the deadline.
+        var regenerateNext = false
 
         while true {
             do {
@@ -350,7 +356,8 @@ actor ServerImageLoader {
                 // STRIP-2: the file the server handed us would not decode
                 // (truncated write on a network cache, say) — ask it to drop
                 // and regenerate rather than serve the same bytes again.
-                request.regenerate = decodeFailures > 0
+                request.regenerate = regenerateNext
+                regenerateNext = false
 
                 let response = try await client.getThumbnail(request)
                 let responsePath = response.filePath
@@ -364,6 +371,7 @@ actor ServerImageLoader {
                 } else {
                     logDebug("loadThumbnail FAILED to read from path for \(filePath): \(responsePath)")
                     decodeFailures += 1
+                    regenerateNext = true
                     if decodeFailures >= 3 || Date() >= deadline {
                         throw NSError(domain: "ServerImageLoader", code: -4, userInfo: [NSLocalizedDescriptionKey: "Failed to decode thumbnail"])
                     }
